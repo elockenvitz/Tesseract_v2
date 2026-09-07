@@ -28,6 +28,7 @@
 import { KIND_LABEL } from '../../components/signals/card-identity'
 import { RESEARCH_FILTER_OPTIONS, RESEARCH_FILTER_PREFIX } from '../research/case-state'
 import { CONTENT_REGISTRY } from '../signals/content-registry'
+import { entrySignalType } from './entry-signal-type'
 import type { SignalType } from '../signals/contract'
 import { PORTFOLIO_FILTER_OPTIONS, PORTFOLIO_FILTER_PREFIX } from '../signals/portfolio-issues'
 
@@ -377,16 +378,26 @@ export function familyOf(entry: {
  * `family-label-agreement` in `feed-categories.test` holds the invariant: for
  * every family this returns, `familyLabel` gives back the words the chip prints.
  */
-export function displayFamilyOf(entry: {
-  kind?: string
-  card?: { type?: string } | null
-  signalType?: string | null
+export function displayFamilyOf(entry: Parameters<typeof entrySignalType>[0] & {
   insight?: { issue?: { framing?: string | null } | null } | null
 }): string | null {
   const framing = entry.insight?.issue?.framing
   if (framing) return `${RESEARCH_FILTER_PREFIX}${framing}`
 
-  const declared = entry.card?.type ?? entry.signalType
+  /**
+   * Wherever the entry keeps its type, not only where two kinds keep it.
+   *
+   * This read `entry.card?.type ?? entry.signalType`, which finds it on a
+   * scenario, a template and a lens and misses it on an idea, a signal and an
+   * attention item — three kinds that dominate the feed. Their chips printed
+   * real, labelled families and their pills rendered inert, because a family
+   * that resolves only to the hook name correctly fails `isExactFamily`.
+   *
+   * Browser evidence, one chip of each: `SPAN` with `onClick: undefined` on a
+   * tile reading "Trade idea", `BUTTON` with a handler on one reading "News".
+   * See `entry-signal-type`, which is now the one place that answers this.
+   */
+  const declared = entrySignalType(entry)
   if (declared) return declared
 
   return entry.kind ?? null

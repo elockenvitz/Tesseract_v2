@@ -1,5 +1,6 @@
 import { signalTypeForTemplate } from '../signals/builders/legacy-kinds'
 import { insightSignalType } from '../signals/insight-type'
+import { ideaSignalType } from './entry-signal-type'
 import type { ExploreItem } from './explore-item'
 import type { FeedCategory } from './feed-categories'
 
@@ -722,9 +723,14 @@ export function exploreSymbols(items: ExploreItem[]): string[] {
  * trade-idea tiles, and the Explore matcher could not resolve one back to its
  * feed entry because the two sides had given it different types.
  */
-export function ideaSignalType(type: unknown): 'trade_idea' | 'thought' {
-  return type === 'trade' || type === 'trade_idea' ? 'trade_idea' : 'thought'
-}
+/**
+ * Re-exported, not redefined.
+ *
+ * It lived here and `displayFamilyOf` needs it too. Moving it to a leaf keeps
+ * one implementation and keeps `feed-categories` — which the gallery imports —
+ * clear of this module's builder dependencies.
+ */
+export { ideaSignalType }
 
 /**
  * A person's name, from the shape the feed actually emits.
