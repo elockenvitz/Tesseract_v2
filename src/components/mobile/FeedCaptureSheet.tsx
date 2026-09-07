@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
-import { ArrowLeft, ArrowUpRight, Lightbulb, List, MessageSquareQuote, Tag, Target, TrendingUp } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight } from 'lucide-react'
 import { BottomSheet } from './BottomSheet'
 import { CaptureFilePicker } from './CaptureFilePicker'
 import { QuickThoughtCapture } from '../thoughts/QuickThoughtCapture'
@@ -9,7 +9,7 @@ import { RecommendationQuickModal } from '../thoughts/RecommendationQuickModal'
 import { PromptModal } from '../thoughts/PromptModal'
 import type { CapturedContext } from '../thoughts/ContextSelector'
 
-type CaptureKind = 'thought' | 'trade-idea' | 'recommendation' | 'prompt' | 'add-to-list' | 'add-to-theme'
+import { CAPTURE_TYPES, captureType, type CaptureKind } from '../../lib/capture/capture-types'
 
 interface FeedCaptureSheetProps {
   open: boolean
@@ -47,65 +47,7 @@ interface FeedCaptureSheetProps {
   onOpenAsset?: (assetId: string, symbol: string) => void
 }
 
-const OPTIONS: {
-  kind: CaptureKind
-  label: string
-  hint: string
-  icon: typeof Lightbulb
-  tone: string
-  /** Hidden when the tile has no asset — filing needs something to file. */
-  needsAsset?: boolean
-}[] = [
-  {
-    kind: 'thought',
-    label: 'Quick thought',
-    hint: 'Something worth remembering. Structure it later.',
-    icon: Lightbulb,
-    tone: 'text-amber-500 bg-amber-50 dark:bg-amber-900/30',
-  },
-  {
-    kind: 'trade-idea',
-    label: 'Trade idea',
-    hint: 'A position to put on, with a direction.',
-    icon: TrendingUp,
-    tone: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30',
-  },
-  {
-    kind: 'recommendation',
-    label: 'Recommendation',
-    hint: 'Ask a PM to act. Goes to the decision queue.',
-    icon: Target,
-    tone: 'text-primary-600 bg-primary-50 dark:bg-primary-900/30',
-  },
-  {
-    kind: 'prompt',
-    label: 'Prompt',
-    hint: 'Ask someone for work or an answer.',
-    icon: MessageSquareQuote,
-    tone: 'text-purple-600 bg-purple-50 dark:bg-purple-900/30',
-  },
-  // Filing, not writing. "Keep an eye on this" is the most common reaction to
-  // a feed card and every option above it produces prose, so the only way to
-  // act on it was to leave the feed and find the list — by which point the
-  // impulse has cost more than it was worth. These need an asset, so they are
-  // hidden on cards that have none.
-  {
-    kind: 'add-to-list',
-    label: 'Add to a list',
-    hint: 'File it somewhere you already watch.',
-    icon: List,
-    tone: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30',
-    needsAsset: true,
-  },
-  {
-    kind: 'add-to-theme',
-    label: 'Add to a theme',
-    hint: 'Connect it to a thesis you are building.',
-    icon: Tag,
-    tone: 'text-fuchsia-600 bg-fuchsia-50 dark:bg-fuchsia-900/30',
-    needsAsset: true,
-  },
-]
+const OPTIONS = CAPTURE_TYPES
 
 /**
  * Capture from inside the feed.
@@ -151,27 +93,17 @@ export function FeedCaptureSheet({
     close()
   }
 
-  // These two own their overlay, so they render outside the sheet rather than
-  // inside it — nesting them would put a modal inside a drag-dismissable panel.
-  if (open && kind === 'recommendation') {
-    return (
-      <RecommendationQuickModal
-        isOpen
-        onClose={close}
-        context={context ?? contextFromAsset(assetId, assetSymbol)}
-      />
-    )
-  }
+  /*
+    All four writable kinds render INSIDE the sheet now.
 
-  if (open && kind === 'prompt') {
-    return (
-      <PromptModal
-        isOpen
-        onClose={close}
-        context={context ?? contextFromAsset(assetId, assetSymbol)}
-      />
-    )
-  }
+    Prompt and Recommendation used to break out and draw their own full-screen
+    modals, on the grounds that nesting a modal inside a drag-dismissable panel
+    would be wrong. It would be — but both have supported an `embedded` mode
+    since the pane started rendering them inline, and embedded they draw no
+    overlay at all. So the reason had lapsed, and the cost was that two of the
+    four capture types arrived with different chrome, a different way to
+    dismiss, and none of the sheet's keyboard handling.
+  */
 
   return (
     <BottomSheet
@@ -263,10 +195,19 @@ export function FeedCaptureSheet({
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-              {OPTIONS.find(o => o.kind === kind)?.label}
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
+              {captureType(kind)?.label}
             </span>
           </div>
+
+          {/* What to do now that you have chosen, in the words the registry
+              holds. The pane wrote its own sentence for each of these and they
+              had drifted; both surfaces read the same line now. */}
+          {captureType(kind)?.guidance && (
+            <p className="flex-shrink-0 px-3 pb-2 text-xs text-gray-500 dark:text-gray-400">
+              {captureType(kind)!.guidance}
+            </p>
+          )}
 
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-4">
             {kind === 'thought' && (
@@ -289,6 +230,22 @@ export function FeedCaptureSheet({
                 assetName={assetName ?? undefined}
                 onSuccess={() => done('trade-idea')}
                 onCancel={() => setKind(null)}
+              />
+            )}
+            {kind === 'recommendation' && (
+              <RecommendationQuickModal
+                isOpen
+                embedded
+                onClose={() => setKind(null)}
+                context={context ?? contextFromAsset(assetId, assetSymbol)}
+              />
+            )}
+            {kind === 'prompt' && (
+              <PromptModal
+                isOpen
+                embedded
+                onClose={() => setKind(null)}
+                context={context ?? contextFromAsset(assetId, assetSymbol)}
               />
             )}
             {(kind === 'add-to-list' || kind === 'add-to-theme') && assetId && (
