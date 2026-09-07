@@ -242,11 +242,14 @@ BEGIN
   -- ---------------------------------------------------------------------------
   RAISE NOTICE '';
   RAISE NOTICE '--- Cleanup ---';
-  DELETE FROM accepted_trades WHERE portfolio_id = v_book;
+  -- The portfolio goes FIRST. The ledger is append-only and its rows can only
+  -- be removed by cascading from the book they describe, so deleting the
+  -- trades first would leave events pointing at trades that must not vanish.
   DELETE FROM portfolio_holdings WHERE portfolio_id = v_book;
   DELETE FROM portfolio_holdings_superseded WHERE portfolio_id = v_book;
   DELETE FROM portfolio_memberships WHERE portfolio_id = v_book;
   DELETE FROM portfolios WHERE id = v_book;
+  DELETE FROM accepted_trades WHERE portfolio_id = v_book;
   DELETE FROM organization_memberships WHERE organization_id = v_org;
   DELETE FROM organization_audit_log WHERE organization_id = v_org;
   DELETE FROM organizations WHERE id = v_org;

@@ -281,12 +281,20 @@ BEGIN
   END IF;
 
   -- ===========================================================================
-  -- 19. History is not touched by either operation
+  -- 19. A trade changes the book; only a reconcile records a complete one
+  --
+  -- RESTATED by the historical-ledger stage. This used to assert that neither
+  -- operation wrote a snapshot, which was right while the snapshot tables
+  -- were being mutated in place by the trade path and had to be defended from
+  -- it. A complete reconcile now WRITES a snapshot, because a reconcile knows
+  -- the whole book and a trade knows one line. What must still hold is that a
+  -- trade does not manufacture one.
   -- ===========================================================================
-  SELECT count(*) INTO v_n FROM portfolio_holdings_snapshots WHERE portfolio_id = v_book;
+  SELECT count(*) INTO v_n FROM portfolio_holdings_snapshots
+   WHERE portfolio_id = v_book AND source = 'trade';
   IF v_n = 0 THEN
-    v_pass := v_pass + 1; RAISE NOTICE 'PASS [19] book operations write no snapshot rows';
-  ELSE v_fail := v_fail + 1; RAISE NOTICE 'FAIL [19] % snapshot row(s) appeared', v_n; END IF;
+    v_pass := v_pass + 1; RAISE NOTICE 'PASS [19] a trade records no complete snapshot';
+  ELSE v_fail := v_fail + 1; RAISE NOTICE 'FAIL [19] % snapshot(s) written by a trade', v_n; END IF;
 
   -- ===========================================================================
   -- 20-22. Authorization — the existing model, not a new one

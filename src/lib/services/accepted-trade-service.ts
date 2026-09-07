@@ -903,6 +903,10 @@ async function applyTradeToHoldings(
     p_price: price,
     p_accepted_trade_id: trade.id,
     p_actor_id: actorId ?? null,
+    // A grouped commit carries its batch onto the ledger, so "what did this
+    // rebalance do to the book" is one query rather than a join back through
+    // the Trade Book.
+    p_batch_id: (trade as any).batch_id ?? null,
   })
 
   if (error) {

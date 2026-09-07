@@ -332,6 +332,9 @@ export function useHoldingsUpload(portfolioId: string | undefined) {
         p_positions: bookPositions,
         p_as_of: snapshotDate,
         p_source: 'upload',
+        // Recorded on every event this reconcile writes, so the ledger
+        // answers who loaded the file as well as what it changed.
+        p_actor_id: user.id,
       })
 
       // Deliberately fatal. The snapshot is history and is already committed,
