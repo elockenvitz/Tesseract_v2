@@ -27,6 +27,7 @@ import { TradeJournalTab } from '../portfolio/tabs/TradeJournalTab'
 import { HoldingsUploadPanel } from '../portfolio/HoldingsUploadPanel'
 import { PortfolioHoldingsSourceSetting } from '../portfolio/PortfolioHoldingsSourceSetting'
 import { usePendingRationaleCount } from '../../hooks/useTradeJournal'
+import { OptionPicker } from '../ui/OptionPicker'
 
 interface PortfolioTabProps {
   portfolio: any
@@ -402,6 +403,23 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
 
   // ── Render ───────────────────────────────────────────────
 
+  /**
+   * The count beside a section's name.
+   *
+   * Defined once because two presentations now render it — the desktop tab row
+   * as a Badge, the phone picker as a dimmed count — and a section that counts
+   * differently depending on which control you are looking at would be worse
+   * than one that does not count at all.
+   */
+  const badgeFor = (badgeKey?: string): number | null => {
+    if (badgeKey === 'holdings' && holdings && holdings.length > 0) return holdings.length
+    if (badgeKey === 'team' && teamCount > 0) return teamCount
+    if (badgeKey === 'pendingRationale' && pendingRationaleCount && pendingRationaleCount > 0) {
+      return pendingRationaleCount
+    }
+    return null
+  }
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Header.
@@ -451,13 +469,49 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
         className="flex-1 flex flex-col overflow-hidden min-h-0 max-sm:-mx-3 max-sm:rounded-none max-sm:border-x-0 max-sm:shadow-none"
       >
         <div className="border-b border-gray-200 dark:border-gray-700">
+          {/*
+            Nine sections, one thumb.
+
+            ── The defect this closes ────────────────────────────────────────
+            The row is `overflow-x-auto no-scrollbar`, so at 390px roughly two
+            and a half of the nine tabs are visible and nothing says the other
+            six exist — the scrollbar that would have hinted at them is
+            deliberately hidden. Worse, the active tab is not scrolled into
+            view: a session restored onto Settings or Universe showed a nav
+            whose highlighted item was off-screen, so the page gave no answer
+            at all to "which section am I in".
+
+            `OptionPicker` is the answer already used one level down, inside
+            Positions, for the identical problem: "seven presets are a
+            comfortable pill row at desktop width and a page-widening pan
+            surface at 390px, so the phone gets the same choice as a picker
+            rather than a shortened list." Nine tabs is that argument again.
+            It names the current section in the trigger, opens a bottom sheet
+            with all nine and their counts, and cannot overflow.
+
+            Desktop keeps the tab row exactly as it was.
+          */}
+          {isMobileViewport ? (
+            <div className="px-3 py-2">
+              <OptionPicker
+                label="Portfolio section"
+                value={activeTab}
+                onChange={setActiveTab}
+                options={TABS.map(({ key, label, badgeKey }) => ({
+                  value: key,
+                  label,
+                  // The same counts the desktop row carries as badges, dimmed
+                  // beside the label rather than dropped on the phone.
+                  count: badgeFor(badgeKey) ?? undefined,
+                }))}
+                className="w-full"
+              />
+            </div>
+          ) : (
           <nav className="flex gap-4 sm:gap-8 px-3 sm:px-6 overflow-x-auto no-scrollbar" aria-label="Tabs">
             {TABS.map(({ key, label, icon: Icon, badgeKey }) => {
               const isActive = activeTab === key
-              let badge: number | null = null
-              if (badgeKey === 'holdings' && holdings && holdings.length > 0) badge = holdings.length
-              if (badgeKey === 'team' && teamCount > 0) badge = teamCount
-              if (badgeKey === 'pendingRationale' && pendingRationaleCount && pendingRationaleCount > 0) badge = pendingRationaleCount
+              const badge = badgeFor(badgeKey)
 
               return (
                 <button
@@ -485,6 +539,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
               )
             })}
           </nav>
+          )}
         </div>
 
         {/* Tab Content */}

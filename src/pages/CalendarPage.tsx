@@ -487,9 +487,17 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
           </div>
 
           <h2 className="text-base sm:text-lg font-semibold text-gray-700 dark:text-gray-300 shrink-0">
-            {viewMode === 'week'
-              ? `${format(dateRange.start, 'MMM d')} - ${format(dateRange.end, 'MMM d, yyyy')}`
-              : format(currentDate, 'MMMM yyyy')
+            {/* The heading names the window that is actually on screen.
+
+                Agenda showed `MMMM yyyy` over a rolling THIRTY DAYS anchored on
+                `currentDate`, so on 7 September it read "September 2026" above a
+                list running to 7 October, and tapping next read "October 2026"
+                above 7 October to 6 November. On a phone, where agenda is the
+                default view, that is the only date label there is. Agenda now
+                reads its range the way week already did. */}
+            {viewMode === 'month'
+              ? format(currentDate, 'MMMM yyyy')
+              : `${format(dateRange.start, 'MMM d')} - ${format(dateRange.end, 'MMM d, yyyy')}`
             }
           </h2>
 
@@ -1284,9 +1292,17 @@ function EventModal({
           p-4 around it wastes width the date and time fields need, and the
           on-screen keyboard pushes a vertically-centred dialog off screen. */}
       <div className="flex min-h-full items-end sm:items-center justify-center p-0 sm:p-4">
-        <div className="relative w-full max-w-xl bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl shadow-2xl transform transition-all max-h-viewport-90 sm:max-h-none overflow-y-auto overscroll-contain pb-safe">
+        {/* A column, not one scrolling box.
+
+            The whole panel was `overflow-y-auto`, so Cancel and Save sat at the
+            bottom of the same scroll as every field. On a phone with the keyboard
+            open that put the only way to commit the form below the fold, behind a
+            scroll past the remaining inputs — on the one control the flow cannot
+            be completed without. Header and footer are now fixed and the body
+            between them scrolls. */}
+        <div className="relative flex flex-col w-full max-w-xl bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl shadow-2xl transform transition-all max-h-viewport-90 sm:max-h-none overscroll-contain pb-safe">
           {/* Header */}
-          <div className="flex items-center justify-between px-3 sm:px-6 py-4 border-b border-gray-100 dark:border-gray-800">
+          <div className="flex-shrink-0 flex items-center justify-between px-3 sm:px-6 py-4 border-b border-gray-100 dark:border-gray-800">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
               {editingEvent ? 'Edit Event' : 'New Event'}
             </h2>
@@ -1298,8 +1314,15 @@ function EventModal({
             </button>
           </div>
 
-          {/* Body - fixed height with scroll, stable scrollbar */}
-          <div className="px-3 sm:px-6 py-5 space-y-6 max-h-viewport-60 overflow-y-scroll" style={{ scrollbarGutter: 'stable' }}>
+          {/* Body — takes what the header and footer leave, and scrolls that.
+
+              It was capped at 60dvh inside a panel that also scrolled, which is
+              two scrollers for one form: the inner one ran out while the outer
+              still had somewhere to go, so the footer could sit below the
+              panel's visible edge with nothing obviously wrong on screen.
+              `flex-1 min-h-0` makes the body exactly the space that is left,
+              which is what keeps Save in view at any height. */}
+          <div className="flex-1 min-h-0 px-3 sm:px-6 py-5 space-y-6 overflow-y-scroll" style={{ scrollbarGutter: 'stable' }}>
             {/* Title Input */}
             <div>
               <input
@@ -1592,8 +1615,9 @@ function EventModal({
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="flex items-center justify-between px-3 sm:px-6 py-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
+          {/* Footer. `flex-shrink-0` because it carries Save, and it is the last
+              thing that may give way when the keyboard takes half the screen. */}
+          <div className="flex-shrink-0 flex items-center justify-between px-3 sm:px-6 py-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
             {editingEvent && onDelete ? (
               <button
                 type="button"

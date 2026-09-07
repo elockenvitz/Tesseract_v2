@@ -21,6 +21,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { formatDistanceToNow } from 'date-fns'
 import { TabStateManager } from '../../lib/tabStateManager'
 import { getContentPreview } from '../../utils/stripHtml'
+import { OptionPicker } from '../ui/OptionPicker'
 
 type ThemeLifecycleStatus = 'emerging' | 'active' | 'playing_out' | 'played_out' | 'invalidated'
 
@@ -68,11 +69,31 @@ interface ThemeTabProps {
   onCite?: (content: string, fieldName?: string) => void
 }
 
+/**
+ * The theme's sections, named once.
+ *
+ * They were six hand-written buttons in the nav, which is fine while there is
+ * one control rendering them and wrong the moment there are two. The phone
+ * picker and the desktop tab row both walk this, so a section cannot exist in
+ * one and not the other — the failure Portfolio's nine tabs were fixed for, one
+ * surface over.
+ */
+type ThemeSection = 'thesis' | 'chart' | 'related-assets' | 'notes' | 'discussion' | 'processes'
+
+const THEME_SECTIONS: { key: ThemeSection; label: string }[] = [
+  { key: 'thesis', label: 'Thesis' },
+  { key: 'chart', label: 'Chart' },
+  { key: 'related-assets', label: 'Related Assets' },
+  { key: 'notes', label: 'Notes' },
+  { key: 'discussion', label: 'Discussion' },
+  { key: 'processes', label: 'Process' },
+]
+
 export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) {
   const { user } = useAuth()
 
   // Initialize state from saved tab state
-  const [activeTab, setActiveTab] = useState<'thesis' | 'chart' | 'related-assets' | 'notes' | 'discussion' | 'processes'>(() => {
+  const [activeTab, setActiveTab] = useState<ThemeSection>(() => {
     const savedState = TabStateManager.loadTabState(theme.id)
     const saved = savedState?.activeTab
     // Migrate legacy 'outcomes' state to 'thesis'
@@ -816,6 +837,40 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
       <Card padding="none">
         {/* Tab Navigation */}
         <div className="border-b border-gray-200 dark:border-gray-700">
+          {/*
+            Six sections, on a screen that fits two.
+
+            The same defect Portfolio had, one surface over: the row is
+            `overflow-x-auto no-scrollbar`, so at 390px most of the sections are
+            off the right edge with the scrollbar that would have hinted at them
+            deliberately hidden, and nothing scrolls the active tab into view.
+            `activeTab` is restored from TabStateManager, so a session that ended
+            on Discussion or Process reopened showing a nav whose highlighted
+            item was off-screen.
+
+            The treatment is the accepted one, not a second Theme-only
+            primitive: OptionPicker names the current section, lists all six in
+            a bottom sheet, and cannot overflow. Desktop keeps its tab row.
+          */}
+          {isMobileViewport ? (
+            <div className="px-3 py-2">
+              <OptionPicker
+                label="Theme section"
+                value={activeTab}
+                onChange={setActiveTab}
+                options={THEME_SECTIONS.map(({ key, label }) => ({
+                  value: key,
+                  label,
+                  // The one count the desktop row carries, kept rather than
+                  // dropped on the phone.
+                  count: key === 'related-assets' && relatedAssets && relatedAssets.length > 0
+                    ? relatedAssets.length
+                    : undefined,
+                }))}
+                className="w-full"
+              />
+            </div>
+          ) : (
           <nav className="flex gap-4 sm:gap-8 px-3 sm:px-6 overflow-x-auto no-scrollbar" aria-label="Tabs">
             <button
               onClick={() => setActiveTab('thesis')}
@@ -901,6 +956,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               </div>
             </button>
           </nav>
+          )}
         </div>
 
         {/* Tab Content */}

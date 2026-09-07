@@ -30,7 +30,7 @@ import { ObjectLinkPicker } from './ObjectLinkPicker'
 import { LinkedObjectsPanel } from './LinkedObjectsPanel'
 import { InlineReferencePopup } from './InlineReferencePopup'
 import { clsx } from 'clsx'
-import { useIsMobile } from '../../hooks/useMediaQuery'
+import { useIsMobile, useViewportHeight } from '../../hooks/useMediaQuery'
 import { stripHtml } from '../../utils/stripHtml'
 
 export type EntityType = 'asset' | 'portfolio' | 'theme'
@@ -155,6 +155,32 @@ export function UniversalNoteEditor({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   // On a phone the notes list is an overlay, not a column.
   const isMobileViewport = useIsMobile()
+  /**
+   * How tall the writing area is allowed to insist on being.
+   *
+   * ── The defect this closes ────────────────────────────────────────────────
+   *
+   * It was `calc(100vh - 300px)`, a fixed minimum on the editable region inside
+   * a `flex-1 overflow-y-auto` pane. Two things go wrong on a phone. `100vh`
+   * includes the strip behind the URL bar, so the minimum is already taller
+   * than the screen; and when the keyboard opens the visible area halves while
+   * `100vh` does not move at all. The pane then holds a writing surface roughly
+   * twice the height of what can be seen, most of it empty, so the caret
+   * scrolls out of view and the reader is left dragging through blank space
+   * looking for their own text.
+   *
+   * `useViewportHeight` reads `visualViewport`, which is the one measurement
+   * that tracks both the URL bar and the keyboard. The subtraction is smaller
+   * on a phone because the chrome it is accounting for is smaller: a title row
+   * and a format bar, not a desktop header, breadcrumb and links rail.
+   *
+   * Desktop keeps a `calc()` string and its 300px, so nothing about the wide
+   * editor changes.
+   */
+  const viewportHeight = useViewportHeight()
+  const editorMinHeight = isMobileViewport
+    ? `${Math.max(160, viewportHeight - 190)}px`
+    : 'calc(100dvh - 300px)'
   const [mobileListOpen, setMobileListOpen] = useState(false)
   const [showLinkPicker, setShowLinkPicker] = useState(false)
   const [inlinePopup, setInlinePopup] = useState<{
@@ -2350,7 +2376,7 @@ export function UniversalNoteEditor({
                   onChange={handleContentChange}
                   placeholder="Start writing..."
                   className="h-full"
-                  minHeight="calc(100vh - 300px)"
+                  minHeight={editorMinHeight}
                   enableMentions={true}
                   enableAssets={true}
                   enableHashtags={true}
@@ -2376,7 +2402,10 @@ export function UniversalNoteEditor({
             </div>
 
             {/* Status Bar */}
-            <div className="px-3 sm:px-6 py-2.5 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+            {/* flex-shrink-0: this row carries Save and the save state, and it
+                is the last thing that may give way when the editor above it is
+                tall or the keyboard is open. */}
+            <div className="flex-shrink-0 px-3 sm:px-6 py-2.5 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 text-gray-400">
                   {/* Offline Status Indicator */}

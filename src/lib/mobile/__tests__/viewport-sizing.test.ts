@@ -47,10 +47,39 @@ function walk(dir: string, out: string[] = []): string[] {
 const FILES = walk(SRC)
 const rel = (p: string) => p.slice(SRC.length + 1).replace(/\\/g, '/')
 
+/**
+ * Every source file, read ONCE.
+ *
+ * Three rules over roughly seven hundred files is three passes of disk if each
+ * test reads for itself, which was enough to trip the 5s default under a
+ * parallel guard run. The scan is identical for all three, so it happens here.
+ */
+const SOURCES = FILES.map(f => ({ file: rel(f), text: readFileSync(f, 'utf8') }))
+
+/** Files matching a rule, formatted so a failure names them. */
+function offendersOf(rule: RegExp): string[] {
+  return SOURCES
+    .map(s => ({ file: s.file, hits: s.text.match(rule) ?? [] }))
+    .filter(x => x.hits.length > 0)
+    .map(x => `${x.file}: ${[...new Set(x.hits)].join(', ')}`)
+}
+
 /** `max-h-[90vh]`, `h-[92vh]`, `min-h-[100vh]` and friends. */
 const VH_CLASS = /\b(?:max-|min-)?h-\[\s*(?:\d+(?:\.\d+)?)vh\s*\]/g
 /** `style={{ height: 'calc(100vh - 73px)' }}` and its relatives. */
 const VH_STYLE = /(?:height|maxHeight|minHeight)\s*:\s*[`'"][^`'"]*\bvh\b/g
+/**
+ * `minHeight="calc(100vh - 300px)"` — a viewport height handed to a component
+ * as a prop.
+ *
+ * The note editor sized its writing area this way and neither rule above saw
+ * it: the string is not a class and not a style declaration, it is an
+ * attribute. Inside a scrolling pane it forced a surface taller than the screen
+ * that grew relatively taller still when the keyboard opened, so the caret
+ * scrolled out of view and the reader dragged through blank space looking for
+ * their own text.
+ */
+const VH_PROP = /\b\w*(?:[Hh]eight)\s*=\s*[{]?[`'"][^`'"]*\bvh\b/g
 
 describe('the codebase is clean of viewport-height traps', () => {
   it('scans a meaningful number of files, or it is proving nothing', () => {
@@ -58,10 +87,7 @@ describe('the codebase is clean of viewport-height traps', () => {
   })
 
   it('sizes no container with a bare vh class', () => {
-    const offenders = FILES
-      .map(f => ({ file: rel(f), hits: readFileSync(f, 'utf8').match(VH_CLASS) ?? [] }))
-      .filter(x => x.hits.length > 0)
-      .map(x => `${x.file}: ${[...new Set(x.hits)].join(', ')}`)
+    const offenders = offendersOf(VH_CLASS)
 
     // Use `h-viewport`, `h-viewport-90`, `max-h-viewport-90` or
     // `max-h-viewport-95` from index.css, or add a sibling utility there in the
@@ -69,11 +95,16 @@ describe('the codebase is clean of viewport-height traps', () => {
     expect(offenders).toEqual([])
   })
 
+  it('hands no component a vh height as a prop', () => {
+    const offenders = offendersOf(VH_PROP)
+
+    // Where the height must be a real number, read the viewport that tracks
+    // the URL bar and the keyboard: `useViewportHeight` in hooks/useMediaQuery.
+    expect(offenders).toEqual([])
+  })
+
   it('sizes no container with a vh inline style', () => {
-    const offenders = FILES
-      .map(f => ({ file: rel(f), hits: readFileSync(f, 'utf8').match(VH_STYLE) ?? [] }))
-      .filter(x => x.hits.length > 0)
-      .map(x => `${x.file}: ${x.hits.join(', ')}`)
+    const offenders = offendersOf(VH_STYLE)
 
     expect(offenders).toEqual([])
   })
