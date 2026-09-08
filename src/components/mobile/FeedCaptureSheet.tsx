@@ -49,6 +49,10 @@ interface FeedCaptureSheetProps {
 
 const OPTIONS = CAPTURE_TYPES
 
+/** Filing picks a destination; the other kinds ask the reader to write. */
+const isFiling = (kind: CaptureKind) =>
+  captureType(kind)?.group === 'file'
+
 /**
  * Capture from inside the feed.
  *
@@ -114,7 +118,19 @@ export function FeedCaptureSheet({
          says whose actions these are, which matters when the sheet is opened
          from a feed the reader is scrolling quickly. */
       title={kind ? undefined : (assetSymbol ? `${assetSymbol} actions` : 'Actions')}
-      snapPoints={kind ? [0.92] : [0.5]}
+      /*
+        Sheet height follows the task.
+
+        The picker is a short list and wants half a screen. A writing form
+        wants the phone: `0.92` leaves the backdrop peeking so the sheet still
+        reads as a sheet, while the keyboard — which `BottomSheet` already
+        offsets for — takes roughly 40% of what is left. At `0.5` a keyboard
+        would reduce Recommendation or Prompt to a strip a few lines tall.
+
+        Filing is a selection, not a writing task, so it keeps the shorter
+        sheet and does not ask for a screen it has no use for.
+      */
+      snapPoints={kind === null ? [0.5] : isFiling(kind) ? [0.7] : [0.92]}
     >
       {kind === null ? (
         <div className="px-3 pb-4">

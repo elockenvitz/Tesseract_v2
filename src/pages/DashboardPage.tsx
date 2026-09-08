@@ -981,6 +981,39 @@ export function DashboardPage() {
     return () => window.removeEventListener('navigate-to-project', handleNavigateToProject as EventListener)
   }, [])
 
+  /*
+    Open a list or a theme the reader just filed something into.
+
+    The mobile capture sheet confirms with a toast carrying "View list" /
+    "View theme", and it cannot reach `handleSearchResult` — it is rendered
+    deep inside MobileDashboard, which this lane does not touch. The event is
+    the seam the surrounding code already uses for exactly this, alongside
+    `navigate-to-asset` and `navigate-to-project` above.
+
+    The name travels with the event, so the tab opens titled correctly without
+    a round trip; the id alone would show "List" until a fetch landed.
+  */
+  useEffect(() => {
+    const openFiled = (type: 'list' | 'theme') => (event: Event) => {
+      const { id, name } = (event as CustomEvent).detail || {}
+      if (!id) return
+      navigateRef.current({
+        id,
+        title: name || (type === 'list' ? 'List' : 'Theme'),
+        type,
+        data: { id, name },
+      })
+    }
+    const onList = openFiled('list')
+    const onTheme = openFiled('theme')
+    window.addEventListener('navigate-to-list', onList)
+    window.addEventListener('navigate-to-theme', onTheme)
+    return () => {
+      window.removeEventListener('navigate-to-list', onList)
+      window.removeEventListener('navigate-to-theme', onTheme)
+    }
+  }, [])
+
   // Listen for custom event to open Trade Queue (e.g., from toast action after creating trade idea)
   useEffect(() => {
     const handleOpenTradeQueue = (event: CustomEvent) => {

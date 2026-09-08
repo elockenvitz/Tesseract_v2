@@ -20,6 +20,8 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 
 const seen: Record<string, any> = {}
@@ -224,5 +226,30 @@ describe('the registry is what both surfaces read', () => {
     expect(screen.getByText(captureType('thought')!.label)).toBeTruthy()
     const prompt = captureType('prompt')!
     expect(screen.getByLabelText(`${prompt.label}. ${prompt.hint}`)).toBeTruthy()
+  })
+})
+
+
+describe('sheet height follows the task', () => {
+  const sheetSource = readFileSync(
+    resolve(__dirname, '../FeedCaptureSheet.tsx'), 'utf8',
+  )
+
+  it('gives the picker half a screen, because it is a short list', () => {
+    expect(sheetSource).toContain('kind === null ? [0.5]')
+  })
+
+  it('gives a writing form the phone', () => {
+    // At 0.5 an open keyboard reduces Recommendation or Prompt to a strip a
+    // few lines tall.
+    expect(sheetSource).toContain(': [0.92]')
+  })
+
+  it('does not give filing a screen it has no use for', () => {
+    expect(sheetSource).toContain('isFiling(kind) ? [0.7]')
+  })
+
+  it('decides from the registry group rather than a hardcoded list of kinds', () => {
+    expect(sheetSource).toContain("captureType(kind)?.group === 'file'")
   })
 })
