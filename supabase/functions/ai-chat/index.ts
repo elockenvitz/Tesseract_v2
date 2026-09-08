@@ -16,6 +16,23 @@
  *   - Purpose-based model routing: optional 'purpose' in request body
  *     ('chat' | 'column' | 'snippet' | 'analysis') picks a cheaper model for
  *     cheap tasks (Haiku) while keeping the configured default for chat.
+ *
+ * AI System V2 (this revision):
+ *   - Phase timing on every request, returned as `timings` and logged, so
+ *     latency is measured rather than guessed. Nothing is optimised blind.
+ *   - Pre-flight fan-out: attribution, config and usage are three independent
+ *     reads and now run concurrently instead of five serial round-trips.
+ *   - Response-size policy: the client resolves a verbosity
+ *     ('brief' | 'standard' | 'deep') deterministically and sends it; this
+ *     function owns the directive text and the max_tokens ceiling for each.
+ *     Brief is the default, and depth is something the user asks for.
+ *   - Structured recommendations: when `structured: true`, the model is told
+ *     the closed Tesseract action vocabulary and appends one fenced block the
+ *     client parses into buttons. The vocabulary here is mirrored from
+ *     src/lib/ai/actions.ts and a unit test fails if the two drift.
+ *   - Split system prompt: the stable half (role, vocabulary, contract) is
+ *     one cache breakpoint; verbosity and context follow it uncached, so a
+ *     change of verbosity no longer invalidates the whole prefix.
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -102,6 +119,18 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Phase timing. Every await that can take a network hop is fenced, so the
+  // breakdown in the response is measured rather than inferred. Costs one
+  // Date.now() per phase and is always on — latency you only measure when you
+  // go looking for it is latency you find out about from users.
+  const t0 = Date.now();
+  const timings: Record<string, number> = {};
+  const mark = (phase: string, from: number) => { timings[phase] = Date.now() - from; };
+  async function phase<T>(name: string, fn: () => Promise<T>): Promise<T> {
+    const start = Date.now();
+    try { return await fn(); } finally { mark(name, start); }
+  }
+
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) throw new Error("Missing authorization header");
@@ -117,19 +146,51 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } }
     });
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Body first: it needs no network, and having `purpose` early lets the
+    // pre-flight fan-out below start with everything it needs.
+    // Tags is the new shape (array of {type, id}); `context` is the old
+    // single-target shape — accepted for backward compat during migration
+    // and converted to a single-element tags list.
+    const body = await req.json();
+    const message: string = body.message;
+    const conversationHistory: any[] = body.conversationHistory || [];
+    const purpose: string | undefined = body.purpose;
+    const verbosity: Verbosity = normalizeVerbosity(body.verbosity);
+    // Structured recommendations are opt-in per request, so every existing
+    // caller — the column generator, the inline editor, the smart input —
+    // keeps getting exactly the prose response it gets today.
+    const structured: boolean = body.structured === true;
+    const maxActions: number = clampInt(body.maxActions, 1, 5, 3);
+    const maxEvidence: number = clampInt(body.maxEvidence, 1, 8, 3);
+    const tags: Array<{ type: string; id: string }> = Array.isArray(body.tags)
+      ? body.tags.filter((t: any) => t && t.type && t.id)
+      : (body.context && body.context.type && body.context.id
+          ? [{ type: body.context.type, id: body.context.id }]
+          : []);
+
+    if (!message || typeof message !== "string") throw new Error("Message is required");
+
+    const { data: { user }, error: authError } = await phase("auth", () => supabase.auth.getUser());
     if (authError || !user) throw new Error("Unauthorized");
 
-    // Resolve org/team for attribution. Both may be null for users with
-    // no membership yet; that's fine — the log columns are nullable.
-    const attribution = await resolveAttribution(supabase, user.id);
+    // ─── Pre-flight fan-out ────────────────────────────────────────────
+    // Attribution, config and usage were five serial round-trips against the
+    // same database, and none of the three needs another's answer. The one
+    // real dependency — org config keys off the org id — stays inside
+    // getEffectiveAIConfig, which is why attribution is awaited first and the
+    // other two run alongside it.
+    const attribution = await phase("attribution", () => resolveAttribution(supabase, user.id));
 
-    const { aiConfig, platformConfig, userConfig } = await getEffectiveAIConfig(
-      supabase,
-      user.id,
-      attribution.organizationId,
-      { anthropic: platformApiKey, openai: platformOpenAIKey, google: platformGoogleKey, perplexity: platformPerplexityKey }
-    );
+    const [configResult, usage] = await phase("preflight", () => Promise.all([
+      getEffectiveAIConfig(
+        supabase,
+        user.id,
+        attribution.organizationId,
+        { anthropic: platformApiKey, openai: platformOpenAIKey, google: platformGoogleKey, perplexity: platformPerplexityKey }
+      ),
+      getCurrentUsage(supabase, user.id),
+    ]));
+    const { aiConfig, platformConfig, userConfig } = configResult;
 
     if (!aiConfig.isConfigured) {
       throw new Error(
@@ -139,25 +200,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Parse request (before rate check so purpose can influence model choice).
-    // Tags is the new shape (array of {type, id}); `context` is the old
-    // single-target shape — accepted for backward compat during migration
-    // and converted to a single-element tags list.
-    const body = await req.json();
-    const message: string = body.message;
-    const conversationHistory: any[] = body.conversationHistory || [];
-    const purpose: string | undefined = body.purpose;
-    const tags: Array<{ type: string; id: string }> = Array.isArray(body.tags)
-      ? body.tags.filter((t: any) => t && t.type && t.id)
-      : (body.context && body.context.type && body.context.id
-          ? [{ type: body.context.type, id: body.context.id }]
-          : []);
-
-    if (!message || typeof message !== "string") throw new Error("Message is required");
-
     // ─── Rate-limit gate ───────────────────────────────────────────────
     const limits = resolveLimits(platformConfig, userConfig);
-    const usage = await getCurrentUsage(supabase, user.id);
     const breach = checkLimits(limits, usage);
     if (breach) {
       // Persist a notification once per user per breach kind per day.
@@ -185,24 +229,43 @@ Deno.serve(async (req) => {
     let documents: SourceDocument[] = [];
     const isAnthropic = aiConfig.provider === "anthropic";
 
-    for (const tag of tags) {
-      if (isAnthropic) {
-        const docs = await buildContextDocuments(supabase, tag, user.id, aiConfig);
-        if (docs.length > 0) {
-          documents.push(...docs);
-        } else {
+    // Tags are independent of one another, so a two-tag conversation used to
+    // pay for eight serial round-trips where four would do. Fan out.
+    await phase("context", async () => {
+      const parts = await Promise.all(tags.map(async (tag) => {
+        if (isAnthropic) {
+          const docs = await buildContextDocuments(supabase, tag, user.id, aiConfig);
+          if (docs.length > 0) return { docs, text: "" };
           // For tag types without document support (theme/portfolio so
           // far), fall back to the embedded-string context — still gives
           // the model something to work with, just no inline citations.
           const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
-          if (part) contextPrompt += part + "\n";
+          return { docs: [] as SourceDocument[], text: part ? part + "\n" : "" };
         }
-      } else {
         const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
-        if (part) contextPrompt += part + "\n";
+        return { docs: [] as SourceDocument[], text: part ? part + "\n" : "" };
+      }));
+      for (const p of parts) {
+        documents.push(...p.docs);
+        contextPrompt += p.text;
       }
-    }
-    const systemPrompt = buildSystemPrompt(contextPrompt);
+    });
+
+    // The document path never had a total ceiling — MAX_CONTEXT_CHARS is
+    // applied inside buildContextPrompt only, which is the branch Anthropic
+    // does not take. Five thesis sections plus ten notes is ~5.5K tokens for
+    // ONE tag, and nothing stopped four tags from sending four times that.
+    const trimmed = capDocuments(documents);
+    documents = trimmed.documents;
+
+    const stableSystem = buildStableSystemPrompt({
+      structured,
+      maxActions,
+      maxEvidence,
+      allowDeep: verbosity === "deep",
+    });
+    const variableSystem = buildVariableSystemPrompt(verbosity, contextPrompt);
+    const systemPrompt = `${stableSystem}\n\n${variableSystem}`;
 
     // ─── Pick model based on purpose ───────────────────────────────────
     const effectiveModel = pickModelForPurpose(
@@ -211,25 +274,41 @@ Deno.serve(async (req) => {
       purpose as Purpose | undefined
     );
 
+    // The response-size policy is a ceiling, not a suggestion. Clamped by the
+    // platform limit so a client cannot ask for more than the org allows.
+    const effectiveMaxTokens = Math.min(
+      VERBOSITY_MAX_TOKENS[verbosity],
+      limits.maxTokensPerRequest,
+    );
+
+    timings.context_documents = documents.length;
+    timings.context_chars =
+      documents.reduce((n, d) => n + d.text.length + d.title.length, 0) + contextPrompt.length;
+    timings.prompt_chars = systemPrompt.length;
+    timings.history_chars = conversationHistory.reduce(
+      (n: number, m: any) => n + String(m?.content ?? "").length, 0);
+    timings.context_dropped = trimmed.dropped;
+
     // ─── Call provider ─────────────────────────────────────────────────
     const startTime = Date.now();
     let result;
     try {
-      result = await callAIProvider(
+      result = await phase("model", () => callAIProvider(
         aiConfig.provider as AIProvider,
         aiConfig.apiKey!,
         effectiveModel,
         systemPrompt,
         conversationHistory,
         message,
-        limits.maxTokensPerRequest,
+        effectiveMaxTokens,
         user.id,
         documents,
         // Pass the user-authed supabase client so the model's tool calls
         // execute under that user's RLS — they can only see what they're
         // already entitled to. Anthropic only; other providers ignore.
         supabase,
-      );
+        { stableSystem, variableSystem },
+      ));
     } catch (e) {
       // 401/403/billing errors from the provider mean the org's BYOK key
       // (or platform key) is dead — notify org admins so someone fixes it.
@@ -256,6 +335,16 @@ Deno.serve(async (req) => {
     logUsage(supabase, user.id, attribution, { ...aiConfig, model: effectiveModel }, usageContext, purpose, startTime, result.tokens)
       .catch(console.error);
 
+    timings.total = Date.now() - t0;
+    timings.output_chars = result.response.length;
+    timings.tool_iterations = result.tool_calls?.length ?? 0;
+    // One structured line per request. Cheap, greppable in the function log,
+    // and the only way a latency regression shows up before a user reports it.
+    console.log("ai-chat timings", JSON.stringify({
+      purpose: purpose ?? "chat", verbosity, structured, provider: aiConfig.provider,
+      model: effectiveModel, tags: tags.length, ...timings,
+    }));
+
     return new Response(
       JSON.stringify({
         response:   result.response,
@@ -263,18 +352,28 @@ Deno.serve(async (req) => {
         model:      effectiveModel,
         citations:  result.citations || [],
         tool_calls: result.tool_calls || [],
+        // Additive. Existing clients ignore these; the AI pane uses them to
+        // show what it was given and how long each phase took.
+        verbosity,
+        timings,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (error) {
-    console.error("AI Chat Error:", error);
+    console.error("AI Chat Error:", error, JSON.stringify(timings));
     return new Response(
       JSON.stringify({ error: (error as Error).message || "An error occurred" }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
+
+/** Bounded integer from an untrusted body field. */
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? Math.round(value) : fallback;
+  return Math.min(max, Math.max(min, n));
+}
 
 // ─── Config resolution ───────────────────────────────────────────────────
 
@@ -284,16 +383,12 @@ async function getEffectiveAIConfig(
   organizationId: string | null,
   platformKeys: { anthropic?: string, openai?: string, google?: string, perplexity?: string }
 ) {
-  const { data: platformConfig } = await supabase
-    .from("platform_ai_config")
-    .select("*")
-    .single();
-
-  const { data: userConfig } = await supabase
-    .from("user_ai_config")
-    .select("*")
-    .eq("user_id", userId)
-    .single();
+  // Independent reads. Serial cost two round-trips for no reason; the only
+  // real dependency is the org config below, which needs the org id.
+  const [{ data: platformConfig }, { data: userConfig }] = await Promise.all([
+    supabase.from("platform_ai_config").select("*").single(),
+    supabase.from("user_ai_config").select("*").eq("user_id", userId).single(),
+  ]);
 
   // BYOK is org-scoped: each firm has at most one config, only org admins
   // can write it, all members can use it. We resolve via the user's
@@ -401,17 +496,20 @@ async function getCurrentUsage(supabase: any, userId: string): Promise<CurrentUs
   const sinceDayIso   = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const sinceMonthIso = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
-  const { data: dayRows } = await supabase
-    .from("ai_usage_log")
-    .select("input_tokens, output_tokens")
-    .eq("user_id", userId)
-    .gte("created_at", sinceDayIso);
-
-  const { data: monthRows } = await supabase
-    .from("ai_usage_log")
-    .select("estimated_cost")
-    .eq("user_id", userId)
-    .gte("created_at", sinceMonthIso);
+  // Two windows over the same table, neither depending on the other. The
+  // comment above claimed a single round-trip; it was two, in series.
+  const [{ data: dayRows }, { data: monthRows }] = await Promise.all([
+    supabase
+      .from("ai_usage_log")
+      .select("input_tokens, output_tokens")
+      .eq("user_id", userId)
+      .gte("created_at", sinceDayIso),
+    supabase
+      .from("ai_usage_log")
+      .select("estimated_cost")
+      .eq("user_id", userId)
+      .gte("created_at", sinceMonthIso),
+  ]);
 
   let requestsToday = 0, tokensToday = 0, costMtd = 0;
   for (const r of (dayRows || [])) {
@@ -450,35 +548,174 @@ function checkLimits(limits: Limits, usage: CurrentUsage): Breach | null {
 
 // ─── Prompt construction ────────────────────────────────────────────────
 
-function buildSystemPrompt(contextPrompt: string): string {
-  return `You are an AI investment research assistant integrated into Tesseract, a professional investment research platform.
+type Verbosity = 'brief' | 'standard' | 'deep';
 
-Your role is to help investment professionals:
-- Analyze investment theses and identify blind spots
-- Suggest outcome scenarios with probabilities
-- Summarize research notes and discussions
-- Answer questions about specific investments
-- Provide market context and analysis
+const DEFAULT_VERBOSITY: Verbosity = 'brief';
 
-Guidelines:
-- Be concise and actionable
-- Use bullet points and clear formatting
-- When suggesting probabilities, explain your reasoning
-- Flag risks and counterarguments proactively
-- Reference the user's own notes and thesis when relevant
-- Provide balanced analysis, not just confirmation
+function normalizeVerbosity(value: unknown): Verbosity {
+  return value === 'brief' || value === 'standard' || value === 'deep'
+    ? value
+    : DEFAULT_VERBOSITY;
+}
+
+/**
+ * Hard ceilings per verbosity.
+ *
+ * Clamped against the platform's max_tokens_per_request, never above it. The
+ * old behaviour — 4096 for every request regardless of what was asked — is
+ * why a "is this still a buy" question could come back as eight paragraphs.
+ */
+const VERBOSITY_MAX_TOKENS: Record<Verbosity, number> = {
+  brief:    700,
+  standard: 1200,
+  deep:     4096,
+};
+
+/**
+ * The directive text for each verbosity.
+ *
+ * Keyed by the same union the client resolves. `src/lib/ai/response-policy.ts`
+ * owns WHICH verbosity a message gets; this owns what that means in words.
+ * A unit test asserts every verbosity in that union has an entry here.
+ */
+const VERBOSITY_DIRECTIVE: Record<Verbosity, string> = {
+  brief: `LENGTH — BRIEF (default)
+Answer in this shape, in this order:
+1. The judgment. One sentence. Lead with it; never restate the question first.
+2. The evidence. At most three lines, each a specific fact from the context.
+3. The recommended next steps, when there are any.
+
+Hard rules:
+- Under 150 words of prose. Under 600 characters is typical and good.
+- No preamble, no summary of what you are about to say, no closing offer of
+  further help. The reader is a professional investor at work.
+- No headings unless the answer genuinely has two subjects.
+- If you do not know, say what would settle it. Do not fill the space.`,
+
+  standard: `LENGTH — STANDARD
+Lead with the judgment in one sentence, then the reasoning, then the
+recommended next steps. Under 300 words. No preamble and no closing offer of
+further help. Use a heading only when the answer has more than one subject.`,
+
+  deep: `LENGTH — DEEP (the user explicitly asked for depth)
+Still lead with the judgment in one sentence, so the answer is useful before
+it is finished. Then develop it properly: the evidence, the counter-case, what
+would change your mind. Headings and structure are welcome here. Do not pad —
+depth means more substance, not more words around the same substance.`,
+};
+
+/**
+ * The Tesseract action vocabulary, as the model sees it.
+ *
+ * MIRRORED from `src/lib/ai/actions.ts` (ACTION_SPECS). That file is the
+ * source of truth: it is what validates the model's output, and an id present
+ * here but absent there produces a recommendation the client silently drops.
+ * `src/lib/ai/__tests__/prompt-drift.test.ts` reads this file and fails on any
+ * divergence, so the two cannot separate quietly.
+ */
+const ACTION_VOCABULARY = `NAVIGATION
+- open_asset (target: asset) — The reader should look at the whole asset — case, position, decisions, activity.
+- open_chart (target: asset) — Price action, not the written case, is what would settle the question.
+- open_idea (target: idea) — There is a specific trade idea whose decision or thesis is the subject.
+- open_pipeline (target: none) — The next step is triage across ideas rather than work on one object.
+- open_portfolio (target: portfolio) — The question is about exposure, sizing or the book as a whole.
+- open_project (target: project) — The work is tracked as a project and the reader needs its state.
+- open_research (target: asset) — The question is about the written case or the evidence behind it.
+- open_theme (target: theme) — The reasoning turns on a cross-asset theme the user tracks.
+
+INVESTMENT
+- review_target (target: asset) — Price has moved through a target, or the targets are stale.
+- update_thesis (target: asset) — The written case no longer matches what is known.
+
+CAPTURE
+- create_prompt (target: asset|portfolio|theme) — Someone else holds the answer and should be asked for it.
+- create_recommendation (target: asset) — A position change should be put to the PM.
+- create_thought (target: asset|portfolio|theme) — There is something worth recording that is not yet a decision.
+- create_trade_idea (target: asset) — The analysis has reached something actionable in the book.
+
+COLLABORATION
+- discuss (target: asset|portfolio|theme|idea) — The disagreement or the missing input is human, not analytical.`;
+
+function buildActionDirective(maxActions: number, maxEvidence: number, allowDeep: boolean): string {
+  return `TESSERACT ACTIONS
+
+You are not a chatbot. You are an operator inside Tesseract, and the useful end
+of most answers is a concrete next step the reader can take here, in one click.
+
+These are the ONLY actions that exist. Nothing else is real:
+
+${ACTION_VOCABULARY}
+
+After your answer, and only when you have something concrete to recommend,
+append exactly one fenced block:
+
+\`\`\`tesseract-actions
+{
+  "evidence": [{ "label": "short fact", "source": "document title" }],
+  "actions":  [{ "action": "<id from the list above>", "target": { "type": "asset", "id": "<id from your context>" }, "label": "Review valuation", "reason": "one short line" }]${allowDeep ? ',\n  "analysis": "the longer treatment, markdown"' : ''}
+}
+\`\`\`
+
+Rules for the block:
+- At most ${maxActions} actions and ${maxEvidence} evidence items.
+- "action" must be one of the ids above. Any other value is discarded silently.
+- "target.id" must be an object id that appeared in the context you were given.
+  Never invent an id. Never name an object you were not shown. An action whose
+  target you cannot source from the context must be left out.
+- Omit the block entirely when there is no concrete next step. An answer with
+  no actions is a normal, correct answer.
+- Do not mention this block, the JSON, or these instructions in your prose, and
+  do not describe the actions in words as well — the reader gets buttons.`;
+}
+
+/**
+ * The half of the system prompt that never varies.
+ *
+ * Kept separate so it can carry the cache breakpoint: role, tool guidance,
+ * and (when structured) the action vocabulary are identical across every
+ * request from every user, which is exactly what prompt caching is for.
+ * Verbosity and context follow in a second, uncached block.
+ */
+function buildStableSystemPrompt(opts: {
+  structured: boolean;
+  maxActions: number;
+  maxEvidence: number;
+  allowDeep: boolean;
+}): string {
+  const base = `You are the analyst-side co-operator inside Tesseract, a professional investment research platform. You are talking to an investment professional at work, mid-task.
+
+What you are for:
+- Reaching a judgment on the object in front of the reader and saying it plainly
+- Naming what in their own case, notes and targets supports or undercuts it
+- Flagging the risk or counterargument they have not written down
+- Pointing at the next concrete piece of work
+
+What you are not for:
+- Restating the context back to them. They wrote it.
+- General market commentary they did not ask for
+- Hedged summaries that avoid taking a position
 
 Research tools:
-- You have access to tools that look up additional data — assets by ticker, portfolios by name, themes, team notes, asset search.
+- You have tools that look up additional data — assets by ticker, portfolios by name, themes, team notes, asset search.
 - Use them when the user references a company / portfolio / theme you don't already have full context on, or when comparing multiple objects would benefit the answer.
 - Don't call tools for objects you already have rich context on (the user's currently-tagged objects are already provided as documents).
 - Prefer specific lookups (get_asset, get_portfolio) over broad searches when you know the name. Cap yourself to the minimum set of tool calls needed.
-- After calling tools, weave the findings into a single coherent answer rather than dumping raw tool output.
+- Every tool call costs the reader several seconds. Call none when the context already answers the question.
+- After calling tools, weave the findings into a single coherent answer rather than dumping raw tool output.`;
 
-${contextPrompt ? `\n--- CURRENT CONTEXT ---\n${contextPrompt}\n--- END CONTEXT ---\n` : ""}
-
-Remember: You're helping a professional investor, so be direct, substantive, and analytical.`;
+  if (!opts.structured) return base;
+  return `${base}\n\n${buildActionDirective(opts.maxActions, opts.maxEvidence, opts.allowDeep)}`;
 }
+
+/** The per-request half: how long, and what about. */
+function buildVariableSystemPrompt(verbosity: Verbosity, contextPrompt: string): string {
+  const length = VERBOSITY_DIRECTIVE[verbosity];
+  const context = contextPrompt
+    ? `\n--- CURRENT CONTEXT ---\n${contextPrompt}\n--- END CONTEXT ---\n`
+    : "";
+  return `${length}\n${context}`;
+}
+
 
 // ─── Context building with caps ─────────────────────────────────────────
 
@@ -493,6 +730,31 @@ function truncate(s: string | null | undefined, n: number): string {
   if (!s) return "";
   if (s.length <= n) return s;
   return s.slice(0, n) + "…[truncated]";
+}
+
+/**
+ * The total ceiling the document path never had.
+ *
+ * `MAX_CONTEXT_CHARS` was only ever applied in `buildContextPrompt`, which is
+ * the branch non-Anthropic providers take. The document branch — the default
+ * production path — could send five thesis sections plus ten notes per tag
+ * with nothing above it, so context grew linearly with tag count and the only
+ * thing bounding cost was how many objects a user happened to tag.
+ *
+ * Documents arrive in the order `buildContextDocuments` builds them: overview,
+ * thesis sections, price targets, then notes. That is already priority order,
+ * so keeping the prefix that fits drops notes before it drops a thesis.
+ */
+function capDocuments(docs: SourceDocument[]): { documents: SourceDocument[]; dropped: number } {
+  let spent = 0;
+  const kept: SourceDocument[] = [];
+  for (const doc of docs) {
+    const cost = doc.text.length + doc.title.length;
+    if (spent + cost > MAX_CONTEXT_CHARS) continue;
+    spent += cost;
+    kept.push(doc);
+  }
+  return { documents: kept, dropped: docs.length - kept.length };
 }
 
 // Returns the user's relevant context as a list of source documents — one
@@ -513,8 +775,44 @@ async function buildContextDocuments(
   // gets context via buildContextPrompt embedded in system prompt.
   if (context.type !== "asset") return docs;
 
-  const { data: asset } = await supabase
-    .from("assets").select("symbol, company_name, sector, industry").eq("id", context.id).single();
+  // All four reads at once. They were serial, and only the document TITLES
+  // need the symbol — which is a formatting concern, not a data dependency,
+  // so nothing here has to wait for the asset row to come back first.
+  const [
+    { data: asset },
+    { data: contributions },
+    { data: targets },
+    { data: notes },
+  ] = await Promise.all([
+    supabase
+      .from("assets").select("symbol, company_name, sector, industry").eq("id", context.id).single(),
+    aiConfig.includeThesis
+      ? supabase
+          .from("asset_contributions")
+          .select("section, content, supporting_detail")
+          .eq("asset_id", context.id)
+          .eq("is_archived", false)
+          .in("section", ["thesis", "business_model", "where_different", "risks_to_thesis", "key_catalysts"])
+      : Promise.resolve({ data: null }),
+    aiConfig.includeOutcomes
+      ? supabase
+          .from("price_targets")
+          .select("type, price, timeframe, reasoning")
+          .eq("asset_id", context.id)
+          .order("type", { ascending: true })
+          .limit(MAX_OUTCOMES)
+      : Promise.resolve({ data: null }),
+    aiConfig.includeNotes
+      ? supabase
+          .from("asset_notes")
+          .select("title, content, created_at, created_by, is_shared")
+          .eq("asset_id", context.id)
+          .eq("is_deleted", false)
+          .or(`created_by.eq.${userId},is_shared.eq.true`)
+          .order("created_at", { ascending: false })
+          .limit(MAX_NOTES)
+      : Promise.resolve({ data: null }),
+  ]);
 
   const symbol = asset?.symbol || "asset";
 
@@ -528,13 +826,6 @@ async function buildContextDocuments(
   }
 
   if (aiConfig.includeThesis) {
-    const { data: contributions } = await supabase
-      .from("asset_contributions")
-      .select("section, content, supporting_detail")
-      .eq("asset_id", context.id)
-      .eq("is_archived", false)
-      .in("section", ["thesis", "business_model", "where_different", "risks_to_thesis", "key_catalysts"]);
-
     const labelMap: Record<string, string> = {
       thesis:           "Thesis",
       business_model:   "Business model",
@@ -557,13 +848,6 @@ async function buildContextDocuments(
   }
 
   if (aiConfig.includeOutcomes) {
-    const { data: targets } = await supabase
-      .from("price_targets")
-      .select("type, price, timeframe, reasoning")
-      .eq("asset_id", context.id)
-      .order("type", { ascending: true })
-      .limit(MAX_OUTCOMES);
-
     if (targets?.length) {
       const lines = targets.map((t: any) =>
         `${(t.type || "").toUpperCase()}: $${t.price ?? "—"}` +
@@ -575,15 +859,6 @@ async function buildContextDocuments(
   }
 
   if (aiConfig.includeNotes) {
-    const { data: notes } = await supabase
-      .from("asset_notes")
-      .select("title, content, created_at, created_by, is_shared")
-      .eq("asset_id", context.id)
-      .eq("is_deleted", false)
-      .or(`created_by.eq.${userId},is_shared.eq.true`)
-      .order("created_at", { ascending: false })
-      .limit(MAX_NOTES);
-
     if (notes?.length) {
       // One document per note so citations link to a specific note rather
       // than a giant blob — more useful in the UI footer.
@@ -1073,8 +1348,26 @@ async function callAnthropicWithLoop(opts: {
   history: Array<{ role: string; content: string }>;
   message: string; maxTokens: number; userId: string;
   documents: SourceDocument[]; supabase?: any;
+  split?: { stableSystem: string; variableSystem: string };
 }): Promise<CallResult> {
-  const { apiKey, model, systemPrompt, history, message, maxTokens, userId, documents, supabase } = opts;
+  const { apiKey, model, systemPrompt, history, message, maxTokens, userId, documents, supabase, split } = opts;
+
+  /**
+   * Two system blocks, one breakpoint.
+   *
+   * The cache_control marker used to sit on the whole system prompt, which
+   * included the per-request context. Any change of tag, or now of verbosity,
+   * invalidated the entire prefix — so the cache only ever paid off when the
+   * same user asked a second question about the same object without changing
+   * anything. Marking only the stable half (role, tools, action vocabulary)
+   * makes that prefix reusable across every request from every user.
+   */
+  const systemBlocks: any[] = split
+    ? [
+        { type: "text", text: split.stableSystem, cache_control: { type: "ephemeral" } },
+        { type: "text", text: split.variableSystem },
+      ]
+    : [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
 
   // Build initial user message: documents (with citations enabled) + the
   // actual question. If no documents, just a plain string.
@@ -1108,7 +1401,7 @@ async function callAnthropicWithLoop(opts: {
       model: model || "claude-3-5-sonnet-20241022",
       max_tokens: maxTokens,
       metadata: { user_id: userId },
-      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+      system: systemBlocks,
       messages,
     };
     // Expose tools only when we have a supabase client to execute them.
@@ -1225,12 +1518,15 @@ async function callAIProvider(
   // Supabase client for executing tools (Anthropic only). Optional — if
   // omitted, tools are not exposed to the model.
   supabase?: any,
+  // The same system prompt, split at its cache breakpoint. Anthropic only;
+  // every other provider takes one system string and has nowhere to put it.
+  split?: { stableSystem: string; variableSystem: string },
 ): Promise<CallResult> {
 
   if (provider === "anthropic") {
     return await callAnthropicWithLoop({
       apiKey, model, systemPrompt, history, message, maxTokens, userId,
-      documents, supabase,
+      documents, supabase, split,
     });
   }
 
@@ -1413,22 +1709,23 @@ interface Attribution {
 
 async function resolveAttribution(supabase: any, userId: string): Promise<Attribution> {
   try {
-    const { data: orgRow } = await supabase
-      .from("organization_memberships")
-      .select("organization_id, joined_at, status")
-      .eq("user_id", userId)
-      .is("suspended_at", null)
-      .order("joined_at", { ascending: false, nullsFirst: false })
-      .limit(1)
-      .maybeSingle();
-
-    const { data: teamRow } = await supabase
-      .from("team_memberships")
-      .select("team_id, joined_at")
-      .eq("user_id", userId)
-      .order("joined_at", { ascending: false, nullsFirst: false })
-      .limit(1)
-      .maybeSingle();
+    const [{ data: orgRow }, { data: teamRow }] = await Promise.all([
+      supabase
+        .from("organization_memberships")
+        .select("organization_id, joined_at, status")
+        .eq("user_id", userId)
+        .is("suspended_at", null)
+        .order("joined_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("team_memberships")
+        .select("team_id, joined_at")
+        .eq("user_id", userId)
+        .order("joined_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
     return {
       organizationId: orgRow?.organization_id ?? null,

@@ -3,6 +3,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useAIConfig } from './useAIConfig'
+import {
+  resolveResponsePolicy,
+  parseAiResponse,
+  type AiAction,
+  type AiEvidence,
+  type AiObjectRef,
+  type AiObjectType,
+  type RejectedAiAction,
+} from '../lib/ai'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -20,6 +29,36 @@ export interface ChatMessage {
   citations?: MessageCitation[]
   // Research tools the model invoked while answering (Anthropic only).
   tool_calls?: MessageToolCall[]
+  // ─── AI System V2 ───────────────────────────────────────────────────────
+  // Validated Tesseract actions the model recommended. Already checked
+  // against the catalogue and against this conversation's own context, so
+  // the pane can render them as buttons without inspecting anything.
+  // Absent on every message produced before V2, and on any response where
+  // the model recommended nothing — which is a normal answer.
+  actions?: AiAction[]
+  // The few facts the answer rests on, each pointing at a context document.
+  evidence?: AiEvidence[]
+  // The longer treatment, present only when the user asked for depth.
+  analysis?: string
+  // Recommendations that were dropped, and why. Diagnostic only — never
+  // rendered as an action. Not persisted.
+  rejected?: RejectedAiAction[]
+}
+
+/** Server-reported phase timings for one request. Diagnostic. */
+export interface AiTimings {
+  auth?: number
+  attribution?: number
+  preflight?: number
+  context?: number
+  model?: number
+  total?: number
+  context_chars?: number
+  prompt_chars?: number
+  history_chars?: number
+  output_chars?: number
+  context_documents?: number
+  context_dropped?: number
 }
 
 export interface MessageCitation {
@@ -125,7 +164,40 @@ function rehydrateMessage(m: any): ChatMessage {
     model: m.model ?? null,
     citations:  Array.isArray(m.citations)  ? m.citations  : undefined,
     tool_calls: Array.isArray(m.tool_calls) ? m.tool_calls : undefined,
+    // Persisted actions are re-validated on use, not on load: the objects a
+    // stored action names may since have been deleted or become invisible to
+    // this reader. Loading them here only restores what the pane will show.
+    actions:    Array.isArray(m.actions)    ? m.actions    : undefined,
+    evidence:   Array.isArray(m.evidence)   ? m.evidence   : undefined,
+    analysis:   typeof m.analysis === 'string' ? m.analysis : undefined,
   }
+}
+
+/**
+ * How much conversation history goes back to the model.
+ *
+ * The whole thread used to be re-sent on every turn, and every turn is also
+ * persisted back into `ai_conversations.messages`, so a long conversation got
+ * quadratically more expensive and slower with each question. Twelve messages
+ * — six exchanges — is the window past which the earlier turns are almost
+ * never what the current question is about.
+ *
+ * Trimmed from the front, so the most recent exchanges are the ones kept, and
+ * the assistant's own long analysis blocks are excluded because the model
+ * does not need to re-read its own essay to answer a follow-up.
+ */
+const HISTORY_MESSAGES = 12
+const HISTORY_MESSAGE_CHARS = 4000
+
+function boundHistory(messages: ChatMessage[]): Array<{ role: string; content: string }> {
+  return messages
+    .slice(-HISTORY_MESSAGES)
+    .map(m => ({
+      role: m.role,
+      content: m.content.length > HISTORY_MESSAGE_CHARS
+        ? m.content.slice(0, HISTORY_MESSAGE_CHARS) + '…'
+        : m.content,
+    }))
 }
 
 // ─── Hook ──────────────────────────────────────────────────────────────────
@@ -363,6 +435,17 @@ export function useAI(initialTags: TagRef[] = []) {
       const safeMessages = Array.isArray(messages) ? messages : []
       const safeTags     = Array.isArray(tags)     ? tags     : []
 
+      // How long the answer may be, decided here, deterministically, from
+      // what the user actually asked for. Brief unless they asked for depth.
+      const policy = resolveResponsePolicy({ message, purpose: 'chat' })
+
+      // What the model may recommend an action about: exactly the objects
+      // this conversation's tags put in front of it. A note is taggable but
+      // has no action that accepts one, so it does not enter the allowlist.
+      const allowlist: AiObjectRef[] = safeTags
+        .filter((t): t is TagRef & { type: AiObjectType } => t.type !== 'note')
+        .map(t => ({ type: t.type, id: t.id, label: t.label }))
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`,
         {
@@ -374,7 +457,11 @@ export function useAI(initialTags: TagRef[] = []) {
           body: JSON.stringify({
             message,
             purpose: 'chat',
-            conversationHistory: safeMessages.map(m => ({ role: m.role, content: m.content })),
+            verbosity: policy.verbosity,
+            structured: true,
+            maxActions: policy.maxActions,
+            maxEvidence: policy.maxEvidence,
+            conversationHistory: boundHistory(safeMessages),
             tags: safeTags.map(t => ({ type: t.type, id: t.id })),
           }),
         },
@@ -390,11 +477,23 @@ export function useAI(initialTags: TagRef[] = []) {
       // (or its safe default) so downstream destructure + .length calls
       // can't crash. The earlier omission of `tool_calls` here was the
       // root cause of the "undefined .length" error users saw.
+      const rawText = typeof data.response === 'string' ? data.response : ''
+
+      // Total by construction: a missing block, malformed JSON, or an action
+      // naming an object this conversation never saw all resolve to prose
+      // plus zero buttons. There is no path from here that throws.
+      const envelope = parseAiResponse(rawText, { allowlist, policy })
+
       return {
-        response:   typeof data.response === 'string' ? data.response : '',
+        response:   envelope.answer,
         model:      typeof data.model    === 'string' ? data.model    : null,
         citations:  Array.isArray(data.citations)  ? data.citations  : [],
         tool_calls: Array.isArray(data.tool_calls) ? data.tool_calls : [],
+        actions:    envelope.actions,
+        evidence:   envelope.evidence,
+        analysis:   envelope.analysis,
+        rejected:   envelope.rejected,
+        timings:    (data.timings ?? null) as AiTimings | null,
       }
     },
     onMutate: async ({ message }) => {
@@ -406,7 +505,7 @@ export function useAI(initialTags: TagRef[] = []) {
       }
       setMessages(prev => [...prev, userMessage])
     },
-    onSuccess: async ({ response, model, citations, tool_calls }, vars) => {
+    onSuccess: async ({ response, model, citations, tool_calls, actions, evidence, analysis, rejected }, vars) => {
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
@@ -415,6 +514,10 @@ export function useAI(initialTags: TagRef[] = []) {
         model,
         citations:  citations.length  > 0 ? citations  : undefined,
         tool_calls: tool_calls.length > 0 ? tool_calls : undefined,
+        actions:    actions.length    > 0 ? actions    : undefined,
+        evidence:   evidence.length   > 0 ? evidence   : undefined,
+        analysis,
+        rejected:   rejected.length   > 0 ? rejected   : undefined,
       }
       // Functional updater: capture the actual current messages (which
       // already include the user message added in onMutate). Reading the

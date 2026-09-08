@@ -28,6 +28,8 @@ import { Button } from '../ui/Button'
 import { clsx } from 'clsx'
 import { AIMessageContent } from './AIMessageContent'
 import { AIConversationList } from './AIConversationList'
+import { AISuggestedActions } from './AISuggestedActions'
+import type { AiAction } from '../../lib/ai'
 
 interface AISectionProps {
   isOpen: boolean
@@ -675,6 +677,7 @@ function AIMessageBubble({
     model?: string | null
     citations?: Array<{ document_title: string; cited_text: string }>
     tool_calls?: Array<{ name: string; input: Record<string, unknown>; result_summary?: string }>
+    actions?: AiAction[]
   }
   onTickerClick: (symbol: string) => void
 }) {
@@ -731,6 +734,13 @@ function AIMessageBubble({
             cited 4 times collapses into one entry with multiple snippets. */}
         {isAssistant && message.citations && message.citations.length > 0 && (
           <CitationsFooter citations={message.citations} />
+        )}
+
+        {/* Structured recommendations. These arrive already validated
+            against the action catalogue and against this conversation's own
+            context — the pane never reads the prose to find them. */}
+        {isAssistant && message.actions && message.actions.length > 0 && (
+          <AISuggestedActions actions={message.actions} />
         )}
 
         <div className="flex items-center justify-between gap-2 mt-2">

@@ -7,8 +7,8 @@ import { ThoughtsSection } from './ThoughtsSection'
 import { EngagementThread } from './EngagementThread'
 import { clsx } from 'clsx'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
-import { toAITags } from '../../lib/engagement'
 import type { EngagementTarget } from '../../lib/engagement'
+import { selectContext } from '../../lib/ai'
 
 interface CommunicationPaneProps {
   /** Presents the pane as a bottom sheet instead of a fixed right rail. */
@@ -71,6 +71,30 @@ export function CommunicationPane({
   onOpenInspector
 }: CommunicationPaneProps) {
 
+  /**
+   * What the AI is given.
+   *
+   * Memoised on the identity of the inputs rather than on the objects
+   * themselves: `useAI` resets its conversation whenever the tag set changes,
+   * so handing it a fresh array on every render of the pane would clear the
+   * thread on any unrelated re-render.
+   */
+  const aiTags = React.useMemo(
+    () => selectContext({
+      engagementTarget,
+      tab: contextType && contextId
+        ? { type: contextType, id: contextId, title: contextTitle, data: { id: contextId } }
+        : null,
+    }).tags,
+    [
+      engagementTarget?.objectType, engagementTarget?.objectId,
+      engagementTarget?.assetId, engagementTarget?.portfolioId,
+      engagementTarget?.symbol, engagementTarget?.label,
+      engagementTarget?.portfolioName, engagementTarget?.issue?.title,
+      contextType, contextId, contextTitle,
+    ],
+  )
+
   const getViewTitle = () => {
     switch (view) {
       case 'ai':
@@ -128,21 +152,13 @@ export function CommunicationPane({
             // strings render with the symbol/name on the very first paint
             // instead of flashing "asset" → "AAPL" once the label resolver
             // finishes a beat later.
-            // When the seam bound an object, its tags win: they can express
-            // "a research note about AMZN inside Growth Composite", which a
-            // single contextType/contextId pair cannot. Falls back to the tab
-            // derivation for every existing caller, unchanged.
-            initialTags={
-              engagementTarget
-                ? toAITags(engagementTarget)
-                : contextType && contextId
-                  ? [{
-                      type: contextType as 'asset' | 'theme' | 'portfolio' | 'note',
-                      id: contextId,
-                      label: contextTitle,
-                    }]
-                  : []
-            }
+            // Context selection is one deterministic pass now, not a ternary
+            // between two sources. `selectContext` applies the same priority
+            // order and the same budget whether the pane was opened from the
+            // engagement seam or by following the active tab, and it says
+            // what it dropped — which the old expression could not, because
+            // it had no notion of a budget at all.
+            initialTags={aiTags}
             engagementTarget={engagementTarget}
             onOpenSettings={onOpenSettings}
           />
