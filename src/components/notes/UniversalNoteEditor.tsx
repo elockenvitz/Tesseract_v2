@@ -1688,8 +1688,17 @@ export function UniversalNoteEditor({
 
   const getNoteTypeColor = (type: string | null) => getNoteType(type).badgeVariant
 
+  /*
+    Edge to edge on a phone.
+
+    A rounded card with a border and a shadow, inside a page that already pads
+    its content, spends horizontal room on decoration twice over — and the
+    writing surface is the one thing on this screen that wants every pixel.
+    Desktop keeps the card; the phone gets the width. Same treatment
+    PortfolioTab already uses for its section card.
+  */
   return (
-    <div className="flex h-full bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+    <div className="flex h-full bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200 dark:border-gray-700 dark:bg-gray-800 max-sm:-mx-3 max-sm:rounded-none max-sm:border-x-0 max-sm:shadow-none">
       {/* Left Sidebar - Notes List.
 
           A w-72 flex sibling leaves ~100px for the editor at 390px, which is
@@ -2001,7 +2010,7 @@ export function UniversalNoteEditor({
         ) : (isLoading || isLoadingContent) && selectedNoteId ? (
           /* Loading state when we have a selected note ID but still fetching */
           <div className="flex-1 flex flex-col">
-            <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
+            <div className="px-3 sm:px-6 py-2 sm:py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
               <div className="animate-pulse flex items-center space-x-3">
                 <div className="h-6 w-20 bg-gray-200 rounded" />
                 <div className="h-4 w-px bg-gray-200" />
@@ -2026,7 +2035,10 @@ export function UniversalNoteEditor({
               </div>
             )}
             {/* Editor Header */}
-            <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
+            {/* The action band. `py-2` on a phone rather than `py-3`: it sits
+                ABOVE the note's own title, so every pixel it takes is one the
+                title and the writing area do not get. Desktop is unchanged. */}
+            <div className="px-3 sm:px-6 py-2 sm:py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center space-x-3 flex-1 min-w-0">
                   {/* The list is an overlay on a phone, so this is the only

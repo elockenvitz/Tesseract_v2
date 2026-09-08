@@ -110,3 +110,30 @@ describe('the save row cannot be squeezed out', () => {
     expect(row).toContain('flex-shrink-0')
   })
 })
+
+
+describe('the phone gets the width and the height, not the chrome', () => {
+  it('drops the card border, radius and shadow below sm', () => {
+    // A rounded card with a border and a shadow, inside a page that already
+    // pads its content, spends horizontal room on decoration twice over.
+    expect(editor).toContain('max-sm:-mx-3 max-sm:rounded-none max-sm:border-x-0 max-sm:shadow-none')
+  })
+
+  it('keeps the card on desktop', () => {
+    expect(editor).toContain('rounded-xl shadow-sm overflow-hidden border border-gray-200')
+  })
+
+  it('halves the block padding of the band above the title', () => {
+    // It sits ABOVE the note's own title, so every pixel is one the title and
+    // the writing area do not get.
+    expect(editor).toContain('px-3 sm:px-6 py-2 sm:py-4 border-b border-gray-100')
+    expect(editor).not.toContain('px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-100')
+  })
+
+  it('leaves one scroll owner for the writing area', () => {
+    // The body scrolls; the band above and the save row below do not. Two
+    // competing scrollers is what makes an editor feel lost.
+    const scrollers = editor.match(/flex-1 overflow-y-auto bg-white/g) ?? []
+    expect(scrollers).toHaveLength(1)
+  })
+})
