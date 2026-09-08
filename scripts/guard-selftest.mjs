@@ -30,7 +30,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { classifyChildOutcome } from './lib/guard-process.mjs'
 import { parseTscOutput, assessTscCompletion } from './lib/tsc-report.mjs'
-import { assessUnitReport } from './lib/unit-scope.mjs'
+import {
+  assessUnitReport, allTestFiles, classifyTestFiles, unclassifiedProblems,
+  GATED_DIRS, DEFERRED_DIRS, resolveScope,
+} from './lib/unit-scope.mjs'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const root = mkdtempSync(path.join(tmpdir(), 'tesseract-guard-selftest-'))
@@ -223,6 +226,31 @@ const PASSING = `import { it, expect } from 'vitest'\nit('works', () => { expect
   const problems = assessUnitReport({ expectedFiles: onDisk, report })
   check('the guard rejects it anyway, naming the files that never ran',
     problems.length > 0 && problems.join('\n').includes('b.test.ts'),
+    problems[0] ?? 'no problem reported')
+}
+
+// ── Scope accounting, against the real working tree ──────────────────────
+
+console.log('\nguard:unit — scope accounting')
+
+{
+  const { files } = resolveScope(REPO, GATED_DIRS)
+  const onDisk = allTestFiles(REPO)
+  const split = classifyTestFiles({ all: onDisk, gatedFiles: files, deferredDirs: DEFERRED_DIRS })
+  check('every test file in the tree is gated or deliberately deferred',
+    split.unclassified.length === 0,
+    `${onDisk.length} on disk = ${split.gated.length} gated + ${split.deferred.length} deferred`)
+
+  // A directory that nobody classified is the way `src/pages/__tests__` landed
+  // on main with no guard running it and no number moving.
+  const pretend = classifyTestFiles({
+    all: [...onDisk, 'src/brand-new-area/__tests__/x.test.ts'],
+    gatedFiles: files,
+    deferredDirs: DEFERRED_DIRS,
+  })
+  const problems = unclassifiedProblems(pretend.unclassified)
+  check('an unclassified test directory is rejected by name',
+    problems.length > 0 && problems.join('\n').includes('src/brand-new-area/__tests__'),
     problems[0] ?? 'no problem reported')
 }
 

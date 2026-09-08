@@ -20,7 +20,8 @@
 import { describe, it, expect } from 'vitest'
 import path from 'node:path'
 import {
-  REGISTERED_DIRS, resolveScope, scopeProblems, assessUnitReport, testFilesUnder,
+  GATED_DIRS, DEFERRED_DIRS, resolveScope, scopeProblems, assessUnitReport, testFilesUnder,
+  allTestFiles, classifyTestFiles, unclassifiedProblems, staleDeferredDirs,
   // @ts-expect-error — plain .mjs script, no type declarations by design
 } from '../../../../scripts/lib/unit-scope.mjs'
 
@@ -122,25 +123,157 @@ describe('assessUnitReport', () => {
   })
 })
 
-describe('the registered scope, against the working tree', () => {
+describe('classifyTestFiles', () => {
+  const all = [
+    'src/lib/signals/__tests__/a.test.ts',
+    'src/lib/research/__tests__/b.test.ts',
+    'src/pages/__tests__/c.test.tsx',
+  ]
+
+  it('sorts files into gated, deferred and neither', () => {
+    const out = classifyTestFiles({
+      all,
+      gatedFiles: ['src/lib/signals/__tests__/a.test.ts'],
+      deferredDirs: ['src/lib/research/__tests__'],
+    })
+    expect(out.gated).toEqual(['src/lib/signals/__tests__/a.test.ts'])
+    expect(out.deferred).toEqual(['src/lib/research/__tests__/b.test.ts'])
+    expect(out.unclassified).toEqual(['src/pages/__tests__/c.test.tsx'])
+  })
+
+  it('matches deferred directories exactly, never as a prefix', () => {
+    // A broad `src/lib` entry must NOT absorb a brand new `src/lib/<x>` test
+    // directory. That absorption is the silent disappearance this guards
+    // against, so the specificity is load bearing.
+    const out = classifyTestFiles({
+      all: ['src/lib/brand-new-area/__tests__/x.test.ts', 'src/lib/loose.test.ts'],
+      gatedFiles: [],
+      deferredDirs: ['src/lib'],
+    })
+    expect(out.deferred).toEqual(['src/lib/loose.test.ts'])
+    expect(out.unclassified).toEqual(['src/lib/brand-new-area/__tests__/x.test.ts'])
+  })
+
+  it('lets gated win wherever both lists could match', () => {
+    const out = classifyTestFiles({
+      all: ['src/hooks/mobile/__tests__/a.test.ts'],
+      gatedFiles: ['src/hooks/mobile/__tests__/a.test.ts'],
+      deferredDirs: ['src/hooks/mobile/__tests__'],
+    })
+    expect(out.gated).toHaveLength(1)
+    expect(out.deferred).toHaveLength(0)
+  })
+})
+
+describe('unclassifiedProblems', () => {
+  it('says nothing when everything is accounted for', () => {
+    expect(unclassifiedProblems([])).toEqual([])
+  })
+
+  it('reports by directory, because the directory is the decision', () => {
+    const problems = unclassifiedProblems([
+      'src/pages/__tests__/a.test.tsx',
+      'src/pages/__tests__/b.test.tsx',
+      'src/components/tabs/__tests__/c.test.tsx',
+    ])
+    const joined = problems.join('\n')
+    expect(problems[0]).toMatch(/3 test file\(s\) in 2 director/)
+    expect(joined).toContain('src/pages/__tests__')
+    expect(joined).toContain('src/components/tabs/__tests__')
+  })
+})
+
+describe('the gated scope, against the working tree', () => {
   // Derived from disk on every run, never pinned to today's number: adding or
   // deleting a test must not require an edit here.
-  const { perDir, files } = resolveScope(ROOT, REGISTERED_DIRS)
+  const { perDir, files } = resolveScope(ROOT, GATED_DIRS)
+  const onDisk = allTestFiles(ROOT)
+  const split = classifyTestFiles({ all: onDisk, gatedFiles: files, deferredDirs: DEFERRED_DIRS })
 
-  it('has no directory that is missing or empty', () => {
+  it('has no gated directory that is missing or empty', () => {
     expect(scopeProblems(perDir)).toEqual([])
+  })
+
+  it('accounts for every test file in the tree', () => {
+    // The assertion this lane's reconciliation added. `src/pages/__tests__`
+    // landed on main ungated and no number moved; this is what would have said
+    // so.
+    expect(unclassifiedProblems(split.unclassified)).toEqual([])
+    expect(split.gated.length + split.deferred.length).toBe(onDisk.length)
   })
 
   it('finds a substantial suite', () => {
     expect(files.length).toBeGreaterThan(100)
   })
 
+  it('gates the page tests that arrived on main after this lane started', () => {
+    expect(GATED_DIRS).toContain('src/pages')
+    expect(files.some((f: string) => f.startsWith('src/pages/'))).toBe(true)
+  })
+
   it('includes this guard suite, so the guards gate themselves', () => {
-    expect(REGISTERED_DIRS).toContain('src/lib/guards')
+    expect(GATED_DIRS).toContain('src/lib/guards')
     expect(files.some((f: string) => f.includes('src/lib/guards/'))).toBe(true)
+  })
+
+  it('lists no gated directory twice, and none that is also deferred', () => {
+    expect(new Set(GATED_DIRS).size).toBe(GATED_DIRS.length)
+    expect(GATED_DIRS.filter((d: string) => DEFERRED_DIRS.includes(d))).toEqual([])
+  })
+
+  it('has no deferred entry pointing at nothing', () => {
+    // Not fatal in the guard, but a stale entry is a place a real directory
+    // could later hide.
+    expect(staleDeferredDirs(ROOT, DEFERRED_DIRS)).toEqual([])
   })
 
   it('returns null for a directory that is not there', () => {
     expect(testFilesUnder(ROOT, 'src/lib/definitely-not-here')).toBeNull()
+  })
+})
+
+/**
+ * The walker skip-list, which had this bug in it.
+ *
+ * `SKIP_DIR` was `/^(node_modules|\.git|dist|coverage)$/`. `dist` and
+ * `coverage` are build outputs at the repo root, but the rule matched a bare
+ * directory NAME at any depth, and this product has `src/lib/coverage` and
+ * `src/components/coverage` holding six gated test files. The whole-tree walk
+ * skipped all six and reported 222 files where `find` counted 228.
+ *
+ * It stayed invisible because the gated scope was still resolved correctly:
+ * the skip applies to directories the walk descends into, not to the root it
+ * is handed, so `testFilesUnder(root, 'src/lib/coverage')` was always right.
+ * Only the accounting was wrong, and nothing compared the two numbers.
+ */
+describe('the tree walk', () => {
+  it('descends into source directories whose name looks like a build output', () => {
+    const all = allTestFiles(ROOT)
+    expect(all.some((f: string) => f.startsWith('src/lib/coverage/'))).toBe(true)
+    expect(all.some((f: string) => f.startsWith('src/components/coverage/'))).toBe(true)
+  })
+
+  it('agrees with the per-directory scan about every gated file', () => {
+    const { files } = resolveScope(ROOT, GATED_DIRS)
+    const split = classifyTestFiles({
+      all: allTestFiles(ROOT),
+      gatedFiles: files,
+      deferredDirs: DEFERRED_DIRS,
+    })
+    expect(split.lost).toEqual([])
+  })
+
+  it('reports a gated file the whole-tree walk lost', () => {
+    // The assertion that turns "two numbers quietly disagree" into a failure.
+    const split = classifyTestFiles({
+      all: ['src/lib/signals/__tests__/a.test.ts'],
+      gatedFiles: ['src/lib/signals/__tests__/a.test.ts', 'src/lib/coverage/__tests__/b.test.ts'],
+      deferredDirs: [],
+    })
+    expect(split.lost).toEqual(['src/lib/coverage/__tests__/b.test.ts'])
+  })
+
+  it('still refuses to descend into node_modules', () => {
+    expect(allTestFiles(ROOT).some((f: string) => f.includes('node_modules'))).toBe(false)
   })
 })

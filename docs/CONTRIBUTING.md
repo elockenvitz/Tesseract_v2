@@ -161,6 +161,27 @@ compiler and the real test runner against deliberately broken fixtures in a
 temp directory and checks that each one is rejected. Run it after changing
 anything under `scripts/`.
 
+### Adding a test directory
+
+`guard:unit` no longer takes its scope from a list of paths in package.json.
+It reads `scripts/lib/unit-scope.mjs`, where every test directory in the tree
+must appear in one of two lists:
+
+| List | Meaning |
+|---|---|
+| `GATED_DIRS` | run by the guard, matched as a subtree, a failure blocks |
+| `DEFERRED_DIRS` | exists, deliberately not gated, matched exactly |
+
+A test file under neither fails the guard by name, before the runner starts.
+That is deliberate. The old filter list could not tell the difference between
+a directory somebody chose not to gate and one nobody noticed, and both look
+identical from the output. `src/pages/__tests__` reached main ungated exactly
+that way.
+
+Being on the deferred list is not a backlog item. The `Unit tests` job in CI
+runs the whole `unit` project regardless, so deferring costs no coverage, only
+the ability to block a merge on it.
+
 **Phone tests run against the BUILT gallery.** `npx playwright test` serves
 `dist-gallery`, so after a source change it tests the previous bundle. Use
 `npm run test:phone`, which rebuilds first. Skipping that once cost an

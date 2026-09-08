@@ -36,21 +36,47 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { classifyChildOutcome, requireCompleted } from './lib/guard-process.mjs'
-import { REGISTERED_DIRS, resolveScope, scopeProblems, assessUnitReport } from './lib/unit-scope.mjs'
+import {
+  GATED_DIRS, DEFERRED_DIRS, resolveScope, scopeProblems, assessUnitReport,
+  allTestFiles, classifyTestFiles, unclassifiedProblems, staleDeferredDirs,
+} from './lib/unit-scope.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const TIMEOUT_MS = Number(process.env.GUARD_UNIT_TIMEOUT_MS ?? 15 * 60 * 1000)
 
-// ── 1. Is the scope still there? ──────────────────────────────────────────
-const { perDir, files } = resolveScope(ROOT, REGISTERED_DIRS)
-const missingScope = scopeProblems(perDir)
+// ── 1. Is the scope still there, and is all of it accounted for? ─────────
+const { perDir, files } = resolveScope(ROOT, GATED_DIRS)
+const onDisk = allTestFiles(ROOT)
+const split = classifyTestFiles({ all: onDisk, gatedFiles: files, deferredDirs: DEFERRED_DIRS })
 
-console.log(`registered directories: ${REGISTERED_DIRS.length}`)
-console.log(`test files discovered: ${files.length}`)
+console.log(`gated directories: ${GATED_DIRS.length}`)
+console.log(`deferred directories: ${DEFERRED_DIRS.length}`)
+console.log(`test files on disk: ${onDisk.length}`)
+console.log(`test files gated: ${split.gated.length}`)
+console.log(`test files deferred: ${split.deferred.length}`)
 
-if (missingScope.length) {
-  console.error(`FAIL: ${missingScope.length} registered directory problem(s):`)
-  missingScope.forEach((p) => console.error('  - ' + p))
+const scopeIssues = [
+  ...scopeProblems(perDir),
+  ...unclassifiedProblems(split.unclassified),
+  ...(split.lost.length
+    ? [
+        `${split.lost.length} gated file(s) were not found by the whole-tree walk, ` +
+          `so the two scans of src disagree:`,
+        ...split.lost.slice(0, 10).map((f) => '    ' + f),
+      ]
+    : []),
+]
+
+// Not a failure: a deferred entry that has emptied costs no coverage, it just
+// makes the list less honest than it looks.
+const stale = staleDeferredDirs(ROOT, DEFERRED_DIRS)
+if (stale.length) {
+  console.log(`note: ${stale.length} deferred director(y/ies) no longer hold tests: ${stale.join(', ')}`)
+}
+
+if (scopeIssues.length) {
+  console.error('FAIL: the gated scope does not account for what is on disk:')
+  scopeIssues.forEach((p) => console.error('  ' + p))
   console.error('')
   console.error('Vitest treats these paths as substring filters and ignores the ones that')
   console.error('match nothing, so this would otherwise have run a smaller suite and passed.')
@@ -66,7 +92,7 @@ const args = [
   'run',
   '--project',
   'unit',
-  ...REGISTERED_DIRS,
+  ...GATED_DIRS,
   '--reporter=default',
   '--reporter=json',
   `--outputFile.json=${reportPath}`,
