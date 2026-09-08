@@ -178,6 +178,51 @@ describe('stale coverage becomes a coverage finding', () => {
   })
 })
 
+/**
+ * What the reader actually reads, pinned against the legacy card it replaces.
+ *
+ * Manual QA, on a build where the identity had shipped and the presentation had
+ * not: "I can see a Coverage Gap tile, but the card still says Research stale
+ * and shows a price chart with almost no coverage detail." The chip and the
+ * face were describing different findings.
+ */
+describe('the card says what the chip says', () => {
+  it('no longer leads with the producer own words', () => {
+    const legacy = coverageCard()
+    expect(legacy.headline).toContain('Research stale')
+    expect(adoption().card.headline).not.toContain('Research stale')
+  })
+
+  it('answers the four things a coverage tile has to answer', () => {
+    const { card } = adoption()
+    // Who is answerable, and that they have not been near it.
+    expect(card.headline).toContain('AMZN')
+    // How long it has been stale, in the hero slot the legacy card left empty.
+    expect(card.metric?.value).toBe(`${DAYS}d`)
+    expect(legacyMetricIsEmpty()).toBe(true)
+    // What is stale, and since when.
+    expect(card.body).toContain('22 Jul')
+    // What to do next.
+    expect(card.actions.primary.id).toBe('open_asset')
+  })
+
+  const legacyMetricIsEmpty = () => coverageCard().metric == null
+
+  /**
+   * The status chips are the producer's and they survive.
+   *
+   * `buildAttentionCard` puts the row's own tags on the context line —
+   * "Coverage", "Stale" — and the projection keeps the producer's chips rather
+   * than restating them. So the status the brief asks for is already on the
+   * card and the engine does not need to invent it.
+   */
+  it('keeps the producer own status chips', () => {
+    const labels = adoption().card.context.map(c => c.label)
+    expect(labels.length).toBeGreaterThan(0)
+    expect(labels.join(' ').toLowerCase()).toContain('coverage')
+  })
+})
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 4 + 10. Composition
 // ─────────────────────────────────────────────────────────────────────────────

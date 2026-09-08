@@ -14,7 +14,7 @@ import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
 import {
   anchorKeyAt, clearFeedContinuity, deriveFeedView, feedScopeKey,
-  readFeedContinuity, reconcileToRemembered, rememberBaseOrder,
+  nearestRememberedKey, readFeedContinuity, reconcileToRemembered, rememberBaseOrder,
   resolveAnchorIndex, writeFeedContinuity,
 } from '../../lib/mobile/feed-continuity'
 import { useFeedSessionStability } from '../../hooks/mobile/useFeedSessionStability'
@@ -182,6 +182,15 @@ import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
  * readers as filter labels. See lib/mobile/feed-categories for why that could
  * not hold.
  */
+
+/**
+ * How long a restore may wait for the feed to stop growing, in frames.
+ *
+ * Forty, the same bound the saved-offset restore uses and for the same reason:
+ * a feed that never reaches the remembered depth — the reader was deeper than
+ * today's feed goes — must settle rather than spin.
+ */
+const SETTLE_FRAMES = 40
 
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
@@ -1799,7 +1808,30 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       | { insight: DerivedInsight }
       | { coverage: CoverageAttentionRow },
   ): any => {
-    if (!tileEngineOn || !original) return original
+    if (!original) return original
+    /**
+     * Coverage is adopted whether or not the comparison flag is on.
+     *
+     * ── Why this one family is not behind the flag ──────────────────────
+     *
+     * The flag exists so an adopted presentation can be compared against the
+     * shipping one before it replaces it. That argument holds for the four
+     * families whose legacy card is fine. It does not hold here, because
+     * Coverage Gap's IDENTITY already shipped unflagged — the chip, the pill,
+     * the category and the dedupe rule all say "Coverage gap" for every reader
+     * — while its presentation stayed behind the flag.
+     *
+     * So the flagged-off state is not the old behaviour. It is a tile that
+     * calls itself a coverage finding, opens a "Coverage gap only" band, and
+     * then reads "AMZN — Research stale" over a price chart. Manual QA saw
+     * exactly that and reported it as the presentation being wrong.
+     *
+     * A card whose face contradicts its own chip is not a comparison, it is a
+     * defect, and the honest fix is the narrow one: this family renders through
+     * the engine for everybody. Nothing else moves.
+     */
+    const flagless = !!source && 'coverage' in source
+    if (!tileEngineOn && !flagless) return original
     const viewer = {
       readerId: userId ?? null,
       // The same value `rankInputFor` supplies, from the same function.
@@ -3298,25 +3330,37 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * remembered tile is not in the current view — `resolveAnchorIndex` says the
    * top, and the top is what the DOM query failing already produces.
    */
-  const scrollToKey = useCallback((key: string | null): boolean => {
-    if (!scroller || !key) return false
-    /**
-     * Compared, not selected.
-     *
-     * Entry keys carry `:` and `#` — `insight:<id>:<round>`, `lens:<type>:<sym>`
-     * and the `#n` suffix `feedEntryKeys` adds to a repeat — and building an
-     * attribute selector out of one means deciding how to escape it. Walking
-     * the nodes compares the strings the browser already parsed, so there is no
-     * escaping question to get wrong.
-     */
+  /**
+   * Where a named tile currently sits, or null when it is not rendered.
+   *
+   * Separated from the scroll so a caller can watch the number rather than
+   * only act on it once. The feed grows for seconds after first paint — slots
+   * below the fold have not laid out and the windowed ones are placeholders —
+   * so a tile's offset is not final at the moment it first becomes findable.
+   *
+   * Compared, not selected. Entry keys carry `:` and `#` —
+   * `insight:<id>:<round>`, `lens:<type>:<sym>` and the `#n` suffix
+   * `feedEntryKeys` adds to a repeat — and building an attribute selector out
+   * of one means deciding how to escape it. Walking the nodes compares the
+   * strings the browser already parsed, so there is no escaping question to get
+   * wrong.
+   */
+  const offsetOfKey = useCallback((key: string | null): number | null => {
+    if (!scroller || !key) return null
     const slots = scroller.querySelectorAll<HTMLElement>('[data-feed-key]')
     for (const el of Array.from(slots)) {
       if (el.dataset.feedKey !== key) continue
-      scroller.scrollTop = el.offsetTop - scroller.offsetTop
-      return true
+      return el.offsetTop - scroller.offsetTop
     }
-    return false
+    return null
   }, [scroller])
+
+  const scrollToKey = useCallback((key: string | null): boolean => {
+    const top = offsetOfKey(key)
+    if (top == null || !scroller) return false
+    scroller.scrollTop = top
+    return true
+  }, [scroller, offsetOfKey])
 
   /**
    * Tap a tile's pill: filter to that family, or clear it if it is already on.
@@ -3646,16 +3690,67 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   useEffect(() => {
     if (continuityRestoredRef.current) return
     if (!scroller || !feedEntries.length) return
-    const want = restoredContinuity.family
+    const el = scroller
+    const remembered = restoredContinuity.family
       ? restoredContinuity.position.viewKey
       : restoredContinuity.position.baseKey
-    if (!want) { continuityRestoredRef.current = true; return }
-    if (scrollToKey(want)) {
-      continuityRestoredRef.current = true
-      // The saved-offset restore would otherwise fight this one.
+    if (!remembered) { continuityRestoredRef.current = true; return }
+
+    /**
+     * Settle onto the tile, rather than jumping at it once.
+     *
+     * ── The reset this ends ─────────────────────────────────────────────
+     *
+     * Manual QA: leave Ideas for another tab, come back, and the feed is at the
+     * beginning. Switching tabs unmounts this component, so the return is a
+     * remount and this effect is the restore.
+     *
+     * It fired on the first commit that had entries and took the answer it got.
+     * At that moment the slots exist but the feed has not laid out: `FeedSlot`
+     * keeps about five cards mounted and the rest are placeholders, so a tile
+     * twenty down measures a few hundred pixels from the top instead of several
+     * thousand. The jump "succeeded", landed near the beginning, and latched —
+     * and it also set `restoredRef`, which switched off the saved-offset
+     * restore below, the one place that already knew to keep trying.
+     *
+     * So both halves of returning were disabled by the weaker one winning the
+     * race. This watches the offset instead: it re-measures every frame, moves
+     * with the tile as the feed grows underneath it, and stops when the number
+     * stops changing. Bounded, for the same reason the other is — a feed that
+     * never settles must not spin forever.
+     */
+    let tries = 0
+    let raf = 0
+    let last = -1
+    const attempt = () => {
+      /**
+       * The tile, or the nearest one the reader was ever shown.
+       *
+       * Resolved each frame rather than once: a tile can arrive late as its
+       * source resolves, and a neighbour chosen in the first frame would strand
+       * the reader one card off for the rest of the visit.
+       */
+      const key = nearestRememberedKey(restoredContinuity.baseOrder, feedKeys, remembered)
+      const top = offsetOfKey(key)
+      if (top == null) {
+        // Not rendered yet. Keep waiting, but not forever.
+        if (tries++ > SETTLE_FRAMES) { continuityRestoredRef.current = true; return }
+        raf = requestAnimationFrame(attempt)
+        return
+      }
+      el.scrollTop = top
+      // We have the position; the saved-offset restore must not fight us.
       restoredRef.current = true
+      if (top === last || tries++ > SETTLE_FRAMES) {
+        continuityRestoredRef.current = true
+        return
+      }
+      last = top
+      raf = requestAnimationFrame(attempt)
     }
-  }, [scroller, feedEntries.length, restoredContinuity, scrollToKey])
+    raf = requestAnimationFrame(attempt)
+    return () => cancelAnimationFrame(raf)
+  }, [scroller, feedEntries.length, restoredContinuity, offsetOfKey, feedKeys])
 
   // A deliberate refresh: refetch every source, re-deal the order, drop the
   // saved position and return to the top. The browser's own pull-to-refresh
@@ -4914,8 +5009,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              * exactly that reason. Leaving a chart underneath would contradict
              * the picture the card just chose, and manual QA already reported
              * these tiles as "not showing much besides just a price chart".
+             *
+             * Not gated on the flag, for the same reason the adoption is not:
+             * the chip already says Coverage gap for every reader, and a price
+             * series underneath it is the picture the resolver rejected.
              */
-            const attnPrice = tileEngineOn && isCoverageStale ? null : pricePane(linked?.symbol, {
+            const attnPrice = isCoverageStale ? null : pricePane(linked?.symbol, {
               markers: attnRaisedAt
                 ? [{ date: attnRaisedAt, label: 'Raised', kind: 'event' as const }]
                 : [],
