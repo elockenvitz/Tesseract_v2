@@ -98,7 +98,11 @@ describe('the phone gets the accepted picker, not a new primitive', () => {
     for (const file of [source, portfolio]) {
       expect(file).toContain("import { OptionPicker } from '../ui/OptionPicker'")
       expect(file).toContain('{isMobileViewport ? (')
-      expect(file).toContain('className="w-full"')
+      // Compact and prefixed on both, rather than a full-width control that
+      // reads as a large empty dropdown.
+      expect(file).toContain('prefix="Section"')
+      expect(file).toContain('<div className="flex items-center px-3 py-1.5">')
+      expect(file).not.toMatch(/className="w-full"\s*\/>/)
     }
   })
 })

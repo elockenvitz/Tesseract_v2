@@ -107,9 +107,31 @@ describe('the date heading names the window on screen', () => {
   })
 })
 
-describe('the phone opens on the agenda, not on a grid', () => {
-  it('defaults to agenda at phone width', () => {
-    expect(page).toContain("useState<ViewMode>(isMobileViewport ? 'agenda' : 'month')")
+describe('the phone opens on the week', () => {
+  it('defaults to week at phone width', () => {
+    // Agenda was the default and answered "what is coming up" as a flat list
+    // with no sense of where you are in the week. A week answers where today
+    // sits, which days carry anything, and what is on the day you tap.
+    expect(page).toContain("useState<ViewMode>(isMobileViewport ? 'week' : 'month')")
+  })
+
+  it('leaves the desktop default on the month grid', () => {
+    expect(page).toContain("isMobileViewport ? 'week' : 'month'")
+    expect(page).not.toContain("useState<ViewMode>('week')")
+  })
+
+  it('renders week through the phone day-grid, not the desktop columns', () => {
+    // The same treatment the phone month view already used: a grid of dates
+    // carrying dots, and the selected day's events below it.
+    expect(page).toContain("isMobileViewport && (viewMode === 'month' || viewMode === 'week')")
+  })
+
+  it('does not dim any day of a week as belonging to another month', () => {
+    expect(page).toContain("const isCurrentMonth = viewMode === 'week' || isSameMonth(day, currentDate)")
+  })
+
+  it('lands on a populated day rather than an empty prompt', () => {
+    expect(page).toContain('useState<Date | null>(() => new Date())')
   })
 
   it('reads the viewport synchronously, so the first paint is already right', () => {
@@ -169,5 +191,33 @@ describe('no viewport or width regressions', () => {
     // and are left alone.
     const wide = [...page.matchAll(/w-\[(\d+)px\]/g)].filter(m => Number(m[1]) >= 300)
     expect(wide.map(m => m[0])).toEqual([])
+  })
+})
+
+
+describe('the phone header stops being most of the screen', () => {
+  it('drops the page title, which the drawer and the range already give', () => {
+    expect(page).toContain('<div className="hidden sm:flex items-center gap-2 min-w-0">')
+  })
+
+  it('replaces three view buttons with one picker on a phone', () => {
+    expect(page).toContain('label="Calendar view"')
+    expect(page).toContain('<div className="hidden sm:flex items-center bg-gray-100')
+  })
+
+  it('hides the filter row until it is asked for', () => {
+    // Two controls that are set once and then left alone, on the screen with
+    // the least room to spare.
+    expect(page).toContain("showFilters ? 'flex' : 'hidden sm:flex'")
+  })
+
+  it('says when a filter is narrowing the view', () => {
+    expect(page).toContain("const filtersActive = filterEventType !== 'all' || filterPriority !== 'all'")
+    expect(page).toContain('filtersActive || showFilters')
+  })
+
+  it('keeps the filter control a real target', () => {
+    const at = page.indexOf('aria-label="Filters"')
+    expect(page.slice(at, at + 400)).toContain('h-9 w-9')
   })
 })

@@ -853,9 +853,18 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             a bottom sheet, and cannot overflow. Desktop keeps its tab row.
           */}
           {isMobileViewport ? (
-            <div className="px-3 py-2">
+            <div className="flex items-center px-3 py-1.5">
+              {/* Sized to its own label, not to the screen.
+
+                  It was `w-full`, which stretched a 28px control across the
+                  whole width and read as a large empty dropdown sitting over
+                  the six theme sections — a permanent band that looked like it cost more than
+                  it did. Compact, with the word "Section" dimmed in front of
+                  the current one, it reads as a label you can change rather
+                  than an empty control. */}
               <OptionPicker
                 label="Theme section"
+                prefix="Section"
                 value={activeTab}
                 onChange={setActiveTab}
                 options={THEME_SECTIONS.map(({ key, label }) => ({
@@ -867,7 +876,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                     ? relatedAssets.length
                     : undefined,
                 }))}
-                className="w-full"
               />
             </div>
           ) : (
