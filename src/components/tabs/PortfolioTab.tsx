@@ -492,9 +492,18 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
             Desktop keeps the tab row exactly as it was.
           */}
           {isMobileViewport ? (
-            <div className="px-3 py-2">
+            <div className="flex items-center px-3 py-1.5">
+              {/* Sized to its own label, not to the screen.
+
+                  It was `w-full`, which stretched a 28px control across the
+                  whole width and read as a large empty dropdown sitting over
+                  the nine portfolio sections — a permanent band that looked like it cost more than
+                  it did. Compact, with the word "Section" dimmed in front of
+                  the current one, it reads as a label you can change rather
+                  than an empty control. */}
               <OptionPicker
                 label="Portfolio section"
+                prefix="Section"
                 value={activeTab}
                 onChange={setActiveTab}
                 options={TABS.map(({ key, label, badgeKey }) => ({
@@ -504,7 +513,6 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                   // beside the label rather than dropped on the phone.
                   count: badgeFor(badgeKey) ?? undefined,
                 }))}
-                className="w-full"
               />
             </div>
           ) : (

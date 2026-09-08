@@ -73,12 +73,35 @@ describe('the picker offers one coherent set', () => {
     }
   })
 
-  it('says what each one is for, in the registry words', () => {
+  it('says what each one is for without spending a line on it', () => {
+    // The hint was a visible second line under every option, which made each
+    // row 60px and pushed the four writing choices past the fold of a
+    // half-height sheet. It is the row's accessible description now, so the
+    // information survives and the height does not.
     open()
 
     for (const t of WRITE_CAPTURE_TYPES) {
-      expect(screen.getByText(t.hint)).toBeTruthy()
+      expect(screen.queryByText(t.hint)).toBeNull()
+      expect(screen.getByLabelText(`${t.label}. ${t.hint}`)).toBeTruthy()
     }
+  })
+
+  it('gives every choice one compact row, so all four are visible at once', () => {
+    open()
+
+    for (const t of WRITE_CAPTURE_TYPES) {
+      const row = screen.getByLabelText(`${t.label}. ${t.hint}`)
+      expect(row.className).toContain('h-12')
+      expect(row.className).not.toContain('min-h-[60px]')
+    }
+  })
+
+  it('rules off where writing ends and filing begins', () => {
+    // Different gestures. Six undifferentiated names make "Add to a list" look
+    // like a sixth thing to compose.
+    open()
+    // The sheet portals to body, so the rule is not under `container`.
+    expect(sheet().querySelectorAll('.border-t').length).toBeGreaterThan(0)
   })
 })
 
@@ -199,6 +222,7 @@ describe('the registry is what both surfaces read', () => {
     // If the sheet ever forks its own copy, one of these stops matching.
     expect(captureType('thought')!.label).toBe('Quick thought')
     expect(screen.getByText(captureType('thought')!.label)).toBeTruthy()
-    expect(screen.getByText(captureType('prompt')!.hint)).toBeTruthy()
+    const prompt = captureType('prompt')!
+    expect(screen.getByLabelText(`${prompt.label}. ${prompt.hint}`)).toBeTruthy()
   })
 })

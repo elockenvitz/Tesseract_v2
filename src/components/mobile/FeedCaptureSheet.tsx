@@ -161,25 +161,48 @@ export function FeedCaptureSheet({
             </p>
           )}
           <div className="space-y-1">
-            {OPTIONS.filter(opt => !opt.needsAsset || !!assetId).map(opt => {
+            {/*
+              One line each.
+
+              ── Why the descriptions came off ──────────────────────────────
+              Every option carried its hint as a second line, which made each
+              row 60px and the four writing choices 240px before the two filing
+              ones. Against a sheet opened at half of an 844px phone — and half
+              of 700px on a smaller one — choosing what to capture meant
+              scrolling first. A sentence under "Trade idea" is read once and
+              then never again; the icon and the name are what the reader picks
+              by, every time after that.
+
+              The hint is not lost. It is the row's accessible description, so
+              a screen reader still hears it, and the fuller `guidance` line
+              appears above the form once a type is chosen.
+            */}
+            {OPTIONS.filter(opt => !opt.needsAsset || !!assetId).map((opt, i, list) => {
               const Icon = opt.icon
+              // A rule where writing ends and filing begins. They are different
+              // gestures and the eye should not have to read six names to work
+              // that out.
+              const startsFiling = opt.group === 'file' && list[i - 1]?.group === 'write'
               return (
-                <button
-                  key={opt.kind}
-                  type="button"
-                  onClick={() => setKind(opt.kind)}
-                  className="w-full flex items-center gap-3 min-h-[60px] px-2 rounded-xl text-left active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
-                >
-                  <span className={clsx('h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0', opt.tone)}>
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">
+                <div key={opt.kind}>
+                  {startsFiling && (
+                    <div className="my-1.5 border-t border-gray-100 dark:border-gray-800" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setKind(opt.kind)}
+                    title={opt.hint}
+                    aria-label={`${opt.label}. ${opt.hint}`}
+                    className="w-full flex items-center gap-3 h-12 px-2 rounded-xl text-left active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
+                  >
+                    <span className={clsx('h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0', opt.tone)}>
+                      <Icon className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
                       {opt.label}
                     </span>
-                    <span className="block text-xs text-gray-500 dark:text-gray-400">{opt.hint}</span>
-                  </span>
-                </button>
+                  </button>
+                </div>
               )
             })}
           </div>

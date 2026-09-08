@@ -6,7 +6,7 @@ import {
   Clock, MapPin, Link as LinkIcon, X, Edit2, Trash2,
   TrendingUp, Briefcase, Tag, FolderKanban, Workflow,
   Bell, CalendarDays, CalendarClock, List, Grid3X3,
-  ChevronDown, FileText, AlertCircle, Check, Users, Settings
+  ChevronDown, FileText, AlertCircle, Check, Users, Settings, Filter
 } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths,
@@ -23,6 +23,7 @@ import { CalendarSettings } from '../components/calendar/CalendarSettings'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { buildOrgQueryKey } from '../hooks/useOrgQueryKey'
 import { useOrgMembers } from '../hooks/useOrgMembers'
+import { OptionPicker } from '../components/ui/OptionPicker'
 
 interface CalendarEvent {
   id: string
@@ -79,10 +80,20 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
   // a phone wants: days as a list, with what is on them underneath. Month and
   // week remain selectable; they are just not the default where they do not fit.
   const isMobileViewport = useIsMobile()
-  const [viewMode, setViewMode] = useState<ViewMode>(isMobileViewport ? 'agenda' : 'month')
+  /*
+    A phone opens on the WEEK.
+
+    Agenda was the default and answered "what is coming up" as a flat list with
+    no sense of where you are in the week. A week answers where today sits, which
+    days carry anything, and what is on the day you tap — which is what a phone
+    calendar is for. Desktop still opens on the month grid.
+  */
+  const [viewMode, setViewMode] = useState<ViewMode>(isMobileViewport ? 'week' : 'month')
   // Today, so the phone month view lands on a populated list rather than
   // "tap a day"; the desktop grid ignores the selection until you click.
   const [selectedDate, setSelectedDate] = useState<Date | null>(() => new Date())
+  /** Whether the phone's filter row is showing. Desktop renders it always. */
+  const [showFilters, setShowFilters] = useState(false)
   const [showEventModal, setShowEventModal] = useState(false)
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
   const [filterEventType, setFilterEventType] = useState<string>('all')
@@ -389,6 +400,9 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
   }
 
   // Generate calendar days
+  /** Something is narrowing the view, so the funnel should say so. */
+  const filtersActive = filterEventType !== 'all' || filterPriority !== 'all'
+
   const calendarDays = useMemo(() => {
     if (viewMode === 'month') {
       return eachDayOfInterval({ start: dateRange.start, end: dateRange.end })
@@ -469,7 +483,10 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
             filters lose their rule and left indent when they fall to their own
             row. */}
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 min-w-0">
-          <div className="flex items-center gap-2 min-w-0">
+          {/* The word "Calendar" is desktop-only now. The drawer names the
+              surface you opened and the range heading below says what is on
+              screen; a phone spending a row on the title says neither. */}
+          <div className="hidden sm:flex items-center gap-2 min-w-0">
             <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-primary-600 shrink-0" />
             <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white">Calendar</h1>
           </div>
@@ -501,8 +518,17 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
             }
           </h2>
 
-          {/* Inline Filters */}
-          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto min-w-0 sm:ml-4 sm:pl-4 sm:border-l border-gray-200 dark:border-gray-700">
+          {/* Inline Filters.
+
+              On a phone they were a permanent full-width row for two controls
+              that are set once and then left alone, on the screen with the
+              least room to spare. They open from the funnel beside the view
+              picker instead, and the row appears only while it is being used.
+              Desktop keeps them inline, where the width is not contested. */}
+          <div className={clsx(
+            'items-center gap-2 sm:gap-3 w-full sm:w-auto min-w-0 sm:ml-4 sm:pl-4 sm:border-l border-gray-200 dark:border-gray-700',
+            showFilters ? 'flex' : 'hidden sm:flex'
+          )}>
             <Select
               value={filterEventType}
               onChange={(e) => setFilterEventType(e.target.value)}
@@ -539,8 +565,42 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* On a phone: the view as a picker, and a funnel that reveals the
+              filters. Two compact controls in place of three toggle buttons and
+              a permanent filter row. */}
+          {isMobileViewport && (
+            <>
+              <OptionPicker
+                label="Calendar view"
+                value={viewMode}
+                onChange={setViewMode}
+                options={[
+                  { value: 'week', label: 'Week' },
+                  { value: 'month', label: 'Month' },
+                  { value: 'agenda', label: 'Agenda' },
+                ]}
+                align="right"
+                className="min-w-0"
+              />
+              <button
+                type="button"
+                onClick={() => setShowFilters(v => !v)}
+                aria-pressed={showFilters}
+                aria-label="Filters"
+                className={clsx(
+                  'flex items-center justify-center h-9 w-9 rounded-lg no-touch-target shrink-0 transition-colors',
+                  filtersActive || showFilters
+                    ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300'
+                    : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+                )}
+              >
+                <Filter className="h-4 w-4" />
+              </button>
+            </>
+          )}
+
           {/* View mode toggle */}
-          <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 shrink-0">
+          <div className="hidden sm:flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 shrink-0">
             <button
               onClick={() => setViewMode('month')}
               className={clsx(
@@ -691,12 +751,19 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
               </div>
             )}
           </div>
-        ) : isMobileViewport && viewMode === 'month' ? (
-          /* Phone month view, laid out the way a phone calendar is: a compact
-             grid of dates carrying dots, and the selected day's events listed
-             underneath it on the same screen. Titles are unreadable inside a
-             55px cell, so the grid answers "which days have things" and the
-             list below answers "what things" â€” without a modal in between. */
+        ) : isMobileViewport && (viewMode === 'month' || viewMode === 'week') ? (
+          /* Phone month AND week, laid out the way a phone calendar is: a
+             compact grid of dates carrying dots, and the selected day's events
+             listed underneath it on the same screen. Titles are unreadable
+             inside a 55px cell, so the grid answers "which days have things"
+             and the list below answers "what things" — without a modal in
+             between.
+
+             Week is the same treatment over seven days rather than six weeks:
+             `calendarDays` already returns the week's days for `week`, so the
+             grid becomes one row and the list below gets the rest of the
+             screen. That is why the phone's weekly view is this branch and not
+             a second implementation of it. */
           <div className="h-full flex flex-col overflow-hidden">
             <div className="grid grid-cols-7 px-1 pt-2 shrink-0">
               {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
@@ -709,7 +776,10 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
             <div className="grid grid-cols-7 px-1 pb-2 shrink-0 border-b border-gray-200 dark:border-gray-700">
               {calendarDays.map(day => {
                 const dayEvents = getEventsForDay(day)
-                const isCurrentMonth = isSameMonth(day, currentDate)
+                // Every day of a week belongs to the week. Dimming by month is
+                // a month-grid idea and would grey half a week that straddles
+                // one.
+                const isCurrentMonth = viewMode === 'week' || isSameMonth(day, currentDate)
                 const isSel = selectedDate && isSameDay(day, selectedDate)
                 const today = isToday(day)
                 return (
