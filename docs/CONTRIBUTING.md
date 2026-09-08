@@ -128,15 +128,38 @@ npm run guard
 `npm run guard` is the gate and its meaning has not changed: ci, holdings,
 unit, tdz, types, layout. Roughly 2m40s.
 
-### Two traps
+### Three traps
 
 **`npx tsc --noEmit` checks zero files.** The root tsconfig is solution-style
 with `"files": []`, so it exits 0 whatever the code says. Never quote it as
 evidence. Use `npm run typecheck` (whole app, reports the ~8.8k historical
 backlog, informational), `npm run typecheck:all` (`tsc -b`), or
 `npm run guard:types` — which is the actual gate: card surface only, ceiling
-of zero, plus a floor on how many files tsc loaded so a misconfigured run
-fails instead of passing.
+of zero, and a completion contract on the compiler.
+
+**A quiet checker is not a clean repository.** All three guards below once
+reported PASS over a checker that had stopped working, and each did it by
+reading silence as compliance:
+
+| Guard | What went quiet | Why it read as clean |
+|---|---|---|
+| `guard:types` | a JSX syntax error made tsc skip semantic analysis | 8,769 type errors vanished; zero of them were on the card surface |
+| `guard:tdz` | eslint could not parse a file | a parse error has no rule id, so it matched neither ratchet |
+| `guard:unit` | a path filter matched nothing | vitest only errors when *every* filter misses |
+
+The type gate is the one worth remembering, because the obvious defences do
+not work on it. The compiler exited **2 both times**, and it loaded **3,132
+files broken against 3,131 clean** — so neither the exit code nor a file count
+separates a healthy run from one that never type-checked anything. What
+separates them is that TypeScript emits syntactic diagnostics *instead of*
+semantic ones, so a grammar-band code is proof that checking did not happen.
+That is what the gate now tests. If you are tempted to "fix" a guard by
+loosening a completion check, read `scripts/lib/tsc-report.mjs` first.
+
+`npm run guard:selftest` proves the guards can still fail: it runs the real
+compiler and the real test runner against deliberately broken fixtures in a
+temp directory and checks that each one is rejected. Run it after changing
+anything under `scripts/`.
 
 **Phone tests run against the BUILT gallery.** `npx playwright test` serves
 `dist-gallery`, so after a source change it tests the previous bundle. Use
