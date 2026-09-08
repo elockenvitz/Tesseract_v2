@@ -269,6 +269,49 @@ export const SITUATION_DEFINITIONS: Record<FindingKind, SituationDefinition> = {
   },
 
   /**
+   * Somebody's work is past the date they gave it.
+   *
+   * ── Why this shares a predicate with a lapsed price target ──────────────
+   *
+   * Because the claim is the same shape: a date was stated and it went by. The
+   * resolver draws both as a track with the overrun on the end and neither has
+   * to know the other exists, which is the reuse rule doing its job rather than
+   * a coincidence.
+   *
+   * They are still two kinds, because the SUBJECTS differ and everything
+   * downstream of the subject differs with them. A lapsed target is answered by
+   * restating a number on a name; a late deliverable is answered by opening the
+   * work. The copy writer tells them apart by the unit the overrun is measured
+   * in — months for a horizon, days for a deadline — and the action vocabulary
+   * by `inspect_item` against `inspect_subject`.
+   *
+   * ── Why the reader question stays `workflow` ────────────────────────────
+   *
+   * Because it is the one question this family has always asked and the one
+   * `reader-question` files `project_overdue` under: what happens next, and who
+   * does it. Coverage moved off `workflow` because its finding is that nobody
+   * is answering; this one genuinely is assigned work with a date on it, which
+   * is what `workflow` means.
+   */
+  work_overdue: {
+    predicate: 'expired',
+    question: 'workflow',
+    signalType: 'project_overdue',
+    subjects: ['project', 'asset'],
+    /**
+     * Open the work, then record where it stands.
+     *
+     * Deliberately not `close_loop`. That maps to `resolve`, which the mobile
+     * feed does not perform — the card's verdict pane does — and
+     * `buildAttentionCard` records at length why offering it as a button was a
+     * dead control. The honest primary is the one production already reached
+     * for: take the reader to the thing being asked about.
+     */
+    intents: ['inspect_item', 'record_judgment'],
+    describes: 'Assigned work has passed the date somebody gave it.',
+  },
+
+  /**
    * A decision was taken and its loop is still open.
    *
    * `awaiting` is the only predicate where the reader is the blocker rather

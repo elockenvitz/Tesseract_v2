@@ -78,8 +78,26 @@ export type ExploreVisual =
    *
    * Used where the trigger is an elapsed clock: a horizon that ran out, research
    * nobody has touched, a review past its date.
+   *
+   * ── Two shapes, one primitive ───────────────────────────────────────────
+   *
+   * `dueAt` present   an interval somebody COMMITTED to, and how far past it we
+   *                   are. Two segments: honoured, then overdue.
+   * `dueAt` absent    an interval nobody committed to, and how long it has run.
+   *                   One segment, and the elapsed time is the whole claim.
+   *
+   * The second was added for coverage neglect, where the finding is that
+   * nothing has happened since a date and there is no deadline to have missed —
+   * drawing an amber "due" cap on it would assert a commitment nobody made. It
+   * is deliberately the same primitive rather than a second one: an aging strip
+   * and a deadline strip differ by whether a marker exists, which is a property
+   * of the data, not a different picture. Overdue work, a lapsed horizon, a
+   * quiet name and an unreviewed move all resolve here.
+   *
+   * `overdueLabel` names the trailing sentence where the default does not fit —
+   * "since your last contribution" rather than "overdue".
    */
-  | { kind: 'timeline'; statedAt: string; dueAt: string; overdueLabel?: string }
+  | { kind: 'timeline'; statedAt: string; dueAt?: string | null; overdueLabel?: string }
   /** How much of a book rides on this, when the finding is about exposure. */
   | { kind: 'exposure'; weightPct: number; portfolioName?: string }
   /**

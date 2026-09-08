@@ -451,12 +451,20 @@ describe('the coverage card renders through the engine for everybody', () => {
     const at = dash.indexOf('const adoptTile = useCallback(')
     expect(at).toBeGreaterThan(0)
     const body = dash.slice(at, dash.indexOf('const rankInputFor = useCallback(', at))
-    expect(body).toContain("const flagless = !!source && 'coverage' in source")
+    expect(body).toContain("'coverage' in source || 'overdue' in source")
     expect(body).toContain('if (!tileEngineOn && !flagless) return original')
   })
 
-  it('drops the price pane on a coverage tile without consulting the flag', () => {
-    expect(dash).toContain('const attnPrice = isCoverageStale ? null : pricePane(')
+  /**
+   * The tape is dropped by a general rule, not a per-family one.
+   *
+   * When the resolver has chosen a lead visual, that visual IS the evidence,
+   * and a price series stapled underneath contradicts the choice the plan just
+   * made. Coverage and Overdue both reach it, and so will the next family whose
+   * claim is not about the price.
+   */
+  it('drops the price pane wherever the engine took the row on', () => {
+    expect(dash).toContain("const attnPrice = attnAdopted?.adopted ? null : pricePane(")
   })
 
   /** The other four families are still behind it. */

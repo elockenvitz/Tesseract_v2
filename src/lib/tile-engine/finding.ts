@@ -233,6 +233,16 @@ export type ActionIntent =
   | 'assign_coverage'
   | 'close_loop'
   | 'inspect_subject'
+  /**
+   * Open the thing being asked about, where the subject is not an asset.
+   *
+   * `inspect_subject` routes to `open_asset`, which is the right destination
+   * for a finding about a name and the wrong one for a finding about a piece of
+   * work: a deliverable three weeks late is not opened by opening a ticker.
+   * `open_item` is the surface's own "take me to it", and it is what
+   * `buildAttentionCard` already falls back to for these rows.
+   */
+  | 'inspect_item'
 
 /**
  * The canonical situations this foundation proves.
@@ -268,6 +278,17 @@ export type FindingKind =
    * `target_reached` and `target_expired` have, and for the same reason.
    */
   | 'coverage_stale'
+  /**
+   * Assigned work whose stated due date has passed.
+   *
+   * `expired`, the same predicate as a lapsed price target, and that shared
+   * predicate is the point: both are "somebody named a date and it went by",
+   * both draw as a track with the overrun on the end, and neither needs to know
+   * what the other is. What separates them is the SUBJECT — a project rather
+   * than a name — and the unit the overrun is measured in, which is what the
+   * copy writer reads.
+   */
+  | 'work_overdue'
   | 'decision_followup'
 
 export interface SemanticFinding {
@@ -347,6 +368,15 @@ const KIND_PRECEDENCE: Record<FindingKind, number> = {
    */
   coverage_gap: 6,
   coverage_stale: 7,
+  /**
+   * Last, and not because it matters least.
+   *
+   * Precedence orders findings WITHIN one subject, and a project is almost
+   * never the subject of anything else here — so this rank is very nearly
+   * unreachable. Placed at the end rather than guessed into the middle of the
+   * investment findings, where it would claim an ordering nobody has argued.
+   */
+  work_overdue: 8,
 }
 
 /**

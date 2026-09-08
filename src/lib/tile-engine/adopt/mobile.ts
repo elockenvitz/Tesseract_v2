@@ -30,6 +30,7 @@ import type { CoverageRelevance } from '../../signals/coverage-relevance'
 import type { StaleTarget, TargetBreach } from '../../../hooks/mobile/usePortfolioLenses'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import { composeSituations, type Situation } from '../situation'
+import type { ExploreVisual } from '../../mobile/explore-visual'
 import { resolvePresentation } from '../resolver'
 import type { PresentationPlan } from '../presentation'
 import { displayCopyFor, type DisplayCopy } from './display-copy'
@@ -39,12 +40,15 @@ import {
 } from './capability'
 import {
   coverageStaleAuthors, coverageStaleFinding, noCoreThesisAuthors, noCoreThesisFinding,
+  workOverdueAuthors, workOverdueFinding,
   scenarioGapAuthors, scenarioGapFinding,
   staleTargetAuthors, staleTargetFinding, targetHitAuthors, targetHitFinding,
   unreviewedMoveFinding,
   type AdapterDecline, type AdapterResult, type CoverageStaleAdapterInput,
+  type WorkOverdueAdapterInput,
 } from './producers'
 import { composeTargetPair, type TargetPair } from './target-composition'
+import { timelineLabelFor, visualDataFor } from './visual'
 
 export interface MobileViewer {
   /** `useAuth().user?.id`. */
@@ -60,6 +64,15 @@ export interface MobileAdoption {
   capability: CapabilityDecision
   /** What `SignalCardView` should render. */
   card: SignalCard
+  /**
+   * The picture the plan chose, as data `ExploreVisualBlock` already draws.
+   *
+   * Null where the claim cannot support one, which is a real answer and not a
+   * gap — see `visualDataFor`. The caller renders it in the evidence band
+   * instead of the pane it would otherwise have built by hand, which is the
+   * step that makes the resolver's choice reach the reader.
+   */
+  visual: ExploreVisual | null
 }
 
 export type MobileAdoptionResult =
@@ -97,7 +110,17 @@ function complete(
   const copy = displayCopyFor(situation, plan)
   const card = projectPlanOntoCard(original, situation, plan, copy)
 
-  return { ok: true, adoption: { situation, plan, copy, capability, card } }
+  return { ok: true, adoption: { situation, plan, copy, capability, card, visual: visualFor(situation, plan, original) } }
+}
+
+/** The plan's picture, with the finding's own words on it where it takes any. */
+function visualFor(
+  situation: Situation, plan: PresentationPlan, original: SignalCard,
+): ExploreVisual | null {
+  const visual = visualDataFor(situation, plan, original)
+  if (!visual || visual.kind !== 'timeline') return visual
+  const label = timelineLabelFor(situation)
+  return label ? { ...visual, overdueLabel: label } : visual
 }
 
 /** Target Expired: `usePortfolioLenses` → `buildStaleTargetCard` → here. */
@@ -191,7 +214,13 @@ export function adoptComposedTarget(
   const copy = displayCopyFor(composed.situation, plan)
   const card = projectPlanOntoCard(original, composed.situation, plan, copy)
 
-  return { ok: true, adoption: { situation: composed.situation, plan, copy, capability, card } }
+  return {
+    ok: true,
+    adoption: {
+      situation: composed.situation, plan, copy, capability, card,
+      visual: visualFor(composed.situation, plan, original),
+    },
+  }
 }
 
 /**
@@ -248,6 +277,30 @@ export function adoptNoCoreThesis(
  * finding reproducible from its inputs in a test.
  */
 export type CoverageAttentionRow = CoverageStaleAdapterInput['item']
+export type OverdueAttentionRow = WorkOverdueAdapterInput['item']
+
+/**
+ * Overdue: `useAttention` -> `buildAttentionCard` -> here.
+ *
+ * The second adapter to take a clock, and for the same reason as the first: the
+ * lateness is computed from two timestamps rather than carried on the row, so
+ * the caller supplies the second one and the engine keeps none.
+ */
+export function adoptWorkOverdue(
+  item: OverdueAttentionRow,
+  original: SignalCard,
+  viewer: MobileViewer,
+  container: TileContainer | null,
+  now: number,
+): MobileAdoptionResult {
+  return complete(
+    original,
+    workOverdueFinding({ item, card: original, coverage: viewer.coverage, now }),
+    workOverdueAuthors(),
+    viewer,
+    container,
+  )
+}
 
 export function adoptCoverageGap(
   item: CoverageAttentionRow,
@@ -274,4 +327,16 @@ export function adoptCoverageGap(
  */
 export function cardOrOriginal(original: SignalCard, result: MobileAdoptionResult): SignalCard {
   return result.ok ? result.adoption.card : original
+}
+
+/**
+ * The picture, where the engine resolved one. Null keeps the caller's own.
+ *
+ * Separate from `cardOrOriginal` because the two degrade differently: a decline
+ * must render the production CARD, and it must also leave the production PANES
+ * alone. Reading null as "the engine has no opinion" is what makes the seam a
+ * pass-through when it declines.
+ */
+export function visualOrNull(result: MobileAdoptionResult): ExploreVisual | null {
+  return result.ok ? result.adoption.visual : null
 }

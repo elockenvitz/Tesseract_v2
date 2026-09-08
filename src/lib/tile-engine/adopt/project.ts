@@ -137,6 +137,7 @@ const ACTION_FOR_INTENT: Record<ActionIntent, { key: FeedActionKey; label: strin
   assign_coverage: { key: 'open_coverage', label: 'Assign coverage' },
   close_loop: { key: 'resolve', label: 'Close the loop' },
   inspect_subject: { key: 'open_asset', label: 'Open' },
+  inspect_item: { key: 'open_item', label: 'Open' },
   resize_position: null,
 }
 
