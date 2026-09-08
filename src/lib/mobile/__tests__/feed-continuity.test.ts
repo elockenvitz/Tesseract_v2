@@ -18,7 +18,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 import {
   anchorKeyAt, clearFeedContinuity, deriveFeedView, emptyContinuity, feedScopeKey,
-  indexOfKey, readFeedContinuity, resolveAnchorIndex, writeFeedContinuity,
+  indexOfKey, nearestRememberedKey, readFeedContinuity, resolveAnchorIndex,
+  writeFeedContinuity,
 } from '../feed-continuity'
 import { familyOf } from '../feed-categories'
 
@@ -205,5 +206,81 @@ describe('only a reload starts a fresh feed session', () => {
     writeFeedContinuity(SCOPE, { family: 'crowding', position: { viewKey: 'l1' } })
     const keys = [...Object.keys(sessionStorage), ...Object.keys(localStorage)]
     expect(keys.filter(k => k.includes('continuity'))).toEqual([])
+  })
+})
+
+
+/**
+ * A tile that went missing is not a reason to start the feed again.
+ *
+ * Manual QA: leave Ideas, come back, and the feed is at the beginning. The
+ * position had been remembered correctly; what was missing was an answer for
+ * the case where the remembered tile is not on screen yet, or not there at all.
+ */
+describe('the nearest remembered tile, when the exact one is gone', () => {
+  const ORDER = ['a', 'b', 'c', 'd', 'e', 'f']
+
+  it('uses the tile itself whenever it is still there', () => {
+    expect(nearestRememberedKey(ORDER, ORDER, 'd')).toBe('d')
+  })
+
+  /**
+   * Backwards first, and the direction is a product decision.
+   *
+   * The reader was moving down the feed, so the tile above the gap is one they
+   * have already passed. Landing there shows them what replaced the missing
+   * card; landing below it would skip whatever took its place.
+   */
+  it('lands on the tile above the gap rather than the one below', () => {
+    expect(nearestRememberedKey(ORDER, ['a', 'b', 'c', 'e', 'f'], 'd')).toBe('c')
+  })
+
+  /**
+   * Nearest wins; the backwards preference only settles a tie.
+   *
+   * From `d` with only `a` and `f` left, `f` is two away and `a` is three, so
+   * the reader lands on `f`. Preferring backwards at any distance would send
+   * them further from where they were, which is the thing being avoided.
+   */
+  it('takes the nearest survivor, whichever side it is on', () => {
+    expect(nearestRememberedKey(ORDER, ['a', 'f'], 'd')).toBe('f')
+    expect(nearestRememberedKey(ORDER, ['b', 'e'], 'd')).toBe('e')
+  })
+
+  it('goes forward when there is nothing behind', () => {
+    expect(nearestRememberedKey(ORDER, ['b', 'c'], 'a')).toBe('b')
+  })
+
+  /**
+   * Null, not the top.
+   *
+   * The caller reads null as "there is no position to restore" and leaves the
+   * feed where it is, which is what a reader arriving fresh should see anyway.
+   * Returning the first key instead would assert a position nobody remembered.
+   */
+  it('answers null when nothing from the remembered order survives', () => {
+    expect(nearestRememberedKey(ORDER, ['x', 'y'], 'd')).toBeNull()
+    expect(nearestRememberedKey(null, ['a'], 'd')).toBeNull()
+    expect(nearestRememberedKey(ORDER, ORDER, null)).toBeNull()
+  })
+
+  /** A key the remembered order never held cannot be placed within it. */
+  it('answers null for a tile that was never in the remembered order', () => {
+    expect(nearestRememberedKey(ORDER, ['a', 'b'], 'zz')).toBeNull()
+  })
+
+  /**
+   * The unfiltered contract, end to end on the model.
+   *
+   * Leave with a position, come back to a feed missing that one tile, and the
+   * reader is put beside where they were rather than at the beginning.
+   */
+  it('keeps a five-screen scroll after a source refetched one card away', () => {
+    writeFeedContinuity(SCOPE, { position: { baseKey: 'd', viewKey: 'd' }, baseOrder: ORDER })
+    const remembered = readFeedContinuity(SCOPE)
+    const now = ORDER.filter(k => k !== 'd')
+    expect(nearestRememberedKey(remembered.baseOrder, now, remembered.position.baseKey))
+      .toBe('c')
+    expect(resolveAnchorIndex(now, remembered.position.baseKey)).toBe(0)
   })
 })

@@ -436,6 +436,86 @@ describe('the Research card wins over the attention copy, in the right place', (
   })
 })
 
+describe('the coverage card renders through the engine for everybody', () => {
+  /**
+   * Manual QA: "I can see a Coverage Gap tile, but the card still says
+   * Research stale and shows a price chart."
+   *
+   * Both halves of that are one cause. Coverage Gap's IDENTITY shipped
+   * unflagged — the chip, the pill, the category, the dedupe rule — while its
+   * PRESENTATION stayed behind the comparison flag. So the flagged-off state
+   * was not the old behaviour; it was a tile that calls itself a coverage
+   * finding and then reads like the legacy attention row underneath.
+   */
+  it('adopts the coverage row whether or not the comparison flag is on', () => {
+    const at = dash.indexOf('const adoptTile = useCallback(')
+    expect(at).toBeGreaterThan(0)
+    const body = dash.slice(at, dash.indexOf('const rankInputFor = useCallback(', at))
+    expect(body).toContain("const flagless = !!source && 'coverage' in source")
+    expect(body).toContain('if (!tileEngineOn && !flagless) return original')
+  })
+
+  it('drops the price pane on a coverage tile without consulting the flag', () => {
+    expect(dash).toContain('const attnPrice = isCoverageStale ? null : pricePane(')
+  })
+
+  /** The other four families are still behind it. */
+  it('leaves every other adoption behind the flag', () => {
+    expect(dash).toContain('const tileEngineOn = isFlagOn(')
+    const at = dash.indexOf('const adoptTile = useCallback(')
+    const body = dash.slice(at, dash.indexOf('const rankInputFor = useCallback(', at))
+    expect(body).toContain('tileEngineOn')
+  })
+})
+
+describe('coming back to Ideas lands where the reader left', () => {
+  /** The restore effect, from its guard to the end of its dependency list. */
+  function restoreBody(): string {
+    const at = dash.indexOf('const continuityRestoredRef = useRef(false)')
+    expect(at).toBeGreaterThan(0)
+    return dash.slice(at, dash.indexOf('// A deliberate refresh', at))
+  }
+
+  /**
+   * The defect: it acted on the first measurement it could take.
+   *
+   * A tab switch unmounts the dashboard, so returning is a remount and this
+   * effect is the restore. It fired on the first commit that had entries, and
+   * at that moment the feed has not laid out — `FeedSlot` keeps about five
+   * cards mounted and the rest are placeholders — so a tile twenty down
+   * measures a few hundred pixels instead of several thousand. The jump
+   * "succeeded" near the top and latched.
+   */
+  it('re-measures across frames instead of jumping once', () => {
+    const body = restoreBody()
+    expect(body).toContain('requestAnimationFrame(attempt)')
+    expect(body).toContain('cancelAnimationFrame(raf)')
+    // Stops when the offset stops moving, not when it first exists.
+    expect(body).toContain('if (top === last || tries++ > SETTLE_FRAMES)')
+  })
+
+  /**
+   * And it disabled the one restore that already knew to keep trying.
+   *
+   * `restoredRef` switches off the saved-offset restore, whose own header
+   * records this exact failure and solves it with a retry loop. Setting it
+   * before there was a position meant the weaker restore won the race and then
+   * did nothing.
+   */
+  it('only takes over the offset restore once it has a position', () => {
+    const body = restoreBody()
+    const marks = body.indexOf('restoredRef.current = true')
+    const measures = body.indexOf('const top = offsetOfKey(key)')
+    expect(measures).toBeGreaterThan(0)
+    expect(marks).toBeGreaterThan(measures)
+  })
+
+  /** A tile that went missing is not a reason to go to the top. */
+  it('falls back to the nearest tile in the order the reader left', () => {
+    expect(restoreBody()).toContain('nearestRememberedKey(restoredContinuity.baseOrder')
+  })
+})
+
 describe('attention urgency is read from the field the row has', () => {
   /**
    * The defect: `rankInputFor` read `a.priority`, which `AttentionItem` does

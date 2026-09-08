@@ -200,6 +200,55 @@ export function resolveAnchorIndex(keys: readonly string[], key: string | null):
   return at >= 0 ? at : 0
 }
 
+/**
+ * The nearest tile the reader can still be put on, using the order they left.
+ *
+ * ── Why the top is the wrong answer here ──────────────────────────────────
+ *
+ * `resolveAnchorIndex` falls back to the top and its reasoning holds where it
+ * is used: a FILTER that does not contain the remembered tile is the reader
+ * asking for something else, and landing them mid-list at an unrelated card
+ * would be worse.
+ *
+ * Coming back to the same unfiltered feed is not that. The tile may be missing
+ * for a reason that has nothing to do with the reader — a source refetched, a
+ * card was answered and dropped, an insight aged out — and sending them to the
+ * beginning of a feed they had scrolled five screens into is the failure this
+ * whole module exists to prevent.
+ *
+ * So the remembered ORDER is walked outwards from where the tile was and the
+ * NEAREST surviving neighbour is used — nearest on either side, because sending
+ * the reader further from where they were to satisfy a direction rule would be
+ * the same mistake in miniature. A tie goes backwards: the reader was moving
+ * down the feed, so the tile above the gap is one they have already passed, and
+ * landing there shows them whatever replaced the missing card rather than
+ * skipping past it.
+ *
+ * Null when nothing from the remembered order survives, which the caller reads
+ * as "there is no position to restore" rather than as "go to the top".
+ */
+export function nearestRememberedKey(
+  baseOrder: readonly string[] | null,
+  currentKeys: readonly string[],
+  want: string | null,
+): string | null {
+  if (!want) return null
+  const present = new Set(currentKeys)
+  if (present.has(want)) return want
+  if (!baseOrder) return null
+
+  const at = baseOrder.indexOf(want)
+  if (at < 0) return null
+
+  for (let d = 1; d < baseOrder.length; d++) {
+    const back = at - d
+    if (back >= 0 && present.has(baseOrder[back])) return baseOrder[back]
+    const fwd = at + d
+    if (fwd < baseOrder.length && present.has(baseOrder[fwd])) return baseOrder[fwd]
+  }
+  return null
+}
+
 /** One slot's measured position within the scroller. */
 export interface SlotOffset {
   key: string

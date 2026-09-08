@@ -191,6 +191,73 @@ const FAMILY_WINDOW = 4
 const SUBJECT_WINDOW = 6
 
 /**
+ * The window the reader actually judges the feed by, and how much of it one
+ * kind of work may take.
+ *
+ * ── Why runs were not enough ──────────────────────────────────────────────
+ *
+ * Manual QA, after the run rules brought the longest exact-family run to two:
+ * "the sequence technically avoids huge exact-family runs but still feels
+ * semantically repetitive — many Trade Ideas / Thoughts / Pair Trades
+ * clustered together, then many No Core Thesis / New Research tiles."
+ *
+ * Both observations are correct and neither is a run. A run rule constrains
+ * ADJACENCY; a phone screen is a WINDOW. This passes every rule in this file:
+ *
+ *   idea  idea  news  idea  idea  news
+ *
+ * — longest family run 2, longest question run 2, and four of the six tiles on
+ * the screen are somebody's posts.
+ *
+ * ── Why the two clusters the reader named are the same defect ─────────────
+ *
+ * They are one gap seen at two levels of the existing model:
+ *
+ *   Trade idea, Thought, Research note   3 families, 1 question, 1 category
+ *   Case gaps, Needs review, Coverage
+ *   gap, Team focus, Disagreement        5 families, 4 questions, 1 category
+ *
+ * The first cluster the question axis already groups, and the run rule caps it
+ * at two consecutive — but not at four in six. The second the question axis
+ * deliberately does NOT group: a missing thesis and a stale one are different
+ * questions and the model is right that they are. What they share is the
+ * CATEGORY, which is the product's own name for a kind of work, and which this
+ * file only ever used to cap the opening.
+ *
+ * So the axis was not missing. It was already computed, already passed in, and
+ * only consulted for the first eight cards.
+ *
+ * ── The rule ──────────────────────────────────────────────────────────────
+ *
+ * No value may take more than half of any window of `VIEWPORT` cards, on any
+ * of the three axes. A cap and not a quota, exactly like everything else here:
+ * nothing is promoted to fill a gap, and where no comparable alternative
+ * exists the cap does not bind and the more important card still wins.
+ */
+const VIEWPORT = 6
+const MAX_PER_VIEWPORT = 3
+/**
+ * The bar a substitute must clear to break a saturated screen.
+ *
+ * ── Chosen from the distribution, not picked ──────────────────────────────
+ *
+ * The ordinary 0.15 cannot reach a different category at all in a pool
+ * stratified by category — which is every real pool, because the tiers ARE
+ * roughly categories. Measured on the production-shaped pool, sweeping the bar:
+ *
+ *   0.15  0.20  0.25   no change whatsoever; the rule never binds
+ *   0.30         windows dominated by one category 20 → 9, by one question
+ *                14 → 9, worst displacement −0.295
+ *   0.35  0.45   identical to 0.30
+ *
+ * So there is one step in the whole range and 0.30 is where it is. Anything
+ * lower buys nothing; anything higher costs more displacement for no further
+ * improvement. It is deliberately tighter than `QUESTION_BREAK_TOLERANCE`,
+ * which stays where it was.
+ */
+const SCREEN_TOLERANCE = 0.30
+
+/**
  * A category may not take more than this many of the opening cards.
  *
  * Carried over from `diversify`, where it was introduced because a desk whose
@@ -255,6 +322,12 @@ export interface ComposeOptions<T> {
   familyWindow?: number
   questionWindow?: number
   subjectWindow?: number
+  /** The screen the saturation rule measures. */
+  viewport?: number
+  /** How much of that screen one value may take. Raise it to switch the rule off. */
+  maxPerViewport?: number
+  /** The score bar a substitute must clear to break a saturated screen. */
+  screenTolerance?: number
   /** Build the per-card explanation. Off by default; on in dev and in tests. */
   trace?: boolean
 }
@@ -308,6 +381,9 @@ export interface ComposeTraceRow {
     | 'family-run'           // pulled up because the head would repeat a family
     | 'subject-run'          // pulled up because the head would repeat a name
     | 'category-cap'         // pulled up because a category had taken the opening
+    | 'category-screen'      // pulled up because one kind of work filled the screen
+    | 'question-screen'
+    | 'family-screen'
     | 'recent-question'      // pulled up on the softer "seen this recently" rule
     | 'recent-family'
     | 'recent-subject'
@@ -347,11 +423,18 @@ const comparableTotal = <T>(r: RankedItem<T>): number =>
  *   1. taking this would run a QUESTION past `maxCategoryRun`
  *   2. taking this would run a family past `maxRun`
  *   3. taking this would run a name past `maxSubjectRun`
- *   4. this question appeared within the last `categoryWindow`
- *   5. this family appeared within the last `familyWindow`
- *   6. this name appeared within the last `subjectWindow`
+ *   4. this CATEGORY would take more than half the viewport
+ *   5. this QUESTION would take more than half the viewport
+ *   6. this FAMILY would take more than half the viewport
+ *   7. this question appeared within the last `categoryWindow`
+ *   8. this family appeared within the last `familyWindow`
+ *   9. this name appeared within the last `subjectWindow`
  *
- * Hard runs before soft recency, and question before family before name.
+ * Hard runs, then screen saturation, then soft recency; and within each band,
+ * the coarsest axis first. Saturation sits above recency because "four of the
+ * last six were this" is a stronger statement about the screen than "one of
+ * the last three was", and below the runs because a run is still the most
+ * visible repetition there is.
  *
  * The question axis is new and sits ABOVE the family, because the family was
  * standing in for it and is too fine to do the job: five research framings are
@@ -363,7 +446,10 @@ const comparableTotal = <T>(r: RankedItem<T>): number =>
  * Every entry is 0 or 1, so a tuple of zeros means "nothing about this card
  * repeats anything", which is the fast path.
  */
-type Cost = [number, number, number, number, number, number, number]
+type Cost = [
+  number, number, number, number, number,
+  number, number, number, number, number,
+]
 
 const costIsZero = (c: Cost) => c.every(v => v === 0)
 
@@ -386,9 +472,12 @@ const REASON_FOR: Record<number, ComposeTraceRow['reason']> = {
   1: 'question-run',
   2: 'family-run',
   3: 'subject-run',
-  4: 'recent-question',
-  5: 'recent-family',
-  6: 'recent-subject',
+  4: 'category-screen',
+  5: 'question-screen',
+  6: 'family-screen',
+  7: 'recent-question',
+  8: 'recent-family',
+  9: 'recent-subject',
 }
 
 export function composeFeed<T>(
@@ -406,6 +495,9 @@ export function composeFeed<T>(
     familyWindow = FAMILY_WINDOW,
     questionWindow = QUESTION_WINDOW,
     subjectWindow = SUBJECT_WINDOW,
+    viewport = VIEWPORT,
+    maxPerViewport = MAX_PER_VIEWPORT,
+    screenTolerance = SCREEN_TOLERANCE,
     trace = false,
   } = options
 
@@ -427,10 +519,11 @@ export function composeFeed<T>(
   const out: RankedItem<T>[] = []
   const rows: ComposeTraceRow[] = []
 
-  /** Questions, families and names already emitted, most recent last. */
+  /** Questions, families, categories and names already emitted, most recent last. */
   const questionSeq: (string | null)[] = []
   const familySeq: (string | null)[] = []
   const subjectSeq: (string | null)[] = []
+  const categorySeq: (string | null)[] = []
   /** How many of the opening each category has taken. */
   const openingCount = new Map<string, number>()
 
@@ -443,6 +536,23 @@ export function composeFeed<T>(
   }
   const seenWithin = (seq: (string | null)[], v: string | null, n: number): boolean =>
     v != null && seq.slice(Math.max(0, seq.length - n)).includes(v)
+
+  /**
+   * Would taking this card make its value more than half of a screen?
+   *
+   * Counts the value in the last `VIEWPORT - 1` emitted cards and adds this
+   * one, so the window under test is exactly the screen the reader would be
+   * looking at with this card on it. Null values — a tile with no subject, an
+   * untyped entry — never saturate: an absent value is not a repetition.
+   */
+  const saturates = (seq: (string | null)[], v: string | null): boolean => {
+    if (v == null) return false
+    let n = 1
+    for (let i = seq.length - 1; i >= Math.max(0, seq.length - (viewport - 1)); i--) {
+      if (seq[i] === v) n += 1
+    }
+    return n > maxPerViewport
+  }
 
   const costOf = (r: RankedItem<T>): Cost => {
     const fam = familyOf(r.item)
@@ -460,11 +570,23 @@ export function composeFeed<T>(
     const questionOver = questionRuleOn && runOf(questionSeq, q) >= maxQuestionRun ? 1 : 0
     const familyOver = familyRuleOn && runOf(familySeq, fam) >= maxRun ? 1 : 0
     const subjectOver = runOf(subjectSeq, sub) >= maxSubjectRun ? 1 : 0
+    /**
+     * The screen, on each axis the reader can perceive.
+     *
+     * Gated by the same scope rules as the run above them: a reader who asked
+     * for Research is not being repeated at by Research, and a reader who
+     * named a family is not being repeated at by that family.
+     */
+    const categoryScreen = categoryCapOn && saturates(categorySeq, cat) ? 1 : 0
+    const questionScreen = questionRuleOn && saturates(questionSeq, q) ? 1 : 0
+    const familyScreen = familyRuleOn && saturates(familySeq, fam) ? 1 : 0
+
     const questionRecent = questionRuleOn && seenWithin(questionSeq, q, questionWindow) ? 1 : 0
     const familyRecent = familyRuleOn && seenWithin(familySeq, fam, familyWindow) ? 1 : 0
     const subjectRecent = seenWithin(subjectSeq, sub, subjectWindow) ? 1 : 0
 
     return [categoryOver, questionOver, familyOver, subjectOver,
+            categoryScreen, questionScreen, familyScreen,
             questionRecent, familyRecent, subjectRecent]
   }
 
@@ -502,11 +624,26 @@ export function composeFeed<T>(
        *
        * The tolerance is not widened with either. See `FAMILY_BREAK_LOOKAHEAD`.
        */
-      const breakingFamilyRun = headCost[2] === 1 || headCost[5] === 1
+      const breakingFamilyRun = headCost[2] === 1 || headCost[8] === 1
+      /**
+       * Saturation earns the wide REACH and never the wide tolerance.
+       *
+       * A screen filled by one category is the same stratification problem the
+       * question run has — the alternative is far down a score-sorted list —
+       * so the reach has to escalate or the rule cannot bind. The tolerance is
+       * a different matter: measured on the production pool, lowering the bar
+       * to 0.45 admitted worse substitutes and made the family sequence WORSE
+       * while more than doubling what the pass costs. See `feed-variety`,
+       * which holds that measurement as a test.
+       */
+      const breakingScreen = headCost[4] === 1 || headCost[5] === 1
       const reach = breakingQuestionRun ? QUESTION_BREAK_LOOKAHEAD
+        : breakingScreen ? QUESTION_BREAK_LOOKAHEAD
         : breakingFamilyRun ? FAMILY_BREAK_LOOKAHEAD
         : lookahead
-      const slack = breakingQuestionRun ? QUESTION_BREAK_TOLERANCE : tolerance
+      const slack = breakingQuestionRun ? QUESTION_BREAK_TOLERANCE
+        : breakingScreen ? screenTolerance
+        : tolerance
       const limit = Math.min(pool.length, reach)
       for (let i = 1; i < limit; i++) {
         const c = pool[i]
@@ -563,6 +700,7 @@ export function composeFeed<T>(
     questionSeq.push(questionOf?.(chosen.item) ?? null)
     familySeq.push(fam)
     subjectSeq.push(sub)
+    categorySeq.push(chosenCat)
     if (categoryCapOn) {
       const c = chosenCat
       if (c) openingCount.set(c, (openingCount.get(c) ?? 0) + 1)
