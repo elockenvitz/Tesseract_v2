@@ -242,8 +242,26 @@ describe('the base order is a snapshot, not a recomputation', () => {
   })
 
   it('commits the order in an effect, so the memo only reads', () => {
-    expect(dash).toContain('rememberBaseOrder(feedBaseline.remembered, feedBaseline.keys)')
+    expect(dash).toContain('rememberBaseOrder(')
     expect(dash).toContain('writeFeedContinuity(continuityKey, { baseOrder: next })')
+  })
+
+  /**
+   * And it commits the READ PREFIX, not the whole order.
+   *
+   * Remembering every key froze the part of the feed nobody had seen, which
+   * meant anything arriving later could only be appended — a page of posts
+   * fetched at the bottom of a long scroll landed after every tile rather than
+   * interleaving into the stretch about to be reached. Only what the reader
+   * has passed, plus a screen, has to hold still.
+   */
+  it('freezes only what the reader has passed', () => {
+    const at = dash.indexOf('const next = rememberBaseOrder(')
+    expect(at).toBeGreaterThan(0)
+    const call = dash.slice(at, at + 200)
+    expect(call).toContain('feedBaseline.keys.slice(0, frozen)')
+    expect(dash).toContain('FREEZE_LOOKAHEAD')
+    expect(dash).toContain('readFeedContinuity(continuityKey).readDepth')
   })
 })
 

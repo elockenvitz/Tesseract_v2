@@ -14,7 +14,7 @@ import { useAttention } from '../../hooks/useAttention'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
 import {
-  anchorKeyAt, clearFeedContinuity, deriveFeedView, feedScopeKey,
+  anchorKeyAt, clearFeedContinuity, deepestRead, deriveFeedView, feedScopeKey, indexOfKey,
   nearestRememberedKey, readFeedContinuity, reconcileToRemembered, rememberBaseOrder,
   resolveAnchorIndex, writeFeedContinuity,
 } from '../../lib/mobile/feed-continuity'
@@ -233,6 +233,21 @@ const VARIETY_RUNWAY = 20
  * below it at the tail is the same measurement saying the pool is spent.
  */
 const MIN_TAIL_FAMILIES = 3
+
+/**
+ * How far past the reader the feed is held still.
+ *
+ * The read depth alone is not enough. A tile one below the fold is partly on
+ * screen and about to be scrolled to, and letting it recompose between the
+ * reader deciding to swipe and the swipe landing is the reordering this whole
+ * module exists to prevent, at the one moment it would be most obvious.
+ *
+ * Ten, which is about a screen and a half at a viewport of six, so the tile
+ * under the thumb and the one after it are settled before the reader can reach
+ * them. Everything past it is material they have never seen, where there is
+ * nothing to keep still and composing is strictly better.
+ */
+const FREEZE_LOOKAHEAD = 10
 
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
@@ -3515,7 +3530,28 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * order is the real one, and THAT is what gets remembered.
      */
     if (composing) return
-    const next = rememberBaseOrder(feedBaseline.remembered, feedBaseline.keys)
+    /**
+     * Only what the reader has passed is frozen.
+     *
+     * ── What committing the whole order cost ────────────────────────────────
+     *
+     * This remembered every key the composer produced, and
+     * `reconcileToRemembered` then held all of them in place. Correct for the
+     * promise — nothing moves under the reader — and far wider than the promise
+     * needs, because it also froze the part of the feed nobody has seen. The
+     * consequence is that anything arriving afterwards can only be APPENDED: a
+     * page of posts fetched at the bottom of a long scroll lands after every
+     * tile in the feed instead of interleaving into the stretch about to be
+     * reached, which is exactly where variety is thinnest.
+     *
+     * The read depth plus a screen is what actually has to hold still. Below
+     * that the composer governs, so new material takes its place on merit.
+     */
+    const frozen = deepestRead(readFeedContinuity(continuityKey).readDepth, 0)
+      + FREEZE_LOOKAHEAD
+    const next = rememberBaseOrder(
+      feedBaseline.remembered, feedBaseline.keys.slice(0, frozen),
+    )
     if (next.length === (feedBaseline.remembered?.length ?? -1)) return
     writeFeedContinuity(continuityKey, { baseOrder: next })
   }, [continuityKey, feedBaseline, composing])
@@ -4165,6 +4201,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       if (!key) return
       writeFeedContinuity(continuityKey, {
         position: tileFamily ? { viewKey: key } : { baseKey: key, viewKey: key },
+        /**
+         * How deep the reader has been, which is what may not move.
+         *
+         * Only recorded on the unfiltered feed. Depth inside a filtered view is
+         * a depth into a different list, and freezing the base by it would
+         * freeze tiles the reader has never met.
+         *
+         * `indexOfKey` reads the base order, so this is the reader's position
+         * in the feed the snapshot is about rather than in whatever is on
+         * screen. `writeFeedContinuity` keeps the deeper of the two, so
+         * scrolling back up cannot unfreeze what is below.
+         */
+        ...(tileFamily ? {} : {
+          readDepth: indexOfKey(feedBaseline.keys, key) + 1,
+        }),
       })
     }
     const onScroll = () => {

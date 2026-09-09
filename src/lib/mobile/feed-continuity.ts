@@ -89,10 +89,50 @@ export interface FeedContinuity {
    * Append-only: see `rememberBaseOrder`.
    */
   baseOrder: string[] | null
+  /**
+   * The furthest the reader has actually been, as a count of tiles.
+   *
+   * -- Why the snapshot is no longer the whole feed --------------------------
+   *
+   * `baseOrder` used to hold the entire composed order, and
+   * `reconcileToRemembered` held all of it in place. That kept the promise this
+   * module exists for and cost something it did not need to: material arriving
+   * later could only ever be APPENDED, because everything ahead of the reader
+   * was already frozen. A page of posts fetched at the bottom of a long scroll
+   * therefore landed after every tile in the feed rather than interleaving into
+   * the stretch the reader was about to reach -- which is the one place a
+   * varied feed most needs it.
+   *
+   * The promise was always narrower than the implementation. Nothing the reader
+   * has PASSED may move. Material they have never seen is free to be composed,
+   * because there is nothing on screen to keep still.
+   *
+   * So the snapshot is the read prefix and it grows as they scroll.
+   * `reconcileToRemembered` needs no change at all: it holds what it knows and
+   * puts the rest after, and "the rest" is now a composed tail rather than a
+   * frozen one.
+   *
+   * -- Why a high-water mark and not the live position ----------------------
+   *
+   * A reader who scrolls back up still has tiles below them on screen. Reading
+   * the live position would let those recompose while visible, which is the
+   * same defect in miniature. This only ever rises, within a page lifetime.
+   */
+  readDepth: number
+}
+
+/**
+ * The deeper of two depths, which is the only way `readDepth` is ever set.
+ *
+ * A named function rather than a `Math.max` at each call site, so the
+ * monotonicity is stated once and the next caller cannot forget it.
+ */
+export function deepestRead(remembered: number | null | undefined, seen: number): number {
+  return Math.max(remembered ?? 0, Number.isFinite(seen) ? Math.max(0, seen) : 0)
 }
 
 export function emptyContinuity(): FeedContinuity {
-  return { family: null, position: { baseKey: null, viewKey: null }, baseOrder: null }
+  return { family: null, position: { baseKey: null, viewKey: null }, baseOrder: null, readDepth: 0 }
 }
 
 /**
@@ -131,7 +171,12 @@ export function readFeedContinuity(scopeKey: string | null): FeedContinuity {
  */
 export function writeFeedContinuity(
   scopeKey: string | null,
-  patch: { family?: string | null; position?: Partial<FeedPosition>; baseOrder?: string[] | null },
+  patch: {
+    family?: string | null
+    position?: Partial<FeedPosition>
+    baseOrder?: string[] | null
+    readDepth?: number
+  },
 ): void {
   if (!scopeKey) return
   const current = readFeedContinuity(scopeKey)
@@ -139,6 +184,10 @@ export function writeFeedContinuity(
     family: patch.family !== undefined ? patch.family : current.family,
     position: { ...current.position, ...(patch.position ?? {}) },
     baseOrder: patch.baseOrder !== undefined ? patch.baseOrder : current.baseOrder,
+    // Never rewritten downwards. See `deepestRead`.
+    readDepth: patch.readDepth !== undefined
+      ? deepestRead(current.readDepth, patch.readDepth)
+      : current.readDepth,
   })
 }
 
