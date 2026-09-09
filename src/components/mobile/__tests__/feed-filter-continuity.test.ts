@@ -242,8 +242,26 @@ describe('the base order is a snapshot, not a recomputation', () => {
   })
 
   it('commits the order in an effect, so the memo only reads', () => {
-    expect(dash).toContain('rememberBaseOrder(feedBaseline.remembered, feedBaseline.keys)')
+    expect(dash).toContain('rememberBaseOrder(')
     expect(dash).toContain('writeFeedContinuity(continuityKey, { baseOrder: next })')
+  })
+
+  /**
+   * And it commits the READ PREFIX, not the whole order.
+   *
+   * Remembering every key froze the part of the feed nobody had seen, which
+   * meant anything arriving later could only be appended — a page of posts
+   * fetched at the bottom of a long scroll landed after every tile rather than
+   * interleaving into the stretch about to be reached. Only what the reader
+   * has passed, plus a screen, has to hold still.
+   */
+  it('freezes only what the reader has passed', () => {
+    const at = dash.indexOf('const next = rememberBaseOrder(')
+    expect(at).toBeGreaterThan(0)
+    const call = dash.slice(at, at + 200)
+    expect(call).toContain('feedBaseline.keys.slice(0, frozen)')
+    expect(dash).toContain('FREEZE_LOOKAHEAD')
+    expect(dash).toContain('readFeedContinuity(continuityKey).readDepth')
   })
 })
 
@@ -504,13 +522,34 @@ describe('the base order is committed from a complete feed', () => {
     expect(decl).toBeLessThan(loader)
   })
 
-  /** The briefing axis reaches the production composer. */
+  /**
+   * The briefing axis reaches the production composer.
+   *
+   * Keyed on `composeFeed(input, {` rather than `composeFeed(ordered, {`: the
+   * call moved inside `composeRound`, which takes the ranked list as an
+   * argument so the endless feed can compose a rotation of it per round. The
+   * assertion is about what the call passes, and that is unchanged.
+   */
   it('passes the brief lane to the composer', () => {
-    const at = dash.indexOf('composeFeed(ordered, {')
+    const at = dash.indexOf('composeFeed(input, {')
     expect(at).toBeGreaterThan(0)
     const call = dash.slice(at, dash.indexOf('})', dash.indexOf('scope,', at)))
     expect(call).toContain('briefOf:')
     expect(call).toContain('briefClassFor(')
+  })
+
+  /**
+   * And the round mechanism is the whole pool rather than one source.
+   *
+   * The derived insights used to be the only thing that repeated when the
+   * server ran out, so "endless" meant an endless stream of research prompts.
+   * If `insightEntries` grows a length-by-cycle again, that regression is back.
+   */
+  it('repeats the whole feed rather than one source', () => {
+    expect(dash).toContain('rotateForRound(ordered, round)')
+    const at = dash.indexOf('const insightEntries =')
+    expect(at).toBeGreaterThan(0)
+    expect(dash.slice(at, at + 200)).not.toContain('cycle + 1')
   })
 })
 

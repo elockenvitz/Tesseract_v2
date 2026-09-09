@@ -85,13 +85,30 @@ const MAX_SUBJECT_RUN = 2
 const TOLERANCE = 0.15
 
 /**
- * How far down the tiers a substitute may come from.
+ * ── The tier reach, and why there is no longer a constant here ────────────
  *
- * Two. The tier is the hard semantic partition — "the price has left the
- * framework" against "somebody wrote a thing" — and a news story must never be
- * pulled above a decision however monotonous the decisions get.
+ * There was a `MAX_TIER_REACH = 2`, and its reasoning was that the tier is the
+ * hard semantic partition — "the price has left the framework" against
+ * "somebody wrote a thing" — so a news story must never be pulled above a
+ * decision however monotonous the decisions get.
+ *
+ * The guarantee is right and it is kept. The mechanism was wrong twice over.
+ *
+ * It was redundant: the score bound already refuses a news card at 0.30
+ * against a framework break at 1.00, and refuses it for the honest reason,
+ * which is that it is WORSE rather than that a partition forbade it. Anything
+ * the tier bound stopped, the score bound stopped first.
+ *
+ * And it was expensive. Stated as a partition it also forbade every HARMLESS
+ * swap across the line — a post at 0.505 standing in for an overdue item at
+ * 0.576 is a tier apart and a twentieth of a point apart — and those swaps are
+ * most of the variety a mixed feed has to work with. Manual QA counted seven
+ * consecutive Overdue tiles behind a wall that existed to prevent an inversion
+ * that the score bound was already preventing.
+ *
+ * Tier still decides the ranked order this pass reads, in `compareRanked`,
+ * which is where a semantic partition belongs.
  */
-const MAX_TIER_REACH = 2
 
 /**
  * How far ahead to look for a substitute.
@@ -238,6 +255,50 @@ const VIEWPORT = 6
 const MAX_PER_VIEWPORT = 3
 
 /**
+ * The share of the feed one VISIBLE FAMILY may take, anywhere in it.
+ *
+ * ── Why a share, and why this is the strongest rule in the file ───────────
+ *
+ * Every other constant here is an absolute count inside a fixed window, and
+ * every one of them stops binding after the opening. Manual QA, with all of
+ * them passing: seven consecutive Overdue tiles.
+ *
+ * The reason none of them fired is not that the numbers were wrong. It is that
+ * they were all expressed as a COST, and a cost only wins when the substitution
+ * scan finds a competitor within `TOLERANCE`. The ranked list is sorted by
+ * score and scores come mostly from a per-type constant, so one family occupies
+ * a contiguous block in which — by construction — no competitor is within 0.15
+ * of the head. The trace said `no-competitor` and the run continued. The rules
+ * were structurally unable to bind precisely where the clustering was worst.
+ *
+ * So this one is not a cost that can be outvoted. It is a hard gate, it is
+ * stated as a share rather than a count, and it applies to the whole feed
+ * rather than to an opening:
+ *
+ *   no visible family may take more than two of any ten consecutive cards
+ *
+ * Two of ten is the product requirement stated directly. The reader judges the
+ * feed by scrolling, so the window is what a reader passes through rather than
+ * what fits on one screen, and it runs the length of the feed because a rule
+ * that stopped after the opening is the rule that produced the report.
+ *
+ * ── What a share cap can and cannot promise ───────────────────────────────
+ *
+ * It binds while the pool has the variety to satisfy it. A desk with forty
+ * overdue items and twelve of everything else cannot be shown a feed that is a
+ * fifth overdue for very long, whatever this file does — the rest of the feed
+ * runs out first and the tail goes uniform. That is arithmetic, not a defect,
+ * and it is why the fallback below degrades rather than throws: when nothing
+ * eligible is left, the least repetitive card still wins.
+ *
+ * The VISIBLE family and not the lane, the category or the question. Those
+ * three are what the model thinks a card is; this is what the tile prints, and
+ * repetition is a complaint about what the reader can see.
+ */
+const FAMILY_SHARE_WINDOW = 10
+const MAX_PER_FAMILY_SHARE = 2
+
+/**
  * The briefing window, and how much of it one KIND OF WORK may take.
  *
  * -- Why a fifth axis, and why it is the strongest one ----------------------
@@ -307,6 +368,63 @@ const MAX_PER_BRIEF = 3
  * which stays where it was.
  */
 const SCREEN_TOLERANCE = 0.30
+
+/**
+ * The bar a substitute must clear to break a family that has taken its share.
+ *
+ * ── Why the share rule needs its own, and why it is bracketed ─────────────
+ *
+ * The share cap is the only rule here stated in the reader's own terms, so it
+ * is the one that must actually bind. The pool it has to bind in is stratified
+ * by type: on the pilot-shaped pool the overdue block sits at 0.576 and the
+ * posts and news items that could break it sit at 0.34 to 0.40. That is a gap
+ * of about 0.24, so a bar tighter than that admits nothing and the cap is
+ * decorative — which is exactly how seven consecutive Overdue tiles shipped
+ * with every rule in this file passing.
+ *
+ * It is bounded at the other end by the guarantee it must not break. A
+ * maximal tier-0 framework break at 1.00 must never be interrupted by a
+ * rounding-error crowding card at ~0.34, a distance of about 0.66. Between
+ * those two brackets there is a wide margin and 0.35 sits in it: comfortably
+ * past the stratum gap, comfortably short of the inversion.
+ *
+ * Both brackets are tests rather than prose. See `feed-compose`'s critical
+ * cluster case for the upper one and `feed-scheduler` for the lower.
+ *
+ * It applies ONLY where the share cap is already breached, which is the same
+ * discipline every other escalation in this file answers to: a wider bar is
+ * earned by a rule that has already failed, never offered up front.
+ */
+const SHARE_BREAK_TOLERANCE = 0.35
+
+/**
+ * How close to the top a card must be to be allowed to open the feed instead.
+ *
+ * ── The requirement ───────────────────────────────────────────────────────
+ *
+ * "Importance should generally lead, but I don't want users opening the app
+ * every day and seeing the same thing." Both halves are real and they pull
+ * against each other, so the rule has to say exactly how much freshness may
+ * cost — and the answer is: nothing the model can measure.
+ *
+ * 0.06 is not picked. It is `WEIGHTS.ownership`, the smallest weight in the
+ * priority model and therefore the finest distinction that model claims to be
+ * able to draw. Two cards closer together than that are, by the model's own
+ * account, equally important; choosing between them on freshness gives up no
+ * importance anybody can name. Anything larger would be trading away a
+ * difference the model does assert.
+ *
+ * Two further bounds keep it honest. It applies at the FIRST card only, so it
+ * cannot compound down the feed. And a candidate must share the leader's tier,
+ * so freshness chooses within a semantic band and never across one — a news
+ * item cannot open the feed because a framework break was shown yesterday.
+ *
+ * It never blocks. If every card in the band was led with recently, the
+ * highest-ranked one leads anyway, and the reader gets a repeat rather than a
+ * worse feed. `feed-rotation` supplies the set and expires it after three
+ * days, which is what gives the rotation its period.
+ */
+const LEAD_BAND = 0.06
 
 /**
  * A category may not take more than this many of the opening cards.
@@ -385,6 +503,29 @@ export interface ComposeOptions<T> {
   /** How much of that opening one lane may take. Raise it to switch the cap off. */
   maxPerBrief?: number
   /**
+   * Card ids the reader has recently been LED with.
+   *
+   * Absent or empty, the lead band is off and the first card is exactly what
+   * the ranking says, which is what every other caller and every existing test
+   * expects. Given, it decides between cards the model considers equally
+   * important — and only between those. See `LEAD_BAND`.
+   *
+   * A SET rather than a clock or a seed, so the pass stays a pure function of
+   * its inputs. Freshness is data here, not time.
+   */
+  ledRecently?: ReadonlySet<string>
+  /** How close to the top a card must be to be allowed to open the feed. */
+  leadBand?: number
+  /** The trailing window the family share is measured over. */
+  shareWindow?: number
+  /**
+   * How many of that window one visible family may take.
+   *
+   * Two of ten is the product requirement. Raise it to switch the cap off,
+   * which is how a test measures what the cap is worth.
+   */
+  maxPerFamilyShare?: number
+  /**
    * Whether a critical card in the ranked opening is owed a seat in it.
    *
    * True in production and everywhere else. False exists so a test can measure
@@ -447,11 +588,13 @@ export interface ComposeTraceRow {
   priorityCost: number
   reason:
     | 'head'                 // the ranking's own choice, taken untouched
+    | 'fresh-lead'           // opened the feed because the better card led it last time
     | 'no-competitor'        // head repeated, but nothing was close enough
     | 'question-run'         // pulled up because the head would repeat a question
     | 'family-run'           // pulled up because the head would repeat a family
     | 'subject-run'          // pulled up because the head would repeat a name
     | 'reserved-seat'        // pulled up because the opening owed a critical a seat
+    | 'share-cap'            // pulled up because one family had taken its share
     | 'brief-cap'            // pulled up because one lane had taken the screen
     | 'brief-screen'
     | 'category-cap'         // pulled up because a category had taken the opening
@@ -494,21 +637,28 @@ const comparableTotal = <T>(r: RankedItem<T>): number =>
  * and argued with:
  *
  *   0. the opening has only enough seats left for the protected items
- *   1. this LANE has already taken its share of the first screen (mixed only)
- *   2. a category has already taken its share of the opening   (mixed only)
- *   3. taking this would run a QUESTION past `maxCategoryRun`
- *   4. taking this would run a family past `maxRun`
- *   5. taking this would run a name past `maxSubjectRun`
- *   6. this LANE would take more than half the viewport
- *   7. this CATEGORY would take more than half the viewport
- *   8. this QUESTION would take more than half the viewport
- *   9. this FAMILY would take more than half the viewport
- *  10. this question appeared within the last `categoryWindow`
- *  11. this family appeared within the last `familyWindow`
- *  12. this name appeared within the last `subjectWindow`
+ *   1. this FAMILY has already taken its share of the last `shareWindow`
+ *   2. this LANE has already taken its share of the first screen (mixed only)
+ *   3. a category has already taken its share of the opening   (mixed only)
+ *   4. taking this would run a QUESTION past `maxCategoryRun`
+ *   5. taking this would run a family past `maxRun`
+ *   6. taking this would run a name past `maxSubjectRun`
+ *   7. this LANE would take more than half the viewport
+ *   8. this CATEGORY would take more than half the viewport
+ *   9. this QUESTION would take more than half the viewport
+ *  10. this FAMILY would take more than half the viewport
+ *  11. this question appeared within the last `categoryWindow`
+ *  12. this family appeared within the last `familyWindow`
+ *  13. this name appeared within the last `subjectWindow`
  *
- * The briefing cap first, then hard runs, then screen saturation, then soft
- * recency; and within each band, the coarsest axis first.
+ * The share cap first, then the briefing cap, then hard runs, then screen
+ * saturation, then soft recency; and within each band, the coarsest axis first.
+ *
+ * The share cap outranks everything except a reserved seat because it is the
+ * only rule stated as a proportion of what the reader actually scrolls past,
+ * and it is the only one that runs the whole length of the feed. Every rule
+ * below it stops binding after the opening or measures a single screen, and a
+ * feed composed only of those is the feed that produced the report.
  *
  * The lane cap outranks everything because it is the only rule stated in terms
  * of what the reader is judged to have received: one screen, and what was on
@@ -531,7 +681,7 @@ const comparableTotal = <T>(r: RankedItem<T>): number =>
  */
 type Cost = [
   number, number, number, number, number,
-  number, number, number, number,
+  number, number, number, number, number,
   number, number, number, number,
 ]
 
@@ -553,18 +703,19 @@ const compareCost = (a: Cost, b: Cost): number => {
  */
 const REASON_FOR: Record<number, ComposeTraceRow['reason']> = {
   0: 'reserved-seat',
-  1: 'brief-cap',
-  2: 'category-cap',
-  3: 'question-run',
-  4: 'family-run',
-  5: 'subject-run',
-  6: 'brief-screen',
-  7: 'category-screen',
-  8: 'question-screen',
-  9: 'family-screen',
-  10: 'recent-question',
-  11: 'recent-family',
-  12: 'recent-subject',
+  1: 'share-cap',
+  2: 'brief-cap',
+  3: 'category-cap',
+  4: 'question-run',
+  5: 'family-run',
+  6: 'subject-run',
+  7: 'brief-screen',
+  8: 'category-screen',
+  9: 'question-screen',
+  10: 'family-screen',
+  11: 'recent-question',
+  12: 'recent-family',
+  13: 'recent-subject',
 }
 
 export function composeFeed<T>(
@@ -584,6 +735,10 @@ export function composeFeed<T>(
     subjectWindow = SUBJECT_WINDOW,
     briefWindow = BRIEF_WINDOW,
     maxPerBrief = MAX_PER_BRIEF,
+    shareWindow = FAMILY_SHARE_WINDOW,
+    maxPerFamilyShare = MAX_PER_FAMILY_SHARE,
+    ledRecently,
+    leadBand = LEAD_BAND,
     protectCritical = true,
     viewport = VIEWPORT,
     maxPerViewport = MAX_PER_VIEWPORT,
@@ -609,9 +764,30 @@ export function composeFeed<T>(
    * category cap off.
    */
   const briefRuleOn = scope === 'mixed' && !!briefOf
+  /**
+   * The share cap, off for the same reason the briefing cap is.
+   *
+   * A reader who asked for one family is asking to see that family, and
+   * holding it to two of every ten would be answering a question they did not
+   * put. It stays on for `category`, which is a request for a kind of work and
+   * not for six identical tiles.
+   */
+  const shareRuleOn = scope !== 'type' && maxPerFamilyShare > 0
 
   const rankBefore = new Map<RankedItem<T>, number>()
   ranked.forEach((r, i) => rankBefore.set(r, i + 1))
+
+  /**
+   * Every axis, resolved once per card instead of once per comparison.
+   *
+   * The selection pass asks for a card's family several times per step and the
+   * candidate set below asks for it once more, so an un-memoised `familyOf`
+   * would be called on the order of n^2 times. The resolvers reach into entry
+   * shapes and one of them re-derives a signal type, so this is not free.
+   */
+  const famOf = new Map<RankedItem<T>, string | null>()
+  for (const r of ranked) famOf.set(r, familyOf(r.item))
+  const famKey = (r: RankedItem<T>) => famOf.get(r) ?? null
 
   const pool = [...ranked]
   const out: RankedItem<T>[] = []
@@ -656,15 +832,39 @@ export function composeFeed<T>(
    * the window is loose and yields only at the point where one more unprotected
    * card would cost a critical its place.
    *
-   * Concentration is still bounded: a lane can only reserve as many seats as it
-   * has genuinely critical cards in the ranked opening, and everything below
-   * that line is capped exactly as before.
+   * -- Why the seats are now bounded per FAMILY ----------------------------
+   *
+   * As written, a lane could reserve as many seats as it had criticals, and
+   * the note above claiming that bounded concentration was wrong. Manual QA:
+   * eight critical Overdue cards in the ranked opening reserved six of the ten
+   * seats, produced six consecutive Overdue tiles, and pushed the highest
+   * scoring card in the whole pool from first place to twelfth. Protection
+   * against an inversion had become the cause of one.
+   *
+   * The mistake was granularity. "Did a critical card that earned the opening
+   * get to be in it" is a good question; "how many of one tile may sit
+   * together" is a different one, and `protectedPerLane` answered the second
+   * at LANE granularity -- coarser than what the reader sees, so Overdue,
+   * Needs Review and Coverage Gap pooled their claims into one.
+   *
+   * So a family may claim at most `maxPerFamilyShare` seats, the same two of
+   * ten the share cap allows. Of eight critical Overdue cards, two are owed a
+   * place in the opening and the other six appear further down. Nothing is
+   * dropped; being edged out by others of your own type means arriving later.
+   *
+   * The claim is taken in ranked order, so the two that keep their seats are
+   * the two that earned them.
    */
   const protectedIds = new Set<string>()
   const protectedPerLane = new Map<string, number>()
   if (briefRuleOn && protectCritical) {
+    const claimedPerFamily = new Map<string | null, number>()
     for (const r of ranked.slice(0, briefWindow)) {
       if (r.input.severity !== 'critical') continue
+      const fam = famKey(r)
+      const claimed = claimedPerFamily.get(fam) ?? 0
+      if (shareRuleOn && claimed >= maxPerFamilyShare) continue
+      claimedPerFamily.set(fam, claimed + 1)
       protectedIds.add(r.input.id)
       const lane = briefOf?.(r.item) ?? null
       if (lane) protectedPerLane.set(lane, (protectedPerLane.get(lane) ?? 0) + 1)
@@ -689,6 +889,27 @@ export function composeFeed<T>(
     v != null && seq.slice(Math.max(0, seq.length - n)).includes(v)
 
   /**
+   * Would taking this card push its value past its share of a window?
+   *
+   * The same arithmetic as `saturates` below, with the window and the bound
+   * named by the caller: the share cap measures what a reader SCROLLS past,
+   * which is ten cards, while saturation measures what fits on one screen.
+   *
+   * A null value never exceeds anything, for the same reason it never
+   * saturates: an absent value is not a repetition.
+   */
+  const exceedsShare = (
+    seq: (string | null)[], v: string | null, window: number, max: number,
+  ): boolean => {
+    if (v == null) return false
+    let n = 1
+    for (let i = seq.length - 1; i >= Math.max(0, seq.length - (window - 1)); i--) {
+      if (seq[i] === v) n += 1
+    }
+    return n > max
+  }
+
+  /**
    * Would taking this card make its value more than half of a screen?
    *
    * Counts the value in the last `VIEWPORT - 1` emitted cards and adds this
@@ -706,7 +927,7 @@ export function composeFeed<T>(
   }
 
   const costOf = (r: RankedItem<T>): Cost => {
-    const fam = familyOf(r.item)
+    const fam = famKey(r)
     const sub = subjectOf(r.item)
     const cat = categoryOf?.(r.item) ?? null
     const q = questionOf?.(r.item) ?? null
@@ -720,6 +941,15 @@ export function composeFeed<T>(
      * as it was -- a cap that ran forever would be a quota, which this is not.
      */
     const owed = isProtected(r)
+    /**
+     * The share cap, and the only rule here that runs the whole feed.
+     *
+     * A protected card is exempt, the same way it is exempt from the lane cap:
+     * its seat was reserved and the reservation is already family-bounded to
+     * this same number, so the two cannot disagree.
+     */
+    const shareOver = shareRuleOn && !owed
+      && exceedsShare(familySeq, fam, shareWindow, maxPerFamilyShare) ? 1 : 0
     /**
      * The seats left, against the cards still owed one.
      *
@@ -756,7 +986,8 @@ export function composeFeed<T>(
     const familyRecent = familyRuleOn && seenWithin(familySeq, fam, familyWindow) ? 1 : 0
     const subjectRecent = seenWithin(subjectSeq, sub, subjectWindow) ? 1 : 0
 
-    return [reserved, briefOver, categoryOver, questionOver, familyOver, subjectOver,
+    return [reserved, shareOver, briefOver, categoryOver,
+            questionOver, familyOver, subjectOver,
             briefScreen, categoryScreen, questionScreen, familyScreen,
             questionRecent, familyRecent, subjectRecent]
   }
@@ -781,7 +1012,7 @@ export function composeFeed<T>(
        * tuple is the question run; see the constants for why the ordinary
        * bounds cannot reach across a stratified pool.
        */
-      const breakingQuestionRun = headCost[3] === 1
+      const breakingQuestionRun = headCost[4] === 1
       /**
        * Index 2 is the family RUN, index 5 the softer "seen it recently".
        *
@@ -795,7 +1026,7 @@ export function composeFeed<T>(
        *
        * The tolerance is not widened with either. See `FAMILY_BREAK_LOOKAHEAD`.
        */
-      const breakingFamilyRun = headCost[4] === 1 || headCost[11] === 1
+      const breakingFamilyRun = headCost[5] === 1 || headCost[12] === 1
       /**
        * Saturation earns the wide REACH and never the wide tolerance.
        *
@@ -816,27 +1047,71 @@ export function composeFeed<T>(
        * too much, and the lane cap does not get its own number.
        */
       const breakingScreen =
-        headCost[1] === 1 || headCost[6] === 1 || headCost[7] === 1 || headCost[8] === 1
-      const reach = breakingQuestionRun ? QUESTION_BREAK_LOOKAHEAD
+        headCost[2] === 1 || headCost[7] === 1 || headCost[8] === 1 || headCost[9] === 1
+      /** Index 1 is the share cap, and it earns the widest bar of all. */
+      const breakingShare = headCost[1] === 1
+      const reach = breakingShare ? pool.length
+        : breakingQuestionRun ? QUESTION_BREAK_LOOKAHEAD
         : breakingScreen ? QUESTION_BREAK_LOOKAHEAD
         : breakingFamilyRun ? FAMILY_BREAK_LOOKAHEAD
         : lookahead
-      const slack = breakingQuestionRun ? QUESTION_BREAK_TOLERANCE
+      const slack = breakingShare ? SHARE_BREAK_TOLERANCE
+        : breakingQuestionRun ? QUESTION_BREAK_TOLERANCE
         : breakingScreen ? screenTolerance
         : tolerance
+      /**
+       * Who may compete, and why the candidate set is no longer a window.
+       *
+       * ── What a window could not see ─────────────────────────────────────
+       *
+       * The scan looked at the next `reach` entries of a score-sorted list, and
+       * a score is mostly a per-type constant, so one family occupies a
+       * contiguous stretch of that list. Inside a stretch longer than the reach
+       * every candidate is the same family, the pass found nothing to swap in,
+       * the trace said `no-competitor`, and the run continued. Widening the
+       * reach was tried twice — twelve to forty-eight — and only moved the
+       * length of stretch that defeats it.
+       *
+       * The fix is not a wider window. It is to stop looking at a window: the
+       * FIRST card of every other family is always a candidate, wherever it
+       * sits. That set is at most one per family, about twenty, so the pass
+       * gets cheaper rather than dearer, and it can never fail to see an
+       * alternative that exists.
+       *
+       * The ordinary window is kept alongside it. Reaching deeper INTO a family
+       * is what breaks up a run of one ticker or one question within a single
+       * family, which the heads alone cannot do.
+       */
       const limit = Math.min(pool.length, reach)
-      for (let i = 1; i < limit; i++) {
+      const seenFamilies = new Set<string | null>([famKey(head)])
+      const candidates: number[] = []
+      for (let i = 1; i < pool.length; i++) {
+        const fam = famKey(pool[i])
+        if (i < limit) {
+          candidates.push(i)
+          seenFamilies.add(fam)
+          continue
+        }
+        if (seenFamilies.has(fam)) continue
+        seenFamilies.add(fam)
+        candidates.push(i)
+      }
+      for (const i of candidates) {
         const c = pool[i]
         /**
-         * Competitive, on the two bounds `diversify` established.
+         * Competitive on the score bound alone.
          *
-         * The tier bound is the one that cannot be relaxed: it is what stops
-         * variety reaching past the semantic partition for something merely
-         * different. The score bound is what makes the whole critical-cluster
-         * question answer itself — an alternative that was never close does
-         * not get a vote on whether a strong run continues.
+         * The tier bound that used to sit here is gone. It said a news card
+         * must never interrupt a decision, which is a guarantee worth keeping —
+         * but the score bound already keeps it, and keeps it honestly: a news
+         * card at 0.30 loses to a framework break at 1.00 because it is WORSE,
+         * not because a partition forbade it. Stated as a partition it also
+         * forbade every harmless swap across the line, which is most of the
+         * variety a mixed feed has available to it.
+         *
+         * Tier still decides the ranked order this pass reads. See
+         * `compareRanked`.
          */
-        if (c.priority.tier - head.priority.tier > MAX_TIER_REACH) continue
         if (comparableTotal(c) < headComparable - slack) continue
         competitors += 1
         const cost = costOf(c)
@@ -847,11 +1122,40 @@ export function composeFeed<T>(
       }
     }
 
+    /**
+     * The one slot freshness is allowed to decide.
+     *
+     * Placed after the cost logic and allowed to override it, because at
+     * `out.length === 0` nothing has been emitted yet, so every cost is zero
+     * and there is nothing for it to override. It reads as a special case
+     * because it IS one: the first card is the only position in the feed where
+     * no repetition rule can apply, which is exactly why it was identical
+     * every morning.
+     */
+    let freshLead = false
+    if (out.length === 0 && ledRecently && ledRecently.size > 0) {
+      const best = comparableTotal(pool[0])
+      const tier = pool[0].priority.tier
+      for (let i = 0; i < pool.length; i++) {
+        const c = pool[i]
+        // The band is a prefix: the pool is sorted by tier then by score, so
+        // the first card outside either bound ends the search.
+        if (c.priority.tier !== tier) break
+        if (comparableTotal(c) < best - leadBand) break
+        if (ledRecently.has(c.input.id)) continue
+        // Everything above this card in the band was led with recently, so the
+        // highest-ranked card the reader has NOT just been shown opens instead.
+        freshLead = i > 0
+        index = i
+        break
+      }
+    }
+
     const chosen = pool.splice(index, 1)[0]
     out.push(chosen)
 
     if (trace) {
-      const bindingDim = index === 0
+      const bindingDim = index === 0 || freshLead
         ? -1
         : chosenCost.findIndex((v, i) => v < headCost[i])
       rows.push({
@@ -868,13 +1172,15 @@ export function composeFeed<T>(
         competitors,
         headComparable,
         priorityCost: comparableTotal(chosen) - headComparable,
-        reason: index === 0
-          ? (costIsZero(headCost) ? 'head' : 'no-competitor')
-          : REASON_FOR[bindingDim] ?? 'head',
+        reason: freshLead
+          ? 'fresh-lead'
+          : index === 0
+            ? (costIsZero(headCost) ? 'head' : 'no-competitor')
+            : REASON_FOR[bindingDim] ?? 'head',
       })
     }
 
-    const fam = familyOf(chosen.item)
+    const fam = famKey(chosen)
     const sub = subjectOf(chosen.item)
     const chosenCat = categoryOf?.(chosen.item) ?? null
     questionSeq.push(questionOf?.(chosen.item) ?? null)

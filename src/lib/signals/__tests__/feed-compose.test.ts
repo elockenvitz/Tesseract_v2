@@ -253,15 +253,40 @@ describe('the pass changes order and nothing else', () => {
     expect(ids(compose([...pool]))).toEqual(ids(compose(pool)))
   })
 
-  it('does not reach past two tiers for a substitute', () => {
-    // The guarantee that survives everything: a news story cannot interrupt a
-    // decision, however monotonous the decisions get.
+  /**
+   * The guarantee that survives everything: a news story cannot interrupt a
+   * decision, however monotonous the decisions get.
+   *
+   * ── Why this is no longer stated in tiers ───────────────────────────────
+   *
+   * It asserted that no substitute ever came from more than two tiers below the
+   * card it displaced, because `MAX_TIER_REACH` enforced exactly that. The
+   * constant is gone and the guarantee is not.
+   *
+   * The tier bound was doing two jobs and only one of them was wanted. It
+   * stopped a weak card interrupting a strong one, which is right — and the
+   * score bound already does that, and does it for the honest reason: a news
+   * item at 0.30 loses to a framework break at 1.00 because it is WORSE, not
+   * because of which side of a partition it sits on. It also forbade every
+   * harmless swap across a tier line, and a post at 0.505 standing in for an
+   * overdue item at 0.576 is one tier and one twentieth of a point apart.
+   * Forbidding those is most of what produced seven consecutive Overdue tiles.
+   *
+   * So the claim is restated in the terms that actually carry it: nothing is
+   * ever displaced by more than the widest bar in the file, whatever tier it
+   * came from. That is a stronger statement than the tier rule, because it
+   * bounds the SIZE of the inversion rather than its shape.
+   */
+  it('never displaces a card by more than the widest bar', () => {
     const out = compose(pool)
-    for (let i = 1; i < out.trace.length; i++) {
-      const prev = out.order[i - 1].priority.tier
-      const here = out.order[i].priority.tier
-      if (here < prev) expect(prev - here).toBeLessThanOrEqual(2)
+    for (const row of out.trace) {
+      expect(row.priorityCost).toBeGreaterThan(-0.36)
     }
+  })
+
+  /** And the head of the ranking is still the head of the feed. */
+  it('still opens with the top-ranked card', () => {
+    expect(compose(pool).trace[0].rankBefore).toBe(1)
   })
 })
 

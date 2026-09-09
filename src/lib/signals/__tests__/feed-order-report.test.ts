@@ -246,10 +246,13 @@ first 20: families ${famsBefore} → ${famsAfter}`
     /**
      * Bounded by the widest bar any rule may use, by construction.
      *
-     * 0.15 for the ordinary swaps, and 0.30 when the swap is breaking a screen
-     * more than half filled by one kind of work — see `SCREEN_TOLERANCE`, where
-     * the sweep that chose 0.30 is recorded. Measured here at 0.191.
+     * 0.15 for the ordinary swaps, 0.30 when the swap is breaking a screen more
+     * than half filled by one kind of work, and 0.35 when it is breaking a
+     * family that has taken its share of the last ten cards. Each bar is wider
+     * than the last because each rule has to reach further out of a stratum to
+     * bind at all; see `SHARE_BREAK_TOLERANCE`, where the brackets on the
+     * widest one are recorded. Measured here at 0.329.
      */
-    expect(Math.max(...costs)).toBeLessThanOrEqual(0.30)
+    expect(Math.max(...costs)).toBeLessThanOrEqual(0.35)
   })
 })

@@ -4,6 +4,7 @@ import {
   DAY_MS, MATERIAL_DEVIATION_PCT, SEVERE_DEVIATION_PCT, SEVERELY_OVERDUE_DAYS,
 } from './thresholds'
 import { acknowledgmentFor, judgmentApplies, type AcknowledgmentState, type JudgmentRecord } from './judgment-policy'
+import { deskMateriality, type DeskExposure } from './desk-exposure'
 
 /**
  * Which card the reader should meet first.
@@ -180,6 +181,22 @@ const TIER: Record<SignalType, { tier: PriorityTier; base: number }> = {
 /** Anything not in the table. Ranks last within tier 4 rather than crashing. */
 const UNTIERED = { tier: 4 as PriorityTier, base: 0.1 }
 
+/**
+ * A type's floor, for callers that want to LIFT it rather than replace it.
+ *
+ * `PriorityInput.base` overrides the table outright, which is right for a card
+ * that knows its own strength from end to end — a research framing does. It is
+ * wrong for a card whose magnitude is a modifier on its kind: a project three
+ * weeks late is still workflow, it is just the loudest workflow there is.
+ *
+ * Exposing the floor lets those callers say `baseFor(type) + lift` and keep the
+ * type's place in the ordering, instead of inventing an absolute number that
+ * has to be kept in sync with this table by hand.
+ */
+export function baseFor(type: SignalType): number {
+  return (TIER[type] ?? UNTIERED).base
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Components
 // ─────────────────────────────────────────────────────────────────────────────
@@ -281,6 +298,19 @@ export interface PriorityInput {
   weightPct?: number | null
   /** Whether the asset is in the book at all. */
   held?: boolean
+  /**
+   * What else the book says about this name, beyond its size.
+   *
+   * Optional, and absent it changes nothing: materiality falls back to exactly
+   * the weight band it has always used. Present, it lets breadth across books
+   * and weight against the benchmark raise a name that a size band alone calls
+   * noise — see `desk-exposure`, which carries the argument and the thresholds.
+   *
+   * Kept as a nested object rather than three more top-level fields because
+   * they are one fact about one asset and every branch that can answer one can
+   * answer all three from the same lookup.
+   */
+  exposure?: DeskExposure | null
   /**
    * Deviation from the recorded framework, as a percentage, already normalised
    * by the caller to mean the same thing within this signal type.
@@ -464,7 +494,20 @@ export function priorityFor(input: PriorityInput, now: number): Priority {
 
   const components: PriorityComponents = {
     base: base * WEIGHTS.base,
-    materiality: materialityBand(input.weightPct, held) * WEIGHTS.materiality,
+    /**
+     * The strongest claim the book makes for this name, not only its size.
+     *
+     * `deskMateriality` is `materialityBand` plus two more bands that only ever
+     * raise it, and it collapses to `materialityBand` exactly when no exposure
+     * is supplied — which is every caller that has not been taught to look one
+     * up. So this line is a widening rather than a change: no existing score
+     * moves, and a name the desk holds thinly across eight books or two points
+     * away from its index stops being scored as noise.
+     */
+    materiality: deskMateriality(
+      materialityBand(input.exposure?.weightPct ?? input.weightPct, held),
+      input.exposure,
+    ) * WEIGHTS.materiality,
     deviation: deviationBand(input.deviationPct) * WEIGHTS.deviation,
     urgency: SEVERITY_URGENCY[input.severity] * WEIGHTS.urgency,
     // Coverage, graded across the span this component always had.

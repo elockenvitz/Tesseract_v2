@@ -7,13 +7,14 @@ import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
 import { markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
+import { rotateForRound } from '../../lib/mobile/feed-rounds'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { useAttention } from '../../hooks/useAttention'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
 import {
-  anchorKeyAt, clearFeedContinuity, deriveFeedView, feedScopeKey,
+  anchorKeyAt, clearFeedContinuity, deepestRead, deriveFeedView, feedScopeKey, indexOfKey,
   nearestRememberedKey, readFeedContinuity, reconcileToRemembered, rememberBaseOrder,
   resolveAnchorIndex, writeFeedContinuity,
 } from '../../lib/mobile/feed-continuity'
@@ -122,13 +123,15 @@ import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import {
   claimedSubjects, coverageDuplicateAssets, suppressCoveredAttention, suppressCoveredInsights,
 } from '../../lib/signals/feed-dedupe'
-import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import { baseFor, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
 import {
   insightPanePlan, IDEA_POST_PANE_MIN_BODY,
 } from '../../lib/signals/pane-plan'
 import { tileRequirementFor } from '../../lib/mobile/tile-requirement'
 import { readerQuestionFor } from '../../lib/signals/reader-question'
 import { briefClassFor } from '../../lib/signals/brief-class'
+import { attentionBase } from '../../lib/signals/attention-strength'
+import type { DeskExposure } from '../../lib/signals/desk-exposure'
 import type { TileContainer } from '../../lib/signals/tile-geometry'
 import {
   composeFeed, type ComposeScope, type ComposeTraceRow,
@@ -195,6 +198,56 @@ import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
  * today's feed goes — must settle rather than spin.
  */
 const SETTLE_FRAMES = 40
+
+/**
+ * How many of the composed feed's opening cards are recorded as having LED it.
+ *
+ * Three, and small on purpose. This record exists for the composer's lead band,
+ * which decides one slot, so it is a record of what opened the feed rather than
+ * of what was seen.
+ *
+ * The arithmetic that fixes the number: `feed-rotation` keeps `MAX_TRACKED`
+ * 300 entries and expires them after three days. At three per open, a reader
+ * opening ten times a day accumulates about ninety inside that window, well
+ * clear of eviction, so a card that led on Monday is still remembered on
+ * Wednesday and the rotation has a real period. Marking a screenful instead
+ * would fill the map in two days and evict the record before the expiry could
+ * mean anything.
+ */
+const LEAD_MARK_COUNT = 3
+
+/**
+ * How far back from the end of the feed variety is measured.
+ *
+ * Twenty cards, which at a viewport of six is a little over three phone
+ * screens — roughly what one flick covers. A fetch started when the reader is
+ * that far from the thin part lands before they reach it.
+ */
+const VARIETY_RUNWAY = 20
+
+/**
+ * How few distinct families at the tail counts as running out.
+ *
+ * Three, and borrowed rather than invented: `feed-variety` already asserts
+ * that an average screen shows at least three distinct families, so falling
+ * below it at the tail is the same measurement saying the pool is spent.
+ */
+const MIN_TAIL_FAMILIES = 3
+
+/**
+ * How far past the reader the feed is held still.
+ *
+ * The read depth alone is not enough. A tile one below the fold is partly on
+ * screen and about to be scrolled to, and letting it recompose between the
+ * reader deciding to swipe and the swipe landing is the reordering this whole
+ * module exists to prevent, at the one moment it would be most obvious.
+ *
+ * Ten, which is about a screen and a half at a viewport of six, so the tile
+ * under the thumb and the one after it are settled before the reader can reach
+ * them. Everything past it is material they have never seen, where there is
+ * nothing to keep still and composing is strictly better.
+ */
+const FREEZE_LOOKAHEAD = 10
 
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
@@ -1737,6 +1790,44 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const coverageIndex = useCoverageIndex()
 
   /**
+   * What the book says about one name, for the ranker.
+   *
+   * ── Why this exists and why it is one lookup ──────────────────────────────
+   *
+   * The ranking model asks how much a card matters and had one answer for it:
+   * the position's weight in its heaviest book. A desk has three, and the other
+   * two were computed, stored and never read — a name held in eight books is
+   * the firm's view rather than one PM's, and a two percent position against a
+   * five percent index weight is a three point UNDERWEIGHT, which a size band
+   * cannot see at all.
+   *
+   * `lenses.weightIndex` already holds all three, keyed by asset, sorted
+   * heaviest book first, built once inside the query. So this is a `Map.get`
+   * per card with no scan and no allocation. `frameworkCapitalFor`, which two
+   * branches already call, copies and re-sorts the same rows on every call to
+   * answer less.
+   *
+   * Null when the name is not in the book, which the model reads as "not
+   * known" rather than as zero. That distinction is load-bearing:
+   * `benchmarkPct` null means the book has no benchmark file, while 0 means the
+   * file exists and does not list the name, and only the second can produce an
+   * active weight.
+   */
+  const exposureFor = useCallback((assetId: string | null | undefined): DeskExposure | null => {
+    if (!assetId) return null
+    const rows = lenses?.weightIndex?.get(assetId)
+    if (!rows?.length) return null
+    // Heaviest first, by construction — see `currentBook`. No sort here.
+    const top = rows[0]
+    return {
+      weightPct: top.portfolioPct,
+      benchmarkPct: top.benchmarkPct,
+      activePct: top.activePct ?? null,
+      bookCount: rows.length,
+    }
+  }, [lenses?.weightIndex])
+
+  /**
    * The tile engine, at its only two seams.
    *
    * ── What this does and, more importantly, what it cannot do ────────────
@@ -1994,6 +2085,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       ...i,
       judgment: judgmentFor(judgmentType, entityId),
       /**
+       * What the book says about the name, on every branch at once.
+       *
+       * Threaded here rather than added to twelve call sites, for the same
+       * reason `coverage` below it is: every branch already routes its entity
+       * id through this function, so a branch cannot answer the coverage
+       * question and forget the exposure one. A branch that has no asset —
+       * a post, a market template with no match — passes null and the model
+       * falls back to the weight band exactly as before.
+       *
+       * A branch that already knows a better weight than the book's heaviest
+       * row keeps it: `i.weightPct` is not overwritten, and
+       * `deskMateriality` takes the strongest claim of the three.
+       */
+      exposure: exposureFor(entityId),
+      /**
        * The coverage seam, finally populated.
        *
        * `PriorityInput.owned` carried a comment since it was written saying it
@@ -2244,6 +2350,34 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           overdueDays: a.due_at
             ? Math.floor((Date.now() - new Date(a.due_at).getTime()) / DAY_MS)
             : null,
+          /**
+           * The magnitude, from the score the attention system already computed.
+           *
+           * ── What was being thrown away ──────────────────────────────────
+           *
+           * Everything above this line is a category: which type, which
+           * severity band, whether it is overdue at all. None of it says HOW
+           * MUCH, and for a workflow card the ranker has nothing else to go on
+           * — `weightPct` and `deviationPct` are null, so its two largest
+           * components are inert and the per-type constant is the whole score.
+           *
+           * Measured: eight overdue projects, one a day late and one
+           * forty-six days late, all scoring exactly 0.576. They formed a
+           * block no composition rule could break into, and inside it the
+           * order fell through every tie-break to a SHA-256 digest.
+           *
+           * `useAttention` has computed a real per-item score all along — ten
+           * points per day overdue, bonuses for ownership, decisions and
+           * blockers, a staleness penalty — and writes it onto this very
+           * object. The sections are already sorted by it. The feed simply
+           * never read it.
+           *
+           * `attentionBase` lifts the type's own floor by it rather than
+           * replacing it, and saturates, because the overdue term is unbounded
+           * and a project a hundred days late must not outrank a decision.
+           * See `attention-strength`, which carries both numbers and why.
+           */
+          base: attentionBase(type, a.score, a.score_breakdown) ?? undefined,
         }, a.context?.asset_id)
       }
 
@@ -2255,10 +2389,42 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // its own builder — so it is named here rather than falling to news.
           type: signalTypeForTemplate(c.kind),
           severity: c.tone === 'negative' ? 'attention' : 'informational',
-          occurredAt: c.occurredAt ?? null,
-          weightPct: c.weightPct ?? null,
-          held: !!c.heldIn?.length,
-          deviationPct: null,
+          /**
+           * `eventDate`, which is the field the card actually has.
+           *
+           * This read `c.occurredAt`, `c.weightPct` and `c.heldIn` — and
+           * `TemplateCard` declares none of the three. So every market card
+           * ever ranked passed `occurredAt: null`, which switches `recencyBoost`
+           * off entirely: a print from this morning and one from three weeks
+           * ago scored the same, on the one card family whose whole claim is
+           * that something just happened.
+           *
+           * The weight and the holding come from the book now, through
+           * `exposure` on the entity id below, which is where every other
+           * branch gets them.
+           */
+          occurredAt: c.eventDate ?? null,
+          weightPct: null,
+          held: false,
+          /**
+           * The move, on the one card kind that measures one.
+           *
+           * `unusualMovers` computes `score` as a MAD-sigma multiple of the
+           * day's cross-section — how far this name moved relative to how far
+           * everything else did — and the number reached the interleaver, which
+           * used it to order market cards among themselves, and then died.
+           * `deviationBand` is exactly the component it belongs in.
+           *
+           * Rescaled from sigmas to the percentage points the band speaks: the
+           * filter admits a card at 1.5 sigma and `MATERIAL_DEVIATION_PCT` is
+           * 15, so ten points a sigma puts the weakest admitted mover at the
+           * material band and a 3-sigma move at the severe one. Only for this
+           * kind: an earnings card's score is a day count and means nothing on
+           * this axis.
+           */
+          deviationPct: c.kind === 'unusual_move' && Number.isFinite(c.score)
+            ? c.score * 10
+            : null,
         }, c.assetId)
       }
 
@@ -2281,13 +2447,63 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           primarySymbol: n?.primarySymbol, symbols: n?.symbols,
         })?.symbol ?? null
         const linkedId = chartSym ? assetBySymbol.get(chartSym)?.id ?? null : null
+        /**
+         * Whether the desk owns the name, and how much of it.
+         *
+         * ── What was pinned off ─────────────────────────────────────────────
+         *
+         * This branch passed `weightPct: null, held: false` for every story
+         * ever ranked. `materialityBand` reads null-and-unheld as 0.15, its
+         * FLOOR — so a story about a ten percent position and a story about a
+         * name nobody here has heard of were ranked identically, at the worst
+         * band the model has. News is already the second-lowest base in the
+         * table; this held it there whatever it was about.
+         *
+         * The book is the same one every other branch reads, and the asset was
+         * already resolved on the line above for the chart. Nothing new is
+         * fetched and nothing is invented where the book is silent: an unheld
+         * name still passes null, which is its own band and not the bottom one.
+         *
+         * This is ranking only. What the CARD says about the position is a
+         * separate seam and is still starved at the builder call site.
+         */
+        const newsPosition = linkedId
+          ? frameworkCapitalFor(lenses?.book ?? null, linkedId)
+          : null
         return withJudgment({
           id: String(n?.id ?? n?.url ?? 'news'),
           type: 'news',
-          severity: 'informational',
+          /**
+           * A story about a position the desk holds is not the same news as a
+           * story about a name it does not. `buildNewsCard` has graded exactly
+           * this since it was written and the ranker discarded the answer.
+           */
+          severity: newsPosition != null ? 'attention' : 'informational',
           occurredAt: n?.publishedAt ?? n?.published_at ?? null,
-          weightPct: null,
-          held: false,
+          weightPct: newsPosition?.weightPct ?? null,
+          held: newsPosition != null,
+          /**
+           * How much this story is about the name it was filed under.
+           *
+           * The provider sends a relevance in 0..1 and nothing downstream has
+           * ever read it — the edge function sorts on it once and drops it, and
+           * it is not even a field on the builder's input type. A tagged mention
+           * in a sector round-up and a story whose subject IS the company arrive
+           * here indistinguishable.
+           *
+           * Applied as a lift on the type's floor, the same shape and for the
+           * same reason as the attention magnitude beside it: a relevant story
+           * is still news and must not become a decision.
+           *
+           * One caveat, recorded rather than assumed. Of the four providers
+           * behind `market-news` only Alpha Vantage supplies this, and that
+           * function's own header records its key sitting unset — so the field
+           * is absent more often than not, and absent must mean "unchanged",
+           * which is what the null does.
+           */
+          base: typeof n?.relevanceScore === 'number' && Number.isFinite(n.relevanceScore)
+            ? Math.min(baseFor('news') + Math.min(Math.max(n.relevanceScore, 0), 1) * 0.10, 1)
+            : undefined,
         }, linkedId ?? n?.primarySymbol ?? 'market')
       }
 
@@ -2332,7 +2548,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           held: false,
         }, e.signal?.entity?.id)
     }
-  }, [dispositions, assetBySymbol, coverageIndex])
+    /**
+     * `lenses?.book` and `exposureFor` belong here, and their absence was a
+     * live staleness bug.
+     *
+     * The body has closed over `lenses?.book` since the scenario branch was
+     * written — `frameworkCapitalFor` reads it — while the dependency list
+     * named only three unrelated things. It was masked because `baseFeedEntries`
+     * lists `lenses` in ITS deps, so the memo re-ran when the book landed; but
+     * it re-ran calling a `rankInputFor` still closed over the previous book,
+     * so the first ranked pass after the holdings resolved used stale weights.
+     *
+     * `rankInputFor` is deliberately NOT in `baseFeedEntries`' deps — it also
+     * closes over `dispositions`, and re-ranking on every judgment would pull
+     * the feed out from under a reader mid-scroll. So the fix is here, where it
+     * touches the book and not the judgments.
+     */
+  }, [dispositions, assetBySymbol, coverageIndex, exposureFor, lenses?.book])
 
   /**
    * Symbol -> the desk's actual position, for surfaces that only know a ticker.
@@ -2563,15 +2795,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       signal: sig,
     }))
 
-    // Cycle 0 is the first pass; each additional cycle re-presents the derived
-    // insights further down the book, so scrolling keeps yielding real
-    // observations about real positions rather than running out.
-    const insightEntries = Array.from({ length: cycle + 1 }).flatMap((_, round) =>
-      derivedInsights.map((ins, idx) => ({
+    /**
+     * One round's worth, like every other source.
+     *
+     * This used to be `Array.from({ length: cycle + 1 })` — the derived
+     * insights were the ONLY source that repeated when the server ran out, so
+     * an endless scroll produced an endless stream of research prompts with
+     * the rest of the product absent from it. Rounds are the whole pool's job
+     * now and are applied once, after composition; see `rounds` below.
+     *
+     * `round` stays on the entry at 0. It is read by the card copy and by the
+     * entry key, and removing it would be a rename in three files for no gain.
+     */
+    const insightEntries = derivedInsights.map((ins, idx) => ({
         kind: 'insight' as const,
         score: derivedInsights.length - idx,
         insight: ins,
-        round,
+        round: 0,
         /**
          * The capital stamp, on the ENTRY.
          *
@@ -2590,7 +2830,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           lenses?.book ?? null, ins.assetId, ins.issue?.framing,
         ),
       }))
-    )
 
     // News is the only source that brings genuinely new material between
     // visits — everything else is the book restated. Ranked on the provider's
@@ -2973,9 +3212,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * owns the sequence and already caps a framing run at two. Running both
      * would mean two rules reordering one list against each other.
      */
-    const composed = researchScoped
-      ? { order: ordered, trace: [] as ComposeTraceRow[] }
-      : composeFeed(ordered, {
+    /**
+     * Compose one round, so the feed can compose several.
+     *
+     * Lifted out of the single call it used to be for the endless feed below.
+     * Everything inside it is unchanged; the only new thing is that the ranked
+     * list it reads is a parameter rather than always `ordered`.
+     */
+    const composeRound = (input: typeof ordered) => researchScoped
+      ? { order: input, trace: [] as ComposeTraceRow[] }
+      : composeFeed(input, {
           familyOf: (e: any) => familyOf(e),
           subjectOf: (e: any) => e?.subject ?? null,
           categoryOf: (e: any) => categoryOf(e),
@@ -3001,10 +3247,64 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
            */
           briefOf: (e: any) =>
             briefClassFor(rankInputFor(e)?.type ?? signalTypeOf(e)),
+          /**
+           * What led the feed recently, so it does not lead it again today.
+           *
+           * ── The requirement ─────────────────────────────────────────────
+           *
+           * Importance should generally lead, and a reader opening the app
+           * every morning should not meet the same tile every morning. The
+           * composer resolves that at one slot only and within a band the
+           * priority model calls indistinguishable — see `LEAD_BAND`.
+           *
+           * `seenAtMount` is the map `feed-rotation` already keeps, snapshotted
+           * once per mount by `useReaderSnapshots`. Reading the snapshot rather
+           * than the live map is what keeps the composer a pure function and
+           * stops the feed reordering under the reader the moment the marking
+           * effect below fires.
+           *
+           * The set, not `rotateBySeen`. That helper puts every seen card
+           * behind every unseen one, which is right for a list of posts and
+           * would flatten importance across a mixed feed.
+           */
+          ledRecently: new Set(Object.keys(seenAtMount ?? {})),
           scope,
           trace: import.meta.env.DEV,
         })
-    const finalOrder = composed.order
+
+    /**
+     * The feed has no bottom.
+     *
+     * ── What "endless" used to mean ─────────────────────────────────────────
+     *
+     * One source repeated. When the server ran out of posts the observer
+     * incremented `cycle`, and `cycle` re-emitted the derived insights and
+     * nothing else — so scrolling past the end of the real feed produced an
+     * endless stream of research prompts with the rest of the product missing
+     * from it.
+     *
+     * Now every round is the whole pool. A reader who reaches the end meets
+     * the feed again rather than a fragment of it, and `feedEntryKeys` gives
+     * the second copy of a card its own key, so continuity, filtering and the
+     * renderer all treat it as its own tile.
+     *
+     * ── Why each round is composed rather than repeated ────────────────────
+     *
+     * "The order could and should be different if duplicates are showing." A
+     * replay reads as a loop. So each round composes from a rotation of the
+     * ranked list — see `feed-rounds` — which changes what the greedy pass
+     * sees at every step and therefore which substitutions win, all the way
+     * down. Same cards, genuinely different sequence.
+     *
+     * Round 0 is always the ranked order untouched, so the first pass is the
+     * honest one and nothing about repetition can reach the opening.
+     */
+    const composed = composeRound(ordered)
+    const rounds = [composed]
+    for (let round = 1; round <= cycle; round++) {
+      rounds.push(composeRound(rotateForRound(ordered, round)))
+    }
+    const finalOrder = rounds.flatMap(r => r.order)
 
     // Recorded before the filter is applied downstream — see `unfilteredRef`.
     if (!kindFilter && !feedFilter.kinds.length) {
@@ -3126,7 +3426,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      *
      * Pinned by `does not re-rank when only the filter changes`.
      */
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, lenses, scenarioCards, coverageSignature(coverageIndex), absorbedTargets, composedTargetKeyByAsset])
+    /**
+     * `seenAtMount` is safe to depend on and `visibleItems` already does.
+     *
+     * It is a snapshot taken once per mount, so it cannot change mid-visit and
+     * cannot pull the feed out from under a reader. Adding it here is what
+     * lets the lead band see yesterday's leader on the first pass rather than
+     * on some later recompute.
+     */
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, seenAtMount, lenses, scenarioCards, coverageSignature(coverageIndex), absorbedTargets, composedTargetKeyByAsset])
 
   /**
    * The base order this page lifetime is committed to.
@@ -3157,6 +3465,30 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * suppression or a refetch removed does disappear, and new findings do
    * arrive; they simply arrive after everything already on screen.
    */
+  /**
+   * How much variety is left at the end of the feed.
+   *
+   * ── Why this is a fetch trigger and not a display concern ─────────────────
+   *
+   * The share cap holds a family to a fifth of the feed only while the pool has
+   * something else to show. Once the small families are spent the tail is
+   * whatever remains, however it is sorted — that is arithmetic, not a weak
+   * rule, and the only fix is more material.
+   *
+   * So the last stretch of the composed order is measured, and a thin one
+   * widens the prefetch margin below. Measured on the last three screens
+   * because that is roughly a flick: a fetch started when the reader is that
+   * far out lands before they reach it.
+   *
+   * Distinct families rather than a count of cards. Twenty tiles of one family
+   * is exactly the case this exists to catch, and a length check would call it
+   * healthy.
+   */
+  const tailVariety = useMemo(() => {
+    const tail = baseFeedEntries.slice(-VARIETY_RUNWAY)
+    return new Set(tail.map(e => familyOf(e as any) ?? 'unknown')).size
+  }, [baseFeedEntries])
+
   const feedBaseline = useMemo(() => {
     const keys = feedEntryKeys(baseFeedEntries)
     const paired = baseFeedEntries.map((item, i) => ({ key: keys[i], item }))
@@ -3198,10 +3530,70 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * order is the real one, and THAT is what gets remembered.
      */
     if (composing) return
-    const next = rememberBaseOrder(feedBaseline.remembered, feedBaseline.keys)
+    /**
+     * Only what the reader has passed is frozen.
+     *
+     * ── What committing the whole order cost ────────────────────────────────
+     *
+     * This remembered every key the composer produced, and
+     * `reconcileToRemembered` then held all of them in place. Correct for the
+     * promise — nothing moves under the reader — and far wider than the promise
+     * needs, because it also froze the part of the feed nobody has seen. The
+     * consequence is that anything arriving afterwards can only be APPENDED: a
+     * page of posts fetched at the bottom of a long scroll lands after every
+     * tile in the feed instead of interleaving into the stretch about to be
+     * reached, which is exactly where variety is thinnest.
+     *
+     * The read depth plus a screen is what actually has to hold still. Below
+     * that the composer governs, so new material takes its place on merit.
+     */
+    const frozen = deepestRead(readFeedContinuity(continuityKey).readDepth, 0)
+      + FREEZE_LOOKAHEAD
+    const next = rememberBaseOrder(
+      feedBaseline.remembered, feedBaseline.keys.slice(0, frozen),
+    )
     if (next.length === (feedBaseline.remembered?.length ?? -1)) return
     writeFeedContinuity(continuityKey, { baseOrder: next })
   }, [continuityKey, feedBaseline, composing])
+
+  /**
+   * Record what LED the feed, so tomorrow it leads with something else.
+   *
+   * ── Why the existing call was not enough ──────────────────────────────────
+   *
+   * `markSeen` is called above on `visibleItems.slice(0, 10)` — the top ten
+   * IDEAS, keyed by post id. That is the right record for `rotateBySeen`, which
+   * rotates the posts pipeline, and it is the wrong one for the lead band:
+   * nothing that is not a post has ever been marked, so an Overdue tile or a
+   * framework break could lead the feed every single morning and the map would
+   * never know.
+   *
+   * This marks the composed feed's own opening, keyed the way the composer
+   * keys it. Both calls write the same map deliberately: for a post the two ids
+   * are the same string, and a trade idea that led the feed genuinely has been
+   * shown, so demoting it in the posts rotation too is correct rather than a
+   * collision.
+   *
+   * Three, not ten. This records what led, and the band only decides slot zero.
+   * Marking a screenful would fill `MAX_TRACKED` inside two days and evict the
+   * record before the three-day expiry could give the rotation its period.
+   *
+   * Gated on `composing` for the same reason the commit above is: a feed still
+   * arriving has no real leader, and marking a partial one would put the wrong
+   * card beyond reach for three days.
+   */
+  useEffect(() => {
+    if (!userId || composing || !feedBaseline.entries.length) return
+    const ids = feedBaseline.entries
+      .slice(0, LEAD_MARK_COUNT)
+      .map(e => rankInputFor(e)?.id)
+      .filter((id): id is string => !!id)
+    if (!ids.length) return
+    // The same 1.5s the posts call waits, for the same reason: it records that
+    // the reader actually arrived, not that a render happened.
+    const timer = setTimeout(() => markSeen(userId, ids), 1500)
+    return () => clearTimeout(timer)
+  }, [userId, composing, feedBaseline, rankInputFor])
 
   /**
    * What the reader sees: the base order, with rows hidden.
@@ -3641,17 +4033,40 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         if (!entries[0].isIntersecting) return
         if (hasNextPage && !isFetchingNextPage) {
           fetchNextPage()
-        } else if (derivedInsights.length > 0) {
-          // Server exhausted — keep the scroll alive with another pass over
-          // the book rather than dead-ending.
+        } else if (baseFeedEntries.length > 0) {
+          /**
+           * Server exhausted, so the feed starts again rather than stopping.
+           *
+           * This was gated on `derivedInsights.length`, because the insights
+           * were the only source that repeated. They are not any more — a round
+           * is the whole pool — so the gate is now simply "is there a feed at
+           * all", and a desk with no research prompts still gets an endless
+           * one.
+           */
           setCycle(c => c + 1)
         }
       },
-      { rootMargin: '400px' }
+      {
+        /**
+         * Reach further ahead when the feed is about to run out of variety.
+         *
+         * A share cap can only hold a family to a fifth of the feed while the
+         * pool has something else to show. Once the small families are spent
+         * the tail is whatever is left, and no ordering rule can help — the
+         * only fix is more material, fetched before the reader arrives rather
+         * than when they hit the bottom.
+         *
+         * So the margin is a function of what is left to interleave against.
+         * Four hundred pixels is about one snap slot of warning, which is
+         * enough when the next page is a nicety; sixteen hundred is four, which
+         * is roughly a flick, and that is what a thin tail needs.
+         */
+        rootMargin: tailVariety < MIN_TAIL_FAMILIES ? '1600px' : '400px',
+      }
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, derivedInsights.length])
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, baseFeedEntries.length, tailVariety])
 
   // Restore once, after the entries that make up the remembered offset exist.
   // Attempting it before render leaves scrollTop clamped to zero.
@@ -3786,6 +4201,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       if (!key) return
       writeFeedContinuity(continuityKey, {
         position: tileFamily ? { viewKey: key } : { baseKey: key, viewKey: key },
+        /**
+         * How deep the reader has been, which is what may not move.
+         *
+         * Only recorded on the unfiltered feed. Depth inside a filtered view is
+         * a depth into a different list, and freezing the base by it would
+         * freeze tiles the reader has never met.
+         *
+         * `indexOfKey` reads the base order, so this is the reader's position
+         * in the feed the snapshot is about rather than in whatever is on
+         * screen. `writeFeedContinuity` keeps the deeper of the two, so
+         * scrolling back up cannot unfreeze what is below.
+         */
+        ...(tileFamily ? {} : {
+          readDepth: indexOfKey(feedBaseline.keys, key) + 1,
+        }),
       })
     }
     const onScroll = () => {
