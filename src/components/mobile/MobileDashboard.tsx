@@ -29,8 +29,8 @@ import { FeedSlot } from './FeedSlot'
 import { isFlagOn } from '../../lib/flags'
 import {
   adoptComposedTarget, adoptCoverageGap, adoptResearchInsight, adoptScenarioGap,
-  adoptStaleTarget, adoptTargetHit, adoptWorkOverdue, cardOrOriginal, visualOrNull,
-  type CoverageAttentionRow, type OverdueAttentionRow,
+  adoptStaleTarget, adoptTargetHit, adoptWorkOverdue, adoptedTile, declinedTile,
+  type AdoptedTile, type CoverageAttentionRow, type OverdueAttentionRow,
 } from '../../lib/tile-engine/adopt/mobile'
 import { ExploreVisualBlock } from './ExploreVisual'
 import type { ExploreVisual } from '../../lib/mobile/explore-visual'
@@ -1796,7 +1796,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   )
 
   const adoptTile = useCallback((
-    original: any,
+    /**
+     * A card, always. Never a maybe.
+     *
+     * It was `any` and the seam checked it for falsiness, which read as
+     * defensive and was in fact the hole: the falsy branch returned something
+     * shaped differently from every other branch. Three of the four call sites
+     * narrow on `ok` before they get here and cannot pass nothing; the fourth
+     * is a raw producer array and now checks itself, where the answer is
+     * "this entry is not a tile" rather than "adopt nothing".
+     */
+    original: SignalCard,
     /**
      * The producer row this card came from, where the adapter needs it.
      *
@@ -1811,8 +1821,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       | { insight: DerivedInsight }
       | { coverage: CoverageAttentionRow }
       | { overdue: OverdueAttentionRow },
-  ): any => {
-    if (!original) return original
+    /**
+     * Declared, and that is the fix.
+     *
+     * This was `any`, and under `any` a function may return two shapes without
+     * anybody hearing about it. It did: the success path returned the triple
+     * and two early returns returned the bare card, so every `.card` on those
+     * paths read `undefined` and the scenario renderer crashed the feed on its
+     * first line. See `AdoptedTile`.
+     */
+  ): AdoptedTile => {
     /**
      * Coverage is adopted whether or not the comparison flag is on.
      *
@@ -1845,7 +1863,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * with why the work is late. A card that is wrong is not a comparison.
      */
     const flagless = !!source && ('coverage' in source || 'overdue' in source)
-    if (!tileEngineOn && !flagless) return original
+    if (!tileEngineOn && !flagless) return declinedTile(original)
     const viewer = {
       readerId: userId ?? null,
       // The same value `rankInputFor` supplies, from the same function.
@@ -1898,11 +1916,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * panes the caller was going to build. Comparing cards to infer that would
      * be reading a result out of an identity check; the result is already here.
      */
-    return {
-      card: cardOrOriginal(original, result),
-      visual: visualOrNull(result),
-      adopted: result.ok,
-    }
+    return adoptedTile(original, result)
   }, [tileEngineOn, userId, coverageIndex, lenses?.book, feedContainer, targetPairFor])
 
   /**
@@ -4680,6 +4694,20 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * one family whose exact filtering already worked everywhere else.
    */
   const renderScenarioCard = (card: any, entry: any) => {
+    /**
+     * Containment, and explicitly not the fix.
+     *
+     * The invariant is upstream: `adoptTile` now declares its return type, so
+     * this cannot be handed a hole by the seam again. This guard is here
+     * because a feed of forty tiles should not go blank when one of them is
+     * malformed, and until `FeedSlot` has a boundary of its own the cheapest
+     * containment is for a renderer to decline a card it cannot draw.
+     *
+     * An empty slot, not a dropped entry: the slot keeps its height and its
+     * snap point, so the reader gets a gap rather than a feed that reshuffles
+     * around a missing item.
+     */
+    if (!card?.entity || !card?.evidence?.data) return null
     const symbol = String(card.entity?.ticker ?? card.entity?.name ?? '')
     const assetId = String(card.entity?.assetId ?? card.entity?.id ?? '')
     const price = card.evidence.data.price
@@ -4864,7 +4892,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // Seam 1 of 4. Off, `adoptTile` is the identity function.
           // The ENTRY travels alongside the adopted card because the pill needs
           // a family to resolve and the card alone carries none.
-          if (entry.kind === 'scenario') return renderScenarioCard(adoptTile(entry.card).card, entry)
+          if (entry.kind === 'scenario') {
+            /**
+             * A scenario entry with no card is a malformed candidate.
+             *
+             * `scenarioEntries` maps the producer's array straight onto entries,
+             * so a null in it arrives here as an entry with nothing to render.
+             * That is not an adoption question and the seam is not asked one:
+             * the renderer declines and the slot stays empty, keeping its height
+             * and its snap point.
+             */
+            const scenarioCard = entry.card ? adoptTile(entry.card).card : null
+            return renderScenarioCard(scenarioCard, entry)
+          }
 
           if (entry.kind === 'attention') {
             const a = entry.attention
