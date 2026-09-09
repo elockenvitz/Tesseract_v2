@@ -20,7 +20,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  adoptCoverageGap, adoptScenarioGap, adoptStaleTarget, adoptWorkOverdue,
+  adoptCoverageGap, adoptResearchInsight, adoptScenarioGap, adoptStaleTarget,
+  adoptTargetHit, adoptWorkOverdue,
 } from '../mobile'
 import { visualDataFor } from '../visual'
 import { workOverdueFinding } from '../producers'
@@ -32,7 +33,8 @@ import { buildAttentionCard } from '../../../signals/builders/legacy-kinds'
 import { feedActionIsRoutable } from '../../../signals/feed-actions'
 import {
   COVERAGE_ASSET, COVERAGE_NOW, PHONE, coverageCard, coverageRow,
-  dislocationCard, staleTargetCard, staleTargetRow,
+  dislocationCard, staleCard, staleInsight, staleTargetCard, staleTargetRow,
+  targetBreachRow, targetHitCard,
 } from './fixtures'
 
 const READER = { readerId: 'u-analyst', coverage: 'direct' as const }
@@ -267,6 +269,135 @@ describe('Overdue draws the deadline it missed', () => {
     expect(a.adoption.copy.metric?.value).toBe('14d')
     // No interval, so no track — and no invented one.
     expect(a.adoption.visual).toBeNull()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Unreviewed Move — the distance since somebody last looked
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Unreviewed Move draws the gap since the last review', () => {
+  const adoption = (f: 'price_move' | 'new_evidence' | 'long_silence' = 'price_move') => {
+    const r = adoptResearchInsight(staleInsight(f), staleCard(f), READER, PHONE)
+    if (!r.ok) throw new Error(`declined: ${r.reason}`)
+    return r.adoption
+  }
+
+  it('resolves to the marked review rather than the bare tape', () => {
+    expect(adoption().plan.visuals[0].primitive).toBe('last_look')
+    expect(adoption().visual?.kind).toBe('last_look')
+  })
+
+  /**
+   * Both halves come off the claim, and the claim came off the producer.
+   *
+   * `researchIssueFor` owns the move and the anchor it is measured from;
+   * `unreviewedMoveFinding` carries both without restating either. Compared
+   * against the claim rather than a literal so the test cannot drift from what
+   * the adapter said.
+   */
+  it('carries the move and the review it is measured from', () => {
+    const { situation, visual } = adoption()
+    const claim = situation.lead.claim
+    if (visual?.kind !== 'last_look') throw new Error('not a last_look')
+    expect(visual.movePct).toBe(claim.quantity?.value)
+    expect(visual.lastLookAt).toBe(claim.interval?.from)
+  })
+
+  /**
+   * No fake review date.
+   *
+   * The anchor is `reviewAnchor`, which is null for a case nobody has written.
+   * With no anchor there is no interval, and with no interval there is nothing
+   * to measure the move from — so the picture is withheld rather than dated to
+   * today, which would draw a review that never happened.
+   */
+  it('draws nothing when there is no review to measure from', () => {
+    const { situation, plan } = adoption()
+    const anchorless = {
+      ...situation,
+      lead: { ...situation.lead, claim: { ...situation.lead.claim, interval: null } },
+    }
+    expect(visualDataFor(anchorless, plan, null)).toBeNull()
+  })
+
+  /**
+   * The other two framings keep the chart they had, and correctly.
+   *
+   * A long silence has no move to draw and new evidence is a count rather than
+   * a distance. The resolver answers `price_trend` for both, which the mapper
+   * reads as "the caller's own sparkline" and returns null for — so production's
+   * anchored chart still leads them.
+   */
+  it('leaves the framings with no measured move to the tape', () => {
+    for (const f of ['new_evidence', 'long_silence'] as const) {
+      expect(adoption(f).plan.visuals[0].primitive, f).toBe('price_trend')
+      expect(adoption(f).visual, f).toBeNull()
+    }
+  })
+
+  it('is not a generic price picture where the move exists', () => {
+    expect(adoption().visual?.kind).not.toBe('price_trend')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Target Hit — one price against one level
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Target Hit draws the level it passed', () => {
+  const adoption = () => {
+    const r = adoptTargetHit(targetBreachRow(), targetHitCard(), READER, PHONE)
+    if (!r.ok) throw new Error(`declined: ${r.reason}`)
+    return r.adoption
+  }
+
+  it('resolves to the single comparison', () => {
+    expect(adoption().plan.visuals[0].primitive).toBe('target_compare')
+    expect(adoption().visual?.kind).toBe('target_compare')
+  })
+
+  it('carries the price and the target it passed', () => {
+    const { situation, visual } = adoption()
+    const t = situation.lead.claim.threshold!
+    expect(visual).toMatchObject({ current: t.observed, target: t.level })
+  })
+
+  /**
+   * One level, and no ladder invented around it.
+   *
+   * A target hit is a price through ONE number somebody typed. Drawing bull,
+   * base and bear around it would be asserting a ladder the finding does not
+   * have — the distinction `threshold_passed` was added to preserve.
+   */
+  it('invents no second level and no band', () => {
+    const v = adoption().visual
+    if (v?.kind !== 'target_compare') throw new Error('not a target_compare')
+    expect(Object.keys(v).sort()).toEqual(['current', 'kind', 'target', 'targetLabel'].filter(
+      k => k !== 'targetLabel' || 'targetLabel' in v).sort())
+    expect(v).not.toHaveProperty('low')
+    expect(v).not.toHaveProperty('high')
+    expect(v).not.toHaveProperty('cases')
+  })
+
+  /**
+   * Degrades rather than drawing an artificial comparison.
+   *
+   * With no threshold on the claim there is no level and no observation, and
+   * `target: null` would be the empty-slot state — which is a finding about a
+   * MISSING target, not about one that was reached. So the picture is withheld.
+   */
+  it('draws nothing when the level or the price is missing', () => {
+    const { situation, plan } = adoption()
+    const bare = {
+      ...situation,
+      lead: { ...situation.lead, claim: { ...situation.lead.claim, threshold: null } },
+    }
+    expect(visualDataFor(bare, plan, targetHitCard())).toBeNull()
+  })
+
+  it('is not a generic price picture', () => {
+    expect(adoption().visual?.kind).not.toBe('price_trend')
   })
 })
 

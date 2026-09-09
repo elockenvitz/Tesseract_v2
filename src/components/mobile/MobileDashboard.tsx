@@ -5214,16 +5214,28 @@ a.context?.asset_id ?? null,
              * resolved once whichever of the two survived. The other three lens
              * kinds are not adopted and `adoptTile` hands them straight back.
              */
+            const lensAdopted = rawBuilt.ok && (l.type === 'breach' || l.type === 'stale')
+              ? adoptTile(
+                  rawBuilt.card,
+                  l.type === 'breach' ? { breach: l.breach } : { stale: l.target },
+                )
+              : null
             const built: typeof rawBuilt =
-              rawBuilt.ok && (l.type === 'breach' || l.type === 'stale')
-                ? {
-                    ok: true,
-                    card: adoptTile(
-                      rawBuilt.card,
-                      l.type === 'breach' ? { breach: l.breach } : { stale: l.target },
-                    ).card,
-                  }
-                : rawBuilt
+              lensAdopted ? { ok: true, card: lensAdopted.card } : rawBuilt
+            /**
+             * The plan's picture, ahead of the tape.
+             *
+             * Target Hit resolves to `target_compare` — one level and the price
+             * that passed it, which is the whole of "where is the price
+             * relative to the target that was reached". The chart still follows
+             * it in the carousel, carrying the path and the target band, which
+             * is the context rather than the claim.
+             *
+             * Target Expired renders through its own component below and never
+             * reaches this list, so `stale` resolves a plan and uses none of it
+             * here. That is deliberate: this stage adopts Target Hit.
+             */
+            const lensPlanPane = planPane(lensAdopted?.visual ?? null)
             const assetId =
               l.type === 'conviction' ? l.gap.assetId
               : l.type === 'crowded'  ? l.name.assetId
@@ -5392,6 +5404,7 @@ a.context?.asset_id ?? null,
             // `TargetExpiredCard`, which returned above.
             const priceMarkers: PriceMarker[] = []
 
+            if (lensPlanPane) panes.push(lensPlanPane)
             const priced = pricePane(symbol, { bands: priceBands, markers: priceMarkers })
             if (priced) panes.push(priced)
 
@@ -5745,9 +5758,24 @@ a.context?.asset_id ?? null,
              * now — `no_thesis` and `stale_research` — and the insight's own
              * kind chooses between them.
              */
-            const insightCard = insightBuilt.ok
-              ? adoptTile(insightBuilt.card, { insight: ins }).card
+            const insightAdopted = insightBuilt.ok
+              ? adoptTile(insightBuilt.card, { insight: ins })
               : null
+            const insightCard = insightAdopted?.card ?? null
+            /**
+             * "Last reviewed here, and the market moved this much since."
+             *
+             * `last_look` states that relationship in one strip. The anchored
+             * chart below states it too, and states it better for a reader who
+             * wants the path — but it states it in a full plot with axes, and
+             * the reader has to find the marker before the sentence arrives.
+             * Lead with the relationship; keep the path as context.
+             *
+             * Only the measured framing resolves here. A long silence has no
+             * move to draw and new evidence is a count rather than a distance,
+             * so both fall through to the chart they already had.
+             */
+            const insightPlanPane = planPane(insightAdopted?.visual ?? null)
 
             /**
              * The tape, with the case's own date marked on it.
@@ -6003,6 +6031,22 @@ a.context?.asset_id ?? null,
                  * what keeps the plan honest about eligibility rather than
                  * pretending it is a guarantee.
                  */
+                /**
+                 * The engine's picture leads, and production's order follows.
+                 *
+                 * Prepended rather than threaded through `insightPanePlan`
+                 * because the two describe different things: that plan is the
+                 * producer's own pane order and the gallery mounts it to
+                 * measure the card, while this is the resolver's answer to
+                 * "what is the picture for this claim". Adding an id to the
+                 * producer's plan would make the geometry contract depend on
+                 * whether a situation had been adopted yet.
+                 *
+                 * Height is unaffected: the evidence band is sized to the
+                 * TALLEST pane, the price pane already reserves an interactive
+                 * plot, and every visual in this vocabulary is a strip.
+                 */
+                ...(insightPlanPane ? [insightPlanPane] : []),
                 ...insightPanePlan({
                   framing,
                   hasCapital: !!insightCapital,
