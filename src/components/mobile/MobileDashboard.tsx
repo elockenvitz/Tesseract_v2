@@ -1594,6 +1594,32 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     book: lenses?.book ?? null,
   })
 
+  /**
+   * Whether the feed's ordering-critical sources have all landed.
+   *
+   * ── Why this moved up here ──────────────────────────────────────────────
+   *
+   * It was declared beside the loader it gates, a couple of thousand lines
+   * below, and that made it look like a rendering concern. It is not. It is the
+   * only thing that says whether the candidate pool is COMPLETE, and the base
+   * order is committed from that pool — so anything committed before this is
+   * false is committed from a partial feed.
+   *
+   * Manual QA on localhost: nine Trade Idea and Thought tiles, then three
+   * Overdue. That order is impossible from a single composed list, because
+   * attention sits a tier above posts and would lead them. It is exactly what
+   * you get when the posts resolve first, the base order is remembered from
+   * them alone, and everything that lands afterwards is APPENDED — which is
+   * what `reconcileToRemembered` is contracted to do, and is right once a
+   * reader is actually looking at something.
+   *
+   * The commit is gated on it now. See the effect below.
+   */
+  const composing =
+    isLoading || attentionLoading || signalsLoading || insightsLoading ||
+    lensesLoading || scenariosLoading || recsLoading ||
+    (attentionSourceIds.length > 0 && pairInfoLoading)
+
 
   /**
    * Scenario cards, with the portfolio chip's books given real exposure.
@@ -3154,10 +3180,28 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   useEffect(() => {
     if (!continuityKey) return
+    /**
+     * Nothing is remembered from a feed that is still arriving.
+     *
+     * This effect runs on every render, including the ones behind the loader —
+     * an early return in the render body does not stop an effect that was
+     * declared above it. So on the first paint it committed whichever sources
+     * had resolved, usually the posts, and `reconcileToRemembered` then held
+     * that order and appended everything else behind it for the life of the
+     * page. Nine Trade Ideas and then the Overdue tiles, with a fully composed
+     * order computed on every render and discarded by the line that reconciles
+     * it.
+     *
+     * Waiting costs nothing: while `composing` is true the reader is looking at
+     * the loader, so there is no position to protect and nothing on screen to
+     * keep still. The moment it goes false the pool is complete, the composed
+     * order is the real one, and THAT is what gets remembered.
+     */
+    if (composing) return
     const next = rememberBaseOrder(feedBaseline.remembered, feedBaseline.keys)
     if (next.length === (feedBaseline.remembered?.length ?? -1)) return
     writeFeedContinuity(continuityKey, { baseOrder: next })
-  }, [continuityKey, feedBaseline])
+  }, [continuityKey, feedBaseline, composing])
 
   /**
    * What the reader sees: the base order, with rows hidden.
@@ -4635,12 +4679,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * sources. Gating on them would trade a stable first card for a slower one
    * and gain nothing: a news card appearing late changes nothing above it.
    */
-  const composing =
-    isLoading || attentionLoading || signalsLoading || insightsLoading ||
-    lensesLoading || scenariosLoading || recsLoading ||
-    (attentionSourceIds.length > 0 && pairInfoLoading)
-
-
   if (composing) {
     return (
       // The branded mark, not a border-radius with a spinning edge.
