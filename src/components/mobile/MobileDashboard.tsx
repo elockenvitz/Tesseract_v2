@@ -7,6 +7,7 @@ import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
 import { markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
+import { rotateForRound } from '../../lib/mobile/feed-rounds'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { useAttention } from '../../hooks/useAttention'
@@ -214,6 +215,24 @@ const SETTLE_FRAMES = 40
  * mean anything.
  */
 const LEAD_MARK_COUNT = 3
+
+/**
+ * How far back from the end of the feed variety is measured.
+ *
+ * Twenty cards, which at a viewport of six is a little over three phone
+ * screens — roughly what one flick covers. A fetch started when the reader is
+ * that far from the thin part lands before they reach it.
+ */
+const VARIETY_RUNWAY = 20
+
+/**
+ * How few distinct families at the tail counts as running out.
+ *
+ * Three, and borrowed rather than invented: `feed-variety` already asserts
+ * that an average screen shows at least three distinct families, so falling
+ * below it at the tail is the same measurement saying the pool is spent.
+ */
+const MIN_TAIL_FAMILIES = 3
 
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
@@ -2761,15 +2780,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       signal: sig,
     }))
 
-    // Cycle 0 is the first pass; each additional cycle re-presents the derived
-    // insights further down the book, so scrolling keeps yielding real
-    // observations about real positions rather than running out.
-    const insightEntries = Array.from({ length: cycle + 1 }).flatMap((_, round) =>
-      derivedInsights.map((ins, idx) => ({
+    /**
+     * One round's worth, like every other source.
+     *
+     * This used to be `Array.from({ length: cycle + 1 })` — the derived
+     * insights were the ONLY source that repeated when the server ran out, so
+     * an endless scroll produced an endless stream of research prompts with
+     * the rest of the product absent from it. Rounds are the whole pool's job
+     * now and are applied once, after composition; see `rounds` below.
+     *
+     * `round` stays on the entry at 0. It is read by the card copy and by the
+     * entry key, and removing it would be a rename in three files for no gain.
+     */
+    const insightEntries = derivedInsights.map((ins, idx) => ({
         kind: 'insight' as const,
         score: derivedInsights.length - idx,
         insight: ins,
-        round,
+        round: 0,
         /**
          * The capital stamp, on the ENTRY.
          *
@@ -2788,7 +2815,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           lenses?.book ?? null, ins.assetId, ins.issue?.framing,
         ),
       }))
-    )
 
     // News is the only source that brings genuinely new material between
     // visits — everything else is the book restated. Ranked on the provider's
@@ -3171,9 +3197,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * owns the sequence and already caps a framing run at two. Running both
      * would mean two rules reordering one list against each other.
      */
-    const composed = researchScoped
-      ? { order: ordered, trace: [] as ComposeTraceRow[] }
-      : composeFeed(ordered, {
+    /**
+     * Compose one round, so the feed can compose several.
+     *
+     * Lifted out of the single call it used to be for the endless feed below.
+     * Everything inside it is unchanged; the only new thing is that the ranked
+     * list it reads is a parameter rather than always `ordered`.
+     */
+    const composeRound = (input: typeof ordered) => researchScoped
+      ? { order: input, trace: [] as ComposeTraceRow[] }
+      : composeFeed(input, {
           familyOf: (e: any) => familyOf(e),
           subjectOf: (e: any) => e?.subject ?? null,
           categoryOf: (e: any) => categoryOf(e),
@@ -3223,7 +3256,40 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           scope,
           trace: import.meta.env.DEV,
         })
-    const finalOrder = composed.order
+
+    /**
+     * The feed has no bottom.
+     *
+     * ── What "endless" used to mean ─────────────────────────────────────────
+     *
+     * One source repeated. When the server ran out of posts the observer
+     * incremented `cycle`, and `cycle` re-emitted the derived insights and
+     * nothing else — so scrolling past the end of the real feed produced an
+     * endless stream of research prompts with the rest of the product missing
+     * from it.
+     *
+     * Now every round is the whole pool. A reader who reaches the end meets
+     * the feed again rather than a fragment of it, and `feedEntryKeys` gives
+     * the second copy of a card its own key, so continuity, filtering and the
+     * renderer all treat it as its own tile.
+     *
+     * ── Why each round is composed rather than repeated ────────────────────
+     *
+     * "The order could and should be different if duplicates are showing." A
+     * replay reads as a loop. So each round composes from a rotation of the
+     * ranked list — see `feed-rounds` — which changes what the greedy pass
+     * sees at every step and therefore which substitutions win, all the way
+     * down. Same cards, genuinely different sequence.
+     *
+     * Round 0 is always the ranked order untouched, so the first pass is the
+     * honest one and nothing about repetition can reach the opening.
+     */
+    const composed = composeRound(ordered)
+    const rounds = [composed]
+    for (let round = 1; round <= cycle; round++) {
+      rounds.push(composeRound(rotateForRound(ordered, round)))
+    }
+    const finalOrder = rounds.flatMap(r => r.order)
 
     // Recorded before the filter is applied downstream — see `unfilteredRef`.
     if (!kindFilter && !feedFilter.kinds.length) {
@@ -3384,6 +3450,30 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * suppression or a refetch removed does disappear, and new findings do
    * arrive; they simply arrive after everything already on screen.
    */
+  /**
+   * How much variety is left at the end of the feed.
+   *
+   * ── Why this is a fetch trigger and not a display concern ─────────────────
+   *
+   * The share cap holds a family to a fifth of the feed only while the pool has
+   * something else to show. Once the small families are spent the tail is
+   * whatever remains, however it is sorted — that is arithmetic, not a weak
+   * rule, and the only fix is more material.
+   *
+   * So the last stretch of the composed order is measured, and a thin one
+   * widens the prefetch margin below. Measured on the last three screens
+   * because that is roughly a flick: a fetch started when the reader is that
+   * far out lands before they reach it.
+   *
+   * Distinct families rather than a count of cards. Twenty tiles of one family
+   * is exactly the case this exists to catch, and a length check would call it
+   * healthy.
+   */
+  const tailVariety = useMemo(() => {
+    const tail = baseFeedEntries.slice(-VARIETY_RUNWAY)
+    return new Set(tail.map(e => familyOf(e as any) ?? 'unknown')).size
+  }, [baseFeedEntries])
+
   const feedBaseline = useMemo(() => {
     const keys = feedEntryKeys(baseFeedEntries)
     const paired = baseFeedEntries.map((item, i) => ({ key: keys[i], item }))
@@ -3907,17 +3997,40 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         if (!entries[0].isIntersecting) return
         if (hasNextPage && !isFetchingNextPage) {
           fetchNextPage()
-        } else if (derivedInsights.length > 0) {
-          // Server exhausted — keep the scroll alive with another pass over
-          // the book rather than dead-ending.
+        } else if (baseFeedEntries.length > 0) {
+          /**
+           * Server exhausted, so the feed starts again rather than stopping.
+           *
+           * This was gated on `derivedInsights.length`, because the insights
+           * were the only source that repeated. They are not any more — a round
+           * is the whole pool — so the gate is now simply "is there a feed at
+           * all", and a desk with no research prompts still gets an endless
+           * one.
+           */
           setCycle(c => c + 1)
         }
       },
-      { rootMargin: '400px' }
+      {
+        /**
+         * Reach further ahead when the feed is about to run out of variety.
+         *
+         * A share cap can only hold a family to a fifth of the feed while the
+         * pool has something else to show. Once the small families are spent
+         * the tail is whatever is left, and no ordering rule can help — the
+         * only fix is more material, fetched before the reader arrives rather
+         * than when they hit the bottom.
+         *
+         * So the margin is a function of what is left to interleave against.
+         * Four hundred pixels is about one snap slot of warning, which is
+         * enough when the next page is a nicety; sixteen hundred is four, which
+         * is roughly a flick, and that is what a thin tail needs.
+         */
+        rootMargin: tailVariety < MIN_TAIL_FAMILIES ? '1600px' : '400px',
+      }
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, derivedInsights.length])
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, baseFeedEntries.length, tailVariety])
 
   // Restore once, after the entries that make up the remembered offset exist.
   // Attempting it before render leaves scrollTop clamped to zero.
