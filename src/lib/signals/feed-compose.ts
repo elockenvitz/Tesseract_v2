@@ -257,21 +257,36 @@ const MAX_PER_VIEWPORT = 3
  * Ten, because that is what manual acceptance is now judged on: the first one
  * or two phone screens.
  *
- * Four, from the sweep rather than from taste. Measured on the pilot-shaped
+ * Three, chosen by product after seeing both. Measured on the pilot-shaped
  * pool, where the ranked top ten is nine tenths one lane:
  *
  *   cap off   work 5, desk 2, market 2, judgment 1
  *   cap 4     work 4, desk 3, market 2, judgment 1
  *   cap 3     work 3, desk 3, market 3, judgment 1
  *
- * Three buys one more lane and pays for it twice: a third news item reaches the
- * opening at 0.337 where a review at 0.629 was, and the counts land on a
- * suspiciously even 3/3/3, which is the round-robin this rule is forbidden to
- * be. Four is also the acceptance criterion stated exactly — no lane may take
- * five of the first ten — rather than a number chosen to beat it.
+ * Four was tried first and shipped for a day. It moved one card in the opening
+ * and product acceptance called the result too small to change how the feed
+ * reads, which is a judgement about the product and not about the numbers.
+ *
+ * Three is not free and the cost is recorded here rather than in a commit
+ * message nobody will find. On that pool it takes two cards out of the opening:
+ *
+ *   research_stale  0.629, attention   position  8 -> 11
+ *   awaiting_review 0.553, CRITICAL    position  9 -> 19
+ *
+ * and the slots go to a post at 0.505 and two news items at 0.345 and 0.337.
+ * The largest single sacrifice is 0.292, inside `SCREEN_TOLERANCE` and
+ * therefore inside the bar every other rule in this file already answers to —
+ * but it is a critical-severity row leaving the first screen for an
+ * informational one, which is the sharpest edge this rule has.
+ *
+ * Two things keep that honest rather than arbitrary. The tolerance still binds,
+ * so a materially better card is never displaced; and the head of the ranking
+ * is still the head of the feed, because nothing precedes it and a rule about
+ * what has already been shown cannot reach it.
  */
 const BRIEF_WINDOW = 10
-const MAX_PER_BRIEF = 4
+const MAX_PER_BRIEF = 3
 /**
  * The bar a substitute must clear to break a saturated screen.
  *

@@ -145,9 +145,38 @@ describe('A. the work-heavy pool the reader complained about', () => {
   })
 
   it('no longer lets one lane take half the first screen', () => {
-    // Measured: 5 of 10 before the cap, 4 after.
+    // Measured: 5 of 10 before the cap, 3 after.
     expect(worst(lanesIn(before))).toBeGreaterThanOrEqual(5)
-    expect(worst(lanesIn(after))).toBeLessThanOrEqual(4)
+    expect(worst(lanesIn(after))).toBeLessThanOrEqual(3)
+  })
+
+  /**
+   * What the third slot costs, kept as numbers.
+   *
+   * Product chose three over four after seeing both. It is not free: two cards
+   * leave the opening and one of them is critical-severity. Recorded here so
+   * the price is visible to whoever reads this next rather than buried in the
+   * constant's comment.
+   */
+  it('records the two cards the third slot costs', () => {
+    const kept = new Set(after.slice(0, 10).map(r => r.item.id))
+    const dropped = before.slice(0, 10).filter(r => !kept.has(r.item.id))
+    expect(dropped.map(r => r.item.family).sort())
+      .toEqual(['awaiting_review', 'research:long_silence'])
+    // Neither is displaced by more than the bar every other rule answers to.
+    const worstCost = Math.min(...compose(WORK_HEAVY).trace.map(t => t.priorityCost))
+    expect(worstCost).toBeGreaterThan(-0.31)
+  })
+
+  /**
+   * The head of the ranking is the head of the feed, always.
+   *
+   * A rule about what has already been shown cannot reach the first card,
+   * because nothing precedes it. Asserted rather than assumed: it is the one
+   * protection that must survive every future change to this cap.
+   */
+  it('never moves the top-ranked card', () => {
+    expect(after[0].item.id).toBe(rankFeed(WORK_HEAVY, toInput, NOW)[0].item.id)
   })
 
   it('shows at least four reader questions in the first ten', () => {
@@ -167,7 +196,7 @@ describe('A. the work-heavy pool the reader complained about', () => {
   it('stops Needs Review, Overdue and Coverage Gap dominating together', () => {
     const trio = new Set(['awaiting_review', 'project_overdue', 'coverage_gap'])
     const held = familiesIn(after).filter(f => trio.has(f)).length
-    expect(held).toBeLessThanOrEqual(3)
+    expect(held).toBeLessThanOrEqual(2)
   })
 })
 
@@ -206,9 +235,9 @@ describe('B. the desk-heavy pool', () => {
    * it stays fixed with the new axis in play rather than claiming a second
    * improvement that did not happen.
    */
-  it('holds Thought, Trade idea and Research note to four of the first ten', () => {
+  it('holds Thought, Trade idea and Research note to the cap', () => {
     expect(worst(lanesIn(before))).toBeLessThanOrEqual(4)
-    expect(worst(lanesIn(after))).toBeLessThanOrEqual(4)
+    expect(worst(lanesIn(after))).toBeLessThanOrEqual(3)
     // And the ranked feed is what it is being held back from.
     expect(worst(lanesIn(rankFeed(DESK_HEAVY, toInput, NOW)))).toBeGreaterThanOrEqual(6)
   })
