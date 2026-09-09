@@ -340,3 +340,50 @@ export function cardOrOriginal(original: SignalCard, result: MobileAdoptionResul
 export function visualOrNull(result: MobileAdoptionResult): ExploreVisual | null {
   return result.ok ? result.adoption.visual : null
 }
+
+/**
+ * What the feed's adoption seam hands back, on every path without exception.
+ *
+ * -- The P0 this exists to make unrepresentable ----------------------------
+ *
+ * `MobileDashboard`'s `adoptTile` was typed `any` and returned two different
+ * shapes. The success path returned `{ card, visual, adopted }`; two early
+ * returns -- a falsy card, and the comparison flag being off for a family that
+ * is still behind it -- returned the bare card instead.
+ *
+ * Every call site reads `.card`. On a bare card that property does not exist,
+ * so the scenario branch called `renderScenarioCard(undefined)` and the
+ * renderer's first line, `card.entity`, took down the entire Ideas feed. The
+ * insight branch lost its card to `undefined` and rendered nothing; the lens
+ * branch built `{ ok: true, card: undefined }` and carried the hole further.
+ *
+ * One function, two shapes, and `any` on both ends of it. The type is the fix:
+ * with a declared return, `return original` does not compile.
+ */
+export interface AdoptedTile {
+  /** Always present. The adopted card, or production's own when it declined. */
+  card: SignalCard
+  /** The plan's picture, or null when the engine has no opinion. */
+  visual: ExploreVisual | null
+  /** Whether the engine took the card on. See `MobileDashboard`'s price rule. */
+  adopted: boolean
+}
+
+/**
+ * The seam's answer when the engine never ran, or ran and declined.
+ *
+ * Production's card, no picture, not adopted. The one thing it may never do is
+ * fail to carry a card: the caller is about to render one.
+ */
+export function declinedTile(original: SignalCard): AdoptedTile {
+  return { card: original, visual: null, adopted: false }
+}
+
+/** The seam's answer once an adapter has run. Declines degrade to the original. */
+export function adoptedTile(original: SignalCard, result: MobileAdoptionResult): AdoptedTile {
+  return {
+    card: cardOrOriginal(original, result),
+    visual: visualOrNull(result),
+    adopted: result.ok,
+  }
+}

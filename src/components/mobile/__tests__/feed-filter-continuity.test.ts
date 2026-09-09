@@ -452,7 +452,7 @@ describe('the coverage card renders through the engine for everybody', () => {
     expect(at).toBeGreaterThan(0)
     const body = dash.slice(at, dash.indexOf('const rankInputFor = useCallback(', at))
     expect(body).toContain("'coverage' in source || 'overdue' in source")
-    expect(body).toContain('if (!tileEngineOn && !flagless) return original')
+    expect(body).toContain('if (!tileEngineOn && !flagless) return declinedTile(original)')
   })
 
   /**
