@@ -117,7 +117,30 @@ export function FeedCaptureSheet({
          capture — it is everything you can do from this tile. "GOOGL actions"
          says whose actions these are, which matters when the sheet is opened
          from a feed the reader is scrolling quickly. */
-      title={kind ? undefined : (assetSymbol ? `${assetSymbol} actions` : 'Actions')}
+      /*
+        When a type is chosen, the sheet's own header carries the way back and
+        the name of what is being written.
+
+        It used to be a row at the top of the sheet BODY, which is a scrolling
+        region, so the control that gets you out of a full-height writing form
+        scrolled away with the form. Putting it here also removes the wrapper it
+        lived in, which is what was clipping the form — see the branch below.
+      */
+      title={kind ? (
+        <div className="flex items-center gap-2 -ml-2">
+          <button
+            type="button"
+            onClick={() => setKind(null)}
+            className="flex items-center justify-center h-9 w-9 rounded-full text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+            aria-label="Back to capture options"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <span className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 dark:text-white">
+            {captureType(kind)?.label}
+          </span>
+        </div>
+      ) : (assetSymbol ? `${assetSymbol} actions` : 'Actions')}
       /*
         Sheet height follows the task.
 
@@ -226,31 +249,46 @@ export function FeedCaptureSheet({
           </div>
         </div>
       ) : (
-        <div className="flex flex-col min-h-0">
-          <div className="flex-shrink-0 flex items-center gap-2 px-3 pb-2">
-            <button
-              type="button"
-              onClick={() => setKind(null)}
-              className="flex items-center justify-center h-9 w-9 -ml-1 rounded-full text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
-              aria-label="Back to capture options"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
-              {captureType(kind)?.label}
-            </span>
-          </div>
+        /*
+          One scroll owner, and no collapsed flex item.
 
+          ── The defect this closes ──────────────────────────────────────────
+
+          Reported as "Actions → Prompt → content at the TOP of the sheet is
+          clipped/cut off", and it was geometry rather than anything in
+          `PromptModal`.
+
+          This branch was `<div class="flex flex-col min-h-0">` wrapping a
+          `<div class="flex-1 min-h-0 overflow-y-auto">` that held the form.
+          The wrapper has no height of its own, so it sizes to its content — and
+          a `flex: 1 1 0%` child whose `min-height` has been zeroed contributes
+          NOTHING to that measurement. Its hypothetical main size is its
+          flex-basis, which is zero, and with the automatic minimum removed
+          there is nothing to clamp it back up to its content. The form was
+          therefore laid out inside a box collapsed to near nothing, with
+          `overflow-y-auto` cutting off whatever did not fit — from the top,
+          because that is where the box begins.
+
+          It was also a scroller inside `BottomSheet`'s own scroller, which is
+          the nested scroll trap: a drag in the form moved the inner box while
+          the sheet stood still.
+
+          Both go away by making this plain flow content. The sheet's body is
+          already `flex-1 min-h-0 overflow-y-auto` against a definite height, so
+          it is the only scroller needed, and content in normal flow cannot be
+          collapsed by a flex basis it does not have.
+        */
+        <div className="px-3 pb-4">
           {/* What to do now that you have chosen, in the words the registry
               holds. The pane wrote its own sentence for each of these and they
               had drifted; both surfaces read the same line now. */}
           {captureType(kind)?.guidance && (
-            <p className="flex-shrink-0 px-3 pb-2 text-xs text-gray-500 dark:text-gray-400">
+            <p className="pb-2 text-xs text-gray-500 dark:text-gray-400">
               {captureType(kind)!.guidance}
             </p>
           )}
 
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-4">
+          <div>
             {/* None of these carry `autoFocus`.
 
                 A sheet that opens with the keyboard already up gives the reader

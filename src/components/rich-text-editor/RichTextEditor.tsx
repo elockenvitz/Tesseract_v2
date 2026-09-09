@@ -765,7 +765,11 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           'prose prose-sm max-w-none focus:outline-none',
           editorClassName
         ),
-        style: `min-height: ${minHeight}; padding: 0.5rem ${isMobileViewport ? '0.5rem' : '1rem'};`
+        style: `min-height: ${minHeight}; padding: ${isMobileViewport ? '0.5rem 0.5rem 1.25rem' : '0.5rem 1rem'};`
+        // The trailing room is INSIDE the editable element on purpose:
+        // ProseMirror maps a click in its own padding to the nearest
+        // position, so the caret can still be placed after the last
+        // paragraph. A spacer div below it would swallow that tap.
       },
       // Smart paste handling
       handlePaste: (view, event) => {
@@ -977,9 +981,13 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
 
   return (
     <div className={clsx('rich-text-editor relative', className)}>
-      {/* Toolbar - Sticky */}
+      {/* Toolbar - Sticky.
+
+          `top-[41px]` clears the note title band, which exists on desktop only
+          now; on a phone the title lives in the header row above the scrollport,
+          so the format bar sticks to the top of the pane. */}
       {!readOnly && (
-        <div className="sticky top-[41px] z-10 bg-white dark:bg-gray-800">
+        <div className="sticky top-0 sm:top-[41px] z-10 bg-white dark:bg-gray-800 flex-shrink-0">
           {isMobileViewport ? (
             <MobileFormatBar
               editor={editor}

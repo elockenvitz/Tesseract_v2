@@ -712,3 +712,58 @@
   from { opacity: 0; transform: scale(0.985); }
   to   { opacity: 1; transform: none; }
 }
+
+/*
+ * The phone note editor filling its pane exactly.
+ *
+ * ── The defect this closes ────────────────────────────────────────────────
+ *
+ * The writing surface had a minimum height computed as "the viewport minus an
+ * estimate of the chrome around it". The estimate was 190px. The chrome is not
+ * 190px, and every number in it moved during this pass, so the surface ended up
+ * TALLER than the pane holding it: an empty note scrolled roughly 130px, and a
+ * note with text in it never appeared to end, because the blank region below
+ * the last line was part of the editable canvas rather than the end of it.
+ *
+ * The fix is to stop predicting. These rules make the editor a flex column that
+ * grows to whatever space the pane actually has, so the browser does the
+ * measuring — including when the keyboard opens and the pane halves.
+ *
+ * `flex-grow: 1; flex-shrink: 0` and NOT `flex: 1` is the part that matters. A
+ * shrinkable child inside a scrollport is compressed to fit instead of
+ * overflowing it, which would mean a long note that cannot scroll. Growing
+ * without shrinking fills the pane when the note is short and pushes past it
+ * when the note is long.
+ *
+ * Phone only, and opt-in: the class is applied by `UniversalNoteEditor` at
+ * phone width, so the desktop editor keeps its `calc()` minimum untouched.
+ */
+@media (max-width: 639px) {
+  .rich-text-editor.editor-fill {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 0;
+  }
+  .rich-text-editor.editor-fill > .editor-container {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 0;
+  }
+  .rich-text-editor.editor-fill .editor-content {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 0;
+  }
+  /*
+   * The trailing writing room is set inline by `RichTextEditor` rather than
+   * here, because ProseMirror owns that element's style attribute and an inline
+   * padding beats a stylesheet one.
+   */
+  .rich-text-editor.editor-fill .editor-content > .ProseMirror {
+    flex-grow: 1;
+    flex-shrink: 0;
+  }
+}

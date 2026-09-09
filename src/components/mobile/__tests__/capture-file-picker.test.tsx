@@ -283,6 +283,138 @@ describe('a successful file says so, and offers the way in', () => {
   })
 })
 
+/**
+ * Filing into MORE THAN ONE destination, which is the normal case.
+ *
+ * ── The defect this pins ──────────────────────────────────────────────────
+ *
+ * The picker treated one add as the end of the task: it set a tick and closed
+ * itself 550ms later. An asset belongs in several lists far more often than in
+ * exactly one, so filing into three meant opening the same sheet three times,
+ * re-finding the asset's action each time, and having no way to tell which of
+ * the three had already been done — the rows looked identical before and after.
+ *
+ * The rows are membership rows now. A row says whether the asset is in that
+ * destination, adding flips it, and the sheet stays open until dismissed.
+ */
+describe('filing into several destinations is one visit', () => {
+  it('stays open after the first add', async () => {
+    rows = [{ id: 'l1', name: 'Watchlist' }, { id: 'l2', name: 'Semis' }]
+    const { onDone } = view()
+    await waitFor(() => expect(screen.getByText('Watchlist')).toBeTruthy())
+
+    fireEvent.click(screen.getByText('Watchlist').closest('button')!)
+    await waitFor(() => expect(screen.getAllByText('Added').length).toBe(1))
+
+    // Long enough that the 550ms auto-close this replaced would have fired.
+    await new Promise(resolve => setTimeout(resolve, 700))
+
+    expect(onDone).not.toHaveBeenCalled()
+    expect(screen.getByText('Semis')).toBeTruthy()
+  })
+
+  it('takes a second destination without reopening anything', async () => {
+    rows = [{ id: 'l1', name: 'Watchlist' }, { id: 'l2', name: 'Semis' }]
+    view()
+    await waitFor(() => expect(screen.getByText('Watchlist')).toBeTruthy())
+
+    fireEvent.click(screen.getByText('Watchlist').closest('button')!)
+    await waitFor(() => expect(inserted.length).toBe(1))
+    fireEvent.click(screen.getByText('Semis').closest('button')!)
+
+    await waitFor(() => expect(inserted.length).toBe(2))
+    expect(inserted.map(i => i.payload.list_id)).toEqual(['l1', 'l2'])
+  })
+
+  it('shows which destinations it is already in', async () => {
+    rows = [{ id: 'l1', name: 'Watchlist' }, { id: 'l2', name: 'Semis' }]
+    view()
+    await waitFor(() => expect(screen.getByText('Watchlist')).toBeTruthy())
+
+    // Before: two invitations to add.
+    expect(screen.getAllByText('Add')).toHaveLength(2)
+
+    fireEvent.click(screen.getByText('Watchlist').closest('button')!)
+
+    // After: one membership and one invitation.
+    await waitFor(() => expect(screen.getAllByText('Added')).toHaveLength(1))
+    expect(screen.getAllByText('Add')).toHaveLength(1)
+  })
+
+  it('cannot file the same destination twice', async () => {
+    rows = [{ id: 'l1', name: 'Watchlist' }]
+    view()
+    await waitFor(() => expect(screen.getByText('Watchlist')).toBeTruthy())
+    const row = screen.getByText('Watchlist').closest('button')!
+
+    fireEvent.click(row)
+    await waitFor(() => expect(row.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.click(row)
+    fireEvent.click(row)
+
+    expect(row).toBeDisabled()
+    expect(inserted).toHaveLength(1)
+  })
+
+  it('confirms once, not once per add', async () => {
+    rows = [{ id: 'l1', name: 'Watchlist' }, { id: 'l2', name: 'Semis' }]
+    view()
+    await waitFor(() => expect(screen.getByText('Watchlist')).toBeTruthy())
+
+    fireEvent.click(screen.getByText('Watchlist').closest('button')!)
+    await waitFor(() => expect(toasts).toHaveLength(1))
+    fireEvent.click(screen.getByText('Semis').closest('button')!)
+    await waitFor(() => expect(inserted).toHaveLength(2))
+
+    // The rows themselves say what happened. A toast per add is the spam this
+    // avoids, and three of them would cover the sheet being filed from.
+    expect(toasts).toHaveLength(1)
+  })
+
+  it('does not close itself on a timer', () => {
+    expect(picker).not.toContain('setTimeout(onDone')
+  })
+
+  it('keeps the sheet open after creating a destination too', async () => {
+    rows = []
+    const { onDone } = view()
+    await waitFor(() => expect(screen.getByPlaceholderText(/Search lists/)).toBeTruthy())
+    fireEvent.change(screen.getByPlaceholderText(/Search lists/), { target: { value: 'Semis' } })
+
+    fireEvent.click(screen.getByText('Semis').closest('button')!)
+
+    await waitFor(() => expect(inserted.length).toBe(2))
+    expect(onDone).not.toHaveBeenCalled()
+  })
+
+  it('does the same on the theme target, from the same code', async () => {
+    rows = [{ id: 't1', name: 'AI infrastructure' }, { id: 't2', name: 'Power' }]
+    const { onDone } = view('theme')
+    await waitFor(() => expect(screen.getByText('AI infrastructure')).toBeTruthy())
+
+    fireEvent.click(screen.getByText('AI infrastructure').closest('button')!)
+    await waitFor(() => expect(inserted.length).toBe(1))
+    fireEvent.click(screen.getByText('Power').closest('button')!)
+
+    await waitFor(() => expect(inserted.length).toBe(2))
+    expect(onDone).not.toHaveBeenCalled()
+    expect(toasts).toHaveLength(1)
+  })
+
+  it('does not infer membership from optimistic state alone', async () => {
+    // The rows the picker starts from are the rows the database returns; the
+    // set of "just added" ids only ever ADDS to that, so a failed insert cannot
+    // leave a row claiming a membership that does not exist.
+    expect(picker).toContain('existing.has(o.id)')
+    expect(picker).toContain('justAdded.has(o.id)')
+  })
+
+  it('keeps the destinations on screen when an add fails', () => {
+    // The error used to replace the list, so recovering meant starting over.
+    expect(picker).toContain('add.isError || createAndAdd.isError')
+  })
+})
+
 describe('the shell makes no width or viewport assumption', () => {
   it('adds no bare vh sizing', () => {
     expect(picker).not.toMatch(/\b(?:max-|min-)?h-\[\d+vh\]/)
