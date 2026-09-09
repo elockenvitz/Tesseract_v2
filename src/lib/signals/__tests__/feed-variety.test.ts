@@ -216,10 +216,105 @@ describe('the composed feed is not a run of one family', () => {
    * comparison cannot go stale.
    */
   it('is far better than leaving the family rule off', () => {
-    const off = measure(compose({ maxRun: 99, familyWindow: 0 }))
+    /**
+     * The share cap has to come off with the run rule, or this is not a
+     * baseline.
+     *
+     * `maxRun: 99, familyWindow: 0` used to switch off everything that spaced a
+     * family out. It no longer does: the share cap is a separate rule keyed on
+     * the same axis, and with the run rule alone disabled it still held the
+     * longest run to 2 — so the "before" measured 2 and the comparison became
+     * vacuous. Switching both off restores the baseline the number describes.
+     */
+    const off = measure(compose({ maxRun: 99, familyWindow: 0, maxPerFamilyShare: 99 }))
     expect(off.longestRun).toBeGreaterThanOrEqual(5)
     expect(shipped.longestRun).toBeLessThan(off.longestRun)
     expect(shipped.adjacentPairs).toBeLessThan(off.adjacentPairs)
+  })
+
+  /**
+   * The rule the product actually asked for, measured as a share.
+   *
+   * No visible family may take more than two of any ten consecutive cards.
+   * Every other assertion in this file is about ADJACENCY, and adjacency is
+   * what a reader complains about second: the report that motivated this was
+   * seven Overdue tiles, which is a share complaint and passed every run rule
+   * the file had.
+   *
+   * Measured over the reachable feed rather than the whole list, for the reason
+   * given above — the last screen of a 94-card pool is whatever is left.
+   */
+  /** Every window of ten, and the worst family in it. */
+  const shareWindows = (fams: string[]) => {
+    const out: { at: number; family: string; n: number }[] = []
+    for (let i = 0; i + 10 <= fams.length; i++) {
+      const counts = new Map<string, number>()
+      for (const f of fams.slice(i, i + 10)) counts.set(f, (counts.get(f) ?? 0) + 1)
+      for (const [family, n] of counts) if (n > 2) out.push({ at: i, family, n })
+    }
+    return out
+  }
+
+  it('holds every family to its share for as long as the pool allows', () => {
+    /**
+     * ── Why this is not "no window ever exceeds two" ────────────────────────
+     *
+     * It cannot be, and the reason is arithmetic rather than a weak rule. This
+     * pool is 22 trade ideas out of 94, which is 23% of the SUPPLY. No ordering
+     * of it can hold trade ideas to a fifth of every ten cards, because once
+     * the other families are spent there is nothing else left to show. Project
+     * overdue is 19% and thought 17%, so all three crowd the same limit.
+     *
+     * That is the honest shape of a share cap: it binds while the pool has the
+     * variety to satisfy it, and past that point the feed degrades to whatever
+     * remains. A rule that claimed otherwise would be dropping cards, which
+     * this pass does not do.
+     *
+     * So the assertion is about WHERE it stops binding. On this pool the first
+     * window over its share begins at 53 of 94 — the point where the six small
+     * families are spent and only the three big ones are left — and the worst
+     * any window ever reaches is 4 of 10. A reader who gets that far has
+     * already been shown fifty varied cards. The fix for the tail is more
+     * supply, not a stricter sort.
+     */
+    const fams = compose().order.map(r => r.item.family)
+    const breaches = shareWindows(fams)
+    const off = shareWindows(compose({ maxPerFamilyShare: 99 }).order.map(r => r.item.family))
+
+    expect(Math.min(...breaches.map(b => b.at))).toBeGreaterThanOrEqual(50)
+
+    /**
+     * What the cap changes, stated as a comparison rather than as a constant
+     * somebody tuned until it went green.
+     *
+     * Note what it does NOT change: the WORST window is 5 either way. Once the
+     * pool is down to trade ideas there is nothing to interleave and no rule
+     * can help. What the cap does is move every breach into the tail and cut
+     * how many there are, which is the whole of what an ordering pass can do
+     * about a supply problem. The rest is Strand 4's job — fetch more before
+     * the variety runs out.
+     */
+    expect(breaches.length).toBeLessThan(off.length)
+    expect(Math.min(...breaches.map(b => b.at)))
+      .toBeGreaterThan(Math.min(...off.map(b => b.at)))
+  })
+
+  /**
+   * And nothing at all is over its share on the part a reader meets first.
+   *
+   * Fifty cards is about eight phone screens. This is the assertion the
+   * product requirement actually reduces to.
+   */
+  it('is exactly on share through the first fifty cards', () => {
+    const opening = compose().order.slice(0, 50).map(r => r.item.family)
+    expect(shareWindows(opening)).toEqual([])
+  })
+
+  /** The cap is what does it, rather than the run rules incidentally. */
+  it('is far worse with the share cap switched off', () => {
+    const off = compose({ maxPerFamilyShare: 99 }).order.map(r => r.item.family)
+    expect(Math.max(...shareWindows(off).map(b => b.n))).toBeGreaterThanOrEqual(4)
+    expect(Math.min(...shareWindows(off).map(b => b.at))).toBeLessThan(20)
   })
 })
 
@@ -235,19 +330,55 @@ describe('importance stays sovereign', () => {
    */
   it('never displaces a card by more than the widest tolerance in play', () => {
     /**
-     * −0.295 against a 0.30 bar, and the bar is the saturation rule's.
+     * −0.336 against a 0.35 bar, and the bar is now the share cap's.
      *
-     * It was −0.143 against 0.15 while only the run rules could bind. Breaking
-     * a screen that is more than half one kind of work needs a wider bar,
-     * because a pool stratified by category has no alternative inside 0.15 —
-     * see `SCREEN_TOLERANCE`, where the sweep that chose 0.30 is recorded.
+     * The progression is the whole argument of this file in three numbers.
+     * −0.143 against 0.15 while only the run rules could bind. −0.295 against
+     * 0.30 once saturation could. −0.336 against 0.35 now the share cap can,
+     * and it needs the widest bar of the three because it is the only rule that
+     * has to reach out of a stratum: the overdue block sits at 0.576 and the
+     * posts that break it at 0.34 to 0.40. See `SHARE_BREAK_TOLERANCE`, where
+     * both brackets are recorded.
+     *
      * Nothing exceeds the bar it was given, which is the property that matters.
      */
-    expect(shipped.worstPriorityCost).toBeGreaterThan(-0.31)
+    expect(shipped.worstPriorityCost).toBeGreaterThan(-0.36)
   })
 
-  it('keeps the highest-ranked cards near where rankFeed put them', () => {
-    expect(shipped.topTenMaxDrift).toBeLessThanOrEqual(8)
+  /**
+   * The metric that replaces "the top ten stay near where they were".
+   *
+   * That assertion bounded the drift of the ranked top ten at eight places, and
+   * it is the wrong question now. When eight cards of one family are tied at the
+   * head of the ranking, six of them SHOULD move a long way — that is the
+   * product decision, stated as "if a tile is edged out by others of its own
+   * type it appears later in the feed". A bound on absolute drift forbids
+   * exactly the behaviour that was asked for.
+   *
+   * What "importance survived" actually means is two narrower claims, and both
+   * are asserted here instead:
+   *
+   *   the best card in the pool still opens the feed
+   *   within one family, the ranking's order is preserved
+   *
+   * The second is the one that carries the weight. It says the reader meets the
+   * most overdue project before the least overdue one, whatever the spacing
+   * rules did to the gaps between them.
+   */
+  it('opens with the highest-ranked card in the pool', () => {
+    const result = compose()
+    expect(result.trace[0].rankBefore).toBe(1)
+  })
+
+  it('never reorders two cards of the same family', () => {
+    const result = compose()
+    const lastSeen = new Map<string, number>()
+    for (const row of result.trace) {
+      const fam = String(row.family)
+      const prev = lastSeen.get(fam)
+      if (prev != null) expect(row.rankBefore).toBeGreaterThan(prev)
+      lastSeen.set(fam, row.rankBefore)
+    }
   })
 
   /**
