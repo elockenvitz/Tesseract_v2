@@ -2,11 +2,16 @@ import { describe, it, expect } from 'vitest'
 
 import {
   DAILY_CLOSE_POLICY,
+  ESTIMATE_POLICY,
+  FUNDAMENTAL_POLICY,
   INTRADAY_QUOTE_POLICY,
+  REFERENCE_POLICY,
   areComparable,
   assessFreshness,
   describeSource,
   freshValue,
+  isCalendarFallback,
+  policyFor,
   type Observed,
 } from '../freshness'
 
@@ -72,10 +77,70 @@ describe('freshness is measured from when the value was true', () => {
   it('does not apply a schedule check to a policy that has no schedule', () => {
     const v = assessFreshness(
       close({ effectiveAt: '2026-09-08', observedAt: '2020-01-01T00:00:00Z' }),
-      { maxAgeMs: DAILY_CLOSE_POLICY.maxAgeMs },
+      { ...DAILY_CLOSE_POLICY, maxObservationAgeMs: undefined },
       NOW,
     )
     expect(v.state).toBe('fresh')
+  })
+})
+
+describe('freshness is per data class, not one number', () => {
+  it('gives each class its own window', () => {
+    const classes = ['intraday_quote', 'daily_close', 'estimate', 'fundamental', 'reference'] as const
+    const windows = classes.map(c => policyFor(c).maxAgeMs)
+    // Five distinct windows. The point is that no two classes share a number,
+    // so none of them can quietly become the definition of "fresh".
+    expect(new Set(windows).size).toBe(classes.length)
+  })
+
+  it('orders the market-data classes by how fast each actually decays', () => {
+    /**
+     * Only the market-data classes form a scale: a quote decays in minutes, a
+     * close in days, an estimate between revisions.
+     *
+     * `reference` and `fundamental` are deliberately NOT on that scale and are
+     * not compared here. They are bounded by different things — a corporate
+     * action for one, a reporting cycle for the other — and asserting an order
+     * between them would be inventing a relationship to make a test tidy.
+     */
+    expect(policyFor('intraday_quote').maxAgeMs).toBeLessThan(policyFor('daily_close').maxAgeMs)
+    expect(policyFor('daily_close').maxAgeMs).toBeLessThan(policyFor('estimate').maxAgeMs)
+  })
+
+  it('judges one value differently depending on what it is', () => {
+    /**
+     * The concrete reason the five-day constant must not become universal. A
+     * value from eight days ago is a dead quote, a stale close, a perfectly
+     * current estimate and an unremarkable sector label — all at once.
+     */
+    const eightDaysOld = close({ effectiveAt: '2026-08-31', observedAt: '2026-08-31T22:00:00Z' })
+    expect(assessFreshness(eightDaysOld, INTRADAY_QUOTE_POLICY, NOW).state).toBe('stale')
+    expect(assessFreshness(eightDaysOld, DAILY_CLOSE_POLICY, NOW).state).toBe('stale')
+    expect(assessFreshness(eightDaysOld, ESTIMATE_POLICY, NOW).state).toBe('fresh')
+    expect(assessFreshness(eightDaysOld, FUNDAMENTAL_POLICY, NOW).state).toBe('fresh')
+    expect(assessFreshness(eightDaysOld, REFERENCE_POLICY, NOW).state).toBe('fresh')
+  })
+
+  it('carries the class and the basis on the verdict', () => {
+    // So a surface can say "older than our conservative window" rather than
+    // "the exchange has published something newer" — different claims, and
+    // only the first is provable without a session calendar.
+    const v = assessFreshness(close(), DAILY_CLOSE_POLICY, NOW)
+    expect(v.dataClass).toBe('daily_close')
+    expect(v.basis).toBe('calendar')
+  })
+
+  it('reports the basis on a missing verdict too, so absence is still labelled', () => {
+    const v = assessFreshness(null, ESTIMATE_POLICY, NOW)
+    expect(v).toMatchObject({ state: 'missing', dataClass: 'estimate', basis: 'calendar' })
+  })
+
+  it('marks every shipped policy as a calendar fallback', () => {
+    // No exchange calendar exists yet. If one lands and this still passes for
+    // daily_close, the session policy was not wired up.
+    for (const c of ['intraday_quote', 'daily_close', 'estimate', 'fundamental', 'reference'] as const) {
+      expect(isCalendarFallback(policyFor(c))).toBe(true)
+    }
   })
 })
 

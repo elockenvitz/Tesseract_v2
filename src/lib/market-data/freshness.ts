@@ -97,14 +97,52 @@ export interface Observed<T> {
 
 export type FreshnessState = 'fresh' | 'stale' | 'missing'
 
+/**
+ * What kind of value this is.
+ *
+ * Present so that "fresh" cannot become one number for the whole product. A
+ * five-day window is right for a daily close and absurd for an intraday quote,
+ * roughly meaningless for a sector label, and wrong in the other direction for
+ * a quarterly estimate that is perfectly current at eighty days old. Stage 1
+ * shipped three constants with no way to tell which applied where; this makes
+ * the class part of the policy so a consumer reads a verdict rather than
+ * choosing a constant.
+ */
+export type DataClass =
+  | 'intraday_quote'
+  | 'daily_close'
+  | 'reference'
+  | 'fundamental'
+  | 'estimate'
+
+/**
+ * How the age was judged.
+ *
+ * `calendar` is wall-clock arithmetic: cheap, provider-independent, and
+ * deliberately conservative, because it has to allow for every weekend and
+ * holiday it cannot see. `session` would consult an exchange calendar and say
+ * "this is the most recent close that exists" rather than "this is less than N
+ * days old".
+ *
+ * Only `calendar` is implemented. The value is carried on the policy and
+ * echoed on the verdict now, rather than added later, so that a surface can
+ * already distinguish a conservative fallback from a real answer — and so that
+ * adding `session` is a new policy rather than a change to every call site.
+ * Building an exchange calendar is explicitly out of scope for this stage.
+ */
+export type FreshnessBasis = 'calendar' | 'session'
+
 export interface FreshnessPolicy {
+  dataClass: DataClass
+  /** Always `calendar` today. See `FreshnessBasis`. */
+  basis: FreshnessBasis
   /**
    * How old the FACT may be before it is stale, in milliseconds.
    *
    * Calendar time, not trading time. A close from Friday read on a Monday is
    * three days old and must still count as fresh, so a daily policy has to be
-   * wider than a day; that slack is the reason the default below is four days
-   * rather than one, and it is deliberate rather than a rounding.
+   * wider than a day; that slack is deliberate rather than a rounding, and it
+   * is the price of not having a session calendar.
    */
   maxAgeMs: number
   /**
@@ -137,12 +175,16 @@ export interface FreshnessPolicy {
  * would flag a working pipeline.
  */
 export const DAILY_CLOSE_POLICY: FreshnessPolicy = {
+  dataClass: 'daily_close',
+  basis: 'calendar',
   maxAgeMs: 5 * 24 * 60 * 60 * 1000,
   maxObservationAgeMs: 5 * 24 * 60 * 60 * 1000,
 }
 
 /** Fifteen minutes. A delayed quote that has not moved in longer is not live. */
 export const INTRADAY_QUOTE_POLICY: FreshnessPolicy = {
+  dataClass: 'intraday_quote',
+  basis: 'calendar',
   maxAgeMs: 15 * 60 * 1000,
   maxObservationAgeMs: 15 * 60 * 1000,
 }
@@ -155,11 +197,82 @@ export const INTRADAY_QUOTE_POLICY: FreshnessPolicy = {
  * and train readers to ignore the flag.
  */
 export const REFERENCE_POLICY: FreshnessPolicy = {
+  dataClass: 'reference',
+  basis: 'calendar',
   maxAgeMs: 90 * 24 * 60 * 60 * 1000,
+}
+
+/**
+ * A hundred and thirty days.
+ *
+ * A reported fundamental is current until the next report supersedes it, which
+ * for a US filer is about ninety days plus filing lag. Judging it on the
+ * daily-close window would mark every company's own last filed number stale
+ * five days after we fetched it, which is not what stale means here.
+ */
+export const FUNDAMENTAL_POLICY: FreshnessPolicy = {
+  dataClass: 'fundamental',
+  basis: 'calendar',
+  maxAgeMs: 130 * 24 * 60 * 60 * 1000,
+}
+
+/**
+ * Fourteen days.
+ *
+ * An estimate is a live opinion, not a reported fact: it moves on revisions
+ * between reports, so it goes stale much faster than the fundamental it
+ * forecasts even though both arrive quarterly.
+ */
+export const ESTIMATE_POLICY: FreshnessPolicy = {
+  dataClass: 'estimate',
+  basis: 'calendar',
+  maxAgeMs: 14 * 24 * 60 * 60 * 1000,
+}
+
+const POLICIES: Record<DataClass, FreshnessPolicy> = {
+  intraday_quote: INTRADAY_QUOTE_POLICY,
+  daily_close: DAILY_CLOSE_POLICY,
+  reference: REFERENCE_POLICY,
+  fundamental: FUNDAMENTAL_POLICY,
+  estimate: ESTIMATE_POLICY,
+}
+
+/**
+ * The policy for a class of data.
+ *
+ * The point of the lookup is that a caller names WHAT it is holding rather
+ * than choosing a duration. Naming a duration is how one class's window
+ * becomes every class's window — and the daily-close five days is a
+ * conservative fallback for one specific feed, not a definition of "recent".
+ */
+export function policyFor(dataClass: DataClass): FreshnessPolicy {
+  return POLICIES[dataClass]
+}
+
+/**
+ * Whether this verdict rests on wall-clock arithmetic rather than a real
+ * market calendar.
+ *
+ * True for everything today. A surface that wants to say "as of Friday's
+ * close" rather than "4 days old" needs a `session` policy and should check
+ * this rather than assume.
+ */
+export function isCalendarFallback(policy: FreshnessPolicy): boolean {
+  return policy.basis === 'calendar'
 }
 
 export interface FreshnessVerdict {
   state: FreshnessState
+  /**
+   * The class and basis the verdict was reached under.
+   *
+   * Echoed rather than left implicit so a surface can render "stale" honestly:
+   * a `calendar` verdict on a `daily_close` means "older than the conservative
+   * window", not "the exchange has published something newer". Those are
+   * different claims and only one of them is currently provable.
+   */
+  dataClass: DataClass
+  basis: FreshnessBasis
   /** Age of the FACT in ms, from `effectiveAt`. Null when missing. */
   ageMs: number | null
   /** Age of the fact in whole days, for display. Null when missing. */
@@ -177,13 +290,15 @@ export interface FreshnessVerdict {
   reason: string | null
 }
 
-const MISSING: FreshnessVerdict = {
+const missing = (policy: FreshnessPolicy, reason: string): FreshnessVerdict => ({
   state: 'missing',
+  dataClass: policy.dataClass,
+  basis: policy.basis,
   ageMs: null,
   ageDays: null,
   observationAgeMs: null,
-  reason: 'no value',
-}
+  reason,
+})
 
 const parse = (iso: string | null | undefined): number | null => {
   if (typeof iso !== 'string' || iso.length === 0) return null
@@ -203,11 +318,11 @@ export function assessFreshness<T>(
   policy: FreshnessPolicy,
   now: number = Date.now(),
 ): FreshnessVerdict {
-  if (!observed) return MISSING
+  if (!observed) return missing(policy, 'no value')
 
   const effective = parse(observed.effectiveAt)
   if (effective == null) {
-    return { ...MISSING, reason: 'value carries no usable effective date' }
+    return missing(policy, 'value carries no usable effective date')
   }
 
   // Clamped at zero. A clock skew that puts `effectiveAt` slightly ahead of now
@@ -222,6 +337,8 @@ export function assessFreshness<T>(
   if (ageMs > policy.maxAgeMs) {
     return {
       state: 'stale',
+      dataClass: policy.dataClass,
+      basis: policy.basis,
       ageMs,
       ageDays,
       observationAgeMs,
@@ -239,6 +356,8 @@ export function assessFreshness<T>(
   ) {
     return {
       state: 'stale',
+      dataClass: policy.dataClass,
+      basis: policy.basis,
       ageMs,
       ageDays,
       observationAgeMs,
@@ -246,7 +365,15 @@ export function assessFreshness<T>(
     }
   }
 
-  return { state: 'fresh', ageMs, ageDays, observationAgeMs, reason: null }
+  return {
+    state: 'fresh',
+    dataClass: policy.dataClass,
+    basis: policy.basis,
+    ageMs,
+    ageDays,
+    observationAgeMs,
+    reason: null,
+  }
 }
 
 /** The value, but only if it is fresh. Null otherwise, never a default. */
