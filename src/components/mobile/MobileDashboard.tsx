@@ -128,6 +128,7 @@ import {
 } from '../../lib/signals/pane-plan'
 import { tileRequirementFor } from '../../lib/mobile/tile-requirement'
 import { readerQuestionFor } from '../../lib/signals/reader-question'
+import { briefClassFor } from '../../lib/signals/brief-class'
 import type { TileContainer } from '../../lib/signals/tile-geometry'
 import {
   composeFeed, type ComposeScope, type ComposeTraceRow,
@@ -2959,6 +2960,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
            */
           questionOf: (e: any) =>
             readerQuestionFor(rankInputFor(e)?.type ?? signalTypeOf(e)),
+          /**
+           * Which lane of the briefing, which is coarser than all three above.
+           *
+           * Manual QA saw "Needs Review, Overdue, Coverage Gap, Needs Review,
+           * Coverage Gap, Overdue" and called it repetitive, while the family,
+           * question and category rules all read it as varied — because
+           * `research_stale` prints the same words as `awaiting_review`,
+           * coverage is filed under research, and a recommendation is filed
+           * under decisions. Four names, one lane. See `brief-class`.
+           *
+           * Derived from the same type the other two are, so a card cannot be
+           * one thing to the ranker and another to the composer.
+           */
+          briefOf: (e: any) =>
+            briefClassFor(rankInputFor(e)?.type ?? signalTypeOf(e)),
           scope,
           trace: import.meta.env.DEV,
         })
