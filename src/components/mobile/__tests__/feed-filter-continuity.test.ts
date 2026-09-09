@@ -451,12 +451,20 @@ describe('the coverage card renders through the engine for everybody', () => {
     const at = dash.indexOf('const adoptTile = useCallback(')
     expect(at).toBeGreaterThan(0)
     const body = dash.slice(at, dash.indexOf('const rankInputFor = useCallback(', at))
-    expect(body).toContain("const flagless = !!source && 'coverage' in source")
+    expect(body).toContain("'coverage' in source || 'overdue' in source")
     expect(body).toContain('if (!tileEngineOn && !flagless) return original')
   })
 
-  it('drops the price pane on a coverage tile without consulting the flag', () => {
-    expect(dash).toContain('const attnPrice = isCoverageStale ? null : pricePane(')
+  /**
+   * The tape is dropped by a general rule, not a per-family one.
+   *
+   * When the resolver has chosen a lead visual, that visual IS the evidence,
+   * and a price series stapled underneath contradicts the choice the plan just
+   * made. Coverage and Overdue both reach it, and so will the next family whose
+   * claim is not about the price.
+   */
+  it('drops the price pane wherever the engine took the row on', () => {
+    expect(dash).toContain("const attnPrice = attnAdopted?.adopted ? null : pricePane(")
   })
 
   /** The other four families are still behind it. */
@@ -465,6 +473,52 @@ describe('the coverage card renders through the engine for everybody', () => {
     const at = dash.indexOf('const adoptTile = useCallback(')
     const body = dash.slice(at, dash.indexOf('const rankInputFor = useCallback(', at))
     expect(body).toContain('tileEngineOn')
+  })
+})
+
+describe('the plan owns the picture on every adopted family', () => {
+  /**
+   * The seam, once, for all of them.
+   *
+   * `planPane` renders whatever primitive the plan named through the switch
+   * Explore already owns. A hand-written pane that led an adopted card would be
+   * the caller overruling the resolver, which is the defect this whole seam
+   * closes — so the assertion is that every adoption site consults it.
+   */
+  it('renders the plan visual through one shared seam', () => {
+    expect(dash).toContain('const planPane = useCallback((visual: ExploreVisual | null)')
+    expect(dash).toContain('<ExploreVisualBlock visual={visual} />')
+  })
+
+  it('leads the attention families with it', () => {
+    expect(dash).toContain('const attnPlanPane = planPane(attnAdopted?.visual ?? null)')
+  })
+
+  it('leads Target Hit with it, ahead of the tape', () => {
+    expect(dash).toContain('const lensPlanPane = planPane(lensAdopted?.visual ?? null)')
+    const at = dash.indexOf('if (lensPlanPane) panes.push(lensPlanPane)')
+    const priced = dash.indexOf('const priced = pricePane(symbol, { bands: priceBands')
+    expect(at).toBeGreaterThan(0)
+    expect(priced).toBeGreaterThan(at)
+  })
+
+  it('leads Unreviewed Move with it, ahead of the producer own order', () => {
+    expect(dash).toContain('const insightPlanPane = planPane(insightAdopted?.visual ?? null)')
+    const at = dash.indexOf('...(insightPlanPane ? [insightPlanPane] : []),')
+    const producerOrder = dash.indexOf('...insightPanePlan({')
+    expect(at).toBeGreaterThan(0)
+    expect(producerOrder).toBeGreaterThan(at)
+  })
+
+  /**
+   * The producer's pane plan is untouched.
+   *
+   * It is the geometry contract the gallery measures, and threading an engine
+   * pane through it would make a card's reserved height depend on whether its
+   * situation had been adopted yet.
+   */
+  it('does not thread the engine pane through the producer geometry plan', () => {
+    expect(dash).not.toContain("id === 'visual'")
   })
 })
 

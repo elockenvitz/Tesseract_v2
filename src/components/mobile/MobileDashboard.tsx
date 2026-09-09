@@ -29,8 +29,11 @@ import { FeedSlot } from './FeedSlot'
 import { isFlagOn } from '../../lib/flags'
 import {
   adoptComposedTarget, adoptCoverageGap, adoptResearchInsight, adoptScenarioGap,
-  adoptStaleTarget, adoptTargetHit, cardOrOriginal, type CoverageAttentionRow,
+  adoptStaleTarget, adoptTargetHit, adoptWorkOverdue, cardOrOriginal, visualOrNull,
+  type CoverageAttentionRow, type OverdueAttentionRow,
 } from '../../lib/tile-engine/adopt/mobile'
+import { ExploreVisualBlock } from './ExploreVisual'
+import type { ExploreVisual } from '../../lib/mobile/explore-visual'
 import { absorbedTargetLenses, composedTargetKeys, type TargetPair } from '../../lib/tile-engine/adopt/target-composition'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
@@ -57,7 +60,7 @@ import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
 import {
-  attentionDisplayType, attentionRankSeverity, attentionSignalType,
+  attentionCardType, attentionDisplayType, attentionRankSeverity, attentionSignalType,
 } from '../../lib/mobile/entry-signal-type'
 import { CATEGORY_LABEL, categoryOf, displayFamilyOf, familyLabel, familyOf, isExactFamily, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
@@ -1806,7 +1809,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       | { stale: StaleTarget }
       | { breach: TargetBreach }
       | { insight: DerivedInsight }
-      | { coverage: CoverageAttentionRow },
+      | { coverage: CoverageAttentionRow }
+      | { overdue: OverdueAttentionRow },
   ): any => {
     if (!original) return original
     /**
@@ -1830,7 +1834,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * defect, and the honest fix is the narrow one: this family renders through
      * the engine for everybody. Nothing else moves.
      */
-    const flagless = !!source && 'coverage' in source
+    /**
+     * Both attention adoptions are flagless, and for one reason.
+     *
+     * The comparison flag exists so an adopted presentation can be measured
+     * against the shipping one before it replaces it. That argument holds for a
+     * family whose legacy card is fine. It does not hold for either of these:
+     * the coverage tile's chip already contradicted its own face, and the
+     * overdue tile's picture was the price of a name that has nothing to do
+     * with why the work is late. A card that is wrong is not a comparison.
+     */
+    const flagless = !!source && ('coverage' in source || 'overdue' in source)
     if (!tileEngineOn && !flagless) return original
     const viewer = {
       readerId: userId ?? null,
@@ -1859,6 +1873,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         ? adoptTargetHit(source.breach, original, viewer, feedContainer)
       : source && 'insight' in source
         ? adoptResearchInsight(source.insight, original, viewer, feedContainer)
+      : source && 'overdue' in source
+        ? adoptWorkOverdue(source.overdue, original, viewer, feedContainer, Date.now())
       : source && 'coverage' in source
         /**
          * The one adapter that needs the time.
@@ -1875,8 +1891,42 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           viewer,
           feedContainer,
         )
-    return cardOrOriginal(original, result)
+    /**
+     * `adopted` is the seam's own answer, and it is not "did the card change".
+     *
+     * A decline must leave BOTH halves of production alone — its card and the
+     * panes the caller was going to build. Comparing cards to infer that would
+     * be reading a result out of an identity check; the result is already here.
+     */
+    return {
+      card: cardOrOriginal(original, result),
+      visual: visualOrNull(result),
+      adopted: result.ok,
+    }
   }, [tileEngineOn, userId, coverageIndex, lenses?.book, feedContainer, targetPairFor])
+
+  /**
+   * The plan's picture, as a pane, using the renderer Explore already has.
+   *
+   * ── Why this is one function and not a component per situation ──────────
+   *
+   * `ExploreVisualBlock` is a closed switch over the ten primitives, and the
+   * plan's vocabulary is aliased from that union precisely so it cannot name
+   * anything else. So "render what the resolver chose" is a lookup, not a
+   * design decision, and a new situation that resolves to an existing primitive
+   * costs nothing here at all.
+   *
+   * Null when the engine has no picture — a declined adoption, or a claim whose
+   * data cannot support one — and the caller keeps whatever pane it built.
+   */
+  const planPane = useCallback((visual: ExploreVisual | null) => {
+    if (!visual || visual.kind === 'none') return null
+    return {
+      id: 'evidence',
+      label: 'Evidence',
+      content: <ExploreVisualBlock visual={visual} />,
+    }
+  }, [])
 
   const rankInputFor = useCallback((e: any): PriorityInput => {
     /** The stored judgment for a card, so acknowledgment can be read. */
@@ -4814,7 +4864,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // Seam 1 of 4. Off, `adoptTile` is the identity function.
           // The ENTRY travels alongside the adopted card because the pill needs
           // a family to resolve and the card alone carries none.
-          if (entry.kind === 'scenario') return renderScenarioCard(adoptTile(entry.card), entry)
+          if (entry.kind === 'scenario') return renderScenarioCard(adoptTile(entry.card).card, entry)
 
           if (entry.kind === 'attention') {
             const a = entry.attention
@@ -4996,10 +5046,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              * card, whose primary is the honest generic one.
              */
             const isCoverageStale = (a as any).reason_code === 'coverage_neglected' && !!linked
+            /**
+             * Work with a date on it, whether or not it names an asset.
+             *
+             * No `linked` requirement, unlike coverage: the engine's actions for
+             * this family are `open_item` and `capture`, and both work on a row
+             * with no ticker. The adapter declines a row with no due date, so a
+             * generic `action_required` item still renders as it ships.
+             */
+            const isWorkOverdue = attentionCardType(a as any) === 'project_overdue'
+            const attnAdopted = !attnRaw.ok ? null
+              : isCoverageStale ? adoptTile(attnRaw.card, { coverage: a as any })
+              : isWorkOverdue ? adoptTile(attnRaw.card, { overdue: a as any })
+              : null
             const attnBuilt: typeof attnRaw =
-              attnRaw.ok && isCoverageStale
-                ? { ok: true, card: adoptTile(attnRaw.card, { coverage: a as any }) }
-                : attnRaw
+              attnAdopted ? { ok: true, card: attnAdopted.card } : attnRaw
+            /**
+             * The clock, where the resolver asked for one.
+             *
+             * This is the pane the price chart used to occupy. It is not a
+             * coverage component: `planPane` renders whatever primitive the
+             * plan named, through the switch Explore already owns.
+             */
+            const attnPlanPane = planPane(attnAdopted?.visual ?? null)
             const attnRaisedAt = a.created_at ?? a.last_activity_at ?? null
             /**
              * The tape, except where the resolver has said it is the wrong picture.
@@ -5014,7 +5083,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              * the chip already says Coverage gap for every reader, and a price
              * series underneath it is the picture the resolver rejected.
              */
-            const attnPrice = isCoverageStale ? null : pricePane(linked?.symbol, {
+            /**
+             * The tape, unless the engine took this row on.
+             *
+             * General rather than per-family, and keyed on the ADOPTION rather
+             * than on whether a picture came out of it. Once the engine owns a
+             * card it owns its evidence: a coverage clock and an overdue
+             * deadline both say the price is not why the reader is here, and a
+             * claim that resolved to no picture at all is saying the same thing
+             * more strongly. A declined row keeps production's pane untouched.
+             */
+            const attnPrice = attnAdopted?.adopted ? null : pricePane(linked?.symbol, {
               markers: attnRaisedAt
                 ? [{ date: attnRaisedAt, label: 'Raised', kind: 'event' as const }]
                 : [],
@@ -5047,6 +5126,7 @@ entry,
 'attention',
 a.context?.asset_id ?? null,
 [
+...(attnPlanPane ? [attnPlanPane] : []),
 ...(attnPrice ? [attnPrice] : []),
 ...(attnBuilt.ok ? [{ id: 'verdict', label: 'Respond', content: (
 <VerdictBar
@@ -5134,16 +5214,28 @@ a.context?.asset_id ?? null,
              * resolved once whichever of the two survived. The other three lens
              * kinds are not adopted and `adoptTile` hands them straight back.
              */
+            const lensAdopted = rawBuilt.ok && (l.type === 'breach' || l.type === 'stale')
+              ? adoptTile(
+                  rawBuilt.card,
+                  l.type === 'breach' ? { breach: l.breach } : { stale: l.target },
+                )
+              : null
             const built: typeof rawBuilt =
-              rawBuilt.ok && (l.type === 'breach' || l.type === 'stale')
-                ? {
-                    ok: true,
-                    card: adoptTile(
-                      rawBuilt.card,
-                      l.type === 'breach' ? { breach: l.breach } : { stale: l.target },
-                    ),
-                  }
-                : rawBuilt
+              lensAdopted ? { ok: true, card: lensAdopted.card } : rawBuilt
+            /**
+             * The plan's picture, ahead of the tape.
+             *
+             * Target Hit resolves to `target_compare` — one level and the price
+             * that passed it, which is the whole of "where is the price
+             * relative to the target that was reached". The chart still follows
+             * it in the carousel, carrying the path and the target band, which
+             * is the context rather than the claim.
+             *
+             * Target Expired renders through its own component below and never
+             * reaches this list, so `stale` resolves a plan and uses none of it
+             * here. That is deliberate: this stage adopts Target Hit.
+             */
+            const lensPlanPane = planPane(lensAdopted?.visual ?? null)
             const assetId =
               l.type === 'conviction' ? l.gap.assetId
               : l.type === 'crowded'  ? l.name.assetId
@@ -5312,6 +5404,7 @@ a.context?.asset_id ?? null,
             // `TargetExpiredCard`, which returned above.
             const priceMarkers: PriceMarker[] = []
 
+            if (lensPlanPane) panes.push(lensPlanPane)
             const priced = pricePane(symbol, { bands: priceBands, markers: priceMarkers })
             if (priced) panes.push(priced)
 
@@ -5665,9 +5758,24 @@ a.context?.asset_id ?? null,
              * now — `no_thesis` and `stale_research` — and the insight's own
              * kind chooses between them.
              */
-            const insightCard = insightBuilt.ok
+            const insightAdopted = insightBuilt.ok
               ? adoptTile(insightBuilt.card, { insight: ins })
               : null
+            const insightCard = insightAdopted?.card ?? null
+            /**
+             * "Last reviewed here, and the market moved this much since."
+             *
+             * `last_look` states that relationship in one strip. The anchored
+             * chart below states it too, and states it better for a reader who
+             * wants the path — but it states it in a full plot with axes, and
+             * the reader has to find the marker before the sentence arrives.
+             * Lead with the relationship; keep the path as context.
+             *
+             * Only the measured framing resolves here. A long silence has no
+             * move to draw and new evidence is a count rather than a distance,
+             * so both fall through to the chart they already had.
+             */
+            const insightPlanPane = planPane(insightAdopted?.visual ?? null)
 
             /**
              * The tape, with the case's own date marked on it.
@@ -5923,6 +6031,22 @@ a.context?.asset_id ?? null,
                  * what keeps the plan honest about eligibility rather than
                  * pretending it is a guarantee.
                  */
+                /**
+                 * The engine's picture leads, and production's order follows.
+                 *
+                 * Prepended rather than threaded through `insightPanePlan`
+                 * because the two describe different things: that plan is the
+                 * producer's own pane order and the gallery mounts it to
+                 * measure the card, while this is the resolver's answer to
+                 * "what is the picture for this claim". Adding an id to the
+                 * producer's plan would make the geometry contract depend on
+                 * whether a situation had been adopted yet.
+                 *
+                 * Height is unaffected: the evidence band is sized to the
+                 * TALLEST pane, the price pane already reserves an interactive
+                 * plot, and every visual in this vocabulary is a strip.
+                 */
+                ...(insightPlanPane ? [insightPlanPane] : []),
                 ...insightPanePlan({
                   framing,
                   hasCapital: !!insightCapital,

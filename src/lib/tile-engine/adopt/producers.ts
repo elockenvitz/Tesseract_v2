@@ -914,6 +914,148 @@ export function coverageStaleFinding(input: CoverageStaleAdapterInput): AdapterR
   }
 }
 
+// -----------------------------------------------------------------------------
+// 7. Overdue work
+// -----------------------------------------------------------------------------
+
+/**
+ * The attention row whose date has gone by.
+ *
+ *   collectProjectDeliverables / collectProjects / collectOverdueTasks
+ *     -> AttentionItem { attention_type: 'action_required', due_at: <past> }
+ *   buildAttentionCard(a, asset) -> SignalCard typed `project_overdue`
+ *   MobileDashboard rankInputFor case 'attention' -> PriorityInput
+ *
+ * -- What the reader is being told, and what they were being told ------------
+ *
+ * "What required work missed its deadline, by how much, and what needs to
+ * happen." The shipping card answers the first and the third and leaves the
+ * second to whatever the body happens to say. Its picture is the asset's price
+ * chart, on the reasoning that an attention row with a ticker is a card about a
+ * ticker. It is not: a deliverable is late because nobody did it, and the price
+ * of the name it concerns has no bearing on that at all.
+ *
+ * -- The subject is the WORK, not the name -----------------------------------
+ *
+ * `buildAttentionCard` gives the card an asset entity when the row resolves to
+ * one, which is right for the chip and the deep link. The FINDING is about the
+ * deliverable, so its subject is the item and its name is the row's title --
+ * otherwise the copy reads "AMZN is past the date it was given", which is a
+ * sentence about the wrong object. The asset stays where production put it: on
+ * the entity, as supporting context.
+ *
+ * -- Declines rather than guesses --------------------------------------------
+ *
+ * `attentionCardType` types every `action_required` row `project_overdue`,
+ * including the ones with no due date at all. Those are not overdue findings --
+ * nothing was missed, because nothing was promised -- so they decline and render
+ * exactly as they ship today.
+ */
+export interface WorkOverdueAdapterInput {
+  item: {
+    attention_id?: string | null
+    attention_type?: string | null
+    title?: string | null
+    due_at?: string | null
+    created_at?: string | null
+    last_activity_at?: string | null
+    context?: { asset_id?: string | null } | null
+  }
+  /** `buildAttentionCard(item, asset)`, unwrapped. The severity authority. */
+  card: SignalCard
+  coverage: CoverageRelevance
+  /** `Date.now()` at the call site. The engine keeps no clock. */
+  now: number
+}
+
+/**
+ * Nobody authored a deadline in the sense a thesis is authored.
+ *
+ * The artefact a revision would change is the work item, and the attention row
+ * carries no author for it. `null` says the producer cannot answer, which
+ * resolves to a non-commit path.
+ */
+export function workOverdueAuthors(): ArtefactAuthors {
+  return null
+}
+
+export function workOverdueFinding(input: WorkOverdueAdapterInput): AdapterResult {
+  const { item, card, coverage, now } = input
+  const id = item.attention_id ?? card.id
+
+  if (!item.due_at) {
+    return decline('insufficient_facts', `${id}: no due date, so nothing was missed`)
+  }
+  const due = Date.parse(item.due_at)
+  if (!Number.isFinite(due)) {
+    return decline('insufficient_facts', `${id}: unparseable due date`)
+  }
+  if (due > now) {
+    return decline('not_an_attention_state', `${id}: due ${item.due_at}, which has not passed`)
+  }
+
+  /**
+   * The span the work was given, from when it was raised to when it was due.
+   *
+   * `created_at` is when the row appeared, which is the closest thing to "when
+   * this became somebody's job" that the attention model records. Where it is
+   * missing or later than the due date the track has no honoured stretch to
+   * draw, and the finding keeps its number without a picture.
+   */
+  const raised = item.created_at ? Date.parse(item.created_at) : NaN
+  const hasSpan = Number.isFinite(raised) && raised < due
+
+  const lateDays = Math.max(0, Math.floor((now - due) / 86_400_000))
+
+  return {
+    ok: true,
+    finding: assembleFinding('work_overdue', {
+      id: card.id,
+      subject: {
+        kind: 'project',
+        id: String(id),
+        name: (item.title ?? card.headline ?? 'This work').trim(),
+      },
+      claim: {
+        predicate: 'expired',
+        /**
+         * Days, and the unit is what the copy writer reads.
+         *
+         * A lapsed price horizon carries months and reads as one; a missed
+         * deadline carries days and reads as one. Same predicate, same picture,
+         * two sentences -- decided by the number rather than by the family.
+         */
+        quantity: { value: lateDays, unit: 'days', direction: 'bad' },
+        ...(hasSpan
+          ? { interval: { from: new Date(raised).toISOString(), to: new Date(due).toISOString() } }
+          : {}),
+      },
+      facts: [
+        { key: 'due_at', value: item.due_at, source: 'stated', asOf: item.due_at },
+        ...(item.last_activity_at
+          ? [{
+              key: 'last_activity',
+              value: item.last_activity_at,
+              source: 'stated' as const,
+              asOf: item.last_activity_at,
+            }]
+          : []),
+      ],
+      stakes: {
+        /** `rankInputFor`'s attention branch, copied field for field. */
+        weightPct: null,
+        held: !!item.context?.asset_id,
+        deviationPct: null,
+        overdueDays: lateDays,
+        coverage,
+      },
+      occurredAt: item.created_at ?? item.due_at,
+      /** Production's own, from `buildAttentionCard`. */
+      severity: card.severity,
+    }),
+  }
+}
+
 /**
  * A case that was never written has no author to check.
  *

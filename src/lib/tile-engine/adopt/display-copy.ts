@@ -146,6 +146,29 @@ const COPY: Record<FindingPredicate, CopyWriter> = {
     const q = s.lead.claim.quantity
     const iv = s.lead.claim.interval
     const size = amount(q)
+
+    /**
+     * Two things expire, and the unit says which.
+     *
+     * A horizon is measured in months and belongs to a view somebody wrote
+     * about a price. A deadline is measured in days and belongs to a piece of
+     * work somebody was going to do. Written the same way, the second reads as
+     * an investment claim about a project, which it is not.
+     *
+     * Read off the unit, exactly as the `unreviewed` writer reads it. Neither
+     * writer knows which producer it is serving.
+     */
+    if (q?.unit === 'days') {
+      const late = Math.round(Math.abs(q.value))
+      return {
+        headline: `${nameOf(s)} is past the date it was given`,
+        metric: { value: `${late}d`, label: 'Late' },
+        body: iv
+          ? `Due ${day(iv.to)} and still open. Nothing has moved it since.`
+          : 'The date it was given has passed and the work is still open.',
+      }
+    }
+
     return {
       headline: `${nameOf(s)} has outlived the horizon it was given`,
       metric: size ? { value: `${size}mo`, label: 'Past its horizon' } : null,
