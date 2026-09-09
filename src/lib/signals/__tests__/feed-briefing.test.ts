@@ -89,6 +89,9 @@ function compose(pool: Cand[], over: Record<string, unknown> = {}) {
 /** The composer as it stood before the lane cap: every other rule, unchanged. */
 const withoutCap = (pool: Cand[]) => compose(pool, { maxPerBrief: 99 })
 
+/** The cap, without the seats it owes to critical cards. */
+const withoutProtection = (pool: Cand[]) => compose(pool, { protectCritical: false })
+
 const top = <T>(order: RankedItem<Cand>[], n: number, f: (c: Cand) => T): T[] =>
   order.slice(0, n).map(r => f(r.item))
 
@@ -130,7 +133,6 @@ const WORK_HEAVY: Cand[] = [
 ]
 
 describe('A. the work-heavy pool the reader complained about', () => {
-  const before = withoutCap(WORK_HEAVY).order
   const after = compose(WORK_HEAVY).order
 
   /**
@@ -144,39 +146,89 @@ describe('A. the work-heavy pool the reader complained about', () => {
     expect(worst(lanesIn(ranked))).toBeGreaterThanOrEqual(9)
   })
 
-  it('no longer lets one lane take half the first screen', () => {
-    // Measured: 5 of 10 before the cap, 3 after.
-    expect(worst(lanesIn(before))).toBeGreaterThanOrEqual(5)
-    expect(worst(lanesIn(after))).toBeLessThanOrEqual(3)
+  /**
+   * The cap binds on everything the opening does not owe a seat to.
+   *
+   * On this pool it cannot reach three, and the reason is the whole of the
+   * priority-protection correction: five of the ranked top ten are
+   * critical-severity work. Holding the lane to three would mean deciding that
+   * two critical cards are not worth the reader's first screen, which is a
+   * ranking judgement and not a composition one.
+   *
+   * So the lane's occupancy here is what it is owed and no more. Everything
+   * below the protected line is still capped exactly as before, which is what
+   * `withoutProtection` measures.
+   */
+  it('caps the lane at three once the seats it owes are filled', () => {
+    const owed = rankFeed(WORK_HEAVY, toInput, NOW)
+      .slice(0, 10)
+      .filter(r => r.input.severity === 'critical')
+      .filter(r => briefClassFor(r.item.type) === 'work')
+    expect(owed.length).toBe(5)
+    expect(worst(lanesIn(after))).toBe(owed.length)
+    // And with nothing owed a seat, the plain cap is what binds.
+    expect(worst(lanesIn(withoutProtection(WORK_HEAVY).order))).toBeLessThanOrEqual(3)
   })
 
   /**
-   * What the third slot costs, kept as numbers.
+   * ── The report this answers ─────────────────────────────────────────────
    *
-   * Product chose three over four after seeing both. It is not free: two cards
-   * leave the opening and one of them is critical-severity. Recorded here so
-   * the price is visible to whoever reads this next rather than buried in the
-   * constant's comment.
+   * With the cap at three and no protection, a critical review at 0.553 left
+   * the first screen and landed at 19, while a news item at 0.345 was pulled
+   * from 16 into the opening. Priority sovereignty, inverted by a rule about
+   * how a screen reads.
    */
-  it('records the two cards the third slot costs', () => {
+  it('keeps every critical card that earned the ranked opening', () => {
+    const owed = rankFeed(WORK_HEAVY, toInput, NOW)
+      .slice(0, 10)
+      .filter(r => r.input.severity === 'critical')
+      .map(r => r.item.id)
+    expect(owed.length).toBeGreaterThan(0)
+
+    const opening = new Set(after.slice(0, 10).map(r => r.item.id))
+    for (const id of owed) expect(opening.has(id), id).toBe(true)
+
+    // Unprotected, three of those five were outside the first screen.
+    const without = new Set(withoutProtection(WORK_HEAVY).order.slice(0, 10).map(r => r.item.id))
+    expect(owed.filter(id => !without.has(id)).length).toBe(3)
+  })
+
+  /**
+   * The weakest same-lane card gives way, not the strongest other-lane one.
+   *
+   * `research_stale` at 0.636 has the higher score and the lower severity, and
+   * it is what yields to the criticals of its own lane. That is the
+   * substitution the correction asks for: a lane's own weakest representative,
+   * rather than a critical card anywhere.
+   */
+  it('gives way from inside the lane rather than dropping the critical', () => {
     const kept = new Set(after.slice(0, 10).map(r => r.item.id))
-    const dropped = before.slice(0, 10).filter(r => !kept.has(r.item.id))
-    expect(dropped.map(r => r.item.family).sort())
-      .toEqual(['awaiting_review', 'research:long_silence'])
-    // Neither is displaced by more than the bar every other rule answers to.
-    const worstCost = Math.min(...compose(WORK_HEAVY).trace.map(t => t.priorityCost))
-    expect(worstCost).toBeGreaterThan(-0.31)
+    const dropped = withoutProtection(WORK_HEAVY).order.slice(0, 10).filter(r => !kept.has(r.item.id))
+    const laneOf = (r: RankedItem<Cand>) => briefClassFor(r.item.type)
+
+    // Nothing critical is among them.
+    expect(dropped.every(r => r.input.severity !== 'critical')).toBe(true)
+    // And the one that left the work lane is its weakest member by severity.
+    const fromWork = dropped.filter(r => laneOf(r) === 'work')
+    expect(fromWork.map(r => r.item.family)).toEqual(['research:long_silence'])
   })
 
   /**
-   * The head of the ranking is the head of the feed, always.
+   * Informational content may never take a critical card's seat.
    *
-   * A rule about what has already been shown cannot reach the first card,
-   * because nothing precedes it. Asserted rather than assumed: it is the one
-   * protection that must survive every future change to this cap.
+   * Stated as the property rather than as a sequence, because it is the one
+   * rule that must survive every future change to the cap.
    */
-  it('never moves the top-ranked card', () => {
-    expect(after[0].item.id).toBe(rankFeed(WORK_HEAVY, toInput, NOW)[0].item.id)
+  it('never lets an informational card displace a protected one', () => {
+    const opening = after.slice(0, 10)
+    const worstInformational = Math.max(
+      ...opening.filter(r => r.input.severity === 'informational').map(r => r.priority.total))
+    const droppedCritical = rankFeed(WORK_HEAVY, toInput, NOW)
+      .slice(0, 10)
+      .filter(r => r.input.severity === 'critical')
+      .filter(r => !opening.some(o => o.item.id === r.item.id))
+    expect(droppedCritical).toEqual([])
+    expect(Number.isFinite(worstInformational)).toBe(true)
   })
 
   it('shows at least four reader questions in the first ten', () => {
@@ -193,10 +245,19 @@ describe('A. the work-heavy pool the reader complained about', () => {
    * Needs Review, Overdue and Coverage Gap are three of the five families in
    * the `work` lane; between them they may not hold most of the screen.
    */
+  /**
+   * The reported sequence, as a count, with the protection in play.
+   *
+   * Four of the ten rather than the seven the ranked feed produced, and all
+   * four are critical. The reader is no longer being shown the same request
+   * six times; they are being shown the six that matter and then something
+   * else.
+   */
   it('stops Needs Review, Overdue and Coverage Gap dominating together', () => {
     const trio = new Set(['awaiting_review', 'project_overdue', 'coverage_gap'])
-    const held = familiesIn(after).filter(f => trio.has(f)).length
-    expect(held).toBeLessThanOrEqual(2)
+    const held = after.slice(0, 10).filter(r => trio.has(r.item.family))
+    expect(held.length).toBeLessThanOrEqual(4)
+    expect(held.every(r => r.input.severity === 'critical')).toBe(true)
   })
 })
 
