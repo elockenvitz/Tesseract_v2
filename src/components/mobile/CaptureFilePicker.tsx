@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
-import { Check, Loader2, Search } from 'lucide-react'
+import { Check, Loader2, Plus, Search } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
+import { useToast } from '../common/Toast'
 
 interface CaptureFilePickerProps {
   target: 'list' | 'theme'
@@ -33,6 +34,7 @@ export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: Capt
   const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
   const [justAdded, setJustAdded] = useState<string | null>(null)
+  const toast = useToast()
 
   const { data: options = [], isLoading } = useQuery({
     queryKey: ['capture-file-options', target, user?.id, currentOrgId],
@@ -40,18 +42,51 @@ export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: Capt
     staleTime: 60_000,
     queryFn: async () => {
       if (target === 'list') {
-        const { data } = await supabase
-          .from('asset_lists')
-          .select('id, name, color')
-          .eq('organization_id', currentOrgId!)
-          .eq('created_by', user!.id)
-          .order('updated_at', { ascending: false })
-          .limit(50)
-        return (data as any[]) ?? []
+        /*
+          Owned AND shared, which is what "my lists" means.
+
+          ── The defect this closes ──────────────────────────────────────────
+          This asked for `created_by = me` and nothing else, so a list a
+          colleague had shared with the reader simply did not appear — while
+          the desktop `AddToListButton`, looking at the same asset, offered it.
+          Filing from a phone showed a shorter list than filing from a laptop,
+          with no sign that anything was missing.
+
+          The org filter stays: `created_by` alone is not a tenant filter, and a
+          user in two organisations must not be offered the other one's lists.
+          The collaboration arm is joined through `asset_lists` so the same
+          scoping applies to it.
+        */
+        const [owned, shared] = await Promise.all([
+          supabase
+            .from('asset_lists')
+            .select('id, name, color')
+            .eq('organization_id', currentOrgId!)
+            .eq('created_by', user!.id)
+            .order('updated_at', { ascending: false })
+            .limit(50),
+          supabase
+            .from('asset_list_collaborations')
+            .select('asset_lists!inner(id, name, color, organization_id, updated_at)')
+            .eq('user_id', user!.id)
+            .limit(50),
+        ])
+        const sharedLists = (((shared.data as any[]) ?? [])
+          .map(c => c.asset_lists)
+          .filter(Boolean) as any[])
+          .filter(l => l.organization_id === currentOrgId)
+        // Deduplicate: a list can be both owned and collaborated on.
+        return Array.from(
+          new Map([...(((owned.data as any[]) ?? [])), ...sharedLists].map(l => [l.id, l])).values(),
+        )
       }
+      // Themes carry no collaboration table, so ownership is the whole set the
+      // reader can file into. Scoped to the organisation for the same reason
+      // the lists are.
       const { data } = await supabase
         .from('themes')
         .select('id, name, color')
+        .eq('organization_id', currentOrgId!)
         .order('updated_at', { ascending: false })
         .limit(50)
       return (data as any[]) ?? []
@@ -93,17 +128,95 @@ export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: Capt
           .insert({ theme_id: id, asset_id: assetId })
         if (error) throw error
       }
-      return id
+      return { id, name: options.find((o: any) => o.id === id)?.name ?? (target === 'list' ? 'the list' : 'the theme') }
     },
-    onSuccess: (id) => {
+    onSuccess: onFiled,
+  })
+
+  /** What happens after a successful file, whichever route got there. */
+  function onFiled({ id, name }: { id: string; name: string }) {
+    {
       setJustAdded(id)
+      queryClient.invalidateQueries({ queryKey: ['capture-file-options', target] })
       queryClient.invalidateQueries({ queryKey: ['capture-file-existing', target, assetId] })
       queryClient.invalidateQueries({ queryKey: target === 'list' ? ['list-surfaces'] : ['themes'] })
-      // Held briefly so the tick is visible — filing gives no other feedback,
-      // and a sheet that closes instantly reads as "did that work?".
+      /*
+        Say what happened, and offer the way in.
+
+        Filing gave no feedback beyond a tick that the closing sheet took with
+        it, and no route to the thing just filed into — so "did that work, and
+        where did it go" had no answer. The toast is the product's existing
+        primitive and already carries an action, so this introduces no second
+        notification system. It does NOT navigate on its own: the reader was
+        capturing from a feed and being moved off it unasked would cost more
+        than the confirmation is worth.
+      */
+      toast.success(`Added to ${name}`, {
+        action: {
+          label: target === 'list' ? 'View list' : 'View theme',
+          onClick: () => window.dispatchEvent(new CustomEvent(
+            target === 'list' ? 'navigate-to-list' : 'navigate-to-theme',
+            { detail: { id, name } },
+          )),
+        },
+      })
+      // Held briefly so the tick is visible before the sheet goes.
       setTimeout(onDone, 550)
+    }
+  }
+
+  /**
+   * Create the thing being searched for, and file into it in one go.
+   *
+   * The picker offered no way out of an empty result: typing the name of a list
+   * that did not exist yet produced "No lists match" and a dead end, so filing
+   * a new idea meant leaving the feed to make the list first — the exact
+   * round trip this sheet exists to remove.
+   *
+   * The payloads are the desktop buttons' payloads, unchanged: a `mutual` list
+   * or a plain theme, then the link row. Nothing new is persisted and no schema
+   * moves.
+   */
+  const createAndAdd = useMutation({
+    mutationFn: async (name: string) => {
+      if (target === 'list') {
+        const { data, error } = await (supabase.from('asset_lists') as any)
+          // `organization_id` explicitly, even though a BEFORE INSERT trigger
+          // would stamp it. The org-scope guard reads the call site, not the
+          // schema, and it is right to: a reader of this line should be able to
+          // see which tenant the row lands in without going to find a trigger.
+          .insert({ name, created_by: user?.id, list_type: 'mutual', organization_id: currentOrgId })
+          .select('id').single()
+        if (error) throw error
+        const { error: linkError } = await (supabase.from('asset_list_items') as any)
+          .insert({ list_id: data.id, asset_id: assetId, added_by: user?.id })
+        if (linkError) throw linkError
+        return { id: data.id as string, name }
+      }
+      const { data, error } = await (supabase.from('themes') as any)
+        .insert({ name, created_by: user?.id, organization_id: currentOrgId })
+        .select('id').single()
+      if (error) throw error
+      const { error: linkError } = await (supabase.from('theme_assets') as any)
+        .insert({ theme_id: data.id, asset_id: assetId })
+      if (linkError) throw linkError
+      return { id: data.id as string, name }
     },
+    onSuccess: onFiled,
   })
+
+  /**
+   * Whether to offer creation.
+   *
+   * Only once something has been typed, and only when nothing already carries
+   * that exact name — offering "Create Watchlist" beside an existing Watchlist
+   * invites a duplicate the reader did not mean to make.
+   */
+  const canCreate = useMemo(() => {
+    const q = query.trim()
+    if (q.length === 0) return false
+    return !options.some((o: any) => (o.name ?? '').trim().toLowerCase() === q.toLowerCase())
+  }, [options, query])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -132,12 +245,34 @@ export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: Capt
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-safe">
         {isLoading ? (
           <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>
-        ) : filtered.length === 0 ? (
+        ) : filtered.length === 0 && !canCreate ? (
           <p className="py-8 text-center text-sm text-gray-400">
             {query ? `No ${target}s match “${query}”` : `No ${target}s yet`}
           </p>
         ) : (
           <div className="space-y-0.5">
+            {/* Create what was searched for, and file into it.
+
+                Typing the name of a list that does not exist yet used to
+                produce "No lists match" and a dead end — so filing a new idea
+                meant leaving the feed to make the list first, which is the
+                round trip this sheet exists to remove. */}
+            {canCreate && (
+              <button
+                type="button"
+                disabled={createAndAdd.isPending}
+                onClick={() => createAndAdd.mutate(query.trim())}
+                className="w-full flex items-center gap-3 min-h-[52px] px-2 rounded-xl text-left active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
+              >
+                <span className="h-2.5 w-2.5 rounded-full flex-shrink-0 border border-dashed border-gray-400" />
+                <span className="flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200 truncate">
+                  Create <span className="font-semibold">{query.trim()}</span>
+                </span>
+                {createAndAdd.isPending
+                  ? <Loader2 className="h-4 w-4 animate-spin text-gray-400 shrink-0" />
+                  : <Plus className="h-4 w-4 text-gray-400 shrink-0" />}
+              </button>
+            )}
             {filtered.map((o: any) => {
               const already = existing.has(o.id) || justAdded === o.id
               return (

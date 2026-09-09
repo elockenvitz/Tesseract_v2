@@ -299,7 +299,27 @@ export function Header({
   }
 
   return (
-    <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
+    /*
+      `flex-shrink-0`, and that is the whole bug.
+
+      ── Why the app bar disappeared ─────────────────────────────────────────
+      `Layout` is `h-viewport flex flex-col overflow-hidden`. This header is a
+      flex child of that column and had no shrink rule, so it defaulted to
+      `flex: 0 1 auto` — shrinkable. Its sibling `<main>` is `flex-1`, which
+      shrinks first, but once the column itself gets shorter than its content
+      the header gives way too and collapses toward zero height.
+
+      `h-viewport` is `100dvh`, which shrinks when the keyboard opens and when
+      the URL bar appears. That is why the bar vanished "sometimes" rather than
+      on any particular screen: it tracks the keyboard, not the route. Nothing
+      conditionally hides it — `Layout` renders it unconditionally — so the
+      cause was never a visibility branch.
+
+      `sticky top-0 z-40` stays for the stacking context its dropdowns rely on,
+      though the sticky itself is inert here: the scrollport is inside `main`,
+      not around the shell.
+    */
+    <header className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16 min-w-0 gap-1">
           {/* Logo, Org Switcher, and Search */}

@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { routeOrgByEmail, titleCase } from '../lib/org-domain-routing'
+import { isMaterialAuthChange } from '../lib/auth/session-events'
 
 const USER_CACHE_KEY = 'auth-user-cache'
 const RECOVERY_SESSION_KEY = 'auth-recovery-session'
@@ -40,6 +41,13 @@ export function useAuth() {
   const [user, setUser] = useState<User | null>(() => getCachedUser())
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  /**
+   * Who is currently rendered, for the auth callback to compare against.
+   *
+   * `onAuthStateChange` is subscribed once on mount, so it closes over the
+   * first `user`. A ref is the value that stays current.
+   */
+  const currentUserIdRef = useRef<string | null>(null)
   const [isRecoverySession, setIsRecoverySession] = useState(() => detectRecoveryFromUrl())
   const orgRouteAttemptedRef = useRef(false)
 
@@ -171,6 +179,10 @@ export function useAuth() {
   }
 
   useEffect(() => {
+    currentUserIdRef.current = (user as any)?.id ?? null
+  }, [user])
+
+  useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       handleAuthSession(session)
@@ -184,6 +196,23 @@ export function useAuth() {
         setIsRecoverySession(true)
         try { sessionStorage.setItem(RECOVERY_SESSION_KEY, 'true') } catch {}
       }
+
+      /*
+        A token refresh is not a user change.
+
+        Supabase fires `TOKEN_REFRESHED` whenever its auto-refresh timer catches
+        up, and a backgrounded phone browser catches up the moment it is
+        foregrounded. Handling it like any other event meant every return to the
+        tab ran a profile fetch over the network and handed every `useAuth`
+        consumer a brand-new `user` object — for an event that says nothing
+        about the user has changed.
+
+        Read from a ref rather than from `user`, so this callback — registered
+        once, on mount — compares against what is actually rendered rather than
+        against the value captured when it was created.
+      */
+      if (!isMaterialAuthChange(event, session?.user?.id, currentUserIdRef.current)) return
+
       handleAuthSession(session)
     })
 
