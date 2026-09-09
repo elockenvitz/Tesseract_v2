@@ -122,13 +122,14 @@ import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import {
   claimedSubjects, coverageDuplicateAssets, suppressCoveredAttention, suppressCoveredInsights,
 } from '../../lib/signals/feed-dedupe'
-import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import { baseFor, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
 import {
   insightPanePlan, IDEA_POST_PANE_MIN_BODY,
 } from '../../lib/signals/pane-plan'
 import { tileRequirementFor } from '../../lib/mobile/tile-requirement'
 import { readerQuestionFor } from '../../lib/signals/reader-question'
 import { briefClassFor } from '../../lib/signals/brief-class'
+import { attentionBase } from '../../lib/signals/attention-strength'
 import type { TileContainer } from '../../lib/signals/tile-geometry'
 import {
   composeFeed, type ComposeScope, type ComposeTraceRow,
@@ -2244,6 +2245,34 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           overdueDays: a.due_at
             ? Math.floor((Date.now() - new Date(a.due_at).getTime()) / DAY_MS)
             : null,
+          /**
+           * The magnitude, from the score the attention system already computed.
+           *
+           * ── What was being thrown away ──────────────────────────────────
+           *
+           * Everything above this line is a category: which type, which
+           * severity band, whether it is overdue at all. None of it says HOW
+           * MUCH, and for a workflow card the ranker has nothing else to go on
+           * — `weightPct` and `deviationPct` are null, so its two largest
+           * components are inert and the per-type constant is the whole score.
+           *
+           * Measured: eight overdue projects, one a day late and one
+           * forty-six days late, all scoring exactly 0.576. They formed a
+           * block no composition rule could break into, and inside it the
+           * order fell through every tie-break to a SHA-256 digest.
+           *
+           * `useAttention` has computed a real per-item score all along — ten
+           * points per day overdue, bonuses for ownership, decisions and
+           * blockers, a staleness penalty — and writes it onto this very
+           * object. The sections are already sorted by it. The feed simply
+           * never read it.
+           *
+           * `attentionBase` lifts the type's own floor by it rather than
+           * replacing it, and saturates, because the overdue term is unbounded
+           * and a project a hundred days late must not outrank a decision.
+           * See `attention-strength`, which carries both numbers and why.
+           */
+          base: attentionBase(type, a.score, a.score_breakdown) ?? undefined,
         }, a.context?.asset_id)
       }
 
@@ -2281,13 +2310,63 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           primarySymbol: n?.primarySymbol, symbols: n?.symbols,
         })?.symbol ?? null
         const linkedId = chartSym ? assetBySymbol.get(chartSym)?.id ?? null : null
+        /**
+         * Whether the desk owns the name, and how much of it.
+         *
+         * ── What was pinned off ─────────────────────────────────────────────
+         *
+         * This branch passed `weightPct: null, held: false` for every story
+         * ever ranked. `materialityBand` reads null-and-unheld as 0.15, its
+         * FLOOR — so a story about a ten percent position and a story about a
+         * name nobody here has heard of were ranked identically, at the worst
+         * band the model has. News is already the second-lowest base in the
+         * table; this held it there whatever it was about.
+         *
+         * The book is the same one every other branch reads, and the asset was
+         * already resolved on the line above for the chart. Nothing new is
+         * fetched and nothing is invented where the book is silent: an unheld
+         * name still passes null, which is its own band and not the bottom one.
+         *
+         * This is ranking only. What the CARD says about the position is a
+         * separate seam and is still starved at the builder call site.
+         */
+        const newsPosition = linkedId
+          ? frameworkCapitalFor(lenses?.book ?? null, linkedId)
+          : null
         return withJudgment({
           id: String(n?.id ?? n?.url ?? 'news'),
           type: 'news',
-          severity: 'informational',
+          /**
+           * A story about a position the desk holds is not the same news as a
+           * story about a name it does not. `buildNewsCard` has graded exactly
+           * this since it was written and the ranker discarded the answer.
+           */
+          severity: newsPosition != null ? 'attention' : 'informational',
           occurredAt: n?.publishedAt ?? n?.published_at ?? null,
-          weightPct: null,
-          held: false,
+          weightPct: newsPosition?.weightPct ?? null,
+          held: newsPosition != null,
+          /**
+           * How much this story is about the name it was filed under.
+           *
+           * The provider sends a relevance in 0..1 and nothing downstream has
+           * ever read it — the edge function sorts on it once and drops it, and
+           * it is not even a field on the builder's input type. A tagged mention
+           * in a sector round-up and a story whose subject IS the company arrive
+           * here indistinguishable.
+           *
+           * Applied as a lift on the type's floor, the same shape and for the
+           * same reason as the attention magnitude beside it: a relevant story
+           * is still news and must not become a decision.
+           *
+           * One caveat, recorded rather than assumed. Of the four providers
+           * behind `market-news` only Alpha Vantage supplies this, and that
+           * function's own header records its key sitting unset — so the field
+           * is absent more often than not, and absent must mean "unchanged",
+           * which is what the null does.
+           */
+          base: typeof n?.relevanceScore === 'number' && Number.isFinite(n.relevanceScore)
+            ? Math.min(baseFor('news') + Math.min(Math.max(n.relevanceScore, 0), 1) * 0.10, 1)
+            : undefined,
         }, linkedId ?? n?.primarySymbol ?? 'market')
       }
 

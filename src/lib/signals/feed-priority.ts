@@ -180,6 +180,22 @@ const TIER: Record<SignalType, { tier: PriorityTier; base: number }> = {
 /** Anything not in the table. Ranks last within tier 4 rather than crashing. */
 const UNTIERED = { tier: 4 as PriorityTier, base: 0.1 }
 
+/**
+ * A type's floor, for callers that want to LIFT it rather than replace it.
+ *
+ * `PriorityInput.base` overrides the table outright, which is right for a card
+ * that knows its own strength from end to end — a research framing does. It is
+ * wrong for a card whose magnitude is a modifier on its kind: a project three
+ * weeks late is still workflow, it is just the loudest workflow there is.
+ *
+ * Exposing the floor lets those callers say `baseFor(type) + lift` and keep the
+ * type's place in the ordering, instead of inventing an absolute number that
+ * has to be kept in sync with this table by hand.
+ */
+export function baseFor(type: SignalType): number {
+  return (TIER[type] ?? UNTIERED).base
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Components
 // ─────────────────────────────────────────────────────────────────────────────
