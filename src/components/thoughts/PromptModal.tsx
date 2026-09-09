@@ -20,6 +20,7 @@ import { PendingResearchBanner } from '../common/PendingResearchBanner'
 import { useToast } from '../common/Toast'
 import type { CapturedContext } from './ContextSelector'
 import { type RequestType, REQUEST_TYPE_META } from '../ui/checklist/types'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 
 // -- Types --
 
@@ -70,6 +71,8 @@ function audienceToVisibility(audience: AudienceMember[]): 'private' | 'team' {
 }
 
 export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = false }: PromptModalProps) {
+  /** No keyboard on open for a phone; desktop keeps its focus. */
+  const isMobileViewport = useIsMobile()
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
@@ -663,7 +666,7 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
           onChange={e => setQuestion(e.target.value)}
           placeholder="What would you like reviewed or analyzed?"
           rows={embedded ? 3 : 4}
-          autoFocus
+          autoFocus={!isMobileViewport}
           className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-violet-500 focus:border-transparent resize-none"
         />
       </div>
@@ -699,7 +702,7 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
               value={audienceSearch}
               onChange={e => setAudienceSearch(e.target.value)}
               placeholder="Search users or groups..."
-              autoFocus
+              autoFocus={!isMobileViewport}
               className="w-full px-2.5 py-1.5 text-xs border-b border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none"
             />
             <div className="max-h-52 overflow-y-auto">

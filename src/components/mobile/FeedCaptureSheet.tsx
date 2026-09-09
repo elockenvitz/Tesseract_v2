@@ -122,15 +122,17 @@ export function FeedCaptureSheet({
         Sheet height follows the task.
 
         The picker is a short list and wants half a screen. A writing form
-        wants the phone: `0.92` leaves the backdrop peeking so the sheet still
-        reads as a sheet, while the keyboard — which `BottomSheet` already
-        offsets for — takes roughly 40% of what is left. At `0.5` a keyboard
+        wants the phone. `1` is the sheet's own maximum, not the screen's:
+        `BottomSheet` caps every snap at `available - TOP_PEEK`, so 24px of
+        backdrop stays visible and the surface still reads as a sheet rather
+        than a page. `0.92` was an arbitrary gap on top of that cap, which is
+        what made a writing workspace feel half-open. At `0.5` an open keyboard
         would reduce Recommendation or Prompt to a strip a few lines tall.
 
         Filing is a selection, not a writing task, so it keeps the shorter
         sheet and does not ask for a screen it has no use for.
       */
-      snapPoints={kind === null ? [0.5] : isFiling(kind) ? [0.7] : [0.92]}
+      snapPoints={kind === null ? [0.5] : isFiling(kind) ? [0.7] : [1]}
     >
       {kind === null ? (
         <div className="px-3 pb-4">
@@ -249,9 +251,15 @@ export function FeedCaptureSheet({
           )}
 
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-4">
+            {/* None of these carry `autoFocus`.
+
+                A sheet that opens with the keyboard already up gives the reader
+                half a screen and a decision they did not ask to make yet. They
+                tap the writing area when ready, and until then the whole
+                surface is theirs. Product contract, overriding the earlier
+                "writing actions may autofocus" note. */}
             {kind === 'thought' && (
               <QuickThoughtCapture
-                autoFocus
                 compact
                 initialContent={initialNote ?? undefined}
                 initialAssetId={assetId ?? undefined}
@@ -262,7 +270,6 @@ export function FeedCaptureSheet({
             )}
             {kind === 'trade-idea' && (
               <QuickTradeIdeaCapture
-                autoFocus
                 compact
                 assetId={assetId ?? undefined}
                 assetSymbol={assetSymbol ?? undefined}

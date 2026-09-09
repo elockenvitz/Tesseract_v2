@@ -16,6 +16,7 @@ import { RecommendationEditorModal } from '../trading/RecommendationEditorModal'
 import { RecommendationReviewPane } from './RecommendationReviewPane'
 import type { TradeQueueItemWithDetails } from '../../types/trading'
 import type { CapturedContext } from './ContextSelector'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 
 interface RecommendationQuickModalProps {
   isOpen: boolean
@@ -57,6 +58,8 @@ interface DisplayRow {
 }
 
 export function RecommendationQuickModal({ isOpen, onClose, context, embedded = false }: RecommendationQuickModalProps) {
+  /** No keyboard on open for a phone; desktop keeps its focus. */
+  const isMobileViewport = useIsMobile()
   const { user } = useAuth()
   const [selectedIdea, setSelectedIdea] = useState<TradeQueueItemWithDetails | null>(null)
   const [search, setSearch] = useState('')
@@ -224,7 +227,7 @@ export function RecommendationQuickModal({ isOpen, onClose, context, embedded = 
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by symbol or name..."
-            autoFocus
+            autoFocus={!isMobileViewport}
             className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-amber-500 focus:border-transparent"
           />
         </div>

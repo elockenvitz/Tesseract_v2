@@ -61,6 +61,9 @@ vi.mock('../../../lib/supabase', () => {
     const api: any = {}
     api.select = () => api
     api.eq = () => api
+    // The lists arm reads `(is_default OR organization_id)`, which is the
+    // predicate the migration specifies.
+    api.or = () => api
     api.order = () => api
     api.limit = () => Promise.resolve({
       data: name === 'asset_list_collaborations' ? shared : rows, error: null,
@@ -103,11 +106,35 @@ describe('the phone offers the same lists the desktop does', () => {
     expect(desktopList).toContain("from('asset_list_collaborations')")
   })
 
-  it('keeps the organisation filter on both arms', () => {
-    // `created_by` alone is not a tenant filter, and the collaboration arm
-    // could otherwise reach across organisations.
-    expect(picker).toContain("eq('organization_id', currentOrgId!)")
-    expect(picker).toContain('l.organization_id === currentOrgId')
+  it('reads lists by the predicate the migration wrote down', () => {
+    /*
+      This is the acceptance failure. The picker used
+      `.eq('organization_id', currentOrgId)`, and
+      `20260603160000_asset_lists_organization_id` deliberately leaves two
+      kinds of row org-NULL: the two system-seeded default lists every user
+      gets on signup, and every list that predates the migration. A pilot who
+      has never hand-made a list owns exactly those two, so an equality filter
+      returned an empty picker while the desktop button showed them.
+
+      The migration states the correct read as
+      `(is_default = TRUE) OR (organization_id = X)`. `useListSurfaces` and
+      `AssetListManager` already use it.
+    */
+    expect(picker).toContain('.or(`is_default.eq.true,organization_id.eq.${currentOrgId!}`)')
+    expect(picker).not.toMatch(/eq\('organization_id', currentOrgId!\)\s*\.eq\('created_by'/)
+  })
+
+  it('applies the same rule to shared lists', () => {
+    // A default list shared with you is still org-NULL; dropping it on the
+    // join side would reintroduce the bug one arm over.
+    expect(picker).toContain('l.is_default === true || l.organization_id === currentOrgId')
+  })
+
+  it('matches how the rest of the product reads this table', () => {
+    const surfaces = readFileSync(
+      resolve(__dirname, '../../../hooks/lists/useListSurfaces.ts'), 'utf8',
+    )
+    expect(surfaces).toContain('is_default.eq.true,organization_id.eq.')
   })
 
   it('deduplicates a list that is both owned and collaborated on', () => {
