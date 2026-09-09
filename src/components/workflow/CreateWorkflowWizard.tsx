@@ -49,6 +49,7 @@ import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { supabase } from '../../lib/supabase'
+import { assetAccess } from '../../lib/market-data/supabase-asset-source'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import type { CadenceTimeframe, WorkflowScopeType } from '../../types/workflow'
@@ -964,10 +965,15 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         break
     }
 
-    // Handle excludes by getting all assets and removing the matched ones
+    /**
+     * Handle excludes by taking every asset and removing the matched ones.
+     *
+     * Paged. An unpaged select returns the first 1,000 rows and HTTP 200 past
+     * the cap, which would silently scope a workflow to a fraction of the
+     * universe while reporting success.
+     */
     if (isExclude) {
-      const { data: allAssets } = await supabase.from('assets').select('id')
-      const allIds = new Set(allAssets?.map(a => a.id) || [])
+      const allIds = await assetAccess.allIds()
       filterAssetIds.forEach(id => allIds.delete(id))
       return allIds
     }

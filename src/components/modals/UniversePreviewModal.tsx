@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X, TrendingUp, Search, UserPlus, UserMinus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { assetAccess } from '../../lib/market-data/supabase-asset-source'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 
@@ -138,11 +139,16 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
           if (rule.operator === 'includes') {
             resultAssetIds = processedSet
           } else {
-            // If first rule is exclude, start with all assets and remove
-            const { data: allAssets } = await supabase
-              .from('assets')
-              .select('id')
-            const allIds = new Set(allAssets?.map(a => a.id) || [])
+            /**
+             * If the first rule is exclude, start with every asset and remove.
+             *
+             * Paged rather than a single select. PostgREST caps a response at
+             * 1,000 rows and returns HTTP 200, so an unpaged read here turned
+             * "everything except these" into "the first thousand except these"
+             * the moment the universe outgrew the cap — and the preview would
+             * have reported that as a correct count.
+             */
+            const allIds = await assetAccess.allIds()
             processedSet.forEach(id => allIds.delete(id))
             resultAssetIds = allIds
           }
