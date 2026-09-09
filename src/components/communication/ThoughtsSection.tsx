@@ -25,6 +25,7 @@ import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksS
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
 import { type RequestType, REQUEST_TYPE_META } from '../ui/checklist/types'
 import { captureTypeForMode, type LegacyCaptureMode } from '../../lib/capture/capture-types'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 
 interface ThoughtsSectionProps {
   onClose?: () => void
@@ -55,6 +56,8 @@ export function ThoughtsSection({
   onBackToCapture,
   onOpenInspector,
 }: ThoughtsSectionProps) {
+  /** No keyboard on open for a phone; desktop keeps its focus. */
+  const isMobileViewport = useIsMobile()
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const pilotMode = usePilotMode()
@@ -586,7 +589,7 @@ export function ThoughtsSection({
 
             <QuickThoughtCapture
               compact={true}
-              autoFocus={true}
+              autoFocus={!isMobileViewport}
               placeholder="Capture a quick thought..."
               onSuccess={handleCaptureSuccess}
               onCancel={handleCaptureCancel}
@@ -636,7 +639,7 @@ export function ThoughtsSection({
 
             <QuickTradeIdeaCapture
               compact={true}
-              autoFocus={true}
+              autoFocus={!isMobileViewport}
               onSuccess={handleTradeIdeaSuccess}
               onCancel={handleCaptureCancel}
               // Provenance is now auto-captured from location.pathname

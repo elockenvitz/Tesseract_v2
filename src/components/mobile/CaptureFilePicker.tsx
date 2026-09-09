@@ -60,21 +60,43 @@ export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: Capt
         const [owned, shared] = await Promise.all([
           supabase
             .from('asset_lists')
-            .select('id, name, color')
-            .eq('organization_id', currentOrgId!)
+            .select('id, name, color, is_default')
+            /*
+              `is_default OR organization_id`, which is the predicate the
+              migration that added the column wrote down.
+
+              ── Why `.eq('organization_id', …)` returned nothing ─────────────
+              `20260603160000_asset_lists_organization_id` deliberately leaves
+              two kinds of row org-NULL: the two system-seeded default lists
+              every user gets on signup ("Investment Ideas", "Work in Process"),
+              which are user-level globals by design, and every list that
+              existed before the migration, whose origin org cannot be
+              reconstructed.
+
+              A pilot who has never hand-made a list owns exactly those two, so
+              an equality filter on the org returned an empty picker — while the
+              desktop button, which filters on `created_by` alone, showed them.
+              "Works on my laptop, empty on my phone" was that one operator.
+
+              `useListSurfaces` and `AssetListManager` already read it this way.
+            */
+            .or(`is_default.eq.true,organization_id.eq.${currentOrgId!}`)
             .eq('created_by', user!.id)
             .order('updated_at', { ascending: false })
             .limit(50),
           supabase
             .from('asset_list_collaborations')
-            .select('asset_lists!inner(id, name, color, organization_id, updated_at)')
+            .select('asset_lists!inner(id, name, color, is_default, organization_id, updated_at)')
             .eq('user_id', user!.id)
             .limit(50),
         ])
         const sharedLists = (((shared.data as any[]) ?? [])
           .map(c => c.asset_lists)
           .filter(Boolean) as any[])
-          .filter(l => l.organization_id === currentOrgId)
+          // Same rule on the shared arm: a default list shared with you is
+          // still org-NULL, and dropping it here would reintroduce the bug on
+          // the other side of the join.
+          .filter(l => l.is_default === true || l.organization_id === currentOrgId)
         // Deduplicate: a list can be both owned and collaborated on.
         return Array.from(
           new Map([...(((owned.data as any[]) ?? [])), ...sharedLists].map(l => [l.id, l])).values(),

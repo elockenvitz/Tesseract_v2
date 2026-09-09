@@ -193,11 +193,27 @@ describe('context still reaches every form', () => {
     expect(seen.prompt.context).toBeTruthy()
   })
 
-  it('opens the first useful field itself, rather than waiting for a tap', () => {
+  it('does NOT open the keyboard, so the whole surface is the reader is', () => {
+    /*
+      Reversed by manual QA, and deliberately.
+
+      A capture sheet that opens with the keyboard already up hands the phone
+      half a screen and a decision nobody asked to make yet. The reader taps
+      the writing area when they are ready. This test previously asserted the
+      opposite; it is inverted rather than deleted so the old behaviour cannot
+      return quietly.
+    */
     open()
     fireEvent.click(screen.getByText('Quick thought'))
 
-    expect(seen.thought.autoFocus).toBe(true)
+    expect(seen.thought.autoFocus).toBeFalsy()
+  })
+
+  it('does not autofocus the trade idea either', () => {
+    open()
+    fireEvent.click(screen.getByText('Trade idea'))
+
+    expect(seen.trade.autoFocus).toBeFalsy()
   })
 })
 
@@ -239,10 +255,20 @@ describe('sheet height follows the task', () => {
     expect(sheetSource).toContain('kind === null ? [0.5]')
   })
 
-  it('gives a writing form the phone', () => {
-    // At 0.5 an open keyboard reduces Recommendation or Prompt to a strip a
-    // few lines tall.
-    expect(sheetSource).toContain(': [0.92]')
+  it('gives a writing form the whole sheet, not 92% of it', () => {
+    // `1` is the sheet's own maximum, not the screen's: BottomSheet caps every
+    // snap at `available - TOP_PEEK`, so 24px of backdrop stays visible. The
+    // old `0.92` was an arbitrary gap on top of that cap, which is what made a
+    // writing workspace feel half-open.
+    expect(sheetSource).toContain(': [1]')
+    expect(sheetSource).not.toContain(': [0.92]')
+  })
+
+  it('still caps at the sheet maximum rather than covering the screen', () => {
+    const bottomSheet = readFileSync(
+      resolve(__dirname, '../BottomSheet.tsx'), 'utf8',
+    )
+    expect(bottomSheet).toContain('available - TOP_PEEK')
   })
 
   it('does not give filing a screen it has no use for', () => {
