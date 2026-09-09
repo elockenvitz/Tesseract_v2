@@ -476,6 +476,44 @@ describe('the coverage card renders through the engine for everybody', () => {
   })
 })
 
+describe('the base order is committed from a complete feed', () => {
+  /**
+   * QA on localhost: nine posts, then three Overdue. Impossible from one
+   * composed list — attention outranks posts — and exactly what an order
+   * remembered from a partial pool produces, because everything that lands
+   * afterwards is appended behind it.
+   *
+   * The effect runs on every render including the ones behind the loader, so
+   * an early return in the render body does not stop it.
+   */
+  it('waits for the ordering-critical sources before remembering an order', () => {
+    const at = dash.indexOf('const next = rememberBaseOrder(')
+    expect(at).toBeGreaterThan(0)
+    const body = dash.slice(dash.lastIndexOf('useEffect(() => {', at), at)
+    expect(body).toContain('if (composing) return')
+  })
+
+  /** And the gate is the same signal that holds the loader up. */
+  it('uses the loader gate rather than a second idea of readiness', () => {
+    expect(dash).toContain('const composing =')
+    expect(dash.match(/const composing =/g)).toHaveLength(1)
+    const decl = dash.indexOf('const composing =')
+    const effect = dash.indexOf('const next = rememberBaseOrder(')
+    const loader = dash.indexOf('if (composing) {')
+    expect(decl).toBeLessThan(effect)
+    expect(decl).toBeLessThan(loader)
+  })
+
+  /** The briefing axis reaches the production composer. */
+  it('passes the brief lane to the composer', () => {
+    const at = dash.indexOf('composeFeed(ordered, {')
+    expect(at).toBeGreaterThan(0)
+    const call = dash.slice(at, dash.indexOf('})', dash.indexOf('scope,', at)))
+    expect(call).toContain('briefOf:')
+    expect(call).toContain('briefClassFor(')
+  })
+})
+
 describe('the plan owns the picture on every adopted family', () => {
   /**
    * The seam, once, for all of them.
