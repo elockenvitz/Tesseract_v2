@@ -279,3 +279,111 @@ describe('sheet height follows the task', () => {
     expect(sheetSource).toContain("captureType(kind)?.group === 'file'")
   })
 })
+
+/**
+ * The chosen form is not clipped, and not inside a second scroller.
+ *
+ * ── The defect this pins ──────────────────────────────────────────────────
+ *
+ * Reported as "Actions → Prompt → content at the TOP of the sheet is
+ * clipped/cut off". Nothing in `PromptModal` caused it.
+ *
+ * The chosen-kind branch was `<div class="flex flex-col min-h-0">` wrapping a
+ * `<div class="flex-1 min-h-0 overflow-y-auto">` that held the form. The wrapper
+ * has no height of its own, so it sizes to its content — and a `flex: 1 1 0%`
+ * child whose automatic minimum has been zeroed contributes nothing to that
+ * measurement. Its hypothetical main size is its flex-basis, which is zero, and
+ * `min-h-0` removes the content-based clamp that would have pushed it back up.
+ * The form was laid out in a box collapsed to near nothing with
+ * `overflow-y-auto` cutting off the overflow — from the top, because that is
+ * where the box begins.
+ *
+ * It was also a scroller nested inside `BottomSheet`'s own scroller, so a drag
+ * in the form moved the inner box while the sheet stood still.
+ *
+ * ── Why the structure is asserted rather than the clipping ─────────────────
+ *
+ * jsdom computes no layout, so the collapsed height cannot be observed here.
+ * What is assertable is that the shape which caused it is gone, that the form
+ * is in normal flow, and that the header control which used to scroll away with
+ * the form is now outside the scrolling region.
+ */
+describe('the chosen form is laid out in normal flow', () => {
+  const sheetSource = readFileSync(
+    resolve(__dirname, '../FeedCaptureSheet.tsx'), 'utf8',
+  ).replace(/\r\n/g, '\n')
+
+  it('no longer wraps the form in a zero-basis flex item', () => {
+    expect(sheetSource).not.toContain('flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-4')
+    expect(sheetSource).not.toContain('<div className="flex flex-col min-h-0">')
+  })
+
+  it('leaves the sheet as the only scroller', () => {
+    // BottomSheet's body is `flex-1 min-h-0 overflow-y-auto` against a definite
+    // height. A second one inside it is the nested scroll trap. Class names
+    // only — the prose above the branch names the rule it removed.
+    const scrollingClasses = [...sheetSource.matchAll(/className="([^"]*)"/g)]
+      .map(m => m[1])
+      .filter(c => c.includes('overflow-y-auto'))
+
+    expect(scrollingClasses).toEqual([])
+  })
+
+  it('puts the form in a plain padded block', () => {
+    const at = sheetSource.indexOf('One scroll owner, and no collapsed flex item.')
+    expect(at).toBeGreaterThan(0)
+    expect(sheetSource.slice(at, at + 2200)).toContain('<div className="px-3 pb-4">')
+  })
+
+  it.each([
+    ['Quick thought', 'form-thought'],
+    ['Trade idea', 'form-trade'],
+    ['Recommendation', 'form-rec'],
+    ['Prompt', 'form-prompt'],
+  ])('%s renders with nothing scrollable between it and the sheet', (label, testid) => {
+    open()
+    fireEvent.click(screen.getByText(label))
+
+    // Walk from the form up to the dialog; exactly one region may scroll, and
+    // it is the sheet's own body.
+    let node: HTMLElement | null = screen.getByTestId(testid)
+    const scrollers: string[] = []
+    while (node && node !== sheet()) {
+      if (node.className.includes('overflow-y-auto')) scrollers.push(node.className)
+      node = node.parentElement
+    }
+
+    expect(scrollers).toHaveLength(1)
+    expect(scrollers[0]).toContain('flex-1 min-h-0 overflow-y-auto')
+  })
+})
+
+describe('the way back does not scroll away with the form', () => {
+  it('lives in the sheet header, outside the scrolling body', () => {
+    open()
+    fireEvent.click(screen.getByText('Prompt'))
+
+    const back = screen.getByLabelText('Back to capture options')
+    const body = sheet().querySelector('.flex-1.min-h-0.overflow-y-auto')
+
+    expect(body).toBeTruthy()
+    expect(body!.contains(back)).toBe(false)
+  })
+
+  it('still names what is being written', () => {
+    open()
+    fireEvent.click(screen.getByText('Prompt'))
+
+    expect(screen.getByText(captureType('prompt')!.label)).toBeTruthy()
+  })
+
+  it('is a button, so the header drag row does not swallow its tap', () => {
+    // `BottomSheet` captures the pointer on this row for drag-to-dismiss, and
+    // capture retargets `pointerup`, which suppresses `click`. The row exempts
+    // anything inside a `button`, which is what makes this work here.
+    open()
+    fireEvent.click(screen.getByText('Prompt'))
+
+    expect(screen.getByLabelText('Back to capture options').tagName).toBe('BUTTON')
+  })
+})

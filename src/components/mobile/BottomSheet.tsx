@@ -244,6 +244,27 @@ export function BottomSheet({
 
   const onPointerDown = (event: React.PointerEvent) => {
     if (!dismissible) return
+    /*
+      A press on a control in this row is a press, not a drag.
+
+      ── The defect this closes ────────────────────────────────────────────
+      The close button lives INSIDE the drag row, and the row captures the
+      pointer on `pointerdown`. Pointer capture retargets every later pointer
+      event — `pointerup` included — to the capturing element, and a browser
+      only fires `click` when down and up land on the same node. So the X
+      received the press, lost the release to this div, and never got a click
+      at all. `onClose` was wired correctly and simply never ran.
+
+      It affected every sheet. It surfaced on the thesis drawer because that
+      one is near-full height over a keyboard-heavy editor, where the X is the
+      only exit anyone reaches for — elsewhere the backdrop or a drag got used
+      first and hid it.
+
+      Dragging still works from the handle, the title and the empty space
+      around them, which is all a drag affordance needs.
+    */
+    if ((event.target as HTMLElement | null)?.closest('button')) return
+
     dragRef.current = {
       startY: event.clientY,
       startTime: event.timeStamp,

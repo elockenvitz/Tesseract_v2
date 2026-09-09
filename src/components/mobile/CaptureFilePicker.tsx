@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { Check, Loader2, Plus, Search } from 'lucide-react'
@@ -33,7 +33,18 @@ export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: Capt
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
-  const [justAdded, setJustAdded] = useState<string | null>(null)
+  /**
+   * What this session has filed into, on top of what the server reported.
+   *
+   * A set rather than the single id it was: filing into three lists in one pass
+   * has to leave all three reading as members, not just the last one. The
+   * server's own membership query stays the source of truth and is invalidated
+   * on every add; this is what makes the row change under the thumb before that
+   * round trip lands.
+   */
+  const [justAdded, setJustAdded] = useState<Set<string>>(() => new Set())
+  /** The confirmation toast fires once, not once per add. */
+  const hasToastedRef = useRef(false)
   const toast = useToast()
 
   const { data: options = [], isLoading } = useQuery({
@@ -155,10 +166,23 @@ export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: Capt
     onSuccess: onFiled,
   })
 
-  /** What happens after a successful file, whichever route got there. */
+  /**
+   * What happens after a successful file, whichever route got there.
+   *
+   * ── Why the drawer no longer closes ───────────────────────────────────────
+   *
+   * It closed 550ms after the first add, which made filing into three lists
+   * three round trips through the actions sheet. Adding one name to several
+   * lists is the normal case, not the exception, so the picker stays open and
+   * the row it just filed into becomes the receipt.
+   *
+   * The toast is kept for the FIRST add only. Firing one per add turned a
+   * quick pass over four lists into four overlays covering the picker being
+   * used — the confirmation drowning the thing it was confirming.
+   */
   function onFiled({ id, name }: { id: string; name: string }) {
     {
-      setJustAdded(id)
+      setJustAdded(prev => new Set(prev).add(id))
       queryClient.invalidateQueries({ queryKey: ['capture-file-options', target] })
       queryClient.invalidateQueries({ queryKey: ['capture-file-existing', target, assetId] })
       queryClient.invalidateQueries({ queryKey: target === 'list' ? ['list-surfaces'] : ['themes'] })
@@ -173,17 +197,19 @@ export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: Capt
         capturing from a feed and being moved off it unasked would cost more
         than the confirmation is worth.
       */
-      toast.success(`Added to ${name}`, {
-        action: {
-          label: target === 'list' ? 'View list' : 'View theme',
-          onClick: () => window.dispatchEvent(new CustomEvent(
-            target === 'list' ? 'navigate-to-list' : 'navigate-to-theme',
-            { detail: { id, name } },
-          )),
-        },
-      })
-      // Held briefly so the tick is visible before the sheet goes.
-      setTimeout(onDone, 550)
+      if (!hasToastedRef.current) {
+        hasToastedRef.current = true
+        toast.success(`Added to ${name}`, {
+          action: {
+            label: target === 'list' ? 'View list' : 'View theme',
+            onClick: () => window.dispatchEvent(new CustomEvent(
+              target === 'list' ? 'navigate-to-list' : 'navigate-to-theme',
+              { detail: { id, name } },
+            )),
+          },
+        })
+      }
+      // No auto-close. The reader dismisses when they are done filing.
     }
   }
 
@@ -295,17 +321,31 @@ export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: Capt
                   : <Plus className="h-4 w-4 text-gray-400 shrink-0" />}
               </button>
             )}
+            {/* A membership row, not a one-shot action.
+
+                Each row says whether the asset is in that destination and, if
+                not, offers to put it there. Filing several in a pass is the
+                normal case, so the row is the receipt and the picker stays put.
+
+                Membership is the SERVER's answer — the `existing` query — plus
+                what this session has filed since. Optimistic state alone would
+                claim a membership a failed insert never created. */}
             {filtered.map((o: any) => {
-              const already = existing.has(o.id) || justAdded === o.id
+              const addedNow = justAdded.has(o.id)
+              const already = existing.has(o.id) || addedNow
+              const pending = add.isPending && add.variables === o.id
               return (
                 <button
                   key={o.id}
                   type="button"
-                  disabled={already || add.isPending}
+                  // Duplicate prevention is the row's own job as well as the
+                  // table's: a member cannot be tapped again.
+                  disabled={already || pending}
                   onClick={() => add.mutate(o.id)}
+                  aria-pressed={already}
                   className={clsx(
                     'w-full flex items-center gap-3 min-h-[52px] px-2 rounded-xl text-left transition-colors',
-                    already ? 'opacity-60' : 'active:bg-gray-100 dark:active:bg-gray-800',
+                    already ? 'opacity-70' : 'active:bg-gray-100 dark:active:bg-gray-800',
                   )}
                 >
                   <span
@@ -315,10 +355,17 @@ export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: Capt
                   <span className="flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                     {o.name}
                   </span>
-                  {already && (
-                    <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 shrink-0">
+                  {pending ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-gray-400 shrink-0" />
+                  ) : already ? (
+                    <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 shrink-0">
                       <Check className="h-4 w-4" />
-                      {justAdded === o.id ? 'Added' : 'Already in'}
+                      Added
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-0.5 text-xs font-medium text-gray-400 shrink-0">
+                      <Plus className="h-4 w-4" />
+                      Add
                     </span>
                   )}
                 </button>
@@ -327,9 +374,12 @@ export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: Capt
           </div>
         )}
 
-        {add.isError && (
+        {/* Errors sit under the list rather than replacing it. A failed add is
+            one row's problem and must not cost the reader the picker they were
+            part way through using. */}
+        {(add.isError || createAndAdd.isError) && (
           <p className="py-2 text-center text-xs text-red-600">
-            Couldn't add — {(add.error as any)?.message ?? 'please try again'}
+            Couldn't add — {((add.error ?? createAndAdd.error) as any)?.message ?? 'please try again'}
           </p>
         )}
       </div>

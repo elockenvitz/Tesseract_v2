@@ -508,11 +508,24 @@ export function Layout({
           const activeTab = tabs.find(tab => tab.id === activeTabId)
           const isFullWidth = activeTab && FULL_WIDTH_TAB_TYPES.includes(activeTab.type)
           const isCompactPad = activeTab && ['outcomes'].includes(activeTab.type)
+          /*
+            A note on a phone is a writing surface, and this wrapper was taxing
+            it twice. `py-4` top and bottom is 32px of page margin around an
+            editor that already owns a header, a format bar and a save row; and
+            `overflow-auto` puts a second scrollport around a component whose
+            body is already `flex-1 overflow-y-auto`, which is the nested
+            scroller that makes a phone editor feel like it is dragging.
+
+            Both go away at phone width for the note tab only. The horizontal
+            padding stays, because the editor's own `max-sm:-mx-3` is what
+            reclaims it and the two have to agree. Desktop is untouched.
+          */
+          const isMobileNote = !!activeTab && activeTab.type === 'note' && isMobile
           return (
             <div className={clsx(
               "relative h-full flex flex-col",
-              isFullWidth ? "overflow-hidden" : isCompactPad ? "overflow-hidden p-2" : "overflow-auto",
-              !isFullWidth && !isCompactPad && "px-3 py-4 sm:px-6 sm:py-6 lg:px-8",
+              isFullWidth || isMobileNote ? "overflow-hidden" : isCompactPad ? "overflow-hidden p-2" : "overflow-auto",
+              !isFullWidth && !isCompactPad && (isMobileNote ? "px-3" : "px-3 py-4 sm:px-6 sm:py-6 lg:px-8"),
               "transition-[margin] duration-300 ease-in-out",
               // The comm pane becomes a bottom sheet on phones, so it must not
               // reserve a 384px right margin out of a 390px viewport.

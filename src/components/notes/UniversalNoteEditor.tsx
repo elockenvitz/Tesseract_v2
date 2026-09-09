@@ -4,7 +4,7 @@ import {
   Plus, Search, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Users, History, Pin,
   Save, Check, AlertCircle, ArrowUpDown, X, FileText, HelpCircle, AtSign, DollarSign, Hash, FileCode, BarChart3, Sparkles,
   WifiOff, CloudOff, RefreshCw, Download, FileDown, Loader2, Paperclip, Link2, ExternalLink, FileSpreadsheet, Image, FileVideo, File,
-  PanelLeftClose, PanelLeft, CornerDownRight, Menu
+  PanelLeftClose, PanelLeft, CornerDownRight, Menu, Tag, ChevronLeft, ChevronRight
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { removeNoteAttachments } from '../../lib/storage/note-attachments'
@@ -30,7 +30,8 @@ import { ObjectLinkPicker } from './ObjectLinkPicker'
 import { LinkedObjectsPanel } from './LinkedObjectsPanel'
 import { InlineReferencePopup } from './InlineReferencePopup'
 import { clsx } from 'clsx'
-import { useIsMobile, useViewportHeight } from '../../hooks/useMediaQuery'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { BottomSheet } from '../mobile/BottomSheet'
 import { stripHtml } from '../../utils/stripHtml'
 
 export type EntityType = 'asset' | 'portfolio' | 'theme'
@@ -155,32 +156,30 @@ export function UniversalNoteEditor({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   // On a phone the notes list is an overlay, not a column.
   const isMobileViewport = useIsMobile()
-  /**
-   * How tall the writing area is allowed to insist on being.
-   *
-   * ── The defect this closes ────────────────────────────────────────────────
-   *
-   * It was `calc(100vh - 300px)`, a fixed minimum on the editable region inside
-   * a `flex-1 overflow-y-auto` pane. Two things go wrong on a phone. `100vh`
-   * includes the strip behind the URL bar, so the minimum is already taller
-   * than the screen; and when the keyboard opens the visible area halves while
-   * `100vh` does not move at all. The pane then holds a writing surface roughly
-   * twice the height of what can be seen, most of it empty, so the caret
-   * scrolls out of view and the reader is left dragging through blank space
-   * looking for their own text.
-   *
-   * `useViewportHeight` reads `visualViewport`, which is the one measurement
-   * that tracks both the URL bar and the keyboard. The subtraction is smaller
-   * on a phone because the chrome it is accounting for is smaller: a title row
-   * and a format bar, not a desktop header, breadcrumb and links rail.
-   *
-   * Desktop keeps a `calc()` string and its 300px, so nothing about the wide
-   * editor changes.
-   */
-  const viewportHeight = useViewportHeight()
-  const editorMinHeight = isMobileViewport
-    ? `${Math.max(160, viewportHeight - 190)}px`
-    : 'calc(100dvh - 300px)'
+  /** The phone's overflow for every secondary note action. */
+  const [showNoteActions, setShowNoteActions] = useState(false)
+  /** Which panel the overflow sheet is showing. Two of the actions are lists. */
+  const [noteActionsView, setNoteActionsView] = useState<'root' | 'type' | 'files'>('root')
+
+  /*
+    A measured minimum was still a guess, and a guess is what produced the
+    endless blank scroll.
+
+    The old rule took the visible viewport and subtracted 190px for the chrome
+    around it. The chrome is not 190px. It is whatever the header, the format
+    bar and the save row happen to be, and every one of those numbers moved
+    during this pass. When the estimate is short the writing area is taller than the
+    pane that holds it, so an EMPTY note scrolls: you drag through a hundred
+    and thirty pixels of nothing looking for text that is not there, and a note
+    with text in it never appears to end.
+
+    So the phone stops subtracting. `editor-fill` makes the pane's contents a
+    flex column that grows to fill exactly the space there is and then grows
+    with the text — the browser measures the chrome instead of this file
+    predicting it. `0px` here disables the inline minimum that would otherwise
+    fight it. Desktop keeps its `calc()` and its 300px.
+  */
+  const editorMinHeight = isMobileViewport ? '0px' : 'calc(100dvh - 300px)'
   const [mobileListOpen, setMobileListOpen] = useState(false)
   const [showLinkPicker, setShowLinkPicker] = useState(false)
   const [inlinePopup, setInlinePopup] = useState<{
@@ -1697,6 +1696,42 @@ export function UniversalNoteEditor({
     Desktop keeps the card; the phone gets the width. Same treatment
     PortfolioTab already uses for its section card.
   */
+  /**
+   * Everything the desktop action row carries, named once for the phone.
+   *
+   * ── Why a list rather than a second set of buttons ────────────────────────
+   *
+   * The desktop row and this list must not come to mean different things. Each
+   * entry either calls the same setter the desktop button calls, or names a
+   * panel this sheet shows itself — so an action added to the row without being
+   * added here is visible in the test that compares the two.
+   *
+   * `Save checkpoint` and `Saved versions` were two buttons opening the same
+   * dialog. They are one row.
+   */
+  const noteActions: {
+    label: string
+    hint: string
+    icon: typeof Link2
+    count?: number
+    run?: () => void
+    view?: 'type' | 'files'
+  }[] = [
+    {
+      label: 'Note type',
+      hint: selectedNote ? getNoteType(selectedNote.note_type).label : 'Classify this note',
+      icon: Tag,
+      view: 'type',
+    },
+    { label: 'Link to an object', hint: 'Attach an asset, note or project', icon: Link2, run: () => setShowLinkPicker(true) },
+    { label: 'Collaborators', hint: 'Who can see and edit this note', icon: Users, run: () => setShowCollaborationManager(true) },
+    { label: 'Saved versions', hint: 'Save a checkpoint or return to one', icon: History, count: versions.length, run: () => setShowVersionHistory(true) },
+    { label: 'Files & links', hint: 'Everything attached to this note', icon: Paperclip, count: noteFiles.length + noteLinks.length, view: 'files' },
+    { label: 'Export as PDF', hint: 'Download a formatted copy', icon: FileDown, run: () => { void exportToPdf() } },
+    { label: 'Export as Word', hint: 'Download an editable copy', icon: FileText, run: () => { void exportToWord() } },
+    { label: 'Smart input reference', hint: '@mention, $asset, #tag, [[note]], .AI', icon: HelpCircle, run: () => setShowSmartInputHelp(true) },
+  ]
+
   return (
     <div className="flex h-full bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200 dark:border-gray-700 dark:bg-gray-800 max-sm:-mx-3 max-sm:rounded-none max-sm:border-x-0 max-sm:shadow-none">
       {/* Left Sidebar - Notes List.
@@ -2035,23 +2070,90 @@ export function UniversalNoteEditor({
               </div>
             )}
             {/* Editor Header */}
-            {/* The action band. `py-2` on a phone rather than `py-3`: it sits
-                ABOVE the note's own title, so every pixel it takes is one the
-                title and the writing area do not get. Desktop is unchanged. */}
-            <div className="px-3 sm:px-6 py-2 sm:py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center space-x-3 flex-1 min-w-0">
+            {/*
+              Two bands became one, on a phone.
+
+              The action band and the note's own title band were stacked, 53px
+              and 41px, and between them they carried a type pill, two badges,
+              seven buttons and a heading — 94px of chrome above the first line
+              of text, with the last two buttons past the right edge of a 390px
+              screen and the eighth unreachable at 320.
+
+              A phone gets one row instead: the way back to the list, the
+              note's name, and everything else behind More. Its width is two
+              36px buttons and a name that truncates, so there is nothing left
+              that CAN clip, at any width. The desktop row below is the
+              original, unchanged, and now unconditionally desktop.
+            */}
+            <div className="flex-shrink-0 px-3 sm:px-6 py-1 sm:py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
+              {isMobileViewport ? (
+                <div className="flex items-center gap-1">
                   {/* The list is an overlay on a phone, so this is the only
                       route back to it. */}
-                  {isMobileViewport && (
+                  <button
+                    onClick={() => setMobileListOpen(true)}
+                    aria-label="All notes"
+                    className="shrink-0 h-9 w-9 -ml-1 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-700"
+                  >
+                    <Menu className="h-5 w-5" />
+                  </button>
+
+                  <div className="flex-1 min-w-0">
+                    {isTitleEditing ? (
+                      <input
+                        ref={titleInputRef}
+                        type="text"
+                        value={editingTitle}
+                        onChange={(e) => handleTitleChange(e.target.value)}
+                        onKeyDown={handleTitleKeyDown}
+                        onBlur={handleTitleBlur}
+                        className="w-full text-[15px] font-semibold text-gray-900 bg-transparent border-0 border-b-2 border-primary-500 focus:outline-none dark:text-white"
+                        placeholder="Untitled"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleTitleClick}
+                        className="w-full min-w-0 flex items-center gap-1.5 text-left no-touch-target"
+                      >
+                        {/* The type survives as its dot. The word it carried is
+                            in the sheet, next to the control that changes it. */}
+                        <span
+                          className={clsx('h-2 w-2 rounded-full flex-shrink-0', getNoteType(selectedNote.note_type).dotColor)}
+                          title={getNoteType(selectedNote.note_type).label}
+                          aria-hidden
+                        />
+                        <span className="block truncate text-[15px] font-semibold text-gray-900 dark:text-white">
+                          {editingTitle || selectedNote.title || 'Untitled'}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => { setNoteActionsView('root'); setShowNoteActions(true) }}
+                    className="shrink-0 h-9 w-9 -mr-1 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-700"
+                    title="More actions"
+                    aria-label="More note actions"
+                  >
+                    <MoreHorizontal className="h-5 w-5" />
+                  </button>
+
+                  {onClose && (
                     <button
-                      onClick={() => setMobileListOpen(true)}
-                      aria-label="All notes"
-                      className="shrink-0 h-9 w-9 -ml-1 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-700"
+                      type="button"
+                      onClick={onClose}
+                      aria-label="Close note"
+                      className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-700"
                     >
-                      <Menu className="h-5 w-5" />
+                      <X className="h-5 w-5" />
                     </button>
                   )}
+                </div>
+              ) : (
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center space-x-3 flex-1 min-w-0">
                   <div className="flex items-center space-x-3" ref={noteTypeDropdownRef}>
                     <div className="relative">
                       {/* Trigger: clean pill + separate chevron */}
@@ -2338,6 +2440,7 @@ export function UniversalNoteEditor({
                   </Button>
                 )}
               </div>
+              )}
 
             </div>
 
@@ -2353,9 +2456,33 @@ export function UniversalNoteEditor({
             />
 
             {/* Editor Content */}
-            <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-800">
-              {/* Sticky Header: Title + Toolbar */}
-              <div className="sticky top-0 z-10 bg-white dark:bg-gray-800">
+            {/*
+              The one scroll owner.
+
+              `max-sm:flex max-sm:flex-col` is what lets the writing surface
+              below fill this pane exactly rather than guess at its height, and
+              the gray ground is what makes the end of the note visible: the
+              editor is a white card with a bottom border, and until now it sat
+              on white, so its edge was invisible and the blank space below the
+              last line read as more note.
+
+              `show-scrollbar` is a deliberate exception to the phone layer's
+              global scrollbar suppression. That rule exists so the feed reads
+              like Reels; a long note is the case the rule's own comment carves
+              out — the indicator is the only thing that says how much of the
+              note is above and below you. It is transient on both iOS and
+              Android, appearing during the gesture only, so it costs no
+              writing space and adds no permanent chrome.
+            */}
+            <div
+              className="flex-1 overflow-y-auto show-scrollbar bg-white dark:bg-gray-800 max-sm:flex max-sm:flex-col max-sm:bg-gray-50 max-sm:dark:bg-gray-900"
+              data-testid="note-scrollport"
+            >
+              {/* Sticky Header: Title + Toolbar.
+
+                  Hidden on a phone: the name is in the band above, and a second
+                  copy of it cost 41px of the screen it is meant to write on. */}
+              <div className="hidden sm:block sticky top-0 z-10 bg-white dark:bg-gray-800">
                 {/* Title */}
                 <div className="px-4 py-1.5 border-b border-gray-100 dark:border-gray-800">
                   {isTitleEditing ? (
@@ -2380,14 +2507,25 @@ export function UniversalNoteEditor({
                 </div>
               </div>
 
-              {/* Note Content - Rich Text Editor */}
-              <div className="px-1.5 sm:px-4">
+              {/* Note Content - Rich Text Editor.
+
+                  `grow shrink-0` — not `flex-1` — on a phone. `flex-1` is
+                  `flex: 1 1 0%`, and a shrinkable child inside a scrollport
+                  gets compressed instead of overflowing, so a long note would
+                  never scroll. Growing without shrinking fills the pane when
+                  the note is short and pushes past it when the note is long,
+                  which is the whole behaviour being asked for.
+
+                  `pb-6` is the bounded trailing space: a deliberate 24px of
+                  page below the editor's bottom edge, so the boundary is on
+                  screen instead of being the thing you scroll to find. */}
+              <div className="px-1.5 sm:px-4 max-sm:flex max-sm:flex-col max-sm:grow max-sm:shrink-0 max-sm:pb-6">
                 <RichTextEditor
                   ref={richTextEditorRef}
                   value={editingContent}
                   onChange={handleContentChange}
                   placeholder="Start writing..."
-                  className="h-full"
+                  className={clsx('h-full', isMobileViewport && 'editor-fill')}
                   minHeight={editorMinHeight}
                   enableMentions={true}
                   enableAssets={true}
@@ -2417,9 +2555,16 @@ export function UniversalNoteEditor({
             {/* flex-shrink-0: this row carries Save and the save state, and it
                 is the last thing that may give way when the editor above it is
                 tall or the keyboard is open. */}
-            <div className="flex-shrink-0 px-3 sm:px-6 py-2.5 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 text-gray-400">
+            <div className="flex-shrink-0 px-3 sm:px-6 py-2 sm:py-2.5 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+              {/* One line on a phone, never two. This row wrapped at 390px —
+                  word count, character count, a shortcuts link and a "saved
+                  2m ago" on the first line, the save state and Save button on
+                  the second — which cost 20px of writing space to say things
+                  the writer did not ask for. What survives is the save state,
+                  Save, and the word count. The shortcuts reference moved to the
+                  More sheet; the rest is derivable from the text on screen. */}
+              <div className="flex flex-nowrap sm:flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+                <div className="flex flex-nowrap sm:flex-wrap items-center gap-x-3 gap-y-1 min-w-0 text-gray-400">
                   {/* Offline Status Indicator */}
                   {!isOnline && (
                     <>
@@ -2454,20 +2599,19 @@ export function UniversalNoteEditor({
                     const charCount = plainText.length
                     return (
                       <>
-                        <span className="font-medium text-gray-500 dark:text-gray-400">{wordCount} words</span>
-                        <span className="text-gray-300">•</span>
-                        <span className="text-gray-500 dark:text-gray-400">{charCount >= 1000 ? `${(charCount / 1000).toFixed(1)}k` : charCount} chars</span>
+                        <span className="font-medium text-gray-500 whitespace-nowrap dark:text-gray-400">{wordCount} words</span>
+                        <span className="hidden sm:inline text-gray-300">•</span>
+                        <span className="hidden sm:inline text-gray-500 dark:text-gray-400">{charCount >= 1000 ? `${(charCount / 1000).toFixed(1)}k` : charCount} chars</span>
                       </>
                     )
                   })()}
-                  <span className="text-gray-300">|</span>
+                  <span className="hidden sm:inline text-gray-300">|</span>
                   <button
                     type="button"
                     onClick={() => setShowSmartInputHelp(true)}
-                    className="flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors cursor-help dark:hover:text-gray-300"
+                    className="hidden sm:flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors cursor-help dark:hover:text-gray-300"
                   >
                     <HelpCircle className="w-3 h-3" />
-                    <span className="sm:hidden">Shortcuts</span>
                     <span className="hidden sm:inline"><span className="text-primary-500">@</span>mention</span>
                     <span className="hidden sm:contents"><span className="mx-1">·</span>
                     <span className="text-emerald-500">$</span>asset</span>
@@ -2480,12 +2624,12 @@ export function UniversalNoteEditor({
                   </button>
                   {lastSavedAt && (
                     <>
-                      <span className="text-gray-300">|</span>
-                      <span>Saved {formatLastSaved(lastSavedAt)}</span>
+                      <span className="hidden sm:inline text-gray-300">|</span>
+                      <span className="hidden sm:inline">Saved {formatLastSaved(lastSavedAt)}</span>
                     </>
                   )}
                 </div>
-                <div className="flex items-center space-x-3">
+                <div className="flex flex-shrink-0 items-center space-x-3">
                   {/* Save status indicator */}
                   {isSaving ? (
                     <div className="flex items-center text-gray-500 font-medium dark:text-gray-400">
@@ -2766,6 +2910,130 @@ export function UniversalNoteEditor({
           </div>
         </div>
       )}
+
+      {/* The phone's overflow for every secondary note action.
+
+          Two of the actions are lists rather than commands, so the sheet has a
+          back stack of exactly one level. That is cheaper than nesting sheets
+          and it keeps a single dismissal gesture for the whole thing. */}
+      <BottomSheet
+        open={showNoteActions}
+        onClose={() => { setShowNoteActions(false); setNoteActionsView('root') }}
+        title={noteActionsView === 'type' ? 'Note type' : noteActionsView === 'files' ? 'Files & links' : 'Note actions'}
+        snapPoints={[0.6, 0.9]}
+      >
+        <div className="px-3 pb-4">
+          {noteActionsView !== 'root' && (
+            <button
+              type="button"
+              onClick={() => setNoteActionsView('root')}
+              className="mb-1 flex items-center gap-1.5 px-2 py-2 text-sm font-medium text-gray-500 dark:text-gray-400"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Note actions
+            </button>
+          )}
+
+          {noteActionsView === 'root' && noteActions.map(action => {
+            const Icon = action.icon
+            return (
+              <button
+                key={action.label}
+                type="button"
+                onClick={() => {
+                  if (action.view) { setNoteActionsView(action.view); return }
+                  setShowNoteActions(false)
+                  action.run?.()
+                }}
+                className="w-full flex items-center gap-3 min-h-[56px] px-2 rounded-xl text-left active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
+              >
+                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">{action.label}</span>
+                  <span className="block text-xs text-gray-500 dark:text-gray-400 truncate">{action.hint}</span>
+                </span>
+                {typeof action.count === 'number' && action.count > 0 && (
+                  <span className="flex-shrink-0 text-xs font-medium tabular-nums text-gray-400">{action.count}</span>
+                )}
+                {action.view && <ChevronRight className="h-4 w-4 flex-shrink-0 text-gray-300" />}
+              </button>
+            )
+          })}
+
+          {noteActionsView === 'type' && selectedNote && NOTE_TYPES_GROUPED.map(({ group, types }) => (
+            <div key={group}>
+              <div className="px-2 pt-3 pb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{group}</span>
+              </div>
+              {types.map(nt => {
+                const isActive = getNoteType(selectedNote.note_type).id === nt.id
+                return (
+                  <button
+                    key={nt.id}
+                    type="button"
+                    disabled={updateNoteTypeMutation.isPending}
+                    onClick={() => { handleNoteTypeChange(nt.id); setShowNoteActions(false); setNoteActionsView('root') }}
+                    className="w-full flex items-center gap-3 min-h-[48px] px-2 rounded-xl text-left active:bg-gray-100 dark:active:bg-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    <span className={clsx('h-2.5 w-2.5 flex-shrink-0 rounded-full', nt.dotColor)} />
+                    <span className={clsx('flex-1 text-sm', isActive ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300')}>
+                      {nt.label}
+                    </span>
+                    {isActive && <Check className="h-4 w-4 flex-shrink-0 text-primary-500" />}
+                  </button>
+                )
+              })}
+            </div>
+          ))}
+
+          {noteActionsView === 'files' && (
+            noteFiles.length === 0 && noteLinks.length === 0 ? (
+              <p className="px-2 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                Nothing attached to this note yet.
+              </p>
+            ) : (
+              <>
+                {noteFiles.map((file, idx) => (
+                  <a
+                    key={`file-${idx}`}
+                    href={file.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 min-h-[56px] px-2 rounded-xl active:bg-gray-100 dark:active:bg-gray-800"
+                  >
+                    <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800">
+                      <Paperclip className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm text-gray-900 dark:text-gray-100">{file.fileName}</span>
+                    <ExternalLink className="h-4 w-4 flex-shrink-0 text-gray-300" />
+                  </a>
+                ))}
+                {noteLinks.map((link, idx) => (
+                  <a
+                    key={`link-${idx}`}
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 min-h-[56px] px-2 rounded-xl active:bg-gray-100 dark:active:bg-gray-800"
+                  >
+                    <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-500 dark:bg-gray-800">
+                      <Link2 className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-gray-900 dark:text-gray-100">{link.text}</span>
+                      <span className="block truncate text-xs text-gray-400">{link.url}</span>
+                    </span>
+                    <ExternalLink className="h-4 w-4 flex-shrink-0 text-gray-300" />
+                  </a>
+                ))}
+              </>
+            )
+          )}
+        </div>
+      </BottomSheet>
+
     </div>
   )
 }
