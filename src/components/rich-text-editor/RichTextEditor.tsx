@@ -1,5 +1,6 @@
 import React, { useEffect, forwardRef, useImperativeHandle, useRef, useCallback, memo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { resolveResponsePolicy } from '../../lib/ai'
 import { useEditor, EditorContent, Extension } from '@tiptap/react'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
@@ -255,9 +256,14 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
     })
   }, [])
 
-  // Handle AI prompt submission (inline mode)
-  const handleAISubmit = useCallback(async (prompt: string, model: string | null): Promise<string | null> => {
+  // Handle AI prompt submission (inline mode).
+  //
+  // `model` is still in the signature because the extension that calls this
+  // passes it; ai-chat has never read it, and the canonical route is the
+  // request's `purpose`, not a per-caller model override.
+  const handleAISubmit = useCallback(async (prompt: string, _model: string | null): Promise<string | null> => {
     setIsAILoading(true)
+    const snippetPolicy = resolveResponsePolicy({ message: prompt, purpose: 'snippet' })
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -275,8 +281,15 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           },
           body: JSON.stringify({
             message: prompt,
+            // Inline generation is a snippet, and always was. It sent no
+            // `purpose` at all, so ai-chat's purpose routing left it on the
+            // full chat model — the most expensive route in the product, for
+            // the shortest output in it. `model` was sent and silently
+            // ignored by the function; dropping it removes a field that
+            // looked like it controlled something and never did.
+            purpose: 'snippet',
+            verbosity: snippetPolicy.verbosity,
             conversationHistory: [],
-            model: model || 'claude'
           }),
         }
       )

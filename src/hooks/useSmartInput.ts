@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo, ChangeEvent, KeyboardEvent } from 'react'
+import { resolveResponsePolicy } from '../lib/ai'
 import { useEntitySearch, EntitySearchResult, EntityType } from './useEntitySearch'
 import { useTemplates, Template } from './useTemplates'
 import { supabase } from '../lib/supabase'
@@ -885,6 +886,7 @@ export function useSmartInput({
 
     setIsAILoading(true)
     setAIError(null)
+    const snippetPolicy = resolveResponsePolicy({ message: aiPromptText, purpose: 'snippet' })
 
     try {
       // Import supabase and call AI
@@ -904,8 +906,13 @@ export function useSmartInput({
             'Authorization': `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({
-            message: `Please provide a brief, concise summary (2-3 sentences max) for this request: ${aiPromptText}`,
+            // The "2-3 sentences max" that used to be glued onto the message
+            // is now the snippet policy's job. Length belongs in one place,
+            // and a length rule pasted into the user's own text is a rule the
+            // model can be talked out of by the next sentence.
+            message: aiPromptText,
             purpose: 'snippet',
+            verbosity: snippetPolicy.verbosity,
             conversationHistory: [],
             context: assetContext ? {
               type: 'asset',

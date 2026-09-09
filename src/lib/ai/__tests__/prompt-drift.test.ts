@@ -16,6 +16,7 @@ import { resolve } from 'node:path'
 import { AI_ACTION_IDS } from '../actions'
 import { AI_VERBOSITIES } from '../response-policy'
 import { ENVELOPE_FENCE } from '../envelope'
+import { AI_STREAM_EVENT_TYPES, TOOL_STATUS_LABEL } from '../stream-protocol'
 
 const SOURCE = readFileSync(
   resolve(process.cwd(), 'supabase/functions/ai-chat/index.ts'),
@@ -123,6 +124,124 @@ describe('latency instrumentation', () => {
     // branch the default provider does not take.
     expect(SOURCE).toContain('function capDocuments')
     expect(SOURCE).toMatch(/documents = trimmed\.documents/)
+  })
+})
+
+describe('the streaming seam', () => {
+  it('streaming is opt-in per request', () => {
+    expect(SOURCE).toMatch(/const wantsStream: boolean = body\.stream === true/)
+  })
+
+  it('rate limits and config errors stay HTTP status codes, not stream frames', () => {
+    // A 429 buried in an SSE frame would look to every existing caller like a
+    // successful empty answer. The gate must precede the stream branch.
+    const gate = SOURCE.indexOf('code: \'rate_limit_exceeded\'')
+    const branch = SOURCE.indexOf('if (wantsStream)')
+    expect(gate).toBeGreaterThan(-1)
+    expect(branch).toBeGreaterThan(gate)
+  })
+
+  it('emits only the event kinds the client can decode', () => {
+    const emitted = new Set(
+      [...SOURCE.matchAll(/\bsend\("([a-z]+)"/g)].map(m => m[1]),
+    )
+    for (const kind of emitted) {
+      expect(AI_STREAM_EVENT_TYPES as readonly string[]).toContain(kind)
+    }
+    // And the ones the reader depends on are actually sent.
+    for (const kind of ['meta', 'status', 'delta', 'final', 'error']) {
+      expect(emitted.has(kind), `never sends "${kind}"`).toBe(true)
+    }
+  })
+
+  it('status carries a tool name, never a label the server wrote', () => {
+    expect(SOURCE).toMatch(/send\("status", \{ tool: name/)
+    expect(SOURCE).not.toMatch(/send\("status", \{ label/)
+  })
+
+  it('every tool it can report is one the client has words for', () => {
+    const block = SOURCE.match(/const RESEARCH_TOOLS = \[([\s\S]*?)\n\] as const;/)
+    expect(block).toBeTruthy()
+    const names = [...block![1].matchAll(/name: "([a-z_]+)"/g)].map(m => m[1]).sort()
+    expect(names).toEqual(Object.keys(TOOL_STATUS_LABEL).sort())
+  })
+
+  it('asks Anthropic for a stream and parses the documented event set', () => {
+    expect(SOURCE).toMatch(/stream: true/)
+    for (const event of [
+      'message_start', 'content_block_start', 'content_block_delta',
+      'content_block_stop', 'message_delta',
+    ]) {
+      expect(SOURCE, `does not handle ${event}`).toContain(`"${event}"`)
+    }
+    for (const delta of ['text_delta', 'input_json_delta', 'citations_delta']) {
+      expect(SOURCE, `does not handle ${delta}`).toContain(`"${delta}"`)
+    }
+  })
+
+  it('a provider that cannot stream still delivers the whole answer', () => {
+    expect(SOURCE).toMatch(/if \(!canStream && result\.response\)/)
+  })
+
+  it('a terminal error sends no final event after it', () => {
+    // The client's fail-safe depends on `final` being absent when the answer
+    // is incomplete. An error path that also sent `final` would hand it a
+    // structure to parse out of a half-written answer.
+    const streamBlock = SOURCE.slice(SOURCE.indexOf('if (wantsStream)'))
+    const errorSend = streamBlock.indexOf('send("error"')
+    const finalSend = streamBlock.indexOf('send("final"')
+    expect(finalSend).toBeGreaterThan(-1)
+    expect(errorSend).toBeGreaterThan(finalSend)
+  })
+})
+
+describe('legacy caller routing', () => {
+  const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8')
+
+  it('the inline editor routes as a snippet and no longer sends a dead model field', () => {
+    const source = read('src/components/rich-text-editor/RichTextEditor.tsx')
+    const body = source.slice(source.indexOf('handleAISubmit'), source.indexOf('const editor = useEditor'))
+    expect(body).toMatch(/purpose: 'snippet'/)
+    expect(body).not.toMatch(/model: model \|\| 'claude'/)
+  })
+
+  it('the smart-input prompt modal routes as a snippet', () => {
+    const source = read('src/components/smart-input/AIPromptModal.tsx')
+    expect(source).toMatch(/purpose: 'snippet'/)
+  })
+
+  it('no chat caller relies on a hand-written length instruction', () => {
+    // Length is the response policy's job. A rule pasted into the user's own
+    // message is a rule the next sentence can argue with.
+    const source = read('src/hooks/useSmartInput.ts')
+    // The instruction is gone from the request; only the comment explaining
+    // its removal mentions it.
+    expect(source).not.toMatch(/message: `[^`]*2-3 sentences max/)
+    expect(source).toMatch(/verbosity: snippetPolicy\.verbosity/)
+  })
+
+  it('every ai-chat caller in the repo declares a purpose', () => {
+    // A caller with no purpose falls through to the full chat model, which is
+    // how the inline editor ran the most expensive route for the shortest
+    // output in the product.
+    const callers = [
+      'src/hooks/useAI.ts',
+      'src/hooks/useGenerateAIColumn.ts',
+      'src/hooks/useSmartInput.ts',
+      'src/hooks/useContributions.ts',
+      'src/components/rich-text-editor/RichTextEditor.tsx',
+      'src/components/smart-input/AIPromptModal.tsx',
+    ]
+    for (const file of callers) {
+      const source = read(file)
+      const bodies = [...source.matchAll(/body: JSON\.stringify\(\{([\s\S]{0,900}?)\}\),/g)]
+        .map(m => m[1])
+        .filter(b => b.includes('message:'))
+      expect(bodies.length, `no ai-chat body found in ${file}`).toBeGreaterThan(0)
+      for (const body of bodies) {
+        expect(body, `a request in ${file} sends no purpose`).toMatch(/purpose:/)
+      }
+    }
   })
 })
 

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { resolveResponsePolicy } from '../../lib/ai'
 import { Sparkles, X, Loader2, AlertCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -42,6 +43,7 @@ export function AIPromptModal({
 
     setIsGenerating(true)
     setError(null)
+    const snippetPolicy = resolveResponsePolicy({ message: prompt, purpose: 'snippet' })
 
     try {
       // Use the existing AI infrastructure
@@ -62,6 +64,10 @@ export function AIPromptModal({
           },
           body: JSON.stringify({
             message: prompt,
+            // Same omission as the inline editor: no `purpose`, so this ran
+            // on the full chat model to generate a field's worth of text.
+            purpose: 'snippet',
+            verbosity: snippetPolicy.verbosity,
             conversationHistory: [],
             context: assetContext ? {
               type: 'asset',

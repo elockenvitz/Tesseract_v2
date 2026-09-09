@@ -24,7 +24,7 @@ const BOOK: AiObjectRef = { type: 'portfolio', id: 'pf-growth', label: 'Growth C
 const ALLOWLIST = [AMZN, BOOK]
 
 function captureEvents(names: string[]) {
-  const seen: Array<{ name: string; detail: any }> = []
+  const seen: Array<{ name: string; detail: Record<string, unknown> }> = []
   const listeners = names.map(name => {
     const handler = (e: Event) => seen.push({ name, detail: (e as CustomEvent).detail })
     window.addEventListener(name, handler)

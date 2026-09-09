@@ -160,6 +160,9 @@ Deno.serve(async (req) => {
     // caller — the column generator, the inline editor, the smart input —
     // keeps getting exactly the prose response it gets today.
     const structured: boolean = body.structured === true;
+    // Opt-in, like `structured`. Every caller that does not ask for a stream
+    // keeps receiving exactly the JSON body it receives today.
+    const wantsStream: boolean = body.stream === true;
     const maxActions: number = clampInt(body.maxActions, 1, 5, 3);
     const maxEvidence: number = clampInt(body.maxEvidence, 1, 8, 3);
     const tags: Array<{ type: string; id: string }> = Array.isArray(body.tags)
@@ -288,6 +291,132 @@ Deno.serve(async (req) => {
     timings.history_chars = conversationHistory.reduce(
       (n: number, m: any) => n + String(m?.content ?? "").length, 0);
     timings.context_dropped = trimmed.dropped;
+
+    // ─── Streamed response ─────────────────────────────────────────────
+    //
+    // The pre-model work above deliberately stays OUTSIDE the stream. A rate
+    // limit is a 429 and a missing key is a 400 — status codes every existing
+    // caller already handles — and burying them in an SSE frame would make a
+    // configuration error look like a successful empty answer. Once the model
+    // call begins, everything that follows is a stream event.
+    //
+    // Non-Anthropic providers take this path too. They cannot produce
+    // incremental text, so the whole answer arrives as one delta; the client
+    // gets one code path either way and learns from `streamed` in the meta
+    // event whether the prose actually arrived in pieces.
+    if (wantsStream) {
+      const startTime = Date.now();
+      const canStream = aiConfig.provider === "anthropic";
+      const encoder = new TextEncoder();
+
+      const sse = new ReadableStream({
+        async start(controller) {
+          const send = (type: string, payload: Record<string, unknown>) => {
+            try {
+              controller.enqueue(encoder.encode(
+                `event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`,
+              ));
+            } catch {
+              // The reader went away — a closed pane, a cancelled request.
+              // Nothing to recover; the loop below finishes and closes.
+            }
+          };
+
+          send("meta", {
+            model: effectiveModel,
+            verbosity,
+            streamed: canStream,
+            timings: { ...timings },
+          });
+          // Grounded: context assembly genuinely happened before this point.
+          send("status", { phase: "context" });
+
+          const modelStart = Date.now();
+          try {
+            const result = await callAIProvider(
+              aiConfig.provider as AIProvider,
+              aiConfig.apiKey!,
+              effectiveModel,
+              systemPrompt,
+              conversationHistory,
+              message,
+              effectiveMaxTokens,
+              user.id,
+              documents,
+              supabase,
+              { stableSystem, variableSystem },
+              canStream
+                ? {
+                    onText: (text) => send("delta", { text }),
+                    onTool: (name, iteration) => send("status", { tool: name, iteration }),
+                    onFirstDelta: () => {
+                      timings.provider_first_delta = Date.now() - modelStart;
+                    },
+                  }
+                : undefined,
+            );
+
+            timings.model = Date.now() - modelStart;
+
+            // A provider that could not stream still owes the reader the
+            // answer. One delta, then the same terminal event.
+            if (!canStream && result.response) {
+              send("delta", { text: result.response });
+            }
+
+            const primaryTag = tags[0] || null;
+            logUsage(
+              supabase, user.id, attribution, { ...aiConfig, model: effectiveModel },
+              primaryTag ? { type: primaryTag.type, id: primaryTag.id } : null,
+              purpose, startTime, result.tokens,
+            ).catch(console.error);
+
+            timings.total = Date.now() - t0;
+            timings.output_chars = result.response.length;
+            timings.tool_iterations = result.tool_calls?.length ?? 0;
+            console.log("ai-chat timings", JSON.stringify({
+              purpose: purpose ?? "chat", verbosity, structured, streamed: canStream,
+              provider: aiConfig.provider, model: effectiveModel, tags: tags.length, ...timings,
+            }));
+
+            send("final", {
+              raw: result.response,
+              model: effectiveModel,
+              citations: result.citations || [],
+              tool_calls: result.tool_calls || [],
+              usage: result.usageRaw ?? {},
+              timings: { ...timings },
+            });
+          } catch (e) {
+            const errMsg = (e as Error).message || "";
+            if (looksLikeAuthFailure(errMsg)) {
+              notifyProviderAuthFailureOncePerDay(
+                supabase, attribution.organizationId,
+                aiConfig.provider as AIProvider, aiConfig.mode, errMsg,
+              ).catch(console.error);
+            }
+            console.error("AI Chat stream error:", errMsg, JSON.stringify(timings));
+            // Terminal: no `final` follows. The client keeps whatever prose
+            // already arrived and derives no actions from it.
+            send("error", { message: errMsg || "The AI request failed.", recoverable: false });
+          } finally {
+            try { controller.close(); } catch { /* already closed */ }
+          }
+        },
+      });
+
+      return new Response(sse, {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          "Connection": "keep-alive",
+          // Stops an intermediary from buffering the whole body and undoing
+          // the entire point of this branch.
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
 
     // ─── Call provider ─────────────────────────────────────────────────
     const startTime = Date.now();
@@ -1343,14 +1472,153 @@ async function executeResearchTool(
 // user saw a "thinking" spinner that never resolved.
 const MAX_TOOL_ITERATIONS = 3;
 
+/**
+ * One Anthropic request, streamed.
+ *
+ * Assembles the same shape the non-streaming branch gets back from
+ * `response.json()` — content blocks, stop_reason, usage — while forwarding
+ * every text delta to `onText` as it arrives. The loop above is then identical
+ * whether or not the caller wanted a stream.
+ *
+ * Raw SSE rather than the Anthropic SDK, deliberately. Every provider branch
+ * in this file speaks raw HTTP; this function cannot be deployed or executed
+ * by anything in this repository, so adding an `npm:` dependency to the single
+ * path all AI in the product depends on would be an unverifiable change to a
+ * function that currently works. The event set below is small and fully
+ * specified, and the fiddly half — deciding what a reader should see — lives
+ * client-side in `src/lib/ai/stream.ts` where tests can reach it.
+ */
+async function streamAnthropicOnce(
+  apiKey: string,
+  body: any,
+  onText: (text: string) => void,
+): Promise<{ content: any[]; stop_reason: string | null; usage: any }> {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({ ...body, stream: true }),
+  });
+
+  if (!response.ok || !response.body) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error?.message || `Anthropic API error (HTTP ${response.status})`);
+  }
+
+  // Blocks are assembled by index. `partial` holds the accumulating JSON for a
+  // tool_use block, which arrives as a string across many input_json_delta
+  // events and is only parseable once the block closes.
+  const blocks = new Map<number, any>();
+  const partial = new Map<number, string>();
+  let stop_reason: string | null = null;
+  let usage: any = {};
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const handle = (payload: any) => {
+    switch (payload?.type) {
+      case "message_start":
+        usage = { ...(payload.message?.usage ?? {}) };
+        break;
+
+      case "content_block_start":
+        blocks.set(payload.index, { ...payload.content_block });
+        if (payload.content_block?.type === "tool_use") partial.set(payload.index, "");
+        break;
+
+      case "content_block_delta": {
+        const block = blocks.get(payload.index);
+        const delta = payload.delta;
+        if (!block || !delta) break;
+        if (delta.type === "text_delta") {
+          block.text = (block.text ?? "") + (delta.text ?? "");
+          onText(delta.text ?? "");
+        } else if (delta.type === "input_json_delta") {
+          partial.set(payload.index, (partial.get(payload.index) ?? "") + (delta.partial_json ?? ""));
+        } else if (delta.type === "citations_delta" && delta.citation) {
+          block.citations = [...(block.citations ?? []), delta.citation];
+        }
+        break;
+      }
+
+      case "content_block_stop": {
+        const raw = partial.get(payload.index);
+        if (raw !== undefined) {
+          const block = blocks.get(payload.index);
+          // A tool call whose arguments did not parse is dropped rather than
+          // executed with a guess. The loop then sees no tool_use for it.
+          try { if (block) block.input = raw ? JSON.parse(raw) : {}; }
+          catch { blocks.delete(payload.index); }
+          partial.delete(payload.index);
+        }
+        break;
+      }
+
+      case "message_delta":
+        if (payload.delta?.stop_reason) stop_reason = payload.delta.stop_reason;
+        // Output tokens are only known at the end; input/cache counts came
+        // with message_start. Merge rather than replace.
+        usage = { ...usage, ...(payload.usage ?? {}) };
+        break;
+
+      case "error":
+        throw new Error(payload.error?.message || "Anthropic stream error");
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    buffer = buffer.replace(/\r\n/g, "\n");
+
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary !== -1) {
+      const block = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const data = block
+        .split("\n")
+        .filter((l) => l.startsWith("data:"))
+        .map((l) => l.slice(5).trimStart())
+        .join("\n");
+      if (data) {
+        try { handle(JSON.parse(data)); }
+        catch (e) {
+          // Re-throw a genuine stream error; skip an unparseable frame.
+          if (e instanceof Error && e.message.startsWith("Anthropic stream")) throw e;
+        }
+      }
+      boundary = buffer.indexOf("\n\n");
+    }
+  }
+
+  const content = [...blocks.entries()].sort((a, b) => a[0] - b[0]).map(([, b]) => b);
+  return { content, stop_reason, usage };
+}
+
 async function callAnthropicWithLoop(opts: {
   apiKey: string; model: string; systemPrompt: string;
   history: Array<{ role: string; content: string }>;
   message: string; maxTokens: number; userId: string;
   documents: SourceDocument[]; supabase?: any;
   split?: { stableSystem: string; variableSystem: string };
+  /**
+   * Present when the caller is streaming to a client. Text deltas are handed
+   * over as they arrive; `onTool` fires when a research lookup begins, so the
+   * reader is not left in silence while the loop runs.
+   */
+  stream?: {
+    onText: (text: string) => void;
+    onTool: (name: string, iteration: number) => void;
+    onFirstDelta: () => void;
+  };
 }): Promise<CallResult> {
-  const { apiKey, model, systemPrompt, history, message, maxTokens, userId, documents, supabase, split } = opts;
+  const { apiKey, model, systemPrompt, history, message, maxTokens, userId, documents, supabase, split, stream } = opts;
 
   /**
    * Two system blocks, one breakpoint.
@@ -1407,21 +1675,30 @@ async function callAnthropicWithLoop(opts: {
     // Expose tools only when we have a supabase client to execute them.
     if (supabase) body.tools = RESEARCH_TOOLS;
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error?.error?.message || `Anthropic API error (HTTP ${response.status})`);
+    let data: { content: any[]; stop_reason: string | null; usage: any };
+    if (stream) {
+      let sawDelta = false;
+      data = await streamAnthropicOnce(apiKey, body, (text) => {
+        if (!sawDelta) { sawDelta = true; stream.onFirstDelta(); }
+        stream.onText(text);
+      });
+    } else {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error?.error?.message || `Anthropic API error (HTTP ${response.status})`);
+      }
+      data = await response.json();
     }
 
-    const data = await response.json();
     const u = data.usage || {};
     lastUsageRaw = u;
     totals.input       += u.input_tokens ?? 0;
@@ -1471,6 +1748,10 @@ async function callAnthropicWithLoop(opts: {
 
     const toolResults: any[] = [];
     for (const tu of toolUseBlocks) {
+      // Tell the reader what is being looked up. Only the tool NAME crosses
+      // the wire — the words belong to the client, and the model's arguments
+      // are never rendered as status text.
+      stream?.onTool(tu.name, iter);
       const result = supabase
         ? await executeResearchTool(supabase, userId, tu.name, tu.input || {})
         : JSON.stringify({ error: "Tools not available in this context." });
@@ -1521,12 +1802,21 @@ async function callAIProvider(
   // The same system prompt, split at its cache breakpoint. Anthropic only;
   // every other provider takes one system string and has nowhere to put it.
   split?: { stableSystem: string; variableSystem: string },
+  // Anthropic only. The other three branches assemble one JSON body and have
+  // no incremental shape to forward, so a request for streaming against them
+  // is silently served whole — the caller learns this from `streamed: false`
+  // in the meta event rather than from a failure.
+  stream?: {
+    onText: (text: string) => void;
+    onTool: (name: string, iteration: number) => void;
+    onFirstDelta: () => void;
+  },
 ): Promise<CallResult> {
 
   if (provider === "anthropic") {
     return await callAnthropicWithLoop({
       apiKey, model, systemPrompt, history, message, maxTokens, userId,
-      documents, supabase, split,
+      documents, supabase, split, stream,
     });
   }
 

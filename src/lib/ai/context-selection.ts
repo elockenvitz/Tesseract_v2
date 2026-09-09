@@ -367,7 +367,12 @@ export function selectContext(
     // "open the idea you are already on" is a legitimate recommendation.
     allowlist: selected
       .filter(o => ACTIONABLE.has(o.type))
-      .map(({ role: _role, why: _why, estimatedTokens: _t, ...ref }) => ref as AiObjectRef),
+      .map(o => ({
+        type: o.type as AiObjectType,
+        ...(o.label !== undefined ? { label: o.label } : {}),
+        ...(o.symbol !== undefined ? { symbol: o.symbol } : {}),
+        id: o.id,
+      })),
     estimatedTokens: spent,
     dropped,
   }

@@ -74,6 +74,9 @@ export function AISection({
     clearConversation,
     isLoading,
     error,
+    // Stage 2: grounded activity text and the stop control.
+    status,
+    cancelGeneration,
     // Tag labels are still used for read-only display (e.g. "About: AAPL"
     // hint in the header) — but the user no longer adds or removes tags
     // directly. They're inferred from whatever page launched the panel.
@@ -410,12 +413,26 @@ export function AISection({
             ))}
 
             {/* Loading indicator */}
-            {isLoading && (
+            {/* Only while the answer has not started arriving. Once prose is
+                streaming into the bubble above, a second spinner underneath it
+                says nothing the reader cannot already see. The label is a
+                grounded activity from the stream, never model text. */}
+            {isLoading && !messages.some(m => m.streaming && m.content) && (
               <div className="flex justify-start">
                 <div className="bg-gray-100 dark:bg-gray-800 rounded-lg px-4 py-3">
                   <div className="flex items-center space-x-2">
                     <Loader2 className="h-4 w-4 animate-spin text-primary-500" />
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Thinking...</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      {status ?? 'Working…'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={cancelGeneration}
+                      className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400
+                                 dark:hover:text-gray-200 underline underline-offset-2"
+                    >
+                      Stop
+                    </button>
                   </div>
                 </div>
               </div>
@@ -678,6 +695,8 @@ function AIMessageBubble({
     citations?: Array<{ document_title: string; cited_text: string }>
     tool_calls?: Array<{ name: string; input: Record<string, unknown>; result_summary?: string }>
     actions?: AiAction[]
+    streaming?: boolean
+    truncated?: boolean
   }
   onTickerClick: (symbol: string) => void
 }) {

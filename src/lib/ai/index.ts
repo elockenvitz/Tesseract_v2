@@ -56,6 +56,62 @@ export {
 export type { AiResponseEnvelope, AiEvidence, ParseEnvelopeOptions } from './envelope'
 
 export {
+  TOOL_STATUS_LABEL,
+  PHASE_STATUS_LABEL,
+  AI_STREAM_EVENT_TYPES,
+  isAiToolName,
+  isAiStatusPhase,
+  statusLabel,
+  toStreamEvent,
+} from './stream-protocol'
+export type {
+  AiToolName,
+  AiStatusPhase,
+  AiStreamEvent,
+  AiStreamMetaEvent,
+  AiStreamStatusEvent,
+  AiStreamDeltaEvent,
+  AiStreamFinalEvent,
+  AiStreamErrorEvent,
+} from './stream-protocol'
+
+export {
+  FENCE_MARKER,
+  createSseDecoder,
+  createFenceFilter,
+  createMarks,
+  deriveLatency,
+  consumeAiStream,
+} from './stream'
+export type {
+  FenceFilter,
+  AiStreamMarks,
+  AiLatency,
+  AiStreamHandlers,
+  AiStreamOutcome,
+} from './stream'
+
+export {
+  boundHistory,
+  DEFAULT_HISTORY_BUDGET,
+} from './history'
+export type { HistoryMessage, HistoryBudget, BoundedHistory } from './history'
+
+export {
+  createRequestContext,
+  createInFlight,
+  cancelInFlight,
+  shouldApplyToView,
+  __resetRequestCounter,
+} from './request-context'
+export type {
+  AiRequestContext,
+  AiInFlightRequest,
+  AiRequestStatus,
+  ViewState,
+} from './request-context'
+
+export {
   selectContext,
   describeSelection,
   DEFAULT_BUDGET,
