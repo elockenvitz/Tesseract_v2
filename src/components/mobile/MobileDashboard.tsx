@@ -130,6 +130,7 @@ import { tileRequirementFor } from '../../lib/mobile/tile-requirement'
 import { readerQuestionFor } from '../../lib/signals/reader-question'
 import { briefClassFor } from '../../lib/signals/brief-class'
 import { attentionBase } from '../../lib/signals/attention-strength'
+import type { DeskExposure } from '../../lib/signals/desk-exposure'
 import type { TileContainer } from '../../lib/signals/tile-geometry'
 import {
   composeFeed, type ComposeScope, type ComposeTraceRow,
@@ -196,6 +197,23 @@ import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
  * today's feed goes — must settle rather than spin.
  */
 const SETTLE_FRAMES = 40
+
+/**
+ * How many of the composed feed's opening cards are recorded as having LED it.
+ *
+ * Three, and small on purpose. This record exists for the composer's lead band,
+ * which decides one slot, so it is a record of what opened the feed rather than
+ * of what was seen.
+ *
+ * The arithmetic that fixes the number: `feed-rotation` keeps `MAX_TRACKED`
+ * 300 entries and expires them after three days. At three per open, a reader
+ * opening ten times a day accumulates about ninety inside that window, well
+ * clear of eviction, so a card that led on Monday is still remembered on
+ * Wednesday and the rotation has a real period. Marking a screenful instead
+ * would fill the map in two days and evict the record before the expiry could
+ * mean anything.
+ */
+const LEAD_MARK_COUNT = 3
 
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
@@ -1738,6 +1756,44 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const coverageIndex = useCoverageIndex()
 
   /**
+   * What the book says about one name, for the ranker.
+   *
+   * ── Why this exists and why it is one lookup ──────────────────────────────
+   *
+   * The ranking model asks how much a card matters and had one answer for it:
+   * the position's weight in its heaviest book. A desk has three, and the other
+   * two were computed, stored and never read — a name held in eight books is
+   * the firm's view rather than one PM's, and a two percent position against a
+   * five percent index weight is a three point UNDERWEIGHT, which a size band
+   * cannot see at all.
+   *
+   * `lenses.weightIndex` already holds all three, keyed by asset, sorted
+   * heaviest book first, built once inside the query. So this is a `Map.get`
+   * per card with no scan and no allocation. `frameworkCapitalFor`, which two
+   * branches already call, copies and re-sorts the same rows on every call to
+   * answer less.
+   *
+   * Null when the name is not in the book, which the model reads as "not
+   * known" rather than as zero. That distinction is load-bearing:
+   * `benchmarkPct` null means the book has no benchmark file, while 0 means the
+   * file exists and does not list the name, and only the second can produce an
+   * active weight.
+   */
+  const exposureFor = useCallback((assetId: string | null | undefined): DeskExposure | null => {
+    if (!assetId) return null
+    const rows = lenses?.weightIndex?.get(assetId)
+    if (!rows?.length) return null
+    // Heaviest first, by construction — see `currentBook`. No sort here.
+    const top = rows[0]
+    return {
+      weightPct: top.portfolioPct,
+      benchmarkPct: top.benchmarkPct,
+      activePct: top.activePct ?? null,
+      bookCount: rows.length,
+    }
+  }, [lenses?.weightIndex])
+
+  /**
    * The tile engine, at its only two seams.
    *
    * ── What this does and, more importantly, what it cannot do ────────────
@@ -1994,6 +2050,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     ): PriorityInput => ({
       ...i,
       judgment: judgmentFor(judgmentType, entityId),
+      /**
+       * What the book says about the name, on every branch at once.
+       *
+       * Threaded here rather than added to twelve call sites, for the same
+       * reason `coverage` below it is: every branch already routes its entity
+       * id through this function, so a branch cannot answer the coverage
+       * question and forget the exposure one. A branch that has no asset —
+       * a post, a market template with no match — passes null and the model
+       * falls back to the weight band exactly as before.
+       *
+       * A branch that already knows a better weight than the book's heaviest
+       * row keeps it: `i.weightPct` is not overwritten, and
+       * `deskMateriality` takes the strongest claim of the three.
+       */
+      exposure: exposureFor(entityId),
       /**
        * The coverage seam, finally populated.
        *
@@ -2284,10 +2355,42 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // its own builder — so it is named here rather than falling to news.
           type: signalTypeForTemplate(c.kind),
           severity: c.tone === 'negative' ? 'attention' : 'informational',
-          occurredAt: c.occurredAt ?? null,
-          weightPct: c.weightPct ?? null,
-          held: !!c.heldIn?.length,
-          deviationPct: null,
+          /**
+           * `eventDate`, which is the field the card actually has.
+           *
+           * This read `c.occurredAt`, `c.weightPct` and `c.heldIn` — and
+           * `TemplateCard` declares none of the three. So every market card
+           * ever ranked passed `occurredAt: null`, which switches `recencyBoost`
+           * off entirely: a print from this morning and one from three weeks
+           * ago scored the same, on the one card family whose whole claim is
+           * that something just happened.
+           *
+           * The weight and the holding come from the book now, through
+           * `exposure` on the entity id below, which is where every other
+           * branch gets them.
+           */
+          occurredAt: c.eventDate ?? null,
+          weightPct: null,
+          held: false,
+          /**
+           * The move, on the one card kind that measures one.
+           *
+           * `unusualMovers` computes `score` as a MAD-sigma multiple of the
+           * day's cross-section — how far this name moved relative to how far
+           * everything else did — and the number reached the interleaver, which
+           * used it to order market cards among themselves, and then died.
+           * `deviationBand` is exactly the component it belongs in.
+           *
+           * Rescaled from sigmas to the percentage points the band speaks: the
+           * filter admits a card at 1.5 sigma and `MATERIAL_DEVIATION_PCT` is
+           * 15, so ten points a sigma puts the weakest admitted mover at the
+           * material band and a 3-sigma move at the severe one. Only for this
+           * kind: an earnings card's score is a day count and means nothing on
+           * this axis.
+           */
+          deviationPct: c.kind === 'unusual_move' && Number.isFinite(c.score)
+            ? c.score * 10
+            : null,
         }, c.assetId)
       }
 
@@ -2411,7 +2514,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           held: false,
         }, e.signal?.entity?.id)
     }
-  }, [dispositions, assetBySymbol, coverageIndex])
+    /**
+     * `lenses?.book` and `exposureFor` belong here, and their absence was a
+     * live staleness bug.
+     *
+     * The body has closed over `lenses?.book` since the scenario branch was
+     * written — `frameworkCapitalFor` reads it — while the dependency list
+     * named only three unrelated things. It was masked because `baseFeedEntries`
+     * lists `lenses` in ITS deps, so the memo re-ran when the book landed; but
+     * it re-ran calling a `rankInputFor` still closed over the previous book,
+     * so the first ranked pass after the holdings resolved used stale weights.
+     *
+     * `rankInputFor` is deliberately NOT in `baseFeedEntries`' deps — it also
+     * closes over `dispositions`, and re-ranking on every judgment would pull
+     * the feed out from under a reader mid-scroll. So the fix is here, where it
+     * touches the book and not the judgments.
+     */
+  }, [dispositions, assetBySymbol, coverageIndex, exposureFor, lenses?.book])
 
   /**
    * Symbol -> the desk's actual position, for surfaces that only know a ticker.
@@ -3080,6 +3199,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
            */
           briefOf: (e: any) =>
             briefClassFor(rankInputFor(e)?.type ?? signalTypeOf(e)),
+          /**
+           * What led the feed recently, so it does not lead it again today.
+           *
+           * ── The requirement ─────────────────────────────────────────────
+           *
+           * Importance should generally lead, and a reader opening the app
+           * every morning should not meet the same tile every morning. The
+           * composer resolves that at one slot only and within a band the
+           * priority model calls indistinguishable — see `LEAD_BAND`.
+           *
+           * `seenAtMount` is the map `feed-rotation` already keeps, snapshotted
+           * once per mount by `useReaderSnapshots`. Reading the snapshot rather
+           * than the live map is what keeps the composer a pure function and
+           * stops the feed reordering under the reader the moment the marking
+           * effect below fires.
+           *
+           * The set, not `rotateBySeen`. That helper puts every seen card
+           * behind every unseen one, which is right for a list of posts and
+           * would flatten importance across a mixed feed.
+           */
+          ledRecently: new Set(Object.keys(seenAtMount ?? {})),
           scope,
           trace: import.meta.env.DEV,
         })
@@ -3205,7 +3345,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      *
      * Pinned by `does not re-rank when only the filter changes`.
      */
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, lenses, scenarioCards, coverageSignature(coverageIndex), absorbedTargets, composedTargetKeyByAsset])
+    /**
+     * `seenAtMount` is safe to depend on and `visibleItems` already does.
+     *
+     * It is a snapshot taken once per mount, so it cannot change mid-visit and
+     * cannot pull the feed out from under a reader. Adding it here is what
+     * lets the lead band see yesterday's leader on the first pass rather than
+     * on some later recompute.
+     */
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, seenAtMount, lenses, scenarioCards, coverageSignature(coverageIndex), absorbedTargets, composedTargetKeyByAsset])
 
   /**
    * The base order this page lifetime is committed to.
@@ -3281,6 +3429,45 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     if (next.length === (feedBaseline.remembered?.length ?? -1)) return
     writeFeedContinuity(continuityKey, { baseOrder: next })
   }, [continuityKey, feedBaseline, composing])
+
+  /**
+   * Record what LED the feed, so tomorrow it leads with something else.
+   *
+   * ── Why the existing call was not enough ──────────────────────────────────
+   *
+   * `markSeen` is called above on `visibleItems.slice(0, 10)` — the top ten
+   * IDEAS, keyed by post id. That is the right record for `rotateBySeen`, which
+   * rotates the posts pipeline, and it is the wrong one for the lead band:
+   * nothing that is not a post has ever been marked, so an Overdue tile or a
+   * framework break could lead the feed every single morning and the map would
+   * never know.
+   *
+   * This marks the composed feed's own opening, keyed the way the composer
+   * keys it. Both calls write the same map deliberately: for a post the two ids
+   * are the same string, and a trade idea that led the feed genuinely has been
+   * shown, so demoting it in the posts rotation too is correct rather than a
+   * collision.
+   *
+   * Three, not ten. This records what led, and the band only decides slot zero.
+   * Marking a screenful would fill `MAX_TRACKED` inside two days and evict the
+   * record before the three-day expiry could give the rotation its period.
+   *
+   * Gated on `composing` for the same reason the commit above is: a feed still
+   * arriving has no real leader, and marking a partial one would put the wrong
+   * card beyond reach for three days.
+   */
+  useEffect(() => {
+    if (!userId || composing || !feedBaseline.entries.length) return
+    const ids = feedBaseline.entries
+      .slice(0, LEAD_MARK_COUNT)
+      .map(e => rankInputFor(e)?.id)
+      .filter((id): id is string => !!id)
+    if (!ids.length) return
+    // The same 1.5s the posts call waits, for the same reason: it records that
+    // the reader actually arrived, not that a render happened.
+    const timer = setTimeout(() => markSeen(userId, ids), 1500)
+    return () => clearTimeout(timer)
+  }, [userId, composing, feedBaseline, rankInputFor])
 
   /**
    * What the reader sees: the base order, with rows hidden.

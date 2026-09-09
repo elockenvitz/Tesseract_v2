@@ -398,6 +398,35 @@ const SCREEN_TOLERANCE = 0.30
 const SHARE_BREAK_TOLERANCE = 0.35
 
 /**
+ * How close to the top a card must be to be allowed to open the feed instead.
+ *
+ * ── The requirement ───────────────────────────────────────────────────────
+ *
+ * "Importance should generally lead, but I don't want users opening the app
+ * every day and seeing the same thing." Both halves are real and they pull
+ * against each other, so the rule has to say exactly how much freshness may
+ * cost — and the answer is: nothing the model can measure.
+ *
+ * 0.06 is not picked. It is `WEIGHTS.ownership`, the smallest weight in the
+ * priority model and therefore the finest distinction that model claims to be
+ * able to draw. Two cards closer together than that are, by the model's own
+ * account, equally important; choosing between them on freshness gives up no
+ * importance anybody can name. Anything larger would be trading away a
+ * difference the model does assert.
+ *
+ * Two further bounds keep it honest. It applies at the FIRST card only, so it
+ * cannot compound down the feed. And a candidate must share the leader's tier,
+ * so freshness chooses within a semantic band and never across one — a news
+ * item cannot open the feed because a framework break was shown yesterday.
+ *
+ * It never blocks. If every card in the band was led with recently, the
+ * highest-ranked one leads anyway, and the reader gets a repeat rather than a
+ * worse feed. `feed-rotation` supplies the set and expires it after three
+ * days, which is what gives the rotation its period.
+ */
+const LEAD_BAND = 0.06
+
+/**
  * A category may not take more than this many of the opening cards.
  *
  * Carried over from `diversify`, where it was introduced because a desk whose
@@ -473,6 +502,20 @@ export interface ComposeOptions<T> {
   briefWindow?: number
   /** How much of that opening one lane may take. Raise it to switch the cap off. */
   maxPerBrief?: number
+  /**
+   * Card ids the reader has recently been LED with.
+   *
+   * Absent or empty, the lead band is off and the first card is exactly what
+   * the ranking says, which is what every other caller and every existing test
+   * expects. Given, it decides between cards the model considers equally
+   * important — and only between those. See `LEAD_BAND`.
+   *
+   * A SET rather than a clock or a seed, so the pass stays a pure function of
+   * its inputs. Freshness is data here, not time.
+   */
+  ledRecently?: ReadonlySet<string>
+  /** How close to the top a card must be to be allowed to open the feed. */
+  leadBand?: number
   /** The trailing window the family share is measured over. */
   shareWindow?: number
   /**
@@ -545,6 +588,7 @@ export interface ComposeTraceRow {
   priorityCost: number
   reason:
     | 'head'                 // the ranking's own choice, taken untouched
+    | 'fresh-lead'           // opened the feed because the better card led it last time
     | 'no-competitor'        // head repeated, but nothing was close enough
     | 'question-run'         // pulled up because the head would repeat a question
     | 'family-run'           // pulled up because the head would repeat a family
@@ -693,6 +737,8 @@ export function composeFeed<T>(
     maxPerBrief = MAX_PER_BRIEF,
     shareWindow = FAMILY_SHARE_WINDOW,
     maxPerFamilyShare = MAX_PER_FAMILY_SHARE,
+    ledRecently,
+    leadBand = LEAD_BAND,
     protectCritical = true,
     viewport = VIEWPORT,
     maxPerViewport = MAX_PER_VIEWPORT,
@@ -1076,11 +1122,40 @@ export function composeFeed<T>(
       }
     }
 
+    /**
+     * The one slot freshness is allowed to decide.
+     *
+     * Placed after the cost logic and allowed to override it, because at
+     * `out.length === 0` nothing has been emitted yet, so every cost is zero
+     * and there is nothing for it to override. It reads as a special case
+     * because it IS one: the first card is the only position in the feed where
+     * no repetition rule can apply, which is exactly why it was identical
+     * every morning.
+     */
+    let freshLead = false
+    if (out.length === 0 && ledRecently && ledRecently.size > 0) {
+      const best = comparableTotal(pool[0])
+      const tier = pool[0].priority.tier
+      for (let i = 0; i < pool.length; i++) {
+        const c = pool[i]
+        // The band is a prefix: the pool is sorted by tier then by score, so
+        // the first card outside either bound ends the search.
+        if (c.priority.tier !== tier) break
+        if (comparableTotal(c) < best - leadBand) break
+        if (ledRecently.has(c.input.id)) continue
+        // Everything above this card in the band was led with recently, so the
+        // highest-ranked card the reader has NOT just been shown opens instead.
+        freshLead = i > 0
+        index = i
+        break
+      }
+    }
+
     const chosen = pool.splice(index, 1)[0]
     out.push(chosen)
 
     if (trace) {
-      const bindingDim = index === 0
+      const bindingDim = index === 0 || freshLead
         ? -1
         : chosenCost.findIndex((v, i) => v < headCost[i])
       rows.push({
@@ -1097,9 +1172,11 @@ export function composeFeed<T>(
         competitors,
         headComparable,
         priorityCost: comparableTotal(chosen) - headComparable,
-        reason: index === 0
-          ? (costIsZero(headCost) ? 'head' : 'no-competitor')
-          : REASON_FOR[bindingDim] ?? 'head',
+        reason: freshLead
+          ? 'fresh-lead'
+          : index === 0
+            ? (costIsZero(headCost) ? 'head' : 'no-competitor')
+            : REASON_FOR[bindingDim] ?? 'head',
       })
     }
 
