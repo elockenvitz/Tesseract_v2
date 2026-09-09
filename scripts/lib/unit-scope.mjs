@@ -94,6 +94,18 @@ export const GATED_DIRS = [
   'src/components/layout',  'src/hooks/__tests__',
   'src/components/communication',
 
+  /*
+   * Gated on the lanes that introduced them.
+   *
+   * `src/lib/auth` came in with the mobile lane's session-event work and
+   * `src/lib/market-data` is the data lane's read seam. Both were entries
+   * in those branches' old `guard:unit` filter lists, so they arrive gated
+   * rather than deferred — the filter list is gone, not the decision it
+   * carried.
+   */
+  'src/lib/auth',
+  'src/lib/market-data',
+
 ]
 
 /**
