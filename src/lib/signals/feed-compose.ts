@@ -236,6 +236,42 @@ const SUBJECT_WINDOW = 6
  */
 const VIEWPORT = 6
 const MAX_PER_VIEWPORT = 3
+
+/**
+ * The briefing window, and how much of it one KIND OF WORK may take.
+ *
+ * -- Why a fifth axis, and why it is the strongest one ----------------------
+ *
+ * Manual QA, with every rule in this file passing: "Needs Review, Overdue,
+ * Coverage Gap, Needs Review, Coverage Gap, Overdue". Measured on a
+ * pilot-shaped pool the composed top ten held four reader questions and four
+ * categories -- the acceptance criteria, met -- while seven of the ten cards
+ * were amber and all seven said something needs looking at.
+ *
+ * The model had four names for one lane. `research_stale` prints the same two
+ * words as `awaiting_review`, coverage was filed under research, and a
+ * recommendation is filed under decisions; each of those is correct on its own
+ * terms and none of them is visible to a reader holding a phone. See
+ * `brief-class`, which is the coarser axis that was missing.
+ *
+ * Ten, because that is what manual acceptance is now judged on: the first one
+ * or two phone screens.
+ *
+ * Four, from the sweep rather than from taste. Measured on the pilot-shaped
+ * pool, where the ranked top ten is nine tenths one lane:
+ *
+ *   cap off   work 5, desk 2, market 2, judgment 1
+ *   cap 4     work 4, desk 3, market 2, judgment 1
+ *   cap 3     work 3, desk 3, market 3, judgment 1
+ *
+ * Three buys one more lane and pays for it twice: a third news item reaches the
+ * opening at 0.337 where a review at 0.629 was, and the counts land on a
+ * suspiciously even 3/3/3, which is the round-robin this rule is forbidden to
+ * be. Four is also the acceptance criterion stated exactly — no lane may take
+ * five of the first ten — rather than a number chosen to beat it.
+ */
+const BRIEF_WINDOW = 10
+const MAX_PER_BRIEF = 4
 /**
  * The bar a substitute must clear to break a saturated screen.
  *
@@ -313,6 +349,13 @@ export interface ComposeOptions<T> {
   subjectOf: (item: T) => string | null
   /** The canonical category, for the opening cap. Omitted, the cap is off. */
   categoryOf?: (item: T) => string | null
+  /**
+   * Which lane of the briefing this card is -- see `brief-class`.
+   *
+   * Optional, and the rule is off without it. Coarser than the category and
+   * coarser than the question: it is the axis a reader judges a screen by.
+   */
+  briefOf?: (item: T) => string | null
   scope?: ComposeScope
   maxRun?: number
   maxQuestionRun?: number
@@ -322,6 +365,10 @@ export interface ComposeOptions<T> {
   familyWindow?: number
   questionWindow?: number
   subjectWindow?: number
+  /** How many cards the briefing cap applies to. */
+  briefWindow?: number
+  /** How much of that opening one lane may take. Raise it to switch the cap off. */
+  maxPerBrief?: number
   /** The screen the saturation rule measures. */
   viewport?: number
   /** How much of that screen one value may take. Raise it to switch the rule off. */
@@ -380,6 +427,8 @@ export interface ComposeTraceRow {
     | 'question-run'         // pulled up because the head would repeat a question
     | 'family-run'           // pulled up because the head would repeat a family
     | 'subject-run'          // pulled up because the head would repeat a name
+    | 'brief-cap'            // pulled up because one lane had taken the screen
+    | 'brief-screen'
     | 'category-cap'         // pulled up because a category had taken the opening
     | 'category-screen'      // pulled up because one kind of work filled the screen
     | 'question-screen'
@@ -419,22 +468,30 @@ const comparableTotal = <T>(r: RankedItem<T>): number =>
  * needs only an ORDER, and the order is a product judgement that can be stated
  * and argued with:
  *
- *   0. a category has already taken its share of the opening   (mixed only)
- *   1. taking this would run a QUESTION past `maxCategoryRun`
- *   2. taking this would run a family past `maxRun`
- *   3. taking this would run a name past `maxSubjectRun`
- *   4. this CATEGORY would take more than half the viewport
- *   5. this QUESTION would take more than half the viewport
- *   6. this FAMILY would take more than half the viewport
- *   7. this question appeared within the last `categoryWindow`
- *   8. this family appeared within the last `familyWindow`
- *   9. this name appeared within the last `subjectWindow`
+ *   0. this LANE has already taken its share of the first screen (mixed only)
+ *   1. a category has already taken its share of the opening   (mixed only)
+ *   2. taking this would run a QUESTION past `maxCategoryRun`
+ *   3. taking this would run a family past `maxRun`
+ *   4. taking this would run a name past `maxSubjectRun`
+ *   5. this LANE would take more than half the viewport
+ *   6. this CATEGORY would take more than half the viewport
+ *   7. this QUESTION would take more than half the viewport
+ *   8. this FAMILY would take more than half the viewport
+ *   9. this question appeared within the last `categoryWindow`
+ *  10. this family appeared within the last `familyWindow`
+ *  11. this name appeared within the last `subjectWindow`
  *
- * Hard runs, then screen saturation, then soft recency; and within each band,
- * the coarsest axis first. Saturation sits above recency because "four of the
- * last six were this" is a stronger statement about the screen than "one of
- * the last three was", and below the runs because a run is still the most
- * visible repetition there is.
+ * The briefing cap first, then hard runs, then screen saturation, then soft
+ * recency; and within each band, the coarsest axis first.
+ *
+ * The lane cap outranks everything because it is the only rule stated in terms
+ * of what the reader is judged to have received: one screen, and what was on
+ * it. It applies to the opening alone and stops binding after that, so the rest
+ * of the feed is composed exactly as it was.
+ *
+ * Saturation sits above recency because "four of the last six were this" is a
+ * stronger statement about the screen than "one of the last three was", and
+ * below the runs because a run is still the most visible repetition there is.
  *
  * The question axis is new and sits ABOVE the family, because the family was
  * standing in for it and is too fine to do the job: five research framings are
@@ -447,8 +504,9 @@ const comparableTotal = <T>(r: RankedItem<T>): number =>
  * repeats anything", which is the fast path.
  */
 type Cost = [
-  number, number, number, number, number,
-  number, number, number, number, number,
+  number, number, number, number,
+  number, number, number, number,
+  number, number, number, number,
 ]
 
 const costIsZero = (c: Cost) => c.every(v => v === 0)
@@ -468,16 +526,18 @@ const compareCost = (a: Cost, b: Cost): number => {
  * called that `family-run`, which says a family was broken up when none was.
  */
 const REASON_FOR: Record<number, ComposeTraceRow['reason']> = {
-  0: 'category-cap',
-  1: 'question-run',
-  2: 'family-run',
-  3: 'subject-run',
-  4: 'category-screen',
-  5: 'question-screen',
-  6: 'family-screen',
-  7: 'recent-question',
-  8: 'recent-family',
-  9: 'recent-subject',
+  0: 'brief-cap',
+  1: 'category-cap',
+  2: 'question-run',
+  3: 'family-run',
+  4: 'subject-run',
+  5: 'brief-screen',
+  6: 'category-screen',
+  7: 'question-screen',
+  8: 'family-screen',
+  9: 'recent-question',
+  10: 'recent-family',
+  11: 'recent-subject',
 }
 
 export function composeFeed<T>(
@@ -485,7 +545,7 @@ export function composeFeed<T>(
   options: ComposeOptions<T>,
 ): ComposeResult<T> {
   const {
-    familyOf, subjectOf, categoryOf, questionOf,
+    familyOf, subjectOf, categoryOf, questionOf, briefOf,
     scope = 'mixed',
     maxRun = MAX_RUN,
     maxQuestionRun = MAX_QUESTION_RUN,
@@ -495,6 +555,8 @@ export function composeFeed<T>(
     familyWindow = FAMILY_WINDOW,
     questionWindow = QUESTION_WINDOW,
     subjectWindow = SUBJECT_WINDOW,
+    briefWindow = BRIEF_WINDOW,
+    maxPerBrief = MAX_PER_BRIEF,
     viewport = VIEWPORT,
     maxPerViewport = MAX_PER_VIEWPORT,
     screenTolerance = SCREEN_TOLERANCE,
@@ -511,6 +573,14 @@ export function composeFeed<T>(
   const categoryCapOn = scope === 'mixed' && !!categoryOf
   /** Question diversity is off when the reader named what they wanted. */
   const questionRuleOn = scope === 'mixed' && !!questionOf
+  /**
+   * The briefing cap, on only for an unfiltered feed.
+   *
+   * A reader who asked for one family is not being handed a briefing and must
+   * not have one composed for them -- the same reasoning that switches the
+   * category cap off.
+   */
+  const briefRuleOn = scope === 'mixed' && !!briefOf
 
   const rankBefore = new Map<RankedItem<T>, number>()
   ranked.forEach((r, i) => rankBefore.set(r, i + 1))
@@ -524,6 +594,9 @@ export function composeFeed<T>(
   const familySeq: (string | null)[] = []
   const subjectSeq: (string | null)[] = []
   const categorySeq: (string | null)[] = []
+  const briefSeq: (string | null)[] = []
+  /** How many of the opening screen each lane has taken. */
+  const briefCount = new Map<string, number>()
   /** How many of the opening each category has taken. */
   const openingCount = new Map<string, number>()
 
@@ -559,7 +632,17 @@ export function composeFeed<T>(
     const sub = subjectOf(r.item)
     const cat = categoryOf?.(r.item) ?? null
     const q = questionOf?.(r.item) ?? null
+    const lane = briefOf?.(r.item) ?? null
 
+    /**
+     * One lane may not take more than its share of the first screen.
+     *
+     * Counted over the opening only. After `briefWindow` cards the reader has
+     * had their briefing and the rest of the feed is ranked and spaced exactly
+     * as it was -- a cap that ran forever would be a quota, which this is not.
+     */
+    const briefOver = briefRuleOn && out.length < briefWindow && lane != null
+      && (briefCount.get(lane) ?? 0) >= maxPerBrief ? 1 : 0
     const categoryOver = categoryCapOn && out.length < OPENING && cat != null
       && (openingCount.get(cat) ?? 0) >= MAX_OPENING_PER_CATEGORY ? 1 : 0
     /**
@@ -577,6 +660,7 @@ export function composeFeed<T>(
      * for Research is not being repeated at by Research, and a reader who
      * named a family is not being repeated at by that family.
      */
+    const briefScreen = briefRuleOn && saturates(briefSeq, lane) ? 1 : 0
     const categoryScreen = categoryCapOn && saturates(categorySeq, cat) ? 1 : 0
     const questionScreen = questionRuleOn && saturates(questionSeq, q) ? 1 : 0
     const familyScreen = familyRuleOn && saturates(familySeq, fam) ? 1 : 0
@@ -585,8 +669,8 @@ export function composeFeed<T>(
     const familyRecent = familyRuleOn && seenWithin(familySeq, fam, familyWindow) ? 1 : 0
     const subjectRecent = seenWithin(subjectSeq, sub, subjectWindow) ? 1 : 0
 
-    return [categoryOver, questionOver, familyOver, subjectOver,
-            categoryScreen, questionScreen, familyScreen,
+    return [briefOver, categoryOver, questionOver, familyOver, subjectOver,
+            briefScreen, categoryScreen, questionScreen, familyScreen,
             questionRecent, familyRecent, subjectRecent]
   }
 
@@ -610,7 +694,7 @@ export function composeFeed<T>(
        * tuple is the question run; see the constants for why the ordinary
        * bounds cannot reach across a stratified pool.
        */
-      const breakingQuestionRun = headCost[1] === 1
+      const breakingQuestionRun = headCost[2] === 1
       /**
        * Index 2 is the family RUN, index 5 the softer "seen it recently".
        *
@@ -624,7 +708,7 @@ export function composeFeed<T>(
        *
        * The tolerance is not widened with either. See `FAMILY_BREAK_LOOKAHEAD`.
        */
-      const breakingFamilyRun = headCost[2] === 1 || headCost[8] === 1
+      const breakingFamilyRun = headCost[3] === 1 || headCost[10] === 1
       /**
        * Saturation earns the wide REACH and never the wide tolerance.
        *
@@ -636,7 +720,16 @@ export function composeFeed<T>(
        * while more than doubling what the pass costs. See `feed-variety`,
        * which holds that measurement as a test.
        */
-      const breakingScreen = headCost[4] === 1 || headCost[5] === 1
+      /**
+       * The lane cap earns the same reach and the same bar as saturation.
+       *
+       * It is the same stratification problem in a stronger form: a pilot pool
+       * is mostly one lane, so the alternative is far down a score-sorted list
+       * and is worth less. `screenTolerance` is what decides how much less is
+       * too much, and the lane cap does not get its own number.
+       */
+      const breakingScreen =
+        headCost[0] === 1 || headCost[5] === 1 || headCost[6] === 1 || headCost[7] === 1
       const reach = breakingQuestionRun ? QUESTION_BREAK_LOOKAHEAD
         : breakingScreen ? QUESTION_BREAK_LOOKAHEAD
         : breakingFamilyRun ? FAMILY_BREAK_LOOKAHEAD
@@ -701,6 +794,11 @@ export function composeFeed<T>(
     familySeq.push(fam)
     subjectSeq.push(sub)
     categorySeq.push(chosenCat)
+    const chosenLane = briefOf?.(chosen.item) ?? null
+    briefSeq.push(chosenLane)
+    if (briefRuleOn && chosenLane) {
+      briefCount.set(chosenLane, (briefCount.get(chosenLane) ?? 0) + 1)
+    }
     if (categoryCapOn) {
       const c = chosenCat
       if (c) openingCount.set(c, (openingCount.get(c) ?? 0) + 1)
