@@ -204,3 +204,50 @@ Recommendation: check (1) first while designing Stage 4's surface. If any of
 them renders `analyst_name`, do (2) as Stage 3.6 — it is a near-copy of the
 migration deployed on 2026-08-28 and carries the same near-zero risk while
 production holds 0 personal rows.
+
+### RESOLVED 2026-09-10 — option (1) checked and falsified, (2) drafted
+
+The check the recommendation asked for was performed. **Option (1) is not
+available, and not only for Stage 4: surfaces render `analyst_name` as
+attribution today.**
+
+| where | what it does with it |
+|---|---|
+| `CoverageMatrixView.tsx:225` | groups the whole matrix by `c.analyst_name` |
+| `CoverageMatrixView.tsx:481` | prints that group key as the section heading |
+| `CoverageMatrixView.tsx:105` | builds the analyst roster from it |
+| `CoverageMatrixView.tsx:539-540` | decides whose coverage indicator is whose |
+| `CoverageDisplay.tsx:8` | renders it |
+| `CoverageManager.tsx:40,297,393` | renders it |
+| `ThesisContainer.tsx:95` | selects it for display |
+
+The ticket's own explanation is why: `coverage.user_id` carries no FK, so
+PostgREST cannot embed through it and every surface reads the denormalised
+column instead. That remains true, which is also why option (3) is still the
+largest change and was not taken.
+
+So option (2) applies, and is drafted at
+`supabase/migrations/20260910120000_coverage_personal_analyst_name_immutable.sql`.
+**Not applied anywhere** — see below.
+
+**One deliberate departure from a copy.** This ticket named option (2)'s
+weakness: a genuine surname change would need the row retired and recreated,
+destroying the `start_date` provenance the row exists to carry. The trigger
+therefore refuses a change that makes the row present as *somebody else*, and
+allows one that keeps it presenting as its own owner — the new label is
+accepted when it equals the owner's name composed from `users` exactly as
+`CoverageManager.tsx:2080` composes it, or when the old label was blank. An
+admin cannot write an arbitrary string through that path, because the only
+string it accepts is one already true of the owner.
+
+**Status: BLOCKED EXTERNALLY, not on a decision.** The design question this
+ticket raised is answered. What remains is applying a migration, which needs
+the live database: this repository's migrations do not describe production, so
+before it runs somebody must confirm `users` still has `first_name` /
+`last_name` / `email`, that `coverage` still holds 0 personal rows (or none
+whose label disagrees with its owner), and that the Stage 3.5 trigger is live.
+Those three checks are listed in the migration header.
+
+**Stage 4 is not unblocked by this and was not started.** Follow-up B — `role`
+as free text — is still open and still constrains `CoverageQuickStart` exactly
+as written above.
