@@ -817,3 +817,45 @@ describe('the remembered tile is not taken from a discarded scroller either', ()
     expect(body).toContain('if (!el.isConnected) return')
   })
 })
+
+describe('the restored position is painted, not animated into place', () => {
+  /**
+   * The report: "switching back to Ideas from Explore, the tile sort of flashes
+   * instead of smoothly opening."
+   *
+   * The flash is the restore becoming visible. Effects run after the browser
+   * has painted and the offset restore waits a further frame for
+   * `requestAnimationFrame`, so the feed painted once at the top and the reader
+   * saw it there before it moved. It only appeared once the restore started
+   * working: a feed stuck at the top is wrong, but it never jumps.
+   *
+   * The ref callback runs during the commit, with the scroller and its slots in
+   * the DOM and before any paint, so landing the offset there makes the first
+   * paint the restored position. This holds the feed to doing it there rather
+   * than deferring it back into an effect.
+   */
+  function attachBody(): string {
+    const at = dash.indexOf('const attachScroller = useCallback(')
+    expect(at).toBeGreaterThan(0)
+    return dash.slice(at, dash.indexOf('}, [feedScope])', at))
+  }
+
+  it('sets the offset in the ref callback, before the first paint', () => {
+    const body = attachBody()
+    expect(body).toContain('loadFeedSession(feedScope)')
+    expect(body).toContain('el.scrollTop = Math.min(want, reachable)')
+  })
+
+  /** Nothing may be waited on there: a frame of delay is the flash itself. */
+  it('waits for no frame and no timer to do it', () => {
+    const body = attachBody()
+    expect(body).not.toContain('requestAnimationFrame')
+    expect(body).not.toContain('setTimeout')
+  })
+
+  /** And the scroller must actually be wired to it. */
+  it('is the scroller’s ref, so it runs at all', () => {
+    expect(dash).toContain('ref={attachScroller}')
+    expect(dash).not.toContain('ref={setScroller}')
+  })
+})

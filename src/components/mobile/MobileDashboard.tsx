@@ -1123,6 +1123,49 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
 
   /**
+   * Land the reader's position before the first paint, not after it.
+   *
+   * ── The report ────────────────────────────────────────────────────────────
+   *
+   * "Switching back to Ideas from Explore, the tile sort of flashes instead of
+   * smoothly opening."
+   *
+   * That flash is the restore itself becoming visible. The restores below run
+   * in effects, after React has committed and the browser has painted, and the
+   * earliest of them waits a frame more for `requestAnimationFrame`. So the
+   * feed paints once at the top, and the reader sees it there before it jumps.
+   *
+   * It is new. While the restore was broken the feed simply stayed at the top,
+   * which is wrong but never moves; a restore that works is what made the jump
+   * visible.
+   *
+   * ── Why the ref callback is the right moment ──────────────────────────────
+   *
+   * It runs during the commit, once the scroller and its slots are in the DOM
+   * and before the browser has painted anything. Setting `scrollTop` here means
+   * the first paint IS the restored position, so there is no intermediate frame
+   * to see.
+   *
+   * The measurement is available that early because of how the feed is built:
+   * every slot is exactly one scroller height whether or not its card is
+   * mounted, so `scrollHeight` describes the whole list from the first commit
+   * rather than growing as cards arrive.
+   *
+   * This does not replace the effects below. A feed that is still growing —
+   * a cold load, where the entries themselves have not arrived — needs the
+   * retry loop they own. This removes the flash from the common case, which is
+   * a return to a feed that is already built.
+   */
+  const attachScroller = useCallback((el: HTMLDivElement | null) => {
+    setScroller(el)
+    if (!el) return
+    const want = loadFeedSession(feedScope)?.scrollTop ?? 0
+    if (!want) return
+    const reachable = el.scrollHeight - el.clientHeight
+    if (reachable > 0) el.scrollTop = Math.min(want, reachable)
+  }, [feedScope])
+
+  /**
    * The feed's own box, observed ONCE for the whole feed.
    *
    * ── Why the container is measured and the tiles are not ─────────────────
@@ -8175,7 +8218,7 @@ c.assetId ?? null,
           inside are full-height by definition. Without it the scroller has no
           bounded height and every tile spills. */}
       <div
-        ref={setScroller}
+        ref={attachScroller}
         // Mandatory snapping stays.
         //
         // It was briefly relaxed to `proximity` on the theory that mandatory
