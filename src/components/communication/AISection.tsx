@@ -28,6 +28,8 @@ import { Button } from '../ui/Button'
 import { clsx } from 'clsx'
 import { AIMessageContent } from './AIMessageContent'
 import { AIConversationList } from './AIConversationList'
+import { AISuggestedActions } from './AISuggestedActions'
+import type { AiAction } from '../../lib/ai'
 
 interface AISectionProps {
   isOpen: boolean
@@ -72,6 +74,9 @@ export function AISection({
     clearConversation,
     isLoading,
     error,
+    // Stage 2: grounded activity text and the stop control.
+    status,
+    cancelGeneration,
     // Tag labels are still used for read-only display (e.g. "About: AAPL"
     // hint in the header) — but the user no longer adds or removes tags
     // directly. They're inferred from whatever page launched the panel.
@@ -408,12 +413,26 @@ export function AISection({
             ))}
 
             {/* Loading indicator */}
-            {isLoading && (
+            {/* Only while the answer has not started arriving. Once prose is
+                streaming into the bubble above, a second spinner underneath it
+                says nothing the reader cannot already see. The label is a
+                grounded activity from the stream, never model text. */}
+            {isLoading && !messages.some(m => m.streaming && m.content) && (
               <div className="flex justify-start">
                 <div className="bg-gray-100 dark:bg-gray-800 rounded-lg px-4 py-3">
                   <div className="flex items-center space-x-2">
                     <Loader2 className="h-4 w-4 animate-spin text-primary-500" />
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Thinking...</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      {status ?? 'Working…'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={cancelGeneration}
+                      className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400
+                                 dark:hover:text-gray-200 underline underline-offset-2"
+                    >
+                      Stop
+                    </button>
                   </div>
                 </div>
               </div>
@@ -675,6 +694,9 @@ function AIMessageBubble({
     model?: string | null
     citations?: Array<{ document_title: string; cited_text: string }>
     tool_calls?: Array<{ name: string; input: Record<string, unknown>; result_summary?: string }>
+    actions?: AiAction[]
+    streaming?: boolean
+    truncated?: boolean
   }
   onTickerClick: (symbol: string) => void
 }) {
@@ -731,6 +753,13 @@ function AIMessageBubble({
             cited 4 times collapses into one entry with multiple snippets. */}
         {isAssistant && message.citations && message.citations.length > 0 && (
           <CitationsFooter citations={message.citations} />
+        )}
+
+        {/* Structured recommendations. These arrive already validated
+            against the action catalogue and against this conversation's own
+            context — the pane never reads the prose to find them. */}
+        {isAssistant && message.actions && message.actions.length > 0 && (
+          <AISuggestedActions actions={message.actions} />
         )}
 
         <div className="flex items-center justify-between gap-2 mt-2">

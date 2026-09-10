@@ -3,6 +3,27 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useAIConfig } from './useAIConfig'
+import {
+  resolveResponsePolicy,
+  parseAiResponse,
+  boundHistory,
+  consumeAiStream,
+  createMarks,
+  deriveLatency,
+  statusLabel,
+  createRequestContext,
+  createInFlight,
+  cancelInFlight,
+  shouldApplyToView,
+  type AiAction,
+  type AiEvidence,
+  type AiObjectRef,
+  type AiObjectType,
+  type AiInFlightRequest,
+  type AiLatency,
+  type RejectedAiAction,
+  type ViewState,
+} from '../lib/ai'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -20,6 +41,44 @@ export interface ChatMessage {
   citations?: MessageCitation[]
   // Research tools the model invoked while answering (Anthropic only).
   tool_calls?: MessageToolCall[]
+  // ─── AI System V2 ───────────────────────────────────────────────────────
+  // Validated Tesseract actions the model recommended. Already checked
+  // against the catalogue and against this conversation's own context, so
+  // the pane can render them as buttons without inspecting anything.
+  // Absent on every message produced before V2, and on any response where
+  // the model recommended nothing — which is a normal answer.
+  actions?: AiAction[]
+  // The few facts the answer rests on, each pointing at a context document.
+  evidence?: AiEvidence[]
+  // The longer treatment, present only when the user asked for depth.
+  analysis?: string
+  // Recommendations that were dropped, and why. Diagnostic only — never
+  // rendered as an action. Not persisted.
+  rejected?: RejectedAiAction[]
+  // ─── Stage 2 ────────────────────────────────────────────────────────────
+  // True while prose is still arriving. The bubble exists from the moment the
+  // question is sent, so the reader sees where the answer will appear.
+  streaming?: boolean
+  // The stream ended without a terminal `final` event — a dropped connection
+  // or a killed function. The prose that arrived is kept and no actions are
+  // derived from it.
+  truncated?: boolean
+}
+
+/** Server-reported phase timings for one request. Diagnostic. */
+export interface AiTimings {
+  auth?: number
+  attribution?: number
+  preflight?: number
+  context?: number
+  model?: number
+  total?: number
+  context_chars?: number
+  prompt_chars?: number
+  history_chars?: number
+  output_chars?: number
+  context_documents?: number
+  context_dropped?: number
 }
 
 export interface MessageCitation {
@@ -62,10 +121,6 @@ export interface AIConversation {
   updated_at: string
   // Populated client-side from a separate query against ai_conversation_tags.
   tags?: TagRef[]
-}
-
-interface SendMessageParams {
-  message: string
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -125,6 +180,12 @@ function rehydrateMessage(m: any): ChatMessage {
     model: m.model ?? null,
     citations:  Array.isArray(m.citations)  ? m.citations  : undefined,
     tool_calls: Array.isArray(m.tool_calls) ? m.tool_calls : undefined,
+    // Persisted actions are re-validated on use, not on load: the objects a
+    // stored action names may since have been deleted or become invisible to
+    // this reader. Loading them here only restores what the pane will show.
+    actions:    Array.isArray(m.actions)    ? m.actions    : undefined,
+    evidence:   Array.isArray(m.evidence)   ? m.evidence   : undefined,
+    analysis:   typeof m.analysis === 'string' ? m.analysis : undefined,
   }
 }
 
@@ -348,20 +409,97 @@ export function useAI(initialTags: TagRef[] = []) {
   }, [initialTagsKey])
 
   // ─── Send message ──────────────────────────────────────────────────────
-  const sendMessageMutation = useMutation({
-    mutationFn: async ({ message }: SendMessageParams) => {
-      if (!user) throw new Error('Not authenticated')
-      if (!effectiveConfig.isConfigured) {
-        throw new Error('AI not configured. Please set up AI in Settings.')
-      }
+  //
+  // Not a react-query mutation any more. A mutation's callbacks fire against
+  // whatever the hook's state is when the promise settles, which is exactly
+  // the bug this rewrite closes: a reader who asked about AMZN and then opened
+  // MSFT had `tags`, `conversationId` and the action allowlist all pointing at
+  // MSFT by the time AMZN's answer arrived. Everything the response needs is
+  // now frozen into an `AiRequestContext` at submit time and travels with it.
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
+  const [latency, setLatency] = useState<AiLatency | null>(null)
+  const inFlightRef = useRef<AiInFlightRequest | null>(null)
+
+  // A ref mirror of the state the completion path must compare against.
+  // Reading React state inside an async continuation gives the value from the
+  // render that started the request, which is the stale read we are removing.
+  const viewRef = useRef<ViewState>({ conversationId: null, tags: [] })
+  viewRef.current = { conversationId, tags }
+
+  /** Stop the in-flight request, if any. Safe to call at any time. */
+  const cancelGeneration = useCallback((): boolean => {
+    const cancelled = cancelInFlight(inFlightRef.current)
+    if (cancelled) {
+      inFlightRef.current = null
+      setIsLoading(false)
+      setStatus(null)
+    }
+    return cancelled
+  }, [])
+
+  // Abort on unmount. A request nobody will read is a request nobody should
+  // pay for, and its completion must not write into a torn-down component.
+  useEffect(() => () => { cancelInFlight(inFlightRef.current) }, [])
+
+  const sendMessage = useCallback(async (message: string): Promise<void> => {
+    if (!user) { setError(new Error('Not authenticated')); return }
+    if (!effectiveConfig.isConfigured) {
+      setError(new Error('AI not configured. Please set up AI in Settings.')); return
+    }
+    if (!message.trim()) return
+
+    // A second question supersedes the first. The reader asked for something
+    // else; finishing the abandoned answer helps nobody and costs tokens.
+    cancelInFlight(inFlightRef.current)
+
+    const safeMessages = Array.isArray(messages) ? messages : []
+    const safeTags     = Array.isArray(tags)     ? tags     : []
+
+    const policy = resolveResponsePolicy({ message, purpose: 'chat' })
+    const allowlist: AiObjectRef[] = safeTags
+      .filter((t): t is TagRef & { type: AiObjectType } => t.type !== 'note')
+      .map(t => ({ type: t.type, id: t.id, label: t.label }))
+
+    const context = createRequestContext({
+      conversationId, tags: safeTags, allowlist, policy, message,
+    })
+    const request = createInFlight(context)
+    inFlightRef.current = request
+
+    const marks = createMarks()
+    setIsLoading(true)
+    setError(null)
+    setLatency(null)
+    setStatus(null)
+
+    // The user's message and an empty assistant bubble go up together, so the
+    // reader sees where the answer will appear before it starts arriving.
+    const userMessage: ChatMessage = {
+      id: `user-${context.requestId}`, role: 'user', content: message, timestamp: new Date(),
+    }
+    const assistantId = `assistant-${context.requestId}`
+    setMessages(prev => [
+      ...prev,
+      userMessage,
+      { id: assistantId, role: 'assistant', content: '', timestamp: new Date(), streaming: true },
+    ])
+
+    /** Only touch the view when the reader is still looking at this thread. */
+    const applyToView = (fn: (prev: ChatMessage[]) => ChatMessage[]) => {
+      if (!shouldApplyToView(context, viewRef.current)) return
+      setMessages(fn)
+    }
+
+    let streamed = false
+    let serverTimings: Record<string, number> | null = null
+
+    try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error('No session')
 
-      // Defensive: messages/tags come from React state and should always
-      // be arrays, but guard against undefined-`.map` errors that'd surface
-      // as opaque "Cannot read properties of undefined" failures.
-      const safeMessages = Array.isArray(messages) ? messages : []
-      const safeTags     = Array.isArray(tags)     ? tags     : []
+      const bounded = boundHistory(safeMessages.map(m => ({ role: m.role, content: m.content })))
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`,
@@ -371,69 +509,91 @@ export function useAI(initialTags: TagRef[] = []) {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${session.access_token}`,
           },
+          signal: request.controller.signal,
           body: JSON.stringify({
             message,
             purpose: 'chat',
-            conversationHistory: safeMessages.map(m => ({ role: m.role, content: m.content })),
+            stream: true,
+            verbosity: policy.verbosity,
+            structured: true,
+            maxActions: policy.maxActions,
+            maxEvidence: policy.maxEvidence,
+            conversationHistory: bounded.messages,
             tags: safeTags.map(t => ({ type: t.type, id: t.id })),
           }),
         },
       )
 
+      // Config and rate-limit failures are still status codes, not stream
+      // frames, so this check is unchanged from the non-streaming path.
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}))
-        throw new Error(error.error || `Failed to get AI response (HTTP ${response.status})`)
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.error || `Failed to get AI response (HTTP ${response.status})`)
       }
-      const data = await response.json().catch(() => ({} as any))
 
-      // Belt-and-suspenders: every field arrives as the expected type
-      // (or its safe default) so downstream destructure + .length calls
-      // can't crash. The earlier omission of `tool_calls` here was the
-      // root cause of the "undefined .length" error users saw.
-      return {
-        response:   typeof data.response === 'string' ? data.response : '',
-        model:      typeof data.model    === 'string' ? data.model    : null,
-        citations:  Array.isArray(data.citations)  ? data.citations  : [],
-        tool_calls: Array.isArray(data.tool_calls) ? data.tool_calls : [],
+      const outcome = await consumeAiStream(response, {
+        onText: (delta) => {
+          applyToView(prev => prev.map(m =>
+            m.id === assistantId ? { ...m, content: m.content + delta } : m))
+        },
+        onStatus: (event) => {
+          if (shouldApplyToView(context, viewRef.current)) setStatus(statusLabel(event))
+        },
+        onMeta: (event) => { streamed = true; serverTimings = event.timings },
+      }, marks)
+
+      if (request.status === 'cancelled') return
+
+      serverTimings = outcome.final?.timings ?? serverTimings
+
+      if (outcome.error) throw new Error(outcome.error.message)
+      if (outcome.truncated && !outcome.visible.trim()) {
+        throw new Error('The AI response was interrupted before it started.')
       }
-    },
-    onMutate: async ({ message }) => {
-      const userMessage: ChatMessage = {
-        id: `user-${Date.now()}`,
-        role: 'user',
-        content: message,
-        timestamp: new Date(),
-      }
-      setMessages(prev => [...prev, userMessage])
-    },
-    onSuccess: async ({ response, model, citations, tool_calls }, vars) => {
-      const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
+
+      // The envelope is parsed here, against THIS request's frozen allowlist —
+      // never against whatever the pane is bound to now. A truncated stream
+      // has no `final`, so it keeps its prose and derives no actions at all.
+      const envelope = outcome.truncated
+        ? { answer: outcome.visible.trim(), evidence: [] as AiEvidence[], actions: [] as AiAction[], rejected: [] as RejectedAiAction[], analysis: undefined }
+        : parseAiResponse(outcome.raw, { allowlist: context.allowlist, policy: context.policy })
+
+      const finalMessage: ChatMessage = {
+        id: assistantId,
         role: 'assistant',
-        content: response,
+        content: envelope.answer,
         timestamp: new Date(),
-        model,
-        citations:  citations.length  > 0 ? citations  : undefined,
-        tool_calls: tool_calls.length > 0 ? tool_calls : undefined,
+        model: outcome.final?.model ?? null,
+        citations:  outcome.final?.citations?.length  ? outcome.final.citations  : undefined,
+        tool_calls: outcome.final?.tool_calls?.length ? outcome.final.tool_calls : undefined,
+        actions:    envelope.actions.length  > 0 ? envelope.actions  : undefined,
+        evidence:   envelope.evidence.length > 0 ? envelope.evidence : undefined,
+        analysis:   envelope.analysis,
+        rejected:   envelope.rejected.length > 0 ? envelope.rejected : undefined,
+        truncated:  outcome.truncated || undefined,
       }
-      // Functional updater: capture the actual current messages (which
-      // already include the user message added in onMutate). Reading the
-      // closure variable here was the source of an earlier persist bug
-      // where only the user message landed in the DB.
-      let nextMessages: ChatMessage[] = []
-      setMessages(prev => {
-        nextMessages = [...prev, assistantMessage]
-        return nextMessages
-      })
+
+      // Build the thread to persist from the frozen history plus this
+      // exchange, rather than from current state — state may now belong to a
+      // different conversation entirely.
+      const persisted: ChatMessage[] = [...safeMessages, userMessage, finalMessage]
+      applyToView(prev => prev.map(m => (m.id === assistantId ? finalMessage : m)))
+
       const { conversationId: newId, isNew } = await persistConversation(
-        nextMessages, vars.message, tags,
+        persisted, context.message, context.tags as TagRef[], context.conversationId,
       )
 
-      // Async title generation for new conversations.
+      // Adopt the new thread's id only if the reader is still on it. A reader
+      // who navigated away gets the answer in their conversation list, and the
+      // pane they moved to keeps its own identity.
+      if (isNew && newId && shouldApplyToView(context, viewRef.current)) {
+        setConversationId(newId)
+      }
+
       if (isNew && newId) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session) {
-          generateConversationTitle(vars.message, response, session.access_token)
+        const { data: { session: s2 } } = await supabase.auth.getSession()
+        if (s2) {
+          generateConversationTitle(context.message, envelope.answer, s2.access_token)
             .then(title => {
               if (title) {
                 supabase.from('ai_conversations').update({ title }).eq('id', newId)
@@ -442,22 +602,43 @@ export function useAI(initialTags: TagRef[] = []) {
             }).catch(console.error)
         }
       }
-    },
-    onError: () => {
-      setMessages(prev => prev.slice(0, -1))
-    },
-  })
+
+      request.status = 'done'
+      setLatency(deriveLatency(marks, serverTimings, streamed))
+    } catch (e) {
+      // An abort is the reader's own decision, not a failure to report.
+      const aborted = request.status === 'cancelled'
+        || (e instanceof DOMException && e.name === 'AbortError')
+      if (!aborted) {
+        request.status = 'error'
+        setError(e instanceof Error ? e : new Error('The AI request failed.'))
+      }
+      // Remove the placeholder pair only from the view it was added to.
+      applyToView(prev => prev.filter(m => m.id !== assistantId && m.id !== userMessage.id))
+    } finally {
+      if (inFlightRef.current === request) {
+        inFlightRef.current = null
+        setIsLoading(false)
+        setStatus(null)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, effectiveConfig.isConfigured, messages, tags, conversationId, queryClient])
 
   // ─── Persist ───────────────────────────────────────────────────────────
   const persistConversation = useCallback(async (
     nextMessages: ChatMessage[],
     firstUserMessageOnCreate: string,
     snapshotTags: TagRef[],
+    // The conversation the REQUEST belonged to, not the one the pane is
+    // showing now. Reading the live `conversationId` here would write AMZN's
+    // answer into whichever thread the reader happened to open while it ran.
+    targetConversationId: string | null,
   ): Promise<{ conversationId: string | null; isNew: boolean }> => {
     if (!user?.id) return { conversationId: null, isNew: false }
 
     const nowIso = new Date().toISOString()
-    if (conversationId) {
+    if (targetConversationId) {
       const { error } = await supabase
         .from('ai_conversations')
         .update({
@@ -465,10 +646,10 @@ export function useAI(initialTags: TagRef[] = []) {
           last_message_at: nowIso,
           updated_at: nowIso,
         })
-        .eq('id', conversationId)
+        .eq('id', targetConversationId)
       if (error) console.error('Failed to update conversation:', error)
       queryClient.invalidateQueries({ queryKey: ['ai-conversations'] })
-      return { conversationId, isNew: false }
+      return { conversationId: targetConversationId, isNew: false }
     } else {
       const { data, error } = await supabase
         .from('ai_conversations')
@@ -484,7 +665,10 @@ export function useAI(initialTags: TagRef[] = []) {
         console.error('Failed to create conversation:', error)
         return { conversationId: null, isNew: false }
       }
-      setConversationId(data.id)
+      // Whether the pane adopts this id is the CALLER's decision — only it
+      // knows whether the reader is still looking at the thread this answer
+      // created. Adopting it here would repoint a pane the reader had already
+      // navigated away from.
       // Insert tag rows for any tags currently set on the conversation.
       if (snapshotTags.length > 0) {
         await supabase.from('ai_conversation_tags').insert(
@@ -501,7 +685,7 @@ export function useAI(initialTags: TagRef[] = []) {
       queryClient.invalidateQueries({ queryKey: ['ai-conversations'] })
       return { conversationId: data.id, isNew: true }
     }
-  }, [user?.id, conversationId, queryClient])
+  }, [user?.id, queryClient])
 
   // ─── Conversation list mutations ───────────────────────────────────────
   const renameConversationMutation = useMutation({
@@ -582,10 +766,19 @@ export function useAI(initialTags: TagRef[] = []) {
     configMode: effectiveConfig.mode,
 
     // Send
-    sendMessage:      (m: string) => sendMessageMutation.mutate({ message: m }),
-    sendMessageAsync: (m: string) => sendMessageMutation.mutateAsync({ message: m }),
-    isLoading: sendMessageMutation.isPending,
-    error: sendMessageMutation.error,
+    // Fire-and-forget and awaitable are the same function now; the async
+    // shape is kept so existing callers of either name keep working.
+    sendMessage:      (m: string) => { void sendMessage(m) },
+    sendMessageAsync: sendMessage,
+    isLoading,
+    error,
+    // ─── Stage 2 ──────────────────────────────────────────────────────────
+    /** Grounded activity text while the model works. Null when idle. */
+    status,
+    /** Stop the in-flight answer. Returns false when nothing was running. */
+    cancelGeneration,
+    /** Measured latency for the last completed request. TTFU is the one. */
+    latency,
 
     // Tag actions
     addTag,

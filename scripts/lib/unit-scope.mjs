@@ -106,6 +106,25 @@ export const GATED_DIRS = [
   'src/lib/auth',
   'src/lib/market-data',
 
+  /*
+   * Arrived during backlog closure, gated on arrival.
+   *
+   * `src/lib/ai` is the AI System V2 action vocabulary, response policy,
+   * envelope, context selector, history budget and stream protocol. Its
+   * prompt-drift test is the only thing holding the edge function's copy of
+   * the prompt to the client's, so an ungated run of it is worth less than
+   * no run at all — the drift would land silently.
+   *
+   * `src/lib/onboarding` is the activation definition. It has no caller yet,
+   * which is exactly why it is gated: an unwired module with green tests is
+   * the one that rots without anyone noticing.
+   *
+   * Both were caught by this guard's own unclassified-scope check rather
+   * than by anyone remembering to add them.
+   */
+  'src/lib/ai',
+  'src/lib/onboarding',
+
 ]
 
 /**
