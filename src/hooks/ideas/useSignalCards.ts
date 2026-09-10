@@ -127,10 +127,37 @@ async function generateConflictSignals(orgId: string): Promise<SignalCard[]> {
 // ============================================================
 
 async function generateStaleCoverageSignals(userId: string, orgId: string): Promise<SignalCard[]> {
-  // Get user's portfolio holdings
+  /*
+    The holdings this organization actually has.
+
+    This function took `orgId` and applied it to the activity probes below
+    while leaving this query unfiltered, and the asymmetry is what made the
+    defect worse than a stray row. `portfolio_holdings` has no
+    `organization_id` — the org is on `portfolios` — so an unfiltered read
+    returned every holding RLS admitted across every org the reader belongs
+    to, while "has anyone worked on this recently" was answered in the
+    current org only.
+
+    A name held in org B and worked on daily in org B therefore had none of
+    that work visible to these org-A probes, making it maximally likely to be
+    classified stale and rendered in org A's feed as
+
+        <SYMBOL>: held position with no recent activity
+
+    Both halves of that sentence are false where the reader is standing: the
+    position is not held in this organization, and the silence is an artifact
+    of asking the wrong org. The card also discloses something real about
+    another organization's book — the symbol is shared reference data, but
+    the existence of the holding row is not, and printing it asserts that
+    somebody the reader can see holds this name.
+
+    `portfolios!inner(organization_id)` is the canonical scoping for this
+    table; usePortfolioLenses and useScenarioCards already read it this way.
+  */
   const { data: holdings } = await supabase
     .from('portfolio_holdings')
-    .select('asset_id, assets:asset_id(id, symbol, company_name)')
+    .select('asset_id, assets:asset_id(id, symbol, company_name), portfolios!inner(organization_id)')
+    .eq('portfolios.organization_id', orgId)
 
   if (!holdings || holdings.length === 0) return []
 
@@ -229,7 +256,12 @@ export function useSignalCards() {
       return [...clusters, ...conflicts, ...stale]
         .sort((a, b) => b.priority - a.priority)
     },
-    enabled: !!user,
+    // Both, because the body returns [] without both. Gating on the user
+    // alone ran the query before an org resolved, hit the guard on the first
+    // line, and cached an empty signal set against a key that then changed —
+    // harmless, but a gate that disagrees with its own function's
+    // precondition is the kind of thing that stops being harmless quietly.
+    enabled: !!user && !!currentOrgId,
     staleTime: 5 * 60_000, // 5 min cache — signals don't change fast
   })
 

@@ -1,14 +1,45 @@
 # Ideas feed reads holdings without an organization filter
 
-**Status**: escalated, NOT fixed. Do not patch these queries in isolation —
-the tenant-scoping audit owns the canonical fix across the repository.
+**Status**: the two Ideas-feed sites are **FIXED** (2026-09-10, backlog
+closure). The repo-wide class remains **OPEN** and is still the tenant-scoping
+audit's, unchanged in scope — see §1 and §8.
 **Found**: 2026-08-26, during the Ideas/Explore quality review (`feat/ideas-quality`).
 **Branch that found it**: `feat/ideas-quality`. That branch deliberately changed
 none of the code below.
 
 ---
 
-## 1. Why this was left alone
+## 0. What closed, and why the reasoning in §1 no longer blocks it
+
+Both sites now use `portfolios!inner(organization_id)` with a matching `.eq`,
+and `useIdeasFeed`'s cache key carries `currentOrgId`. `useSignalCards`'s
+`enabled` gate now matches its own function's precondition.
+
+`src/hooks/ideas/__tests__/feed-holdings-org-scope.test.ts` is a ratchet over
+both files: any future `.from('portfolio_holdings')` in either without an org
+filter fails it. It was proven non-vacuous by reverting the `useSignalCards`
+fix and observing the failure, and it carries four self-tests including one
+that pins the chain boundary — without it, an unscoped read followed by a
+scoped one anywhere below would pass.
+
+The reason §1 gave for waiting has expired rather than been overruled. It
+said the canonical answer was "probably" the mobile hooks' join and that
+"probably" was not a basis for a convention. Since then that join is what
+`usePortfolioLenses`, `useScenarioCards` and `useHeldAssetIds` all do, and the
+holdings working-book lane built on the same reading. The convention is
+settled; what remains open is applying it at roughly seventy other call sites,
+which is a different and much larger piece of work.
+
+The evidence concern in §1 — that fixing these two consumes what the audit
+needs to size the problem — is answered by this document: the sites, the
+mechanism and the two distinct failure modes are recorded above and below in
+full, and nothing about them was learned from leaving the defect running.
+
+**What is emphatically NOT closed:** the class. §8 still stands as written.
+
+---
+
+## 1. Why this was left alone (original reasoning, superseded by §0)
 
 The obvious patch is three `.eq()` calls. It was not applied because the same
 pattern almost certainly recurs outside the Ideas feed, and a per-site fix would
