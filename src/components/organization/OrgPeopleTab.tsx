@@ -459,7 +459,9 @@ export function OrgPeopleTab({
           {/* Member rows */}
           {displayMembers.length > 0 ? (
             <div className="bg-white rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
-              <table className="w-full">
+              {/* The phone shell clips horizontal overflow, so a table this wide is unreachable without its own scroller. `sm:min-w-0` returns it to the container from 640px up, leaving desktop unchanged. */}
+              <div className="mobile-scroll-x show-scrollbar">
+              <table className="w-full min-w-[720px] sm:min-w-0">
                 <thead>
                   <tr className="bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
                     <th className="px-4 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-[40%]">Name</th>
@@ -496,6 +498,7 @@ export function OrgPeopleTab({
                   })}
                 </tbody>
               </table>
+              </div>
 
               {hasNextPage && (
                 <button

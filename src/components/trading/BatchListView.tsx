@@ -436,7 +436,12 @@ function BatchTradesList({
   return (
     <div className="space-y-3">
       <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <table className="w-full text-xs">
+        {/* Ten columns. Trade Book is registered as a full mobile surface, and
+            the shell clips horizontal overflow, so without this the batch's
+            numbers are invisible and unreachable on a phone. Matches the
+            committed-trades table in AcceptedTradesTable. */}
+        <div className="mobile-scroll-x show-scrollbar">
+        <table className="w-full text-xs min-w-[720px] sm:min-w-0">
           <thead className="bg-gray-50 dark:bg-gray-800/60">
             <tr className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
               <th className="text-left px-3 py-2">Symbol</th>
@@ -471,6 +476,7 @@ function BatchTradesList({
             />
           )}
         </table>
+        </div>
       </div>
     </div>
   )

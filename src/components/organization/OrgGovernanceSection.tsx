@@ -320,7 +320,9 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
 
           {exportJobs.length > 0 && (
             <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
-              <table className="w-full text-xs">
+              {/* The phone shell clips horizontal overflow, so a table this wide is unreachable without its own scroller. `sm:min-w-0` returns it to the container from 640px up, leaving desktop unchanged. */}
+              <div className="mobile-scroll-x show-scrollbar">
+              <table className="w-full text-xs min-w-[640px] sm:min-w-0">
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 text-left dark:text-gray-400 dark:bg-gray-900">
                     <th className="px-3 py-2 font-medium">Status</th>
@@ -401,6 +403,7 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>

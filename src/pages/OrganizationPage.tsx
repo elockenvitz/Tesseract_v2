@@ -3705,7 +3705,9 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                       </div>
                     </div>
                     <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
-                      <table className="w-full text-sm">
+                      {/* The phone shell clips horizontal overflow, so a table this wide is unreachable without its own scroller. `sm:min-w-0` returns it to the container from 640px up, leaving desktop unchanged. */}
+                      <div className="mobile-scroll-x show-scrollbar">
+                      <table className="w-full text-sm min-w-[720px] sm:min-w-0">
                         <thead>
                           <tr className="bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
                             <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Team</th>
@@ -3810,6 +3812,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                           </tfoot>
                         )}
                       </table>
+                      </div>
                     </div>
                   </Card>
                 </div>

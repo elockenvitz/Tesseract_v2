@@ -638,7 +638,13 @@ function ComparisonSection({
 
       {/* Comparison Table */}
       <Card className="overflow-hidden">
-        <table className="w-full">
+        {/* Four columns at 32px of cell padding each do not compress to a phone,
+            and the shell clips horizontal overflow rather than scrolling it, so
+            without this the right-hand columns are unreachable. Same opt-in the
+            Trade Book's committed-trades table uses. `sm:min-w-0` hands the
+            table back to the container from 640px up, so desktop is unchanged. */}
+        <div className="mobile-scroll-x show-scrollbar">
+        <table className="w-full min-w-[520px] sm:min-w-0">
           <thead className="bg-gray-50 dark:bg-gray-800">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fund</th>
@@ -685,6 +691,7 @@ function ComparisonSection({
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
     </div>
   )
@@ -987,7 +994,9 @@ function TradesSection({
         </div>
       ) : (
         <Card className="overflow-hidden">
-          <table className="w-full">
+          {/* Six columns; see the comparison table above for the reasoning. */}
+          <div className="mobile-scroll-x show-scrollbar">
+          <table className="w-full min-w-[720px] sm:min-w-0">
             <thead className="bg-gray-50 dark:bg-gray-800">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Date</th>
@@ -1042,6 +1051,7 @@ function TradesSection({
               ))}
             </tbody>
           </table>
+          </div>
           {executedTrades.length === 0 && (
             <div className="p-8 text-center">
               <p className="text-gray-500 dark:text-gray-400">No executed trades</p>

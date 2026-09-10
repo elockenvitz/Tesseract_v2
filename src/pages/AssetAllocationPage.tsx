@@ -384,7 +384,16 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
 
       {/* Main Grid */}
       <div className="flex-1 overflow-auto p-3 sm:p-6">
+        {/* The grid is 900px wide and the phone shell clips horizontal overflow
+            (`overflow-x: clip` on html/body/#root), so without its own scroller
+            four of the five period columns are not merely off-screen — they are
+            unreachable. `.mobile-scroll-x` is the project's opt-in for exactly
+            this, and `.show-scrollbar` opts back out of the global phone
+            scrollbar hiding, because here the bar is the only thing saying
+            there is more to the right. Desktop is unchanged: `overflow-x: auto`
+            draws nothing when the content already fits. */}
         <Card className="overflow-hidden shadow-sm">
+          <div className="mobile-scroll-x show-scrollbar">
           <div className="min-w-[900px]">
             {/* Grid Header */}
             <div className="grid grid-cols-[220px_repeat(5,1fr)] border-b border-gray-200 dark:border-gray-700">
@@ -499,6 +508,7 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
                 </div>
               )
             })}
+          </div>
           </div>
         </Card>
 
