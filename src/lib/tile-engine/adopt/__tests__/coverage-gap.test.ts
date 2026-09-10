@@ -197,9 +197,22 @@ describe('the card says what the chip says', () => {
     const { card } = adoption()
     // Who is answerable, and that they have not been near it.
     expect(card.headline).toContain('AMZN')
-    // How long it has been stale, in the hero slot the legacy card left empty.
+    /**
+     * How long it has been stale, in the hero slot.
+     *
+     * This used to assert the slot was empty in production and filled by the
+     * engine, and that gap is now closed at the source. `buildAttentionCard`
+     * built its metric from `due_at` alone, so every collector that raises a
+     * row with no deadline — a stale trade idea, an untouched project, a
+     * neglected name — showed no number at all. Reported again from a phone
+     * about the Overdue tiles, in the same words this file already used: the
+     * tile gave no context about why it was showing.
+     *
+     * Production now puts the elapsed silence there too, so the two agree
+     * rather than the engine compensating for the builder.
+     */
     expect(card.metric?.value).toBe(`${DAYS}d`)
-    expect(legacyMetricIsEmpty()).toBe(true)
+    expect(coverageCard().metric?.value).toBe(`${DAYS}d`)
     // What is stale, and since when.
     expect(card.body).toContain('22 Jul')
     // What to do next.
@@ -676,8 +689,19 @@ describe('the feed contract survives the adoption', () => {
       adoption: adopt(),
     })
     const failed = report.checks.filter(c => !c.ok).map(c => c.axis)
-    expect(failed.sort()).toEqual(['action_intent', 'metric_value', 'ranking_input'])
-    expect(coverageCard().metric).toBeNull()
+    /**
+     * `metric_value` used to be on this list and is not any more.
+     *
+     * It was here because production built its metric from `due_at` alone and a
+     * coverage row has none, so the hero slot was empty and the engine filled
+     * it. That gap is closed in `buildAttentionCard` now — an attention row
+     * with no deadline shows how long it has been sitting, which for a row with
+     * no date IS its magnitude — so the two agree and the divergence is gone.
+     *
+     * The remaining two are real and are named in the block below.
+     */
+    expect(failed.sort()).toEqual(['action_intent', 'ranking_input'])
+    expect(coverageCard().metric?.value).toBe(`${DAYS}d`)
     expect(buildAttentionCard(coverageRow() as never, COVERAGE_ASSET))
       .toMatchObject({ ok: true })
   })

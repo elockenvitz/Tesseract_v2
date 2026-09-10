@@ -422,7 +422,9 @@ export const coverageRow = (over: Record<string, unknown> = {}) => ({
 export const COVERAGE_ASSET = { id: 'a-amzn', symbol: 'AMZN', companyName: 'Amazon.com' }
 
 export const coverageCard = (over: Record<string, unknown> = {}): SignalCard => {
-  const r = buildAttentionCard(coverageRow(over) as never, COVERAGE_ASSET)
+  // The fixture pins its own clock, so the elapsed-silence metric is the
+  // same number every day the suite runs.
+  const r = buildAttentionCard(coverageRow(over) as never, COVERAGE_ASSET, undefined, COVERAGE_NOW)
   if (!r.ok) throw new Error(`fixture suppressed: ${r.reason} — ${r.detail ?? ''}`)
   return r.card
 }

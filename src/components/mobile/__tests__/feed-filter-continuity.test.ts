@@ -206,8 +206,44 @@ describe('the remembered state has the lifetime of the page load', () => {
 
   it('is read once at mount, which is what survives the remount', () => {
     // Returning from an asset page remounts the dashboard, so the mount-time
-    // read IS the restore.
-    expect(dash).toContain('useState(() => readFeedContinuity(feedScopeKey(feedScope)))')
+    // read IS the restore. It is now preceded by a hydrate, which is what
+    // survives an iOS tab eviction — see the block below.
+    expect(dash).toContain('readFeedContinuity(feedScopeKey(feedScope))')
+    const at = dash.indexOf('const [restoredContinuity] = useState(')
+    expect(at).toBeGreaterThan(0)
+  })
+
+  /**
+   * And a tab the system killed gets its place back.
+   *
+   * Reported from an iPhone: leave Safari for another app, come back, and the
+   * feed is at the top. iOS evicts a backgrounded tab under memory pressure and
+   * reloads it on return, which to this module was indistinguishable from a
+   * refresh — so a page load the reader never asked for threw their place away.
+   *
+   * The restore is gated on the page having been HIDDEN when it died, so a
+   * deliberate refresh still gets the fresh feed it is asking for.
+   */
+  it('hands the place back after a background eviction, not after a refresh', () => {
+    expect(dash).toContain('hydrateFeedContinuity(feedScopeKey(feedScope))')
+    expect(dash).toContain('markFeedHidden(continuityKey, true)')
+    expect(dash).toContain('markFeedHidden(continuityKey, false)')
+    expect(dash).toContain('persistFeedContinuity(continuityKey)')
+  })
+
+  /**
+   * Saved on the way out of view, which on a phone is the only reliable moment.
+   *
+   * Switching apps neither unmounts the component nor fires another scroll, so
+   * the last thing written was whatever the throttle happened to catch.
+   */
+  it('saves on visibilitychange and pagehide, and not on beforeunload', () => {
+    expect(dash).toContain("addEventListener('visibilitychange'")
+    expect(dash).toContain("addEventListener('pagehide'")
+    // `beforeunload` does not fire reliably on iOS and blocks the bfcache where
+    // it does. Asserted on the listener rather than on the word, because the
+    // word appears in the comment recording that decision.
+    expect(dash).not.toContain("addEventListener('beforeunload'")
   })
 
   it('is cleared by a deliberate refresh and by nothing else', () => {

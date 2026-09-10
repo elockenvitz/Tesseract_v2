@@ -14,8 +14,9 @@ import { useAttention } from '../../hooks/useAttention'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
 import {
-  anchorKeyAt, clearFeedContinuity, deepestRead, deriveFeedView, feedScopeKey, indexOfKey,
-  nearestRememberedKey, readFeedContinuity, reconcileToRemembered, rememberBaseOrder,
+  anchorKeyAt, clearFeedContinuity, deepestRead, deriveFeedView, feedScopeKey,
+  hydrateFeedContinuity, indexOfKey, markFeedHidden, nearestRememberedKey,
+  persistFeedContinuity, readFeedContinuity, reconcileToRemembered, rememberBaseOrder,
   resolveAnchorIndex, writeFeedContinuity,
 } from '../../lib/mobile/feed-continuity'
 import { useFeedSessionStability } from '../../hooks/mobile/useFeedSessionStability'
@@ -1053,7 +1054,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * restore: whatever the reader had filtered to, and where they were in it
    * and underneath it, is still in the module from before they left.
    */
-  const [restoredContinuity] = useState(() => readFeedContinuity(feedScopeKey(feedScope)))
+  /**
+   * Read once, at mount — after a persisted snapshot has been handed back.
+   *
+   * ── The report ────────────────────────────────────────────────────────────
+   *
+   * From an iPhone: leave Safari for another app, come back, and the feed is at
+   * the top. iOS evicts a backgrounded tab under memory pressure and reloads it
+   * on return, and this module's state lived only for the life of the bundle —
+   * so a page load the reader never asked for looked exactly like a refresh and
+   * threw their place away.
+   *
+   * `hydrateFeedContinuity` puts the snapshot back before this read, and only
+   * when the page was hidden at the moment it died. A reader who actually hits
+   * refresh still gets a fresh feed, which is what the continuity module's
+   * header argues for and what this must not cost.
+   */
+  const [restoredContinuity] = useState(() => {
+    hydrateFeedContinuity(feedScopeKey(feedScope))
+    return readFeedContinuity(feedScopeKey(feedScope))
+  })
 
   /**
    * The tile pill's filter: ONE family, or nothing.
@@ -4126,13 +4146,46 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       if (timer) return
       timer = setTimeout(() => { timer = null; persist() }, 400)
     }
+    /**
+     * Save on the way out of view, which on a phone is the only reliable moment.
+     *
+     * ── Why the scroll throttle and the unmount were not enough ─────────────
+     *
+     * Switching apps neither unmounts this component nor fires another scroll,
+     * so the last thing written was whatever the 400ms throttle happened to
+     * catch — and if the reader's last act was a flick that landed inside that
+     * window, nothing at all. iOS then evicts the tab and the position is gone.
+     *
+     * `visibilitychange` is the event that actually fires when Safari goes to
+     * the background, and `pagehide` covers the tab being closed or replaced.
+     * `beforeunload` deliberately is not used: it does not fire reliably on
+     * iOS and blocks the back-forward cache where it does.
+     *
+     * The same handler marks the page as hidden, which is what lets the next
+     * load tell an eviction from a refresh.
+     */
+    const onHide = () => {
+      persist()
+      markFeedHidden(continuityKey, true)
+      persistFeedContinuity(continuityKey)
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') onHide()
+      // Back in view without having died: this was not an eviction, so the
+      // marker must not survive to make a later refresh look like one.
+      else markFeedHidden(continuityKey, false)
+    }
     el.addEventListener('scroll', onScroll, { passive: true })
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', onHide)
     return () => {
       el.removeEventListener('scroll', onScroll)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', onHide)
       if (timer) clearTimeout(timer)
       persist()
     }
-  }, [scroller, shuffleSeed, cycle, feedScope])
+  }, [scroller, shuffleSeed, cycle, feedScope, continuityKey])
 
   /**
    * A filter change keeps the reader's tile. It does not start the feed again.

@@ -14,6 +14,8 @@
  * session can persist for days.
  */
 
+import { wasFeedBackgrounded } from './feed-continuity'
+
 /**
  * The unscoped key this used to live under, kept only so it can be deleted.
  *
@@ -32,6 +34,15 @@ const LEGACY_KEY = 'tesseract:feed-session'
 const KEY_PREFIX = 'tesseract:feed-session:'
 /** Beyond this, treat it as a new visit and start fresh. */
 const MAX_AGE_MS = 30 * 60 * 1000
+/**
+ * The same window, for a tab the system killed while it was in the background.
+ *
+ * Eight hours, matching `feed-continuity`'s own. The two have to agree: the
+ * order and the position are restored by that module and the seed and cycle by
+ * this one, and a feed handed back half of each would land the reader at an
+ * offset into a shorter list than the one they left.
+ */
+const BACKGROUND_MAX_AGE_MS = 8 * 60 * 60 * 1000
 
 /**
  * Whose feed, in which organization.
@@ -98,10 +109,26 @@ export function loadFeedSession(scope: FeedSessionScope): FeedSession | null {
   dropLegacy()
   const key = scopedKey(scope)
   if (!key) return null
-  // Resume only for in-app navigation. Without this a browser refresh looked
-  // identical to returning from an asset page, so it restored the same seed
-  // and offset — the feed appeared not to change at all.
-  if (isPageReload()) {
+  /**
+   * Resume for an in-app navigation, and for a tab the system killed.
+   *
+   * ── What the reload check was getting wrong ─────────────────────────────
+   *
+   * Its reasoning holds and is kept: a browser refresh looked identical to
+   * returning from an asset page, so it restored the same seed and offset and
+   * the feed appeared not to change at all.
+   *
+   * It assumed a reload is always the reader asking for one. On a phone it
+   * usually is not. Reported from an iPhone: leave Safari for another app,
+   * come back, and the feed is at the top — because iOS evicts a backgrounded
+   * tab under memory pressure and reloads it on return, and
+   * `performance.navigation` calls that a reload too.
+   *
+   * `wasFeedBackgrounded` is the thing that tells them apart: a reader who
+   * hits refresh is LOOKING at the page, and a tab iOS discards was hidden.
+   */
+  const backgrounded = wasFeedBackgrounded(`${scope.userId}:${scope.orgId}`)
+  if (isPageReload() && !backgrounded) {
     clearFeedSession(scope)
     return null
   }
@@ -110,7 +137,16 @@ export function loadFeedSession(scope: FeedSessionScope): FeedSession | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as FeedSession
     if (typeof parsed?.seed !== 'number') return null
-    if (Date.now() - (parsed.savedAt ?? 0) > MAX_AGE_MS) return null
+    /**
+     * A longer window for a phone that was put down.
+     *
+     * Thirty minutes was chosen for an in-app navigation, where it is generous.
+     * It is far too short for "I switched apps", which is the case this now
+     * also serves — a meeting, a commute or an afternoon all count as "where I
+     * was", and the next morning still does not.
+     */
+    const maxAge = backgrounded ? BACKGROUND_MAX_AGE_MS : MAX_AGE_MS
+    if (Date.now() - (parsed.savedAt ?? 0) > maxAge) return null
     return parsed
   } catch {
     return null

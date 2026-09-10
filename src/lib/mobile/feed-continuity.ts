@@ -154,6 +154,127 @@ export function feedScopeKey(scope: {
 
 const BY_SCOPE = new Map<string, FeedContinuity>()
 
+/**
+ * ── Why this module now writes to storage after all ───────────────────────
+ *
+ * The header above argues for a module-level Map, and the argument is right
+ * for the case it considered: an in-app navigation keeps the bundle alive and
+ * a reload evaluates the module afresh, which is the required lifetime with no
+ * expiry check and no key to clean up.
+ *
+ * It assumed a reload is always the reader asking for one. On a phone it is
+ * usually not. Reported from an iPhone: leave Safari for another app, come
+ * back, and the feed is at the top. iOS evicts a backgrounded tab under memory
+ * pressure and reloads it on return, and to this module that is
+ * indistinguishable from a refresh — so the order and the tile were discarded
+ * on a page load the reader never asked for and did not know had happened.
+ *
+ * So the snapshot survives in `sessionStorage`, which dies with the tab as it
+ * should, and the RESTORE is gated on whether the page was hidden when it was
+ * last written. See `markFeedHidden`.
+ *
+ * What is stored is small by construction. Since the freeze depth landed,
+ * `baseOrder` holds the read prefix rather than the whole feed, so a reader ten
+ * screens down persists a few dozen keys.
+ */
+const STORE_PREFIX = 'tesseract:feed-continuity:'
+const HIDDEN_PREFIX = 'tesseract:feed-hidden:'
+
+/**
+ * How long a backgrounded feed is still the reader's place.
+ *
+ * Eight hours: a lunch, a meeting, a commute and an afternoon all count as
+ * "where I was", and the next morning does not. `feed-session` draws the same
+ * line at thirty minutes, which was chosen for an in-app navigation and is far
+ * too short for "I put my phone down".
+ */
+const HIDDEN_TTL_MS = 8 * 60 * 60 * 1000
+
+function storeKey(scopeKey: string): string { return `${STORE_PREFIX}${scopeKey}` }
+function hiddenKey(scopeKey: string): string { return `${HIDDEN_PREFIX}${scopeKey}` }
+
+/**
+ * Record that the page went into the background, and when.
+ *
+ * This is the whole of how a system eviction is told apart from a refresh, and
+ * it works because the two differ in what the page was doing when it died. A
+ * reader who hits reload does it while LOOKING at the page. A tab iOS discards
+ * was hidden at the time. So the marker is set on the way out of view and
+ * cleared on the way back in, and a page that loads to find one knows it was
+ * killed rather than refreshed.
+ *
+ * `performance.navigation` cannot answer this: both report `reload`.
+ */
+export function markFeedHidden(scopeKey: string | null, hidden: boolean): void {
+  if (!scopeKey || typeof sessionStorage === 'undefined') return
+  try {
+    if (hidden) sessionStorage.setItem(hiddenKey(scopeKey), String(Date.now()))
+    else sessionStorage.removeItem(hiddenKey(scopeKey))
+  } catch {
+    /* storage unavailable — the feed simply starts from the top */
+  }
+}
+
+/** Whether this page load followed a background eviction rather than a refresh. */
+export function wasFeedBackgrounded(scopeKey: string | null): boolean {
+  if (!scopeKey || typeof sessionStorage === 'undefined') return false
+  try {
+    const at = Number(sessionStorage.getItem(hiddenKey(scopeKey)))
+    return Number.isFinite(at) && at > 0 && Date.now() - at < HIDDEN_TTL_MS
+  } catch {
+    return false
+  }
+}
+
+/** Write the in-memory snapshot out, so a killed tab can be handed it back. */
+export function persistFeedContinuity(scopeKey: string | null): void {
+  if (!scopeKey || typeof sessionStorage === 'undefined') return
+  const current = BY_SCOPE.get(scopeKey)
+  if (!current) return
+  try {
+    sessionStorage.setItem(storeKey(scopeKey), JSON.stringify(current))
+  } catch {
+    /* storage full — the position is a nicety, never a failure */
+  }
+}
+
+/**
+ * Read a persisted snapshot back into memory, once, at mount.
+ *
+ * Refuses unless the page was backgrounded, so a deliberate refresh still gets
+ * the fresh feed it is asking for — which is the behaviour the module header
+ * argues for and which this must not cost.
+ *
+ * Never overwrites a live entry. An in-app navigation already has the real
+ * thing in memory and it is newer than anything on disk.
+ */
+export function hydrateFeedContinuity(scopeKey: string | null): boolean {
+  if (!scopeKey || typeof sessionStorage === 'undefined') return false
+  if (BY_SCOPE.has(scopeKey)) return false
+  if (!wasFeedBackgrounded(scopeKey)) {
+    try { sessionStorage.removeItem(storeKey(scopeKey)) } catch { /* nothing to do */ }
+    return false
+  }
+  try {
+    const raw = sessionStorage.getItem(storeKey(scopeKey))
+    if (!raw) return false
+    const parsed = JSON.parse(raw) as Partial<FeedContinuity>
+    if (!parsed || typeof parsed !== 'object') return false
+    BY_SCOPE.set(scopeKey, {
+      family: parsed.family ?? null,
+      position: {
+        baseKey: parsed.position?.baseKey ?? null,
+        viewKey: parsed.position?.viewKey ?? null,
+      },
+      baseOrder: Array.isArray(parsed.baseOrder) ? parsed.baseOrder : null,
+      readDepth: typeof parsed.readDepth === 'number' ? parsed.readDepth : 0,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function readFeedContinuity(scopeKey: string | null): FeedContinuity {
   if (!scopeKey) return emptyContinuity()
   return BY_SCOPE.get(scopeKey) ?? emptyContinuity()
@@ -204,6 +325,15 @@ export function clearFeedContinuity(scopeKey?: string | null): void {
     return
   }
   BY_SCOPE.delete(scopeKey)
+  // The persisted copy goes with it, or a pull-to-refresh would be undone by
+  // the next background eviction handing the old place straight back.
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.removeItem(storeKey(scopeKey))
+    sessionStorage.removeItem(hiddenKey(scopeKey))
+  } catch {
+    /* nothing to do */
+  }
 }
 
 /**
