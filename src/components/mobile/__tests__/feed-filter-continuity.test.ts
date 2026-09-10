@@ -707,3 +707,42 @@ describe('attention urgency is read from the field the row has', () => {
     expect(dash).not.toContain('a.priority ===')
   })
 })
+
+describe('a scroller the reader can no longer see is not asked where they were', () => {
+  /**
+   * The defect: the feed writes its offset on a 400ms throttle and once more
+   * when the effect tears down, so the last flick is not lost. The teardown
+   * write read `scrollTop` off the scrolling element — which React has already
+   * detached by then, and a detached element reports 0. So leaving the feed
+   * wrote 0 over the position the throttle had just saved, and returning from
+   * Explore landed at the top.
+   *
+   * Measured in Chrome against the running app: 4130 while scrolling, 0 the
+   * instant Explore was tapped, with the scroller confirmed gone from the
+   * document. jsdom cannot reproduce that, having no layout, which is exactly
+   * why this is pinned as wiring rather than as behaviour under a render.
+   */
+  function persistBody(): string {
+    const at = dash.indexOf('const persist = () =>')
+    expect(at).toBeGreaterThan(0)
+    return dash.slice(at, dash.indexOf('const onScroll', at))
+  }
+
+  it('asks whether the element is still in the document', () => {
+    expect(persistBody()).toContain('el.isConnected')
+  })
+
+  /**
+   * `null` is the whole fix: it tells `saveFeedSession` to keep the stored
+   * offset, so teardown still records the seed and cycle without claiming the
+   * reader is at the top.
+   */
+  it('sends null rather than a number it cannot vouch for', () => {
+    expect(persistBody()).toContain('el.isConnected ? el.scrollTop : null')
+  })
+
+  /** The unguarded read is what caused this. It must not come back. */
+  it('never writes a bare scrollTop into the session', () => {
+    expect(dash).not.toContain('scrollTop: el.scrollTop')
+  })
+})

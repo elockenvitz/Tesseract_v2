@@ -4141,7 +4141,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     const el = scroller
     if (!el) return
     let timer: ReturnType<typeof setTimeout> | null = null
-    const persist = () => saveFeedSession(feedScope, { seed: shuffleSeed, cycle, scrollTop: el.scrollTop })
+    /**
+     * A detached scroller is not asked where the reader was.
+     *
+     * This runs on the throttle, on the way out of view, AND in the cleanup
+     * below. In the cleanup React has usually already removed the element, and
+     * a detached element reports `scrollTop` as 0 — so this used to write 0
+     * over the position the throttle had just saved, and returning from Explore
+     * landed at the top of the feed.
+     *
+     * `null` tells `saveFeedSession` to keep the offset already stored, which
+     * leaves the seed and cycle still recorded. See `lib/mobile/feed-session`.
+     */
+    const persist = () =>
+      saveFeedSession(feedScope, {
+        seed: shuffleSeed,
+        cycle,
+        scrollTop: el.isConnected ? el.scrollTop : null,
+      })
     const onScroll = () => {
       if (timer) return
       timer = setTimeout(() => { timer = null; persist() }, 400)
