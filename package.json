@@ -47,6 +47,8 @@
     "tenant:lint:frontend": "node scripts/frontend-tenant-lint.mjs",
     "tenant:lint:all": "node scripts/tenant-boundary-lint.mjs && node scripts/frontend-tenant-lint.mjs && node scripts/unconditional-policy-guard.mjs",
     "tunnel:mobile": "node scripts/mobile-tunnel.mjs",
+    "deploy:fn:prod": "node scripts/supabase-target.mjs prod",
+    "deploy:fn:staging": "node scripts/supabase-target.mjs staging",
     "guard:invite": "playwright test --config playwright.invite.config.ts",
     "sec:invite": "node scripts/invite-security-test.mjs",
     "guard:policies": "node scripts/unconditional-policy-guard.mjs",
