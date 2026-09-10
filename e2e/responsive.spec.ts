@@ -34,6 +34,18 @@ import { join } from 'node:path'
 const VIEWPORTS = [
   { name: '400x700 (primary reproduction)', width: 400, height: 700 },
   { name: '360x700 (narrow)', width: 360, height: 700 },
+  /**
+   * 320 is the floor, and it was missing.
+   *
+   * The suite's narrowest case was 360, so the width where a fixed minimum or
+   * an unresponsive column count breaks FIRST was never measured — every rule
+   * below only ever had to hold with 40px of slack. 320 is the iPhone SE in
+   * landscape-locked apps, the smallest viewport still in real use, and the
+   * width the compatibility audit found the dense surfaces failing at.
+   *
+   * It costs one more pass of an already-parallel suite.
+   */
+  { name: '320x700 (smallest supported)', width: 320, height: 700 },
   { name: '390x844 (tall)', width: 390, height: 844 },
   { name: '430x932 (large)', width: 430, height: 932 },
   { name: '390x650 (short sanity)', width: 390, height: 650 },
