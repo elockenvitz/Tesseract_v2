@@ -115,7 +115,7 @@ const MAX_ERRORS = 0
  * visible rather than silently accumulating. Lowering it is a one-line commit
  * and should accompany whatever removed the errors.
  */
-const MAX_REPO_ERRORS = 8769
+const MAX_REPO_ERRORS = 8765
 
 /**
  * A floor on real source files, now that they are counted as source files.

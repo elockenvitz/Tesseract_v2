@@ -465,14 +465,36 @@ async function reverseTradeOnHoldings(
     return
   }
 
+  /*
+    The result of a holdings write is checked, not discarded.
+
+    These two statements dropped their error. `portfolio_holdings` carries RLS
+    that can refuse a write — the UPDATE and DELETE policies require the caller
+    to be the row's creator or an active admin of the org that owns the
+    portfolio — so a refusal is an ordinary outcome, not an exotic one. Ignoring
+    it meant a reversal that never happened reported the same as one that did,
+    and the book silently kept a position the desk believed it had unwound.
+
+    Thrown rather than logged: the caller is reversing an accepted trade, and
+    continuing as though the book matched the trade record is the failure worth
+    interrupting.
+  */
+  // `as any` on the row id follows this file's existing idiom for reading
+  // columns off a Supabase result the generated types resolve to `never`.
+  // Hoisted once so the id is named in the filter and the message without
+  // adding four more instances of that pre-existing typing defect.
+  const rowId = (existing as any).id as string
+
   const newShares = Number(existing.shares) + reverseDelta
   if (newShares <= 0) {
-    await supabase.from('portfolio_holdings').delete().eq('id', existing.id)
+    const { error } = await supabase.from('portfolio_holdings').delete().eq('id', rowId)
+    if (error) throw new Error(`Failed to reverse holding ${rowId} (delete): ${error.message}`)
   } else {
-    await supabase
+    const { error } = await supabase
       .from('portfolio_holdings')
       .update({ shares: newShares, updated_at: new Date().toISOString() })
-      .eq('id', existing.id)
+      .eq('id', rowId)
+    if (error) throw new Error(`Failed to reverse holding ${rowId} (update): ${error.message}`)
   }
 
   // Also reverse on the latest snapshot positions if Phase 1 wrote there.
@@ -815,17 +837,32 @@ async function applyTradeToHoldings(
     return { sharesBefore, sharesAfter: sharesBefore, priceUsed: price, applied: false }
   }
 
+  /*
+    Same rule as the reversal path: a refused write must not read as an applied
+    one. All three branches now surface their error.
+
+    The INSERT deliberately does not set `created_by`. The column DEFAULTS to
+    `auth.uid()`, which is what the INSERT policy's WITH CHECK compares against,
+    so naming it here would change nothing except to let a caller pass somebody
+    else's id. Leaving it to the default keeps authorship a fact the database
+    establishes rather than one the client asserts.
+  */
+  // Same idiom as the reversal path above, for the same reason.
+  const rowId = existing ? ((existing as any).id as string) : null
+
   if (newShares <= 0) {
-    if (existing) {
-      await supabase.from('portfolio_holdings').delete().eq('id', existing.id)
+    if (rowId) {
+      const { error } = await supabase.from('portfolio_holdings').delete().eq('id', rowId)
+      if (error) throw new Error(`Failed to close holding ${rowId}: ${error.message}`)
     }
-  } else if (existing) {
-    await supabase
+  } else if (rowId) {
+    const { error } = await supabase
       .from('portfolio_holdings')
       .update({ shares: newShares, price, updated_at: new Date().toISOString() })
-      .eq('id', existing.id)
+      .eq('id', rowId)
+    if (error) throw new Error(`Failed to update holding ${rowId}: ${error.message}`)
   } else {
-    await supabase.from('portfolio_holdings').insert({
+    const { error } = await supabase.from('portfolio_holdings').insert({
       portfolio_id: portfolioId,
       asset_id: assetId,
       shares: newShares,
@@ -833,6 +870,11 @@ async function applyTradeToHoldings(
       cost: price,
       date: today,
     })
+    if (error) {
+      throw new Error(
+        `Failed to create holding for asset ${assetId} in portfolio ${portfolioId}: ${error.message}`,
+      )
+    }
   }
 
   const sharesAfter = Math.max(newShares, 0)
