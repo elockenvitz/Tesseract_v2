@@ -1447,6 +1447,19 @@ export function buildAttentionCard(
    * `CaseEditor` from showing an edit control for a row RLS will refuse.
    */
   can?: { approve?: boolean; reject?: boolean; markDone?: boolean; defer?: boolean },
+  /**
+   * The clock, injectable so a fixture can pin it.
+   *
+   * This file has always read `Date.now()` directly for the due-date metric,
+   * which was harmless while that metric only appeared on rows the tests did
+   * not measure. The elapsed-silence metric below appears on the rows the tile
+   * engine's parity fixtures ARE built around, and those fixtures pin their own
+   * clock — so a builder reading the wall clock reports a different number for
+   * the same row every day the suite runs.
+   *
+   * Defaulted, so every production call site is unchanged.
+   */
+  now: number = Date.now(),
 ): CardResult {
   const type = attentionCardType(a) as SignalType
   return gate(type, () => {
@@ -1457,7 +1470,12 @@ export function buildAttentionCard(
 
     const occurredAt = a.last_activity_at || a.created_at || new Date().toISOString()
     const dueDays = a.due_at
-      ? Math.round((new Date(a.due_at).getTime() - Date.now()) / 86_400_000)
+      ? Math.round((new Date(a.due_at).getTime() - now) / 86_400_000)
+      : null
+    /** How long the thing has been sitting, for the rows that have no deadline. */
+    const quietSince = Date.parse(occurredAt)
+    const quietDays = Number.isFinite(quietSince)
+      ? Math.floor((now - quietSince) / 86_400_000)
       : null
 
     /**
@@ -1519,6 +1537,29 @@ export function buildAttentionCard(
         : a.attention_type === 'action_required' ? 'attention'
         : 'informational',
       headline: a.title.trim(),
+      /**
+       * The number that says why this is in front of the reader.
+       *
+       * ── Why a deadline was not enough ─────────────────────────────────────
+       *
+       * The metric came from `due_at` alone, so any item without one showed no
+       * number at all. Several collectors raise rows that have no deadline by
+       * construction — a queued trade nobody has moved on, a project untouched
+       * for a month, a covered name with no contribution in three weeks — and
+       * those are the ones whose whole claim is about ELAPSED TIME.
+       *
+       * Reported from a phone: a tile headed "BUY MSFT" that gave no context or
+       * clarity about why it was showing. The row's own `reason_text` said "no
+       * updates in 5 days" and the card had nowhere to put the 5.
+       *
+       * So where there is no deadline the metric becomes how long the thing has
+       * been sitting, which for an item with no date IS its magnitude. Where
+       * there is one the deadline still wins: a due date is a harder fact than
+       * a silence, and a row that has both is about the date.
+       *
+       * Bounded at a day, because "quiet for 0 days" is not a finding and a row
+       * raised this morning is not stale.
+       */
       metric: dueDays != null && Number.isFinite(dueDays)
         ? {
             value: dueDays < 0 ? `${Math.abs(dueDays)}d` : `${dueDays}d`,
@@ -1527,7 +1568,15 @@ export function buildAttentionCard(
             source: 'stated',
             asOf: a.due_at!,
           }
-        : null,
+        : quietDays != null && quietDays >= 1
+          ? {
+              value: `${quietDays}d`,
+              label: 'Since update',
+              direction: 'neutral',
+              source: 'computed',
+              asOf: occurredAt,
+            }
+          : null,
       body: body.trim(),
       prompt: a.attention_type === 'decision_required'
         ? 'What is your answer?'

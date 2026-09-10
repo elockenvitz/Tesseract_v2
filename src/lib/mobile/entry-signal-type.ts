@@ -174,6 +174,43 @@ export const ATTENTION_CARD_TYPE: Record<string, string> = {
  */
 export const ATTENTION_REASON_CARD_TYPE: Record<string, string> = {
   coverage_neglected: 'coverage_gap',
+  /**
+   * A trade idea nobody has moved on is a decision, not a deadline.
+   *
+   * ── The report ──────────────────────────────────────────────────────────
+   *
+   * From a phone: "for overdue I see BUY MSFT but it doesn't give any other
+   * context or clarity right away."
+   *
+   * `collectStaleTradeIdeas` raises a queued trade that has sat untouched. It
+   * titles the row from the trade — "BUY MSFT" — and stamps it
+   * `action_required`, which the generic mapping turns into `project_overdue`
+   * and the chip prints as "Overdue". Nothing about it is overdue: the row
+   * carries no `due_at` at all, so the card cannot even say by how much, and
+   * the reader is told a deadline passed on a trade idea that never had one.
+   *
+   * It is the same defect `coverage_neglected` above was added to fix, in a
+   * second collector, which is what a junk-drawer default does.
+   *
+   * `recommendation` prints "Awaiting decision", which is exactly what the row
+   * says in its own words: advance it, archive it, or update it. It also makes
+   * the chip agree with `attentionSignalType`, which already ranks anything
+   * from the trade queue as a recommendation.
+   */
+  idea_stale: 'recommendation',
+  /**
+   * A project nobody has touched is stale, which is not the same as late.
+   *
+   * `collectStaleProjects` raises a project with no updates in a month and
+   * stamps it `action_required` too, so it also printed "Overdue" — on a row
+   * whose own `reason_text` says "No updates in 31 days" and which may have no
+   * due date or a due date comfortably in the future.
+   *
+   * "Needs review" is the honest chip. The product has no "Stale" one, and
+   * inventing a type for a single collector would be the variant flag the
+   * signal contract exists to prevent.
+   */
+  project_stale: 'awaiting_review',
 }
 
 export function attentionCardType(
