@@ -126,16 +126,23 @@ export interface AiActionSpec {
  *   dispatchDecisionAction.ts is an empty `break` under the comment "Prompts
  *   not fully implemented".
  *
- *   The `outcomes:*` family is NOT unlistened — that was the original claim
- *   here and it is wrong. `outcomes:open-section` is handled at
- *   DecisionAccountabilityPage.tsx:864 and `outcomes:section-opened` at
- *   PilotOutcomesGetStarted.tsx:146. What disqualifies them is narrower and
- *   more durable: both listeners are registered by components mounted inside
- *   those pages, so the event only lands when the reader is already on the
- *   page the action would take them to. The AI panel opens over any surface,
- *   which is exactly the case where the handler does not exist. A page-local
- *   event is not an app seam, and it will not become one by being listened to
- *   more carefully.
+ *   The `outcomes:*` family fails for two different reasons, and the original
+ *   note here flattened them into one. Five members are dispatched by
+ *   `ACTION_EVENT` in DecisionAccountabilityPage and have no listener
+ *   anywhere: `update-thesis`, `add-note`, `create-followup-idea`,
+ *   `prompt-from-outcome`, `revisit-position`.
+ *
+ *   The other two DO have listeners, and are still not offerable.
+ *   `outcomes:open-section` is handled at DecisionAccountabilityPage.tsx:864
+ *   and `outcomes:section-opened` at PilotOutcomesGetStarted.tsx:146 — but
+ *   both listeners are registered by components mounted inside those pages,
+ *   so the event only lands when the reader is already on the page the action
+ *   would take them to. The AI panel opens over any surface, which is exactly
+ *   the case where the handler does not exist.
+ *
+ *   The distinction matters for the next person: the five need building, the
+ *   two need promoting to an app-level seam. A page-local event does not
+ *   become one by being listened to more carefully.
  */
 export const ACTION_SPECS: Readonly<Record<AiActionId, AiActionSpec>> = Object.freeze({
   open_asset: {
