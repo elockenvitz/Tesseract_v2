@@ -94,6 +94,18 @@ export interface FeedSession {
  * navigation. A reload is the user asking for a fresh feed; restoring the
  * previous order and position in that case makes refreshing look broken.
  */
+/**
+ * When this page load began, so an entry can be dated against it.
+ *
+ * Anything written after this moment belongs to the CURRENT visit, whatever
+ * kind of navigation started it. See the reload rule in `loadFeedSession`.
+ */
+function pageLoadedAt(): number {
+  if (typeof performance === 'undefined') return 0
+  const origin = performance.timeOrigin
+  return typeof origin === 'number' && Number.isFinite(origin) ? origin : 0
+}
+
 function isPageReload(): boolean {
   if (typeof performance === 'undefined') return false
   try {
@@ -128,15 +140,36 @@ export function loadFeedSession(scope: FeedSessionScope): FeedSession | null {
    * hits refresh is LOOKING at the page, and a tab iOS discards was hidden.
    */
   const backgrounded = wasFeedBackgrounded(`${scope.userId}:${scope.orgId}`)
-  if (isPageReload() && !backgrounded) {
-    clearFeedSession(scope)
-    return null
-  }
   try {
     const raw = sessionStorage.getItem(key)
     if (!raw) return null
     const parsed = JSON.parse(raw) as FeedSession
     if (typeof parsed?.seed !== 'number') return null
+    /**
+     * The reload discards the place the reader had BEFORE the refresh.
+     *
+     * ── Why this is dated rather than latched ───────────────────────────────
+     *
+     * The rule used to be "on a reload, discard", evaluated on every read. That
+     * was harmless while the only read was the dashboard's mount. It is not
+     * harmless now the feed re-reads this every time the reader arrives back at
+     * it, because `performance.navigation` describes the DOCUMENT: once a page
+     * was loaded by refresh it answers "reload" for the rest of that page's
+     * life. So the second read after a refresh would wipe the position the
+     * reader had just built up, and every read after that too — one refresh
+     * poisoning the whole visit.
+     *
+     * What the rule always meant is "the place they had before they asked for a
+     * fresh feed". So the entry is dated against the page load: anything written
+     * since this document started belongs to this visit and is kept, and a
+     * refresh still opens on a fresh feed at the top.
+     */
+    const savedThisPageLoad =
+      typeof parsed.savedAt === 'number' && parsed.savedAt >= pageLoadedAt()
+    if (isPageReload() && !backgrounded && !savedThisPageLoad) {
+      clearFeedSession(scope)
+      return null
+    }
     /**
      * A longer window for a phone that was put down.
      *
@@ -159,9 +192,14 @@ export function loadFeedSession(scope: FeedSessionScope): FeedSession | null {
  * ── The report ────────────────────────────────────────────────────────────
  *
  * From a phone: scroll the Ideas feed, tap Explore, come back, and the feed is
- * at the top. Reproduced in the running app with this entry read at each step —
- * scrolling stored 4130, tapping Explore turned it into 0, and the return
- * restored 0 exactly as asked. The restore was never broken; the save was.
+ * at the top.
+ *
+ * This is one of three causes behind that single report, and on its own it does
+ * not fix it — see the re-entry read in `MobileDashboard` for the one that
+ * does. It is stated as reasoning about the code rather than as a measurement:
+ * an attempt to measure it in a live browser was made in a tab the browser
+ * considered hidden, where no scroll events fire at all, and those numbers were
+ * discarded as worthless.
  *
  * The dashboard writes on a 400ms throttle while the reader scrolls and once
  * more when its effect tears down, so the last flick is not lost. That teardown

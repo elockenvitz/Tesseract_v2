@@ -32,7 +32,7 @@
  * rule has nothing to keep in sync.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { loadFeedSession, saveFeedSession, clearFeedSession } from '../feed-session'
 
@@ -96,5 +96,52 @@ describe('saving without an offset keeps the one already stored', () => {
     saveFeedSession(SCOPE, { seed: 7, cycle: 0, scrollTop: 20 })
 
     expect(loadFeedSession(SCOPE)?.scrollTop).toBe(20)
+  })
+})
+
+describe('the reload discard is about the page load, not about every read', () => {
+  /**
+   * The feed now re-reads this every time the reader arrives back at it, which
+   * is what makes returning from Explore work at all. That turned a rule that
+   * had been harmless into a trap.
+   *
+   * `performance.navigation` describes the DOCUMENT: once a page was loaded by
+   * refresh it says "reload" for the rest of that page's life. So the second
+   * read after a refresh would discard the position the reader had just built
+   * up, and every read after that too — one refresh poisoning the whole visit.
+   */
+  const pretendReload = () =>
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'reload' }] as never)
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  /** An entry from before this document started is the pre-refresh place. */
+  const saveAsBeforeThisPageLoad = () => {
+    saveFeedSession(SCOPE, { seed: 7, cycle: 0, scrollTop: 4130 })
+    const key = Object.keys(sessionStorage).find(k => k.startsWith('tesseract:feed-session:'))!
+    const v = JSON.parse(sessionStorage.getItem(key)!)
+    sessionStorage.setItem(key, JSON.stringify({ ...v, savedAt: performance.timeOrigin - 1000 }))
+  }
+
+  it('still gives a refresh the fresh feed it asked for', () => {
+    saveAsBeforeThisPageLoad()
+    pretendReload()
+
+    expect(loadFeedSession(SCOPE)).toBeNull()
+  })
+
+  it('does not keep discarding for the rest of that page load', () => {
+    saveAsBeforeThisPageLoad()
+    pretendReload()
+
+    // The refresh: the old position goes, as it should.
+    expect(loadFeedSession(SCOPE)).toBeNull()
+
+    // The reader now scrolls the fresh feed, then goes to Explore and back.
+    saveFeedSession(SCOPE, { seed: 9, cycle: 0, scrollTop: 2600 })
+
+    expect(loadFeedSession(SCOPE)?.scrollTop).toBe(2600)
   })
 })

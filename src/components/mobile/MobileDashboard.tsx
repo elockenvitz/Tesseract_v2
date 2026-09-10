@@ -1036,7 +1036,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     () => ({ userId: userId ?? null, orgId: currentOrgId }),
     [userId, currentOrgId],
   )
-  const [resumed] = useState(() => loadFeedSession(feedScope))
+  const [resumed, setResumed] = useState(() => loadFeedSession(feedScope))
 
   /**
    * The same scope, as the key the in-memory continuity map is filed under.
@@ -1070,7 +1070,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * refresh still gets a fresh feed, which is what the continuity module's
    * header argues for and what this must not cost.
    */
-  const [restoredContinuity] = useState(() => {
+  const [restoredContinuity, setRestoredContinuity] = useState(() => {
     hydrateFeedContinuity(feedScopeKey(feedScope))
     return readFeedContinuity(feedScopeKey(feedScope))
   })
@@ -4267,6 +4267,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     if (!el) return
     let timer: ReturnType<typeof setTimeout> | null = null
     const record = () => {
+      /**
+       * A discarded scroller reports scrollTop 0, which resolves to the FIRST
+       * tile — so recording from one on the way out would remember the top of
+       * the feed as the place the reader had reached. The same defect as the
+       * offset half, in the half that names the tile.
+       */
+      if (!el.isConnected) return
       const key = currentAnchorKey()
       if (!key) return
       writeFeedContinuity(continuityKey, {
@@ -4375,6 +4382,41 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     raf = requestAnimationFrame(attempt)
     return () => cancelAnimationFrame(raf)
   }, [scroller, feedEntries.length, restoredContinuity, offsetOfKey, feedKeys])
+
+  /**
+   * Arriving back at the feed is a restore, even when nothing unmounted.
+   *
+   * ── The report ────────────────────────────────────────────────────────────
+   *
+   * "I scroll the Ideas feed, tap Explore, go back to Ideas, and it is at the
+   * start." Both restores above were written for a REMOUNT — opening an asset,
+   * or switching to another app — where this component is rebuilt and reads
+   * what was remembered on the way up.
+   *
+   * Ideas and Explore are not that. `mode` is state on this component, so the
+   * switch never unmounts it: the two values the restores work from are read
+   * once in `useState` initialisers and are still the ones from the original
+   * mount, and both latches were switched off by the restore that ran then. The
+   * feed's scroller subtree DOES unmount, so the position is gone from the DOM
+   * while the only things that could put it back are stale and disarmed.
+   *
+   * The scroller's own identity is what says the reader has arrived. A new
+   * element means a new arrival — from Explore, from another app, from an asset
+   * page — so that is when the remembered values are re-read and the latches
+   * are re-armed. Restoring into the same element twice is what the latches
+   * exist to prevent, and `restoredForRef` keeps that intact.
+   */
+  const restoredForRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = scroller
+    if (!el || restoredForRef.current === el) return
+    restoredForRef.current = el
+    hydrateFeedContinuity(continuityKey)
+    setRestoredContinuity(readFeedContinuity(continuityKey))
+    setResumed(loadFeedSession(feedScope))
+    restoredRef.current = false
+    continuityRestoredRef.current = false
+  }, [scroller, continuityKey, feedScope])
 
   // A deliberate refresh: refetch every source, re-deal the order, drop the
   // saved position and return to the top. The browser's own pull-to-refresh

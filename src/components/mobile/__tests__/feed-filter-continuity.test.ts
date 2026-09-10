@@ -204,13 +204,30 @@ describe('the remembered state has the lifetime of the page load', () => {
     expect(dash).not.toContain('localStorage.setItem')
   })
 
-  it('is read once at mount, which is what survives the remount', () => {
+  it('is read at mount, which is what survives the remount', () => {
     // Returning from an asset page remounts the dashboard, so the mount-time
     // read IS the restore. It is now preceded by a hydrate, which is what
     // survives an iOS tab eviction — see the block below.
     expect(dash).toContain('readFeedContinuity(feedScopeKey(feedScope))')
-    const at = dash.indexOf('const [restoredContinuity] = useState(')
+    const at = dash.indexOf('const [restoredContinuity, setRestoredContinuity] = useState(')
     expect(at).toBeGreaterThan(0)
+  })
+
+  /**
+   * Once was not enough, and this is where that was assumed.
+   *
+   * This assertion used to require that the value be read ONLY at mount, on
+   * the reasoning that a remount is how the reader returns. That is true of an
+   * asset page and of another app, and false of Explore: `mode` is state on
+   * this component, so switching to it and back never remounts anything while
+   * still throwing away the scroller that holds the position.
+   *
+   * So the mount read stays and a re-entry read joins it, keyed on the
+   * scroller's identity rather than on the component's lifetime. See "arriving
+   * back at the feed re-reads what was remembered".
+   */
+  it('is read again whenever the reader arrives back at the feed', () => {
+    expect(dash).toContain('const restoredForRef = useRef<HTMLDivElement | null>(null)')
   })
 
   /**
@@ -744,5 +761,59 @@ describe('a scroller the reader can no longer see is not asked where they were',
   /** The unguarded read is what caused this. It must not come back. */
   it('never writes a bare scrollTop into the session', () => {
     expect(dash).not.toContain('scrollTop: el.scrollTop')
+  })
+})
+
+describe('arriving back at the feed re-reads what was remembered', () => {
+  /**
+   * The report: scroll Ideas, tap Explore, come back, and it is at the start.
+   *
+   * Ideas and Explore are `mode` state on this component, so the switch never
+   * unmounts it. Both restores were written for a remount and read what they
+   * restore from in `useState` initialisers — so after the first arrival those
+   * values are frozen and both latches are off, while the scroller subtree HAS
+   * unmounted and taken the position with it.
+   *
+   * A new scroller element is the signal that the reader has arrived again.
+   * These pin that the re-entry exists, reads both halves fresh, and re-arms
+   * both latches — the piece a well-meaning edit would drop as redundant.
+   */
+  function reentryBody(): string {
+    const at = dash.indexOf('const restoredForRef = useRef')
+    expect(at).toBeGreaterThan(0)
+    return dash.slice(at, dash.indexOf('}, [scroller, continuityKey, feedScope])', at))
+  }
+
+  it('treats a new scroller element as a new arrival', () => {
+    expect(reentryBody()).toContain('restoredForRef.current === el')
+  })
+
+  it('re-reads the saved offset rather than the one from first mount', () => {
+    expect(reentryBody()).toContain('setResumed(loadFeedSession(feedScope))')
+  })
+
+  it('re-reads the remembered tile too, not only the offset', () => {
+    expect(reentryBody()).toContain('setRestoredContinuity(readFeedContinuity(continuityKey))')
+  })
+
+  it('re-arms both latches, since both were spent on the first arrival', () => {
+    const body = reentryBody()
+    expect(body).toContain('restoredRef.current = false')
+    expect(body).toContain('continuityRestoredRef.current = false')
+  })
+})
+
+describe('the remembered tile is not taken from a discarded scroller either', () => {
+  /**
+   * The offset half had this defect and so does the half that names the tile.
+   * A detached scroller reports 0, which resolves to the FIRST entry, so
+   * recording on the way out would remember the top of the feed as the place
+   * the reader had reached — and the tile restore is the one that wins.
+   */
+  it('records nothing once the scroller has left the document', () => {
+    const at = dash.indexOf('const record = () => {')
+    expect(at).toBeGreaterThan(0)
+    const body = dash.slice(at, dash.indexOf('const onScroll', at))
+    expect(body).toContain('if (!el.isConnected) return')
   })
 })

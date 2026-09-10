@@ -154,7 +154,17 @@ describe('lifecycle listeners clean themselves up', () => {
     // stops registering a handler, the entry is stale and must be deleted
     // rather than left standing as cover for the next one.
     for (const f of allowed) expect(registers(f)).toBe(true)
-  })
+  }, /**
+      * This walks and reads every source file under `src/`, so its cost grows
+      * with the repository and with whatever else the runner is doing. At the
+      * default five seconds it passed alone and timed out inside the full unit
+      * guard — a failure to COMPLETE, which the guard rightly refuses to call a
+      * pass, and which says nothing about the rule.
+      *
+      * Raised rather than narrowed: the point of the assertion is that it looks
+      * everywhere, so the walk is the test.
+      */
+     30_000)
 })
 
 describe('the query layer does not rebuild the shell on foreground', () => {
