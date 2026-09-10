@@ -444,7 +444,7 @@ function BatchTradesList({
         <table className="w-full text-xs min-w-[720px] sm:min-w-0">
           <thead className="bg-gray-50 dark:bg-gray-800/60">
             <tr className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              <th className="text-left px-3 py-2">Symbol</th>
+              <th className="text-left px-3 py-2 sticky left-0 z-20 bg-gray-50 dark:bg-gray-800">Symbol</th>
               <th className="text-left px-3 py-2">Action</th>
               <th className="text-right px-3 py-2">Tgt Wt</th>
               <th className="text-right px-3 py-2">Δ Wt</th>
@@ -567,6 +567,12 @@ function TradeRow({
   const srcCfg = SOURCE_CONFIG[src]
   const SourceIcon = srcCfg.icon
   const rowBg = rowIndex % 2 === 0 ? 'bg-gray-50/40 dark:bg-gray-800/20' : ''
+  // The frozen ticker needs an opaque fill of its own: the row banding above is
+  // translucent, and a see-through sticky cell lets the scrolling columns slide
+  // visibly underneath the symbol. Same reasoning, and the same pair of values,
+  // as AcceptedTradesTable — the two tables sit one toggle apart in Trade Book
+  // and should not disagree about this.
+  const stickyBg = rowIndex % 2 === 0 ? 'bg-gray-50 dark:bg-gray-900' : 'bg-white dark:bg-gray-900'
 
   const hasNote = !!(trade.acceptance_note && trade.acceptance_note.trim())
   const canExpand = hasNote || !!onAddComment
@@ -587,7 +593,7 @@ function TradeRow({
         try { window.dispatchEvent(new CustomEvent('pilot-tradebook:trade-reviewed')) } catch { /* ignore */ }
       } : undefined}
     >
-      <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">
+      <td className={clsx('px-3 py-2 font-medium text-gray-900 dark:text-white sticky left-0 z-10', stickyBg)}>
         {trade.asset?.symbol || 'Unknown'}
       </td>
       <td className="px-3 py-2">
