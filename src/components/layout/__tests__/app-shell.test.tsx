@@ -109,6 +109,24 @@ describe('lifecycle listeners clean themselves up', () => {
     expect(removed).toBe(added)
   })
 
+  /**
+   * Files exempt from the ban below, each for a reason recorded here.
+   *
+   * `MobileDashboard.tsx` saves the reader's feed position on the way out of
+   * view. iOS evicts a backgrounded tab and reloads it on return, and neither
+   * unmount nor the scroll throttle fires in time to catch the last position,
+   * so `pagehide` is the only moment left. It is the demonstrated need the
+   * comment below asks for.
+   *
+   * It does not conflict with the reason for the ban. The rule exists so a
+   * BFCache restore is never met with a synthetic reload; this handler writes
+   * a session snapshot and sets a hidden marker, and reloads nothing. It also
+   * removes itself in the effect cleanup, which the sibling test above pins
+   * for `visibilitychange`. `beforeunload` remains unused precisely because it
+   * blocks BFCache where it fires at all.
+   */
+  const exempt = ['src/components/mobile/MobileDashboard.tsx']
+
   it('registers no pageshow or pagehide handler anywhere', () => {
     // So a BFCache restore is never met with a synthetic reload. Recorded as a
     // fact rather than a hope: adding one would need a demonstrated need.
@@ -120,10 +138,22 @@ describe('lifecycle listeners clean themselves up', () => {
         return /\.tsx?$/.test(name) ? [p] : []
       })
     }
+    const registers = (f: string) =>
+      /addEventListener\('(pageshow|pagehide)'/.test(readFileSync(f, 'utf8'))
+
+    // Resolved to absolute paths and compared exactly, so an exemption covers
+    // the one file it names and no other. A new offender beside it still fails.
+    const allowed = new Set(exempt.map(rel => resolve(__dirname, '../../../..', rel)))
+
     const offenders = walk(resolve(__dirname, '../../..'))
-      .filter(f => /addEventListener\('(pageshow|pagehide)'/.test(readFileSync(f, 'utf8')))
+      .filter(f => registers(f) && !allowed.has(f))
 
     expect(offenders).toEqual([])
+
+    // The allowlist is not allowed to outlive its reason. If an exempt file
+    // stops registering a handler, the entry is stale and must be deleted
+    // rather than left standing as cover for the next one.
+    for (const f of allowed) expect(registers(f)).toBe(true)
   })
 })
 
