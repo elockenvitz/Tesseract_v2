@@ -5750,9 +5750,12 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Summary stats */}
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-green-50 rounded-lg p-4 text-center">
+              {/* Summary stats — three tiles across IS the shape, so the row is
+                  kept and the spacing is what gives way. At 320px the old
+                  gap-4/p-4 left 61px of content per tile and wrapped every
+                  label; this leaves 77px, which fits them. */}
+              <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                <div className="bg-green-50 rounded-lg p-3 sm:p-4 text-center">
                   <div className="text-2xl font-bold text-green-700">
                     {coverageByVisibility['team']?.length || 0}
                   </div>
@@ -5760,7 +5763,7 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
                     <Users className="w-3 h-3" /> Team Only
                   </div>
                 </div>
-                <div className="bg-blue-50 rounded-lg p-4 text-center">
+                <div className="bg-blue-50 rounded-lg p-3 sm:p-4 text-center">
                   <div className="text-2xl font-bold text-blue-700">
                     {coverageByVisibility['division']?.length || 0}
                   </div>
@@ -5768,7 +5771,7 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
                     <FolderOpen className="w-3 h-3" /> Division
                   </div>
                 </div>
-                <div className="bg-purple-50 rounded-lg p-4 text-center">
+                <div className="bg-purple-50 rounded-lg p-3 sm:p-4 text-center">
                   <div className="text-2xl font-bold text-purple-700">
                     {coverageByVisibility['firm']?.length || 0}
                   </div>

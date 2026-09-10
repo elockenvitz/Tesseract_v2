@@ -269,8 +269,10 @@ export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
         </Card>
       </div>
 
-      {/* TDF Grid */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* TDF Grid — three across is a desktop shape; at 320px it left each card
+          about 95px. Same cards, same order, reflowed. This is the ladder
+          Portfolios, Themes and Lists already use. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredSummaries.map((summary) => (
           <TDFCard
             key={summary.tdf.id}
