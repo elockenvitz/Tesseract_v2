@@ -153,12 +153,54 @@ export function loadFeedSession(scope: FeedSessionScope): FeedSession | null {
   }
 }
 
-export function saveFeedSession(scope: FeedSessionScope, session: Omit<FeedSession, 'savedAt'>): void {
+/**
+ * What to write when the caller cannot see where the reader was.
+ *
+ * ── The report ────────────────────────────────────────────────────────────
+ *
+ * From a phone: scroll the Ideas feed, tap Explore, come back, and the feed is
+ * at the top. Reproduced in the running app with this entry read at each step —
+ * scrolling stored 4130, tapping Explore turned it into 0, and the return
+ * restored 0 exactly as asked. The restore was never broken; the save was.
+ *
+ * The dashboard writes on a 400ms throttle while the reader scrolls and once
+ * more when its effect tears down, so the last flick is not lost. That teardown
+ * write read `scrollTop` off the scrolling element, and by then React had
+ * already detached it. A detached element reports `scrollTop` as 0, so the
+ * teardown wrote 0 over the good value the throttle had just saved.
+ *
+ * ── Why `null` rather than a remembered offset ────────────────────────────
+ *
+ * `null` means "keep the offset already stored". The teardown still has a job
+ * beyond the offset — it records the seed and the cycle, without which the
+ * restored position points into a differently ordered feed — so it cannot
+ * simply be skipped.
+ *
+ * A ref holding the last known offset was the alternative. It has to be updated
+ * at every site that writes `scrollTop`, the restore included, and a site missed
+ * later brings this bug back silently. Keeping what is already stored has
+ * nothing to keep in sync.
+ *
+ * The cost is bounded and deliberate: up to one throttle window of scrolling,
+ * so a reader who flicks and leaves inside 400ms returns a little above where
+ * they left, rather than at the top.
+ */
+export type FeedSessionWrite = Omit<FeedSession, 'savedAt' | 'scrollTop'> & {
+  scrollTop: number | null
+}
+
+export function saveFeedSession(scope: FeedSessionScope, session: FeedSessionWrite): void {
   if (typeof sessionStorage === 'undefined') return
   const key = scopedKey(scope)
   if (!key) return
   try {
-    sessionStorage.setItem(key, JSON.stringify({ ...session, savedAt: Date.now() }))
+    let scrollTop = session.scrollTop
+    if (scrollTop == null) {
+      const raw = sessionStorage.getItem(key)
+      const stored = raw ? (JSON.parse(raw) as Partial<FeedSession>) : null
+      scrollTop = typeof stored?.scrollTop === 'number' ? stored.scrollTop : 0
+    }
+    sessionStorage.setItem(key, JSON.stringify({ ...session, scrollTop, savedAt: Date.now() }))
   } catch {
     /* storage full or unavailable — the feed simply starts from the top */
   }
