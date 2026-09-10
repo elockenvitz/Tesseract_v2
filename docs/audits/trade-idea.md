@@ -1,5 +1,10 @@
 # Trade Idea Audit
 
+> **Status note:** some findings below have been closed since this was
+> written. See [`AUDIT-STATUS-2026-08-30.md`](../audit/AUDIT-STATUS-2026-08-30.md) before acting on any of
+> them. Nothing in this document has been edited — the note tracks status
+> separately so the original assessment stands as written.
+
 **Branch:** `audit/trade-idea` · **Worktree:** `C:\dev\tesseract-trade-idea` · **Base:** `origin/main` @ `12c6225`
 **Date:** 2026-08-29
 **Status:** Read-only audit. No application code, SQL, or production state was changed.

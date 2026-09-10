@@ -64,6 +64,20 @@ export type ActionType =
    */
   | 'record_judgment'
 
+  /**
+   * Activation milestones, written at most once per user per organization.
+   *
+   * Same shape and same reasoning as `record_judgment` above: `action_type` is
+   * unconstrained in the database, so these needed no migration — only members
+   * here so TypeScript agrees. `entity_type` is `user`, which the CHECK already
+   * allows. See `lib/onboarding/activation.ts` for what each one means and why
+   * there are four of them rather than an event stream.
+   */
+  | 'coverage_established'
+  | 'first_relevant_idea_viewed'
+  | 'first_judgment'
+  | 'activated'
+
   // Field edits
   | 'update_field'
   | 'update_fields'
