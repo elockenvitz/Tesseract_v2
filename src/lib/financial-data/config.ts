@@ -39,7 +39,53 @@ export interface FinancialDataConfig {
 }
 
 /**
- * Load configuration from environment variables
+ * Load configuration from environment variables.
+ *
+ * ── Why ALPHA_VANTAGE_API_KEY is still named here ─────────────────────────
+ *
+ * Audited 2026-09-10, alongside the removal of the client-side provider keys.
+ * It stays, and this note is the reason, so the next reader does not have to
+ * re-derive it.
+ *
+ * It is NOT the defect that was fixed elsewhere. That one read the same
+ * provider key from `import.meta.env` under a VITE_-prefixed name, which Vite
+ * replaces with a string literal at build time — setting it published it.
+ * These are `process.env` reads with no VITE prefix, and Vite does not
+ * substitute those at all. Nothing here can reach a bundle.
+ *
+ * (This comment cannot spell that variable out. The guard named below scans
+ * for it in prose as well as in code, which is deliberate — an example is
+ * indistinguishable from a reintroduction to a grep, and the rule is worth
+ * more than the convenience.)
+ *
+ * It is also unreachable. `config.ts` is imported only by this module's
+ * `index.ts`, and `index.ts` has no importers outside the module — the whole
+ * ProviderManager half of `financial-data` (this file, `client.ts`,
+ * `provider-manager.ts`, `base-provider.ts`, `providers/`) is dead code. Only
+ * `browser-client.ts` and `types.ts` are live. If `loadConfigFromEnv` were
+ * somehow called in the browser it would throw on `process` being undefined,
+ * long before it could read anything.
+ *
+ * ── Why the reference was not simply deleted ──────────────────────────────
+ *
+ * Deleting just the alphavantage block leaves the module incoherent rather
+ * than dead: `primaryProvider` defaults to `'alphavantage'` and
+ * `validateConfig` throws "Alpha Vantage API key is required" when the
+ * primary provider has no key — so removing the only thing that supplies one
+ * turns unreachable-but-consistent code into unreachable-and-broken code, and
+ * the next person to consider reviving the module inherits a puzzle.
+ *
+ * Deleting the whole dead module is the real disposition, and it is bigger
+ * than it looks: `types.ts` is the canonical asset-type vocabulary, pointed at
+ * by `supabase/functions/market-news` and by migration
+ * `20260818141000_asset_instrument_identity.sql`. Removing the module means
+ * rehoming that first. Recorded as deferred rather than done here.
+ *
+ * ── The rule that actually matters ────────────────────────────────────────
+ *
+ * A provider credential belongs in a Supabase function secret —
+ * `ALPHAVANTAGE_API_KEY`, read by `supabase/functions/market-news` through
+ * `Deno.env.get`. Never a `VITE_` name.
  */
 export function loadConfigFromEnv(): Partial<FinancialDataConfig> {
   return {

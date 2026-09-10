@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -36,7 +36,82 @@ import { describe, expect, it } from 'vitest'
  * there is a working seam to move to and nothing to design.
  */
 
-const SRC = join(process.cwd(), 'src')
+const ROOT = process.cwd()
+const SRC = join(ROOT, 'src')
+
+/**
+ * The surfaces outside `src/` where a build variable can actually be declared.
+ *
+ * ── Why scanning src/ alone was not enough ────────────────────────────────
+ *
+ * When the Alpha Vantage read was removed from browser-client.ts, this guard
+ * passed — and `.env.example` was still telling every new developer to set
+ * `VITE_ALPHA_VANTAGE_API_KEY`, with a comment claiming the data layer used
+ * it. The code was clean and the instructions still described the defect.
+ *
+ * A `VITE_*` variable does not need a line in `src/` to reach the bundle. It
+ * needs somewhere that SETS it, and those places are all outside `src/`: the
+ * env template developers copy, the Netlify build config, the vite configs,
+ * and CI workflow env blocks. That is the surface this list covers.
+ *
+ * Listed explicitly rather than walked, because a recursive scan of the
+ * repository root would have to exclude node_modules, dist, .git and every
+ * build artifact, and an exclusion list that grows is one that eventually
+ * excludes the thing being checked.
+ */
+const CONFIG_SURFACES = [
+  '.env.example',
+  'netlify.toml',
+  'vite.config.ts',
+  'vite.mobile.config.ts',
+  'vite.gallery.config.ts',
+  'vite.desktop-harness.config.ts',
+  'vite.invite-e2e.config.ts',
+  '.github/workflows/ci.yml',
+  '.github/workflows/ingest.yml',
+]
+
+/**
+ * How many config surfaces must actually exist for the scan to mean anything.
+ *
+ * The failure mode this defends against is the whole list quietly evaluating
+ * to nothing — a rename, a restructure, or a wrong `process.cwd()` — leaving a
+ * check that reads zero files and reports zero findings. Set below the current
+ * count so an ordinary file rename does not fail the build, and far enough
+ * above zero that a silently empty scan does.
+ */
+const MIN_CONFIG_SURFACES = 5
+
+/**
+ * `docs/` is deliberately NOT scanned, and this is not a convenience carve-out.
+ *
+ * `docs/audit/platform-readiness-2026-08.md` and
+ * `docs/audit/production-verification-pack.md` both name
+ * the removed variables, because naming them is what those documents are for:
+ * they are the record of the incident, written before it was fixed. A guard
+ * that forced the audit trail to redact the thing it audited would be
+ * destroying evidence to keep itself green.
+ *
+ * The distinction is causal rather than editorial. A markdown file cannot set
+ * a build variable. Every surface in CONFIG_SURFACES can.
+ */
+const NOT_SCANNED_AND_WHY = 'docs/ — records the incident and cannot set a variable'
+
+/**
+ * Names that were removed on 2026-09-10 and may not come back.
+ *
+ * Detection-wise this set is redundant: both names contain KEY, so
+ * SECRET_WORDS already catches them anywhere the scan reaches. It earns its
+ * place by changing the MESSAGE — someone reintroducing one of these is
+ * usually restoring an old config from memory or from a stale document, and
+ * the useful thing to tell them is not "this looks like a credential" but
+ * "this specific variable shipped a key in the bundle, and the server-side
+ * secret you want is ALPHAVANTAGE_API_KEY".
+ */
+const RETIRED_BROWSER_KEYS = new Set([
+  ['VITE', 'ALPHA', 'VANTAGE', 'API', 'KEY'].join('_'),
+  ['VITE', 'FINNHUB', 'API', 'KEY'].join('_'),
+])
 
 /**
  * The one name that is legitimately public.
@@ -74,7 +149,12 @@ interface Finding {
   variable: string
 }
 
-/** Every credential-shaped VITE variable named under `src/`. */
+/** Config surfaces that exist on disk, as absolute paths. */
+export function existingConfigSurfaces(root: string = ROOT): string[] {
+  return CONFIG_SURFACES.map(p => join(root, ...p.split('/'))).filter(p => existsSync(p))
+}
+
+/** Every credential-shaped VITE variable named in the given files. */
 export function browserKeyReads(files: readonly string[]): Finding[] {
   const findings: Finding[] = []
   for (const file of files) {
@@ -112,6 +192,59 @@ describe('no provider credential is readable from the browser bundle', () => {
           `the VITE prefix — supabase/functions/market-news does this already.`
         : '',
     ).toEqual([])
+  })
+
+  it('declares no secret-shaped VITE variable in any config surface', () => {
+    /*
+      The gap that made this necessary: browser-client.ts was clean and
+      `.env.example` was still instructing everyone to set the variable. Code
+      does not have to name a build variable for the build variable to reach
+      the bundle — something has to SET it, and those places are all here.
+    */
+    const surfaces = existingConfigSurfaces()
+    const findings = browserKeyReads(surfaces)
+
+    const report = findings
+      .map(f => `  ${f.file}:${f.line}  ${f.variable}`)
+      .join('\n')
+
+    const retired = findings.filter(f => RETIRED_BROWSER_KEYS.has(f.variable))
+
+    expect(
+      findings,
+      findings.length
+        ? `A config surface declares a VITE_* variable that looks like a ` +
+          `credential. Anything set under a VITE_ name is inlined into the ` +
+          `bundle as a literal string.\n\n${report}\n\n` +
+          (retired.length
+            ? `At least one of these was REMOVED on 2026-09-10 because it ` +
+              `shipped a working key in dist/assets/index-*.js. Nothing reads ` +
+              `it. If you want Alpha Vantage back, the secret is ` +
+              `ALPHAVANTAGE_API_KEY in Supabase function secrets, read by ` +
+              `supabase/functions/market-news — never a VITE_ name.\n\n`
+            : '') +
+          `Not scanned, deliberately: ${NOT_SCANNED_AND_WHY}.`
+        : '',
+    ).toEqual([])
+  })
+
+  it('actually reads the config surfaces rather than an empty list', () => {
+    /*
+      Without this, a rename or a wrong working directory would leave the
+      assertion above scanning zero files and passing forever. This is the
+      difference between "no findings" and "no look".
+    */
+    const surfaces = existingConfigSurfaces()
+    expect(
+      surfaces.length,
+      `Only ${surfaces.length} of ${CONFIG_SURFACES.length} config surfaces ` +
+        `were found. If one was renamed, update CONFIG_SURFACES; a list that ` +
+        `resolves to nothing is a check that reads nothing.`,
+    ).toBeGreaterThanOrEqual(MIN_CONFIG_SURFACES)
+
+    // The env template is the one that actually caused this, so its presence
+    // is asserted by name rather than left to the count.
+    expect(surfaces.some(p => p.endsWith('.env.example'))).toBe(true)
   })
 })
 
@@ -176,5 +309,37 @@ describe('the check can see its own failure', () => {
     expect(files.length).toBeGreaterThan(500)
     expect(files.every(f => CODE.test(f))).toBe(true)
     void fixture
+  })
+
+  it('flags a retired name in a config surface, not just in code', () => {
+    /*
+      The exact regression this extension exists to catch: the line that was
+      in .env.example while browser-client.ts was already clean. Detected here
+      through the same code path the real scan uses, over a file written for
+      the purpose, so the assertion covers the reader as well as the regex.
+    */
+    const retired = [...RETIRED_BROWSER_KEYS][0]
+    const probe = join(SRC, 'lib', 'security', '__tests__', '__config-probe.tmp')
+    writeFileSync(probe, `# comment\n${retired}=\nVITE_SENTRY_DSN=\n`, 'utf8')
+    try {
+      const findings = browserKeyReads([probe])
+      expect(findings).toHaveLength(1)
+      expect(findings[0].variable).toBe(retired)
+      expect(findings[0].line).toBe(2)
+      expect(RETIRED_BROWSER_KEYS.has(findings[0].variable)).toBe(true)
+    } finally {
+      rmSync(probe, { force: true })
+    }
+  })
+
+  it('leaves the audit trail alone', () => {
+    /*
+      docs/ names the retired variables because recording the incident is what
+      those documents are for. If docs/ were ever added to CONFIG_SURFACES,
+      this fails — which is the point: the exclusion should cost a deliberate
+      edit here, not go unnoticed.
+    */
+    expect(CONFIG_SURFACES.some(p => p.startsWith('docs/'))).toBe(false)
+    expect(NOT_SCANNED_AND_WHY).toContain('docs/')
   })
 })
