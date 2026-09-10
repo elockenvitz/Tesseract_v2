@@ -35,6 +35,34 @@ export interface MobileSurface {
   mobileNote?: string
   /** Surfaces reachable from the drawer. Detail types (asset, note) are not. */
   inNav?: boolean
+  /**
+   * The surface owns the phone viewport, so the shell must not wrap it in a
+   * padded scrollport.
+   *
+   * `Layout` gives every non-full-width tab `overflow-auto px-3 py-4`. For a
+   * page that is already `h-full`, paints its own background and runs its own
+   * scroller, that wrapper is pure loss: 24px of width and 32px of height on
+   * the smallest screens, an inert second scrollport around the page's real
+   * one, and a full-bleed background inset from the edges it was drawn to
+   * reach.
+   *
+   * Declared here, per surface, rather than inferred. There IS a defensible
+   * heuristic — root is `h-full`, has its own `overflow-*`, paints a `bg-*` —
+   * and it is still the wrong mechanism: it would silently change a page's
+   * layout the day someone adds a background colour, and silently stop
+   * applying the day someone removes one. A layout contract that a component
+   * can opt into by accident is not a contract.
+   *
+   * Set it only where all three are true and the page genuinely pads its own
+   * content. A page that relies on the shell's `px-3` (notes-list, list) must
+   * NOT set it, or its content will run into the screen edge.
+   *
+   * The `note` tab reaches the same end through its own branch in `Layout`
+   * and is deliberately not folded in here: it keeps `px-3` because the
+   * editor's `max-sm:-mx-3` is what reclaims it, so the two have to agree.
+   * That is a different contract, not this one at a different setting.
+   */
+  ownsViewportOnMobile?: boolean
 }
 
 export const MOBILE_SURFACES: MobileSurface[] = [
@@ -188,6 +216,9 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     type: 'files', title: 'Files', icon: FolderOpen,
     color: 'text-slate-500', bg: 'bg-slate-100',
     support: 'read-only', group: 'work', inNav: true,
+    // `h-full flex flex-col bg-gray-50`, its own header padding and its own
+    // scroller. The shell's wrapper inset that grey off the screen edges.
+    ownsViewportOnMobile: true,
   },
   {
     // A model attached to an asset. Search returns these, so a phone could
@@ -198,6 +229,8 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     type: 'model-file', title: 'Model', icon: FolderOpen,
     color: 'text-slate-500', bg: 'bg-slate-100',
     support: 'read-only', group: 'work',
+    // Renders FilesPage focused on one file — the same surface as `files`.
+    ownsViewportOnMobile: true,
   },
   {
     type: 'workflows', title: 'Process', icon: Repeat,
@@ -277,18 +310,25 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     color: 'text-emerald-600', bg: 'bg-emerald-50',
     support: 'read-only', group: 'admin', inNav: true,
     mobileNote: 'Read allocation; rebalancing stays on desktop',
+    // `h-full flex flex-col overflow-hidden bg-gray-50` with its own
+    // `p-3 sm:p-6` around the grid.
+    ownsViewportOnMobile: true,
   },
   {
     // One period, rendered by the same AssetAllocationPage.
     type: 'allocation-period', title: 'Allocation Period', icon: Briefcase,
     color: 'text-emerald-600', bg: 'bg-emerald-50',
     support: 'read-only', group: 'admin',
+    // The same AssetAllocationPage, focused on one period.
+    ownsViewportOnMobile: true,
   },
   {
     type: 'charting', title: 'Charting', icon: LineChart,
     color: 'text-blue-600', bg: 'bg-blue-50',
     support: 'read-only', group: 'admin', inNav: true,
     mobileNote: 'Chart and timeframe; drawing tools want a pointer',
+    // `h-full flex flex-col bg-white overflow-hidden` — owns its scrolling.
+    ownsViewportOnMobile: true,
   },
   {
     type: 'audit', title: 'Audit', icon: Shield,
@@ -323,6 +363,14 @@ export function getMobileSurface(type: string | undefined): MobileSurface | unde
  */
 export function getMobileSupport(type: string | undefined): MobileSupportLevel {
   return getMobileSurface(type)?.support ?? 'desktop-only'
+}
+
+/**
+ * True when the shell must hand the phone viewport straight to the surface —
+ * no padding, no wrapping scrollport. See `ownsViewportOnMobile`.
+ */
+export function ownsMobileViewport(type: string | undefined): boolean {
+  return getMobileSurface(type)?.ownsViewportOnMobile === true
 }
 
 export function isDesktopOnly(type: string | undefined): boolean {

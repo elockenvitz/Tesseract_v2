@@ -16,6 +16,7 @@ import { useOrganization } from '../../contexts/OrganizationContext'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { MobileNavDrawer } from '../mobile/MobileNavDrawer'
 import { OverflowAuditOverlay } from '../mobile/OverflowAuditOverlay'
+import { ownsMobileViewport } from '../../lib/mobile/mobile-surfaces'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -521,11 +522,22 @@ export function Layout({
             reclaims it and the two have to agree. Desktop is untouched.
           */
           const isMobileNote = !!activeTab && activeTab.type === 'note' && isMobile
+          /*
+            Surfaces that own the phone viewport get it whole — no padding, no
+            wrapping scrollport — exactly as a full-width tab does.
+
+            Declared per surface in the mobile registry rather than inferred
+            here from what a page's root happens to look like; see
+            `ownsViewportOnMobile`. Phone only: on desktop these pages keep the
+            standard wrapper, so nothing about the wide layout moves.
+          */
+          const ownsViewport = !!activeTab && isMobile && ownsMobileViewport(activeTab.type)
+          const isBare = isFullWidth || ownsViewport
           return (
             <div className={clsx(
               "relative h-full flex flex-col",
-              isFullWidth || isMobileNote ? "overflow-hidden" : isCompactPad ? "overflow-hidden p-2" : "overflow-auto",
-              !isFullWidth && !isCompactPad && (isMobileNote ? "px-3" : "px-3 py-4 sm:px-6 sm:py-6 lg:px-8"),
+              isBare || isMobileNote ? "overflow-hidden" : isCompactPad ? "overflow-hidden p-2" : "overflow-auto",
+              !isBare && !isCompactPad && (isMobileNote ? "px-3" : "px-3 py-4 sm:px-6 sm:py-6 lg:px-8"),
               "transition-[margin] duration-300 ease-in-out",
               // The comm pane becomes a bottom sheet on phones, so it must not
               // reserve a 384px right margin out of a 390px viewport.
