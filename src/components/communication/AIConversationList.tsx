@@ -1,11 +1,17 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Plus, Pin, PinOff, Archive, Trash2, Pencil, MessageSquare, Search, X, Tag } from 'lucide-react'
 import { clsx } from 'clsx'
-import type { AIConversation, TagRef } from '../../hooks/useAI'
+import type { AIConversationSummary, TagRef } from '../../hooks/useAI'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 
 interface Props {
-  conversations: AIConversation[]
+  /*
+    The summary, not the full row: this list renders titles, pins, tags and
+    dates and has never read a transcript. Asking for `AIConversation` here is
+    what let the sidebar query fetch up to two hundred of them — the prop type
+    was the only thing claiming they were needed.
+  */
+  conversations: AIConversationSummary[]
   activeConversationId: string | null
   onSelect: (id: string) => void
   onNewConversation: () => void
@@ -70,8 +76,8 @@ export function AIConversationList({
     if (activeTagFilter) {
       filtered = filtered.filter(c => (c.tags || []).some(t => tagKey(t) === activeTagFilter))
     }
-    const pinned: AIConversation[] = []
-    const rest:   AIConversation[] = []
+    const pinned: AIConversationSummary[] = []
+    const rest:   AIConversationSummary[] = []
     for (const c of filtered) {
       if (c.is_pinned) pinned.push(c)
       else             rest.push(c)
@@ -218,7 +224,7 @@ function Group({
   label, items, activeId, tagLabels, onSelect, onRename, onArchive, onTogglePin, onRequestDelete,
 }: {
   label: string
-  items: AIConversation[]
+  items: AIConversationSummary[]
   activeId: string | null
   tagLabels: Record<string, string>
   onSelect: (id: string) => void
@@ -256,7 +262,7 @@ function Group({
 function ConversationItem({
   conversation, tagLabels, isActive, onSelect, onRename, onArchive, onTogglePin, onRequestDelete,
 }: {
-  conversation: AIConversation
+  conversation: AIConversationSummary
   tagLabels: Record<string, string>
   isActive: boolean
   onSelect: () => void

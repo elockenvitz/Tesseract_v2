@@ -117,10 +117,25 @@ export interface AiActionSpec {
 /**
  * Every action, and the seam it rides.
  *
- * Each entry was checked against a live listener before being added. Actions
- * whose events are dispatched but unlistened — the `outcomes:*` family in
- * DecisionAccountabilityPage, `OPEN_PROMPT_THREAD` — are deliberately absent:
- * recommending a button that does nothing is worse than recommending nothing.
+ * Each entry was checked against a live listener before being added. An action
+ * the AI can offer must reach something from wherever the panel is open, and
+ * two families fail that for different reasons. Both stay out; recommending a
+ * button that does nothing is worse than recommending nothing.
+ *
+ *   `OPEN_PROMPT_THREAD` is dead outright. Its case in
+ *   dispatchDecisionAction.ts is an empty `break` under the comment "Prompts
+ *   not fully implemented".
+ *
+ *   The `outcomes:*` family is NOT unlistened — that was the original claim
+ *   here and it is wrong. `outcomes:open-section` is handled at
+ *   DecisionAccountabilityPage.tsx:864 and `outcomes:section-opened` at
+ *   PilotOutcomesGetStarted.tsx:146. What disqualifies them is narrower and
+ *   more durable: both listeners are registered by components mounted inside
+ *   those pages, so the event only lands when the reader is already on the
+ *   page the action would take them to. The AI panel opens over any surface,
+ *   which is exactly the case where the handler does not exist. A page-local
+ *   event is not an app seam, and it will not become one by being listened to
+ *   more carefully.
  */
 export const ACTION_SPECS: Readonly<Record<AiActionId, AiActionSpec>> = Object.freeze({
   open_asset: {

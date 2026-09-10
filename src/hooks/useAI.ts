@@ -123,6 +123,40 @@ export interface AIConversation {
   tags?: TagRef[]
 }
 
+/**
+ * A conversation as the SIDEBAR knows it — everything except the transcript.
+ *
+ * ── Why this type exists ──────────────────────────────────────────────────
+ *
+ * The list query used to be `select('*')` with `.limit(200)`, and `*` includes
+ * `messages`: a single jsonb column holding every turn of the thread. So
+ * opening the AI panel downloaded up to two hundred complete transcripts to
+ * render a list of titles and dates, and that payload grew every time anybody
+ * asked the model anything. The most expensive query in the feature was the
+ * one that displays the least.
+ *
+ * Omitting the column is not enough on its own — three call sites read
+ * `messages` off a row that came from this list, and any of them would have
+ * silently started showing an empty thread. They now go through
+ * `fetchConversationMessages`. This type is what stops a fourth from being
+ * written: a summary has no `messages` to read, so the mistake is a type
+ * error rather than a blank panel.
+ *
+ * It does NOT bound how large one transcript can get. See the note on
+ * `fetchConversationMessages`.
+ */
+export type AIConversationSummary = Omit<AIConversation, 'messages'>
+
+/**
+ * The columns the sidebar actually renders, named rather than starred.
+ *
+ * `context_type` and `context_id` are dead for the UI but are on the type and
+ * cheap; they stay so the summary is a real `Omit` of the row rather than a
+ * second, subtly different shape.
+ */
+const CONVERSATION_SUMMARY_COLUMNS =
+  'id, user_id, context_type, context_id, title, is_archived, is_pinned, last_message_at, created_at, updated_at'
+
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 function tagKey(t: TagRef): string {
@@ -169,6 +203,46 @@ async function generateConversationTitle(
   } catch {
     return null
   }
+}
+
+/**
+ * The transcript of one conversation, fetched only when it is about to be read.
+ *
+ * ── Why a transcript is never carried on a list row ───────────────────────
+ *
+ * One round trip for the thread the reader opened, instead of two hundred
+ * transcripts fetched on the chance that one of them is opened. The three
+ * call sites that used to read `messages` off a cached list row now come
+ * through here, and `AIConversationSummary` makes a fourth impossible to
+ * write by accident.
+ *
+ * ── What this does NOT fix ────────────────────────────────────────────────
+ *
+ * One long thread is still one unbounded jsonb value: `saveConversation`
+ * rewrites the whole array on every turn, so a hundred-turn conversation
+ * re-uploads ninety-nine turns to append the hundredth, and this function
+ * downloads all of it to open the thread. That is the write half, and it
+ * cannot be bounded from here.
+ *
+ * Truncating on write would delete the reader's own transcript, which is not
+ * ours to drop — the sidebar reads it back and a research thread is a record.
+ * The honest fix is `ai_conversation_messages`, one row per turn, appended
+ * rather than rewritten, and that is a migration plus a backfill of every
+ * existing jsonb array. Drafted, not applied — see
+ * docs/tickets/ai-conversation-transcript-storage.md.
+ *
+ * Until then this function is where the cost is paid, and it is paid once
+ * per thread opened rather than on every panel render.
+ */
+async function fetchConversationMessages(id: string): Promise<ChatMessage[]> {
+  const { data, error } = await supabase
+    .from('ai_conversations')
+    .select('messages')
+    .eq('id', id)
+    .single()
+  if (error) throw error
+  const raw = (data as { messages?: unknown } | null)?.messages
+  return Array.isArray(raw) ? raw.map(rehydrateMessage) : []
 }
 
 function rehydrateMessage(m: any): ChatMessage {
@@ -224,20 +298,20 @@ export function useAI(initialTags: TagRef[] = []) {
   }, [initialTags])
 
   // ─── Conversations list ────────────────────────────────────────────────
-  const { data: conversations = [], isLoading: isLoadingList } = useQuery<AIConversation[]>({
+  const { data: conversations = [], isLoading: isLoadingList } = useQuery<AIConversationSummary[]>({
     queryKey: ['ai-conversations', user?.id],
     queryFn: async () => {
       if (!user?.id) return []
       const { data, error } = await supabase
         .from('ai_conversations')
-        .select('*')
+        .select(CONVERSATION_SUMMARY_COLUMNS)
         .eq('user_id', user.id)
         .eq('is_archived', false)
         .order('is_pinned', { ascending: false })
         .order('last_message_at', { ascending: false, nullsFirst: false })
         .limit(200)
       if (error) throw error
-      return (data || []) as AIConversation[]
+      return (data || []) as unknown as AIConversationSummary[]
     },
     enabled: !!user?.id,
     staleTime: 30_000,
@@ -380,18 +454,19 @@ export function useAI(initialTags: TagRef[] = []) {
 
   // ─── Conversation actions ──────────────────────────────────────────────
   const selectConversation = useCallback(async (id: string) => {
+    // The sidebar row is enough to name the thread and its tags; the
+    // transcript is never on it. Two paths differing only in whether the tags
+    // are already cached, so the id-fetch below stays the one that also
+    // resolves tags for a conversation the list has not loaded.
     const found = conversationsWithTags.find(c => c.id === id)
     if (found) {
       setConversationId(found.id)
-      setMessages((found.messages || []).map(rehydrateMessage))
       setTagsState(found.tags || [])
+      setMessages(await fetchConversationMessages(id))
       return
     }
-    const { data, error } = await supabase
-      .from('ai_conversations').select('*').eq('id', id).single()
-    if (error) throw error
     setConversationId(id)
-    setMessages(((data as any).messages || []).map(rehydrateMessage))
+    setMessages(await fetchConversationMessages(id))
     const { data: tagRows } = await supabase
       .from('ai_conversation_tags')
       .select('tag_type, tag_id').eq('conversation_id', id)
@@ -659,7 +734,11 @@ export function useAI(initialTags: TagRef[] = []) {
           messages: nextMessages,
           last_message_at: nowIso,
         })
-        .select()
+        // Only the id. A bare `.select()` echoes the whole row back, and the
+        // largest thing in that row is the `messages` array we just uploaded —
+        // so creating a conversation paid for the transcript twice, once up
+        // and once down, for a value the caller already has in hand.
+        .select('id')
         .single()
       if (error) {
         console.error('Failed to create conversation:', error)
@@ -750,9 +829,18 @@ export function useAI(initialTags: TagRef[] = []) {
       .sort((a, b) => (b.last_message_at || b.updated_at || '').localeCompare(a.last_message_at || a.updated_at || ''))
 
     if (candidates[0]) {
-      setConversationId(candidates[0].id)
-      setMessages((candidates[0].messages || []).map(rehydrateMessage))
-      setTagsState(candidates[0].tags || initialTags)
+      const picked = candidates[0]
+      setConversationId(picked.id)
+      setTagsState(picked.tags || initialTags)
+      // The transcript is fetched rather than read off the list row. This
+      // effect re-fires whenever the parent navigates, so a slow fetch for
+      // AAPL must not land in a pane the reader has since pointed at MSFT —
+      // `cancelled` is the same guard the send path uses for the same reason.
+      let cancelled = false
+      fetchConversationMessages(picked.id)
+        .then(loaded => { if (!cancelled) setMessages(loaded) })
+        .catch(console.error)
+      return () => { cancelled = true }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, initialTagsKey, conversationsWithTags.length])
