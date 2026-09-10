@@ -32,13 +32,20 @@ function createFrontendConfig(): Partial<FinancialDataConfig> {
     }
   }
 
-  // Configure Alpha Vantage if API key is provided
-  if (import.meta.env.VITE_ALPHA_VANTAGE_API_KEY) {
-    config.providers!.alphavantage = {
-      apiKey: import.meta.env.VITE_ALPHA_VANTAGE_API_KEY,
-      premium: import.meta.env.VITE_ALPHA_VANTAGE_PREMIUM === 'true'
-    }
-  }
+  /*
+    Alpha Vantage is deliberately not configured from the browser.
+
+    This block read an Alpha Vantage credential from the build environment.
+    Vite inlines such a variable into the bundle as a string literal — the same
+    mistake that put a working key in the deployed JavaScript through
+    browser-client.ts. It did no harm only because
+    this module currently has no importers at all, so it is tree-shaken out
+    before the bundle is written. "Unreachable" is not a security control: the
+    first import of this file would have shipped the key.
+
+    A provider credential belongs in an edge function, read through
+    `Deno.env.get`. supabase/functions/market-news already does exactly that.
+  */
 
   // Always configure Yahoo Finance as fallback (no API key needed)
   config.providers!.yahoo = {

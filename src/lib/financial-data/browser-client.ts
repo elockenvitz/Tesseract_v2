@@ -42,8 +42,32 @@ export class BrowserFinancialService {
   private rateLimitHit = false
 
   constructor() {
-    // Get API key from environment
-    this.alphaVantageKey = import.meta.env.VITE_ALPHA_VANTAGE_API_KEY || null
+    /*
+      No provider key is read here, and none may be.
+
+      This class runs in the browser. Vite inlines every `VITE_*` variable into
+      the bundle as a string literal at build time, so reading one here does
+      not configure a secret — it publishes one. The deployed bundle carried a
+      working Alpha Vantage key as plain text in
+      `dist/assets/index-*.js`, readable by anyone who loaded the app.
+
+      That key must be treated as compromised regardless of this change:
+      removing the read stops the NEXT build shipping it and does nothing about
+      the builds already served. Rotation is the fix; this is the thing that
+      stops it happening again.
+
+      There is nothing to design here — the server-side seam already exists and
+      is already used. `supabase/functions/market-news` and
+      `market-events` read `ALPHAVANTAGE_API_KEY` and `FINNHUB_API_KEY` through
+      `Deno.env.get`, with no VITE prefix, which is what a provider credential
+      is supposed to look like.
+
+      Leaving the field as a permanent null rather than deleting it: every
+      Alpha Vantage path in this file is already guarded by `if
+      (this.alphaVantageKey)` and falls through to Yahoo, so the fallbacks stay
+      exercised and reachable, and the next person to consider wiring a key in
+      finds this note where they would have written it.
+    */
   }
 
   // Debug method to clear cache
@@ -367,8 +391,19 @@ export class BrowserFinancialService {
 
   private async fetchFromFinnhub(symbol: string): Promise<Quote | null> {
     try {
-      // Use demo token or from environment
-      const finnhubToken = import.meta.env.VITE_FINNHUB_API_KEY || 'demo'
+      /*
+        Finnhub's public demo token, and only ever that.
+
+        This read a Finnhub credential from the build environment first, which
+        put a second provider key into the bundle whenever that variable was
+        set. `demo` is
+        published by Finnhub for exactly this purpose, so it is the honest
+        thing for a browser to hold: heavily rate limited, worth nothing if
+        copied, and it makes the tier the code is actually running on visible
+        rather than dependent on a build variable. A real Finnhub key belongs
+        in the market-events function, where one already lives.
+      */
+      const finnhubToken = 'demo'
 
       // Try to get both quote and volume data from Finnhub
       const [quoteResponse, volumeResponse] = await Promise.all([
