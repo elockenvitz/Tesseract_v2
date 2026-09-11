@@ -10,6 +10,7 @@ import { QuickThoughtCapture } from '../thoughts/QuickThoughtCapture'
 import { QuickTradeIdeaCapture } from '../thoughts/QuickTradeIdeaCapture'
 import { RecentQuickIdeas } from '../thoughts/RecentQuickIdeas'
 import { CaptureActionBands } from '../thoughts/CaptureActionBands'
+import { RecentListView } from '../thoughts/RecentListView'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
 import { PromptDetailView } from '../thoughts/PromptDetailView'
 import { PromptModal } from '../thoughts/PromptModal'
@@ -142,6 +143,7 @@ export function ThoughtsSection({
   const [currentIdeaType, setCurrentIdeaType] = useState<IdeaType>('thought')
   const [showPromptList, setShowPromptList] = useState(false)
   const [showPendingReview, setShowPendingReview] = useState(false)
+  const [showRecentList, setShowRecentList] = useState(false)
   const { success } = useToast()
   const { openPromptCount, pendingRecommendationCount } = useDirectCounts()
 
@@ -294,21 +296,25 @@ export function ThoughtsSection({
     }
   }, [onOpenInspector])
 
-  // Handle viewing all ideas - opens Ideas tab without pre-filtering
+  /**
+   * "See the rest of these recent items" is not "open another application".
+   *
+   * This used to dispatch `openIdeasTab` and close the pane, so the answer to
+   * a five-item preview was the legacy Ideas app, the reader's place in the
+   * pane thrown away, and a mixed list of thoughts and prompts flattened into
+   * that app's single taxonomy. It now opens a subview here, the same way Open
+   * Prompts and Pending Review already do.
+   *
+   * `onViewAllIdeas` is kept as an escape hatch for a host that wants
+   * somewhere else. Nothing passes it today.
+   */
   const handleViewAllIdeas = useCallback(() => {
     if (onViewAllIdeas) {
-      // Custom handler provided
       onViewAllIdeas()
-    } else {
-      // Open Ideas tab unfiltered so the user sees everything, not just recent
-      window.dispatchEvent(new CustomEvent('openIdeasTab', {
-        detail: {}
-      }))
-
-      // Close the sidebar
-      onClose?.()
+      return
     }
-  }, [onViewAllIdeas, onClose])
+    setShowRecentList(true)
+  }, [onViewAllIdeas])
 
   // ESC key handler - in inspect mode, go back to capture
   useEffect(() => {
@@ -368,6 +374,34 @@ export function ThoughtsSection({
               <p>Detail view for {selectedItem.type} coming soon</p>
             </div>
           )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Recent list view ──
+  if (showRecentList) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+          <button
+            onClick={() => setShowRecentList(false)}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors dark:text-gray-400"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span>Back to Quick Ideas</span>
+          </button>
+        </div>
+        <div className="px-3 py-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Recent</h3>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 pb-3">
+          <RecentListView
+            onOpen={(id, kind) => {
+              setShowRecentList(false)
+              handleOpenIdea(id, kind)
+            }}
+          />
         </div>
       </div>
     )

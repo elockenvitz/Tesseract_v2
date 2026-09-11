@@ -168,7 +168,7 @@ function MetaDot() {
  * truncate. That is what holds at 320px, where a long assignee name would
  * otherwise push the timestamp off-screen.
  */
-function RecentRow({ item, onClick, dense }: { item: RecentItem; onClick: () => void; dense: boolean }) {
+export function RecentRow({ item, onClick, dense }: { item: RecentItem; onClick: () => void; dense: boolean }) {
   const status = item.kind === 'prompt' ? (STATUS_LABEL[item.status] || STATUS_LABEL.open) : null
   const signal = item.kind === 'thought' && item.signal ? SIGNAL_CONFIG[item.signal] : null
   const SignalIcon = signal?.icon
