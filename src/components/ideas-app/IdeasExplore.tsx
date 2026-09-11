@@ -5,10 +5,9 @@ import { CuratePanel } from './CuratePanel'
 import { EMPTY_FILTER, filterCount, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { SignalCardView } from '../signals/SignalCardView'
 import { ideaPanes } from '../signals/ideaPanes'
-import { useDesktopExploreFeed } from '../../hooks/useDesktopExploreFeed'
+import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import { IDEA_LENSES, lensSpec, lensShowsInvestmentFilters, type IdeaLens } from '../../lib/desktop-ideas/lens'
 import { MATURITY_LABEL, maturityOf, type IdeaDirection, type IdeaMaturity } from '../../lib/desktop-ideas'
-import type { SignalCard } from '../../lib/signals/contract'
 
 /**
  * Desktop Explore — the canonical Ideas feed, composed for a wide screen.
@@ -53,10 +52,12 @@ const DIRECTIONS: IdeaDirection[] = ['buy', 'sell', 'add', 'trim']
 const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready', 'deciding']
 
 export function IdeasExplore({
-  onOpenCard,
+  onSelect, selectedKey = null,
 }: {
-  /** Stage 3 keeps selection minimal; the contextual workspace is Stage 4. */
-  onOpenCard?: (card: SignalCard) => void
+  /** The tile the reader picked. The app owns what happens next. */
+  onSelect?: (entry: AttentionEntry) => void
+  /** Which tile the open workspace belongs to, for the selected state. */
+  selectedKey?: string | null
 }) {
   const [lens, setLens] = useState<IdeaLens>('all')
   const [direction, setDirection] = useState<IdeaDirection | null>(null)
@@ -71,7 +72,7 @@ export function IdeasExplore({
   const [curateOpen, setCurateOpen] = useState(false)
   const facetCount = filterCount(facets)
 
-  const feed = useDesktopExploreFeed(lens, { facets })
+  const feed = useDesktopAttentionFeed(lens, { facets })
   const spec = lensSpec(lens)
   const showInvestment = lensShowsInvestmentFilters(lens)
 
@@ -83,7 +84,7 @@ export function IdeasExplore({
    */
   const entries = showInvestment
     ? feed.entries.filter(e => {
-      const row = e.item as unknown as { action?: string | null; stage?: string | null }
+      const row = (e.item ?? {}) as unknown as { action?: string | null; stage?: string | null }
       if (direction && row.action !== direction) return false
       // `maturityOf` is the canonical stage bucket the whole desktop Ideas
       // model uses. Re-deriving it here would be the second definition.
@@ -227,7 +228,16 @@ export function IdeasExplore({
               // The card contract owns its own internal height on a phone. Here
               // it sits in normal flow at a readable measure, so the feed
               // scrolls as one column rather than as a stack of viewports.
-              className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800"
+              onClick={() => onSelect?.(entry)}
+              className={clsx(
+                'cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition-colors dark:bg-gray-800',
+                // Restrained: a ring, not a fill. The card's own severity rail
+                // already uses colour, and a selected state that competes with
+                // it would make every list look alarming.
+                selectedKey === entry.key
+                  ? 'border-primary-400 ring-1 ring-primary-400 dark:border-primary-500 dark:ring-primary-500'
+                  : 'border-gray-200 dark:border-gray-700',
+              )}
             >
               <SignalCardView
                 card={entry.card}
@@ -239,6 +249,11 @@ export function IdeasExplore({
                  * feed read as flat text while the phone's reads as something
                  * you can turn over. Same renderer, same primitives; the
                  * assembly was simply never done on this side.
+                 */
+                /*
+                 * Panes follow the shared plan. A machine-derived card has no
+                 * post body, so it gets none and renders as the typography it
+                 * is — which is correct, not a gap.
                  */
                 panes={ideaPanes(entry.card)}
                 /*
@@ -259,7 +274,7 @@ export function IdeasExplore({
                  * precisely so a card cannot be rendered with its actions
                  * silently inert, so this is explicit rather than absent.
                  */
-                onAction={(_actionId, card) => onOpenCard?.(card)}
+                onAction={() => onSelect?.(entry)}
               />
             </div>
           ))}

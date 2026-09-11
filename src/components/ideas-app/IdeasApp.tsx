@@ -3,7 +3,8 @@ import { clsx } from 'clsx'
 import { Compass, Lightbulb } from 'lucide-react'
 import { IdeasExplore } from './IdeasExplore'
 import { IdeasExploreBrowse } from './IdeasExploreBrowse'
-import type { SignalCard } from '../../lib/signals/contract'
+import { IdeasWorkPane } from './IdeasWorkPane'
+import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 
 /**
  * Ideas — the standalone application.
@@ -69,6 +70,14 @@ const MODES: { key: IdeasMode; label: string; hint: string; icon: typeof Lightbu
 
 export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
   const [mode, setMode] = useState<IdeasMode>('feed')
+  /*
+   * The open workspace. Held HERE, above both regions, which is what makes the
+   * feed permanent: selecting a tile changes this value and re-renders the
+   * right column only. The feed component never unmounts, so its scroll, its
+   * loaded pages, its lens and its Curate facets are not state to restore —
+   * they are simply never lost.
+   */
+  const [selected, setSelected] = useState<AttentionEntry | null>(null)
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-900">
@@ -122,22 +131,34 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
         <div className={clsx('h-full', mode !== 'explore' && 'hidden')}>
           <IdeasExploreBrowse />
         </div>
-        <div className={clsx('h-full', mode === 'explore' && 'hidden')}>
+        <div className={clsx('flex h-full', mode === 'explore' && 'hidden')}>
         {/* Kept MOUNTED while Explore is open, not unmounted. Switching modes
             must not throw away loaded pages, scroll position or the type lens
             — mobile's modes switch instantly for the same reason. */}
-        <IdeasExplore
-          onOpenCard={(_card: SignalCard) => {
+        <div
+          className={clsx(
+            'min-w-0 border-r border-gray-200 dark:border-gray-700',
             /*
-             * Stage 5. Left explicitly empty rather than wired to
-             * `openDashboardFocus`: that seam hands an object to the Dashboard
-             * shell and would pull the reader out of this application into
-             * that one, which is the exact flow this app is being built to
-             * replace. An inert click for one stage is better than a route
-             * that has to be unpicked in the next.
+             * ~42% with a floor and a ceiling, not a bare percentage.
+             *
+             * Below about 30rem the cards stop being scannable; above 40rem the
+             * feed is spending width the work pane needs. Closed, it takes the
+             * whole column back — and because only the CLASS changes, the
+             * component does not remount and the scroll does not move.
              */
-          }}
+            selected ? 'w-[42%] min-w-[30rem] max-w-[40rem]' : 'w-full border-r-0',
+          )}
+        >
+        <IdeasExplore
+          selectedKey={selected?.key ?? null}
+          onSelect={entry => setSelected(entry)}
         />
+        </div>
+        {selected && (
+          <div className="min-w-0 flex-1">
+            <IdeasWorkPane entry={selected} onClose={() => setSelected(null)} />
+          </div>
+        )}
         </div>
       </div>
     </div>

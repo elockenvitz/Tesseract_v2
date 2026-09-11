@@ -4,10 +4,7 @@ import {
   ideasToExplore, newsToExplore, aggregatesFor,
 } from '../lib/mobile/explore-adapters'
 import { diversifyExplore } from '../lib/mobile/explore-compose'
-import { usePortfolioLenses } from './mobile/usePortfolioLenses'
-import { useScenarioCards } from './mobile/useScenarioCards'
-import { useDerivedInsights } from './mobile/useDerivedInsights'
-import { useDesktopIdeasFeed } from './useDesktopIdeasFeed'
+import { useDesktopCandidates } from './useDesktopCandidates'
 import type { ComposedExploreItem } from '../lib/mobile/explore-item'
 
 /**
@@ -61,21 +58,19 @@ export interface DesktopExplore {
 export function useDesktopExplore(opts: { enabled?: boolean } = {}): DesktopExplore {
   const enabled = opts.enabled ?? true
 
-  const { data: lenses, isLoading: lensesLoading } = usePortfolioLenses({ enabled })
-  const { data: scenarioCards, isLoading: scenarioLoading } = useScenarioCards({ enabled })
-  const { data: insights, isLoading: insightsLoading } = useDerivedInsights()
   /*
-   * The same hook, the same key, the same cache entry the Ideas mode uses.
-   * Explore does not get its own copy of the feed.
+   * The same pool Ideas reads. Not a second set of producer calls — both modes
+   * are questions about one desk, and the difference is the arrangement below.
    */
-  const feed = useDesktopIdeasFeed('all')
+  const pool = useDesktopCandidates({ enabled })
+  const { lenses, scenarioCards, insights } = pool
 
   const items = useMemo(() => {
     const base = [
       ...lensesToExplore(lenses as never),
       ...scenarioCardsToExplore((scenarioCards ?? []) as never),
       ...insightsToExplore((insights ?? []) as never),
-      ...ideasToExplore(feed.items as never),
+      ...ideasToExplore(pool.feedItems as never),
       ...newsToExplore([] as never),
     ]
     /*
@@ -85,7 +80,7 @@ export function useDesktopExplore(opts: { enabled?: boolean } = {}): DesktopExpl
      */
     const now = Date.now()
     return diversifyExplore([...base, ...aggregatesFor(base, now)], now)
-  }, [lenses, scenarioCards, insights, feed.items])
+  }, [lenses, scenarioCards, insights, pool.feedItems])
 
   /*
    * Reported, not substituted.
@@ -106,7 +101,7 @@ export function useDesktopExplore(opts: { enabled?: boolean } = {}): DesktopExpl
 
   return {
     items,
-    isLoading: lensesLoading || scenarioLoading || insightsLoading,
+    isLoading: pool.isLoading,
     missing,
   }
 }
