@@ -44,10 +44,26 @@ function isTerminal(row: { outcome?: string | null; status?: string | null }): b
 
 export function useIdeaScan() {
   /*
-   * The scan reads `trade_queue_items` with no asset filter, so this is the
-   * only thing separating workspaces: RLS on that table is not organisation-
-   * aware, and without the filter the Ideas list was every organisation's
-   * queue.
+   * The scan reads `trade_queue_items` with no asset filter, so it is filtered
+   * to the current organisation here.
+   *
+   * This comment used to say RLS on the table "is not organisation-aware".
+   * That is no longer true and was corrected on inspection: the SELECT policy
+   * `Trade queue: org-scoped access` is granted TO authenticated and has two
+   * branches — a portfolio-less row is visible only to its creator or
+   * assignee, and a row with a portfolio goes through
+   * `portfolio_in_current_org`, a SECURITY DEFINER function with a pinned
+   * search_path that compares the portfolio's organisation to
+   * `current_org_id()`. RLS is the boundary and it holds.
+   *
+   * The filter stays as defence in depth, and because `useIdeasFeed` filters
+   * the same table the same way — one behaviour for one table.
+   *
+   * Follow-up, deliberately not chased here: the policy scopes by the
+   * PORTFOLIO's organisation while these queries filter
+   * `trade_queue_items.organization_id`. Two different columns. A row where
+   * they disagree would be judged differently by each layer. Not a leak, since
+   * RLS is the narrower of the two, but worth reconciling on its own.
    */
   const { currentOrgId } = useOrganization()
 

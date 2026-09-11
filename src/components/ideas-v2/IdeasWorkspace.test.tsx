@@ -94,6 +94,24 @@ vi.mock('../../hooks/useDesktopIdeas', () => ({
 
 // The detail pane's own dependencies. Stubbed rather than exercised: this
 // suite is about which object is on screen, not what the decision widget does.
+/*
+ * The workspace now also reads the canonical mixed feed (Stage 1 of the
+ * desktop Ideas convergence). It is gated behind the `desktop-ideas-feed`
+ * flag, which is off here, but hooks cannot be called conditionally — so the
+ * hook runs, reaches `useOrganization`, and fails without a provider.
+ *
+ * Mocked empty rather than wrapped in a provider: these tests are about the
+ * workspace's behaviour over a candidate list, and `useDesktopIdeas` above is
+ * already mocked for exactly that reason. Providing the feed for real would
+ * make them assert two sources at once.
+ */
+vi.mock('../../hooks/useDesktopIdeasFeed', () => ({
+  useDesktopIdeasFeed: () => ({
+    items: [], ideaRows: [], isLoading: false, isFetchingNextPage: false,
+    hasNextPage: false, fetchNextPage: () => {}, isError: false,
+  }),
+}))
+
 vi.mock('../../hooks/useDesktopResearch', () => ({ useHasResearch: () => false }))
 vi.mock('./DecisionModule', () => ({
   DecisionModule: ({ ideaId }: { ideaId: string }) =>

@@ -30,6 +30,20 @@ export type FlagName =
   | 'signal-cards'
 
   /**
+   * Desktop Ideas reads the canonical mixed feed instead of `useIdeaScan`.
+   *
+   * Staged deliberately: the candidate set is the substance of the desktop
+   * Ideas convergence, and it changes what the surface CONTAINS — quick
+   * thoughts and notes appear beside trade ideas, and the bounded 200-row scan
+   * becomes a paged feed. Behind a flag so the widened source can be verified
+   * against the live workspace before it becomes what everyone opens.
+   *
+   * Exit: on by default once the Explore composition and the type-aware
+   * workspace land, then removed with `useIdeaScan`'s candidate role.
+   */
+  | 'desktop-ideas-feed'
+
+  /**
    * Show a count per feed stage, above the first card.
    *
    * A phone has no console and no network tab, so "the query returned
