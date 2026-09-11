@@ -381,8 +381,19 @@ export function IdeasExplore({
                * `onAction` — they are meant to.
                */
               onClick={e => {
-                const el = e.target as HTMLElement
-                if (el.closest('button, a, input, select, textarea, [role="button"], [role="tab"]')) return
+                /*
+                 * The match must be a DESCENDANT, not the tile itself.
+                 *
+                 * The tile carries `role="button"` for keyboard semantics, so
+                 * `closest()` walking up from the target matched the tile root
+                 * on every click — including clicks on prose — and every one
+                 * of them looked like a nested-control press. That is the
+                 * regression: the guard was catching its own container.
+                 */
+                const root = e.currentTarget as HTMLElement
+                const hit = (e.target as HTMLElement)
+                  .closest('button, a, input, select, textarea, [role="button"], [role="tab"]')
+                if (hit && hit !== root && root.contains(hit)) return
                 onSelect?.(entry)
               }}
               /* Keyboard parity: the tile is reachable and Enter opens it. */
