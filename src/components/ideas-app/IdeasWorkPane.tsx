@@ -1,6 +1,10 @@
 import { Lightbulb, X } from 'lucide-react'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
 import { PromptDetailView } from '../thoughts/PromptDetailView'
+import { IdeaDetail } from '../ideas-v2/IdeaDetail'
+import { AssetWorkspacePane } from '../asset-v2/AssetWorkspace'
+import { useTradeIdeaWorkspace } from '../../hooks/useTradeIdeaWorkspace'
+import { assetFocusFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
 import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 
 /**
@@ -33,12 +37,15 @@ import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
  * do not substitute something that looks similar.
  */
 export function IdeasWorkPane({
-  entry, onClose,
+  selection, entry, onClose,
 }: {
+  /** Stable identity. Survives the feed reranking underneath. */
+  selection: IdeasSelection | null
+  /** Presentation only, for the header. May be stale; never routed on. */
   entry: AttentionEntry | null
   onClose: () => void
 }) {
-  if (!entry) {
+  if (!selection) {
     return (
       <div className="flex h-full items-center justify-center px-8">
         {/* Quiet. Half a screen of empty chrome, or a second dashboard invented
@@ -58,14 +65,27 @@ export function IdeasWorkPane({
 
   return (
     <div className="flex h-full flex-col">
+      {/*
+        Why you are here, carried from the candidate.
+
+        Deterministic — the headline and reason the builder already computed.
+        Nothing is regenerated, and no model is asked for a fact the finding
+        knows. This is what makes the surface below feel entered FROM an
+        attention event rather than dropped into cold.
+      */}
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 px-5 py-3 dark:border-gray-700">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-            {entry.card.entity?.ticker ?? entry.card.surface}
+            {selection.symbol ?? entry?.card.surface}
           </p>
           <h2 className="truncate text-sm font-semibold text-gray-900 dark:text-white">
-            {entry.card.headline}
+            {selection.why.headline}
           </h2>
+          {selection.why.reason && (
+            <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">
+              {selection.why.reason}
+            </p>
+          )}
         </div>
         <button
           onClick={onClose}
@@ -77,47 +97,78 @@ export function IdeasWorkPane({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <WorkSurface entry={entry} onClose={onClose} />
+        <WorkSurface selection={selection} onClose={onClose} />
       </div>
     </div>
   )
 }
 
-function WorkSurface({ entry, onClose }: { entry: AttentionEntry; onClose: () => void }) {
+function WorkSurface({ selection, onClose }: { selection: IdeasSelection; onClose: () => void }) {
   /*
    * Posts route by their own feed type. Every surface below already exists and
-   * is already embeddable elsewhere in the product — this is routing, not a
-   * new set of work surfaces.
+   * is already used elsewhere — this is routing, not new work surfaces.
    */
-  if (entry.family === 'post' && entry.item) {
-    const type = entry.item.type
-    const isPrompt = type === 'quick_thought' &&
-      ((entry.item as unknown as { idea_type?: string }).idea_type === 'prompt')
-
-    if (isPrompt) return <PromptDetailView promptId={entry.item.id} onClose={onClose} />
-    if (type === 'quick_thought' || type === 'note') {
-      return <QuickThoughtDetailPanel quickThoughtId={entry.item.id} onClose={onClose} embedded />
+  if (selection.family === 'post') {
+    if (selection.postType === 'prompt') {
+      return <PromptDetailView promptId={selection.objectId!} onClose={onClose} />
     }
-    /*
-     * A trade idea's rich investment workspace — thesis, framework, exposure,
-     * targets, price, maturity — is the one surface that is NOT embeddable
-     * today: `IdeaDetail` takes the Dashboard's `IdeaRow` plus three enrichment
-     * hooks, and mounting it here would either pull in the Dashboard's focus
-     * seam or duplicate its data layer. Both were ruled out. Reported rather
-     * than faked.
-     */
+    if (selection.postType === 'thought') {
+      return <QuickThoughtDetailPanel quickThoughtId={selection.objectId} onClose={onClose} embedded />
+    }
+    if (selection.postType === 'trade_idea') return <TradeIdeaSurface selection={selection} />
     return (
       <NotYet
-        what="This trade idea's investment workspace"
-        why="Its thesis, framework, exposure and target surfaces are built around the Dashboard's Idea object and are not embeddable yet."
+        what={`A work surface for a ${selection.postType ?? 'post'}`}
+        why="This post family has no dedicated work surface yet."
+      />
+    )
+  }
+
+  /*
+   * Every machine-derived family here is an ASSET-level finding, and the
+   * finding is the reason the reader arrived rather than the thing they work
+   * on. So the workspace opens the underlying asset, focused on the part the
+   * finding is about — a target argument lands on research, a sizing argument
+   * on the position, a case-versus-price gap on the framework.
+   *
+   * `AssetWorkspacePane` already takes an `issue`, which is how the attention
+   * event travels in with the reader. `openAsset` was rejected: it dispatches
+   * a tab and would eject them from Ideas entirely, which is the flow this
+   * application exists to replace.
+   */
+  if (selection.assetId) {
+    return (
+      <AssetWorkspacePane
+        asset={{ id: selection.assetId, symbol: selection.symbol }}
+        focus={assetFocusFor(selection.family)}
+        portfolioId={selection.portfolioId}
+        portfolioName={selection.portfolioName}
+        issue={selection.why.headline}
+        origin="ideas"
       />
     )
   }
 
   return (
     <NotYet
-      what={`A work surface for ${FAMILY_LABEL[entry.family] ?? entry.family}`}
-      why="This is a machine-derived finding, not a trade idea. It deserves its own analytical surface rather than being shown in one built for something else."
+      what={`A work surface for ${FAMILY_LABEL[selection.family] ?? selection.family}`}
+      why="This finding does not name an asset, so there is no underlying object to open. Its attention tile is still useful; the work surface is not."
+    />
+  )
+}
+
+function TradeIdeaSurface({ selection }: { selection: IdeasSelection }) {
+  const { idea, detail, exposure } = useTradeIdeaWorkspace(selection.item ?? null)
+  if (!idea) {
+    return <NotYet what="This trade idea" why="Its underlying row is no longer in the loaded feed." />
+  }
+  return (
+    <IdeaDetail
+      idea={idea}
+      detail={detail}
+      exposure={exposure}
+      /* The attention event, preserved in the surface's own vocabulary. */
+      arrivedFor={selection.why.headline}
     />
   )
 }

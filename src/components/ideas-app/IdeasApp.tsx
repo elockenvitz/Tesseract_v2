@@ -5,6 +5,7 @@ import { IdeasExplore } from './IdeasExplore'
 import { IdeasExploreBrowse } from './IdeasExploreBrowse'
 import { IdeasWorkPane } from './IdeasWorkPane'
 import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
+import { selectionFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
 
 /**
  * Ideas — the standalone application.
@@ -77,7 +78,7 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
    * loaded pages, its lens and its Curate facets are not state to restore —
    * they are simply never lost.
    */
-  const [selected, setSelected] = useState<AttentionEntry | null>(null)
+  const [selected, setSelected] = useState<{ selection: IdeasSelection; entry: AttentionEntry } | null>(null)
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-900">
@@ -150,13 +151,13 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
           )}
         >
         <IdeasExplore
-          selectedKey={selected?.key ?? null}
-          onSelect={entry => setSelected(entry)}
+          selectedKey={selected?.selection.key ?? null}
+          onSelect={entry => setSelected({ selection: selectionFor(entry), entry })}
         />
         </div>
         {selected && (
           <div className="min-w-0 flex-1">
-            <IdeasWorkPane entry={selected} onClose={() => setSelected(null)} />
+            <IdeasWorkPane selection={selected.selection} entry={selected.entry} onClose={() => setSelected(null)} />
           </div>
         )}
         </div>
