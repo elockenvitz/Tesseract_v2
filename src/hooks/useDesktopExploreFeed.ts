@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { buildIdeaCard } from '../lib/signals/builders/ideas'
+import { buildIdeaCard, type IdeaInput } from '../lib/signals/builders/ideas'
 import { feedItemToIdeaInput, type FeedItemLike } from '../lib/signals/feed-item-input'
 import { useDesktopIdeasFeed } from './useDesktopIdeasFeed'
 import { lensSpec, type IdeaLens } from '../lib/desktop-ideas/lens'
@@ -51,6 +51,14 @@ export interface ExploreEntry {
   /** Stable across pages and renders. The card's own id, from the builder. */
   key: string
   card: SignalCard
+  /**
+   * The builder's own input, kept so the caller can build contextual panes.
+   *
+   * A card is the claim; the panes are what a reader turns over, and they are
+   * assembled from the same input the card was — not re-derived from the card,
+   * which has already dropped the fields a pane needs.
+   */
+  input: IdeaInput
   /** The row the card came from, for actions that need the raw item. */
   item: ScoredFeedItem
   /**
@@ -115,11 +123,12 @@ export function useDesktopExploreFeed(
     const out: ExploreEntry[] = []
     for (const item of feed.items) {
       if (!inLens(item, lens)) continue
-      const built = buildIdeaCard(feedItemToIdeaInput(item as unknown as FeedItemLike))
+      const input = feedItemToIdeaInput(item as unknown as FeedItemLike)
+      const built = buildIdeaCard(input)
       // A suppression is the shared rules saying this should not be seen.
       // Desktop honours it rather than rendering the row anyway.
       if (!built.ok) continue
-      out.push({ key: built.card.id, card: built.card, item, ideaRow: null })
+      out.push({ key: built.card.id, card: built.card, input, item, ideaRow: null })
     }
     return out
   }, [feed.items, lens])

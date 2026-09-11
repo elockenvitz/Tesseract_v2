@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { clsx } from 'clsx'
 import { Loader2, Sparkles } from 'lucide-react'
 import { SignalCardView } from '../signals/SignalCardView'
+import { ideaPanes } from '../signals/ideaPanes'
 import { useDesktopExploreFeed } from '../../hooks/useDesktopExploreFeed'
 import { IDEA_LENSES, lensSpec, lensShowsInvestmentFilters, type IdeaLens } from '../../lib/desktop-ideas/lens'
 import { MATURITY_LABEL, maturityOf, type IdeaDirection, type IdeaMaturity } from '../../lib/desktop-ideas'
@@ -135,6 +136,16 @@ export function IdeasExplore({
             >
               <SignalCardView
                 card={entry.card}
+                /*
+                 * The interactive half of the card.
+                 *
+                 * Passing only `card` rendered the typographic half of a
+                 * contract that also takes panes — which is why the desktop
+                 * feed read as flat text while the phone's reads as something
+                 * you can turn over. Same renderer, same primitives; the
+                 * assembly was simply never done on this side.
+                 */
+                panes={ideaPanes(entry.input)}
                 /*
                  * Stage 3 routes every card action to one place: open the item.
                  *
