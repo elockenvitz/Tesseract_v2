@@ -32,7 +32,20 @@ import type { SignalCard } from '../../lib/signals/contract'
  * narrowed client-side, so Trade Ideas is one click away and instant.
  */
 
-const FEED_MEASURE = 'mx-auto w-full max-w-[46rem]'
+/*
+ * 56rem, not 46.
+ *
+ * Wide enough that a ladder, a chart or a metadata row has somewhere to go
+ * horizontally instead of making the card taller; narrow enough that a claim
+ * still reads as prose rather than a banner.
+ *
+ * Deliberately NOT viewport-relative. Stage 5 puts a work region beside this
+ * column, and a measure defined as a share of the viewport would reflow every
+ * card the moment that region opens. A fixed measure keeps the feed still
+ * while something opens next to it, which is the whole point of the
+ * persistent-context requirement.
+ */
+const FEED_MEASURE = 'mx-auto w-full max-w-[56rem]'
 
 const DIRECTIONS: IdeaDirection[] = ['buy', 'sell', 'add', 'trim']
 const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready', 'deciding']
@@ -146,6 +159,13 @@ export function IdeasExplore({
                  * assembly was simply never done on this side.
                  */
                 panes={ideaPanes(entry.input)}
+                /*
+                 * This card is in a scrolling column, not on a screen of its
+                 * own. Every fixed height in the contract is a share of a
+                 * phone viewport, and applying them here reserved a 264px
+                 * stage for a two-word conviction pane.
+                 */
+                layout="flow"
                 /*
                  * Stage 3 routes every card action to one place: open the item.
                  *

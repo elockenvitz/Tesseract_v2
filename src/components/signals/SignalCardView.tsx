@@ -98,6 +98,22 @@ interface SignalCardViewProps {
   card: SignalCard
   onAction: (actionId: string, card: SignalCard) => void
   /**
+   * Which height regime this card is in.
+   *
+   * `viewport` is the phone: one card per screen, `h-full`, and an analytical
+   * band that takes whatever the header and footer leave. Every fixed pixel
+   * height in this component is a share of a screen, chosen for that regime.
+   *
+   * `flow` is a card sitting in a scrolling desktop column, where there is no
+   * screen to divide. The same numbers there reserve a 264px stage for a
+   * two-word conviction pane and push the description hundreds of pixels down.
+   *
+   * The regime is the CALLER's knowledge — only it knows whether the card owns
+   * a screen — so it is a prop rather than a media query. Default is
+   * `viewport`, so every existing call site is unchanged.
+   */
+  layout?: 'viewport' | 'flow'
+  /**
    * @deprecated Navigation moved into the actions sheet.
    *
    * The footer no longer renders an `Open TICKER` button, so nothing in this
@@ -294,7 +310,7 @@ function utcDay(iso: string): string {
 
 export function SignalCardView({
   card, onAction, evidence, detail, panes, onFilterKind, onContext, onOpenPortfolio, focusPaneId,
-  onFeedback, onPaneChange, primaryOverride = null,
+  onFeedback, onPaneChange, primaryOverride = null, layout = 'viewport',
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
   /**
@@ -724,7 +740,12 @@ export function SignalCardView({
        * content tucked under the bar on whichever card gets there first.
        */
       style={{ ['--card-bar' as string]: 'calc(4.25rem + env(safe-area-inset-bottom))' } as React.CSSProperties}
-      className="relative flex h-full w-full flex-col overflow-hidden bg-white dark:bg-gray-900"
+      className={clsx(
+        'relative flex w-full flex-col overflow-hidden bg-white dark:bg-gray-900',
+        // `h-full` is the one-screen-per-card promise. In a flowing column
+        // there is no screen to fill, and the card should be as tall as it is.
+        layout === 'flow' ? 'h-auto' : 'h-full',
+      )}
     >
       {/* Only critical cards get the rule. If everything has one it stops
           meaning anything, which is what the old 4px rail on every card did. */}
@@ -1326,7 +1347,16 @@ export function SignalCardView({
              * exists, and where none does the spacer is the only claimant and
              * takes all of it. One rule, no branch on card shape.
              */
-            merged ? 'grow-[999] shrink basis-[38%]'
+            /*
+             * In `flow` the band is sized by what is IN it.
+             *
+             * Not a smaller fixed height — that would be the same mistake with
+             * a nicer number. A conviction pane is two words and should be two
+             * words tall; a chart or a ladder earns its room and takes it, up
+             * to a ceiling that stops one card owning the column.
+             */
+            layout === 'flow' ? 'h-auto max-h-[420px]'
+              : merged ? 'grow-[999] shrink basis-[38%]'
               : detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',
@@ -1944,7 +1974,25 @@ export function SignalCardView({
           The bottom inset is not decoration: on iOS the home indicator sits
           over the last ~34px of the viewport, and a 44px button ending flush
           with the card was a button whose bottom third could not be tapped. */}
-      <div data-slot="actions" className="sticky bottom-0 flex min-h-[var(--card-bar)] items-center gap-2 border-t border-gray-100 bg-white/95 px-4 pt-3 pb-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+      <div
+        data-slot="actions"
+        className={clsx(
+          'flex items-center gap-2 border-t border-gray-100 px-4 dark:border-gray-800',
+          /*
+           * The bar is sticky and full-bleed on a phone because it is the only
+           * thing anchoring a thumb on a card that fills the screen. In a
+           * desktop column it is neither needed nor wanted: sticky against a
+           * content-height card does nothing, and a full-width dark primary on
+           * every card turns a feed into a wall of buttons.
+           *
+           * Same buttons, same ids, same routing — the row simply stops
+           * dominating. See the sizing below for the rest of it.
+           */
+          layout === 'flow'
+            ? 'justify-end py-2'
+            : 'sticky bottom-0 min-h-[var(--card-bar)] bg-white/95 pt-3 pb-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur dark:bg-gray-900/95',
+        )}
+      >
         {/* Two buttons, not three.
             ── Why `Open TICKER` left the bar ─────────────────────────────
             Every asset card carried `Capture | <decision> | Open TICKER`, so
@@ -1961,7 +2009,10 @@ export function SignalCardView({
             type="button"
             data-slot="quick"
             onClick={() => onAction(a.id, card)}
-            className="h-11 min-w-0 shrink-0 basis-[38%] overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"
+            className={clsx(
+              'min-w-0 shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200',
+              layout === 'flow' ? 'h-9 px-3 text-[13px]' : 'h-11 basis-[38%] text-[15px]',
+            )}
           >
             {barLabel(a)}
           </button>
@@ -1986,7 +2037,10 @@ export function SignalCardView({
             onAction((primaryOverride ?? card.actions.primary).id, card)
           }}
           className={clsx(
-            'h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl text-[15px] font-bold',
+            'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl font-bold',
+            // `flex-1` is what makes this span the card on a phone. In a
+            // column it should be the size of its own label.
+            layout === 'flow' ? 'h-9 px-4 text-[13px]' : 'h-11 flex-1 text-[15px]',
             primaryOverride?.disabled
               ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
               : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900',
