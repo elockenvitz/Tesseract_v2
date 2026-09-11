@@ -47,7 +47,18 @@ export function IdeasWorkPane({
 }) {
   if (!selection) {
     return (
-      <div className="flex h-full items-center justify-center px-8">
+      <div className="relative flex h-full items-center justify-center px-8">
+        {/* The empty region is still a region, and it still has to be
+            dismissible — it is now reachable by clearing a selection, not only
+            before one is made, so the collapse control cannot live in the
+            header that only a selected item renders. */}
+        <button
+          onClick={onClose}
+          aria-label="Close workspace"
+          className="absolute right-3 top-3 rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+        >
+          <X className="h-4 w-4" />
+        </button>
         {/* Quiet. Half a screen of empty chrome, or a second dashboard invented
             to fill it, would both be worse than one line saying what to do. */}
         <div className="max-w-xs text-center">

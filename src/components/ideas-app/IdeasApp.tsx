@@ -79,6 +79,20 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
    * they are simply never lost.
    */
   const [selected, setSelected] = useState<{ selection: IdeasSelection; entry: AttentionEntry } | null>(null)
+  /**
+   * Two states, deliberately separate.
+   *
+   *   splitOpen   the LAYOUT: is there a work region beside the feed?
+   *   selected    the CONTENT: which candidate is in it?
+   *
+   * They were one, so a lens change that invalidated the selection also
+   * collapsed the pane — the reader was working in two columns, switched to
+   * Thoughts, and the app rearranged itself around them.
+   *
+   * Only the close control returns to a single feed. A filter change may empty
+   * the work region; it may not put it away.
+   */
+  const [splitOpen, setSplitOpen] = useState(false)
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-900">
@@ -147,20 +161,26 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
              * whole column back — and because only the CLASS changes, the
              * component does not remount and the scroll does not move.
              */
-            selected ? 'w-[42%] min-w-[30rem] max-w-[40rem]' : 'w-full border-r-0',
+            splitOpen ? 'w-[42%] min-w-[30rem] max-w-[40rem]' : 'w-full border-r-0',
           )}
         >
         <IdeasExplore
           selectedKey={selected?.selection.key ?? null}
-          onSelect={entry => setSelected({ selection: selectionFor(entry), entry })}
-          /* The feed changed context and the open candidate is not in it. Close
-             rather than substitute — picking a replacement is the reader's. */
+          onSelect={entry => { setSelected({ selection: selectionFor(entry), entry }); setSplitOpen(true) }}
+          /* The open candidate is not in the new context. Clear it and leave
+             the work region open and empty — picking a replacement is the
+             reader's, and so is putting the pane away. */
           onSelectionInvalid={() => setSelected(null)}
         />
         </div>
-        {selected && (
+        {splitOpen && (
           <div className="min-w-0 flex-1">
-            <IdeasWorkPane selection={selected.selection} entry={selected.entry} onClose={() => setSelected(null)} />
+            <IdeasWorkPane
+              selection={selected?.selection ?? null}
+              entry={selected?.entry ?? null}
+              /* The only route back to a single feed. */
+              onClose={() => { setSelected(null); setSplitOpen(false) }}
+            />
           </div>
         )}
         </div>
