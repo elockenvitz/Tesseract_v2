@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { Loader2, Sparkles } from 'lucide-react'
+import { Loader2, SlidersHorizontal, Sparkles } from 'lucide-react'
 import { SignalCardView } from '../signals/SignalCardView'
 import { ideaPanes } from '../signals/ideaPanes'
 import { useDesktopExploreFeed } from '../../hooks/useDesktopExploreFeed'
@@ -105,6 +105,34 @@ export function IdeasExplore({
               {l.label}
             </button>
           ))}
+
+          {/*
+            Curate: the deep faceted filter, beside the quick lenses but
+            deliberately not one of them.
+
+            A lens is one tap and one dimension — "show me thoughts". Curate is
+            kinds, signal types, sectors, countries, exchanges and tickers,
+            multi-select within a facet and intersected across them. The chip
+            answers "more like this"; Curate is how you say "European
+            industrials, news and decisions only", which no chip can express.
+
+            Separated by a divider and given an outline rather than a pill, so
+            it reads as a control that OPENS something rather than a fifth
+            lens. Disabled until the desktop facet panel exists — the facet
+            data comes from `useFeedFacets`, which is shared, but the panel is
+            its own piece of work and a button that silently does nothing is
+            worse than one that says it is not ready.
+          */}
+          <span className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden />
+          <button
+            type="button"
+            disabled
+            title="Faceted filtering is coming to desktop"
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm font-medium text-gray-400 dark:border-gray-700 dark:text-gray-500"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Curate
+          </button>
         </div>
 
         {/* Investment controls — Trade Ideas only. */}
@@ -158,7 +186,7 @@ export function IdeasExplore({
                  * you can turn over. Same renderer, same primitives; the
                  * assembly was simply never done on this side.
                  */
-                panes={ideaPanes(entry.input)}
+                panes={ideaPanes(entry.card)}
                 /*
                  * This card is in a scrolling column, not on a screen of its
                  * own. Every fixed height in the contract is a share of a

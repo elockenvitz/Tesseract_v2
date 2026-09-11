@@ -39,30 +39,35 @@ import type { SignalCard } from '../../lib/signals/contract'
  * to the shell it exists to be independent of.
  */
 /**
- * Curate and Explore, as mobile defines them.
+ * The two modes, and why Curate is not one of them.
  *
- * Traced from `MobileDashboard`, where the state is
- * `useState<'curate' | 'explore'>('curate')` and the comment beside it is
- * explicit: a browsing MODE, not a filter. Curate answers "what deserves my
- * attention" — the composed, ranked feed. Explore answers "what might be
- * interesting" — the SAME candidates in a second arrangement, which is why
- * switching is instant rather than a load.
+ * Mobile's state is `useState<'curate' | 'explore'>('curate')`, and reading
+ * that alone I made Curate a peer of Explore and the name of the feed. It is
+ * neither. `FeedFilterSheet` — the thing actually called Curate, headed
+ * "Curate feed" — is a FACETED FILTER: kinds, signal types, sectors, countries,
+ * exchanges and tickers, multi-select within a facet and intersected across
+ * them, applied on close so Cancel means something.
  *
- * Kept deliberately apart from the type lens inside the feed. The mode is
- * which question you are asking; the lens is which kind of answer you want to
- * see. Mobile's own note says folding them together would make Explore look
- * like a sixth category, "the one thing the phase brief is explicit that it is
- * not". Same reasoning holds here, so they are two rows, not one.
+ * That answers "how do I shape what this feed shows me", not "which mode am I
+ * in". On mobile the variable name is the feed's DEFAULT mode; the control the
+ * reader knows as Curate is the sheet.
+ *
+ * So the hierarchy here is Ideas and Explore, and Curate sits with the type
+ * lenses as a feed control. Three concepts, correctly ranked:
+ *
+ *   Ideas / Explore                which question am I asking
+ *   All / Trade Ideas / ...        quick type lens
+ *   Curate                         the deep faceted filter
  */
-type IdeasMode = 'curate' | 'explore'
+type IdeasMode = 'feed' | 'explore'
 
 const MODES: { key: IdeasMode; label: string; hint: string; icon: typeof Lightbulb }[] = [
-  { key: 'curate', label: 'Curate', hint: 'What deserves attention', icon: Lightbulb },
+  { key: 'feed', label: 'Ideas', hint: 'What deserves attention', icon: Lightbulb },
   { key: 'explore', label: 'Explore', hint: 'What might be interesting', icon: Compass },
 ]
 
 export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
-  const [mode, setMode] = useState<IdeasMode>('curate')
+  const [mode, setMode] = useState<IdeasMode>('feed')
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-900">
