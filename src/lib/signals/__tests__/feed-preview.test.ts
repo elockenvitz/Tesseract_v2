@@ -52,15 +52,19 @@ describe('previewFor', () => {
     }, undefined)).toBeNull()
   })
 
+  /** Dated closes, because the desktop chart reads out the date under the cursor. */
+  const series = (...closes: number[]) =>
+    closes.map((close, i) => ({ date: `2026-01-0${i + 1}`, close }))
+
   it('carries a declared target onto the price path', () => {
     const c = card({ type: 'target_hit', evidence: { kind: 'sparkline', data: { target: 310 } } })
-    const p = previewFor('target_hit', c, null, [100, 120, 140])
-    expect(p).toEqual({ kind: 'price', points: [100, 120, 140], reference: 310 })
+    const p = previewFor('target_hit', c, null, series(100, 120, 140))
+    expect(p).toEqual({ kind: 'price', series: series(100, 120, 140), reference: 310 })
   })
 
   it('draws no line from a single close', () => {
     const c = card({ type: 'trade_idea', evidence: { kind: 'sparkline', data: { symbol: 'AAA' } } })
-    expect(previewFor('post', c, null, [100])).toBeNull()
+    expect(previewFor('post', c, null, series(100))).toBeNull()
     expect(previewFor('post', c, null, undefined)).toBeNull()
   })
 

@@ -28,8 +28,13 @@ import type { WeightRow } from '../../components/signals/WeightBars'
  */
 
 export type FeedPreview =
-  /** A price path, optionally against a declared reference level. */
-  | { kind: 'price'; points: number[]; reference: number | null }
+  /**
+   * A price path, optionally against a declared reference level.
+   *
+   * Dated closes rather than bare numbers: the desktop preview reads out the
+   * date under the cursor, and a bare series cannot answer "when".
+   */
+  | { kind: 'price'; series: { date: string; close: number }[]; reference: number | null }
   /** Every case on a price axis, with the live price against them. */
   | { kind: 'scenario_ladder'; price?: number; cases: unknown[]; expected?: unknown; statedOn?: string | null }
   /** A weight distribution — across books, or against a benchmark. */
@@ -53,7 +58,7 @@ export function previewFor(
   family: string,
   card: SignalCard,
   source: PreviewSource | null,
-  points: number[] | undefined,
+  series: { date: string; close: number }[] | undefined,
 ): FeedPreview | null {
   /*
    * Crowding: the count was the whole tile, and the count is the least
@@ -103,9 +108,9 @@ export function previewFor(
   if (evidence.kind === 'sparkline') {
     // Fewer than two closes is not a line. A flat stroke is a claim about the
     // price and one point is not.
-    if (!points || points.length < 2) return null
+    if (!series || series.length < 2) return null
     const d = evidence.data as { target?: number | null } | null
-    return { kind: 'price', points, reference: d?.target ?? null }
+    return { kind: 'price', series, reference: d?.target ?? null }
   }
 
   /*

@@ -469,7 +469,9 @@ export function IdeasExplore({
                  */
                 evidence={(() => {
                   const sym = previewSymbol(entry.card)
-                  const pts = sym ? history?.get(sym)?.map(p => p.close) : undefined
+                  /* Dated closes: the desktop chart reads out the date under the
+                     cursor, which bare numbers cannot answer. */
+                  const pts = sym ? history?.get(sym) : undefined
                   const preview = previewFor(entry.family, entry.card, entry.source, pts)
                   return preview ? <FeedPreview preview={preview} /> : undefined
                 })()}

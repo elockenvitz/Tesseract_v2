@@ -1,5 +1,5 @@
 import { ScenarioLadder } from './ScenarioLadder'
-import { ExploreSpark } from './ExploreSpark'
+import { FeedPriceChart } from './FeedPriceChart'
 import { WeightBars } from './WeightBars'
 import type { FeedPreview as Descriptor } from '../../lib/signals/feed-preview'
 
@@ -16,19 +16,17 @@ import type { FeedPreview as Descriptor } from '../../lib/signals/feed-preview'
  */
 export function FeedPreview({ preview }: { preview: Descriptor }) {
   if (preview.kind === 'price') {
-    const first = preview.points[0]
-    const last = preview.points[preview.points.length - 1]
-    const changePct = first > 0 ? ((last - first) / first) * 100 : undefined
+    /*
+     * The desktop regime, not `ExploreSpark`. That one is `Sparkline` in a
+     * 48px frame — correct on a phone tile and a flattened strip across a
+     * 30-to-40rem column. See `FeedPriceChart` for why this is a second
+     * regime rather than a change to the shared passive chart.
+     */
     return (
-      <ExploreSpark
-        points={preview.points}
-        /* `detail` (128px) rather than `primary` (48px, 12 of it caption). A
-           36px chart stretched across a 30-to-40rem card is a squiggle. */
-        form="detail"
-        window="1Y"
-        sinceLabel="1Y"
-        changePct={changePct}
+      <FeedPriceChart
+        series={preview.series}
         reference={preview.reference}
+        referenceLabel="Target"
       />
     )
   }
