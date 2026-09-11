@@ -7,6 +7,10 @@ import { SignalCardView } from '../signals/SignalCardView'
 import { ideaPanes } from '../signals/ideaPanes'
 import { FeedPreview } from '../signals/FeedPreview'
 import { previewFor, previewSymbol } from '../../lib/signals/feed-preview'
+import { progressionFor } from '../../lib/desktop-ideas/progression'
+import { selectionFor } from '../../lib/desktop-ideas/selection'
+import { ideaRowFromFeedItem } from '../../lib/desktop-ideas/from-feed'
+import type { Progression } from '../../lib/desktop-ideas/progression'
 import { usePriceHistory } from '../../hooks/mobile/usePriceHistory'
 import type { SignalCard } from '../../lib/signals/contract'
 import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
@@ -56,8 +60,10 @@ const DIRECTIONS: IdeaDirection[] = ['buy', 'sell', 'add', 'trim']
 const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready', 'deciding']
 
 export function IdeasExplore({
-  onSelect, selectedKey = null, onSelectionInvalid,
+  onSelect, selectedKey = null, onSelectionInvalid, onProgress,
 }: {
+  /** The one next step this candidate can take. See `progressionFor`. */
+  onProgress?: (entry: AttentionEntry, progression: Progression) => void
   /** The tile the reader picked. The app owns what happens next. */
   onSelect?: (entry: AttentionEntry) => void
   /** Which tile the open workspace belongs to, for the selected state. */
@@ -476,6 +482,32 @@ export function IdeasExplore({
                 onAction={() => onSelect?.(entry)}
               />
               )}
+              {selectedKey !== entry.key && (() => {
+                /*
+                 * One compact progression control, and only where the
+                 * destination differs from what the tile already does.
+                 * `progressionFor` returns null otherwise — machine findings,
+                 * promoted thoughts, closed prompts — and nothing renders.
+                 */
+                const p = progressionFor(
+                  selectionFor(entry),
+                  { idea: entry.item ? ideaRowFromFeedItem(entry.item) : null },
+                )
+                if (!p) return null
+                return (
+                  <div className="flex justify-end border-t border-gray-100 px-4 py-2 dark:border-gray-800">
+                    <button
+                      type="button"
+                      /* A nested control: the tile's guard sees a `button`
+                         descendant and leaves selection alone. */
+                      onClick={() => onProgress?.(entry, p)}
+                      className="rounded-lg border border-gray-300 px-3 py-1.5 text-[13px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                    >
+                      {p.label}
+                    </button>
+                  </div>
+                )
+              })()}
             </div>
           ))}
         </div>

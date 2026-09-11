@@ -5,6 +5,7 @@ import { IdeaDetail } from '../ideas-v2/IdeaDetail'
 import { AssetWorkspacePane } from '../asset-v2/AssetWorkspace'
 import { useTradeIdeaWorkspace } from '../../hooks/useTradeIdeaWorkspace'
 import { assetFocusFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
+import type { Progression } from '../../lib/desktop-ideas/progression'
 import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 
 /**
@@ -37,8 +38,10 @@ import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
  * do not substitute something that looks similar.
  */
 export function IdeasWorkPane({
-  selection, entry, onClose,
+  selection, entry, onClose, mode = null,
 }: {
+  /** What the reader came to DO, when a progression CTA sent them. */
+  mode?: Progression['mode'] | null
   /** Stable identity. Survives the feed reranking underneath. */
   selection: IdeasSelection | null
   /** Presentation only, for the header. May be stale; never routed on. */
@@ -108,13 +111,17 @@ export function IdeasWorkPane({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <WorkSurface selection={selection} onClose={onClose} />
+        <WorkSurface selection={selection} onClose={onClose} mode={mode} />
       </div>
     </div>
   )
 }
 
-function WorkSurface({ selection, onClose }: { selection: IdeasSelection; onClose: () => void }) {
+function WorkSurface({ selection, onClose, mode }: {
+  selection: IdeasSelection
+  onClose: () => void
+  mode: Progression['mode'] | null
+}) {
   /*
    * Posts route by their own feed type. Every surface below already exists and
    * is already used elsewhere — this is routing, not new work surfaces.
@@ -126,7 +133,7 @@ function WorkSurface({ selection, onClose }: { selection: IdeasSelection; onClos
     if (selection.postType === 'thought') {
       return <QuickThoughtDetailPanel quickThoughtId={selection.objectId} onClose={onClose} embedded />
     }
-    if (selection.postType === 'trade_idea') return <TradeIdeaSurface selection={selection} />
+    if (selection.postType === 'trade_idea') return <TradeIdeaSurface selection={selection} mode={mode} />
     return (
       <NotYet
         what={`A work surface for a ${selection.postType ?? 'post'}`}
@@ -168,7 +175,14 @@ function WorkSurface({ selection, onClose }: { selection: IdeasSelection; onClos
   )
 }
 
-function TradeIdeaSurface({ selection }: { selection: IdeasSelection }) {
+const FOCUS_FOR_MODE: Record<string, 'research' | 'thesis' | 'decision'> = {
+  research: 'research', thesis: 'thesis', decision: 'decision',
+}
+
+function TradeIdeaSurface({ selection, mode }: {
+  selection: IdeasSelection
+  mode: Progression['mode'] | null
+}) {
   const { idea, detail, exposure } = useTradeIdeaWorkspace(selection.item ?? null)
   if (!idea) {
     return <NotYet what="This trade idea" why="Its underlying row is no longer in the loaded feed." />
@@ -178,6 +192,16 @@ function TradeIdeaSurface({ selection }: { selection: IdeasSelection }) {
       idea={idea}
       detail={detail}
       exposure={exposure}
+      /*
+       * The module the CTA asked for. `IdeaDetail` already takes a focus, so
+       * "Advance research" lands on research rather than the workspace default
+       * — which is what makes it a different destination from the tile.
+       *
+       * Nothing is written. Entering a research view is not evidence research
+       * happened, and a CTA that advanced the pipeline for a look would put
+       * false progress in the record.
+       */
+      focus={mode?.kind === 'idea_focus' ? FOCUS_FOR_MODE[mode.focus] : null}
       /* The attention event, preserved in the surface's own vocabulary. */
       arrivedFor={selection.why.headline}
     />

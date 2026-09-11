@@ -436,7 +436,7 @@ async function fetchFeedPage(
     queries.push((async () => {
       let q = supabase
         .from('quick_thoughts')
-        .select('id, content, created_at, updated_at, sentiment, visibility, is_pinned, tags, asset_id, created_by, source_url, source_title, assets:asset_id(id, symbol, company_name)')
+        .select('id, content, created_at, updated_at, sentiment, visibility, is_pinned, tags, asset_id, created_by, source_url, source_title, promoted_to_trade_idea_id, assets:asset_id(id, symbol, company_name)')
         .eq('is_archived', false)
         .eq('organization_id', ctx.organizationId!)
         .gte('created_at', timeStart)
@@ -472,6 +472,9 @@ async function fetchFeedPage(
         tags: d.tags || [],
         source_url: d.source_url,
         source_title: d.source_title,
+        /* Whether this thought has already become a trade idea. Read by the
+           feed's progression CTA so a promoted thought is not offered again. */
+        promoted_to_trade_idea_id: d.promoted_to_trade_idea_id ?? null,
         asset: d.assets || undefined,
       }))
     })())

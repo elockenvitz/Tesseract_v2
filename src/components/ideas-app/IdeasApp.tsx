@@ -6,6 +6,8 @@ import { IdeasExploreBrowse } from './IdeasExploreBrowse'
 import { IdeasWorkPane } from './IdeasWorkPane'
 import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import { selectionFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
+import type { Progression } from '../../lib/desktop-ideas/progression'
+import { usePromptResolve } from '../../hooks/usePromptResolve'
 
 /**
  * Ideas — the standalone application.
@@ -79,6 +81,16 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
    * they are simply never lost.
    */
   const [selected, setSelected] = useState<{ selection: IdeasSelection; entry: AttentionEntry } | null>(null)
+  /**
+   * The work mode a progression CTA asked for, if any.
+   *
+   * Held beside the selection rather than inside it: selection says WHAT is
+   * open, this says what the reader came to do. Cleared on an ordinary tile
+   * click, so opening the same candidate normally does not inherit a mode
+   * from a press that happened earlier.
+   */
+  const [workMode, setWorkMode] = useState<Progression['mode'] | null>(null)
+  const resolvePrompt = usePromptResolve()
   /**
    * Two states, deliberately separate.
    *
@@ -166,11 +178,31 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
         >
         <IdeasExplore
           selectedKey={selected?.selection.key ?? null}
-          onSelect={entry => { setSelected({ selection: selectionFor(entry), entry }); setSplitOpen(true) }}
+          onSelect={entry => {
+            setSelected({ selection: selectionFor(entry), entry })
+            setWorkMode(null)
+            setSplitOpen(true)
+          }}
+          onProgress={(entry, progression) => {
+            /*
+             * Resolve is a WRITE, not a destination. It finishes the prompt
+             * where the reader is standing — opening the workspace to press
+             * the same control would be the duplication this CTA exists to
+             * avoid.
+             */
+            if (progression.mode.kind === 'prompt_resolve') {
+              const item = entry.item as unknown as { tags?: string[] | null } | null
+              resolvePrompt.mutate({ promptId: entry.item!.id, tags: item?.tags ?? [] })
+              return
+            }
+            setSelected({ selection: selectionFor(entry), entry })
+            setWorkMode(progression.mode)
+            setSplitOpen(true)
+          }}
           /* The open candidate is not in the new context. Clear it and leave
              the work region open and empty — picking a replacement is the
              reader's, and so is putting the pane away. */
-          onSelectionInvalid={() => setSelected(null)}
+          onSelectionInvalid={() => { setSelected(null); setWorkMode(null) }}
         />
         </div>
         {splitOpen && (
@@ -178,8 +210,9 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
             <IdeasWorkPane
               selection={selected?.selection ?? null}
               entry={selected?.entry ?? null}
+              mode={workMode}
               /* The only route back to a single feed. */
-              onClose={() => { setSelected(null); setSplitOpen(false) }}
+              onClose={() => { setSelected(null); setWorkMode(null); setSplitOpen(false) }}
             />
           </div>
         )}

@@ -24,6 +24,14 @@ interface IdeaCommentsProps {
   emptyStateOverride?: string
   /** Called when the item count changes so parent can display it. */
   onCountChange?: (count: number) => void
+  /**
+   * Open the composer on mount.
+   *
+   * For an arrival that IS the act of responding — the Ideas feed's "Respond"
+   * progression, which must land somewhere more specific than the prompt's
+   * read view or it is just another way to open it.
+   */
+  startComposing?: boolean
 }
 
 interface Comment {
@@ -51,6 +59,7 @@ export function IdeaComments({
   disabledMessage,
   emptyStateOverride,
   onCountChange,
+  startComposing = false,
 }: IdeaCommentsProps) {
   const isResponse = interactionMode === 'response'
   const nounSingular = isResponse ? 'response' : 'comment'
@@ -62,7 +71,7 @@ export function IdeaComments({
   const queryClient = useQueryClient()
   const [showAll, setShowAll] = useState(false)
   const [newComment, setNewComment] = useState('')
-  const [isCommentInputExpanded, setIsCommentInputExpanded] = useState(false)
+  const [isCommentInputExpanded, setIsCommentInputExpanded] = useState(startComposing && !disabled)
 
   // Fetch comments using messages table with context
   const { data: comments = [], isLoading } = useQuery({
