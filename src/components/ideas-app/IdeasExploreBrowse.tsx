@@ -3,9 +3,9 @@ import { clsx } from 'clsx'
 import { Compass, Loader2, X } from 'lucide-react'
 import { ExploreVisualBlock } from '../mobile/ExploreVisual'
 import { exploreVisualFor } from '../../lib/mobile/explore-visual'
-import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { useDesktopExplore } from '../../hooks/useDesktopExplore'
-import type { ComposedExploreItem } from '../../lib/mobile/explore-item'
+import type { ExploreOpen } from '../../lib/desktop-ideas/explore-open'
+import type { ComposedExploreItem, ExploreItem } from '../../lib/mobile/explore-item'
 
 /**
  * Explore, on desktop.
@@ -45,7 +45,20 @@ import type { ComposedExploreItem } from '../../lib/mobile/explore-item'
  * so the arrangement has rhythm rather than uniformity.
  */
 
-export function IdeasExploreBrowse() {
+export function IdeasExploreBrowse({ resolve, onOpen, selectedKey = null }: {
+  /**
+   * What a tile would do, asked at RENDER time as well as on click.
+   *
+   * Rendering needs the answer too: a preview with nothing behind it must not
+   * be drawn as a control. Asking the same function in both places is what
+   * keeps the appearance and the behaviour from disagreeing.
+   */
+  resolve: (item: ExploreItem) => ExploreOpen
+  /** Everything Explore does not own itself. The shell carries it out. */
+  onOpen: (open: Exclude<ExploreOpen, { do: 'filter' }>) => void
+  /** Which tile the open workspace belongs to. */
+  selectedKey?: string | null
+}) {
   /*
    * Explore's own category state, deliberately separate from the Ideas type
    * lens and from Curate. Mobile keeps `exploreCategory` apart from
@@ -71,7 +84,13 @@ export function IdeasExploreBrowse() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    /*
+     * The scroll host is the container query's subject, and it is also the one
+     * element whose scrollTop must survive the workspace opening. Both follow
+     * from the same fact: this element is never unmounted or replaced — only
+     * its width changes — so the grid re-flows and the scroll does not move.
+     */
+    <div className="explore-host h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-[76rem] px-6 py-5">
         {category && (
           <button
@@ -99,13 +118,20 @@ export function IdeasExploreBrowse() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {/* Columns from the CONTAINER, not the window. The same 1920px screen
+            shows this grid at full width and at ~40rem beside an open
+            workspace, and only the region's own width can say how many columns
+            fit. See `.explore-grid`. */}
+        <div className="explore-grid gap-4">
           {shown.map(composed => (
             <ExploreTile
               key={composed.item.id}
               composed={composed}
               now={now}
+              selectedKey={selectedKey}
+              open={resolve(composed.item)}
               onFilter={setCategory}
+              onOpen={onOpen}
             />
           ))}
         </div>
@@ -115,15 +141,17 @@ export function IdeasExploreBrowse() {
 }
 
 function ExploreTile({
-  composed, now, onFilter,
+  composed, now, open, selectedKey, onFilter, onOpen,
 }: {
   composed: ComposedExploreItem
   now: number
+  open: ExploreOpen
+  selectedKey: string | null
   onFilter: (category: string) => void
+  onOpen: (open: Exclude<ExploreOpen, { do: 'filter' }>) => void
 }) {
   const item = composed.item
   const visual = useMemo(() => exploreVisualFor(item as never), [item])
-  const action = resolveExploreItem(item)
 
   /*
    * `diversifyExplore` already decided which candidates lead, and says so in
@@ -131,18 +159,38 @@ function ExploreTile({
    * how two surfaces start disagreeing about the same arrangement.
    */
   const feature = composed.emphasis === 'feature'
+  const selected = open.do === 'work' && selectedKey != null && open.selection.key === selectedKey
+
+  /*
+   * A tile that cannot answer is not a control.
+   *
+   * Every tile used to be a `<button>`, including the ones whose action was
+   * `unsupported` and the ones whose focus has nothing behind it — so the
+   * surface offered a press, took it, and did nothing. An element with no
+   * behaviour should not have the affordance; the preview is still worth
+   * reading, which is why it stays and only its interactivity goes.
+   */
+  const Tag = open.do === 'none' ? 'div' : 'button'
 
   return (
-    <button
+    <Tag
+      {...(open.do === 'none' ? {} : { type: 'button' as const })}
       onClick={() => {
-        // The resolver is the grammar. `filter` is the only action this
-        // surface owns; everything else belongs to the Work stage and is left
-        // deliberately unhandled rather than half-routed.
-        if (action.do === 'filter') onFilter(action.category)
+        // The resolver is the grammar, and `filter` is the only answer this
+        // surface owns — narrowing the grid never leaves Explore. Everything
+        // else is the shell's, which is what stops Explore growing a second
+        // detail system beside the workspace.
+        if (open.do === 'filter') { onFilter(open.category); return }
+        if (open.do === 'none') return
+        onOpen(open)
       }}
       className={clsx(
-        'flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white text-left transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800',
-        feature && 'xl:col-span-2',
+        'flex flex-col overflow-hidden rounded-xl border bg-white text-left dark:bg-gray-800',
+        open.do === 'none'
+          ? 'border-gray-200 opacity-80 dark:border-gray-700'
+          : 'border-gray-200 transition-shadow hover:shadow-md dark:border-gray-700',
+        selected && 'border-primary-400 ring-1 ring-primary-400 dark:border-primary-500 dark:ring-primary-500',
+        feature && 'explore-feature',
       )}
     >
       {visual && (
@@ -171,6 +219,6 @@ function ExploreTile({
           </p>
         )}
       </div>
-    </button>
+    </Tag>
   )
 }

@@ -25,8 +25,27 @@ import type { ScoredFeedItem } from '../../hooks/ideas/types'
  * the card's own entity.
  */
 export interface IdeasSelection {
-  /** Which producer made this. Decides the work surface. */
-  family: AttentionEntry['family']
+  /**
+   * Which producer made this. Decides the work surface.
+   *
+   * `'explore'` is the one value no producer emits: a preview opened from
+   * Explore that has no candidate behind it in the attention pool. It names an
+   * asset and nothing more specific, so it opens the asset at `overview` — see
+   * `assetFocusFor`. It is a family the router can route and NOT a second
+   * selection type, which is the thing Explore must not grow.
+   */
+  family: AttentionEntry['family'] | 'explore'
+  /**
+   * Which surface the reader was on when they selected this.
+   *
+   * Carried for RECONCILIATION, not for routing — the work surface is the same
+   * either way, which is the whole point of the convergence. The Ideas feed
+   * clears a selection that its own lens or facets no longer contain, and that
+   * rule cannot be applied to something the reader opened from Explore: they
+   * never asked the Ideas feed for it, so the Ideas feed's context has no
+   * standing to take it away.
+   */
+  origin: 'ideas' | 'explore'
   /**
    * The card id. Used ONLY to mark the selected tile, so it must match
    * `AttentionEntry.key` — and must not be used to resolve data, because a
@@ -88,7 +107,7 @@ const FOCUS_FOR_FAMILY: Record<string, AssetFocus> = {
   crowding: 'position',
 }
 
-export function assetFocusFor(family: AttentionEntry['family']): AssetFocus {
+export function assetFocusFor(family: IdeasSelection['family']): AssetFocus {
   return FOCUS_FOR_FAMILY[family] ?? 'overview'
 }
 
@@ -111,6 +130,7 @@ export function selectionFor(entry: AttentionEntry): IdeasSelection {
   const book = (card as unknown as { books?: { id?: string; name?: string }[] }).books?.[0]
   return {
     family: entry.family,
+    origin: 'ideas',
     key: entry.key,
     // A post's own row id is the object; a finding's object IS its asset.
     objectId: entry.family === 'post' ? entry.item?.id ?? null : null,

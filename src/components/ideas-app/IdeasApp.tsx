@@ -4,8 +4,11 @@ import { Compass, Lightbulb } from 'lucide-react'
 import { IdeasExplore } from './IdeasExplore'
 import { IdeasExploreBrowse } from './IdeasExploreBrowse'
 import { IdeasWorkPane } from './IdeasWorkPane'
-import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
+import { ArticleReader } from '../mobile/ArticleReader'
+import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import { selectionFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
+import { exploreOpen, type ExploreOpen } from '../../lib/desktop-ideas/explore-open'
+import { openAsset } from '../../lib/desktop-asset/navigate'
 import type { Progression } from '../../lib/desktop-ideas/progression'
 import { usePromptResolve } from '../../hooks/usePromptResolve'
 
@@ -80,7 +83,12 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
    * loaded pages, its lens and its Curate facets are not state to restore —
    * they are simply never lost.
    */
-  const [selected, setSelected] = useState<{ selection: IdeasSelection; entry: AttentionEntry } | null>(null)
+  /*
+   * The entry is PRESENTATION and optional. `IdeasWorkPane` reads one field off
+   * it for a header fallback and routes on none of it, which is why a selection
+   * made in Explore can carry `null` here and reach the identical surface.
+   */
+  const [selected, setSelected] = useState<{ selection: IdeasSelection; entry: AttentionEntry | null } | null>(null)
   /**
    * The work mode a progression CTA asked for, if any.
    *
@@ -105,6 +113,31 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
    * the work region; it may not put it away.
    */
   const [splitOpen, setSplitOpen] = useState(false)
+
+  /**
+   * The candidate pool, for RESOLVING an Explore preview — never for drawing.
+   *
+   * Always the `all` lens with no facets: the reader's Ideas lens is a question
+   * about what the Ideas feed shows them, and it must not decide whether a
+   * preview they tapped in Explore can be opened. Nothing is rendered from
+   * this; `IdeasExplore` holds its own.
+   *
+   * No new query. `useDesktopAttentionFeed` is a memo over
+   * `useDesktopCandidates`, whose React Query entries the feed and Explore
+   * already share, so this re-derives cards from data in hand and fetches
+   * nothing.
+   */
+  const resolver = useDesktopAttentionFeed('all')
+
+  /**
+   * The open story, if any.
+   *
+   * A story is read, not worked on, and `resolveExploreItem` has said so since
+   * it was written. It gets the reader the product already has rather than a
+   * second one, and deliberately NOT the workspace — putting an article there
+   * for the sake of consistency would make the workspace a browser.
+   */
+  const [article, setArticle] = useState<Extract<ExploreOpen, { do: 'article' }> | null>(null)
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-900">
@@ -151,17 +184,20 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
       </header>
 
       <div className="min-h-0 flex-1">
-        {/* Explore is MOUNTED beside Ideas, not instead of it — both stay in
-            the tree so switching modes keeps Ideas' scroll, its loaded pages,
-            its type lens and its Curate facets exactly as they were. Explore
-            likewise keeps its own category between visits. */}
-        <div className={clsx('h-full', mode !== 'explore' && 'hidden')}>
-          <IdeasExploreBrowse />
-        </div>
-        <div className={clsx('flex h-full', mode === 'explore' && 'hidden')}>
-        {/* Kept MOUNTED while Explore is open, not unmounted. Switching modes
-            must not throw away loaded pages, scroll position or the type lens
-            — mobile's modes switch instantly for the same reason. */}
+        {/*
+          One row, two browse surfaces, one workspace.
+
+          The workspace used to live inside the Ideas branch, so Explore could
+          not have reached it without growing its own — which is exactly the
+          parallel detail system this stage exists to prevent. It is a sibling
+          of the browse region now, and both surfaces feed the same one.
+
+          Both browse surfaces stay MOUNTED and are hidden by class. Switching
+          modes therefore keeps Ideas' scroll, its loaded pages, its type lens
+          and its Curate facets, and keeps Explore's scroll and its category —
+          none of it is state to restore, because none of it is ever lost.
+        */}
+        <div className="flex h-full">
         <div
           className={clsx(
             'min-w-0 border-r border-gray-200 dark:border-gray-700',
@@ -184,6 +220,40 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
             splitOpen ? 'w-[42%] min-w-[30rem] max-w-[40rem]' : 'w-full border-r-0 px-2',
           )}
         >
+        <div className={clsx('h-full', mode !== 'explore' && 'hidden')}>
+          <IdeasExploreBrowse
+            selectedKey={selected?.selection.key ?? null}
+            /*
+             * Resolution happens against the attention pool, so a preview
+             * opens the SAME candidate the Ideas feed would — see
+             * `exploreOpen`. Passed as a function rather than resolved inside
+             * Explore, because the pool lives here beside the workspace.
+             */
+            resolve={item => exploreOpen(item, resolver.entries)}
+            onOpen={open => {
+              if (open.do === 'work') {
+                setSelected({ selection: open.selection, entry: null })
+                setWorkMode(null)
+                setSplitOpen(true)
+                return
+              }
+              if (open.do === 'article') { setArticle(open); return }
+              if (open.do === 'navigate') {
+                /*
+                 * The shell's own tab channel — the same descriptor `openAsset`
+                 * and the AI action seam dispatch. A tab destination names a
+                 * surface; embedding a preview of it in the workspace would be
+                 * answering a different question than the one the tile asked.
+                 */
+                window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: open.target }))
+                return
+              }
+              // `none` never reaches here: the tile is not a control.
+              console.warn('[ideas/explore] nothing to open', open.why)
+            }}
+          />
+        </div>
+        <div className={clsx('h-full', mode === 'explore' && 'hidden')}>
         <IdeasExplore
           selectedKey={selected?.selection.key ?? null}
           onSelect={entry => {
@@ -210,8 +280,19 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
           /* The open candidate is not in the new context. Clear it and leave
              the work region open and empty — picking a replacement is the
              reader's, and so is putting the pane away. */
-          onSelectionInvalid={() => { setSelected(null); setWorkMode(null) }}
+          onSelectionInvalid={() => {
+            /*
+             * Only the Ideas feed's own selections answer to the Ideas feed's
+             * context. A candidate the reader opened from Explore was never
+             * asked for here, so a lens change has no standing to take it
+             * away — that is the reconciliation rule Explore must not inherit.
+             */
+            if (selected?.selection.origin !== 'ideas') return
+            setSelected(null)
+            setWorkMode(null)
+          }}
         />
+        </div>
         </div>
         {splitOpen && (
           <div className="min-w-0 flex-1">
@@ -226,6 +307,25 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
         )}
         </div>
       </div>
+
+      {/* Portalled and full-screen, over whichever mode the reader was in. The
+          same component the phone uses — its directory is historical, it holds
+          no phone-specific layout, and a second reader would be a second
+          answer to a question this product has already answered. */}
+      {article && (
+        <ArticleReader
+          open
+          url={article.url}
+          fallbackTitle={article.title ?? undefined}
+          fallbackSource={article.source ?? undefined}
+          desk={article.desk}
+          onClose={() => setArticle(null)}
+          /* The route the story's own tile would have taken. */
+          onOpenAsset={(assetId, symbol) => {
+            if (assetId) openAsset({ assetId, symbol })
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -310,6 +310,39 @@
   .pl-safe { padding-left: env(safe-area-inset-left, 0px); }
   .pr-safe { padding-right: env(safe-area-inset-right, 0px); }
 
+  /* ── Desktop Explore grid: columns from the REGION, not the window ──────
+     Explore keeps its broad arrangement at full width and has to survive the
+     workspace opening beside it, which leaves it ~40rem. A media query cannot
+     tell those apart — the window is 1920px in both — so it would go on
+     packing three columns into a pane where a tile would be 12rem wide. The
+     region is the container and the region's own width decides.
+
+     Only the class changes when the pane narrows, so the grid re-flows in
+     place: Explore is not remounted, and its scroll does not move. */
+  .explore-host {
+    container-type: inline-size;
+  }
+  .explore-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* 34rem is two tiles at the ~16rem a preview needs to stay a preview. */
+  @container (min-width: 34rem) {
+    .explore-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @container (min-width: 62rem) {
+    .explore-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    /* A feature tile earns two columns only where there are three to spend.
+       At two columns it would be the whole row, which is not emphasis. */
+    .explore-feature {
+      grid-column: span 2 / span 2;
+    }
+  }
+
   /* ── Desktop feed tile: side-by-side when the TILE is wide enough ────────
      A container query, not a media query, because the same viewport shows the
      feed at full width and at ~40% beside an open workspace. Only the tile's
