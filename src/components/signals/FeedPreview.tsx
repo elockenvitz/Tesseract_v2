@@ -32,13 +32,29 @@ export function FeedPreview({ preview }: { preview: Descriptor }) {
   }
 
   if (preview.kind === 'scenario_ladder') {
+    /*
+     * The ladder needs a DEFINITE height, and this is where it gets one.
+     *
+     * Its root is `h-full` and its axis is `flex-1` over absolutely positioned
+     * marks, which is correct inside the card's pane band — that band is a
+     * share of a phone screen and always has a resolved height. Here the host
+     * is content-sized, so `h-full` resolved to auto, the axis' `basis: 0`
+     * resolved to 0, and every mark on it was out of flow: the header rendered
+     * and the ladder itself was a zero-height box. Measured at 0px.
+     *
+     * A box, not a redesign — the ladder is untouched. 16rem is its own
+     * geometry added up: a 210px axis at its ceiling, the legend above it and
+     * the padding around both.
+     */
     return (
-      <ScenarioLadder
-        price={preview.price as never}
-        cases={preview.cases as never}
-        expected={preview.expected as never}
-        statedOn={preview.statedOn as never}
-      />
+      <div className="h-64">
+        <ScenarioLadder
+          price={preview.price as never}
+          cases={preview.cases as never}
+          expected={preview.expected as never}
+          statedOn={preview.statedOn as never}
+        />
+      </div>
     )
   }
 

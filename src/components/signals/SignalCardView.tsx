@@ -1440,7 +1440,26 @@ export function SignalCardView({
            * it, nothing overflows in either state — verified in the running
            * app, where the note fits on arrival with 88px to spare.
            */
-          style={merged || judgmentPane
+          /*
+           * The floor below is a VIEWPORT rule and now says so.
+           *
+           * It exists because a card given one phone screen divides that screen
+           * between its regions, and a band that shrinks rather than overflows
+           * can silently collapse to nothing — the whole reason it is a floor
+           * and not a hint. Every word of that reasoning depends on the height
+           * being shared out from a fixed total.
+           *
+           * In `flow` there is no total to share. The band is `h-auto` and the
+           * card is as tall as its content, so the floor cannot protect a pane
+           * from anything; it can only pad one. Measured on the target-hit card
+           * at 1920: 68px of pane content held open to 168px, and the 100px
+           * landed immediately above the disclosure, which is exactly where a
+           * reader sees it as a gap.
+           *
+           * Scoped rather than lowered. `PANE_VIEWPORT_MIN_PX` is unchanged and
+           * the phone keeps it.
+           */
+          style={layout !== 'flow' && (merged || judgmentPane)
             ? {
                 /**
                  * ONE height, for the life of the card.
