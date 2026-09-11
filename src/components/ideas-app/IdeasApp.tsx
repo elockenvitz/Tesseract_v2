@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { clsx } from 'clsx'
 import { Compass, Lightbulb } from 'lucide-react'
 import { IdeasExplore } from './IdeasExplore'
+import { IdeasExploreBrowse } from './IdeasExploreBrowse'
 import type { SignalCard } from '../../lib/signals/contract'
 
 /**
@@ -114,38 +115,13 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
       </header>
 
       <div className="min-h-0 flex-1">
-        {mode === 'explore' && (
-          /*
-           * Explore is NOT built yet, and says so rather than showing Curate
-           * under a second name.
-           *
-           * Its real semantics are a second arrangement of candidates already
-           * in hand — `lensesToExplore`, `scenarioCardsToExplore`,
-           * `insightsToExplore`, `newsToExplore`, `templatesToExplore` in
-           * `lib/mobile/explore-adapters`. Those modules are PURE despite the
-           * directory name, so desktop can consume them. What desktop cannot
-           * yet reach is the hooks that feed them — `usePortfolioLenses`,
-           * `useScenarioCards`, `useDerivedInsights` — which are the same
-           * producers the tile engine's adopted families need.
-           *
-           * One piece of work unlocks both, and guessing at it would produce
-           * the "unrelated desktop browse system" this was explicitly not to
-           * become.
-           */
-          <div className="flex h-full items-center justify-center px-6">
-            <div className="max-w-sm text-center">
-              <Compass className="mx-auto h-6 w-6 text-gray-300 dark:text-gray-600" />
-              <p className="mt-3 text-sm font-medium text-gray-700 dark:text-gray-200">
-                Explore is not wired up yet
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-                It rearranges the same candidates Curate reads, rather than
-                querying for new ones. Desktop still needs the lens and scenario
-                producers those arrangements are built from.
-              </p>
-            </div>
-          </div>
-        )}
+        {/* Explore is MOUNTED beside Ideas, not instead of it — both stay in
+            the tree so switching modes keeps Ideas' scroll, its loaded pages,
+            its type lens and its Curate facets exactly as they were. Explore
+            likewise keeps its own category between visits. */}
+        <div className={clsx('h-full', mode !== 'explore' && 'hidden')}>
+          <IdeasExploreBrowse />
+        </div>
         <div className={clsx('h-full', mode === 'explore' && 'hidden')}>
         {/* Kept MOUNTED while Explore is open, not unmounted. Switching modes
             must not throw away loaded pages, scroll position or the type lens
