@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { Loader2, SlidersHorizontal, Sparkles } from 'lucide-react'
+import { Loader2, SlidersHorizontal, Sparkles, X } from 'lucide-react'
+import { CuratePanel } from './CuratePanel'
+import { EMPTY_FILTER, filterCount, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { SignalCardView } from '../signals/SignalCardView'
 import { ideaPanes } from '../signals/ideaPanes'
 import { useDesktopExploreFeed } from '../../hooks/useDesktopExploreFeed'
@@ -59,8 +61,17 @@ export function IdeasExplore({
   const [lens, setLens] = useState<IdeaLens>('all')
   const [direction, setDirection] = useState<IdeaDirection | null>(null)
   const [maturity, setMaturity] = useState<IdeaMaturity | null>(null)
+  /*
+   * The APPLIED facets. Held here, above the feed, so they survive lens
+   * switches, paging and the panel opening and closing — the panel keeps only
+   * its own draft. Session state, like every other control on this surface;
+   * nothing is persisted beyond it.
+   */
+  const [facets, setFacets] = useState<FeedFilter>(EMPTY_FILTER)
+  const [curateOpen, setCurateOpen] = useState(false)
+  const facetCount = filterCount(facets)
 
-  const feed = useDesktopExploreFeed(lens)
+  const feed = useDesktopExploreFeed(lens, { facets })
   const spec = lensSpec(lens)
   const showInvestment = lensShowsInvestmentFilters(lens)
 
@@ -124,15 +135,46 @@ export function IdeasExplore({
             worse than one that says it is not ready.
           */}
           <span className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden />
-          <button
-            type="button"
-            disabled
-            title="Faceted filtering is coming to desktop"
-            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm font-medium text-gray-400 dark:border-gray-700 dark:text-gray-500"
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Curate
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setCurateOpen(o => !o)}
+              aria-expanded={curateOpen}
+              className={clsx(
+                'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-colors',
+                facetCount > 0
+                  ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800',
+              )}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Curate
+              {/* The count is the whole active-state indication. A row of chips
+                  per selected value would fill the header on the first real
+                  filter, which is the thing to avoid. */}
+              {facetCount > 0 && (
+                <span className="rounded-full bg-primary-600 px-1.5 text-[10px] font-bold text-white">
+                  {facetCount}
+                </span>
+              )}
+            </button>
+            <CuratePanel
+              open={curateOpen}
+              value={facets}
+              onApply={setFacets}
+              onClose={() => setCurateOpen(false)}
+            />
+          </div>
+          {facetCount > 0 && (
+            <button
+              onClick={() => setFacets(EMPTY_FILTER)}
+              title="Clear Curate filters"
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+            >
+              <X className="h-3 w-3" />
+              Clear
+            </button>
+          )}
         </div>
 
         {/* Investment controls — Trade Ideas only. */}
@@ -162,7 +204,19 @@ export function IdeasExplore({
         {!feed.isLoading && entries.length === 0 && (
           <div className="py-16 text-center">
             <Sparkles className="mx-auto h-6 w-6 text-gray-300 dark:text-gray-600" />
-            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{spec.emptyHint}</p>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              {facetCount > 0
+                ? 'Nothing matches these Curate filters.'
+                : spec.emptyHint}
+            </p>
+            {facetCount > 0 && (
+              <button
+                onClick={() => setFacets(EMPTY_FILTER)}
+                className="mt-2 text-xs font-medium text-primary-600 hover:underline dark:text-primary-400"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         )}
 

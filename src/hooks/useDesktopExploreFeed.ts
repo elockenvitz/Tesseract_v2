@@ -3,6 +3,8 @@ import { buildIdeaCard, type IdeaInput } from '../lib/signals/builders/ideas'
 import { feedItemToIdeaInput, type FeedItemLike } from '../lib/signals/feed-item-input'
 import { useDesktopIdeasFeed } from './useDesktopIdeasFeed'
 import { lensSpec, type IdeaLens } from '../lib/desktop-ideas/lens'
+import { matchesFeedFacets } from '../lib/signals/facet-match'
+import { EMPTY_FILTER, useFeedFacets, type FeedFacets, type FeedFilter } from './mobile/useFeedFacets'
 import type { SignalCard } from '../lib/signals/contract'
 import type { ScoredFeedItem } from './ideas/types'
 import type { IdeaRow } from '../lib/desktop-ideas'
@@ -104,9 +106,40 @@ function inLens(item: ScoredFeedItem, lens: IdeaLens): boolean {
   return !types || types.includes(item.type)
 }
 
+/**
+ * What this shell can say about an item, for `matchesFeedFacets`.
+ *
+ * Each shell supplies its own facts; the RULE is shared.
+ *
+ * Sector, country and exchange are properties of a SYMBOL, not of a feed row,
+ * so they are resolved through `bySymbol` — the index `useFeedFacets` returns
+ * precisely so a feed can answer "is this industrial" without a query per
+ * tile. Keyed uppercase there, because sources disagree about casing.
+ *
+ * A symbol the index does not know resolves to nulls and therefore fails an
+ * asset facet, which is the documented rule rather than an omission.
+ */
+function factsFor(item: ScoredFeedItem, bySymbol: FeedFacets['bySymbol'] | undefined) {
+  const asset = (item as unknown as { asset?: { symbol?: string } }).asset
+  const symbol = asset?.symbol ? asset.symbol.toUpperCase() : null
+  const f = symbol ? bySymbol?.get(symbol) : undefined
+  return {
+    category: 'Ideas',
+    signalTypes: [item.type],
+    symbol,
+    sector: f?.sector ?? null,
+    country: f?.country ?? null,
+    exchange: f?.exchange ?? null,
+  }
+}
+
 export function useDesktopExploreFeed(
   lens: IdeaLens,
-  opts: { mode?: FeedMode; assetId?: string; portfolioId?: string; search?: string } = {},
+  opts: {
+    mode?: FeedMode; assetId?: string; portfolioId?: string; search?: string
+    /** The applied Curate facets. Composes WITH the lens, never replaces it. */
+    facets?: FeedFilter
+  } = {},
 ): DesktopExploreFeed {
   /*
    * The feed is fetched UNFILTERED by lens and narrowed below.
@@ -118,11 +151,29 @@ export function useDesktopExploreFeed(
    * difference.
    */
   const feed = useDesktopIdeasFeed('all', opts)
+  const facets = opts.facets ?? EMPTY_FILTER
+  /*
+   * Only fetched once a symbol-property facet is actually in use. The index is
+   * one query cached for thirty minutes, and a feed with no sector filter has
+   * no reason to pay for it.
+   */
+  const needsIndex = facets.sectors.length > 0 || facets.countries.length > 0 || facets.exchanges.length > 0
+  const { data: facetIndex } = useFeedFacets({ enabled: needsIndex })
+  const bySymbol = facetIndex?.bySymbol
 
   const entries = useMemo(() => {
     const out: ExploreEntry[] = []
     for (const item of feed.items) {
+      /*
+       * Lens AND facets, never one instead of the other.
+       *
+       * "Trade Ideas + Europe + Industrials" is a single narrower question, so
+       * both predicates apply. A facet is never allowed to change the lens —
+       * an incompatible combination returns an empty set, which is the honest
+       * answer, rather than silently widening the type back out.
+       */
       if (!inLens(item, lens)) continue
+      if (!matchesFeedFacets(factsFor(item, bySymbol), facets)) continue
       const input = feedItemToIdeaInput(item as unknown as FeedItemLike)
       const built = buildIdeaCard(input)
       // A suppression is the shared rules saying this should not be seen.
@@ -131,16 +182,17 @@ export function useDesktopExploreFeed(
       out.push({ key: built.card.id, card: built.card, input, item, ideaRow: null })
     }
     return out
-  }, [feed.items, lens])
+  }, [feed.items, lens, facets, bySymbol])
 
   const suppressedCount = useMemo(() => {
     let n = 0
     for (const item of feed.items) {
       if (!inLens(item, lens)) continue
+      if (!matchesFeedFacets(factsFor(item, bySymbol), facets)) continue
       if (!buildIdeaCard(feedItemToIdeaInput(item as unknown as FeedItemLike)).ok) n += 1
     }
     return n
-  }, [feed.items, lens])
+  }, [feed.items, lens, facets, bySymbol])
 
   return {
     entries,
