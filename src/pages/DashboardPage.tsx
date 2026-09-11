@@ -9,6 +9,7 @@ import {
   TabStateManager, CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID, LEGACY_DASHBOARD_TITLE,
 } from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
+import { IdeasApp } from '../components/ideas-app/IdeasApp'
 import { DashboardShell } from '../components/dashboard/DashboardShell'
 import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
 import { MobilePipeline } from '../components/mobile/MobilePipeline'
@@ -1245,6 +1246,25 @@ export function DashboardPage() {
       */
       case 'today':
         return <DashboardShell initialLens="today" />
+      /*
+       * Ideas — the standalone application.
+       *
+       * A phone already HAS the Ideas experience this app exists to bring to
+       * desktop: `renderDashboardContent()` returns MobileDashboard, which is
+       * the feed the whole convergence is modelled on. So `ideas` resolves
+       * there on a phone rather than mounting a desktop shell at 390px, which
+       * is the same thing `dashboard` and `today` already do.
+       */
+      case 'ideas':
+        return isMobile ? renderDashboardContent() : <IdeasApp selectedIdeaId={activeTab.data?.selectedIdeaId ?? null} />
+      /*
+       * `ideas-v2` is a COMPATIBILITY tab type now, not an application. Its
+       * launcher entry is gone, but saved sessions and deep links still carry
+       * it and it still means what it always meant: the Dashboard's Ideas
+       * lens. Deliberately NOT aliased to the standalone app — that state
+       * represented a lens, and silently reinterpreting it as a different
+       * application would move readers somewhere they never chose.
+       */
       case 'ideas-v2':
         return (
           <DashboardShell

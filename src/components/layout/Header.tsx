@@ -510,7 +510,7 @@ export function Header({
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
                       { id: 'today', title: 'Dashboard', type: 'today', icon: Sun, color: 'text-blue-600', bg: 'bg-blue-50' },
-                      { id: 'ideas-v2', title: 'Ideas', type: 'ideas-v2', icon: Lightbulb, color: 'text-purple-600', bg: 'bg-purple-50' },
+                      { id: 'ideas', title: 'Ideas', type: 'ideas', icon: Lightbulb, color: 'text-purple-600', bg: 'bg-purple-50' },
                       { id: 'research-v2', title: 'Research', type: 'research-v2', icon: Microscope, color: 'text-sky-600', bg: 'bg-sky-50' },
                       { id: 'portfolio-v2', title: 'Portfolio', type: 'portfolio-v2', icon: Scale, color: 'text-emerald-600', bg: 'bg-emerald-50' },
                       { id: 'decisions-v2', title: 'Decisions', type: 'decisions-v2', icon: Landmark, color: 'text-slate-600', bg: 'bg-slate-100' },

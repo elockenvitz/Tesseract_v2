@@ -106,6 +106,17 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     support: 'full', group: 'core', inNav: false,
   },
   {
+    // The standalone Ideas application. On a phone it resolves to the same
+    // MobileDashboard feed `today` does — see DashboardPage — because the
+    // phone already has the experience this app brings to desktop. Registered
+    // as `full` so it renders that feed rather than a desktop-only card, and
+    // NOT `inNav`: the drawer's pinned Home row already lands on that feed,
+    // and two rows to one destination is a question with no gain.
+    type: 'ideas', title: 'Ideas', icon: Lightbulb,
+    color: 'text-purple-500', bg: 'bg-purple-50',
+    support: 'full', group: 'core', inNav: false,
+  },
+  {
     // Not offered separately on mobile: it would open a second, near-identical
     // ideas surface alongside the one already at home. Kept in the registry so
     // an existing `idea-generator` tab still resolves correctly.
