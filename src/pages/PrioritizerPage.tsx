@@ -104,7 +104,10 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
         else if (context?.project_id) onNavigate({ id: context.project_id, title, type: 'project', data: { id: context.project_id } })
         break
       case 'quick_thought':
-        onNavigate({ id: 'idea-generator', title: 'Ideas', type: 'idea-generator', data: { selectedThoughtId: source_id } })
+        /* `selectedThoughtId` was the retired generator's own selection
+           state and the standalone app has no equivalent, so it is dropped
+           rather than renamed into one. */
+        onNavigate({ id: 'ideas', title: 'Ideas', type: 'ideas', data: null })
         break
       default:
         if (context?.asset_id) onNavigate({ id: context.asset_id, title, type: 'asset', data: { id: context.asset_id } })

@@ -29,8 +29,8 @@ import { BlankTab } from '../components/tabs/BlankTab.tsx'
 import { DesktopOnlyCard } from '../components/mobile/DesktopOnlyCard'
 import { MobileDashboard } from '../components/mobile/MobileDashboard'
 import { isDesktopOnly } from '../lib/mobile/mobile-surfaces'
+import { canonicalTabTarget } from '../lib/tabs/legacy-tab-aliases'
 import { useIsMobile } from '../hooks/useMediaQuery'
-const IdeaGeneratorPage = lazy(() => import('./IdeaGeneratorPage').then(m => ({ default: m.IdeaGeneratorPage })))
 const WorkflowsPage = lazy(() => import('./WorkflowsPage').then(m => ({ default: m.WorkflowsPage })))
 import { ProjectsPage } from './ProjectsPage'
 import { ProjectDetailTab } from '../components/tabs/ProjectDetailTab'
@@ -491,6 +491,21 @@ export function DashboardPage() {
       }
     }
 
+    /*
+     * A retired tab type becomes the surface that answers for it now.
+     *
+     * Before the id is read, because everything below keys on it: the
+     * existing-tab lookup, the active id and the tab that gets created. An
+     * alias applied after that point would open a second tab for the same
+     * application, which is the duplicate this prevents.
+     *
+     * At the funnel rather than at the senders. A legacy descriptor can
+     * arrive from a banner, a search result, an event, a launcher tile or a
+     * saved session, and the list of senders anybody can enumerate is never
+     * all of them.
+     */
+    result = canonicalTabTarget(result)
+
     // For portfolios, prefer mnemonic (portfolio_id) as tab title
     const tabTitle = result.type === 'portfolio' && result.data?.portfolio_id
       ? result.data.portfolio_id
@@ -938,14 +953,16 @@ export function DashboardPage() {
   // Listen for custom event to open Ideas tab with filters (e.g., from "View all" in sidebar)
   useEffect(() => {
     const handleOpenIdeasTab = (event: CustomEvent) => {
-      const { filters } = event.detail || {}
-      // Navigate to idea-generator tab with initial filters
-      navigateRef.current({
-        id: 'idea-generator',
-        title: 'Ideas',
-        type: 'idea-generator',
-        data: { initialFilters: filters }
-      })
+      /*
+       * The filters go no further.
+       *
+       * They were `IdeasInitialFilters` — the retired generator's scope, view,
+       * time range and sort — and the standalone app has no counterpart for
+       * any of them. Translating them into something that looks equivalent
+       * would put the reader in a state they never chose, so the event now
+       * carries only what still means something: open Ideas.
+       */
+      navigateRef.current({ id: 'ideas', title: 'Ideas', type: 'ideas', data: null })
     }
 
     window.addEventListener('openIdeasTab', handleOpenIdeasTab as EventListener)
@@ -1123,8 +1140,6 @@ export function DashboardPage() {
         return <ListsPage onListSelect={handleSearchResult} />
       case 'list':
         return <ListTab list={activeTab.data} onAssetSelect={handleSearchResult} />
-      case 'idea-generator':
-        return <IdeaGeneratorPage onItemSelect={handleSearchResult} initialFilters={activeTab.data?.initialFilters} />
       case 'workflows':
         return <WorkflowsPage onNavigate={handleSearchResult} />
       case 'projects-list':
@@ -1255,6 +1270,18 @@ export function DashboardPage() {
        * there on a phone rather than mounting a desktop shell at 390px, which
        * is the same thing `dashboard` and `today` already do.
        */
+      /*
+       * `idea-generator` is a COMPATIBILITY tab type, not an application.
+       *
+       * It WAS the standalone desktop ideas app, so the standalone ideas app
+       * is what it meant, and it falls through to exactly the canonical
+       * render below — the smallest alias there is. Both the navigation
+       * funnel and the session restore rewrite it before it reaches here, so
+       * this arm should be unreachable in practice; it exists so a descriptor
+       * from a route nobody has thought of still lands somewhere real rather
+       * than on the blank default.
+       */
+      case 'idea-generator':
       case 'ideas':
         return isMobile ? renderDashboardContent() : <IdeasApp selectedIdeaId={activeTab.data?.selectedIdeaId ?? null} />
       /*
@@ -1485,7 +1512,7 @@ export function DashboardPage() {
               themselves, not a flag. */}
           <FirstSessionCoveragePrompt
             onGoToIdeas={() => handleSearchResult({
-              id: 'idea-generator', title: 'Ideas', type: 'idea-generator', data: null,
+              id: 'ideas', title: 'Ideas', type: 'ideas', data: null,
             })}
           />
 

@@ -340,7 +340,7 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       hint: 'Opens the Ideas tab.',
       icon: Lightbulb,
       done: hasViewedIdeaFeed,
-      action: () => onNavigate({ type: 'idea-generator', id: 'idea-generator', title: 'Ideas', data: {} }),
+      action: () => onNavigate({ type: 'ideas', id: 'ideas', title: 'Ideas', data: {} }),
       category: 'discover',
     },
     // Research workflow

@@ -115,7 +115,9 @@ const MAX_ERRORS = 0
  * visible rather than silently accumulating. Lowering it is a one-line commit
  * and should accompany whatever removed the errors.
  */
-const MAX_REPO_ERRORS = 8765
+// 8765 → 8752 when the Idea Generator and its feed module were deleted. The
+// errors went with the files; the ground is not lost by leaving the slack here.
+const MAX_REPO_ERRORS = 8752
 
 /**
  * A floor on real source files, now that they are counted as source files.

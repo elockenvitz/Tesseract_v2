@@ -86,6 +86,15 @@ export const GATED_DIRS = [
    * gated, and the two that main had listed as deferred move up.
    */
   'src/lib/tile-engine',
+  /*
+   * The standalone desktop Ideas lane, and the tab compatibility boundary that
+   * retired the surface it replaced. Both arrived gated rather than deferred:
+   * they are new, they hold the only assertions that Explore and Ideas resolve
+   * to the same object and that a saved session still opens something, and an
+   * unlisted directory is how a suite goes missing with no number moving.
+   */
+  'src/lib/desktop-ideas',
+  'src/lib/tabs',
   'src/lib/notifications',
   'src/components/notifications',
   'src/lib/capture',
@@ -163,7 +172,9 @@ export const DEFERRED_DIRS = [
   'src/lib/dashboard/__tests__',
   'src/lib/desktop-asset',
   'src/lib/desktop-decisions',
-  'src/lib/desktop-ideas',
+  // 'src/lib/desktop-ideas' moved UP to the gated list: the standalone Ideas
+  // lane now holds the assertions that Explore and the feed resolve to the same
+  // object, which is not a suite to leave outside the gate.
   'src/lib/desktop-portfolio',
   'src/lib/desktop-research',
   'src/lib/engagement',

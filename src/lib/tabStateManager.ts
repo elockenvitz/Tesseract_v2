@@ -1,3 +1,5 @@
+import { migrateLegacyTabs, type TabLike } from './tabs/legacy-tab-aliases'
+
 export interface TabState {
   [key: string]: any
 }
@@ -142,7 +144,25 @@ export class TabStateManager {
         return null
       }
 
-      return state
+      /*
+       * Retired tab types become the surface that answers for them now.
+       *
+       * Here rather than at the two call sites in `DashboardPage`, because
+       * this is the one function every restore path goes through — first
+       * mount, org switch, and the bug reporter's read of the same state. A
+       * migration applied at the readers is a migration that misses the next
+       * reader somebody adds.
+       *
+       * Not written back to storage: the session is rewritten on the next
+       * save anyway, and a read that mutates storage turns a diagnostic read
+       * into a side effect.
+       */
+      const { tabs, activeTabId, migrated } = migrateLegacyTabs(
+        state.tabs as TabLike[],
+        state.activeTabId,
+      )
+      if (!migrated.length) return state
+      return { ...state, tabs: tabs as MainTabState['tabs'], activeTabId: activeTabId ?? state.activeTabId }
     } catch (error) {
       console.warn('Failed to load tab state:', error)
       return null

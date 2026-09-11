@@ -57,7 +57,7 @@ export const STATIC_PAGES = [
   { id: 'charting', title: 'Charting', type: 'page' as const, subtitle: 'Technical charts', keywords: ['charts', 'technical', 'graphs', 'price'] },
   { id: 'asset-allocation', title: 'Asset Allocation', type: 'page' as const, subtitle: 'Portfolio allocation analysis', keywords: ['allocation', 'weights', 'rebalance'] },
   // Prioritizer removed - consolidated into All Priorities
-  { id: 'idea-generator', title: 'Idea Generator', type: 'page' as const, subtitle: 'Investment ideas', keywords: ['ideas', 'opportunities', 'screening'] },
+  { id: 'ideas', title: 'Ideas', type: 'page' as const, subtitle: 'Attention feed and Explore', keywords: ['ideas', 'opportunities', 'screening', 'explore', 'attention'] },
   { id: 'outcomes', title: 'Outcomes', type: 'page' as const, subtitle: 'Decisions and results', keywords: ['decisions', 'execution', 'results', 'approved', 'trades'] },
   { id: 'priorities', title: 'My Priorities', type: 'page' as const, subtitle: 'What needs your attention right now', keywords: ['attention', 'alerts', 'flags', 'urgent', 'review', 'notifications', 'priorities', 'todo', 'decisions'] },
   { id: 'files', title: 'Files', type: 'page' as const, subtitle: 'File management', keywords: ['documents', 'uploads', 'models'] },
