@@ -113,9 +113,37 @@ export function useDeferredLoading(loading: boolean): boolean {
  * `pointer-events-none` because this is transparent: the header underneath
  * stays visible and usable while the wait runs, which is the reason not to just
  * cover the screen instead.
+ *
+ * ── Why z-20, and not z-40 ────────────────────────────────────────────────
+ *
+ * It was z-40, which put it ABOVE the communication pane at z-30 — so opening
+ * Quick Ideas on a phone and then letting anything behind it revalidate drew
+ * the Tesseract mark on top of the open pane. A lazy tab chunk resolving was
+ * enough to do it.
+ *
+ * z-40 was claiming boot-level ownership of the screen, and none of these
+ * waits is the boot. First paint belongs to `#tesseract-boot-loader` in
+ * index.html — a `position: fixed` element outside React that paints before
+ * this component can exist, and at a moment when there is no pane to cover.
+ * DashboardPage's post-boot branch says as much in its own comment: it renders
+ * `null` until first paint has happened, and after that wants "the rest of the
+ * app chrome" to stay visible. It could not, at z-40.
+ *
+ * So every React loader is a BACKGROUND wait, and sits below the things a
+ * reader has deliberately opened:
+ *
+ *   z-[70]  nav drawer
+ *   z-[60]  bottom sheet
+ *   z-50    app header
+ *   z-30    communication pane   ← Quick Ideas
+ *   z-20    this                 ← background waits
+ *   z-10    page content         ← what a wait may legitimately veil
+ *
+ * Not an arbitrary large number in the other direction either: raising the
+ * pane would have left the same defect for the drawer and every sheet.
  */
 export const LOADER_ANCHOR =
-  'fixed inset-0 z-40 flex items-center justify-center pointer-events-none'
+  'fixed inset-0 z-20 flex items-center justify-center pointer-events-none'
 
 export function PageLoader({
   loading = true, text = 'Loading…', size = 96, inline = false, className = '',
