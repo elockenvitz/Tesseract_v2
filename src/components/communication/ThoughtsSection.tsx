@@ -9,6 +9,7 @@ import { clsx } from 'clsx'
 import { QuickThoughtCapture } from '../thoughts/QuickThoughtCapture'
 import { QuickTradeIdeaCapture } from '../thoughts/QuickTradeIdeaCapture'
 import { RecentQuickIdeas } from '../thoughts/RecentQuickIdeas'
+import { CaptureActionBands } from '../thoughts/CaptureActionBands'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
 import { PromptDetailView } from '../thoughts/PromptDetailView'
 import { PromptModal } from '../thoughts/PromptModal'
@@ -467,129 +468,63 @@ export function ThoughtsSection({
 
       {/* Capture Section */}
       <div className="flex-1 px-3 pb-3 overflow-y-auto">
-        {/* Mode selector — four actions in two groups */}
-        {captureMode === 'collapsed' && isMobileViewport && (
-          <MobileCaptureActions
-            thoughtCount={recentIdeas.filter(i => i.kind === 'thought').length}
-            pipelineCount={pipelineCount}
-            openPromptCount={openPromptCount}
-            pendingRecommendationCount={pendingRecommendationCount}
-            onCapture={handleOpenCapture}
-            onViewThoughts={handleViewAllIdeas}
-            onViewPipeline={() => {
-              window.dispatchEvent(new CustomEvent('openTradeQueue', { detail: {} }))
-              onClose?.()
-            }}
-            onViewPrompts={() => setShowPromptList(true)}
-            onViewPendingReview={() => setShowPendingReview(true)}
+        {/* The four actions. One component, both surfaces — see
+            CaptureActionBands for why the pane and the phone stopped having
+            separate implementations of the same four things. `dense` is the
+            only thing that differs: stacked and taller on a phone, two-up and
+            shorter in the pane, which has the width. */}
+        {captureMode === 'collapsed' && (
+          <CaptureActionBands
+            dense={isMobileViewport}
+            directNote={isMobileViewport ? undefined : 'Request insight or formalize a recommendation.'}
+            primary={[
+              {
+                key: 'idea', label: 'Quick thought', icon: Lightbulb, tone: 'amber', weight: 'primary',
+                onOpen: () => handleOpenCapture('idea'),
+                // Suppressed, not removed. This was
+                // `recentIdeas.filter(kind === 'thought').length` over a list
+                // capped at five — so it counted rows already rendered
+                // immediately below it, and could never exceed 5. It described
+                // neither the archive nor anything needing attention. The route
+                // to the full list is worth keeping; the digit was not.
+                count: null, countLabel: 'all thoughts',
+                onTrailing: handleViewAllIdeas,
+              },
+              {
+                key: 'trade_idea', label: 'Trade idea', icon: TrendingUp, tone: 'emerald', weight: 'primary',
+                onOpen: () => handleOpenCapture('trade_idea'),
+                // Kept: trade ideas I raised that are still moving — anything
+                // not approved, rejected, executed or deleted. Work in flight.
+                count: pipelineCount, countLabel: 'in the pipeline',
+                onTrailing: () => {
+                  window.dispatchEvent(new CustomEvent('openTradeQueue', { detail: {} }))
+                  onClose?.()
+                },
+              },
+            ]}
+            secondary={[
+              {
+                key: 'prompt', label: 'Prompt', icon: HelpCircle, tone: 'violet', weight: 'secondary',
+                onOpen: () => handleOpenCapture('prompt'),
+                // Kept: prompts I raised or was assigned, still unarchived and
+                // not closed. An open question with my name on it.
+                count: openPromptCount, countLabel: 'open prompts',
+                onTrailing: () => setShowPromptList(true),
+              },
+              {
+                key: 'proposal', label: 'Recommend', icon: FileText, tone: 'blue', weight: 'secondary',
+                onOpen: () => handleOpenCapture('proposal'),
+                // Kept: my decision requests still pending, under review or in
+                // discussion. Waiting on a PM.
+                count: pendingRecommendationCount, countLabel: 'awaiting a decision',
+                onTrailing: () => setShowPendingReview(true),
+              },
+            ]}
           />
         )}
 
-        {captureMode === 'collapsed' && !isMobileViewport && (
-          <>
-            {/* CAPTURE group */}
-            <div className="mb-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                Capture
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <button
-                  onClick={() => handleOpenCapture('idea')}
-                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-indigo-500 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-indigo-600 hover:to-blue-700 transition-all shadow-sm"
-                >
-                  <Lightbulb className="h-4 w-4" />
-                  <span>Thought</span>
-                </button>
-                {recentIdeas.filter(i => i.kind === 'thought').length > 0 && (
-                  <button
-                    onClick={handleViewAllIdeas}
-                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-colors"
-                  >
-                    <span className="font-semibold text-gray-600 dark:text-gray-300">{recentIdeas.filter(i => i.kind === 'thought').length}</span> recent thoughts
-                  </button>
-                )}
-              </div>
-              <div className="flex-1">
-                <button
-                  onClick={() => handleOpenCapture('trade_idea')}
-                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all shadow-sm"
-                >
-                  <TrendingUp className="h-4 w-4" />
-                  <span>Trade Idea</span>
-                </button>
-                {pipelineCount > 0 && (
-                  <button
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('openTradeQueue', { detail: {} }))
-                      onClose?.()
-                    }}
-                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-green-600 dark:hover:text-green-400 hover:underline transition-colors"
-                  >
-                    <span className="font-semibold text-gray-600 dark:text-gray-300">{pipelineCount}</span> in pipeline
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Divider */}
-            <div className="my-3 border-t border-gray-100 dark:border-gray-700" />
-
-            {/* DIRECT group */}
-            <div className="mb-0.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                Direct
-              </span>
-            </div>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-1.5 leading-tight">
-              Request insight or formalize a recommendation.
-            </p>
-            <div className="flex gap-2">
-              {/* Prompt column */}
-              <div className="flex-1">
-                <button
-                  onClick={() => handleOpenCapture('prompt')}
-                  title="Ask someone for input on the current context (assigned + tracked)"
-                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 border border-violet-300 dark:border-violet-600 text-violet-700 dark:text-violet-300 text-sm font-medium rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all"
-                >
-                  <HelpCircle className="h-4 w-4" />
-                  <span>Prompt</span>
-                </button>
-                {openPromptCount > 0 && (
-                  <button
-                    onClick={() => setShowPromptList(true)}
-                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 hover:underline transition-colors"
-                  >
-                    <span className="font-semibold text-gray-600 dark:text-gray-300">{openPromptCount}</span> open prompts
-                  </button>
-                )}
-              </div>
-
-              {/* Proposal column */}
-              <div className="flex-1">
-                <button
-                  onClick={() => handleOpenCapture('proposal')}
-                  title="Create a formal recommendation from a trade idea"
-                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 border-2 border-amber-300 dark:border-amber-500 text-amber-700 dark:text-amber-300 text-sm font-medium rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-all"
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>Recommend</span>
-                </button>
-                {pendingRecommendationCount > 0 && (
-                  <button
-                    onClick={() => setShowPendingReview(true)}
-                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-amber-600 dark:hover:text-amber-400 hover:underline transition-colors"
-                  >
-                    <span className="font-semibold text-gray-600 dark:text-gray-300">{pendingRecommendationCount}</span> pending review
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Divider — closes the DIRECT group before RECENT */}
-            <div className="my-3 border-t border-gray-100 dark:border-gray-700" />
-          </>
+        {captureMode === 'collapsed' && (
+          <div className="my-3 border-t border-gray-100 dark:border-gray-700" />
         )}
 
         {/* Recent Quick Ideas (personal only, no trade ideas).
@@ -725,156 +660,6 @@ function CaptureGuidance({ mode }: { mode: LegacyCaptureMode }) {
   const type = captureTypeForMode(mode)
   if (!type) return null
   return <p className="mb-3 text-xs text-gray-400">{type.guidance}</p>
-}
-
-// ─── Mobile capture actions ────────────────────────────────────────────────
-
-/**
- * The four capture actions, arranged for a phone.
- *
- * ── What was wrong ────────────────────────────────────────────────────────
- *
- * The desktop block renders all four at identical width and weight in two
- * rows, so nothing said which two matter. It then hung a detached 11px counter
- * under each button — eight separate things competing in a 390px column — and
- * gave the four buttons four unrelated treatments: an indigo→blue gradient, a
- * green→emerald gradient, a 1px violet outline and a 2px amber outline.
- *
- * ── What this does instead ────────────────────────────────────────────────
- *
- * Thought and Trade idea are full-width solid rows; Prompt and Recommend are
- * quiet rows beneath a divider. Hierarchy comes from weight and surface, not
- * from four different palettes — the hue is now only ever carrying MEANING,
- * and it is the hue the capture registry already assigns each kind, which is
- * also the amber the header's capture button uses.
- *
- * ── Why the counts are segmented buttons and not text inside the label ────
- *
- * Each count navigates somewhere its own button does NOT: the thought count
- * opens the ideas list, the trade-idea count opens the pipeline, the prompt
- * count opens the open-prompts list, the recommendation count opens pending
- * review. Folding the number into the capture button would have silently
- * dropped four routes. Nested buttons are invalid HTML, so each row is a pair
- * of siblings inside one rounded, overflow-hidden shell: one control to the
- * eye, two targets to the finger, both full height.
- *
- * Stacked rather than two-up because "Recommend" plus an icon plus a count
- * does not fit a 128px half-column at 320px. Full width also gives every
- * target the whole row.
- *
- * Phone only. The desktop block above is untouched.
- */
-function MobileCaptureActions({
-  thoughtCount,
-  pipelineCount,
-  openPromptCount,
-  pendingRecommendationCount,
-  onCapture,
-  onViewThoughts,
-  onViewPipeline,
-  onViewPrompts,
-  onViewPendingReview,
-}: {
-  thoughtCount: number
-  pipelineCount: number
-  openPromptCount: number
-  pendingRecommendationCount: number
-  /** Never `collapsed` — these open a form, they do not close one. */
-  onCapture: (mode: Exclude<CaptureMode, 'collapsed'>) => void
-  onViewThoughts: () => void
-  onViewPipeline: () => void
-  onViewPrompts: () => void
-  onViewPendingReview: () => void
-}) {
-  const primary = [
-    {
-      mode: 'idea' as const, label: 'Quick thought', icon: Lightbulb,
-      surface: 'bg-amber-500 active:bg-amber-600',
-      count: thoughtCount, countLabel: 'recent thoughts', onCount: onViewThoughts,
-    },
-    {
-      mode: 'trade_idea' as const, label: 'Trade idea', icon: TrendingUp,
-      surface: 'bg-emerald-600 active:bg-emerald-700',
-      count: pipelineCount, countLabel: 'in the pipeline', onCount: onViewPipeline,
-    },
-  ]
-
-  const secondary = [
-    {
-      mode: 'prompt' as const, label: 'Prompt', icon: HelpCircle,
-      accent: 'text-purple-600 dark:text-purple-400',
-      count: openPromptCount, countLabel: 'open prompts', onCount: onViewPrompts,
-    },
-    {
-      mode: 'proposal' as const, label: 'Recommend', icon: FileText,
-      accent: 'text-primary-600 dark:text-primary-400',
-      count: pendingRecommendationCount, countLabel: 'pending review', onCount: onViewPendingReview,
-    },
-  ]
-
-  return (
-    <div className="pt-1">
-      <div className="space-y-2">
-        {primary.map(({ mode, label, icon: Icon, surface, count, countLabel, onCount }) => (
-          <div key={mode} className={clsx('flex items-stretch rounded-xl overflow-hidden shadow-sm', surface)}>
-            <button
-              onClick={() => onCapture(mode)}
-              className="flex-1 flex items-center gap-3 px-4 py-3.5 text-left text-[15px] font-semibold text-white"
-            >
-              <Icon className="h-5 w-5 shrink-0" />
-              <span className="truncate">{label}</span>
-            </button>
-            {count > 0 && (
-              <button
-                onClick={onCount}
-                aria-label={`${count} ${countLabel}`}
-                className="flex items-center gap-0.5 px-3.5 border-l border-white/25 text-white"
-              >
-                <span className="text-sm font-bold tabular-nums">{count}</span>
-                <ChevronRight className="h-4 w-4 opacity-80" />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="my-3 border-t border-gray-100 dark:border-gray-800" />
-
-      {/* The group label stays — it is the only thing saying these two go
-          somewhere rather than into your own notes. The sentence that used to
-          sit under it does not: at 11px grey it was chrome, and the labels
-          plus their icons already carry it. */}
-      <span className="px-0.5 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-        Direct
-      </span>
-      <div className="mt-1.5 space-y-1.5">
-        {secondary.map(({ mode, label, icon: Icon, accent, count, countLabel, onCount }) => (
-          <div
-            key={mode}
-            className="flex items-stretch rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
-          >
-            <button
-              onClick={() => onCapture(mode)}
-              className="flex-1 flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800"
-            >
-              <Icon className={clsx('h-4 w-4 shrink-0', accent)} />
-              <span className="truncate">{label}</span>
-            </button>
-            {count > 0 && (
-              <button
-                onClick={onCount}
-                aria-label={`${count} ${countLabel}`}
-                className="flex items-center gap-0.5 px-3 border-l border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 active:bg-gray-50 dark:active:bg-gray-800"
-              >
-                <span className="text-xs font-bold tabular-nums">{count}</span>
-                <ChevronRight className="h-3.5 w-3.5 opacity-70" />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 // ─── Inline Open Prompts List ──────────────────────────────────────────────
