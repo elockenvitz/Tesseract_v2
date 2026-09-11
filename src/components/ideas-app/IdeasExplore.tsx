@@ -476,7 +476,10 @@ export function IdeasExplore({
          * item, which is exactly the "feed reset while I was reading" defect
          * the context requirement forbids. A button pages when the reader asks.
          */}
-        {feed.hasNextPage && (
+        {/* Outside the hidden list, so it needs the boot gate of its own —
+            otherwise the continuation control sits under a spinner offering to
+            page a feed that has not arrived. */}
+        {!booting && feed.hasNextPage && (
           <button
             onClick={feed.fetchNextPage}
             disabled={feed.isFetchingNextPage}
