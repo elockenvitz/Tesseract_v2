@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { usePortfolioLenses } from './mobile/usePortfolioLenses'
 import { useScenarioCards } from './mobile/useScenarioCards'
 import { useDerivedInsights } from './mobile/useDerivedInsights'
@@ -73,10 +74,39 @@ export function useDesktopCandidates(opts: { enabled?: boolean } = {}): DesktopC
    * producers' own flags are deliberately not destructured: a lens query still
    * in flight must not blank a feed that already has posts.
    */
-  const { data: lenses } = usePortfolioLenses({ enabled })
-  const { data: scenarioCards } = useScenarioCards({ enabled })
-  const { data: insights } = useDerivedInsights()
+  const lensesQ = usePortfolioLenses({ enabled })
+  const scenarioQ = useScenarioCards({ enabled })
+  const insightsQ = useDerivedInsights()
   const feed = useDesktopIdeasFeed('all')
+  const { data: lenses } = lensesQ
+  const { data: scenarioCards } = scenarioQ
+  const { data: insights } = insightsQ
+
+  /**
+   * Has every producer finished its FIRST attempt?
+   *
+   * The four resolve at different times, and each arrival re-runs `rankFeed`
+   * and `composeFeed` over a larger pool — so a cold load rendered the posts,
+   * then reordered the whole list when the lenses landed, then again for the
+   * scenarios. Individually correct, collectively a feed that shuffles under
+   * the reader. That is the hitch.
+   *
+   * `isFetched` is true after success OR error, which is what makes a failing
+   * optional producer unable to hold the feed shut.
+   */
+  const settledOnce = feed.isContextReady &&
+    !feed.isLoading && lensesQ.isFetched && scenarioQ.isFetched && insightsQ.isFetched
+
+  /**
+   * Latched, so this gates the FIRST paint and never again.
+   *
+   * Without the latch every later refetch — a window focus, a five-minute
+   * stale tick — would put the feed back into a loading state the reader has
+   * no reason to see. Boot is the only moment where waiting is better than
+   * showing something and moving it.
+   */
+  const hasSettled = useRef(false)
+  if (settledOnce) hasSettled.current = true
 
   return {
     lenses,
@@ -94,7 +124,12 @@ export function useDesktopCandidates(opts: { enabled?: boolean } = {}): DesktopC
      * replacing it, so the surface stays stable while the slower producers
      * land. `lensesLoading` and friends are deliberately not folded in.
      */
-    isLoading: feed.isLoading,
+    /*
+     * Loading until the pool is whole, once. After that the post half alone
+     * decides, so a slow producer arrives INTO the list rather than blanking
+     * it.
+     */
+    isLoading: hasSettled.current ? feed.isLoading : true,
     isContextReady: feed.isContextReady,
     isError: feed.isError,
     retry: () => { void feed.refetch() },
