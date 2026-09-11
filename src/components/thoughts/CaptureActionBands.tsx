@@ -147,9 +147,25 @@ function Band({ band, dense }: { band: CaptureBand; dense: boolean }) {
 }
 
 /**
- * `dense` is the phone: taller bands, bigger type, stacked one per row.
- * Otherwise the pane: shorter bands, two to a row, because it has the width
- * and stacking four full-width bands in a 320px-wide sidebar wastes it.
+ * Both surfaces stack. `dense` changes the ROW, not the arrangement: taller
+ * bands and 15px labels on a phone, compact bands and 14px labels in the pane.
+ *
+ * ── Why the pane does not go two-up ───────────────────────────────────────
+ *
+ * It was two-up, and it truncated every label to "Quick t...", "Trade i...",
+ * "Recomm...". The pane is `w-96` — 384px, less 24px of padding — so a
+ * two-column band is 176px. Subtract the trailing zone, the band padding and
+ * the icon and 60px of label space is left for a name that needs about 100.
+ *
+ * That is not fixable by trimming: at a trailing zone of ZERO width the label
+ * still only gets 116px, and a zero-width trailing zone has no route in it.
+ * Two columns cannot hold this content at this pane width, so the pane stacks.
+ *
+ * It does not cost height. The arrangement this replaced was two buttons per
+ * group each with a detached count link underneath — four rows per group in
+ * practice. Four stacked bands is fewer rows than that, not more.
+ *
+ * Shared design language, not identical geometry.
  */
 export function CaptureActionBands({
   primary,
@@ -163,8 +179,8 @@ export function CaptureActionBands({
   /** Shown under the Direct label where there is room for it. */
   directNote?: string
 }) {
-  const group = dense ? 'space-y-2' : 'grid grid-cols-2 gap-2'
-  const groupSecondary = dense ? 'space-y-1.5' : 'grid grid-cols-2 gap-2'
+  const group = dense ? 'space-y-2' : 'space-y-1.5'
+  const groupSecondary = dense ? 'space-y-1.5' : 'space-y-1.5'
 
   return (
     <div className={dense ? 'pt-1' : undefined}>

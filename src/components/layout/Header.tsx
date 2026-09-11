@@ -793,16 +793,25 @@ export function Header({
               )}
               title="AI Assistant"
             >
-              {/* A filled gradient chip sitting among four flat grey glyphs made
-                  the phone bar read as a pile of unrelated widgets, and it was
-                  shouting for the one action that is NOT the primary one there
-                  (capture is — hence the amber lightbulb). On a phone it joins
-                  the set; the desktop bar keeps the gradient mark it has
-                  always had, where there is room for it to be a brand cue. */}
-              <Sparkles className="h-5 w-5 md:hidden" />
-              <div className="hidden md:flex w-5 h-5 bg-gradient-to-r from-blue-500 to-purple-500 rounded items-center justify-center">
-                <span className="text-white text-xs font-bold">AI</span>
-              </div>
+              {/* On a phone a filled gradient chip among four flat grey glyphs
+                  read as a pile of unrelated widgets, and it was shouting for
+                  an action that is not the primary one there (capture is —
+                  hence the amber lightbulb).
+
+                  Branched in JS on `isMobile`, NOT with a `hidden md:flex`
+                  pair. The desktop element below is then the original one,
+                  with the original class string, and there is no mobile
+                  override in the tree that could leak into it — the phone
+                  branch does not exist at desktop widths at all. A previous
+                  pass did this with utility classes and changed the desktop
+                  mark, which is exactly the failure this shape prevents. */}
+              {isMobile ? (
+                <Sparkles className="h-5 w-5" />
+              ) : (
+                <div className="w-5 h-5 bg-gradient-to-r from-blue-500 to-purple-500 rounded flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">AI</span>
+                </div>
+              )}
             </button>
             
             {/* Direct Messages Button */}
