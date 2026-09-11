@@ -136,12 +136,12 @@ function SignalPill({ signal }: { signal: QuickIdeaSignal }) {
   return (
     <div
       className={clsx(
-        'flex items-center justify-center w-5 h-5 rounded flex-shrink-0',
+        'flex items-center justify-center w-5 h-5 max-sm:w-7 max-sm:h-7 rounded flex-shrink-0',
         config.bgColor
       )}
       title={config.label}
     >
-      <Icon className={clsx('h-3 w-3', config.textColor)} />
+      <Icon className={clsx('h-3 w-3 max-sm:h-4 max-sm:w-4', config.textColor)} />
     </div>
   )
 }
@@ -151,7 +151,7 @@ function TypeTag({ item }: { item: RecentItem }) {
   if (item.kind === 'prompt') {
     const st = STATUS_LABEL[item.status] || STATUS_LABEL.open
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-medium leading-none">
+      <span className="inline-flex items-center gap-1 text-[10px] max-sm:text-[11px] font-medium leading-none">
         <MessageCircleQuestion className="h-3 w-3 text-violet-500 dark:text-violet-400" />
         <span className="uppercase tracking-wide text-violet-600 dark:text-violet-400">Prompt</span>
         <span className="text-gray-300 dark:text-gray-600">·</span>
@@ -161,7 +161,7 @@ function TypeTag({ item }: { item: RecentItem }) {
   }
 
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-medium leading-none">
+    <span className="inline-flex items-center gap-1 text-[10px] max-sm:text-[11px] font-medium leading-none">
       <Lightbulb className="h-3 w-3 text-gray-400 dark:text-gray-500" />
       <span className="uppercase tracking-wide text-gray-400 dark:text-gray-500">Thought</span>
     </span>
@@ -174,7 +174,7 @@ function MetaLine({ item }: { item: RecentItem }) {
 
   // Timestamp
   parts.push(
-    <span key="time" className="text-[10px] text-gray-400 dark:text-gray-500">
+    <span key="time" className="text-[10px] max-sm:text-[11px] text-gray-400 dark:text-gray-500">
       {formatRelativeTime(item.createdAt)}
     </span>
   )
@@ -182,8 +182,8 @@ function MetaLine({ item }: { item: RecentItem }) {
   // Context tag (e.g. COIN)
   if (item.contextTag) {
     parts.push(
-      <span key="ctx-dot" className="text-[10px] text-gray-300 dark:text-gray-600">·</span>,
-      <span key="ctx" className="text-[10px] font-medium text-gray-500 dark:text-gray-400 truncate max-w-[60px]">
+      <span key="ctx-dot" className="text-[10px] max-sm:text-[11px] text-gray-300 dark:text-gray-600">·</span>,
+      <span key="ctx" className="text-[10px] max-sm:text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate max-w-[60px] max-sm:max-w-[90px]">
         {item.contextTag.label}
       </span>
     )
@@ -192,8 +192,8 @@ function MetaLine({ item }: { item: RecentItem }) {
   // Prompt-specific: assignee
   if (item.kind === 'prompt' && item.assigneeName) {
     parts.push(
-      <span key="to-dot" className="text-[10px] text-gray-300 dark:text-gray-600">·</span>,
-      <span key="to" className="text-[10px] text-gray-400 dark:text-gray-500 shrink-0">
+      <span key="to-dot" className="text-[10px] max-sm:text-[11px] text-gray-300 dark:text-gray-600">·</span>,
+      <span key="to" className="text-[10px] max-sm:text-[11px] text-gray-400 dark:text-gray-500 shrink-0">
         To: {item.assigneeName}
       </span>
     )
@@ -210,17 +210,17 @@ function RecentItemRow({ item, onClick }: { item: RecentItem; onClick: () => voi
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left group cursor-pointer"
+      className="w-full flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left group cursor-pointer max-sm:gap-2.5 max-sm:px-2.5 max-sm:py-3 max-sm:items-center max-sm:active:bg-gray-100 dark:max-sm:active:bg-gray-800"
     >
       {/* Signal icon — only for thoughts (prompts have no sentiment) */}
       {item.kind === 'thought' && item.signal ? (
         <SignalPill signal={item.signal} />
       ) : item.kind === 'thought' ? (
-        <div className="w-5 h-5 rounded bg-gray-100 dark:bg-gray-700 flex-shrink-0" />
+        <div className="w-5 h-5 max-sm:w-7 max-sm:h-7 rounded bg-gray-100 dark:bg-gray-700 flex-shrink-0" />
       ) : (
         // Prompt: subtle violet dot indicator
-        <div className="w-5 h-5 rounded bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center flex-shrink-0">
-          <MessageCircleQuestion className="h-3 w-3 text-violet-500 dark:text-violet-400" />
+        <div className="w-5 h-5 max-sm:w-7 max-sm:h-7 rounded bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center flex-shrink-0">
+          <MessageCircleQuestion className="h-3 w-3 max-sm:h-4 max-sm:w-4 text-violet-500 dark:text-violet-400" />
         </div>
       )}
 
@@ -230,7 +230,7 @@ function RecentItemRow({ item, onClick }: { item: RecentItem; onClick: () => voi
         <TypeTag item={item} />
 
         {/* Title / text */}
-        <p className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2 leading-snug mt-0.5">
+        <p className="text-xs max-sm:text-sm text-gray-700 dark:text-gray-300 line-clamp-2 leading-snug mt-0.5 max-sm:mt-1">
           {item.text}
         </p>
 
@@ -239,7 +239,7 @@ function RecentItemRow({ item, onClick }: { item: RecentItem; onClick: () => voi
       </div>
 
       {/* Hover chevron */}
-      <ChevronRight className="h-3 w-3 text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-1" />
+      <ChevronRight className="h-3 w-3 max-sm:h-4 max-sm:w-4 text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 max-sm:opacity-100 transition-opacity flex-shrink-0 mt-1 max-sm:mt-0" />
     </button>
   )
 }
@@ -260,12 +260,12 @@ export function RecentQuickIdeas({
       <div className="mt-4">
         <div className="border-t border-gray-200 dark:border-gray-700 mb-2" />
         <div className="flex items-center justify-between px-1 mb-1">
-          <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+          <span className="text-[10px] max-sm:text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
             Recent
           </span>
           <button
             onClick={onViewAll}
-            className="text-[10px] text-gray-400 dark:text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+            className="text-[10px] max-sm:text-xs max-sm:font-medium text-gray-400 dark:text-gray-500 max-sm:text-primary-600 dark:max-sm:text-primary-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors max-sm:px-2 max-sm:py-1.5 max-sm:-mr-2 max-sm:rounded-md max-sm:active:bg-gray-100 dark:max-sm:active:bg-gray-800"
           >
             View all
           </button>
@@ -284,19 +284,19 @@ export function RecentQuickIdeas({
 
       {/* Header with View all */}
       <div className="flex items-center justify-between px-1 mb-1">
-        <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+        <span className="text-[10px] max-sm:text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
           Recent
         </span>
         <button
           onClick={onViewAll}
-          className="text-[10px] text-gray-400 dark:text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+          className="text-[10px] max-sm:text-xs max-sm:font-medium text-gray-400 dark:text-gray-500 max-sm:text-primary-600 dark:max-sm:text-primary-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors max-sm:px-2 max-sm:py-1.5 max-sm:-mr-2 max-sm:rounded-md max-sm:active:bg-gray-100 dark:max-sm:active:bg-gray-800"
         >
           View all
         </button>
       </div>
 
       {/* Fixed list (no scrolling) */}
-      <div className="space-y-0.5">
+      <div className="space-y-0.5 max-sm:space-y-1">
         {items.map((item) => (
           <RecentItemRow
             key={item.id}

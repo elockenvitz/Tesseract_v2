@@ -453,8 +453,11 @@ export function ThoughtsSection({
         </div>
       )}
 
-      {/* Purpose statement - only show when no mode selected */}
-      {captureMode === 'collapsed' && (
+      {/* Purpose statement - only show when no mode selected.
+          Desktop only: on a phone the four actions below say what this is, and
+          a line of grey 12px above them is the first thing to cut when the
+          screen is 390px wide. */}
+      {captureMode === 'collapsed' && !isMobileViewport && (
         <div className="px-3 pt-1 pb-2">
           <p className="text-xs text-gray-400">
             Capture ideas the moment they occur.
@@ -465,7 +468,24 @@ export function ThoughtsSection({
       {/* Capture Section */}
       <div className="flex-1 px-3 pb-3 overflow-y-auto">
         {/* Mode selector — four actions in two groups */}
-        {captureMode === 'collapsed' && (
+        {captureMode === 'collapsed' && isMobileViewport && (
+          <MobileCaptureActions
+            thoughtCount={recentIdeas.filter(i => i.kind === 'thought').length}
+            pipelineCount={pipelineCount}
+            openPromptCount={openPromptCount}
+            pendingRecommendationCount={pendingRecommendationCount}
+            onCapture={handleOpenCapture}
+            onViewThoughts={handleViewAllIdeas}
+            onViewPipeline={() => {
+              window.dispatchEvent(new CustomEvent('openTradeQueue', { detail: {} }))
+              onClose?.()
+            }}
+            onViewPrompts={() => setShowPromptList(true)}
+            onViewPendingReview={() => setShowPendingReview(true)}
+          />
+        )}
+
+        {captureMode === 'collapsed' && !isMobileViewport && (
           <>
             {/* CAPTURE group */}
             <div className="mb-1">
@@ -569,16 +589,19 @@ export function ThoughtsSection({
 
             {/* Divider — closes the DIRECT group before RECENT */}
             <div className="my-3 border-t border-gray-100 dark:border-gray-700" />
-
-            {/* Recent Quick Ideas (personal only, no trade ideas) */}
-            <RecentQuickIdeas
-              items={recentIdeas}
-              onOpen={handleOpenIdea}
-              onViewAll={handleViewAllIdeas}
-              hasMore={hasMore}
-            />
-
           </>
+        )}
+
+        {/* Recent Quick Ideas (personal only, no trade ideas).
+            Outside the two branches above so both shells show it — it is the
+            same list either way, and only its own internal density differs. */}
+        {captureMode === 'collapsed' && (
+          <RecentQuickIdeas
+            items={recentIdeas}
+            onOpen={handleOpenIdea}
+            onViewAll={handleViewAllIdeas}
+            hasMore={hasMore}
+          />
         )}
 
         {/* Capture form for quick ideas (Thought / Research / Thesis) */}
@@ -702,6 +725,156 @@ function CaptureGuidance({ mode }: { mode: LegacyCaptureMode }) {
   const type = captureTypeForMode(mode)
   if (!type) return null
   return <p className="mb-3 text-xs text-gray-400">{type.guidance}</p>
+}
+
+// ─── Mobile capture actions ────────────────────────────────────────────────
+
+/**
+ * The four capture actions, arranged for a phone.
+ *
+ * ── What was wrong ────────────────────────────────────────────────────────
+ *
+ * The desktop block renders all four at identical width and weight in two
+ * rows, so nothing said which two matter. It then hung a detached 11px counter
+ * under each button — eight separate things competing in a 390px column — and
+ * gave the four buttons four unrelated treatments: an indigo→blue gradient, a
+ * green→emerald gradient, a 1px violet outline and a 2px amber outline.
+ *
+ * ── What this does instead ────────────────────────────────────────────────
+ *
+ * Thought and Trade idea are full-width solid rows; Prompt and Recommend are
+ * quiet rows beneath a divider. Hierarchy comes from weight and surface, not
+ * from four different palettes — the hue is now only ever carrying MEANING,
+ * and it is the hue the capture registry already assigns each kind, which is
+ * also the amber the header's capture button uses.
+ *
+ * ── Why the counts are segmented buttons and not text inside the label ────
+ *
+ * Each count navigates somewhere its own button does NOT: the thought count
+ * opens the ideas list, the trade-idea count opens the pipeline, the prompt
+ * count opens the open-prompts list, the recommendation count opens pending
+ * review. Folding the number into the capture button would have silently
+ * dropped four routes. Nested buttons are invalid HTML, so each row is a pair
+ * of siblings inside one rounded, overflow-hidden shell: one control to the
+ * eye, two targets to the finger, both full height.
+ *
+ * Stacked rather than two-up because "Recommend" plus an icon plus a count
+ * does not fit a 128px half-column at 320px. Full width also gives every
+ * target the whole row.
+ *
+ * Phone only. The desktop block above is untouched.
+ */
+function MobileCaptureActions({
+  thoughtCount,
+  pipelineCount,
+  openPromptCount,
+  pendingRecommendationCount,
+  onCapture,
+  onViewThoughts,
+  onViewPipeline,
+  onViewPrompts,
+  onViewPendingReview,
+}: {
+  thoughtCount: number
+  pipelineCount: number
+  openPromptCount: number
+  pendingRecommendationCount: number
+  /** Never `collapsed` — these open a form, they do not close one. */
+  onCapture: (mode: Exclude<CaptureMode, 'collapsed'>) => void
+  onViewThoughts: () => void
+  onViewPipeline: () => void
+  onViewPrompts: () => void
+  onViewPendingReview: () => void
+}) {
+  const primary = [
+    {
+      mode: 'idea' as const, label: 'Quick thought', icon: Lightbulb,
+      surface: 'bg-amber-500 active:bg-amber-600',
+      count: thoughtCount, countLabel: 'recent thoughts', onCount: onViewThoughts,
+    },
+    {
+      mode: 'trade_idea' as const, label: 'Trade idea', icon: TrendingUp,
+      surface: 'bg-emerald-600 active:bg-emerald-700',
+      count: pipelineCount, countLabel: 'in the pipeline', onCount: onViewPipeline,
+    },
+  ]
+
+  const secondary = [
+    {
+      mode: 'prompt' as const, label: 'Prompt', icon: HelpCircle,
+      accent: 'text-purple-600 dark:text-purple-400',
+      count: openPromptCount, countLabel: 'open prompts', onCount: onViewPrompts,
+    },
+    {
+      mode: 'proposal' as const, label: 'Recommend', icon: FileText,
+      accent: 'text-primary-600 dark:text-primary-400',
+      count: pendingRecommendationCount, countLabel: 'pending review', onCount: onViewPendingReview,
+    },
+  ]
+
+  return (
+    <div className="pt-1">
+      <div className="space-y-2">
+        {primary.map(({ mode, label, icon: Icon, surface, count, countLabel, onCount }) => (
+          <div key={mode} className={clsx('flex items-stretch rounded-xl overflow-hidden shadow-sm', surface)}>
+            <button
+              onClick={() => onCapture(mode)}
+              className="flex-1 flex items-center gap-3 px-4 py-3.5 text-left text-[15px] font-semibold text-white"
+            >
+              <Icon className="h-5 w-5 shrink-0" />
+              <span className="truncate">{label}</span>
+            </button>
+            {count > 0 && (
+              <button
+                onClick={onCount}
+                aria-label={`${count} ${countLabel}`}
+                className="flex items-center gap-0.5 px-3.5 border-l border-white/25 text-white"
+              >
+                <span className="text-sm font-bold tabular-nums">{count}</span>
+                <ChevronRight className="h-4 w-4 opacity-80" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="my-3 border-t border-gray-100 dark:border-gray-800" />
+
+      {/* The group label stays — it is the only thing saying these two go
+          somewhere rather than into your own notes. The sentence that used to
+          sit under it does not: at 11px grey it was chrome, and the labels
+          plus their icons already carry it. */}
+      <span className="px-0.5 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+        Direct
+      </span>
+      <div className="mt-1.5 space-y-1.5">
+        {secondary.map(({ mode, label, icon: Icon, accent, count, countLabel, onCount }) => (
+          <div
+            key={mode}
+            className="flex items-stretch rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
+          >
+            <button
+              onClick={() => onCapture(mode)}
+              className="flex-1 flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800"
+            >
+              <Icon className={clsx('h-4 w-4 shrink-0', accent)} />
+              <span className="truncate">{label}</span>
+            </button>
+            {count > 0 && (
+              <button
+                onClick={onCount}
+                aria-label={`${count} ${countLabel}`}
+                className="flex items-center gap-0.5 px-3 border-l border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 active:bg-gray-50 dark:active:bg-gray-800"
+              >
+                <span className="text-xs font-bold tabular-nums">{count}</span>
+                <ChevronRight className="h-3.5 w-3.5 opacity-70" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // ─── Inline Open Prompts List ──────────────────────────────────────────────

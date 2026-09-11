@@ -636,11 +636,16 @@ export function Header({
             <div className="md:hidden h-5 w-px bg-gray-200 dark:bg-gray-700 mx-2 flex-shrink-0" />
             <button
               onClick={() => setShowMobileSearch(true)}
-              className="md:hidden flex items-center gap-1.5 min-w-0 h-9 -ml-0.5 pr-2 rounded-lg no-touch-target text-gray-400 dark:text-gray-500 active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
+              className="md:hidden inline-flex items-center justify-center h-9 w-9 rounded-full no-touch-target text-gray-400 dark:text-gray-500 active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
               aria-label="Search"
+              title="Search"
             >
+              {/* The word went. Eight controls were competing across a 390px
+                  bar and this one spent ~50px restating a magnifier that every
+                  phone user already reads. `aria-label` keeps it named for
+                  assistive tech, and it still opens the same full overlay.
+                  Desktop is unaffected — it has a real search FIELD, not this. */}
               <Search className="h-[18px] w-[18px] shrink-0" />
-              <span className="text-sm truncate">Search</span>
             </button>
 
             {/* Divider + Org Switcher. Hidden on phones: the drawer carries
@@ -788,7 +793,14 @@ export function Header({
               )}
               title="AI Assistant"
             >
-              <div className="w-5 h-5 bg-gradient-to-r from-blue-500 to-purple-500 rounded flex items-center justify-center">
+              {/* A filled gradient chip sitting among four flat grey glyphs made
+                  the phone bar read as a pile of unrelated widgets, and it was
+                  shouting for the one action that is NOT the primary one there
+                  (capture is — hence the amber lightbulb). On a phone it joins
+                  the set; the desktop bar keeps the gradient mark it has
+                  always had, where there is room for it to be a brand cue. */}
+              <Sparkles className="h-5 w-5 md:hidden" />
+              <div className="hidden md:flex w-5 h-5 bg-gradient-to-r from-blue-500 to-purple-500 rounded items-center justify-center">
                 <span className="text-white text-xs font-bold">AI</span>
               </div>
             </button>
