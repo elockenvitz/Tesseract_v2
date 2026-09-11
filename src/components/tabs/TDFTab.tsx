@@ -388,14 +388,14 @@ function OverviewSection({
     /* Two panes, 2:1, side by side on a wide screen. On a phone they stack —
        the allocation chart, then the stats — which is the same reading order,
        not a different one. */
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
       {/* Current Allocation */}
-      <Card className="p-4 lg:col-span-2">
+      <Card className="p-4 sm:col-span-2">
         <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Current Allocation</h3>
         {/* A fixed 192px donut beside its legend needs ~380px. Below `sm` the
             legend moves under the chart instead of being squeezed against it. */}
         <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8">
-          <div className="w-48 h-48 shrink-0">
+          <div className="w-48 h-48">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie

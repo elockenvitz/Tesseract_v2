@@ -270,9 +270,9 @@ export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
       </div>
 
       {/* TDF Grid — three across is a desktop shape; at 320px it left each card
-          about 95px. Same cards, same order, reflowed. This is the ladder
-          Portfolios, Themes and Lists already use. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          about 95px. One card per row on a phone, three from 640px up —
+          which is exactly what every width above a phone already did. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {filteredSummaries.map((summary) => (
           <TDFCard
             key={summary.tdf.id}

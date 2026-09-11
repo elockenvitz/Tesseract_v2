@@ -444,7 +444,7 @@ function BatchTradesList({
         <table className="w-full text-xs min-w-[720px] sm:min-w-0">
           <thead className="bg-gray-50 dark:bg-gray-800/60">
             <tr className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              <th className="text-left px-3 py-2 sticky left-0 z-20 bg-gray-50 dark:bg-gray-800">Symbol</th>
+              <th className="text-left px-3 py-2 max-sm:sticky max-sm:left-0 max-sm:z-20 max-sm:bg-gray-50 dark:max-sm:bg-gray-800">Symbol</th>
               <th className="text-left px-3 py-2">Action</th>
               <th className="text-right px-3 py-2">Tgt Wt</th>
               <th className="text-right px-3 py-2">Δ Wt</th>
@@ -572,7 +572,14 @@ function TradeRow({
   // visibly underneath the symbol. Same reasoning, and the same pair of values,
   // as AcceptedTradesTable — the two tables sit one toggle apart in Trade Book
   // and should not disagree about this.
-  const stickyBg = rowIndex % 2 === 0 ? 'bg-gray-50 dark:bg-gray-900' : 'bg-white dark:bg-gray-900'
+  //
+  // `max-sm:` throughout. From 640px up `sm:min-w-0` means the table never
+  // scrolls sideways, so freezing buys nothing there — and the opaque fill WOULD
+  // be visible, replacing the translucent banding with a flat block. Confining
+  // it to phone widths is what keeps desktop byte-identical.
+  const stickyBg = rowIndex % 2 === 0
+    ? 'max-sm:bg-gray-50 dark:max-sm:bg-gray-900'
+    : 'max-sm:bg-white dark:max-sm:bg-gray-900'
 
   const hasNote = !!(trade.acceptance_note && trade.acceptance_note.trim())
   const canExpand = hasNote || !!onAddComment
@@ -593,7 +600,7 @@ function TradeRow({
         try { window.dispatchEvent(new CustomEvent('pilot-tradebook:trade-reviewed')) } catch { /* ignore */ }
       } : undefined}
     >
-      <td className={clsx('px-3 py-2 font-medium text-gray-900 dark:text-white sticky left-0 z-10', stickyBg)}>
+      <td className={clsx('px-3 py-2 font-medium text-gray-900 dark:text-white max-sm:sticky max-sm:left-0 max-sm:z-10', stickyBg)}>
         {trade.asset?.symbol || 'Unknown'}
       </td>
       <td className="px-3 py-2">
