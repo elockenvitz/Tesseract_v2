@@ -880,6 +880,25 @@ export function SignalCardView({
                     a desktop card, a digest — still wants the action in the
                     grammar, and nine builders and their tests should not churn
                     for a decision this component is the only one making. */}
+                {/*
+                    On desktop the quick actions live HERE, not in the footer.
+                    In the split workspace the tile itself is the primary act,
+                    so a row of secondary buttons on every card competes with
+                    the one thing the reader is meant to do. Same ids, same
+                    routing, same labels — moved, not removed. The phone keeps
+                    them in the bar, where the card IS the interaction.
+                */}
+                {(layout === 'flow' ? card.actions.quick : []).map(a => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    data-slot="menu-item"
+                    onClick={() => { setMenuOpen(false); onAction(a.id, card) }}
+                    className="block min-h-[44px] w-full px-4 py-3 text-left text-[14px] font-medium normal-case tracking-normal text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700/60"
+                  >
+                    {a.label}
+                  </button>
+                ))}
                 {card.actions.menu.filter(a => a.id !== 'why').map(a => (
                   <button
                     key={a.id}
@@ -2003,7 +2022,8 @@ export function SignalCardView({
             routes exactly where this button did — see `FeedCaptureSheet`.
             `card.actions.open` is untouched in the contract: the sheet reads
             it, and every builder keeps its label and href. */}
-        {card.actions.quick.map(a => (
+        {/* Desktop renders these in the overflow instead — see the menu. */}
+        {(layout === 'flow' ? [] : card.actions.quick).map(a => (
           <button
             key={a.id}
             type="button"
