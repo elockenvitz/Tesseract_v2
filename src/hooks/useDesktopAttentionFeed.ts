@@ -14,6 +14,7 @@ import { useDesktopCandidates } from './useDesktopCandidates'
 import { EMPTY_FILTER, useFeedFacets, type FeedFacets, type FeedFilter } from './mobile/useFeedFacets'
 import type { SignalCard } from '../lib/signals/contract'
 import type { ScoredFeedItem } from './ideas/types'
+import type { PreviewSource } from '../lib/signals/feed-preview'
 
 /**
  * The Ideas attention feed: every candidate family, ranked by consequence.
@@ -52,6 +53,14 @@ export interface AttentionEntry {
   input: IdeaInput | null
   /** Which producer this came from, for the workspace router. */
   family: 'post' | 'stale_target' | 'target_hit' | 'conviction' | 'crowding' | 'scenario_gap'
+  /**
+   * The structured row the producer returned, for the preview layer.
+   *
+   * A card is a claim and drops the numbers behind it — a crowding card says
+   * "4 books" while its row is holding the weight in each. Carried for
+   * presentation only; nothing routes or ranks on it.
+   */
+  source: PreviewSource | null
 }
 
 /** The facts this shell can state about a card, for Curate. */
@@ -131,21 +140,25 @@ export function useDesktopAttentionFeed(
     for (const item of pool.feedItems) {
       const input = feedItemToIdeaInput(item as unknown as FeedItemLike)
       const r = buildIdeaCard(input)
-      if (r.ok) out.push({ key: r.card.id, card: r.card, item, input, family: 'post' })
+      if (r.ok) out.push({ key: r.card.id, card: r.card, item, input, family: 'post', source: null })
     }
 
     const lenses = pool.lenses as {
       stale?: unknown[]; breaches?: unknown[]; conviction?: unknown[]; crowded?: unknown[]
     } | undefined
 
-    const add = (r: { ok: boolean; card?: SignalCard }, family: AttentionEntry['family']) => {
-      if (r.ok && r.card) out.push({ key: r.card.id, card: r.card, item: null, input: null, family })
+    const add = (
+      r: { ok: boolean; card?: SignalCard },
+      family: AttentionEntry['family'],
+      source: PreviewSource | null = null,
+    ) => {
+      if (r.ok && r.card) out.push({ key: r.card.id, card: r.card, item: null, input: null, family, source })
     }
 
     for (const s of lenses?.stale ?? []) add(buildStaleTargetCard(s as never), 'stale_target')
     for (const b of lenses?.breaches ?? []) add(buildTargetHitCard(b as never), 'target_hit')
-    for (const c of lenses?.conviction ?? []) add(buildConvictionCard(c as never), 'conviction')
-    for (const c of lenses?.crowded ?? []) add(buildCrowdingCard(c as never), 'crowding')
+    for (const c of lenses?.conviction ?? []) add(buildConvictionCard(c as never), 'conviction', c as PreviewSource)
+    for (const c of lenses?.crowded ?? []) add(buildCrowdingCard(c as never), 'crowding', c as PreviewSource)
 
     /*
      * Scenario cards arrive already BUILT — `useScenarioCards` runs
@@ -154,10 +167,10 @@ export function useDesktopAttentionFeed(
      * scenario gap fires.
      */
     for (const c of pool.scenarioCards as { ok?: boolean; card?: SignalCard }[]) {
-      if (c?.ok && c.card) out.push({ key: c.card.id, card: c.card, item: null, input: null, family: 'scenario_gap' })
+      if (c?.ok && c.card) out.push({ key: c.card.id, card: c.card, item: null, input: null, family: 'scenario_gap', source: null })
       else if ((c as unknown as SignalCard)?.id) {
         const card = c as unknown as SignalCard
-        out.push({ key: card.id, card, item: null, input: null, family: 'scenario_gap' })
+        out.push({ key: card.id, card, item: null, input: null, family: 'scenario_gap', source: null })
       }
     }
 

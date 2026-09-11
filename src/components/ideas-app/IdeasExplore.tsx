@@ -5,7 +5,8 @@ import { CuratePanel } from './CuratePanel'
 import { EMPTY_FILTER, filterCount, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { SignalCardView } from '../signals/SignalCardView'
 import { ideaPanes } from '../signals/ideaPanes'
-import { CardEvidenceView, evidenceSymbol, hasDrawableEvidence } from '../signals/CardEvidenceView'
+import { FeedPreview } from '../signals/FeedPreview'
+import { previewFor, previewSymbol } from '../../lib/signals/feed-preview'
 import { usePriceHistory } from '../../hooks/mobile/usePriceHistory'
 import type { SignalCard } from '../../lib/signals/contract'
 import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
@@ -129,7 +130,7 @@ export function IdeasExplore({
    * wide, so more resolution than that cannot be shown and costs round trips.
    */
   const historySymbols = useMemo(
-    () => Array.from(new Set(entries.map(e => evidenceSymbol(e.card)).filter((x): x is string => !!x))),
+    () => Array.from(new Set(entries.map(e => previewSymbol(e.card)).filter((x): x is string => !!x))),
     [entries],
   )
   const { data: history } = usePriceHistory(historySymbols, { points: 60 })
@@ -410,12 +411,22 @@ export function IdeasExplore({
                  * visual. `hasDrawableEvidence` gates it so a tile never
                  * reserves a region for something that returns null.
                  */
+                /*
+                 * The contextual object this candidate can support.
+                 *
+                 * `previewFor` decides WHAT from the card plus the structured
+                 * row its producer returned; `FeedPreview` decides only how to
+                 * draw it. No family conditionals here — adding a family means
+                 * teaching the descriptor, not editing the feed.
+                 *
+                 * `undefined` where there is nothing to draw, so the card
+                 * reserves no region and renders as the typography it is.
+                 */
                 evidence={(() => {
-                  const sym = evidenceSymbol(entry.card)
+                  const sym = previewSymbol(entry.card)
                   const pts = sym ? history?.get(sym)?.map(p => p.close) : undefined
-                  return hasDrawableEvidence(entry.card, pts)
-                    ? <CardEvidenceView card={entry.card} points={pts} />
-                    : undefined
+                  const preview = previewFor(entry.family, entry.card, entry.source, pts)
+                  return preview ? <FeedPreview preview={preview} /> : undefined
                 })()}
                 /*
                  * Every card action opens the workspace, which is where an
