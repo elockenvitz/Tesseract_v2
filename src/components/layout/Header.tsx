@@ -793,25 +793,18 @@ export function Header({
               )}
               title="AI Assistant"
             >
-              {/* On a phone a filled gradient chip among four flat grey glyphs
-                  read as a pile of unrelated widgets, and it was shouting for
-                  an action that is not the primary one there (capture is —
-                  hence the amber lightbulb).
+              {/* One glyph on every surface.
+                  The gradient chip was a filled brand mark sitting among flat
+                  grey glyphs, and — being its own coloured box — it ignored the
+                  button's hover and active colours entirely, so AI was the one
+                  control in the bar that never looked pressed. `Sparkles` takes
+                  `currentColor`, so it picks up the grey, the hover grey and the
+                  primary-600 active state the other four already use.
 
-                  Branched in JS on `isMobile`, NOT with a `hidden md:flex`
-                  pair. The desktop element below is then the original one,
-                  with the original class string, and there is no mobile
-                  override in the tree that could leak into it — the phone
-                  branch does not exist at desktop widths at all. A previous
-                  pass did this with utility classes and changed the desktop
-                  mark, which is exactly the failure this shape prevents. */}
-              {isMobile ? (
-                <Sparkles className="h-5 w-5" />
-              ) : (
-                <div className="w-5 h-5 bg-gradient-to-r from-blue-500 to-purple-500 rounded flex items-center justify-center">
-                  <span className="text-white text-xs font-bold">AI</span>
-                </div>
-              )}
+                  Distinct from capture on purpose: amber lightbulb is Quick
+                  Ideas, sparkles is AI. Same button, same `onShowAI()`, same
+                  route — only the mark changed. */}
+              <Sparkles className="h-5 w-5" />
             </button>
             
             {/* Direct Messages Button */}
