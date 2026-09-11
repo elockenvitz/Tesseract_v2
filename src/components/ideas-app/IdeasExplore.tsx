@@ -393,7 +393,9 @@ export function IdeasExplore({
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(entry) }
               }}
               className={clsx(
-                'cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-800',
+                /* With no Open button, hover and focus are what say the tile is
+                   clickable at all. */
+                'cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition-all hover:shadow-md hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-800 dark:hover:border-gray-600',
                 // Restrained: a ring, not a fill. The card's own severity rail
                 // already uses colour, and a selected state that competes with
                 // it would make every list look alarming.

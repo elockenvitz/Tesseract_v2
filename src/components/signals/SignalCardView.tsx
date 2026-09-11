@@ -1998,6 +1998,22 @@ export function SignalCardView({
         className={clsx(
           'flex items-center gap-2 border-t border-gray-100 px-4 dark:border-gray-800',
           /*
+           * No footer at all on desktop.
+           *
+           * The tile IS the way into the workspace, and every control that was
+           * left here duplicated it. `primary` for a post is documented in
+           * `builders/ideas.ts` as deliberately absent — a trade idea's old
+           * `Open idea` was a dead button and was removed there. For the lens
+           * families `contextualActions` resolves `review_target`, `open_cases`
+           * and friends to an asset destination with a focus, which is the
+           * SAME place the tile already opens with `assetFocusFor` — so
+           * rendering it would be a second button to the same pane.
+           *
+           * Everything else lives in the overflow, which stays. A card with no
+           * legitimate next step gets no fake CTA.
+           */
+          layout === 'flow' && 'hidden',
+          /*
            * The bar is sticky and full-bleed on a phone because it is the only
            * thing anchoring a thumb on a card that fills the screen. In a
            * desktop column it is neither needed nor wanted: sticky against a
