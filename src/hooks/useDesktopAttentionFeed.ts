@@ -218,7 +218,21 @@ export function useDesktopAttentionFeed(
 
   return {
     entries,
-    isLoading: pool.isLoading,
+    /*
+     * Unresolved identity is LOADING, not empty.
+     *
+     * The underlying query is `enabled: !!userId && !!organizationId`, and a
+     * disabled React Query reports `isLoading: false` — pending but idle. So
+     * on a hard refresh, before auth and the org context hydrate, this feed
+     * answered "not loading, no entries", and the view correctly rendered an
+     * empty state for a feed that had never been asked for.
+     *
+     * Client navigation never hit it because both were already resolved,
+     * which is exactly why it reproduced only on a cold load.
+     */
+    isLoading: pool.isLoading || !pool.isContextReady,
+    isError: pool.isError,
+    retry: pool.retry,
     hasNextPage: pool.hasNextPage,
     isFetchingNextPage: pool.isFetchingNextPage,
     fetchNextPage: pool.fetchNextPage,

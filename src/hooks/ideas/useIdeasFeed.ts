@@ -957,6 +957,18 @@ export function useIdeasFeed(filters: IdeasFeedFilters) {
 
   return {
     items,
+    /**
+     * True while the identity this feed is FOR is still resolving.
+     *
+     * The query is `enabled: !!userId && !!organizationId`. A disabled query in
+     * React Query v5 reports `isLoading: false` — it is pending but idle — so
+     * before auth and the org context hydrate the feed answered "not loading,
+     * no items", which a caller correctly renders as an empty feed.
+     *
+     * On client navigation both are already resolved and this is never false,
+     * which is why the defect only appeared on a hard refresh.
+     */
+    isContextReady: !!ctx.userId && !!ctx.organizationId,
     isLoading: query.isLoading,
     isFetchingNextPage: query.isFetchingNextPage,
     hasNextPage: !!query.hasNextPage,

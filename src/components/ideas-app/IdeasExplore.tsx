@@ -292,7 +292,23 @@ export function IdeasExplore({
           </div>
         )}
 
-        {!feed.isLoading && entries.length === 0 && (
+        {/* A genuine failure is distinguishable from an empty feed, and
+            recoverable without a page reload. */}
+        {!feed.isLoading && feed.isError && entries.length === 0 && (
+          <div className="py-16 text-center">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              The feed could not be loaded.
+            </p>
+            <button
+              onClick={feed.retry}
+              className="mt-2 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
+        {!feed.isLoading && !feed.isError && entries.length === 0 && (
           <div className="py-16 text-center">
             <Sparkles className="mx-auto h-6 w-6 text-gray-300 dark:text-gray-600" />
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">

@@ -54,6 +54,15 @@ export interface DesktopCandidates {
   isFetchingNextPage: boolean
   fetchNextPage: () => void
   isLoading: boolean
+  /** False while user/org identity is still hydrating. */
+  isContextReady: boolean
+  /**
+   * The POST half failed. The machine producers are not folded in: one of them
+   * erroring leaves the rest of the feed perfectly usable, so only the source
+   * whose absence empties the surface can put it into an error state.
+   */
+  isError: boolean
+  retry: () => void
 }
 
 export function useDesktopCandidates(opts: { enabled?: boolean } = {}): DesktopCandidates {
@@ -86,5 +95,8 @@ export function useDesktopCandidates(opts: { enabled?: boolean } = {}): DesktopC
      * land. `lensesLoading` and friends are deliberately not folded in.
      */
     isLoading: feed.isLoading,
+    isContextReady: feed.isContextReady,
+    isError: feed.isError,
+    retry: () => { void feed.refetch() },
   }
 }

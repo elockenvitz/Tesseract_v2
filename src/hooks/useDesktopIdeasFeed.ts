@@ -50,10 +50,13 @@ export interface DesktopIdeasFeed {
    */
   ideaRows: IdeaRow[]
   isLoading: boolean
+  /** False while user/org identity is still hydrating. See `useIdeasFeed`. */
+  isContextReady: boolean
   isFetchingNextPage: boolean
   hasNextPage: boolean
   fetchNextPage: () => void
   isError: boolean
+  refetch: () => void
 }
 
 export function useDesktopIdeasFeed(
@@ -81,9 +84,11 @@ export function useDesktopIdeasFeed(
     items: feed.items,
     ideaRows,
     isLoading: feed.isLoading,
+    isContextReady: feed.isContextReady,
     isFetchingNextPage: feed.isFetchingNextPage,
     hasNextPage: feed.hasNextPage,
     fetchNextPage: () => { void feed.fetchNextPage() },
     isError: feed.isError,
+    refetch: () => { void feed.refetch() },
   }
 }
