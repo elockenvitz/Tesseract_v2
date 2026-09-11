@@ -82,12 +82,59 @@ export interface DashboardShellProps {
   origin?: string | null
 }
 
+
+/** Where the chosen lens survives a reload. Session-scoped, like tab state. */
+const LENS_KEY = 'tesseract:dashboard-lens'
+
+/**
+ * An explicitly-addressed lens always wins.
+ *
+ * `ideas-v2` and its siblings mount this shell with their own lens, and a deep
+ * link into one of them must not be overridden by whatever the reader last
+ * browsed. Only the default arrival — the `today` tab, which passes the
+ * default — consults what was remembered.
+ */
+function restoreLens(initial: DashboardLens): DashboardLens {
+  if (initial !== 'today') return initial
+  try {
+    const saved = sessionStorage.getItem(LENS_KEY)
+    if (saved && saved in LENS_ORDER_SET) return saved as DashboardLens
+  } catch { /* a remembered lens must never break the shell */ }
+  return initial
+}
+
+function rememberLens(lens: DashboardLens): void {
+  try { sessionStorage.setItem(LENS_KEY, lens) } catch { /* non-fatal */ }
+}
+
+/** The valid lens names, so a stale or hand-edited value cannot be restored. */
+const LENS_ORDER_SET: Record<string, true> = {
+  today: true, ideas: true, research: true, portfolio: true, decisions: true,
+}
+
 export function DashboardShell({
   initialLens = 'today',
   selectedIdeaId, selectedAssetId, selectedPortfolioId, selectedDecisionId,
   focus, issue, origin,
 }: DashboardShellProps = {}) {
-  const [lens, setLens] = useState<DashboardLens>(initialLens)
+  const [lens, setLens] = useState<DashboardLens>(() => restoreLens(initialLens))
+
+  /*
+   * Remember which lens the reader chose, for the length of the session.
+   *
+   * The lens was component state and nothing else, and the canonical home tab
+   * is `today`, which always mounts `initialLens='today'`. So choosing Ideas
+   * and then reloading — or setting a flag, which reloads — always came back
+   * to Today. The reader's report was "it just reverts to Dashboard", and that
+   * is exactly what it did: the TAB restored correctly, the lens inside it did
+   * not exist to restore.
+   *
+   * sessionStorage, matching where tab state already lives, so this is per
+   * browser tab and does not leak a lens choice into a new window. Not written
+   * into the tab's `data`: that would mean DashboardPage owning a value only
+   * this component sets, and the instruction was to leave tab routing alone.
+   */
+  useEffect(() => { rememberLens(lens) }, [lens])
 
   /**
    * The expanded card, and the deck it came out of.
