@@ -334,6 +334,15 @@
        floor on the right is what keeps the boundary case honest. */
     .feed-tile-cols {
       grid-template-columns: minmax(0, 1.1fr) minmax(19rem, 1fr);
+      /* Each column is its own height. A grid row stretches its items by
+         default, and that default was the whole defect: the taller column set
+         the row, the shorter one was inflated to match, and the inflation had
+         to go somewhere. On the preview side it went under the chart as an
+         empty stage; on the narrative side the card's own `grow` spacer
+         absorbed it and pushed the disclosure to the floor. Neither region was
+         asked how tall it wanted to be. Variable heights between the two
+         columns are the correct outcome, not a defect to equalise. */
+      align-items: start;
     }
     /* No analytical object, so nothing is sharing the tile. The card may sit in
        the wider shell but its text stops at a measure a person can read — this
@@ -345,10 +354,22 @@
     /* The preview becomes a neighbour rather than a band underneath. */
     .feed-tile-aside {
       border-top: 0;
+      /* The divider runs the height of the preview, not of the card, because
+         the preview no longer stretches. A rule that ends where its content
+         ends is telling the truth about how much object there is. */
       border-left: 1px solid rgb(243 244 246);
     }
     .dark .feed-tile-aside {
       border-left-color: rgb(31 41 55);
+    }
+    /* The object gets a little more of the width it earned — 11rem rather than
+       8rem, which is a chart rather than a strip at ~700px wide. A height, not
+       a fill: it does not chase the narrative column, so a tall card still
+       ends with the chart at the top of its own column. */
+    /* Two classes deep on purpose: `h-32` is the component's own floor and a
+       single-class rule here would be a coin toss on emission order. */
+    .feed-tile-aside .feed-chart-plot {
+      height: 11rem;
     }
   }
 

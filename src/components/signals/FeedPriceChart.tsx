@@ -115,7 +115,10 @@ export function FeedPriceChart({
 
       <div
         ref={hostRef}
-        className="relative h-32 w-full cursor-crosshair"
+        /* `h-32` is the floor; `feed-chart-plot` lifts it to 11rem once the
+           tile is wide enough to put the chart beside the narrative. Height
+           only — nothing about the scale, the cursor or the readout moves. */
+        className="feed-chart-plot relative h-32 w-full cursor-crosshair"
         /* Inspection only. The tile's click guard sees a focusable descendant
            with a button-ish role and leaves selection alone; this also stops a
            stray click here reaching the tile. */
