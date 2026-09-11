@@ -133,7 +133,30 @@ export function IdeasExplore({
     () => Array.from(new Set(entries.map(e => previewSymbol(e.card)).filter((x): x is string => !!x))),
     [entries],
   )
-  const { data: history } = usePriceHistory(historySymbols, { points: 60 })
+  const historyQ = usePriceHistory(historySymbols, { points: 60 })
+  const history = historyQ.data
+
+  /**
+   * The last thing that moves on a cold load.
+   *
+   * `historySymbols` is derived FROM `entries`, so this query cannot start
+   * until the feed has candidates — which means it lands after the list has
+   * painted, and every sparkline tile then grows by about 128px at once. The
+   * pool settle-gate upstream cannot cover it, because the request does not
+   * exist until that gate opens.
+   *
+   * So the list waits for the first history result too. Latched, for the same
+   * reason the pool gate is: a later refetch must never re-block a feed the
+   * reader is already using.
+   *
+   * `enabled` is `wanted.length > 0`, so a feed with no sparkline candidates
+   * would leave `isFetched` false forever — that case is settled by
+   * definition, not by waiting.
+   */
+  const historySettled = historySymbols.length === 0 || historyQ.isFetched
+  const historyReady = useRef(false)
+  if (historySettled) historyReady.current = true
+  const booting = feed.isLoading || !historyReady.current
 
 
   /*
@@ -287,7 +310,10 @@ export function IdeasExplore({
 
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
       <div className={clsx(FEED_MEASURE, 'px-6 pb-5')}>
-        {feed.isLoading && entries.length === 0 && (
+        {/* While booting the list is hidden, so the spinner must not depend on
+            entries being empty — the pool can be settled while history is not,
+            and that window would otherwise show a blank column. */}
+        {booting && (
           <div className="flex justify-center py-16 text-gray-400">
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
@@ -295,7 +321,7 @@ export function IdeasExplore({
 
         {/* A genuine failure is distinguishable from an empty feed, and
             recoverable without a page reload. */}
-        {!feed.isLoading && feed.isError && entries.length === 0 && (
+        {!booting && feed.isError && entries.length === 0 && (
           <div className="py-16 text-center">
             <p className="text-sm text-gray-600 dark:text-gray-300">
               The feed could not be loaded.
@@ -309,7 +335,7 @@ export function IdeasExplore({
           </div>
         )}
 
-        {!feed.isLoading && !feed.isError && entries.length === 0 && (
+        {!booting && !feed.isError && entries.length === 0 && (
           <div className="py-16 text-center">
             <Sparkles className="mx-auto h-6 w-6 text-gray-300 dark:text-gray-600" />
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
@@ -328,7 +354,7 @@ export function IdeasExplore({
           </div>
         )}
 
-        <div className="space-y-4 pt-4">
+        <div className={clsx('space-y-4 pt-4', booting && 'hidden')}>
           {entries.map(entry => (
             <div
               key={entry.key}
