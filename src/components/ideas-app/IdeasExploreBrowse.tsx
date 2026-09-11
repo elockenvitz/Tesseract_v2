@@ -211,6 +211,29 @@ function ExploreTile({
         <p className="mt-1 text-sm font-semibold leading-snug text-gray-900 line-clamp-2 dark:text-white">
           {item.title}
         </p>
+        {/*
+          The one number the adapter already computed.
+
+          Every lens and insight sets `metric` and this tile drew none of them,
+          so a preview about a 6.2% position or a target passed by 31% said so
+          only in prose, if at all. It is also what lets the renderability rule
+          count a metric as payload without that being a promise the tile
+          breaks. One number, in the adapter's own words — nothing is derived
+          here.
+        */}
+        {item.metric?.value && (
+          <p className="mt-1.5 flex items-baseline gap-1.5 text-[11px] leading-none">
+            <span className={clsx(
+              'text-sm font-semibold tabular-nums',
+              item.metric.direction === 'good' ? 'text-emerald-600 dark:text-emerald-400'
+                : item.metric.direction === 'bad' ? 'text-rose-600 dark:text-rose-400'
+                  : 'text-gray-900 dark:text-white',
+            )}>{item.metric.value}</span>
+            {item.metric.label && (
+              <span className="uppercase tracking-wide text-gray-400">{item.metric.label}</span>
+            )}
+          </p>
+        )}
         {/* One line of context. A preview that carried the whole argument would
             be a feed card, which is the thing this is not. */}
         {item.context && (

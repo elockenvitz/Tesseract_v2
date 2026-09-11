@@ -12,7 +12,12 @@ import { selectionFor } from '../selection'
 import type { AttentionEntry } from '../../../hooks/useDesktopAttentionFeed'
 import type { ExploreItem } from '../../mobile/explore-item'
 
-const entry = (over: Partial<AttentionEntry> & { card: Record<string, unknown> }): AttentionEntry =>
+/*
+ * The card is a plain literal on purpose: these tests are about identity and
+ * routing, and building a real `SignalCard` would import a builder to assert
+ * something no builder decides.
+ */
+const entry = (over: { card: Record<string, unknown> } & Omit<Partial<AttentionEntry>, 'card'>): AttentionEntry =>
   ({ key: String(over.card.id), item: null, input: null, family: 'post', source: null, ...over } as unknown as AttentionEntry)
 
 const tradeIdeaEntry = entry({
