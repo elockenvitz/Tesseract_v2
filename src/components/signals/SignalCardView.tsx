@@ -2041,9 +2041,21 @@ export function SignalCardView({
             // `flex-1` is what makes this span the card on a phone. In a
             // column it should be the size of its own label.
             layout === 'flow' ? 'h-9 px-4 text-[13px]' : 'h-11 flex-1 text-[15px]',
+            /*
+             * On a phone the primary IS the card's action, so it is filled.
+             *
+             * In the desktop feed it is not: clicking the tile opens the
+             * workspace, and that is the primary act. A dark filled button
+             * repeated down every tile competes with the thing the reader is
+             * actually meant to do, and says "press me" about the lesser
+             * option. Outlined here — same label, same id, same routing,
+             * demoted in weight only.
+             */
             primaryOverride?.disabled
               ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-              : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900',
+              : layout === 'flow'
+                ? 'border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
+                : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900',
           )}
         >
           {barLabel(primaryOverride ?? card.actions.primary)}

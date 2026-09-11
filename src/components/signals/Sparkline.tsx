@@ -27,6 +27,18 @@ interface SparklineProps {
   /** Closes, oldest first. */
   points: number[]
   className?: string
+  /**
+   * A declared reference level — a target, drawn as a dashed rule.
+   *
+   * Optional and backwards-compatible: every existing caller omits it and
+   * renders exactly as before. It exists because a target-hit card without its
+   * target is incomplete evidence — the line alone says the price moved, not
+   * that it reached the thing that made the card fire.
+   *
+   * The value comes from the BUILDER's declared evidence and is never
+   * re-derived here.
+   */
+  reference?: number | null
 }
 
 /**
@@ -40,12 +52,22 @@ interface SparklineProps {
 const W = 100
 const H = 48
 
-export function Sparkline({ points, className }: SparklineProps) {
+export function Sparkline({ points, className, reference }: SparklineProps) {
   const clean = points.filter(p => Number.isFinite(p) && p > 0)
   if (clean.length < 2) return null
 
-  const lo = Math.min(...clean)
-  const hi = Math.max(...clean)
+  /*
+   * The reference joins the SCALE, not just the drawing.
+   *
+   * A target above every close would otherwise sit off the top of the box and
+   * be invisible — which is the common case for a stale target, and exactly
+   * the card where seeing the distance matters most.
+   */
+  const ref = Number.isFinite(reference as number) && (reference as number) > 0
+    ? (reference as number)
+    : null
+  const lo = Math.min(...clean, ...(ref != null ? [ref] : []))
+  const hi = Math.max(...clean, ...(ref != null ? [ref] : []))
   const span = hi - lo || 1
   const up = clean[clean.length - 1] >= clean[0]
 
@@ -97,6 +119,19 @@ export function Sparkline({ points, className }: SparklineProps) {
           <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
         </linearGradient>
       </defs>
+      {/* The reference rule, under the line so the path stays legible over it. */}
+      {ref != null && (
+        <line
+          x1="0" x2={W}
+          y1={(H - 1 - ((ref - lo) / span) * (H - 2)).toFixed(1)}
+          y2={(H - 1 - ((ref - lo) / span) * (H - 2)).toFixed(1)}
+          className="text-gray-400 dark:text-gray-500"
+          stroke="currentColor"
+          strokeWidth="1"
+          strokeDasharray="3 3"
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
       <path
         d={`${d} L${W},${H} L0,${H} Z`}
         fill={`url(#${gid})`}

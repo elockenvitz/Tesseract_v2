@@ -56,13 +56,30 @@ export function CardEvidenceView({
     const first = points[0]
     const last = points[points.length - 1]
     const changePct = first > 0 ? ((last - first) / first) * 100 : null
+    /*
+     * The builder's declared reference, never re-derived. `target` on a
+     * target-hit or stale-target card; absent on a plain trade idea, where the
+     * line alone is the whole claim.
+     */
+    const d = evidence.data as { target?: number | null } | null
     return (
       <ExploreSpark
         points={points}
+        /*
+         * `detail`, not `primary`.
+         *
+         * `primary` is 48px tall with 12px of that spent on the caption — a
+         * 36px chart. On a phone tile that is a glanceable strip; stretched
+         * across a 30-to-40rem desktop card with `preserveAspectRatio="none"`
+         * it flattens into a decorative squiggle, which is what this looked
+         * like. `detail` is an EXISTING form at 128px, so the fix is choosing
+         * the right one rather than adding a fourth.
+         */
+        form="detail"
         window="1Y"
-        form="primary"
         sinceLabel="1Y"
         changePct={changePct ?? undefined}
+        reference={d?.target ?? null}
       />
     )
   }

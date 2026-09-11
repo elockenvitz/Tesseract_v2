@@ -33,6 +33,8 @@ import { Sparkline } from './Sparkline'
 interface ExploreSparkProps {
   /** Closing prices, oldest first. Two or more, or the caller renders nothing. */
   points: number[]
+  /** A builder-declared reference level, drawn as a dashed rule. Optional. */
+  reference?: number | null
   /** The window the line covers — `1Y`, `6M`. Never omitted. */
   window: string
   /** A featured card is wider, so its line gets more room to say something. */
@@ -82,7 +84,7 @@ interface ExploreSparkProps {
 }
 
 export function ExploreSpark({
-  points, window, feature, form = 'primary', sinceLabel, changePct,
+  points, window, feature, form = 'primary', sinceLabel, changePct, reference,
 }: ExploreSparkProps) {
   const showDelta = sinceLabel != null && changePct != null && Number.isFinite(changePct)
   const up = (changePct ?? 0) >= 0
@@ -117,7 +119,7 @@ export function ExploreSpark({
       )}
     >
       <div className="h-[calc(100%-12px)]">
-        <Sparkline points={points} />
+        <Sparkline points={points} reference={reference} />
       </div>
       {/* One caption line, carrying the anchor where there is one.
           `LAST LOOK · 10M` reads as a window with a meaning; `10M` alone
