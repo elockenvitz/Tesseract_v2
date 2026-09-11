@@ -96,10 +96,25 @@ export function IdeasExplore({
     : feed.entries
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className={clsx(FEED_MEASURE, 'px-6 py-5')}>
+    /*
+     * Toolbar OUTSIDE the scroller, list inside it.
+     *
+     * The lens rail and Curate were children of the `overflow-y-auto` element,
+     * so they scrolled away with the tiles. Chosen over `position: sticky`
+     * because it needs no z-index, cannot overlap, and leaves the Curate
+     * popover anchored in a non-scrolling context — sticky would have put the
+     * popover's `relative` ancestor inside the scrollport it is meant to sit
+     * above.
+     *
+     * The measure is applied to both halves so the toolbar stays aligned with
+     * the cards under it.
+     */
+    <div className="flex h-full flex-col">
+      {/* `relative z-20` only so the Curate popover paints above the list; the
+          app header is z-30 and above, so nothing is covered that matters. */}
+      <div className={clsx(FEED_MEASURE, 'relative z-20 shrink-0 border-b border-gray-200 bg-white px-6 pt-5 dark:border-gray-700 dark:bg-gray-900')}>
         {/* Lens rail. Persistent, because it is the primary control. */}
-        <div className="flex items-center gap-1.5 border-b border-gray-200 pb-3 dark:border-gray-700">
+        <div className="flex items-center gap-1.5 pb-3">
           {IDEA_LENSES.map(l => (
             <button
               key={l.key}
@@ -182,7 +197,7 @@ export function IdeasExplore({
 
         {/* Investment controls — Trade Ideas only. */}
         {showInvestment && (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-gray-100 py-2.5 dark:border-gray-800">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 py-2.5 dark:border-gray-800">
             <FilterRow
               label="Direction"
               options={DIRECTIONS.map(d => ({ key: d, label: d }))}
@@ -197,7 +212,10 @@ export function IdeasExplore({
             />
           </div>
         )}
+      </div>
 
+      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className={clsx(FEED_MEASURE, 'px-6 pb-5')}>
         {feed.isLoading && entries.length === 0 && (
           <div className="flex justify-center py-16 text-gray-400">
             <Loader2 className="h-6 w-6 animate-spin" />
@@ -340,6 +358,7 @@ export function IdeasExplore({
             {feed.isFetchingNextPage ? 'Loading…' : 'Show more'}
           </button>
         )}
+      </div>
       </div>
     </div>
   )
