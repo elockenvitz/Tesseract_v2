@@ -215,8 +215,16 @@ describe('there is one vertical scroll owner on a phone', () => {
   it('is not wrapped in a second one by the page shell', () => {
     // Layout put `overflow-auto` around a component whose body already
     // scrolls, which is the nested scroller that makes a phone editor drag.
+    //
+    // `isFullWidth` became `isBare` when surfaces gained a registry opt-in for
+    // owning the phone viewport (`ownsViewportOnMobile`): the bare branch is
+    // now reached either by being a full-width tab OR by declaring ownership.
+    // The note tab is neither — it keeps its own `isMobileNote` branch, which
+    // is what the two assertions below pin — so the behaviour this test exists
+    // for is unchanged and only the identifier moved.
     expect(layout).toContain("const isMobileNote = !!activeTab && activeTab.type === 'note' && isMobile")
-    expect(layout).toContain('isFullWidth || isMobileNote ? "overflow-hidden"')
+    expect(layout).toContain('isBare || isMobileNote ? "overflow-hidden"')
+    expect(layout).toContain('const isBare = isFullWidth || ownsViewport')
   })
 
   it('does not pay page padding around it either', () => {
