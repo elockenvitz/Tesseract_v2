@@ -25,6 +25,7 @@ import {
   type ScanFrame,
 } from '../../hooks/useDesktopIdeas'
 import { useDesktopIdeasFeed } from '../../hooks/useDesktopIdeasFeed'
+import { IdeasExplore } from './IdeasExplore'
 import { isFlagOn } from '../../lib/flags'
 import {
   scoreIdea, compareIdeas, subscribeToOpenIdea, MATURITY_LABEL, targetFor,
@@ -177,6 +178,30 @@ export function IdeasWorkspace({
     if (found) open(found)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [ranked])
+
+  /*
+   * Stage 3: under the flag, Explore IS the browse surface.
+   *
+   * Returned before the loading and empty gates below because those belong to
+   * the scan — Explore runs the feed's own loading and empty states, per lens,
+   * and a scan with nothing in it must not blank a feed that has plenty.
+   *
+   * Detail is deliberately untouched here. Selecting a card hands off through
+   * the same `openDashboardFocus` seam the gallery already uses, so Stage 3
+   * changes what BROWSE is without changing what selection does. The
+   * contextual right-hand workspace is Stage 4.
+   */
+  if (useFeed) {
+    return (
+      <IdeasExplore
+        onOpenCard={card => {
+          const entity = card.entity?.id ?? null
+          const found = entity ? ranked.find(i => i.id === entity || i.assetId === entity) : null
+          if (found) open(found)
+        }}
+      />
+    )
+  }
 
   if (isLoading) return <Loading />
   if (!ranked.length) return <Empty />

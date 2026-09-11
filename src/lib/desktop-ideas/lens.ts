@@ -24,7 +24,7 @@ import type { ItemType } from '../../hooks/ideas/types'
  * capability, and it is explicitly not what this task is for.
  */
 
-export type IdeaLens = 'all' | 'trade_ideas' | 'thoughts' | 'prompts' | 'signals'
+export type IdeaLens = 'all' | 'trade_ideas' | 'thoughts' | 'prompts'
 
 export interface IdeaLensSpec {
   key: IdeaLens
@@ -82,16 +82,21 @@ export const IDEA_LENSES: IdeaLensSpec[] = [
     investmentFilters: false,
     emptyHint: 'No open prompts.',
   },
-  {
-    key: 'signals',
-    label: 'Signals',
-    // Signal cards are inserted into the feed rather than returned by it, so
-    // this lens admits no feed types and keeps only the inserted cards.
-    types: [],
-    investmentFilters: false,
-    emptyHint: 'No signals are firing.',
-  },
 ]
+
+/*
+ * There is deliberately no Signals lens yet.
+ *
+ * The machine-derived families — stale target, case versus price, target hit,
+ * active risk, news — are not returned by `useIdeasFeed`. On mobile they come
+ * from the portfolio-lens and scenario hooks, which desktop does not yet call.
+ * A Signals tab over a feed that cannot produce a signal would be a label with
+ * nothing behind it, and the instruction was to use the real type model rather
+ * than invent one to fill the row.
+ *
+ * It arrives when those producers are reachable from both shells. Their
+ * builders are already shared; only the hooks that feed them are not.
+ */
 
 const BY_KEY = new Map(IDEA_LENSES.map(l => [l.key, l]))
 

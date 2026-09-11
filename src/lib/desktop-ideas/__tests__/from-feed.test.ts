@@ -77,7 +77,7 @@ describe('the type lens', () => {
    */
   it('exposes investment filters only in the trade-ideas lens', () => {
     expect(lensShowsInvestmentFilters('trade_ideas')).toBe(true)
-    for (const key of ['all', 'thoughts', 'prompts', 'signals'] as const) {
+    for (const key of ['all', 'thoughts', 'prompts'] as const) {
       expect(lensShowsInvestmentFilters(key), key).toBe(false)
     }
   })
@@ -88,10 +88,18 @@ describe('the type lens', () => {
     expect(trade!.types).toContain('trade_idea')
   })
 
-  /** `null` means unfiltered, and is not the same as listing every type. */
-  it('distinguishes an unfiltered lens from an empty one', () => {
+  /** `null` means unfiltered, and is not the same as listing specific types. */
+  it('treats All as unfiltered rather than as a list of every type', () => {
     expect(lensSpec('all').types).toBeNull()
-    expect(lensSpec('signals').types).toEqual([])
+    expect(lensSpec('trade_ideas').types).not.toBeNull()
+  })
+
+  /**
+   * No Signals lens until the machine-derived producers are reachable from
+   * desktop. A tab over a feed that cannot produce a signal is a dead label.
+   */
+  it('does not offer a lens the feed cannot fill', () => {
+    expect(IDEA_LENSES.map(l => l.key)).toEqual(['all', 'trade_ideas', 'thoughts', 'prompts'])
   })
 
   it('falls back to All for an unknown key rather than throwing', () => {
