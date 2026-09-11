@@ -1,4 +1,5 @@
 import { ScenarioLadder } from './ScenarioLadder'
+import { ExploreSpark } from './ExploreSpark'
 import type { SignalCard } from '../../lib/signals/contract'
 
 /**
@@ -32,9 +33,39 @@ import type { SignalCard } from '../../lib/signals/contract'
  * Both return null, and `SignalCardView` then renders the card as the
  * typography it is, which is correct rather than a gap.
  */
-export function CardEvidenceView({ card }: { card: SignalCard }) {
+export function CardEvidenceView({
+  card, points,
+}: {
+  card: SignalCard
+  /**
+   * Closes for this card's symbol, oldest first, supplied by the HOST.
+   *
+   * Passed in rather than fetched here for the reason the whole contract
+   * exists: a feed draws many of these at once, and a component that fetched
+   * its own series would be one request per visible card. The host batches.
+   */
+  points?: number[]
+}) {
   const evidence = card.evidence
   if (!evidence || evidence.kind === 'none') return null
+
+  if (evidence.kind === 'sparkline') {
+    // Fewer than two closes is not a line. Nothing is drawn and the card
+    // renders as the typography it is — no empty region, no skeleton.
+    if (!points || points.length < 2) return null
+    const first = points[0]
+    const last = points[points.length - 1]
+    const changePct = first > 0 ? ((last - first) / first) * 100 : null
+    return (
+      <ExploreSpark
+        points={points}
+        window="1Y"
+        form="primary"
+        sinceLabel="1Y"
+        changePct={changePct ?? undefined}
+      />
+    )
+  }
 
   if (evidence.kind === 'scenario_ladder') {
     /*
@@ -68,9 +99,18 @@ export function CardEvidenceView({ card }: { card: SignalCard }) {
  * Used to decide layout before rendering, so a tile does not reserve a region
  * for a visual that will return null.
  */
-export function hasDrawableEvidence(card: SignalCard): boolean {
+export function hasDrawableEvidence(card: SignalCard, points?: number[]): boolean {
   const e = card.evidence
-  if (!e || e.kind !== 'scenario_ladder') return false
+  if (!e) return false
+  if (e.kind === 'sparkline') return !!points && points.length >= 2
+  if (e.kind !== 'scenario_ladder') return false
   const d = e.data as { cases?: unknown[] } | null
   return !!d && Array.isArray(d.cases) && d.cases.length > 0
+}
+
+/** The symbol a card needs history for, or null. Drives the host's batch. */
+export function evidenceSymbol(card: SignalCard): string | null {
+  if (card.evidence?.kind !== 'sparkline') return null
+  const d = card.evidence.data as { symbol?: string } | null
+  return (d?.symbol ?? card.entity?.ticker ?? null)?.toUpperCase() ?? null
 }

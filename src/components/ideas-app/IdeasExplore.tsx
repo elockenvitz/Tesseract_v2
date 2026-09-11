@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Loader2, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import { CuratePanel } from './CuratePanel'
 import { EMPTY_FILTER, filterCount, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { SignalCardView } from '../signals/SignalCardView'
 import { ideaPanes } from '../signals/ideaPanes'
-import { CardEvidenceView, hasDrawableEvidence } from '../signals/CardEvidenceView'
+import { CardEvidenceView, evidenceSymbol, hasDrawableEvidence } from '../signals/CardEvidenceView'
+import { usePriceHistory } from '../../hooks/mobile/usePriceHistory'
 import type { SignalCard } from '../../lib/signals/contract'
 import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import { IDEA_LENSES, lensSpec, lensShowsInvestmentFilters, type IdeaLens } from '../../lib/desktop-ideas/lens'
@@ -114,6 +115,25 @@ export function IdeasExplore({
       return true
     })
     : feed.entries
+
+  /*
+   * One batched history read for the whole visible feed.
+   *
+   * `usePriceHistory` takes the symbol SET and returns one map behind one
+   * query key, sorted and de-duplicated so a re-render that reorders the feed
+   * does not look like a new query. That is the alternative to
+   * `useSymbolHistory`, which is per-symbol and would be one request per
+   * visible card.
+   *
+   * 60 closes rather than the 260 default: these lines are about sixty pixels
+   * wide, so more resolution than that cannot be shown and costs round trips.
+   */
+  const historySymbols = useMemo(
+    () => Array.from(new Set(entries.map(e => evidenceSymbol(e.card)).filter((x): x is string => !!x))),
+    [entries],
+  )
+  const { data: history } = usePriceHistory(historySymbols, { points: 60 })
+
 
   /*
    * Reconcile selection, and normalise scroll, on a context change.
@@ -374,9 +394,13 @@ export function IdeasExplore({
                  * visual. `hasDrawableEvidence` gates it so a tile never
                  * reserves a region for something that returns null.
                  */
-                evidence={hasDrawableEvidence(entry.card)
-                  ? <CardEvidenceView card={entry.card} />
-                  : undefined}
+                evidence={(() => {
+                  const sym = evidenceSymbol(entry.card)
+                  const pts = sym ? history?.get(sym)?.map(p => p.close) : undefined
+                  return hasDrawableEvidence(entry.card, pts)
+                    ? <CardEvidenceView card={entry.card} points={pts} />
+                    : undefined
+                })()}
                 /*
                  * Every card action opens the workspace, which is where an
                  * action has somewhere to happen. `onAction` is required
