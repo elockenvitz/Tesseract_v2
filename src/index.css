@@ -310,6 +310,35 @@
   .pl-safe { padding-left: env(safe-area-inset-left, 0px); }
   .pr-safe { padding-right: env(safe-area-inset-right, 0px); }
 
+  /* ── Desktop feed tile: side-by-side when the TILE is wide enough ────────
+     A container query, not a media query, because the same viewport shows the
+     feed at full width and at ~40% beside an open workspace. Only the tile's
+     own width can say whether a narrative and an analytical object fit next to
+     each other. Native CSS — Tailwind 3.4 ships no container-query utilities
+     and this needs no plugin, no JS and no resize listener. */
+  .feed-tile {
+    container-type: inline-size;
+  }
+  .feed-tile-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* 46rem is the measured floor: below it the narrative column drops under
+     ~26rem and the claim starts wrapping every two or three words. */
+  @container (min-width: 46rem) {
+    .feed-tile-cols {
+      grid-template-columns: minmax(0, 1fr) minmax(19rem, 26rem);
+    }
+    /* The preview becomes a neighbour rather than a band underneath. */
+    .feed-tile-aside {
+      border-top: 0;
+      border-left: 1px solid rgb(243 244 246);
+    }
+    .dark .feed-tile-aside {
+      border-left-color: rgb(31 41 55);
+    }
+  }
+
   /* Opt in where a row genuinely must scroll sideways (a wide table kept as a
      table). Adds momentum scrolling and stops the scroll chaining to the page. */
   .mobile-scroll-x {

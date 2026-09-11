@@ -54,7 +54,17 @@ import { MATURITY_LABEL, maturityOf, type IdeaDirection, type IdeaMaturity } fro
  * while something opens next to it, which is the whole point of the
  * persistent-context requirement.
  */
-const FEED_MEASURE = 'mx-auto w-full max-w-[56rem]'
+/*
+ * 72rem, up from 56.
+ *
+ * 56 was chosen when the feed was a single narrative column; with an
+ * analytical object able to sit BESIDE the narrative it was leaving a third of
+ * a 1440px canvas empty on both sides. Capped rather than fluid so an ultrawide
+ * monitor does not stretch a claim across 2000px, and the pane's own width
+ * still constrains it when a workspace is open — no second measure is needed
+ * for that case, which is why this is one constant and not two.
+ */
+const FEED_MEASURE = 'mx-auto w-full max-w-[72rem]'
 
 const DIRECTIONS: IdeaDirection[] = ['buy', 'sell', 'add', 'trim']
 const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready', 'deciding']
@@ -361,7 +371,15 @@ export function IdeasExplore({
         )}
 
         <div className={clsx('space-y-4 pt-4', booting && 'hidden')}>
-          {entries.map(entry => (
+          {entries.map(entry => {
+            const sym = previewSymbol(entry.card)
+            /* Dated closes: the desktop chart reads out the date under the
+               cursor, which bare numbers cannot answer. */
+            const preview = previewFor(
+              entry.family, entry.card, entry.source,
+              sym ? history?.get(sym) : undefined,
+            )
+            return (
             <div
               key={entry.key}
               // The card contract owns its own internal height on a phone. Here
@@ -412,7 +430,7 @@ export function IdeasExplore({
               className={clsx(
                 /* With no Open button, hover and focus are what say the tile is
                    clickable at all. */
-                'cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition-all hover:shadow-md hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-800 dark:hover:border-gray-600',
+                'feed-tile cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition-all hover:shadow-md hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-800 dark:hover:border-gray-600',
                 // Restrained: a ring, not a fill. The card's own severity rail
                 // already uses colour, and a selected state that competes with
                 // it would make every list look alarming.
@@ -424,6 +442,7 @@ export function IdeasExplore({
               {selectedKey === entry.key ? (
                 <SelectedSummary card={entry.card} />
               ) : (
+              <div className="feed-tile-cols">
               <SignalCardView
                 card={entry.card}
                 /*
@@ -449,32 +468,13 @@ export function IdeasExplore({
                  */
                 layout="flow"
                 /*
-                 * The contextual object the builder DECLARED.
-                 *
-                 * Passed by the host because `SignalCardView` never imports a
-                 * chart. Desktop passed nothing, which is why its tiles had no
-                 * visual. `hasDrawableEvidence` gates it so a tile never
-                 * reserves a region for something that returns null.
+                 * The preview is NOT a card prop. It renders as the card's
+                 * sibling so a wide tile can put it BESIDE the narrative
+                 * instead of underneath it. Threading it back through the card
+                 * would mean restructuring the card's internal flex column,
+                 * which is the geometry the phone suite guards — and this
+                 * composition is desktop-only.
                  */
-                /*
-                 * The contextual object this candidate can support.
-                 *
-                 * `previewFor` decides WHAT from the card plus the structured
-                 * row its producer returned; `FeedPreview` decides only how to
-                 * draw it. No family conditionals here — adding a family means
-                 * teaching the descriptor, not editing the feed.
-                 *
-                 * `undefined` where there is nothing to draw, so the card
-                 * reserves no region and renders as the typography it is.
-                 */
-                evidence={(() => {
-                  const sym = previewSymbol(entry.card)
-                  /* Dated closes: the desktop chart reads out the date under the
-                     cursor, which bare numbers cannot answer. */
-                  const pts = sym ? history?.get(sym) : undefined
-                  const preview = previewFor(entry.family, entry.card, entry.source, pts)
-                  return preview ? <FeedPreview preview={preview} /> : undefined
-                })()}
                 /*
                  * Every card action opens the workspace, which is where an
                  * action has somewhere to happen. `onAction` is required
@@ -483,6 +483,21 @@ export function IdeasExplore({
                  */
                 onAction={() => onSelect?.(entry)}
               />
+              {/*
+                The analytical object. Beside the narrative once the TILE is
+                wide enough — see `.feed-tile-cols` — and stacked beneath it
+                otherwise, which is what keeps a 30rem pane from squeezing a
+                chart next to a claim.
+
+                Text-led candidates produce no preview and render nothing here,
+                so they get no empty right column.
+              */}
+              {preview && (
+                <div className="feed-tile-aside border-t border-gray-100 px-4 py-3 dark:border-gray-800">
+                  <FeedPreview preview={preview} />
+                </div>
+              )}
+              </div>
               )}
               {selectedKey !== entry.key && (() => {
                 /*
@@ -511,7 +526,8 @@ export function IdeasExplore({
                 )
               })()}
             </div>
-          ))}
+            )
+          })}
         </div>
 
         {/*
