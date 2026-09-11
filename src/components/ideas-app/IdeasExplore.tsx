@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Loader2, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import { CuratePanel } from './CuratePanel'
@@ -54,12 +54,20 @@ const DIRECTIONS: IdeaDirection[] = ['buy', 'sell', 'add', 'trim']
 const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready', 'deciding']
 
 export function IdeasExplore({
-  onSelect, selectedKey = null,
+  onSelect, selectedKey = null, onSelectionInvalid,
 }: {
   /** The tile the reader picked. The app owns what happens next. */
   onSelect?: (entry: AttentionEntry) => void
   /** Which tile the open workspace belongs to, for the selected state. */
   selectedKey?: string | null
+  /**
+   * The open workspace's candidate is no longer eligible here.
+   *
+   * Fired only after the reader changes the feed's CONTEXT — lens, Curate
+   * facets, or a trade-specific filter. Never on paging, reranking or a
+   * refetch, because none of those is the reader asking for a different set.
+   */
+  onSelectionInvalid?: () => void
 }) {
   const [lens, setLens] = useState<IdeaLens>('all')
   const [direction, setDirection] = useState<IdeaDirection | null>(null)
@@ -75,6 +83,18 @@ export function IdeasExplore({
   const facetCount = filterCount(facets)
 
   const feed = useDesktopAttentionFeed(lens, { facets })
+  const listRef = useRef<HTMLDivElement | null>(null)
+
+  /**
+   * What the reader has asked the feed to show.
+   *
+   * A string rather than a dependency list so it can be COMPARED against the
+   * last reconciled value: the effect below must fire on a deliberate context
+   * change and stay silent through paging, recomposition and refetches, and
+   * only an explicit previous-value check can tell those apart.
+   */
+  const contextKey = JSON.stringify([lens, facets, direction, maturity])
+  const reconciledFor = useRef(contextKey)
   const spec = lensSpec(lens)
   const showInvestment = lensShowsInvestmentFilters(lens)
 
@@ -94,6 +114,36 @@ export function IdeasExplore({
       return true
     })
     : feed.entries
+
+  /*
+   * Reconcile selection, and normalise scroll, on a context change.
+   *
+   * Both belong to the same moment and neither belongs anywhere else:
+   *
+   *   selection   an open workspace whose candidate is no longer in the
+   *               resulting set is incoherent — the reader switched to
+   *               Thoughts and is looking at a case-versus-price gap. Closed
+   *               rather than replaced: choosing a substitute on their behalf
+   *               is a decision they did not make.
+   *
+   *   scroll      a deep offset into a substantially different result set is
+   *               meaningless. Normalised to the top HERE and nowhere else —
+   *               opening a workspace, paging and reranking must all leave it
+   *               exactly where it is.
+   *
+   * Waits for the set to settle: reconciling mid-fetch would close a workspace
+   * because its candidate had not arrived yet.
+   *
+   * Matched on `key`, the card's stable identity, not on title, array position
+   * or object reference — the entry objects are rebuilt on every pass.
+   */
+  useEffect(() => {
+    if (contextKey === reconciledFor.current) return
+    if (feed.isLoading) return
+    reconciledFor.current = contextKey
+    listRef.current?.scrollTo({ top: 0 })
+    if (selectedKey && !entries.some(e => e.key === selectedKey)) onSelectionInvalid?.()
+  }, [contextKey, feed.isLoading, entries, selectedKey, onSelectionInvalid])
 
   return (
     /*
@@ -214,7 +264,7 @@ export function IdeasExplore({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
       <div className={clsx(FEED_MEASURE, 'px-6 pb-5')}>
         {feed.isLoading && entries.length === 0 && (
           <div className="flex justify-center py-16 text-gray-400">

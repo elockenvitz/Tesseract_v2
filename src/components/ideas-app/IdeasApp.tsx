@@ -153,6 +153,9 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
         <IdeasExplore
           selectedKey={selected?.selection.key ?? null}
           onSelect={entry => setSelected({ selection: selectionFor(entry), entry })}
+          /* The feed changed context and the open candidate is not in it. Close
+             rather than substitute — picking a replacement is the reader's. */
+          onSelectionInvalid={() => setSelected(null)}
         />
         </div>
         {selected && (
