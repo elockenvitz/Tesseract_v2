@@ -5,6 +5,8 @@ import { CuratePanel } from './CuratePanel'
 import { EMPTY_FILTER, filterCount, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { SignalCardView } from '../signals/SignalCardView'
 import { ideaPanes } from '../signals/ideaPanes'
+import { CardEvidenceView, hasDrawableEvidence } from '../signals/CardEvidenceView'
+import type { SignalCard } from '../../lib/signals/contract'
 import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import { IDEA_LENSES, lensSpec, lensShowsInvestmentFilters, type IdeaLens } from '../../lib/desktop-ideas/lens'
 import { MATURITY_LABEL, maturityOf, type IdeaDirection, type IdeaMaturity } from '../../lib/desktop-ideas'
@@ -228,9 +230,39 @@ export function IdeasExplore({
               // The card contract owns its own internal height on a phone. Here
               // it sits in normal flow at a readable measure, so the feed
               // scrolls as one column rather than as a stack of viewports.
-              onClick={() => onSelect?.(entry)}
+              /*
+               * Selection is the BACKGROUND's job, not the card's.
+               *
+               * The tile contains its own controls — carousel pager, ladder
+               * markers, the disclosure toggle — and every one of them is a
+               * reversible preview interaction that must act locally. Paging
+               * the carousel and finding the workspace had swapped underneath
+               * is the defect this guards.
+               *
+               * The test is whether the click originated on a CONTROL, not
+               * whether it originated on the tile's own box — requiring the
+               * latter would leave only the border clickable, since the card
+               * fills the tile. So a click passing through prose, a metric or
+               * the card's chrome selects; a click on a button, link, input or
+               * anything with a button role is that control's and stops here.
+               *
+               * Card actions still open the workspace, explicitly, via
+               * `onAction` — they are meant to.
+               */
+              onClick={e => {
+                const el = e.target as HTMLElement
+                if (el.closest('button, a, input, select, textarea, [role="button"], [role="tab"]')) return
+                onSelect?.(entry)
+              }}
+              /* Keyboard parity: the tile is reachable and Enter opens it. */
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => {
+                if (e.target !== e.currentTarget) return
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(entry) }
+              }}
               className={clsx(
-                'cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition-colors dark:bg-gray-800',
+                'cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-800',
                 // Restrained: a ring, not a fill. The card's own severity rail
                 // already uses colour, and a selected state that competes with
                 // it would make every list look alarming.
@@ -239,6 +271,9 @@ export function IdeasExplore({
                   : 'border-gray-200 dark:border-gray-700',
               )}
             >
+              {selectedKey === entry.key ? (
+                <SelectedSummary card={entry.card} />
+              ) : (
               <SignalCardView
                 card={entry.card}
                 /*
@@ -264,18 +299,25 @@ export function IdeasExplore({
                  */
                 layout="flow"
                 /*
-                 * Stage 3 routes every card action to one place: open the item.
+                 * The contextual object the builder DECLARED.
                  *
-                 * The card contract's real action vocabulary — ask, share,
-                 * promote, readthrough — is honoured by the contextual
-                 * workspace in Stage 4, which is where an action has somewhere
-                 * to happen. Wiring half of them now would mean writing the
-                 * routing twice. `onAction` is required rather than optional
-                 * precisely so a card cannot be rendered with its actions
-                 * silently inert, so this is explicit rather than absent.
+                 * Passed by the host because `SignalCardView` never imports a
+                 * chart. Desktop passed nothing, which is why its tiles had no
+                 * visual. `hasDrawableEvidence` gates it so a tile never
+                 * reserves a region for something that returns null.
+                 */
+                evidence={hasDrawableEvidence(entry.card)
+                  ? <CardEvidenceView card={entry.card} />
+                  : undefined}
+                /*
+                 * Every card action opens the workspace, which is where an
+                 * action has somewhere to happen. `onAction` is required
+                 * rather than optional precisely so a card cannot render with
+                 * its actions silently inert.
                  */
                 onAction={() => onSelect?.(entry)}
               />
+              )}
             </div>
           ))}
         </div>
@@ -299,6 +341,77 @@ export function IdeasExplore({
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The selected tile, collapsed.
+ *
+ * ── Why it collapses at all ───────────────────────────────────────────────
+ *
+ * Its full workspace is open two inches to the right. Leaving the carousel,
+ * the ladder and the action row on the tile would put two independently
+ * interactive copies of the same object on screen, which is the thing the
+ * tile/workspace division exists to prevent — and the second copy is the one
+ * with less room.
+ *
+ * ── What survives ─────────────────────────────────────────────────────────
+ *
+ * Everything needed to remember WHY this row is the one open: the family, the
+ * headline, the number the claim turns on, and the provenance line. Nothing
+ * that would duplicate the workspace.
+ *
+ * ── Only this tile ────────────────────────────────────────────────────────
+ *
+ * Every other tile keeps its full preview. A reader must still be able to scan
+ * past the open item to something more interesting and switch to it, which is
+ * the whole point of a persistent feed; reducing the list to text rows because
+ * a workspace happens to be open would defeat it.
+ *
+ * ── Height ────────────────────────────────────────────────────────────────
+ *
+ * `min-h` matches the collapsed card's natural height rather than the full
+ * one, and the transition is a swap rather than an animated collapse. A tile
+ * shrinking under the cursor is what moves everything below it; a swap changes
+ * one row's height once, at the moment of a deliberate click, which is when a
+ * reader expects the layout to respond.
+ */
+function SelectedSummary({ card }: { card: SignalCard }) {
+  return (
+    <div className="flex min-h-[5.5rem] items-start gap-3 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+          <span>{card.surface}</span>
+          {card.entity?.ticker && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="text-gray-600 dark:text-gray-300">{card.entity.ticker}</span>
+            </>
+          )}
+        </div>
+        <p className="mt-1 text-sm font-semibold leading-snug text-gray-900 dark:text-white">
+          {card.headline}
+        </p>
+        {card.provenance?.reason && (
+          <p className="mt-1 truncate text-[11px] text-gray-500 dark:text-gray-400">
+            {card.provenance.reason}
+          </p>
+        )}
+      </div>
+      {card.metric && (
+        <div className="shrink-0 text-right">
+          <p className="text-sm font-bold tabular-nums text-gray-900 dark:text-white">
+            {card.metric.value}
+          </p>
+          {card.metric.label && (
+            <p className="text-[10px] uppercase tracking-wide text-gray-400">{card.metric.label}</p>
+          )}
+        </div>
+      )}
+      <span className="mt-0.5 shrink-0 rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+        Open
+      </span>
     </div>
   )
 }
