@@ -63,8 +63,14 @@ import { MATURITY_LABEL, maturityOf, type IdeaDirection, type IdeaMaturity } fro
  * monitor does not stretch a claim across 2000px, and the pane's own width
  * still constrains it when a workspace is open — no second measure is needed
  * for that case, which is why this is one constant and not two.
+ *
+ * 96rem (1536px) rather than 72: a 1760-to-1920px monitor was still being
+ * asked to leave ~380px empty down each side. The cap stops mattering below
+ * about 1550px, where the pane's own gutter takes over — see `IdeasApp` for
+ * the 32px floor. It is the READING measure that protects prose from the extra
+ * width, not this number; see `.feed-tile-prose`.
  */
-const FEED_MEASURE = 'mx-auto w-full max-w-[72rem]'
+const FEED_MEASURE = 'mx-auto w-full max-w-[96rem]'
 
 const DIRECTIONS: IdeaDirection[] = ['buy', 'sell', 'add', 'trim']
 const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready', 'deciding']
@@ -442,7 +448,13 @@ export function IdeasExplore({
               {selectedKey === entry.key ? (
                 <SelectedSummary card={entry.card} />
               ) : (
-              <div className="feed-tile-cols">
+              <div
+                /* `feed-tile-prose` caps the READING measure when there is no
+                   analytical object to share the tile with. Without it a
+                   thought on a 1920px canvas is a single 1400px line. Keyed on
+                   the preview seam that already exists, not on family. */
+                className={clsx('feed-tile-cols', !preview && 'feed-tile-prose')}
+              >
               <SignalCardView
                 card={entry.card}
                 /*

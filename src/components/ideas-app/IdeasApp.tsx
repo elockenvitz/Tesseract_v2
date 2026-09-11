@@ -173,7 +173,15 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
              * whole column back — and because only the CLASS changes, the
              * component does not remount and the scroll does not move.
              */
-            splitOpen ? 'w-[42%] min-w-[30rem] max-w-[40rem]' : 'w-full border-r-0',
+            /*
+             * The 8px is the application-side gutter, and it exists only in
+             * the full-width state. The feed's own `px-6` gives 24px; the tile
+             * therefore keeps 32px of air from the window edge on a canvas
+             * narrower than the cap, instead of running to within 24px of it.
+             * Split mode is left exactly as it was — this pane is already the
+             * narrower half and has no width to give away.
+             */
+            splitOpen ? 'w-[42%] min-w-[30rem] max-w-[40rem]' : 'w-full border-r-0 px-2',
           )}
         >
         <IdeasExplore
