@@ -24,9 +24,6 @@ import {
   useIdeaScan, useScanExposure, useScanFramework, useScanOpenPrice, useIdeaDetail,
   type ScanFrame,
 } from '../../hooks/useDesktopIdeas'
-import { useDesktopIdeasFeed } from '../../hooks/useDesktopIdeasFeed'
-import { IdeasExplore } from './IdeasExplore'
-import { isFlagOn } from '../../lib/flags'
 import {
   scoreIdea, compareIdeas, subscribeToOpenIdea, MATURITY_LABEL, targetFor,
   type IdeaRow, type IdeaFocus,
@@ -80,26 +77,7 @@ export interface IdeasWorkspaceProps {
 export function IdeasWorkspace({
   selectedIdeaId, focus, issue, focusObjectId, intent,
 }: IdeasWorkspaceProps = {}) {
-  /*
-   * Stage 1 of the desktop Ideas convergence: the candidate set.
-   *
-   * `useIdeaScan` read one table and capped at 200 rows. The canonical set is
-   * the mixed feed both shells now share — see `useDesktopIdeasFeed`. Behind a
-   * flag because this changes what the surface CONTAINS, not how it looks, and
-   * that deserves to be verified against the live workspace first.
-   *
-   * Both hooks run either way. They must: hooks cannot be called
-   * conditionally, and the unused one is a cache read rather than a second
-   * round trip once its query is already warm. `useIdeaScan` is NOT being
-   * retired — under the feed it stops being the candidate source and stays the
-   * enrichment source for the trade-idea subset, which is what keeps exposure,
-   * framework, open price and detail correct.
-   */
-  const useFeed = isFlagOn('desktop-ideas-feed')
-  const feed = useDesktopIdeasFeed('trade_ideas')
-  const scan = useIdeaScan()
-  const ideas = useFeed ? feed.ideaRows : scan.ideas
-  const isLoading = useFeed ? feed.isLoading : scan.isLoading
+  const { ideas, isLoading } = useIdeaScan()
   const exposure = useScanExposure(ideas)
   const openPrice = useScanOpenPrice(ideas)
   const [arrival, setArrival] = useState<{ focus?: IdeaFocus | null; issue?: string | null } | null>(
@@ -178,30 +156,6 @@ export function IdeasWorkspace({
     if (found) open(found)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [ranked])
-
-  /*
-   * Stage 3: under the flag, Explore IS the browse surface.
-   *
-   * Returned before the loading and empty gates below because those belong to
-   * the scan — Explore runs the feed's own loading and empty states, per lens,
-   * and a scan with nothing in it must not blank a feed that has plenty.
-   *
-   * Detail is deliberately untouched here. Selecting a card hands off through
-   * the same `openDashboardFocus` seam the gallery already uses, so Stage 3
-   * changes what BROWSE is without changing what selection does. The
-   * contextual right-hand workspace is Stage 4.
-   */
-  if (useFeed) {
-    return (
-      <IdeasExplore
-        onOpenCard={card => {
-          const entity = card.entity?.id ?? null
-          const found = entity ? ranked.find(i => i.id === entity || i.assetId === entity) : null
-          if (found) open(found)
-        }}
-      />
-    )
-  }
 
   if (isLoading) return <Loading />
   if (!ranked.length) return <Empty />

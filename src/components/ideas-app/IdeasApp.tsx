@@ -1,5 +1,5 @@
 import { Lightbulb } from 'lucide-react'
-import { IdeasExplore } from '../ideas-v2/IdeasExplore'
+import { IdeasExplore } from './IdeasExplore'
 import type { SignalCard } from '../../lib/signals/contract'
 
 /**
