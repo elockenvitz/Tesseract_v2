@@ -5,6 +5,9 @@ import {
 } from '../lib/signals/builders'
 import { feedItemToIdeaInput, type FeedItemLike } from '../lib/signals/feed-item-input'
 import { rankFeed, type PriorityInput } from '../lib/signals/feed-priority'
+import { composeFeed } from '../lib/signals/feed-compose'
+import { readerQuestionFor } from '../lib/signals/reader-question'
+import { briefClassFor } from '../lib/signals/brief-class'
 import { matchesFeedFacets } from '../lib/signals/facet-match'
 import { lensSpec, type IdeaLens } from '../lib/desktop-ideas/lens'
 import { useDesktopCandidates } from './useDesktopCandidates'
@@ -166,8 +169,51 @@ export function useDesktopAttentionFeed(
     const eligible = built
       .filter(e => inLens(e, lens))
       .filter(e => matchesFeedFacets(factsFor(e.card, bySymbol), facets))
+
     // Tier first, then weighted score, suppressions dropped. Mobile's ranker.
-    return rankFeed(eligible, e => rankInputFor(e.card), now).map(r => r.item)
+    const ranked = rankFeed(eligible, e => rankInputFor(e.card), now)
+
+    /*
+     * Ranking says how much each candidate deserves attention. It says nothing
+     * about what should come NEXT, which is why five legitimate case-versus-
+     * price findings arrived in a row: each individually earned its place and
+     * nothing was looking at the sequence.
+     *
+     * `composeFeed` is that second pass, and it already exists — pure, shared,
+     * and the same one mobile runs. Desktop simply never called it.
+     *
+     * It does not touch a score, an eligibility or a severity. It reorders
+     * within a bounded neighbourhood: a candidate is only postponed when an
+     * alternative exists inside the score tolerance, so a genuinely dominant
+     * finding still leads even if three of its family precede it.
+     *
+     * The bound is the SCORE, not the tier, and deliberately so —
+     * `feed-compose` explains that a hard tier partition "forbade every
+     * harmless swap across the line, which is most of the variety a mixed feed
+     * has available to it", while the score bound keeps the same guarantee
+     * honestly: a weak card loses because it is worse, not because a partition
+     * said so. Tier still decides the ranked order this pass reads.
+     *
+     * Four axes, because repetition is not one thing:
+     *
+     *   family    the product family, finer than the signal type
+     *   subject   the ticker, so one name does not own the opening
+     *   category  the canonical bucket
+     *   question  what the card asks the reader to think about
+     *   brief     which lane of the briefing, coarser than all of them
+     *
+     * Every accessor derives from the card's own type, so a card cannot be one
+     * thing to the ranker and another to the composer.
+     *
+     * Deterministic: same candidates, same scores, same order. No shuffle.
+     */
+    return composeFeed(ranked, {
+      familyOf: e => e.card.type ?? null,
+      subjectOf: e => e.card.entity?.ticker ?? null,
+      categoryOf: e => e.card.surface ?? null,
+      questionOf: e => readerQuestionFor(e.card.type),
+      briefOf: e => briefClassFor(e.card.type),
+    }).order.map(r => r.item)
   }, [built, lens, facets, bySymbol])
 
   return {
