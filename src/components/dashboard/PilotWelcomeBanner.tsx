@@ -118,9 +118,13 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
         })
         return
       case 'outcome_reviewed':
-        // The mark is the arrival. Reading writes nothing, so this is the one
-        // step that has to be reported rather than derived.
-        mission.markOutcomeReviewed()
+        /*
+         * Navigate only. Pressing a button is not reviewing an outcome, and
+         * marking here would complete the step — and graduate the pilot — for
+         * somebody who clicked and landed on an error. Outcomes marks it once
+         * it has actually resolved this decision; if it cannot, the step
+         * stays open, which is the honest result.
+         */
         onNavigate({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: ideaId } })
         return
     }

@@ -6,6 +6,8 @@
  * pilot back to the start rather than leaving them stuck.
  */
 
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 import {
   MISSION_STEP_IDS, isPipelineAdvanced, missionState, tutorialIdeaKey,
@@ -148,5 +150,40 @@ describe('storage keys', () => {
     expect(tutorialIdeaKey('org-1')).toBe('tutorial_idea_id_org-1')
     expect(tutorialOutcomeReviewedKey('org-1')).toBe('tutorial_outcome_reviewed_at_org-1')
     expect(tutorialIdeaKey(null)).toBe('tutorial_idea_id_no-org')
+  })
+})
+
+/**
+ * Where step 5 is marked.
+ *
+ * Asserted against the sources because the claim is about WHICH surface owns
+ * the write, and that is not observable from the pure model — it decided
+ * completion correctly in both the old arrangement and the new one.
+ */
+describe('reviewing an outcome is not pressing a button', () => {
+  const src = (p: string) => readFileSync(path.join(process.cwd(), 'src', p), 'utf8')
+
+  it('does not mark from either CTA', () => {
+    for (const f of [
+      'components/dashboard/PilotWelcomeBanner.tsx',
+      'components/mobile/PilotMissionStrip.tsx',
+    ]) {
+      expect(src(f)).not.toContain('markOutcomeReviewed()')
+    }
+  })
+
+  it('marks from Outcomes, and only once it has resolved the tutorial decision', () => {
+    const page = src('pages/DecisionAccountabilityPage.tsx')
+    expect(page).toContain('markOutcomeReviewed()')
+    // The identity every other step is read against.
+    expect(page).toContain('r.decision_id === tutorialId')
+    // Nothing to resolve means nothing to mark: a failed or empty load leaves
+    // the step open rather than graduating somebody who saw an error.
+    expect(page).toContain('if (isLoading || isError) return')
+  })
+
+  it('still routes the tutorial identity to Outcomes', () => {
+    expect(src('components/dashboard/PilotWelcomeBanner.tsx'))
+      .toContain("type: 'outcomes', data: { tradeQueueItemId: ideaId }")
   })
 })

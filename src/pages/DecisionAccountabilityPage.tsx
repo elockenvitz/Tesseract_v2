@@ -72,6 +72,7 @@ import { useToast } from '../components/common/Toast'
 import { PilotOutcomesGetStarted } from '../components/pilot/PilotOutcomesGetStarted'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
+import { usePilotMission } from '../hooks/usePilotMission'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { MultiSelectFilter } from '../components/ui/MultiSelectFilter'
@@ -3119,6 +3120,35 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
   // been set on the corresponding decision_reviews row.
   const decisionIds = useMemo(() => rows.map(r => r.decision_id), [rows])
   const { data: reviewsById } = useDecisionReviewsByIds(decisionIds)
+
+  /*
+   * Step 5 of the pilot mission completes HERE, not at the button that sent
+   * them.
+   *
+   * The module's CTA used to mark it and then navigate, which meant pressing a
+   * button was the whole of "reviewed the outcome" — a pilot who clicked and
+   * landed on an error, an empty filter or a failed load was marked complete
+   * and graduated anyway. Reading is still not writing, so the step is still a
+   * mark; what changed is that the mark belongs to the surface that can
+   * actually tell whether the decision resolved.
+   *
+   * The condition is the tutorial decision being present in the rows this page
+   * has loaded. `decision_id` IS the `trade_queue_item_id`, so it is the same
+   * identity every other step is read against. Nothing to resolve means
+   * nothing to mark, and the step stays open — which is the honest result and
+   * the one the reader can act on by coming back.
+   *
+   * `markOutcomeReviewed` is idempotent per (stage, org); no second progress
+   * mechanism is introduced.
+   */
+  const mission = usePilotMission()
+  useEffect(() => {
+    if (isLoading || isError) return
+    const tutorialId = mission.tutorialIdeaId
+    if (!tutorialId || mission.steps[4]?.done) return
+    if (!rows.some(r => r.decision_id === tutorialId)) return
+    mission.markOutcomeReviewed()
+  }, [isLoading, isError, rows, mission])
 
   /** Promote a row's intel from `evaluate` → `resolved` once the user
    *  has captured a reflection (thesis call OR reflection note). The

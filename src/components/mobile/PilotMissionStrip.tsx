@@ -43,7 +43,8 @@ export function PilotMissionStrip({ onNavigate }: { onNavigate?: (result: any) =
       return
     }
     if (step.id === 'outcome_reviewed') {
-      mission.markOutcomeReviewed()
+      // Navigate only — Outcomes marks the step once it has resolved the
+      // decision. See the same note on the desktop module.
       onNavigate?.({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: ideaId } })
       return
     }
