@@ -8,6 +8,9 @@ import {
 import { useAuth } from '../../hooks/useAuth'
 import { usePipelineItems } from '../../hooks/usePipelineItems'
 import { usePilotPipelineBanner } from '../../hooks/usePilotPipelineBanner'
+import { usePilotMode } from '../../hooks/usePilotMode'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { DecisionInboxPanel } from '../trading/DecisionInboxPanel'
 import { PilotStepsBanner } from '../pilot/PilotStepsBanner'
 import { useTradeIdeaService } from '../../hooks/useTradeIdeaService'
 import { isCreatorOrCoAnalyst } from '../../lib/permissions/trade-idea-permissions'
@@ -66,6 +69,8 @@ export function MobilePipeline() {
   const { user } = useAuth()
   const { data: items = [], isLoading } = usePipelineItems()
   const pilotBanner = usePilotPipelineBanner()
+  const pilotMode = usePilotMode()
+  const { hasCompletedPipelineStepInbox, mark: markPilotStage } = usePilotProgress()
   const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
 
   const [view, setView] = useState<View>('pipeline')
@@ -83,6 +88,26 @@ export function MobilePipeline() {
    * was closed. It is a mode of the detail, so it is a flag on the detail.
    */
   const [moving, setMoving] = useState(false)
+  /*
+   * The Decision Inbox drawer, which a phone did not have at all.
+   *
+   * `DecisionInboxPanel` was mounted only by `TradeQueuePage`, and a phone
+   * renders this instead — so the Pipeline tutorial's second step told the
+   * reader to open a drawer that nothing drew. The panel itself was never
+   * desktop-bound: it is `absolute bottom-0` with percentage heights and one
+   * `hidden sm:inline` label, so it needed a positioned ancestor and a piece
+   * of state, not a mobile version of itself.
+   */
+  const [inboxCollapsed, setInboxCollapsed] = useState(true)
+  const toggleInbox = () => setInboxCollapsed(prev => {
+    // Marked on collapsed → open only, so closing the drawer does not mark,
+    // and short-circuited once earned — the same rule and the same stage key
+    // the board uses. See `TradeQueuePage`.
+    if (prev && pilotMode.effectiveIsPilot && !hasCompletedPipelineStepInbox) {
+      markPilotStage('pipeline_step_inbox')
+    }
+    return !prev
+  })
 
   const busy = isMoving || isMovingPairTrade
 
@@ -143,7 +168,8 @@ export function MobilePipeline() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950">
+    /* `relative` so the inbox drawer has something to be absolute against. */
+    <div className="relative h-full flex flex-col bg-gray-50 dark:bg-gray-950">
       <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
         <div className="flex gap-1 px-3 pt-1.5">
           {VIEWS.map(v => {
@@ -317,6 +343,20 @@ export function MobilePipeline() {
           })}
         </div>
       </BottomSheet>
+
+      {/* The canonical drawer, on the board it belongs to. Not shown on the
+          committed or archived tabs, which are read-only here and have no
+          decisions waiting. */}
+      {view === 'pipeline' && (
+        <DecisionInboxPanel
+          collapsed={inboxCollapsed}
+          onToggleCollapsed={toggleInbox}
+          onIdeaClick={tradeId => {
+            const row = rows.find(r => r.id === tradeId)
+            if (row) setDetail(row)
+          }}
+        />
+      )}
 
       {detail && (
         <IdeaDetail

@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
@@ -28,8 +28,7 @@ import { PilotCaptureTracker } from '../ThoughtsSection'
 beforeEach(() => { env.isMobile = true })
 afterEach(cleanup)
 
-const tracker = (done: boolean[], onDismiss = vi.fn()) =>
-  render(<PilotCaptureTracker done={done} onDismiss={onDismiss} />)
+const tracker = (done: boolean[]) => render(<PilotCaptureTracker done={done} />)
 
 describe('the capture tracker', () => {
   it('names the step the reader is on, not all three', () => {
@@ -39,10 +38,24 @@ describe('the capture tracker', () => {
     expect(screen.queryByText('Submit')).toBeNull()
   })
 
-  it('follows the form forward', () => {
+  /**
+   * The middle step said "Add a thesis and portfolio" and the form requires
+   * neither — Submit is enabled by an asset, or by both legs of a pair, and
+   * the thesis field is labelled optional in that same form. So it asked for
+   * one thing the form calls optional and a second it never asks for.
+   */
+  it('follows the form forward, and names what the form actually wants', () => {
     tracker([true, false, false])
     expect(screen.getByText(/Step 2 of 3/)).toBeInTheDocument()
-    expect(screen.getByText('Add a thesis and portfolio')).toBeInTheDocument()
+    expect(screen.getByText('Set the trade details')).toBeInTheDocument()
+  })
+
+  it('never asks for a field the form calls optional', () => {
+    for (const done of [[false, false, false], [true, false, false], [true, true, false]]) {
+      cleanup()
+      const { container } = tracker(done)
+      expect(container.textContent).not.toMatch(/thesis/i)
+    }
   })
 
   /** Completion is unchanged; only how much of it is drawn. */
@@ -65,11 +78,16 @@ describe('the capture tracker', () => {
     expect(el.querySelector('ol')).toBeNull()
   })
 
-  it('keeps its dismiss', () => {
-    const onDismiss = vi.fn()
-    tracker([false, false, false], onDismiss)
-    fireEvent.click(screen.getByLabelText('Dismiss capture intro'))
-    expect(onDismiss).toHaveBeenCalledTimes(1)
+  /**
+   * These three steps are how a first-time pilot learns what the form is for,
+   * so a control that hides them is a control that removes the instructions.
+   * It retires itself on the first successful submit, which is the only
+   * moment hiding it is the right answer.
+   */
+  it('offers no way to hide the instructions', () => {
+    const { container } = tracker([false, false, false])
+    expect(screen.queryByLabelText('Dismiss capture intro')).toBeNull()
+    expect(container.querySelectorAll('button')).toHaveLength(0)
   })
 })
 

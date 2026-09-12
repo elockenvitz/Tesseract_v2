@@ -303,6 +303,22 @@ export function ThoughtsSection({
     usePendingResearchLinksStore.getState().clear()
   }, [])
 
+  /*
+   * Hand the pane's header our back action while the form is open on a phone,
+   * and take it away again on the way out — a stale handler in the chrome is
+   * a chevron that closes a form nobody is looking at.
+ *
+ * Declared here, above the branches that return early: a hook after one of
+ * those runs in some renders and not others, which React ends the render
+ * with rather than tolerates.
+   */
+  useEffect(() => {
+    if (!onBackActionChange) return
+    const active = isMobileViewport && captureMode !== 'collapsed'
+    onBackActionChange(active ? handleCaptureCancel : null)
+    return () => onBackActionChange(null)
+  }, [onBackActionChange, isMobileViewport, captureMode, handleCaptureCancel])
+
   // Allow user to change context
   const handleContextChange = (newContext: CapturedContext | null) => {
     setCapturedContext(newContext)
@@ -499,18 +515,6 @@ export function ThoughtsSection({
     )
   }
 
-  /*
-   * Hand the pane's header our back action while the form is open on a phone,
-   * and take it away again on the way out — a stale handler in the chrome is
-   * a chevron that closes a form nobody is looking at.
-   */
-  useEffect(() => {
-    if (!onBackActionChange) return
-    const active = isMobileViewport && captureMode !== 'collapsed'
-    onBackActionChange(active ? handleCaptureCancel : null)
-    return () => onBackActionChange(null)
-  }, [onBackActionChange, isMobileViewport, captureMode, handleCaptureCancel])
-
   return (
     <div className="flex flex-col h-full">
       {/* Back, on the surfaces that have the room for a row of their own.
@@ -644,10 +648,7 @@ export function ThoughtsSection({
                 dismiss. Same visual family as the Trade Lab + Idea
                 Pipeline banners for cross-surface consistency. */}
             {showPilotCaptureBanner && (
-              <PilotCaptureTracker
-                done={[captureStep1Done, captureStep2Done, captureStep3Done]}
-                onDismiss={dismissPilotCaptureBanner}
-              />
+              <PilotCaptureTracker done={[captureStep1Done, captureStep2Done, captureStep3Done]} />
             )}
 
             <CaptureGuidance mode="trade_idea" />
@@ -1237,7 +1238,19 @@ function PendingReviewList() {
   )
 }
 
-const CAPTURE_STEPS = ['Pick a ticker', 'Add a thesis and portfolio', 'Submit'] as const
+/*
+ * ── Why the middle step is not "Add a thesis and portfolio" ──────────────
+ *
+ * It required both, and the form requires neither. Submit is enabled by an
+ * asset (or both legs of a pair) and nothing else; the thesis field is
+ * labelled optional in the form itself. So the tracker asked for one thing
+ * the form calls optional and a second thing it never asks for at all, and a
+ * reader who did as the form told them watched the step refuse to tick.
+ *
+ * It is the form being ready to send now, which is the one fact between
+ * picking a name and submitting that is actually true.
+ */
+const CAPTURE_STEPS = ['Pick a ticker', 'Set the trade details', 'Submit'] as const
 
 /**
  * The three capture steps, in one row that never leaves the screen.
@@ -1260,7 +1273,7 @@ const CAPTURE_STEPS = ['Pick a ticker', 'Add a thesis and portfolio', 'Submit'] 
  * Completion is unchanged: the same three flags, written by the same three
  * events, retiring the same way.
  */
-export function PilotCaptureTracker({ done, onDismiss }: { done: boolean[]; onDismiss: () => void }) {
+export function PilotCaptureTracker({ done }: { done: boolean[] }) {
   const current = done.findIndex(d => !d)
   const allDone = current === -1
   const index = allDone ? done.length - 1 : current
@@ -1272,6 +1285,13 @@ export function PilotCaptureTracker({ done, onDismiss }: { done: boolean[]; onDi
          scrolling under it, and sits above that form rather than beside it. */
       className="sticky top-0 z-10 -mx-3 mb-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-800/60 dark:bg-amber-950/40"
     >
+      {/* No dismiss.
+
+          These three steps are how a first-time pilot learns what this form
+          is for, so a control that hides them is a control that removes the
+          instructions. It retires itself when the third step is done, which
+          is the only moment hiding it is the right answer. The row reclaims
+          the space the X was taking rather than leaving a gap where it was. */}
       <div className="flex items-center gap-2">
         <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
         <p className="min-w-0 flex-1 truncate text-[11px] leading-tight">
@@ -1295,14 +1315,6 @@ export function PilotCaptureTracker({ done, onDismiss }: { done: boolean[]; onDi
             />
           ))}
         </span>
-        <button
-          onClick={onDismiss}
-          className="-my-1 -mr-1 shrink-0 rounded p-1 text-amber-500 transition-colors hover:bg-amber-100/60 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/30 dark:hover:text-amber-200"
-          title="Dismiss"
-          aria-label="Dismiss capture intro"
-        >
-          <XIcon className="h-3.5 w-3.5" />
-        </button>
       </div>
     </div>
   )

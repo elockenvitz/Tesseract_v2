@@ -65,7 +65,10 @@ export function usePilotPipelineBanner(): PilotPipelineBanner {
       {
         n: 2,
         title: 'Open the Decision Inbox',
-        hint: 'The bottom drawer is where recommendations wait for your decision — click it.',
+        /* "Click it" named a mouse on a step both shells now have. The drawer
+           is the same component in both, so the hint says where it is and
+           stops there. */
+        hint: 'The bottom drawer is where recommendations wait for your decision.',
         done: hasCompletedPipelineStepInbox,
       },
       {
