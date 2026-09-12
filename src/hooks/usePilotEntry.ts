@@ -1,4 +1,12 @@
+import { useQuery } from '@tanstack/react-query'
+import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import { useHasCoverage } from './useMyCoverage'
+import { usePilotMode } from './usePilotMode'
+import {
+  coverageSuggestionsKey,
+  fetchCoverageSuggestions,
+} from '../lib/coverage/quick-start-suggestions'
 
 /**
  * What a pilot who has not finished onboarding is looking at: setup, or the
@@ -25,6 +33,18 @@ import { useHasCoverage } from './useMyCoverage'
  * team arrives with assigned coverage and goes straight to the mission, which
  * is correct — they are not asked to redo somebody else's work.
  *
+ * ── Why it also starts the suggestions request ───────────────────────────
+ *
+ * Because the card that needs them mounts too late to ask. The chain was
+ * serial: read coverage to decide the stage, mount the prompt, mount the card,
+ * and only then ask what to suggest — three round trips before a screen whose
+ * whole job is to be answered in a minute showed anything but a spinner.
+ *
+ * Starting it here puts that request beside the coverage read instead of
+ * behind it. Same query key, so the card finds the answer already in the cache
+ * rather than issuing a second request, and a reader who turns out to have
+ * coverage already has simply warmed a cache entry nobody reads.
+ *
  * ── Why loading is its own stage ─────────────────────────────────────────
  *
  * Treating "not loaded yet" as "no coverage" shows the setup surface for a
@@ -35,7 +55,20 @@ import { useHasCoverage } from './useMyCoverage'
 export type PilotEntryStage = 'loading' | 'coverage' | 'mission'
 
 export function usePilotEntry(): { stage: PilotEntryStage } {
+  const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
+  const { effectiveIsPilot } = usePilotMode()
   const { hasCoverage, isLoading } = useHasCoverage()
+
+  // Only a pilot sees the setup card, so only a pilot should pay for the three
+  // reads behind it. The shell calls this hook for everyone.
+  useQuery({
+    queryKey: coverageSuggestionsKey(user?.id ?? null, currentOrgId),
+    enabled: !!user?.id && !!currentOrgId && effectiveIsPilot,
+    staleTime: 5 * 60_000,
+    queryFn: () => fetchCoverageSuggestions(user!.id, currentOrgId!),
+  })
+
   if (isLoading) return { stage: 'loading' }
   return { stage: hasCoverage ? 'mission' : 'coverage' }
 }

@@ -43,7 +43,7 @@ import { CoverageQuickStart } from './CoverageQuickStart'
  */
 
 interface FirstSessionCoveragePromptProps {
-  variant?: 'card' | 'sheet'
+  variant?: 'card' | 'sheet' | 'page'
   className?: string
   /**
    * Whether "Not now" is offered, and whether a stored dismissal is honoured.

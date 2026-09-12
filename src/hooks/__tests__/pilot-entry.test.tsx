@@ -22,25 +22,46 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const coverage = vi.hoisted(() => ({ hasCoverage: false, isLoading: false }))
 vi.mock('../useMyCoverage', () => ({ useHasCoverage: () => coverage }))
+vi.mock('../useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }))
+const fetchSuggestions = vi.hoisted(() => vi.fn(async () => []))
+vi.mock('../../lib/coverage/quick-start-suggestions', () => ({
+  coverageSuggestionsKey: (u: string | null, o: string | null) => ['coverage-quick-start-suggestions', u, o],
+  fetchCoverageSuggestions: fetchSuggestions,
+}))
 
 import { usePilotEntry } from '../usePilotEntry'
+
+/*
+ * The hook also starts the suggestions request, so it needs a client. That
+ * request is the point of the third test below: the card that consumes it
+ * mounts three round trips too late to ask for it itself.
+ */
+let entryClient: QueryClient
+const entryWrapper = ({ children }: { children: React.ReactNode }) =>
+  React.createElement(QueryClientProvider, { client: entryClient }, children)
 
 beforeEach(() => {
   coverage.hasCoverage = false
   coverage.isLoading = false
+  // Restored here rather than at the end of the one test that changes it: an
+  // assertion that throws never reaches its own cleanup, and the leak then
+  // fails unrelated tests further down the file.
+  mission.effectiveIsPilot = true
+  fetchSuggestions.mockClear()
+  entryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 })
 afterEach(cleanup)
 
+const entry = () => renderHook(() => usePilotEntry(), { wrapper: entryWrapper }).result
+
 describe('the pilot entry sequence', () => {
   it('asks for coverage before showing the mission', () => {
-    const { result } = renderHook(() => usePilotEntry())
-    expect(result.current.stage).toBe('coverage')
+    expect(entry().current.stage).toBe('coverage')
   })
 
   it('reveals the mission once coverage exists', () => {
     coverage.hasCoverage = true
-    const { result } = renderHook(() => usePilotEntry())
-    expect(result.current.stage).toBe('mission')
+    expect(entry().current.stage).toBe('mission')
   })
 
   /**
@@ -49,8 +70,24 @@ describe('the pilot entry sequence', () => {
    */
   it('says nothing until the rows have actually been read', () => {
     coverage.isLoading = true
-    const { result } = renderHook(() => usePilotEntry())
-    expect(result.current.stage).toBe('loading')
+    expect(entry().current.stage).toBe('loading')
+  })
+
+  /**
+   * The card cannot ask for its own suggestions in time: it mounts behind the
+   * coverage read, which is behind the stage decision. Starting the request
+   * here puts it beside that read rather than after it.
+   */
+  it('starts the suggestions request before the card exists', async () => {
+    entry()
+    await waitFor(() => expect(fetchSuggestions).toHaveBeenCalled())
+  })
+
+  /** Only a pilot sees the card, so only a pilot pays for the reads. */
+  it('does not start it for a reader who is not a pilot', () => {
+    mission.effectiveIsPilot = false
+    entry()
+    expect(fetchSuggestions).not.toHaveBeenCalled()
   })
 })
 

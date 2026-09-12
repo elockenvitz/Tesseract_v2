@@ -11,6 +11,7 @@ import {
   mergeCandidates, newFromSector, removeCandidate, toggleCandidate,
   type CoverageCandidate,
 } from '../../lib/coverage/quick-start-selection'
+import { coverageSuggestionsKey, fetchCoverageSuggestions } from '../../lib/coverage/quick-start-suggestions'
 
 /**
  * "What do you follow?" — asked once, answerable in under a minute, on either
@@ -50,14 +51,17 @@ import {
  *
  * ── One component, two shells ─────────────────────────────────────────────
  *
- * `variant` changes density and nothing else. Both shells read the same
+ * `variant` changes density and nothing else. `page` is the desktop pilot
+ * home, where this card is the entire screen rather than one module among
+ * several — the same content with room to work in, because a 16rem scroll box
+ * alone on a 1400px display is a form pretending to be a widget. Both shells read the same
  * `useMyCoverage` state and write the same rows, so coverage declared on a
  * phone at 7am is present on the desktop at 9. Building a second mobile
  * onboarding state was the thing most worth not doing here.
  */
 
 interface CoverageQuickStartProps {
-  variant?: 'card' | 'sheet'
+  variant?: 'card' | 'sheet' | 'page'
   /** Called after a successful save, with how many names were added. */
   onSaved?: (count: number) => void
   /**
@@ -200,73 +204,10 @@ export function CoverageQuickStart({
    * signal for someone invited into a configured team.
    */
   const { data: suggestions = [], isLoading: suggestionsLoading } = useQuery({
-    queryKey: ['coverage-quick-start-suggestions', user?.id, currentOrgId],
+    queryKey: coverageSuggestionsKey(user?.id ?? null, currentOrgId),
     enabled: !!user?.id && !!currentOrgId,
     staleTime: 5 * 60_000,
-    queryFn: async (): Promise<AssetOption[]> => {
-      const [holdingsRes, profileRes, teamRes] = await Promise.all([
-        supabase
-          .from('portfolio_holdings')
-          /* The portfolio comes back on the same read. A second query for a
-             label the join already reaches would be a round trip for a
-             string. */
-          .select('asset_id, assets:asset_id(id, symbol, company_name, sector), portfolios:portfolio_id(id, name)')
-          .limit(60),
-        supabase
-          .from('user_profile_extended')
-          .select('sector_focus')
-          .eq('user_id', user!.id)
-          .maybeSingle(),
-        supabase
-          .from('coverage')
-          .select('asset_id, assets:asset_id(id, symbol, company_name, sector)')
-          .eq('organization_id', currentOrgId!)
-          .eq('is_active', true)
-          .limit(40),
-      ])
-
-      const out = new Map<string, AssetOption>()
-
-      for (const row of (holdingsRes.data ?? []) as any[]) {
-        const a = row.assets
-        if (!a?.id) continue
-        const portfolioName: string | null = row.portfolios?.name ?? null
-        const existing = out.get(a.id)
-        if (existing) {
-          // The same name in a second book: record it rather than drop it, so
-          // the row can say "+1" instead of picking one arbitrarily.
-          if (portfolioName && !existing.portfolioNames?.includes(portfolioName)) {
-            existing.portfolioNames = [...(existing.portfolioNames ?? []), portfolioName]
-          }
-          continue
-        }
-        out.set(a.id, {
-          ...a,
-          reason: 'holding',
-          portfolioNames: portfolioName ? [portfolioName] : [],
-        })
-      }
-
-      const sectors: string[] = ((profileRes.data as any)?.sector_focus as string[]) ?? []
-      if (sectors.length > 0) {
-        const { data } = await supabase
-          .from('assets')
-          .select('id, symbol, company_name, sector')
-          .in('sector', sectors)
-          .order('market_cap', { ascending: false, nullsFirst: false })
-          .limit(20)
-        for (const a of (data ?? []) as AssetOption[]) {
-          if (!out.has(a.id)) out.set(a.id, { ...a, reason: 'sector' })
-        }
-      }
-
-      for (const row of (teamRes.data ?? []) as any[]) {
-        const a = row.assets
-        if (a?.id && !out.has(a.id)) out.set(a.id, { ...a, reason: 'team' })
-      }
-
-      return [...out.values()].slice(0, 30)
-    },
+    queryFn: () => fetchCoverageSuggestions(user!.id, currentOrgId!),
   })
 
   /**
@@ -409,6 +350,8 @@ export function CoverageQuickStart({
   }
 
   const dense = variant === 'sheet'
+  /* The card IS the screen: it gets the height a full display can spare. */
+  const roomy = variant === 'page'
 
   /*
    * ── Confirmation, and why it is no longer a screen ──────────────────────
@@ -431,7 +374,7 @@ export function CoverageQuickStart({
       data-slot="coverage-quick-start"
       className={clsx(
         'rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800',
-        dense ? 'p-3' : 'p-4',
+        dense ? 'p-3' : roomy ? 'p-5' : 'p-4',
         className,
       )}
     >
@@ -574,7 +517,10 @@ export function CoverageQuickStart({
         </p>
       )}
 
-      <div className={clsx('overflow-y-auto', dense ? 'max-h-52' : 'max-h-64')}>
+      {/* Capped against the viewport rather than a fixed rem on `page`, so a
+          laptop and a large monitor both fill what they have without the list
+          growing past the fold. */}
+      <div className={clsx('overflow-y-auto', dense ? 'max-h-52' : roomy ? 'max-h-[min(30rem,48vh)]' : 'max-h-64')}>
         {listLoading && options.length === 0 && (
           <div className="flex items-center gap-2 px-1 py-3 text-xs text-gray-400">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
@@ -666,7 +612,7 @@ export function CoverageQuickStart({
           {/* Every staged name, removable one at a time. A sector press can
               stage fifty; nobody should have to accept all fifty to accept
               most of them. */}
-          <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+          <div className={clsx('flex flex-wrap gap-1 overflow-y-auto', roomy ? 'max-h-40' : 'max-h-24')}>
             {[...selected.values()].map(asset => (
               <span
                 key={asset.id}

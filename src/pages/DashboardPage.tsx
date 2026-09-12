@@ -1276,7 +1276,10 @@ export function DashboardPage() {
            * is inside it.
            */
           <div className="h-full overflow-y-auto">
-            <div className="mx-auto w-full max-w-3xl space-y-2.5 p-4">
+            {/* Wider than the Dashboard's reading column because the coverage
+                card is the whole screen here, and the same width holds after
+                the mission appears so nothing reflows on save. */}
+            <div className="mx-auto w-full max-w-4xl space-y-2.5 p-4">
               {/*
                 Setup precedes the mission.
 
@@ -1303,6 +1306,7 @@ export function DashboardPage() {
               {pilotEntry.stage !== 'loading' && (
                 <FirstSessionCoveragePrompt
                   key="coverage-setup"
+                  variant="page"
                   dismissible={pilotEntry.stage === 'mission'}
                 />
               )}
