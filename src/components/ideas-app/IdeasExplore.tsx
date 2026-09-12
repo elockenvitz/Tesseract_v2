@@ -16,6 +16,7 @@ import type { SignalCard } from '../../lib/signals/contract'
 import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import { IDEA_LENSES, lensSpec, lensShowsInvestmentFilters, type IdeaLens } from '../../lib/desktop-ideas/lens'
 import { MATURITY_LABEL, maturityOf, type IdeaDirection, type IdeaMaturity } from '../../lib/desktop-ideas'
+import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
 
 /**
  * Desktop Explore — the canonical Ideas feed, composed for a wide screen.
@@ -107,6 +108,7 @@ export function IdeasExplore({
   const facetCount = filterCount(facets)
 
   const feed = useDesktopAttentionFeed(lens, { facets })
+  const { markIdeasViewed } = usePilotOnboarding()
   const listRef = useRef<HTMLDivElement | null>(null)
 
   /**
@@ -179,6 +181,20 @@ export function IdeasExplore({
   const historyReady = useRef(false)
   if (historySettled) historyReady.current = true
   const booting = feed.isLoading || !historyReady.current
+
+  /*
+   * The pilot has seen the real feed.
+   *
+   * Keyed on candidates actually being on screen, not on this component
+   * mounting: the step means "you have looked at what deserves attention", and
+   * a boot skeleton is not that. `markIdeasViewed` is a no-op for non-pilots
+   * and dedupes its write per session, so firing it from an effect that can
+   * re-run is safe by construction.
+   */
+  useEffect(() => {
+    if (booting || entries.length === 0) return
+    markIdeasViewed()
+  }, [booting, entries.length, markIdeasViewed])
 
 
   /*

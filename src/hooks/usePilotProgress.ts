@@ -34,6 +34,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
+import { onboardingStageKey } from '../lib/pilot/onboarding'
 
 export type PilotStage =
   | 'trade_book_unlocked'
@@ -53,6 +54,22 @@ export type PilotStage =
   | 'post_grad_step_app_launcher'
   | 'post_grad_step_feedback'
   | 'post_grad_step_recommend'
+  /*
+   * The two onboarding steps that leave no artifact of their own.
+   *
+   * Reading a feed and opening a candidate into the workspace write nothing to
+   * the database, so they need a mark — and it is server-backed and per-org for
+   * the reason the old "View idea feed" step was not: a localStorage flag does
+   * not follow the user to a second browser, and its completion event was
+   * fired by a page that has since been deleted, which left the step
+   * permanently impossible to earn honestly.
+   *
+   * The other two onboarding steps are deliberately absent from this union.
+   * A perspective and a coverage assignment are rows, and a boolean beside a
+   * row can only ever disagree with it. See `lib/pilot/onboarding.ts`.
+   */
+  | 'ideas_viewed'
+  | 'signal_worked'
 
 export interface PilotProgress {
   /** @deprecated user-level legacy keys, no longer read or written.
@@ -92,6 +109,10 @@ const stageToKey = (stage: PilotStage, orgId: string | null): string => {
     case 'post_grad_step_app_launcher': return postGradAppLauncherKey(orgId)
     case 'post_grad_step_feedback':     return postGradFeedbackKey(orgId)
     case 'post_grad_step_recommend':    return postGradRecommendKey(orgId)
+    // One key builder, shared with the pure onboarding model, so the writer
+    // and the reader cannot spell the same step differently.
+    case 'ideas_viewed':               return onboardingStageKey('ideas_viewed', orgId)
+    case 'signal_worked':              return onboardingStageKey('signal_worked', orgId)
   }
 }
 
@@ -114,6 +135,8 @@ const STAGE_TO_EVENT: Record<PilotStage, string> = {
   post_grad_step_app_launcher: 'pilot_post_grad_step_app_launcher',
   post_grad_step_feedback:     'pilot_post_grad_step_feedback',
   post_grad_step_recommend:    'pilot_post_grad_step_recommend',
+  ideas_viewed:                'pilot_onboarding_ideas_viewed',
+  signal_worked:               'pilot_onboarding_signal_worked',
 }
 
 export function usePilotProgress() {

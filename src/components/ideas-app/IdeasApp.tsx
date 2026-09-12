@@ -11,6 +11,7 @@ import { exploreOpen, type ExploreOpen } from '../../lib/desktop-ideas/explore-o
 import { openAsset } from '../../lib/desktop-asset/navigate'
 import type { Progression } from '../../lib/desktop-ideas/progression'
 import { usePromptResolve } from '../../hooks/usePromptResolve'
+import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
 
 /**
  * Ideas — the standalone application.
@@ -99,6 +100,7 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
    */
   const [workMode, setWorkMode] = useState<Progression['mode'] | null>(null)
   const resolvePrompt = usePromptResolve()
+  const { markSignalWorked } = usePilotOnboarding()
   /**
    * Two states, deliberately separate.
    *
@@ -113,6 +115,24 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
    * the work region; it may not put it away.
    */
   const [splitOpen, setSplitOpen] = useState(false)
+
+  /*
+   * One place, because every route into the workspace passes through here:
+   * a tile click, a progression CTA, and an Explore preview that resolved to a
+   * candidate. Marking at the three call sites would be three chances to miss
+   * one, and marking on mount would record "opened the app" as "worked a
+   * signal", which is the conflation this step exists to avoid.
+   *
+   * Below `splitOpen` deliberately: it writes that setter, and the repo's
+   * use-before-define ratchet is there because a TDZ error in banner code once
+   * broke the feed on every render.
+   */
+  const openWorkspace = (selection: IdeasSelection, entry: AttentionEntry | null, mode: Progression['mode'] | null) => {
+    setSelected({ selection, entry })
+    setWorkMode(mode)
+    setSplitOpen(true)
+    markSignalWorked()
+  }
 
   /**
    * The candidate pool, for RESOLVING an Explore preview — never for drawing.
@@ -232,9 +252,7 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
             resolve={item => exploreOpen(item, resolver.entries)}
             onOpen={open => {
               if (open.do === 'work') {
-                setSelected({ selection: open.selection, entry: null })
-                setWorkMode(null)
-                setSplitOpen(true)
+                openWorkspace(open.selection, null, null)
                 return
               }
               if (open.do === 'article') { setArticle(open); return }
@@ -256,11 +274,7 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
         <div className={clsx('h-full', mode === 'explore' && 'hidden')}>
         <IdeasExplore
           selectedKey={selected?.selection.key ?? null}
-          onSelect={entry => {
-            setSelected({ selection: selectionFor(entry), entry })
-            setWorkMode(null)
-            setSplitOpen(true)
-          }}
+          onSelect={entry => openWorkspace(selectionFor(entry), entry, null)}
           onProgress={(entry, progression) => {
             /*
              * Resolve is a WRITE, not a destination. It finishes the prompt
@@ -273,9 +287,7 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
               resolvePrompt.mutate({ promptId: entry.item!.id, tags: item?.tags ?? [] })
               return
             }
-            setSelected({ selection: selectionFor(entry), entry })
-            setWorkMode(progression.mode)
-            setSplitOpen(true)
+            openWorkspace(selectionFor(entry), entry, progression.mode)
           }}
           /* The open candidate is not in the new context. Clear it and leave
              the work region open and empty — picking a replacement is the

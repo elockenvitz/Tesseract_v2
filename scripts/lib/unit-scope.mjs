@@ -95,6 +95,9 @@ export const GATED_DIRS = [
    */
   'src/lib/desktop-ideas',
   'src/lib/tabs',
+  // The pilot onboarding model: four steps, two of them marks and two of them
+  // rows. It decides what a new pilot is shown, so it is gated on arrival.
+  'src/lib/pilot',
   'src/lib/notifications',
   'src/components/notifications',
   'src/lib/capture',

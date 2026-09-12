@@ -18,7 +18,8 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
-import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
+import { useMyCoverage } from '../../hooks/useMyCoverage'
+import { onboardingStatus } from '../../lib/pilot/onboarding'
 
 interface PilotWelcomeBannerProps {
   onNavigate: (result: any) => void
@@ -45,6 +46,7 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
     hasCompletedPostGradFeedback,
     hasCompletedPostGradRecommend,
     mark: markPilotStage,
+    progress: pilotProgress,
   } = usePilotProgress()
 
   // Listen for the post-grad step "opened" events fired by the relevant
@@ -71,78 +73,19 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
   const [expanded, setExpanded] = useState(() => {
     try { return localStorage.getItem(`pilot-banner-expanded-${currentOrgId}`) !== 'false' } catch { return true }
   })
-
-  // Local "has explored an asset page" signal. The DB-backed checks for
-  // this step (notes/ratings/contributions) only fire after a user
-  // actually edits something — opening the page itself doesn't leave a
-  // trace. AssetTab fires `pilot-tutorial:asset-explored` on mount and
-  // also writes a localStorage flag, so we hydrate from that and update
-  // live via the event.
-  // Per-(user, org) so opening an asset in one workspace doesn't
-  // pre-tick this step in another workspace the same user joins
-  // later. AssetTab writes to the same key on mount.
-  const assetExploredKey = `pilot-tutorial-asset-explored-${user?.id || 'anon'}-${currentOrgId || 'no-org'}`
-  const [hasExploredAsset, setHasExploredAsset] = useState(() => {
-    if (!user?.id) return false
-    try { return localStorage.getItem(assetExploredKey) === '1' } catch { return false }
-  })
-  useEffect(() => {
-    if (!user?.id) return
-    try {
-      if (localStorage.getItem(assetExploredKey) === '1') {
-        setHasExploredAsset(true)
-      } else {
-        setHasExploredAsset(false)
-      }
-    } catch { /* ignore */ }
-    const handler = () => {
-      // Log the server-side telemetry row exactly once per (user, org)
-      // — readFlag-equivalent check is "was it already '1'?". Without
-      // this guard, every AssetTab mount would fire a duplicate row.
-      let wasAlreadyMarked = false
-      try { wasAlreadyMarked = localStorage.getItem(assetExploredKey) === '1' } catch { /* ignore */ }
-      try { localStorage.setItem(assetExploredKey, '1') } catch { /* ignore */ }
-      setHasExploredAsset(true)
-      if (!wasAlreadyMarked) {
-        logPilotEvent({ eventType: 'pilot_postgrad_asset_explored', organizationId: currentOrgId })
-      }
-    }
-    window.addEventListener('pilot-tutorial:asset-explored', handler)
-    return () => window.removeEventListener('pilot-tutorial:asset-explored', handler)
-  }, [user?.id, assetExploredKey, currentOrgId])
-
-  // "View idea feed" step — done when the user opens the Ideas tab.
-  // IdeaGeneratorPage writes the localStorage flag and fires the event
-  // on mount. Per-(user, org) so opening Ideas in one workspace doesn't
-  // pre-tick the step in another workspace the same user joins later.
-  const ideaFeedViewedKey = `pilot-tutorial-idea-feed-viewed-${user?.id || 'anon'}-${currentOrgId || 'no-org'}`
-  const [hasViewedIdeaFeed, setHasViewedIdeaFeed] = useState(() => {
-    if (!user?.id) return false
-    try { return localStorage.getItem(ideaFeedViewedKey) === '1' } catch { return false }
-  })
-  useEffect(() => {
-    if (!user?.id) return
-    try {
-      if (localStorage.getItem(ideaFeedViewedKey) === '1') {
-        setHasViewedIdeaFeed(true)
-      } else {
-        setHasViewedIdeaFeed(false)
-      }
-    } catch { /* ignore */ }
-    const handler = () => {
-      // Same idempotency pattern as the asset-explored handler above.
-      let wasAlreadyMarked = false
-      try { wasAlreadyMarked = localStorage.getItem(ideaFeedViewedKey) === '1' } catch { /* ignore */ }
-      try { localStorage.setItem(ideaFeedViewedKey, '1') } catch { /* ignore */ }
-      setHasViewedIdeaFeed(true)
-      if (!wasAlreadyMarked) {
-        logPilotEvent({ eventType: 'pilot_postgrad_idea_feed_viewed', organizationId: currentOrgId })
-      }
-    }
-    window.addEventListener('pilot-tutorial:idea-feed-viewed', handler)
-    return () => window.removeEventListener('pilot-tutorial:idea-feed-viewed', handler)
-  }, [user?.id, ideaFeedViewedKey, currentOrgId])
-
+  /*
+   * The two steps that leave no artifact read a SERVER-BACKED mark now.
+   *
+   * They were per-browser localStorage flags fed by `pilot-tutorial:*` events.
+   * That failed two ways: completion did not follow the reader to a second
+   * browser, and the page that fired the idea-feed event has since been
+   * deleted, which left that step impossible to earn honestly. The marks are
+   * written by the Ideas surfaces themselves — see `usePilotOnboarding` — and
+   * live per org in `users.pilot_progress` beside every other pilot stage.
+   *
+   * The old `pilot-tutorial-*` keys are simply no longer read. Nothing
+   * migrates them: they recorded a click, and the step records the thing.
+   */
   // Track completion of tutorial steps — STRICTLY org-scoped.
   // The Get Started checklist is per-org: a graduated pilot landing
   // on their own workspace shouldn't see steps marked complete from
@@ -261,6 +204,22 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
     staleTime: 0,
   })
 
+  /*
+   * The four canonical steps, composed from what has already been read.
+   *
+   * Two are marks in `pilot_progress`, two are rows — a perspective and a
+   * coverage assignment prove themselves, so neither gets a second boolean
+   * that could disagree with them. The arithmetic is pure and lives in
+   * `lib/pilot/onboarding.ts`; this only supplies the readings.
+   */
+  const { hasCoverage } = useMyCoverage()
+  const onboarding = onboardingStatus({
+    progress: pilotProgress,
+    orgId: currentOrgId,
+    activity: progress,
+    hasCoverage,
+  })
+
   const handleDismiss = useCallback(() => {
     setDismissed(true)
     try { localStorage.setItem(`pilot-banner-dismissed-${currentOrgId}`, 'true') } catch {}
@@ -274,20 +233,19 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
     })
   }, [currentOrgId])
 
-  // Auto-dismiss the banner once every Get Started step is complete.
+  /*
+   * Auto-dismiss once ONBOARDING is complete — the same four steps that decide
+   * graduation.
+   *
+   * This watched seven durable flags and ignored every step that ticks on a
+   * click, so the banner could retire itself while still displaying incomplete
+   * boxes. One rule now, and it is the one `onboardingStatus` states.
+   */
   // Computed inline (rather than from the `steps` array further down)
   // so this effect runs BEFORE the early-return guard — placing it
   // after would change the hook count between loading vs loaded
   // renders and trip "Rendered fewer hooks than expected".
-  const allDoneForAutoDismiss = !!progress
-    && hasViewedIdeaFeed
-    && !!progress.hasContribution
-    && !!progress.hasRating
-    && !!progress.hasNote
-    && !!progress.hasTheme
-    && !!progress.hasThought
-    && !!progress.hasPrompt
-    && !!progress.hasList
+  const allDoneForAutoDismiss = !!progress && onboarding.complete
   useEffect(() => {
     if (allDoneForAutoDismiss && !dismissed) {
       handleDismiss()
@@ -339,7 +297,7 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       description: 'Browse the team\'s thoughts, notes, and trade ideas in one feed.',
       hint: 'Opens the Ideas tab.',
       icon: Lightbulb,
-      done: hasViewedIdeaFeed,
+      done: onboarding.ideas_viewed,
       action: () => onNavigate({ type: 'ideas', id: 'ideas', title: 'Ideas', data: {} }),
       category: 'discover',
     },
@@ -350,7 +308,7 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       description: 'Open any asset to see its research fields, workflow status, and history.',
       hint: 'Focuses the search bar — start typing a ticker to pick one.',
       icon: BookOpen,
-      done: (hasExploredAsset || progress.hasContribution || progress.hasNote || progress.hasRating),
+      done: onboarding.signal_worked,
       // Focus the global search bar so the user can type any ticker and
       // pick from live results. Listened to by GlobalSearch.
       action: () => {
