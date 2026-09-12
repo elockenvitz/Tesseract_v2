@@ -28,6 +28,16 @@ import type { PilotStep } from '../components/pilot/PilotStepsBanner'
 export interface PilotPipelineBanner {
   /** Whether this reader should see it at all. */
   show: boolean
+  /**
+   * What it calls itself.
+   *
+   * "Get started" is what the five-step pilot MISSION on the home screen calls
+   * itself, and this is not that: three gestures local to this board, which
+   * neither feed the mission nor gate graduation. Two modules with one name,
+   * one tap apart, tracking different facts, is a reader being asked to guess
+   * which of them they are looking at.
+   */
+  label: string
   /** The three steps, with live completion. */
   steps: PilotStep[]
 }
@@ -53,6 +63,7 @@ export function usePilotPipelineBanner(): PilotPipelineBanner {
 
   return {
     show: pilotMode.effectiveIsPilot && !hasDismissedPipelineBanner && !allStepsDone,
+    label: 'Pipeline basics',
     steps: [
       {
         n: 1,

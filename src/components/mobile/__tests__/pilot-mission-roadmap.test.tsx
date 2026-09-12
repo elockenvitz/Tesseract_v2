@@ -14,13 +14,14 @@
 
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import type { MissionStep, MissionStepId } from '../../../lib/pilot/mission'
 
 const state = vi.hoisted(() => ({
   doneUpTo: 0,
   isLoading: false,
   complete: false,
-  desktopOnly: false,
 }))
 
 const IDS: MissionStepId[] = [
@@ -57,17 +58,12 @@ vi.mock('../../../hooks/usePilotMission', () => ({
   },
 }))
 
-vi.mock('../../../lib/mobile/mobile-surfaces', () => ({
-  isDesktopOnly: () => state.desktopOnly,
-}))
-
 import { PilotMissionStrip } from '../PilotMissionStrip'
 
 beforeEach(() => {
   state.doneUpTo = 0
   state.isLoading = false
   state.complete = false
-  state.desktopOnly = false
 })
 afterEach(cleanup)
 
@@ -134,17 +130,82 @@ describe('what a row will do', () => {
   })
 })
 
-describe('the surfaces a phone cannot reach', () => {
-  /**
-   * Trade Lab has no phone treatment. Saying so beats routing into something
-   * that does not work, and beats faking the step complete.
-   */
-  it('says a desktop-only step needs a desktop, and offers no control', () => {
-    state.doneUpTo = 2
-    state.desktopOnly = true
-    const { container } = render(<PilotMissionStrip />)
-    expect(screen.getByText(/needs a desktop/)).toBeInTheDocument()
-    expect(container.querySelectorAll('[data-slot="pilot-mission-cta"]')).toHaveLength(0)
+/*
+ * ── Every step opens what it says ──────────────────────────────────────────
+ *
+ * Two steps were routed by name and the rest fell through to the Idea
+ * Pipeline, so "Open Trade Lab" opened the Pipeline and so did "Decide".
+ *
+ * There was also a guard claiming Trade Lab has no phone treatment. It has:
+ * `components/mobile/trade-lab` is a full set of phone components and the
+ * surface registry marks it `support: 'full'`, so the branch was unreachable
+ * and the claim was false.
+ */
+describe('where each step goes', () => {
+  const openStep = (index: number) => {
+    state.doneUpTo = index
+    const onNavigate = vi.fn()
+    render(<PilotMissionStrip onNavigate={onNavigate} />)
+    fireEvent.click(screen.getByRole('button', { name: `Go ${index + 1}` }))
+    return onNavigate
+  }
+
+  it('captures an idea without navigating anywhere', () => {
+    const onNavigate = vi.fn()
+    const events: string[] = []
+    const listener = (e: Event) => events.push(e.type)
+    window.addEventListener('openThoughtsCapture', listener)
+    render(<PilotMissionStrip onNavigate={onNavigate} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Go 1' }))
+    window.removeEventListener('openThoughtsCapture', listener)
+
+    expect(events).toEqual(['openThoughtsCapture'])
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('develops the thesis in the Pipeline', () => {
+    expect(openStep(1)).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'trade-queue', data: { focusIdeaId: 'idea-1' } }))
+  })
+
+  /** The one the fallback got wrong: its label says Trade Lab. */
+  it('tests the trade in Trade Lab', () => {
+    expect(openStep(2)).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'trade-lab', data: { tradeQueueItemId: 'idea-1' } }))
+  })
+
+  it('decides in the Pipeline, on the deciding stage', () => {
+    expect(openStep(3)).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'trade-queue',
+      data: { focusIdeaId: 'idea-1', focusStage: 'ready_for_decision' },
+    }))
+  })
+
+  it('closes the loop in Outcomes', () => {
+    expect(openStep(4)).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'outcomes', data: { tradeQueueItemId: 'idea-1' } }))
+  })
+
+  /** Nothing falls through any more, so every step gets its control. */
+  it('offers a control on every step', () => {
+    for (let i = 0; i < 5; i++) {
+      cleanup()
+      state.doneUpTo = i
+      const { container } = render(<PilotMissionStrip />)
+      expect(container.querySelectorAll('[data-slot="pilot-mission-cta"]')).toHaveLength(1)
+    }
+  })
+})
+
+describe('the Trade Lab capability contradiction', () => {
+  const read = (p: string) =>
+    readFileSync(path.join(process.cwd(), 'src', p), 'utf8')
+
+  it('is resolved in favour of the registry, which has the components', () => {
+    expect(read('lib/mobile/mobile-surfaces.ts'))
+      .toMatch(/type: 'trade-lab'[\s\S]{0,200}support: 'full'/)
+    expect(read('components/mobile/PilotMissionStrip.tsx')).not.toContain('isDesktopOnly')
+    expect(read('components/mobile/PilotMissionStrip.tsx')).not.toContain('needs a desktop')
   })
 })
 

@@ -84,7 +84,7 @@ describe('the sheet primitive', () => {
  */
 describe('the banner is subordinate to the board controls', () => {
   it('is drawn as a card, not a strip', () => {
-    expect(pipeline).toContain('<PilotStepsBanner steps={pilotBanner.steps} variant="inset" />')
+    expect(pipeline).toMatch(/<PilotStepsBanner[^>]*variant="inset"/)
   })
 
   it('sits below the stage selector and the search field', () => {

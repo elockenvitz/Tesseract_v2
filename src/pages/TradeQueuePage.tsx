@@ -1532,7 +1532,7 @@ export function TradeQueuePage() {
       {/* Same steps, same flags, same visibility rule as the phone's
           pipeline — see `usePilotPipelineBanner`. The board is where the
           steps are performed, so the markers below stay with this page. */}
-      {pilotBanner.show && <PilotStepsBanner steps={pilotBanner.steps} />}
+      {pilotBanner.show && <PilotStepsBanner steps={pilotBanner.steps} label={pilotBanner.label} />}
 
       {/* Header */}
       <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">

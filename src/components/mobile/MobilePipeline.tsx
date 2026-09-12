@@ -287,7 +287,7 @@ export function MobilePipeline() {
           of equal standing, and guidance about the board should not outrank
           the board. */}
       {pilotBanner.show && view === 'pipeline' && (
-        <PilotStepsBanner steps={pilotBanner.steps} variant="inset" />
+        <PilotStepsBanner steps={pilotBanner.steps} label={pilotBanner.label} variant="inset" />
       )}
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-safe space-y-2">

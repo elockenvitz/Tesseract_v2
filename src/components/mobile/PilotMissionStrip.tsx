@@ -1,9 +1,8 @@
 import { Check } from 'lucide-react'
 import { clsx } from 'clsx'
 import { usePilotMission } from '../../hooks/usePilotMission'
-import { isDesktopOnly } from '../../lib/mobile/mobile-surfaces'
 import { PilotMissionStripSkeleton } from '../pilot/PilotHomeSkeletons'
-import type { MissionStep, MissionStepId } from '../../lib/pilot/mission'
+import type { MissionStepId } from '../../lib/pilot/mission'
 
 /**
  * The pilot mission on a phone: all five steps, one of them open.
@@ -34,12 +33,19 @@ import type { MissionStep, MissionStepId } from '../../lib/pilot/mission'
  * A phone that decided completion for itself would be a phone that eventually
  * disagrees with the laptop about what the reader has done.
  *
- * ── The desktop handoff ───────────────────────────────────────────────────
+ * ── Every step opens what it says ────────────────────────────────────────
  *
- * Trade Lab has no phone treatment — the mobile registry says so — and the
- * honest answer is to say that rather than route into a surface that does not
- * work or fake the step complete. Every other step's destination is reachable
- * here.
+ * Two steps were routed by name and the rest fell through to the Idea
+ * Pipeline, so "Open Trade Lab" opened the Pipeline and so did "Decide". The
+ * five destinations are the desktop module's, by the same tab ids and the
+ * same data, because a phone opening somewhere else for the same step is a
+ * second answer to a question that already has one.
+ *
+ * There was also a guard here claiming Trade Lab has no phone treatment. It
+ * has: `components/mobile/trade-lab` is a full set of phone components, the
+ * surface registry marks it `support: 'full'`, and the shell would render the
+ * desktop-only card instead if it did not. The branch was unreachable and the
+ * comment was wrong, so both are gone.
  */
 export function PilotMissionStrip({ onNavigate }: { onNavigate?: (result: any) => void }) {
   const mission = usePilotMission()
@@ -51,27 +57,37 @@ export function PilotMissionStrip({ onNavigate }: { onNavigate?: (result: any) =
 
   const act = (id: MissionStepId) => {
     const ideaId = mission.tutorialIdeaId
-    if (id === 'idea_created') {
-      try {
-        window.dispatchEvent(new CustomEvent('openThoughtsCapture', { detail: { captureType: 'trade_idea' } }))
-      } catch { /* ignore */ }
-      return
+    switch (id) {
+      case 'idea_created':
+        /* The canonical capture flow, pre-focused on a trade idea. Its success
+           is what adopts the new row as the tutorial idea — see the listener
+           in `usePilotMission`. */
+        try {
+          window.dispatchEvent(new CustomEvent('openThoughtsCapture', { detail: { captureType: 'trade_idea' } }))
+        } catch { /* ignore */ }
+        return
+      case 'pipeline_advanced':
+        onNavigate?.({ id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue', data: { focusIdeaId: ideaId } })
+        return
+      case 'simulation_completed':
+        // The idea travels with the request, so the reader is never asked to
+        // remember which one they were working on.
+        onNavigate?.({ id: 'trade-lab', title: 'Trade Lab', type: 'trade-lab', data: { tradeQueueItemId: ideaId } })
+        return
+      case 'decision_submitted':
+        onNavigate?.({
+          id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue',
+          data: { focusIdeaId: ideaId, focusStage: 'ready_for_decision' },
+        })
+        return
+      case 'outcome_reviewed':
+        /* Navigate only. Pressing a button is not reviewing an outcome, and
+           marking here would graduate somebody who clicked and landed on an
+           error. Outcomes marks it once it has resolved this decision. */
+        onNavigate?.({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: ideaId } })
+        return
     }
-    if (id === 'outcome_reviewed') {
-      // Navigate only — Outcomes marks the step once it has resolved the
-      // decision. See the same note on the desktop module.
-      onNavigate?.({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: ideaId } })
-      return
-    }
-    onNavigate?.({
-      id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue',
-      data: { focusIdeaId: ideaId },
-    })
   }
-
-  /* Trade Lab is desktop-only; the registry is the single source for that. */
-  const strandedOnPhone = (step: MissionStep) =>
-    step.id === 'simulation_completed' && isDesktopOnly('trade-lab')
 
   return (
     <div
@@ -87,7 +103,6 @@ export function PilotMissionStrip({ onNavigate }: { onNavigate?: (result: any) =
       <ol className="mt-1 space-y-0.5">
         {mission.steps.map((step, i) => {
           const current = step.id === mission.currentStepId
-          const stranded = current && strandedOnPhone(step)
 
           if (current) {
             return (
@@ -104,23 +119,18 @@ export function PilotMissionStrip({ onNavigate }: { onNavigate?: (result: any) =
                         {step.label}
                       </p>
                       <p className="mt-0.5 text-[11px] leading-snug text-gray-600 dark:text-gray-400">
-                        {/* Named honestly rather than hidden: the step is
-                            real, it is next, and it happens somewhere this
-                            device cannot go. */}
-                        {stranded ? 'This step needs a desktop. Continue there.' : step.hint}
+                        {step.hint}
                       </p>
                     </div>
                   </div>
-                  {!stranded && (
-                    <button
-                      type="button"
-                      data-slot="pilot-mission-cta"
-                      onClick={() => act(step.id)}
-                      className="mt-2 h-9 w-full rounded-lg bg-indigo-600 text-[13px] font-semibold text-white active:bg-indigo-700"
-                    >
-                      {step.cta}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    data-slot="pilot-mission-cta"
+                    onClick={() => act(step.id)}
+                    className="mt-2 h-9 w-full rounded-lg bg-indigo-600 text-[13px] font-semibold text-white active:bg-indigo-700"
+                  >
+                    {step.cta}
+                  </button>
                 </div>
               </li>
             )

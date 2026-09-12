@@ -38,6 +38,21 @@ describe('the Pipeline banner is defined once', () => {
     }
   })
 
+  /*
+   * "Get started" is what the five-step pilot MISSION on the home screen calls
+   * itself, and this is not that: three gestures local to this board, feeding
+   * neither the mission nor graduation. Two modules with one name, one tap
+   * apart, tracking different facts, is a reader being asked to guess which
+   * they are looking at.
+   */
+  it('calls itself what it teaches, and both shells say it', () => {
+    expect(hook).toContain("label: 'Pipeline basics'")
+    for (const page of [desktop, mobile]) {
+      expect(page).toContain('label={pilotBanner.label}')
+      expect(page).not.toContain("label=\"Get started\"")
+    }
+  })
+
   it('derives the same completion flags both shells already used', () => {
     for (const flag of [
       'hasCompletedPipelineStepMoved',
