@@ -1,5 +1,5 @@
 import React from 'react'
-import { X, Minimize2, Maximize2, Mail, Bell, User, Lightbulb, MessageSquare } from 'lucide-react'
+import { X, ChevronLeft, Minimize2, Maximize2, Mail, Bell, User, Lightbulb, MessageSquare } from 'lucide-react'
 import { AISection } from './AISection'
 import { DirectMessaging } from './DirectMessaging'
 import { NotificationPane } from '../notifications/NotificationPane'
@@ -105,6 +105,26 @@ export function CommunicationPane({
     ],
   )
 
+  /*
+   * What "back" means right now, as the open view reports it.
+   *
+   * On a phone the capture form rendered its own full-width Back row directly
+   * under this header, so two of the four rows above the form were chrome:
+   * one naming where you are and one offering the way out. They are one row
+   * now, and this is the only place the two can meet — the pane owns the
+   * header, the view owns the state that decides whether there is anywhere to
+   * go back to.
+   *
+   * A function or nothing. The pane never decides what back does; it only
+   * decides where the control sits.
+   */
+  const [backAction, setBackAction] = React.useState<(() => void) | null>(null)
+  // Stored as a thunk, because `useState` calls a bare function argument.
+  const reportBackAction = React.useCallback(
+    (fn: (() => void) | null) => setBackAction(() => fn),
+    [],
+  )
+
   const getViewTitle = () => {
     switch (view) {
       case 'ai':
@@ -202,6 +222,7 @@ export function CommunicationPane({
             sidebarMode={sidebarMode}
             selectedItem={selectedItem}
             onBackToCapture={onBackToCapture}
+            onBackActionChange={reportBackAction}
             onOpenInspector={onOpenInspector}
           />
         )
@@ -251,7 +272,20 @@ export function CommunicationPane({
           'flex items-center justify-between border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900',
           isMobile ? 'px-3 py-2 gap-2' : 'p-4'
         )}>
-          <div className={clsx('flex items-center min-w-0', isMobile ? 'gap-2' : 'space-x-3')}>
+          <div className={clsx('flex items-center min-w-0', isMobile ? 'gap-1' : 'space-x-3')}>
+            {/* Leading the row, where a back control belongs, and only when
+                the open view has said there is somewhere to go. */}
+            {isMobile && backAction && (
+              <button
+                type="button"
+                data-slot="pane-back"
+                onClick={backAction}
+                aria-label="Back"
+                className="h-9 w-9 -my-1 -ml-1.5 shrink-0 flex items-center justify-center rounded-full text-gray-500 no-touch-target dark:text-gray-400"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+            )}
             {getViewIcon()}
             <h3 className={clsx(
               'font-semibold text-gray-900 truncate dark:text-white',

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText, MessageCircleQuestion, CheckCircle2, Clock, ChevronRight, Scale, Briefcase, ArrowUpRight, Check, X as XIcon, MessageCircle, Loader2, Sparkles } from 'lucide-react'
+import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText, MessageCircleQuestion, ChevronRight, Scale, Briefcase, ArrowUpRight, Check, X as XIcon, MessageCircle, Loader2, Sparkles } from 'lucide-react'
 import { usePilotMode } from '../../hooks/usePilotMode'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
@@ -41,6 +41,17 @@ interface ThoughtsSectionProps {
   sidebarMode?: SidebarMode
   selectedItem?: SelectedItem | null
   onBackToCapture?: () => void
+  /**
+   * Tells the pane's header what "back" means here, or that there is nowhere
+   * to go.
+   *
+   * On a phone the capture form drew its own full-width Back row directly
+   * under that header, so two of the rows above the form were chrome: one
+   * naming where you are, one offering the way out. The pane owns the header
+   * and this component owns the mode that decides whether back exists, so
+   * they meet here.
+   */
+  onBackActionChange?: (action: (() => void) | null) => void
   onOpenInspector?: (type: InspectableItemType, id: string) => void
 }
 
@@ -56,6 +67,7 @@ export function ThoughtsSection({
   sidebarMode = 'capture',
   selectedItem,
   onBackToCapture,
+  onBackActionChange,
   onOpenInspector,
 }: ThoughtsSectionProps) {
   /** No keyboard on open for a phone; desktop keeps its focus. */
@@ -282,11 +294,14 @@ export function ThoughtsSection({
     } catch { /* ignore */ }
   }
 
-  const handleCaptureCancel = () => {
+  /* Stable, because the pane's header holds on to it: a new function every
+     render would report a new back action every render, and the pane storing
+     it would re-render this component to produce the next one. */
+  const handleCaptureCancel = useCallback(() => {
     setCaptureMode('collapsed')
     setCapturedContext(null)
     usePendingResearchLinksStore.getState().clear()
-  }
+  }, [])
 
   // Allow user to change context
   const handleContextChange = (newContext: CapturedContext | null) => {
@@ -484,10 +499,26 @@ export function ThoughtsSection({
     )
   }
 
+  /*
+   * Hand the pane's header our back action while the form is open on a phone,
+   * and take it away again on the way out — a stale handler in the chrome is
+   * a chevron that closes a form nobody is looking at.
+   */
+  useEffect(() => {
+    if (!onBackActionChange) return
+    const active = isMobileViewport && captureMode !== 'collapsed'
+    onBackActionChange(active ? handleCaptureCancel : null)
+    return () => onBackActionChange(null)
+  }, [onBackActionChange, isMobileViewport, captureMode, handleCaptureCancel])
+
   return (
     <div className="flex flex-col h-full">
-      {/* Back button header - show when in capture mode (not collapsed) */}
-      {captureMode !== 'collapsed' && (
+      {/* Back, on the surfaces that have the room for a row of their own.
+
+          A phone does not: the pane header is directly above this, so the
+          chevron goes there instead and these two rows become one. The
+          desktop rail keeps the row it had. */}
+      {captureMode !== 'collapsed' && !isMobileViewport && (
         <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
           <button
             onClick={handleCaptureCancel}
@@ -613,29 +644,10 @@ export function ThoughtsSection({
                 dismiss. Same visual family as the Trade Lab + Idea
                 Pipeline banners for cross-surface consistency. */}
             {showPilotCaptureBanner && (
-              <div className="mb-3 rounded-md bg-gradient-to-b from-amber-50 to-amber-100/30 dark:from-amber-900/25 dark:to-amber-900/5 border border-amber-200 dark:border-amber-800/60">
-                <div className="px-3 pt-2.5 pb-2 flex items-start gap-2">
-                  <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span className="text-[11px] uppercase tracking-wider">Get started</span>
-                  </div>
-                  <button
-                    onClick={dismissPilotCaptureBanner}
-                    className="ml-auto -my-1 p-1 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
-                    title="Dismiss"
-                    aria-label="Dismiss capture intro"
-                  >
-                    <XIcon className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="px-3 pb-2.5">
-                  <ol className="space-y-1">
-                    <PilotCaptureStep n={1} title="Pick a ticker" done={captureStep1Done} />
-                    <PilotCaptureStep n={2} title="Add a thesis and portfolio" done={captureStep2Done} />
-                    <PilotCaptureStep n={3} title="Submit" done={captureStep3Done} />
-                  </ol>
-                </div>
-              </div>
+              <PilotCaptureTracker
+                done={[captureStep1Done, captureStep2Done, captureStep3Done]}
+                onDismiss={dismissPilotCaptureBanner}
+              />
             )}
 
             <CaptureGuidance mode="trade_idea" />
@@ -1225,28 +1237,73 @@ function PendingReviewList() {
   )
 }
 
-// Numbered step pill used in the pilot Get Started banner inside
-// the capture sidebar. Mirrors the pattern from the Trade Lab and
-// Idea Pipeline banners for visual consistency across surfaces.
-function PilotCaptureStep({ n, title, done }: { n: number; title: string; done?: boolean }) {
+const CAPTURE_STEPS = ['Pick a ticker', 'Add a thesis and portfolio', 'Submit'] as const
+
+/**
+ * The three capture steps, in one row that never leaves the screen.
+ *
+ * ── Why it is not three rows any more ────────────────────────────────────
+ *
+ * It was a header, three stacked labelled rows and a dismiss — about a
+ * hundred pixels, above a form that had four rows of chrome over it already.
+ * Two of the three steps are not the one you are on, and a step you are not
+ * on needs a pip, not a sentence. So the row names the step you ARE on, and
+ * three pips say where that sits.
+ *
+ * ── Why sticky rather than collapsing ────────────────────────────────────
+ *
+ * Because it is already the size a collapsed tracker would be. A card that
+ * shrinks when you scroll is a card that moves everything under it at the
+ * moment you start reading, and there is no second, larger state here for it
+ * to shrink from. One row, pinned, all the way down the form.
+ *
+ * Completion is unchanged: the same three flags, written by the same three
+ * events, retiring the same way.
+ */
+export function PilotCaptureTracker({ done, onDismiss }: { done: boolean[]; onDismiss: () => void }) {
+  const current = done.findIndex(d => !d)
+  const allDone = current === -1
+  const index = allDone ? done.length - 1 : current
+
   return (
-    <li className="flex items-center gap-2">
-      <span
-        className={clsx(
-          "shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold tabular-nums",
-          done ? "bg-emerald-500 text-white" : "bg-amber-500 text-white",
-        )}
-      >
-        {done ? <Check className="h-2.5 w-2.5" /> : n}
-      </span>
-      <span
-        className={clsx(
-          "text-[11px] font-medium leading-tight",
-          done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-800 dark:text-gray-100",
-        )}
-      >
-        {title}
-      </span>
-    </li>
+    <div
+      data-slot="pilot-capture-tracker"
+      /* Bleeds to the scroller's edges so the pinned row covers the form
+         scrolling under it, and sits above that form rather than beside it. */
+      className="sticky top-0 z-10 -mx-3 mb-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-800/60 dark:bg-amber-950/40"
+    >
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+        <p className="min-w-0 flex-1 truncate text-[11px] leading-tight">
+          <span className="font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+            {allDone ? 'Get started \u00b7 done' : `Step ${index + 1} of ${done.length}`}
+          </span>
+          <span className="ml-1.5 font-medium text-gray-700 dark:text-gray-200">
+            {CAPTURE_STEPS[index]}
+          </span>
+        </p>
+        {/* Where you are in three marks, for the two steps the line does not
+            name. */}
+        <span className="flex shrink-0 items-center gap-1" aria-hidden="true">
+          {done.map((d, i) => (
+            <span
+              key={i}
+              className={clsx(
+                'h-1.5 w-1.5 rounded-full',
+                d ? 'bg-emerald-500' : i === index ? 'bg-amber-500' : 'bg-amber-200 dark:bg-amber-800',
+              )}
+            />
+          ))}
+        </span>
+        <button
+          onClick={onDismiss}
+          className="-my-1 -mr-1 shrink-0 rounded p-1 text-amber-500 transition-colors hover:bg-amber-100/60 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/30 dark:hover:text-amber-200"
+          title="Dismiss"
+          aria-label="Dismiss capture intro"
+        >
+          <XIcon className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
   )
 }
