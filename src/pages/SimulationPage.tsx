@@ -399,6 +399,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // Phones render MobileSimulationList in place of the eleven-column table.
   const isMobileViewport = useIsMobile()
   const [mobileLabMenuOpen, setMobileLabMenuOpen] = useState(false)
+  /* The phone's add-a-position sheet. It used to be opened by a floating
+     button inside the table; the control that opens it now lives in the
+     toolbar, so the state comes up here with it. */
+  const [mobileAddOpen, setMobileAddOpen] = useState(false)
 
   // Suggestion review panel state (owner-side)
   const [suggestionReviewOpen, setSuggestionReviewOpen] = useState(false)
@@ -5358,7 +5362,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         && !!pilotScenario
         && user?.id
         && (
-          <PilotTradeLabIntroBanner userId={user.id} orgId={currentOrgId} />
+          <PilotTradeLabIntroBanner
+            userId={user.id}
+            orgId={currentOrgId}
+            onOpenIdeas={() => setShowIdeasPanel(true)}
+          />
         )}
 
       {/* Header Bar - Portfolio Selector + View Tabs */}
@@ -5382,15 +5390,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             {!isSharedView && <div className="relative flex-1 min-w-0 sm:flex-none" ref={portfolioDropdownRef}>
               <button
                 onClick={() => setPortfolioDropdownOpen(!portfolioDropdownOpen)}
+                /* On a phone this was a full-width form field with a 200px
+                   floor, so the portfolio name read as the subject of the
+                   screen rather than as which book you are in. It keeps the
+                   dropdown and the truncation and gives the row back. */
                 className={clsx(
-                  "flex items-center gap-2 px-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors w-full sm:w-auto sm:min-w-[200px]",
+                  "flex items-center gap-1.5 px-2 py-1 text-sm border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors max-w-[62vw] sm:max-w-none sm:px-3 sm:py-1.5 sm:w-auto sm:min-w-[200px]",
                   portfolioDropdownOpen
                     ? "border-primary-500 ring-2 ring-primary-500/20"
                     : "border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
                 )}
               >
-                <Briefcase className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                <span className="flex-1 text-left truncate">
+                <Briefcase className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400 flex-shrink-0" />
+                <span className="min-w-0 flex-1 text-left truncate font-medium">
                   {portfolios?.find(p => p.id === selectedPortfolioId)?.name || 'Select portfolio...'}
                 </span>
                 <ChevronDown className={clsx(
@@ -5544,26 +5556,61 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           </div>
         </div>
 
+        {/*
+          ── The phone's action row ──────────────────────────────────────
+
+          Recommendations had no visible route here at all. There WAS an
+          inline Ideas button, but its container carries `hidden` on a phone,
+          so it rendered into nothing — the only way in was an unlabelled
+          overflow sheet, while the tutorial told the reader to go and review
+          a recommendation.
+
+          Both controls are named, both are the canonical ones: this opens the
+          same ideas panel the desktop rail does, and Add trade opens the same
+          sheet the floating button used to. Placed between the portfolio you
+          are in and the view you are looking at, which is the order the
+          questions come in.
+        */}
+        {isMobileViewport && !isSharedView && selectedPortfolioId && selectedViewType !== 'lists' && (
+          <div className="px-3 pb-2 flex items-center gap-2">
+            <button
+              type="button"
+              data-slot="mobile-lab-ideas"
+              onClick={() => setShowIdeasPanel(true)}
+              className="flex min-w-0 flex-1 items-center justify-center gap-1.5 h-9 rounded-lg border border-gray-200 dark:border-gray-700 px-2 text-[13px] font-medium text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800"
+            >
+              <Layers className="h-4 w-4 shrink-0 text-gray-400" />
+              <span className="truncate">Ideas &amp; recommendations</span>
+              {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
+                <span className="shrink-0 rounded-full bg-primary-100 px-1.5 text-[11px] font-semibold tabular-nums text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                  {filteredItems.proposals.length + filteredItems.ideas.length}
+                </span>
+              )}
+            </button>
+            {!tableReadOnly && (
+              <button
+                type="button"
+                data-slot="mobile-lab-add"
+                onClick={() => setMobileAddOpen(true)}
+                className="flex shrink-0 items-center gap-1.5 h-9 rounded-lg border border-gray-200 dark:border-gray-700 px-2.5 text-[13px] font-medium text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800"
+              >
+                <Plus className="h-4 w-4 text-gray-400" />
+                Add trade
+              </button>
+            )}
+          </div>
+        )}
+
         {/* View Tabs Row */}
         {(selectedPortfolioId || isSharedView) && (
           <div className="px-3 sm:px-6 pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             {/* Left: View Type Tabs — hidden in shared view */}
             {!isSharedView ? (
               <div className={clsx('items-center gap-1', isMobileViewport ? 'hidden' : 'flex')}>
-                {isMobileViewport && (
-                  <button
-                    onClick={() => setShowIdeasPanel(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800"
-                  >
-                    <Layers className="h-4 w-4" />
-                    Ideas
-                    {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
-                      <Badge variant="default" className="text-xs">
-                        {filteredItems.proposals.length + filteredItems.ideas.length}
-                      </Badge>
-                    )}
-                  </button>
-                )}
+                {/* The phone's Ideas control used to be here, inside a
+                    container this very expression hides on a phone — so it
+                    rendered into nothing. It is a named control in the action
+                    row above now. */}
                 <button
                   onClick={() => setSelectedViewType('private')}
                   className={clsx(
@@ -6598,6 +6645,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             assetSearch={phantomAssetSearch}
                             onAssetSearchChange={setPhantomAssetSearch}
                             assetSearchResults={phantomAssetResults ?? []}
+                            addOpen={mobileAddOpen}
+                            onAddOpenChange={setMobileAddOpen}
                           />
                         </div>
                       ) : (

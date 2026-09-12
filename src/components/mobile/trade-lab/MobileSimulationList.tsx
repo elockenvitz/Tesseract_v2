@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { AlertTriangle, ChevronDown, ChevronUp, Layers, Lock, Plus, Search, X } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronUp, Layers, Lock, Search, X } from 'lucide-react'
 import type { SimulationRow, SimulationRowSummary } from '../../../hooks/useSimulationRows'
 import { useAssetGroupingMeta } from '../../../hooks/useAssetGroupingMeta'
 import type { TradeAction } from '../../../types/trading'
@@ -21,6 +21,19 @@ interface MobileSimulationListProps {
   onDeleteVariant?: (variantId: string) => void
   /** Adds an asset the portfolio does not hold. Omit to hide the add control. */
   onAddAsset?: (asset: AddableAsset) => void
+  /**
+   * The add sheet, opened from the surface's own chrome.
+   *
+   * It used to be a floating button over the bottom-right of the table: a
+   * control with no label, no neighbours and nothing saying what it adds,
+   * sitting on top of the rows it was meant to extend. The action is the same
+   * and the sheet is the same; only who opens it moved.
+   *
+   * Uncontrolled when omitted, so a caller that has nowhere to put a button
+   * still works.
+   */
+  addOpen?: boolean
+  onAddOpenChange?: (open: boolean) => void
   assetSearch?: string
   onAssetSearchChange?: (v: string) => void
   assetSearchResults?: AddableAsset[]
@@ -151,6 +164,8 @@ export function MobileSimulationList({
   assetSearch = '',
   onAssetSearchChange,
   assetSearchResults = [],
+  addOpen: controlledAddOpen,
+  onAddOpenChange,
 }: MobileSimulationListProps) {
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -158,7 +173,10 @@ export function MobileSimulationList({
   const [measure, setMeasure] = useState<Measure>('weight')
   const [groupBy, setGroupBy] = useState<GroupBy>('none')
   const [groupOpen, setGroupOpen] = useState(false)
-  const [addOpen, setAddOpen] = useState(false)
+  const [ownAddOpen, setOwnAddOpen] = useState(false)
+  /* Controlled when the caller supplies both halves; its own state otherwise. */
+  const addOpen = controlledAddOpen ?? ownAddOpen
+  const setAddOpen = onAddOpenChange ?? setOwnAddOpen
   const [sortKey, setSortKey] = useState<string>('wt')
   const [sortDesc, setSortDesc] = useState(true)
 
@@ -388,20 +406,6 @@ export function MobileSimulationList({
           </table>
         )}
       </div>
-
-      {/* The only route to a name the portfolio does not already hold. Every
-          other entry point starts from an existing holding or an existing
-          idea. */}
-      {!readOnly && onAddAsset && onAssetSearchChange && (
-        <button
-          type="button"
-          onClick={() => setAddOpen(true)}
-          className="absolute bottom-5 right-5 h-14 w-14 flex items-center justify-center rounded-full bg-primary-600 text-white shadow-lg no-touch-target"
-          aria-label="Add a position the portfolio does not hold"
-        >
-          <Plus className="h-6 w-6" />
-        </button>
-      )}
 
       {onAddAsset && onAssetSearchChange && (
         <MobileAddPositionSheet

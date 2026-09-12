@@ -22,6 +22,14 @@ import { PilotStepsBanner } from './PilotStepsBanner'
 import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
 
 interface PilotTradeLabIntroBannerProps {
+  /**
+   * Opens the canonical ideas and recommendations panel.
+   *
+   * The step's whole difficulty was finding the thing it names, so the step
+   * offers it. Same panel the toolbar control opens; nothing here duplicates
+   * a route.
+   */
+  onOpenIdeas?: () => void
   userId: string
   /** Active org id, used to scope the banner state per pilot client. */
   orgId?: string | null
@@ -51,7 +59,7 @@ function writeFlag(userId: string, orgId: string | null | undefined, suffix: str
   try { localStorage.setItem(flagKey(userId, orgId, suffix), '1') } catch { /* ignore */ }
 }
 
-export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBannerProps) {
+export function PilotTradeLabIntroBanner({ userId, orgId, onOpenIdeas }: PilotTradeLabIntroBannerProps) {
   const [dismissed, setDismissed] = useState<boolean>(() => readFlag(userId, orgId, DISMISS))
   const [step1, setStep1] = useState<boolean>(() => readFlag(userId, orgId, STEP1))
   const [step2, setStep2] = useState<boolean>(() => readFlag(userId, orgId, STEP2))
@@ -122,9 +130,13 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
       steps={[
         {
           n: 1,
-          title: 'Review and add the recommendation',
-          hint: 'Check the box on the recommendation card on the left to import it into the holdings table.',
+          title: 'Review a recommendation',
+          /* It said "on the left", which is a fact about a desktop layout and
+             not about the product. The control has a name on both shells now,
+             so the step names the control. */
+          hint: 'Open Ideas & recommendations, then check one to bring it into the holdings table.',
           done: step1,
+          onClick: onOpenIdeas,
         },
         {
           n: 2,
