@@ -56,17 +56,41 @@ export function PilotMissionSkeleton({ rows = 5 }: { rows?: number }) {
   )
 }
 
-/** The phone's one-step strip. */
+/**
+ * The phone's five-step roadmap: one open row and four compact ones.
+ *
+ * It drew three lines, which was the shape of the single-step strip this
+ * replaced — so the mission arriving grew the card by a hundred pixels and
+ * pushed the coverage banner down with it.
+ */
 export function PilotMissionStripSkeleton() {
   return (
     <div
       data-slot="pilot-mission-strip-skeleton"
       aria-hidden="true"
-      className="rounded-xl border border-indigo-200/60 bg-gradient-to-r from-indigo-50 to-blue-50 px-3.5 py-3 dark:border-indigo-800/40 dark:from-indigo-950/30 dark:to-blue-950/20"
+      className="rounded-xl border border-indigo-200/60 bg-indigo-50/70 px-2.5 py-2 dark:border-indigo-800/40 dark:bg-indigo-950/25"
     >
-      <Skeleton className="h-2.5 w-24 dark:bg-gray-700" />
-      <Skeleton className="mt-2 h-3.5 w-44 dark:bg-gray-700" />
-      <Skeleton className="mt-1.5 h-2.5 w-full max-w-xs dark:bg-gray-700" />
+      <Skeleton className="mx-1 h-2.5 w-28 dark:bg-gray-700" />
+      <div className="mt-1 rounded-lg bg-white/90 px-2.5 py-2 dark:bg-gray-900/60">
+        <div className="flex items-start gap-2.5">
+          <Skeleton className="h-4 w-4 rounded-full dark:bg-gray-700" />
+          <div className="flex-1 space-y-1">
+            <Skeleton className="h-3 w-40 dark:bg-gray-700" />
+            <Skeleton className="h-2.5 w-full max-w-[15rem] dark:bg-gray-700" />
+          </div>
+        </div>
+        <Skeleton className="mt-2 h-9 w-full rounded-lg dark:bg-gray-700" />
+      </div>
+      <div className="mt-0.5 space-y-0.5">
+        {/* Uneven, so four placeholder rows read as four titles rather than
+            as a progress bar. `Skeleton` takes a class, not a style. */}
+        {['w-32', 'w-24', 'w-28', 'w-20'].map(w => (
+          <div key={w} className="flex items-center gap-2.5 px-2.5 py-1">
+            <Skeleton className="h-4 w-4 rounded-full dark:bg-gray-700" />
+            <Skeleton className={`h-2.5 ${w} dark:bg-gray-700`} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
