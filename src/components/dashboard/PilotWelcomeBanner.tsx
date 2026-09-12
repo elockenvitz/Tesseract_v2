@@ -1,541 +1,224 @@
 /**
- * PilotWelcomeBanner — Guided getting-started checklist for pilot clients.
+ * Getting Started — one trade idea through the Tesseract decision loop.
  *
- * Tracks progress across key platform workflows and guides new users
- * through the core features they need to learn for adoption.
+ * ── What this replaces ────────────────────────────────────────────────────
+ *
+ * Twelve rows: launcher, feed, asset, rating, note, theme, thought, prompt,
+ * list, feedback, referral. A feature inventory. Four of them ticked on
+ * opening a tab, two of those only on the browser you happened to use, and the
+ * module retired itself on a seven-flag rule that ignored four of the boxes it
+ * was still displaying. Nothing in it said what the product is FOR, because no
+ * two rows were about the same thing.
+ *
+ * Five steps now, and they are one decision: capture an idea, develop the
+ * reasoning, test it, record the decision, then look at what happened.
+ *
+ * ── Where the truth is ────────────────────────────────────────────────────
+ *
+ * Not here. `usePilotMission` reads it and `missionState` decides it; this file
+ * only draws. That separation is the point — the previous generation had the
+ * checklist deciding completion for itself, which is how it ended up
+ * disagreeing with the rule that dismissed it.
+ *
+ * ── Why future steps are shown ────────────────────────────────────────────
+ *
+ * So the journey is legible from the first minute. A step whose prerequisite
+ * is unmet is not a control and says plainly what comes first. That is a
+ * reason, not an error, and it is deliberately not styled as one.
  */
 
-import { useState, useCallback, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import {
-  X, ChevronDown, ChevronRight, CheckCircle2,
-  FileText, Lightbulb, Star,
-  BookOpen, Sparkles, PenLine, Tag, List,
-  LayoutGrid, MessageSquarePlus, UserPlus,
-} from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ChevronDown, ChevronRight, CheckCircle2, X } from 'lucide-react'
 import { clsx } from 'clsx'
-import { supabase } from '../../lib/supabase'
-import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
-import { usePilotProgress } from '../../hooks/usePilotProgress'
-import { useMyCoverage } from '../../hooks/useMyCoverage'
-import { onboardingStatus } from '../../lib/pilot/onboarding'
+import { usePilotMission, logMissionStep } from '../../hooks/usePilotMission'
+import type { MissionStepId } from '../../lib/pilot/mission'
 
 interface PilotWelcomeBannerProps {
   onNavigate: (result: any) => void
 }
 
-interface TutorialStep {
-  id: string
-  label: string
-  description: string
-  hint: string
-  icon: typeof FileText
-  done: boolean
-  action: () => void
-  category: 'research' | 'collaborate' | 'discover'
-}
-
 export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
-  const { user } = useAuth()
   const { currentOrgId } = useOrganization()
-  // Post-graduation steps live in users.pilot_progress (server-side, keyed
-  // per org) so completion carries across hostnames / browsers / devices.
-  const {
-    hasCompletedPostGradAppLauncher,
-    hasCompletedPostGradFeedback,
-    hasCompletedPostGradRecommend,
-    mark: markPilotStage,
-    progress: pilotProgress,
-  } = usePilotProgress()
+  const mission = usePilotMission()
 
-  // Listen for the post-grad step "opened" events fired by the relevant
-  // UI surfaces (Header app launcher, FeedbackWidget open, FeedbackWidget
-  // refer tab). markPilotStage is server-side and self-deduped so each
-  // event only writes once per (user, org) — repeated opens are no-ops.
-  useEffect(() => {
-    const onLauncher = () => markPilotStage('post_grad_step_app_launcher')
-    const onFeedback = () => markPilotStage('post_grad_step_feedback')
-    const onRecommend = () => markPilotStage('post_grad_step_recommend')
-    window.addEventListener('pilot-postgrad:app-launcher-opened', onLauncher)
-    window.addEventListener('pilot-postgrad:feedback-opened', onFeedback)
-    window.addEventListener('pilot-postgrad:recommend-opened', onRecommend)
-    return () => {
-      window.removeEventListener('pilot-postgrad:app-launcher-opened', onLauncher)
-      window.removeEventListener('pilot-postgrad:feedback-opened', onFeedback)
-      window.removeEventListener('pilot-postgrad:recommend-opened', onRecommend)
-    }
-  }, [markPilotStage])
-
-  const [dismissed, setDismissed] = useState(() => {
-    try { return localStorage.getItem(`pilot-banner-dismissed-${currentOrgId}`) === 'true' } catch { return false }
-  })
+  /*
+   * Collapse is a per-device preference and stays local. Completion is not,
+   * and does not — that distinction is the whole lesson of the version this
+   * replaces, where a browser-local flag was the only record a step was done.
+   */
   const [expanded, setExpanded] = useState(() => {
-    try { return localStorage.getItem(`pilot-banner-expanded-${currentOrgId}`) !== 'false' } catch { return true }
+    try { return localStorage.getItem(`pilot-mission-expanded-${currentOrgId}`) !== 'false' } catch { return true }
   })
-  /*
-   * The two steps that leave no artifact read a SERVER-BACKED mark now.
-   *
-   * They were per-browser localStorage flags fed by `pilot-tutorial:*` events.
-   * That failed two ways: completion did not follow the reader to a second
-   * browser, and the page that fired the idea-feed event has since been
-   * deleted, which left that step impossible to earn honestly. The marks are
-   * written by the Ideas surfaces themselves — see `usePilotOnboarding` — and
-   * live per org in `users.pilot_progress` beside every other pilot stage.
-   *
-   * The old `pilot-tutorial-*` keys are simply no longer read. Nothing
-   * migrates them: they recorded a click, and the step records the thing.
-   */
-  // Track completion of tutorial steps — STRICTLY org-scoped.
-  // The Get Started checklist is per-org: a graduated pilot landing
-  // on their own workspace shouldn't see steps marked complete from
-  // actions taken in OTHER orgs the same user belongs to (e.g. their
-  // dev account in Tesseract). Tables with `organization_id` are
-  // filtered directly; tables without it (asset_notes, quick_thoughts,
-  // analyst_ratings, etc.) use `created_at >= org.created_at` as a
-  // best-effort floor — anything done before this org existed can't
-  // belong to it.
-  const { data: progress } = useQuery({
-    queryKey: ['pilot-tutorial-progress', currentOrgId, user?.id],
-    queryFn: async () => {
-      if (!user?.id || !currentOrgId) return null
-
-      // Org's created_at — used as a recency floor for tables we
-      // can't directly scope by organization_id.
-      const { data: orgRow } = await supabase
-        .from('organizations')
-        .select('created_at')
-        .eq('id', currentOrgId)
-        .maybeSingle()
-      const orgCreatedAt = (orgRow?.created_at as string | undefined) ?? new Date(0).toISOString()
-
-      const [
-        assetNotesRes,
-        thoughtsRes,
-        promptsRes,
-        promptThoughtsRes,
-        ratingsRes,
-        contributionsRes,
-        themesRes,
-        themeNotesRes,
-        listsRes,
-      ] = await Promise.all([
-        // Has the user written a note on an asset? (no org_id column —
-        // floor by org.created_at)
-        supabase.from('asset_notes')
-          .select('id', { count: 'exact', head: true })
-          .eq('created_by', user.id)
-          .gte('created_at', orgCreatedAt),
-        // Has the user posted a thought? (no org_id column — floor by
-        // org.created_at)
-        supabase.from('quick_thoughts')
-          .select('id', { count: 'exact', head: true })
-          .eq('organization_id', currentOrgId!)
-          .eq('created_by', user.id)
-          .gte('created_at', orgCreatedAt),
-        // Has the user used a prompt? Two flows count:
-        //   1. user_quick_prompt_history — template/saved prompt usage
-        //   2. quick_thoughts with idea_type='prompt' — the "ask a colleague"
-        //      flow from PromptModal (right-pane "Prompt" capture).
-        // We run both and OR the results below. Both floored by org.
-        supabase.from('user_quick_prompt_history')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .gte('created_at', orgCreatedAt),
-        supabase.from('quick_thoughts')
-          .select('id', { count: 'exact', head: true })
-          .eq('organization_id', currentOrgId!)
-          .eq('created_by', user.id)
-          .eq('idea_type', 'prompt')
-          .gte('created_at', orgCreatedAt),
-        // Has the user rated an asset? (no org_id — floor by org.created_at)
-        supabase.from('analyst_ratings')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .gte('created_at', orgCreatedAt),
-        // Has the user made a contribution on an asset? Org-scoped
-        // directly via the organization_id column.
-        supabase.from('asset_contributions')
-          .select('id', { count: 'exact', head: true })
-          .eq('created_by', user.id)
-          .eq('organization_id', currentOrgId),
-        // Has the user created a theme in this org?
-        supabase.from('themes')
-          .select('id', { count: 'exact', head: true })
-          .eq('created_by', user.id)
-          .eq('organization_id', currentOrgId),
-        // Has the user written a note on a theme owned by this org?
-        // theme_notes has no org_id directly, but we floor by org
-        // created_at for the same reason as above.
-        supabase.from('theme_notes')
-          .select('id', { count: 'exact', head: true })
-          .eq('created_by', user.id)
-          .gte('created_at', orgCreatedAt),
-        // Has the user built an asset list in this org? asset_lists has
-        // no organization_id, and portfolio_id is nullable (most lists are
-        // user-personal with no portfolio attached), so portfolio scoping
-        // would miss them. Floor by org.created_at like the other
-        // org-less tables. Excludes the two system-seeded default lists
-        // ("Investment Ideas" / "Work in Process") that every user gets
-        // on signup.
-        supabase.from('asset_lists')
-          .select('id', { count: 'exact', head: true })
-          .eq('created_by', user.id)
-          .eq('is_default', false)
-          .gte('created_at', orgCreatedAt),
-      ])
-
-      return {
-        hasNote: (assetNotesRes.count ?? 0) > 0,
-        hasThought: (thoughtsRes.count ?? 0) > 0,
-        hasPrompt: (promptsRes.count ?? 0) > 0 || (promptThoughtsRes.count ?? 0) > 0,
-        hasRating: (ratingsRes.count ?? 0) > 0,
-        hasContribution: (contributionsRes.count ?? 0) > 0,
-        hasTheme: (themesRes.count ?? 0) > 0 || (themeNotesRes.count ?? 0) > 0,
-        hasList: (listsRes.count ?? 0) > 0,
-      }
-    },
-    enabled: !!currentOrgId && !!user?.id,
-    // Short staleTime so the banner re-checks progress when the user
-    // returns to the dashboard after taking an action (rating, note,
-    // contribution, etc). With a 30s stale window the freshly-completed
-    // step would stay un-crossed for half a minute. Refetch on focus is
-    // already on by default, which catches tab-switching too.
-    staleTime: 0,
-  })
-
-  /*
-   * The four canonical steps, composed from what has already been read.
-   *
-   * Two are marks in `pilot_progress`, two are rows — a perspective and a
-   * coverage assignment prove themselves, so neither gets a second boolean
-   * that could disagree with them. The arithmetic is pure and lives in
-   * `lib/pilot/onboarding.ts`; this only supplies the readings.
-   */
-  const { hasCoverage } = useMyCoverage()
-  const onboarding = onboardingStatus({
-    progress: pilotProgress,
-    orgId: currentOrgId,
-    activity: progress,
-    hasCoverage,
-  })
-
-  const handleDismiss = useCallback(() => {
-    setDismissed(true)
-    try { localStorage.setItem(`pilot-banner-dismissed-${currentOrgId}`, 'true') } catch {}
-  }, [currentOrgId])
-
   const toggleExpanded = useCallback(() => {
     setExpanded(prev => {
       const next = !prev
-      try { localStorage.setItem(`pilot-banner-expanded-${currentOrgId}`, String(next)) } catch {}
+      try { localStorage.setItem(`pilot-mission-expanded-${currentOrgId}`, String(next)) } catch { /* ignore */ }
       return next
     })
   }, [currentOrgId])
 
   /*
-   * Auto-dismiss once ONBOARDING is complete — the same four steps that decide
-   * graduation.
+   * Dismissal is allowed only once the mission is complete.
    *
-   * This watched seven durable flags and ignored every step that ticks on a
-   * click, so the banner could retire itself while still displaying incomplete
-   * boxes. One rule now, and it is the one `onboardingStatus` states.
+   * While it is unfinished this is the only onboarding affordance a pilot has,
+   * and a permanent hide would leave them no way back to it.
    */
-  // Computed inline (rather than from the `steps` array further down)
-  // so this effect runs BEFORE the early-return guard — placing it
-  // after would change the hook count between loading vs loaded
-  // renders and trip "Rendered fewer hooks than expected".
-  const allDoneForAutoDismiss = !!progress && onboarding.complete
+  const [dismissed, setDismissed] = useState(false)
+
+  /*
+   * One telemetry row per step, on the first transition only.
+   *
+   * Tracked against what has already been reported in this session rather than
+   * against the previous render, so a refresh does not re-log four steps that
+   * were finished last week.
+   */
+  const reported = useRef<Set<string>>(new Set())
+  const shown = useRef(false)
   useEffect(() => {
-    if (allDoneForAutoDismiss && !dismissed) {
-      handleDismiss()
+    if (mission.isLoading) return
+    if (!shown.current) {
+      shown.current = true
+      logMissionStep('shown', currentOrgId)
     }
-  }, [allDoneForAutoDismiss, dismissed, handleDismiss])
+    for (const step of mission.steps) {
+      if (!step.done || reported.current.has(step.id)) continue
+      reported.current.add(step.id)
+      logMissionStep(step.id, currentOrgId)
+    }
+    if (mission.complete && !reported.current.has('graduated')) {
+      reported.current.add('graduated')
+      logMissionStep('graduated', currentOrgId)
+    }
+  }, [mission.isLoading, mission.steps, mission.complete, currentOrgId])
 
-  if (dismissed || !progress) return null
-
-  // Navigate to AAPL (the tutorial target asset). `extraData` lets steps
-  // deep-link to a specific view (e.g. "My View" + scroll to a section).
-  const openAsset = (extraData: Record<string, any> = {}) => {
-    onNavigate({
-      type: 'asset',
-      id: 'AAPL',
-      title: 'AAPL',
-      data: { symbol: 'AAPL', ...extraData },
-    })
-  }
-
-  // Open AAPL on the user's own "My View" tab (researchViewFilter = userId).
-  const openAaplMyView = (extraData: Record<string, any> = {}) => {
-    if (!user?.id) { openAsset(extraData); return }
-    openAsset({ researchViewFilter: user.id, ...extraData })
-  }
-
-  const steps: TutorialStep[] = [
-    // Open the app launcher FIRST — it's the user's map to everything
-    // else Tesseract can do, so it makes sense as the first move into
-    // the broader app after the guided pilot loop. Ticks off when the
-    // launcher is opened.
-    {
-      id: 'open-app-launcher',
-      label: 'Open the app launcher',
-      description: 'Browse everything else Tesseract can do from the top-left launcher.',
-      hint: 'Click the Tesseract logo in the top-left to expand the launcher.',
-      icon: LayoutGrid,
-      done: hasCompletedPostGradAppLauncher,
-      action: () => {
-        try { window.dispatchEvent(new CustomEvent('open-app-launcher')) } catch { /* ignore */ }
-      },
-      category: 'discover',
-    },
-    // Then the idea feed — the team's running stream of thoughts /
-    // notes / trade ideas. Seeing what's already in motion grounds the
-    // rest of the Get Started flow.
-    {
-      id: 'view-idea-feed',
-      label: 'View idea feed',
-      description: 'Browse the team\'s thoughts, notes, and trade ideas in one feed.',
-      hint: 'Opens the Ideas tab.',
-      icon: Lightbulb,
-      done: onboarding.ideas_viewed,
-      action: () => onNavigate({ type: 'ideas', id: 'ideas', title: 'Ideas', data: {} }),
-      category: 'discover',
-    },
-    // Research workflow
-    {
-      id: 'explore-asset',
-      label: 'Explore an asset page',
-      description: 'Open any asset to see its research fields, workflow status, and history.',
-      hint: 'Focuses the search bar — start typing a ticker to pick one.',
-      icon: BookOpen,
-      done: onboarding.signal_worked,
-      // Focus the global search bar so the user can type any ticker and
-      // pick from live results. Listened to by GlobalSearch.
-      action: () => {
-        try { window.dispatchEvent(new CustomEvent('focus-global-search')) } catch { /* ignore */ }
-      },
-      category: 'research',
-    },
-    {
-      id: 'fill-research',
-      label: 'Fill out a research field',
-      description: 'Add your thesis, bull/bear case, or any research field on an asset page.',
-      hint: 'On AAPL "My View", click any empty field to start typing.',
-      icon: PenLine,
-      done: progress.hasContribution,
-      action: () => openAaplMyView(),
-      category: 'research',
-    },
-    {
-      id: 'rate-asset',
-      label: 'Rate an asset',
-      description: 'Set your conviction rating (e.g., Overweight / Neutral / Underweight).',
-      hint: 'Opens AAPL "My View" and scrolls to the Rating section.',
-      icon: Star,
-      done: progress.hasRating,
-      // scrollNonce ensures the AssetTab scroll effect re-fires on
-      // repeat clicks even though scrollTo='rating' is unchanged.
-      action: () => openAaplMyView({ scrollTo: 'rating', scrollNonce: Date.now() }),
-      category: 'research',
-    },
-    {
-      id: 'take-note',
-      label: 'Write a note',
-      description: 'Write a research note on an asset — capture your analysis and key takeaways.',
-      hint: 'Open the All Notes page and click "New Note".',
-      icon: FileText,
-      done: progress.hasNote,
-      action: () => onNavigate({ type: 'notes-list', id: 'notes-list', title: 'Notes', data: {} }),
-      category: 'research',
-    },
-    {
-      id: 'explore-theme',
-      label: 'Explore a theme',
-      description: 'Group ideas by sector or macro story across many assets at once.',
-      hint: 'Open the All Themes page, then create or open a theme.',
-      icon: Tag,
-      done: progress.hasTheme,
-      action: () => onNavigate({ type: 'themes-list', id: 'themes-list', title: 'Themes', data: {} }),
-      category: 'research',
-    },
-    // Communicate & collaborate
-    {
-      id: 'post-thought',
-      label: 'Post a thought',
-      description: 'Share a quick insight or observation with your team via Thoughts.',
-      hint: 'Opens the right-hand pane to capture a quick thought.',
-      icon: Lightbulb,
-      done: progress.hasThought,
-      action: () => {
+  const act = useCallback((id: MissionStepId) => {
+    const ideaId = mission.tutorialIdeaId
+    switch (id) {
+      case 'idea_created':
+        /* The canonical capture flow, pre-focused on a trade idea. Its success
+           is what adopts the new row as the tutorial idea — see the listener
+           in `usePilotMission`. */
         try {
-          // The right-pane sidebar's quick-capture form for thoughts is
-          // keyed 'idea' in PendingCaptureType. ('thought' isn't a valid
-          // value — the sidebar would open with no form auto-selected.)
-          window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
-            detail: { captureType: 'idea' },
-          }))
+          window.dispatchEvent(new CustomEvent('openThoughtsCapture', { detail: { captureType: 'trade_idea' } }))
         } catch { /* ignore */ }
-      },
-      category: 'collaborate',
-    },
-    {
-      id: 'use-prompt',
-      label: 'Use a prompt',
-      description: 'Address a specific question or task using the prompt system.',
-      hint: 'Opens the right-hand pane to compose a prompt.',
-      icon: Sparkles,
-      done: progress.hasPrompt,
-      action: () => {
-        try {
-          window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
-            detail: { captureType: 'prompt' },
-          }))
-        } catch { /* ignore */ }
-      },
-      category: 'collaborate',
-    },
-    // Discover & customize
-    {
-      id: 'build-list',
-      label: 'Build a list',
-      description: 'Group assets into watchlists, shortlists, or shared lists.',
-      hint: 'Open Lists from the app menu, create a list, and add a few assets to it.',
-      icon: List,
-      done: progress.hasList,
-      action: () => onNavigate({ type: 'lists', id: 'lists', title: 'Lists', data: {} }),
-      category: 'discover',
-    },
-    // Post-graduation onboarding — additional steps surfaced once the
-    // user has finished the pilot loop. App-launcher lives at the TOP
-    // of the list (see above); these two trail at the end. State is
-    // per-(user, org) in users.pilot_progress so it carries across
-    // hostnames / browsers / devices.
-    {
-      id: 'provide-feedback',
-      label: 'Provide feedback',
-      description: 'Tell us what\'s working and what\'s not — it shapes the next release.',
-      hint: 'Opens the feedback widget.',
-      icon: MessageSquarePlus,
-      done: hasCompletedPostGradFeedback,
-      action: () => {
-        try { window.dispatchEvent(new CustomEvent('open-feedback-widget')) } catch { /* ignore */ }
-      },
-      category: 'collaborate',
-    },
-    {
-      id: 'recommend-user',
-      label: 'Recommend a user',
-      description: 'Invite another investor or analyst who\'d get value from Tesseract.',
-      hint: 'Opens the refer-a-friend form.',
-      icon: UserPlus,
-      done: hasCompletedPostGradRecommend,
-      action: () => {
-        try { window.dispatchEvent(new CustomEvent('open-feedback-widget', { detail: { type: 'referral' } })) } catch { /* ignore */ }
-      },
-      category: 'collaborate',
-    },
-  ]
+        return
+      case 'pipeline_advanced':
+        onNavigate({ id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue', data: { focusIdeaId: ideaId } })
+        return
+      case 'simulation_completed':
+        // The idea travels with the request, so the reader is never asked to
+        // remember which one they were working on.
+        onNavigate({ id: 'trade-lab', title: 'Trade Lab', type: 'trade-lab', data: { tradeQueueItemId: ideaId } })
+        return
+      case 'decision_submitted':
+        onNavigate({
+          id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue',
+          data: { focusIdeaId: ideaId, focusStage: 'ready_for_decision' },
+        })
+        return
+      case 'outcome_reviewed':
+        // The mark is the arrival. Reading writes nothing, so this is the one
+        // step that has to be reported rather than derived.
+        mission.markOutcomeReviewed()
+        onNavigate({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: ideaId } })
+        return
+    }
+  }, [mission, onNavigate])
 
-  const completedCount = steps.filter(s => s.done).length
-  const allDone = completedCount === steps.length
+  if (dismissed || mission.isLoading) return null
+
+  const { completedCount, total, currentStepId, complete } = mission
 
   return (
-    <div className="relative bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/20 rounded-xl border border-indigo-200/60 dark:border-indigo-800/40">
-      {/* Header — always visible. Title + one-line "what this is" so the
-          section's purpose is clear even when collapsed. */}
+    <div className="relative rounded-xl border border-indigo-200/60 bg-gradient-to-r from-indigo-50 to-blue-50 dark:border-indigo-800/40 dark:from-indigo-950/30 dark:to-blue-950/20">
       <div className="flex items-start justify-between gap-3 px-4 py-2.5">
-        <button onClick={toggleExpanded} className="flex items-start gap-2 text-left flex-1 min-w-0">
+        <button onClick={toggleExpanded} className="flex min-w-0 flex-1 items-start gap-2 text-left">
           {expanded
-            ? <ChevronDown className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
-            : <ChevronRight className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
-          }
+            ? <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-indigo-400" />
+            : <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-indigo-400" />}
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-tight">
+            <h3 className="text-sm font-semibold leading-tight text-gray-900 dark:text-gray-100">
               Getting Started
             </h3>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
-              A quick tour of Tesseract — click any step to jump in. {allDone ? 'All done!' : `${completedCount} of ${steps.length} complete.`}
+            <p className="text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+              Take one trade idea through the Tesseract decision loop.{' '}
+              {complete ? 'All done.' : `${completedCount} of ${total} complete.`}
             </p>
           </div>
         </button>
-
-        {/* Progress bar + dismiss */}
-        <div className="flex items-center gap-3 mt-0.5 shrink-0">
-          <div className="w-24 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-indigo-500 rounded-full transition-all duration-500"
-              style={{ width: `${(completedCount / steps.length) * 100}%` }}
-            />
-          </div>
-          {/* Get Started checklist intentionally has no dismiss control —
-              the 12 steps are the user's path into the rest of Tesseract,
-              and letting them X-out the checklist hid the only roadmap
-              to where the other features live. Banner auto-retires when
-              every step is complete via the allDoneForAutoDismiss effect. */}
-        </div>
+        {complete && (
+          <button
+            onClick={() => setDismissed(true)}
+            aria-label="Dismiss getting started"
+            className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-white/60 dark:hover:bg-gray-800"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      {/* Expanded content — 2-column grid (3 on wide screens). Each card
-          shows icon + label + one-line description so the user always
-          knows what the step is. Compact rows (~36px) keep total height
-          well below the original stacked layout. Category shown as a
-          small colored bar on the left of each card instead of a
-          standalone section header. */}
       {expanded && (
-        <div className="px-4 pb-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-            {steps.map(step => (
-              <button
+        <ol className="space-y-1 px-3 pb-3">
+          {mission.steps.map((step, i) => {
+            const current = step.id === currentStepId
+            return (
+              <li
                 key={step.id}
-                onClick={step.action}
-                title={step.hint}
                 className={clsx(
-                  'group relative flex items-center gap-2.5 pl-3 pr-2 py-1.5 rounded-md border text-left transition-all overflow-hidden',
-                  step.done
-                    ? 'bg-white/40 border-green-200/70 dark:bg-gray-800/30 dark:border-green-800/40'
-                    : 'bg-white/80 border-indigo-200/60 hover:bg-white hover:border-indigo-300 hover:shadow-sm dark:bg-gray-800/60 dark:border-indigo-800/40 dark:hover:bg-gray-800',
+                  'flex items-start gap-2.5 rounded-lg px-2.5 py-2',
+                  current && 'bg-white/80 ring-1 ring-indigo-200 dark:bg-gray-900/50 dark:ring-indigo-800/60',
                 )}
               >
-                {/* Category accent bar */}
-                <span
-                  className={clsx(
-                    'absolute left-0 top-0 bottom-0 w-1',
-                    step.category === 'research' && 'bg-indigo-400/70',
-                    step.category === 'collaborate' && 'bg-amber-400/70',
-                    step.category === 'discover' && 'bg-emerald-400/70',
-                  )}
-                  aria-hidden
-                />
-                <div className="shrink-0">
+                <span className="mt-0.5 shrink-0">
                   {step.done
-                    ? <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    : <step.icon className="w-4 h-4 text-indigo-400 dark:text-indigo-500" />
-                  }
-                </div>
-                <div className="flex-1 min-w-0">
+                    ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    : (
+                      <span className={clsx(
+                        'flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold',
+                        current
+                          ? 'bg-indigo-500 text-white'
+                          : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+                      )}>{i + 1}</span>
+                    )}
+                </span>
+                <div className="min-w-0 flex-1">
                   <p className={clsx(
-                    'text-[12px] font-medium leading-tight truncate',
-                    step.done ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-800 dark:text-gray-200',
+                    'text-[13px] font-medium leading-tight',
+                    step.done
+                      ? 'text-gray-500 dark:text-gray-500'
+                      : step.available ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500',
                   )}>
                     {step.label}
                   </p>
-                  <p className={clsx(
-                    'text-[10.5px] leading-tight truncate',
-                    step.done ? 'text-gray-300 dark:text-gray-600' : 'text-gray-500 dark:text-gray-400',
-                  )}>
-                    {step.description}
+                  {/* The reason a step is not yet available takes the place of
+                      its hint — quiet, and never styled as a failure. */}
+                  <p className="mt-0.5 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+                    {step.available ? step.hint : step.blockedBy}
                   </p>
                 </div>
-              </button>
-            ))}
-          </div>
-          {/* Small legend so the colored bars are decipherable */}
-          <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-500 dark:text-gray-400">
-            <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-indigo-400/70" /> Research</span>
-            <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-amber-400/70" /> Communicate</span>
-            <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-400/70" /> Discover</span>
-          </div>
-        </div>
+                {/* One control, on the step that is actually next. A finished
+                    step keeps a quiet way back to what it taught. */}
+                {current && (
+                  <button
+                    onClick={() => act(step.id)}
+                    className="shrink-0 rounded-lg bg-indigo-600 px-2.5 py-1 text-[12px] font-semibold text-white hover:bg-indigo-700"
+                  >
+                    {step.cta}
+                  </button>
+                )}
+                {step.done && !current && (
+                  <button
+                    onClick={() => act(step.id)}
+                    className="shrink-0 rounded-lg px-2 py-1 text-[12px] font-medium text-gray-500 hover:bg-white/60 dark:hover:bg-gray-800"
+                  >
+                    Revisit
+                  </button>
+                )}
+              </li>
+            )
+          })}
+        </ol>
       )}
     </div>
   )

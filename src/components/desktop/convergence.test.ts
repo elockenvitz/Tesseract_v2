@@ -828,12 +828,16 @@ describe('the canonical Dashboard is where a session begins', () => {
      */
     expect(page).toContain("activeTab.type === 'dashboard'")
     expect(page).toContain('renderDashboardContent')
-    expect(page).toContain('PilotActionDashboard')
 
-    // The workbench itself, by the components only it rendered.
+    /*
+     * Every desktop surface that once lived on this type, by the components
+     * only it rendered. The non-pilot workbench went first; `PilotActionDashboard`
+     * followed once it was proved to own no access control, no setup state, no
+     * walkthrough and no telemetry of its own.
+     */
     for (const gone of [
       'DashboardFilters', 'DecisionSystem', 'ResearchWorkbench',
-      'PortfolioWorkbench', 'PortfolioGrid',
+      'PortfolioWorkbench', 'PortfolioGrid', 'PilotActionDashboard',
     ]) expect(page).not.toContain(gone)
 
     // And no way in: the launcher's More group no longer offers it.

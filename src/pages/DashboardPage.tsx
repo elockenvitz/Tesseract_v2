@@ -58,7 +58,6 @@ import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
 import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
-import { PilotActionDashboard } from '../components/pilot/PilotActionDashboard'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { TAB_TYPE_TO_PILOT_FEATURE, PILOT_ACCESS_DEFAULTS } from '../lib/pilot/pilot-access'
 import { PilotTeaserModal } from '../components/pilot/PilotTeaserModal'
@@ -1462,69 +1461,19 @@ export function DashboardPage() {
       )
     }
 
-    // Pilot users see a lightweight action dashboard (3 cards —
-    // Ready for Decision / In Progress / Feedback Loop) instead of
-    // the full analytics surfaces. Dashboard acts as a routing
-    // layer into the pilot loop, not a data-rich workbench.
-    if (pilotMode.effectiveIsPilot) {
-      return (
-        /*
-         * The onboarding chrome comes with the pilot branch.
-         *
-         * Both of these stood above the retired workbench, and both are pilot
-         * onboarding: the Get Started checklist, and the first-session prompt
-         * that asks a new reader to establish coverage. Retiring the surface
-         * that hosted them would have taken the pilot programme's own
-         * onboarding with it, which is precisely what keeping this branch is
-         * meant to avoid. They move here rather than onto the canonical
-         * Dashboard, which this stage does not touch.
-         */
-        <div className="h-full overflow-auto">
-          <div className="space-y-2.5 p-3">
-            <FirstSessionCoveragePrompt
-              onGoToIdeas={() => handleSearchResult({
-                id: 'ideas', title: 'Ideas', type: 'ideas', data: null,
-              })}
-            />
-            <PilotWelcomeBanner onNavigate={handleSearchResult} />
-          </div>
-          <PilotActionDashboard
-          onOpenTradeLab={(ctx) => handleSearchResult({
-            id: 'trade-lab',
-            title: 'Trade Lab',
-            type: 'trade-lab',
-            data: ctx ?? {},
-          })}
-          onOpenIdeaPipeline={() => handleOpenTradeQueue()}
-          onOpenTradeBook={() => handleSearchResult({
-            id: 'trade-book',
-            title: 'Trade Book',
-            type: 'trade-book',
-            data: {},
-          })}
-          onOpenOutcomes={() => handleSearchResult({
-            id: 'outcomes',
-            title: 'Outcomes',
-            type: 'outcomes',
-            data: {},
-          })}
-          />
-        </div>
-      )
-    }
     /*
-     * Beyond this point there is no desktop surface left on this type.
+     * There is no desktop surface left on this type, for anybody.
      *
-     * The non-pilot workbench that stood here — a scope bar over a decision,
-     * research or portfolio pane — is retired; `today` is where that question
-     * is asked now, and both the navigation funnel and the session migration
-     * send a reader there before they can arrive. This arm is what a pilot
-     * sees, and a pilot is handled above.
+     * The non-pilot workbench went first — a scope bar over a decision,
+     * research or portfolio pane, replaced by the lens shell. The pilot action
+     * dashboard followed it: three routing cards whose destinations the pilot
+     * tab picker already offers, no access control of its own, no setup state,
+     * no walkthrough and no telemetry. A pilot now learns the real Dashboard
+     * with the mission module on it, which is the whole point.
      *
-     * `today` rather than a blank: the three callers of this function include
-     * the no-active-tab and unknown-type fallbacks, and a fallback that
-     * renders nothing is how a reader ends up on an empty page after a bad
-     * deep link.
+     * `today` rather than a blank: the callers of this function include the
+     * no-active-tab and unknown-type fallbacks, and a fallback that renders
+     * nothing is how a reader lands on an empty page after a bad deep link.
      */
     return <DashboardShell initialLens="today" />
   }

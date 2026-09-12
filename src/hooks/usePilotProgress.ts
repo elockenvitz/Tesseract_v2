@@ -35,6 +35,7 @@ import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
 import { onboardingStageKey } from '../lib/pilot/onboarding'
+import { tutorialIdeaKey, tutorialOutcomeReviewedKey } from '../lib/pilot/mission'
 
 export type PilotStage =
   | 'trade_book_unlocked'
@@ -70,6 +71,15 @@ export type PilotStage =
    */
   | 'ideas_viewed'
   | 'signal_worked'
+  /*
+   * The one step of the pilot MISSION that leaves no artifact.
+   *
+   * The other four are a row, a stage, a simulated trade and a decision — all
+   * of them durable product truth about the same idea, none of them needing a
+   * flag. Reading Outcomes writes nothing, so it is marked. See
+   * `lib/pilot/mission.ts`.
+   */
+  | 'tutorial_outcome_reviewed'
 
 export interface PilotProgress {
   /** @deprecated user-level legacy keys, no longer read or written.
@@ -113,6 +123,7 @@ const stageToKey = (stage: PilotStage, orgId: string | null): string => {
     // and the reader cannot spell the same step differently.
     case 'ideas_viewed':               return onboardingStageKey('ideas_viewed', orgId)
     case 'signal_worked':              return onboardingStageKey('signal_worked', orgId)
+    case 'tutorial_outcome_reviewed':  return tutorialOutcomeReviewedKey(orgId)
   }
 }
 
@@ -137,6 +148,7 @@ const STAGE_TO_EVENT: Record<PilotStage, string> = {
   post_grad_step_recommend:    'pilot_post_grad_step_recommend',
   ideas_viewed:                'pilot_onboarding_ideas_viewed',
   signal_worked:               'pilot_onboarding_signal_worked',
+  tutorial_outcome_reviewed:   'pilot_mission_outcome_reviewed',
 }
 
 export function usePilotProgress() {
@@ -310,6 +322,42 @@ export function usePilotProgress() {
     markStage.mutate(stage)
   }, [markStage])
 
+  /**
+   * The one pilot key that stores a VALUE rather than a timestamp.
+   *
+   * `mark` writes `new Date().toISOString()` and dedupes on "already set",
+   * which is exactly right for a stage and exactly wrong for an id: the
+   * tutorial idea is an identity, and reusing the timestamp writer would store
+   * a date where a `trade_queue_items.id` belongs.
+   *
+   * Write-once per org, deliberately. The mission is one idea carried the
+   * whole way, so a second idea created later must not quietly become the
+   * tutorial and reset four steps of progress. If the row is gone the mission
+   * recovers by returning to step one — see `missionState` — rather than by
+   * silently adopting a replacement.
+   */
+  const setTutorialIdea = useCallback(async (ideaId: string) => {
+    if (!user?.id || !ideaId) return
+    const key = tutorialIdeaKey(currentOrgId)
+    if (progress[key]) return
+    if (writeInFlightRef.current.has(key)) return
+    writeInFlightRef.current.add(key)
+
+    const nextProgress: PilotProgress = { ...progress, [key]: ideaId }
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ pilot_progress: nextProgress } as never)
+        .eq('id', user.id)
+      if (error) throw error
+      queryClient.setQueryData(['pilot-progress', user.id], nextProgress)
+      logPilotEvent({ eventType: 'pilot_mission_idea_created', organizationId: currentOrgId })
+    } catch (err) {
+      writeInFlightRef.current.delete(key)
+      Sentry.captureException(err)
+    }
+  }, [user?.id, currentOrgId, progress, queryClient])
+
   const hasGraduated = !!progress[graduatedKey(currentOrgId)]
 
   // Cached hint from the previous session: did the user graduate in the
@@ -339,6 +387,9 @@ export function usePilotProgress() {
 
   return {
     progress,
+    setTutorialIdea,
+    /** The tutorial idea for this org, if one has been chosen. */
+    tutorialIdeaId: (progress[tutorialIdeaKey(currentOrgId)] as string | undefined) ?? null,
     isLoading: query.isLoading,
     /** True when we have any source of truth for the unlock flags —
      *  either the query has resolved (query.data is defined, even as

@@ -922,6 +922,23 @@ export function QuickTradeIdeaCapture({
       // Pass the first trade idea ID to the callback
       const firstTradeId = data?.[0]?.id
       onSuccess?.(firstTradeId)
+      /*
+       * Announce the new idea so the pilot mission can adopt it.
+       *
+       * An event rather than a prop: this component is mounted several levels
+       * inside the capture sidebar, and threading a pilot concern up through
+       * hosts that have nothing to do with pilots would put onboarding in
+       * four files instead of one. Nothing here knows what a pilot is — the
+       * listener decides whether it cares, and ignores this entirely for a
+       * user who is not one.
+       */
+      if (firstTradeId) {
+        try {
+          window.dispatchEvent(new CustomEvent('pilot-mission:trade-idea-created', {
+            detail: { tradeIdeaId: firstTradeId },
+          }))
+        } catch { /* a telemetry-shaped signal must never break a save */ }
+      }
     },
     onError: (error: Error) => {
       // Log error for debugging (dev only)
