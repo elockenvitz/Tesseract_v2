@@ -60,15 +60,33 @@ describe('canonicalTabTarget', () => {
     const t = { id: 'x' }
     expect(canonicalTabTarget(t)).toBe(t)
   })
+
+  it('sends the legacy desktop Dashboard to the canonical one', () => {
+    expect(canonicalTabTarget(tab('dashboard', 'dashboard'))).toEqual({
+      id: 'today', type: 'today', title: 'Dashboard', data: undefined,
+    })
+  })
+
+  /**
+   * The rewrite is device-blind on purpose, and safe because `DashboardPage`
+   * already routes `today` on a phone into `renderDashboardContent()`, which
+   * returns `MobileDashboard` — the same component `dashboard` reached there.
+   * This pins the target so a future change to the alias cannot quietly send a
+   * phone somewhere `MobileDashboard` does not live.
+   */
+  it('targets the type that a phone already resolves to MobileDashboard', () => {
+    expect(LEGACY_TAB_ALIASES['dashboard'].type).toBe('today')
+    expect(LEGACY_TAB_ALIASES['dashboard'].id).toBe('today')
+  })
 })
 
 describe('migrateLegacyTabs', () => {
   it('restores a saved legacy tab as the canonical one', () => {
     const { tabs, migrated } = migrateLegacyTabs(
-      [tab('dashboard', 'dashboard'), tab('idea-generator', 'idea-generator')],
-      'dashboard',
+      [tab('lab', 'trade-lab'), tab('idea-generator', 'idea-generator')],
+      'lab',
     )
-    expect(tabs.map(t => t.type)).toEqual(['dashboard', 'ideas'])
+    expect(tabs.map(t => t.type)).toEqual(['trade-lab', 'ideas'])
     expect(migrated).toEqual(['idea-generator'])
   })
 
@@ -84,10 +102,10 @@ describe('migrateLegacyTabs', () => {
 
   it('keeps the reader ordering when the legacy tab came first', () => {
     const { tabs } = migrateLegacyTabs(
-      [tab('idea-generator', 'idea-generator'), tab('dashboard', 'dashboard')],
-      'dashboard',
+      [tab('idea-generator', 'idea-generator'), tab('lab', 'trade-lab')],
+      'lab',
     )
-    expect(tabs.map(t => t.id)).toEqual(['ideas', 'dashboard'])
+    expect(tabs.map(t => t.id)).toEqual(['ideas', 'lab'])
   })
 
   /** Otherwise the session restores with an active id no tab has. */
@@ -100,7 +118,7 @@ describe('migrateLegacyTabs', () => {
   })
 
   it('leaves an unrelated session untouched', () => {
-    const input = [tab('dashboard', 'dashboard'), tab('asset-1', 'asset')]
+    const input = [tab('lab', 'trade-lab'), tab('asset-1', 'asset')]
     const { tabs, activeTabId, migrated } = migrateLegacyTabs(input, 'asset-1')
     expect(tabs).toEqual(input)
     expect(activeTabId).toBe('asset-1')
@@ -110,5 +128,25 @@ describe('migrateLegacyTabs', () => {
   it('survives an empty or malformed session', () => {
     expect(migrateLegacyTabs([], null).tabs).toEqual([])
     expect(migrateLegacyTabs(undefined as never, undefined).tabs).toEqual([])
+  })
+
+  it('collapses a session holding both Dashboards onto the canonical one', () => {
+    const { tabs, activeTabId } = migrateLegacyTabs(
+      [tab('dashboard', 'dashboard'), tab('today', 'today'), tab('asset-1', 'asset')],
+      'dashboard',
+    )
+    expect(tabs.filter(t => t.type === 'today')).toHaveLength(1)
+    expect(tabs.map(t => t.id)).toEqual(['today', 'asset-1'])
+    expect(activeTabId).toBe('today')
+  })
+
+  /** Both retirements at once, which is the shape of a genuinely old session. */
+  it('migrates a session carrying both retired surfaces', () => {
+    const { tabs, migrated } = migrateLegacyTabs(
+      [tab('dashboard', 'dashboard'), tab('idea-generator', 'idea-generator')],
+      'idea-generator',
+    )
+    expect(tabs.map(t => t.type)).toEqual(['today', 'ideas'])
+    expect(migrated).toEqual(['dashboard', 'idea-generator'])
   })
 })

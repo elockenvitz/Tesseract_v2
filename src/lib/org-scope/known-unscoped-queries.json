@@ -84,7 +84,6 @@
   "src/lib/services/trade-reconciliation-service.ts",
   "src/lib/universeAssetMatcher.ts",
   "src/pages/CalendarPage.tsx",
-  "src/pages/DashboardPage.tsx",
   "src/pages/NotesListPage.tsx",
   "src/pages/OrganizationPage.tsx",
   "src/pages/PortfoliosListPage.tsx",

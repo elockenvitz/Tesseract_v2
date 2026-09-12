@@ -723,11 +723,11 @@ describe('the launcher names the product, not the build', () => {
     expect(header).not.toContain("title: 'Book'")
   })
 
-  it('demotes the pre-Today dashboard rather than deleting it', () => {
-    // Named as legacy where a user meets it, and still reachable.
-    expect(header).toContain('Dashboard (legacy)')
-    expect(header).toContain("type: 'dashboard'")
-    // It is no longer manufactured as a default tab anywhere.
+  it('offers no route to the pre-Today dashboard', () => {
+    // Demotion was the previous stage: named as legacy, kept in the More
+    // group. The surface behind it is retired now, so the entries are gone
+    // and there is nothing to name.
+    expect(header).not.toContain('Dashboard (legacy)')
     expect(src('pages/DashboardPage.tsx')).not.toContain("title: 'Dashboard (legacy)'")
   })
 })
@@ -810,17 +810,32 @@ describe('the canonical Dashboard is where a session begins', () => {
     expect(page).not.toContain("title: 'Dashboard (legacy)'")
   })
 
-  it('keeps the legacy dashboard built and routable', () => {
-    // Demoted, not deleted: the tab type still renders its own content.
+  it('keeps the dashboard type routable, with no desktop surface on it', () => {
+    /*
+     * The TYPE survives because a saved session or a deep link can still
+     * carry it, and because the pilot action dashboard is still hosted there
+     * pending a separate decision about the pilot programme. What is gone is
+     * the non-pilot desktop workbench and every way of asking for it.
+     */
     expect(page).toContain("activeTab.type === 'dashboard'")
     expect(page).toContain('renderDashboardContent')
-    // And the launcher offers it, named as legacy, in the MORE group --
-    // which is now the ONLY way back to it, since it is no longer injected
-    // into every session.
+    expect(page).toContain('PilotActionDashboard')
+
+    // The workbench itself, by the components only it rendered.
+    for (const gone of [
+      'DashboardFilters', 'DecisionSystem', 'ResearchWorkbench',
+      'PortfolioWorkbench', 'PortfolioGrid',
+    ]) expect(page).not.toContain(gone)
+
+    // And no way in: the launcher's More group no longer offers it.
     const header = src('components/layout/Header.tsx')
     const more = header.slice(header.indexOf('>More<'))
-    expect(more).toContain("title: 'Dashboard (legacy)'")
-    expect(more).toContain("type: 'dashboard'")
+    expect(more).not.toContain("type: 'dashboard'")
+  })
+
+  it('sends a legacy dashboard descriptor to the canonical Dashboard', () => {
+    const aliases = src('lib/tabs/legacy-tab-aliases.ts')
+    expect(aliases).toMatch(/'dashboard': \{ type: 'today', id: 'today'/)
   })
 
   it('does not force the Dashboard over a legitimately persisted tab', () => {

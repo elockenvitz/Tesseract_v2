@@ -59,6 +59,31 @@ export const LEGACY_TAB_ALIASES: Readonly<Record<string, Alias>> = Object.freeze
    * translated into something that looks equivalent.
    */
   'idea-generator': { type: 'ideas', id: 'ideas', title: 'Ideas' },
+
+  /*
+   * The legacy desktop Dashboard: a scope bar over a decision, research or
+   * portfolio workbench. Replaced by `today`, which is the same question asked
+   * through the lens shell.
+   *
+   * ── Why a global rewrite is safe for phones ─────────────────────────────
+   *
+   * This table has no idea what device it is running on, and it does not need
+   * one. `DashboardPage` already routes `today` on a phone into
+   * `renderDashboardContent()`, which returns `MobileDashboard` — the same
+   * component `dashboard` reached there. So rewriting the type preserves the
+   * mobile meaning exactly, and `MobileNavDrawer` already prefers the
+   * canonical id when it looks for home. A device-conditional migration would
+   * be machinery for a difference that does not exist.
+   *
+   * ── What stays behind ───────────────────────────────────────────────────
+   *
+   * The `dashboard` TYPE is not retired. It still has a render path, because
+   * the pilot action dashboard lives on it pending a separate decision about
+   * the pilot programme. What this removes is the ability to arrive there by
+   * navigating: no launcher entry creates it, and no restored session keeps
+   * it.
+   */
+  'dashboard': { type: 'today', id: 'today', title: 'Dashboard' },
 })
 
 export function isLegacyTabType(type: string | undefined | null): boolean {

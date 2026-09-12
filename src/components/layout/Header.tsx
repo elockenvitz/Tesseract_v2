@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun, Microscope, Scale, Landmark } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun, Microscope, Scale, Landmark } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -387,21 +387,6 @@ export function Header({
                       </div>
                     </button>
 
-                    <button
-                      onClick={() => {
-                        setShowAppMenu(false)
-                        onSearchResult({ id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', data: null })
-                      }}
-                      className="mt-1 w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    >
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-100 shrink-0 dark:bg-gray-800">
-                        <Activity className="h-5 w-5 text-gray-500" />
-                      </div>
-                      <div className="flex-1 text-left">
-                        <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Dashboard (legacy)</div>
-                        <div className="text-[11px] text-gray-500 dark:text-gray-400">The pre-Today overview</div>
-                      </div>
-                    </button>
                   </div>
 
                   {/* Secondary tiles — the pilot decision loop. Idea
@@ -539,11 +524,6 @@ export function Header({
                   </div>
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
-                      // Reachable, and only from here. It stopped being
-                      // injected into every session when the canonical
-                      // Dashboard became the landing surface, so this is now
-                      // the way back to it.
-                      { id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', icon: Activity, color: 'text-gray-500', bg: 'bg-gray-100' },
                       { id: 'priorities', title: 'Priorities', type: 'priorities', icon: Flag, color: 'text-rose-500', bg: 'bg-rose-50' },
                       { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', icon: ListTodo, color: 'text-amber-500', bg: 'bg-amber-50' },
                       { id: 'assets-list', title: 'Assets', type: 'assets-list', icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50' },
