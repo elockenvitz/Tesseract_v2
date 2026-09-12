@@ -59,10 +59,12 @@ import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
 import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
+import { CoverageSummaryBanner } from '../components/coverage/CoverageSummaryBanner'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotSeeding } from '../hooks/usePilotSeeding'
 import { usePilotEntry } from '../hooks/usePilotEntry'
 import { TAB_TYPE_TO_PILOT_FEATURE, PILOT_ACCESS_DEFAULTS } from '../lib/pilot/pilot-access'
+import { shouldHoldForPilotDecision } from '../lib/pilot/tab-gate'
 import { PilotTeaserModal } from '../components/pilot/PilotTeaserModal'
 import { PilotGraduationModal } from '../components/pilot/PilotGraduationModal'
 import { PilotTradeBookPreview } from '../components/pilot/PilotTradeBookPreview'
@@ -1281,7 +1283,7 @@ export function DashboardPage() {
                 the mission appears so nothing reflows on save. */}
             <div className="mx-auto w-full max-w-4xl space-y-2.5 p-4">
               {/*
-                Setup precedes the mission.
+                Setup precedes the mission, and then gets out of its way.
 
                 These two rendered together, so a pilot's first screen asked
                 two unrelated things at once — tell us what you follow, and
@@ -1291,24 +1293,25 @@ export function DashboardPage() {
                 Sequence, not a sixth step — nothing about the five steps or
                 about graduation changes. `usePilotEntry` decides.
 
-                Both are keyed so the prompt is the SAME instance either side
-                of the change: saving flips the stage on the tick the first row
-                lands, and an unkeyed sibling list reconciles by position,
-                which would unmount the card mid-save and take its
-                confirmation with it.
+                Afterwards the full card does NOT stay. A search box, a
+                suggestion list and a save button for a question already
+                answered was the largest thing on a screen whose subject is
+                the mission. One line says what they follow and opens the
+                Coverage app, which is reachable for them now.
               */}
-              {pilotEntry.stage === 'mission' && (
-                <PilotWelcomeBanner key="mission" onNavigate={handleSearchResult} />
+              {pilotEntry.stage === 'coverage' && (
+                <FirstSessionCoveragePrompt variant="page" dismissible={false} />
               )}
-              {/* No onward control. The reader is already on the page it
-                  would send them to. Not dismissible while it is the whole
-                  screen — "Not now" there leaves an empty home. */}
-              {pilotEntry.stage !== 'loading' && (
-                <FirstSessionCoveragePrompt
-                  key="coverage-setup"
-                  variant="page"
-                  dismissible={pilotEntry.stage === 'mission'}
-                />
+              {pilotEntry.stage === 'mission' && (
+                <>
+                  <PilotWelcomeBanner onNavigate={handleSearchResult} />
+                  <CoverageSummaryBanner
+                    onOpen={() => handleSearchResult({
+                      id: 'coverage', title: 'Coverage', type: 'coverage',
+                      data: { initialView: 'active' },
+                    })}
+                  />
+                </>
               )}
             </div>
           </div>
@@ -1573,20 +1576,23 @@ export function DashboardPage() {
   // route guard swaps to Trade Lab — that was the visible flash.
   const activeTabForGate = tabs.find(t => t.id === activeTabId)
   const activeTabFeatureForGate = activeTabForGate ? TAB_TYPE_TO_PILOT_FEATURE[activeTabForGate.type] : null
-  const activeTabHiddenForPilot = activeTabFeatureForGate
-    ? PILOT_ACCESS_DEFAULTS[activeTabFeatureForGate] === 'hidden'
-    : false
-  // "Might be a pilot" covers three cases we must hold the loader through:
-  //   1. Auth/org haven't resolved yet (!currentOrgId)
-  //   2. Pilot-flags query still in flight (isLoading)
-  //   3. We've confirmed pilot but the route guard hasn't swapped the
-  //      active tab yet — that happens in a useEffect which runs AFTER the
-  //      render that flipped isLoading to false. Without (3), there's
-  //      always exactly one render where pilotMode.isLoading=false but
-  //      activeTabId is still 'dashboard' — and that's the Dashboard
-  //      flash-in-then-flash-out the user was still seeing.
-  const mightBePilot = pilotMode.effectiveIsPilot || !currentOrgId || pilotMode.isLoading
-  const awaitingPilotDecision = mightBePilot && activeTabHiddenForPilot
+  /*
+   * The rule itself lives in `lib/pilot/tab-gate`, because it is a decision
+   * with a failure mode — reading the static defaults where the resolved map
+   * belonged held the Coverage tab on a loader forever — and a decision worth
+   * a test is worth being a function.
+   */
+  const awaitingPilotDecision = shouldHoldForPilotDecision({
+    orgKnown: !!currentOrgId,
+    pilotLoading: pilotMode.isLoading,
+    isPilot: pilotMode.effectiveIsPilot,
+    hiddenByDefaults: activeTabFeatureForGate
+      ? PILOT_ACCESS_DEFAULTS[activeTabFeatureForGate] === 'hidden'
+      : false,
+    hiddenForThisPilot: activeTabFeatureForGate
+      ? pilotMode.accessFor(activeTabFeatureForGate) === 'hidden'
+      : false,
+  })
 
   // Boot-loader handoff. The persistent #tesseract-boot-loader paints
   // the cold-boot sequence (auth → org → pilot decision) without any

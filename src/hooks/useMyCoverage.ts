@@ -191,7 +191,7 @@ export function useMyCoverage(): MyCoverageState & MyCoverageActions {
  * and a caller that treats "not loaded yet" as "no coverage" would show the
  * setup surface for a frame to somebody who finished it last week.
  */
-export function useHasCoverage(): { hasCoverage: boolean; isLoading: boolean } {
+export function useHasCoverage(): { hasCoverage: boolean; count: number; isLoading: boolean } {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
   const userId = user?.id ?? null
@@ -204,8 +204,11 @@ export function useHasCoverage(): { hasCoverage: boolean; isLoading: boolean } {
     queryFn: () => fetchMyCoverage(orgId),
   })
 
+  const count = query.data?.length ?? 0
+
   return {
-    hasCoverage: (query.data?.length ?? 0) > 0,
+    hasCoverage: count > 0,
+    count,
     // No org yet is not an answer about coverage, and the query is disabled in
     // that state rather than pending — so say so explicitly.
     isLoading: query.isLoading || !userId || !orgId,

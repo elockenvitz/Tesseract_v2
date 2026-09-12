@@ -111,19 +111,21 @@ describe('both homes follow the sequence', () => {
     ['desktop', 'pages/DashboardPage.tsx'],
     ['mobile', 'components/mobile/MobilePilotHome.tsx'],
   ])('%s makes the setup card undismissable while it is the whole screen', (_name, file) => {
-    expect(src(file)).toMatch(/dismissible=\{[a-zA-Z.]*stage === 'mission'\}/)
+    expect(src(file)).toContain('dismissible={false}')
   })
 
   /**
-   * Saving flips the stage on the tick the first row lands. An unkeyed sibling
-   * list reconciles by position, which would unmount the card mid-save and
-   * take its confirmation with it.
+   * The full card does not stay once the question is answered. A search box, a
+   * suggestion list and a save button for something already decided was the
+   * largest thing on a screen whose subject is the mission.
    */
   it.each([
     ['desktop', 'pages/DashboardPage.tsx'],
     ['mobile', 'components/mobile/MobilePilotHome.tsx'],
-  ])('%s keys the setup card so it survives the stage change', (_name, file) => {
-    expect(src(file)).toContain('key="coverage-setup"')
+  ])('%s shows the card only during setup, and one line after', (_name, file) => {
+    const page = src(file)
+    expect(page).toMatch(/stage === 'coverage' && \(\s*<FirstSessionCoveragePrompt/)
+    expect(page).toContain('<CoverageSummaryBanner')
   })
 })
 
