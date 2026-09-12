@@ -63,6 +63,12 @@ export function Header({
   const { user, signOut } = useAuth()
   const { hasUnreadNotifications, unreadCount } = useNotifications()
   const { currentOrg, userOrgs, switchOrg, isLoading } = useOrganization()
+  /*
+   * Openable when there is a choice to make, or when no workspace is
+   * active. One organization that is already current has nothing to
+   * switch to; one that nobody is in still has to be enterable.
+   */
+  const canOpenOrgSwitcher = userOrgs.length > 1 || !currentOrg
 
   // Preload every org logo as soon as the user-orgs query resolves, so the
   // first time the dropdown opens the browser already has the images in
@@ -654,38 +660,65 @@ export function Header({
             {/* Divider + Org Switcher. Hidden on phones: the drawer carries
                 the org name and switcher, which frees the top bar for the
                 controls that have to be one tap away. */}
-            {currentOrg && (
+            {/*
+              Shown whenever the reader belongs to an organization — NOT only
+              when the current one resolves.
+
+              This was gated on `currentOrg`, which is `userOrgs.find(o => o.id
+              === currentOrgId)`. So the moment the durable current org stopped
+              naming a workspace in the list — it was deleted, the membership
+              list is a beat behind, or the heal decision handed back null
+              because several remain and the reader must pick — the entire
+              switcher disappeared. The one control that can fix a bad current
+              org vanished exactly when it was the only thing needed, and a
+              newly provisioned org had nowhere to be selected from.
+
+              The dropdown also required two or more organizations, which is
+              right when one of them is already active and wrong when none is:
+              a single workspace nobody is in still has to be enterable.
+            */}
+            {userOrgs.length > 0 && (
               <>
               <div className="hidden md:block h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1.5 md:mx-3 flex-shrink-0" />
               <div className="hidden md:block relative" ref={orgSwitcherRef}>
                 <button
-                  onClick={() => { if (userOrgs.length > 1) setShowOrgSwitcher(!showOrgSwitcher) }}
+                  data-slot="org-switcher-trigger"
+                  onClick={() => { if (canOpenOrgSwitcher) setShowOrgSwitcher(!showOrgSwitcher) }}
                   className={clsx(
                     'flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors',
-                    userOrgs.length > 1
+                    canOpenOrgSwitcher
                       ? 'hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer'
                       : 'cursor-default'
                   )}
-                  aria-label="Switch organization"
-                  title={userOrgs.length > 1 ? 'Switch organization' : currentOrg.name}
+                  aria-label={currentOrg ? 'Switch organization' : 'Choose organization'}
+                  title={canOpenOrgSwitcher ? 'Switch organization' : currentOrg?.name}
                 >
-                  <span className="font-semibold text-sm md:text-base text-gray-800 dark:text-gray-200 max-w-[104px] md:max-w-[200px] truncate">
-                    {currentOrg.name}
+                  <span className={clsx(
+                    'font-semibold text-sm md:text-base max-w-[104px] md:max-w-[200px] truncate',
+                    currentOrg
+                      ? 'text-gray-800 dark:text-gray-200'
+                      : 'text-amber-700 dark:text-amber-400',
+                  )}>
+                    {/* Says what is true. A reader whose workspace is gone is
+                        not in an unnamed one; they are in none. */}
+                    {currentOrg?.name ?? 'Choose workspace'}
                   </span>
-                  {!!currentOrg.settings?.pilot_mode && (
+                  {!!currentOrg?.settings?.pilot_mode && (
                     <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded">
                       Pilot
                     </span>
                   )}
-                  {userOrgs.length > 1 && (
+                  {canOpenOrgSwitcher && (
                     <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                   )}
                 </button>
 
-                {showOrgSwitcher && userOrgs.length > 1 && (
+                {showOrgSwitcher && canOpenOrgSwitcher && (
                   <div className="absolute left-0 top-full mt-1 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-50">
                     <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Switch Organization</p>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                        {currentOrg ? 'Switch Organization' : 'Choose Organization'}
+                      </p>
                     </div>
                     {userOrgs.map((org) => (
                       <button
@@ -700,7 +733,7 @@ export function Header({
                         }}
                         className={clsx(
                           'w-full flex items-center space-x-3 px-3 py-2.5 text-sm transition-colors text-left',
-                          org.id === currentOrg.id
+                          org.id === currentOrg?.id
                             ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
                             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                         )}
@@ -719,7 +752,7 @@ export function Header({
                           </div>
                         )}
                         <span className="font-medium truncate">{org.name}</span>
-                        {org.id === currentOrg.id && (
+                        {org.id === currentOrg?.id && (
                           <span className="ml-auto text-indigo-500 text-xs">Active</span>
                         )}
                       </button>

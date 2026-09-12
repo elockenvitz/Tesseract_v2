@@ -109,7 +109,15 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
       return orgs
     },
     enabled: !!effectiveUserId,
-    staleTime: 10 * 60 * 1000, // 10 min — org list rarely changes
+    /*
+     * "Org list rarely changes" was a ten-minute staleTime, and it is true
+     * right up until somebody provisions one. The Ops portal invalidates this
+     * key, which covers creating an org in the same tab — and not creating it
+     * in another one, or in another window, which is how it is actually done.
+     * Coming back to the tab is the moment to ask again.
+     */
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
   })
 
   /*

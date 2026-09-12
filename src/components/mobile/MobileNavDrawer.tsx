@@ -43,6 +43,14 @@ export function MobileNavDrawer({
   onTabClose,
 }: MobileNavDrawerProps) {
   const { currentOrg, userOrgs, switchOrg } = useOrganization()
+  /*
+   * Openable when there is a choice to make, or when no workspace is
+   * active. One organization that is already current has nothing to switch
+   * to; one that nobody is in still has to be enterable — which is the
+   * case after the workspace you were in is deleted, and the case where a
+   * newly provisioned one is the only way forward.
+   */
+  const canOpenOrgs = userOrgs.length > 1 || (userOrgs.length > 0 && !currentOrg)
   const [showOrgs, setShowOrgs] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -149,16 +157,23 @@ export function MobileNavDrawer({
           <TesseractLogo size={32} />
           <button
             type="button"
-            onClick={() => userOrgs.length > 1 && setShowOrgs(v => !v)}
+            onClick={() => canOpenOrgs && setShowOrgs(v => !v)}
             className="flex-1 min-w-0 flex items-center gap-1 text-left no-touch-target"
             aria-expanded={showOrgs}
-            aria-haspopup={userOrgs.length > 1}
-            disabled={userOrgs.length <= 1}
+            aria-haspopup={canOpenOrgs}
+            disabled={!canOpenOrgs}
           >
-            <span className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-              {currentOrg?.name ?? 'Tesseract'}
+            {/* Says what is true. A reader whose workspace is gone is not
+                in one called Tesseract; they are in none. */}
+            <span className={clsx(
+              'text-sm font-semibold truncate',
+              currentOrg
+                ? 'text-gray-900 dark:text-white'
+                : 'text-amber-700 dark:text-amber-400',
+            )}>
+              {currentOrg?.name ?? (userOrgs.length > 0 ? 'Choose workspace' : 'Tesseract')}
             </span>
-            {userOrgs.length > 1 && (
+            {canOpenOrgs && (
               <ChevronRight
                 className={clsx(
                   'h-4 w-4 shrink-0 text-gray-400 transition-transform',
@@ -207,7 +222,7 @@ export function MobileNavDrawer({
         */}
         {/* Switching workspace reloads, so it sits above navigation rather
             than among it — it changes what every destination below means. */}
-        {showOrgs && userOrgs.length > 1 && (
+        {showOrgs && canOpenOrgs && (
           // Bounded and scrollable: it is fixed chrome now, and a long list of
           // workspaces must not push search and Home off a short screen.
           <div className="flex-shrink-0 max-h-viewport-30 overflow-y-auto overscroll-contain border-b border-gray-200 dark:border-gray-700 py-1">
