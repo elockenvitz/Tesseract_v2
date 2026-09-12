@@ -23,15 +23,17 @@ import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-teleme
 
 interface PilotTradeLabIntroBannerProps {
   /**
-   * Opens the canonical ideas and recommendations panel.
+   * Which step is being taught, or null when nothing is.
    *
-   * The step's whole difficulty was finding the thing it names, so the step
-   * offers it. Same panel the toolbar control opens; nothing here duplicates
-   * a route.
+   * The banner used to carry its own recommendations button, which put a
+   * second large control for the same action one line above the one in the
+   * toolbar. The reader had two things to choose between for one job.
+   *
+   * So the tutorial explains and the app control acts: this reports which
+   * step is current, the surface points at its own control for as long as the
+   * step needs it, and there is one place to press.
    */
-  onOpenIdeas?: () => void
-  /** How many ideas and recommendations are waiting, for the CTA. */
-  ideasCount?: number
+  onCurrentStepChange?: (step: 1 | 2 | 3 | null) => void
   userId: string
   /** Active org id, used to scope the banner state per pilot client. */
   orgId?: string | null
@@ -61,7 +63,7 @@ function writeFlag(userId: string, orgId: string | null | undefined, suffix: str
   try { localStorage.setItem(flagKey(userId, orgId, suffix), '1') } catch { /* ignore */ }
 }
 
-export function PilotTradeLabIntroBanner({ userId, orgId, onOpenIdeas, ideasCount = 0 }: PilotTradeLabIntroBannerProps) {
+export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange }: PilotTradeLabIntroBannerProps) {
   const [dismissed, setDismissed] = useState<boolean>(() => readFlag(userId, orgId, DISMISS))
   const [step1, setStep1] = useState<boolean>(() => readFlag(userId, orgId, STEP1))
   const [step2, setStep2] = useState<boolean>(() => readFlag(userId, orgId, STEP2))
@@ -114,6 +116,18 @@ export function PilotTradeLabIntroBanner({ userId, orgId, onOpenIdeas, ideasCoun
     }
   }, [markStep])
 
+  /*
+   * Tell the surface which step is being taught, so it can point at its own
+   * control instead of this module growing one. Null once the banner has
+   * nothing left to say, which is what takes the emphasis away again.
+   */
+  useEffect(() => {
+    if (!onCurrentStepChange) return
+    const step = dismissed ? null : !step1 ? 1 : !step2 ? 2 : !step3 ? 3 : null
+    onCurrentStepChange(step)
+    return () => onCurrentStepChange(null)
+  }, [onCurrentStepChange, dismissed, step1, step2, step3])
+
   // Auto-dismiss when all three actions are done.
   useEffect(() => {
     if (!dismissed && step1 && step2 && step3) {
@@ -136,16 +150,11 @@ export function PilotTradeLabIntroBanner({ userId, orgId, onOpenIdeas, ideasCoun
         {
           n: 1,
           title: 'Review a recommendation',
-          /* It said "on the left", which is a fact about a desktop layout and
-             not about the product. The control has a name on both shells now,
-             so the step names the control. */
-          hint: 'Open Ideas & recommendations, then check one to bring it into the holdings table.',
+          /* One line, naming the control rather than a side of a desktop
+             screen. It carried a button too, which is what put two large
+             controls for one action on top of each other. */
+          hint: 'Open Ideas & recommendations and add one to the simulation.',
           done: step1,
-          onClick: onOpenIdeas,
-          /* The step opens the thing it names, so its control says that
-             thing's name — otherwise the reader holds "Review a
-             recommendation" and "Ideas & recommendations" as two ideas. */
-          ctaLabel: ideasCount > 0 ? `Ideas & recommendations · ${ideasCount}` : 'Ideas & recommendations',
         },
         {
           n: 2,

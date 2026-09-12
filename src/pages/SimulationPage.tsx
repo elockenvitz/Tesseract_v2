@@ -403,6 +403,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
      button inside the table; the control that opens it now lives in the
      toolbar, so the state comes up here with it. */
   const [mobileAddOpen, setMobileAddOpen] = useState(false)
+  /* Which Trade Lab basics step is being taught, so the toolbar can
+     emphasise its own control rather than the tutorial growing one. */
+  const [labBasicsStep, setLabBasicsStep] = useState<1 | 2 | 3 | null>(null)
 
   // Suggestion review panel state (owner-side)
   const [suggestionReviewOpen, setSuggestionReviewOpen] = useState(false)
@@ -5365,8 +5368,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           <PilotTradeLabIntroBanner
             userId={user.id}
             orgId={currentOrgId}
-            onOpenIdeas={() => setShowIdeasPanel(true)}
-            ideasCount={filteredItems.proposals.length + filteredItems.ideas.length}
+            onCurrentStepChange={setLabBasicsStep}
           />
         )}
 
@@ -5399,7 +5401,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                    screen rather than as which book you are in. It keeps the
                    dropdown and the truncation and gives the row back. */
                 className={clsx(
-                  "flex items-center gap-1.5 px-2 py-1 text-sm border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors max-w-[62vw] sm:max-w-none sm:px-3 sm:py-1.5 sm:w-auto sm:min-w-[200px]",
+                  "flex items-center gap-1 px-2 py-1 text-sm border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors max-w-[40vw] sm:max-w-none sm:gap-2 sm:px-3 sm:py-1.5 sm:w-auto sm:min-w-[200px]",
                   portfolioDropdownOpen
                     ? "border-primary-500 ring-2 ring-primary-500/20"
                     : "border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
@@ -5503,13 +5505,22 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             */}
             {isMobileViewport && !isSharedView && selectedPortfolioId && selectedViewType !== 'lists' && (
               <>
+                {/* The one recommendations control. While Trade Lab basics
+                    is teaching step one it is also the thing that step points
+                    at, so it wears the emphasis for exactly that long. */}
                 <button
                   type="button"
                   data-slot="mobile-lab-ideas"
+                  data-emphasised={labBasicsStep === 1 ? 'true' : 'false'}
                   onClick={() => setShowIdeasPanel(true)}
-                  className="shrink-0 h-9 inline-flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 px-2 text-[12px] font-medium text-gray-600 dark:text-gray-300"
+                  className={clsx(
+                    'shrink-0 h-9 inline-flex items-center gap-1 rounded-lg border px-2 text-[12px] font-medium',
+                    labBasicsStep === 1
+                      ? 'border-amber-400 bg-amber-50 text-amber-800 ring-2 ring-amber-300/60 dark:border-amber-600 dark:bg-amber-900/25 dark:text-amber-200'
+                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300',
+                  )}
                 >
-                  <Layers className="h-3.5 w-3.5 text-gray-400" />
+                  <Layers className={clsx('h-3.5 w-3.5', labBasicsStep === 1 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-400')} />
                   Ideas
                   {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
                     <span className="rounded-full bg-primary-100 px-1 text-[11px] font-semibold tabular-nums text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
@@ -5524,9 +5535,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     onClick={() => setMobileAddOpen(true)}
                     aria-label="Add trade"
                     title="Add trade"
-                    className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300"
+                    className="shrink-0 h-9 inline-flex items-center gap-0.5 rounded-lg border border-gray-200 dark:border-gray-700 px-2 text-[12px] font-medium text-gray-600 dark:text-gray-300"
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus className="h-3.5 w-3.5" />
+                    Add
                   </button>
                 )}
               </>
@@ -7575,20 +7587,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         fitContent
       >
         <div className="px-3 pb-3 space-y-1">
-          <button
-            type="button"
-            onClick={() => { setMobileLabMenuOpen(false); setShowIdeasPanel(true) }}
-            className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800 no-touch-target"
-          >
-            <Layers className="h-4 w-4 text-gray-400" />
-            Trade ideas
-            {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
-              <span className="ml-auto text-[11px] tabular-nums text-gray-400">
-                {filteredItems.proposals.length + filteredItems.ideas.length}
-              </span>
-            )}
-          </button>
-
+          {/* Trade ideas used to sit here as well, which was the same
+              action in two places — and this was the hidden one. The row
+              above carries it now, so the sheet is only what the row has no
+              space for. */}
           <button
             type="button"
             onClick={() => { setMobileLabMenuOpen(false); setSelectedViewType('private') }}

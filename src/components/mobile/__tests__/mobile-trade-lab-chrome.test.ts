@@ -36,9 +36,9 @@ describe('recommendations have a named control', () => {
    */
   it('is labelled, not an icon', () => {
     expect(page).toContain('data-slot="mobile-lab-ideas"')
-    const row = page.slice(page.indexOf('data-slot="mobile-lab-ideas"'))
-    expect(row.slice(0, 500)).toContain('Ideas')
-    expect(row.slice(0, 500)).toContain('<Layers')
+    const row = page.slice(page.indexOf('data-slot="mobile-lab-ideas"'), page.indexOf('data-slot="mobile-lab-add"'))
+    expect(row).toContain('Ideas')
+    expect(row).toContain('<Layers')
   })
 
   /** The canonical panel, the same one the desktop rail opens. */
@@ -99,12 +99,6 @@ describe('the local Trade Lab tutorial', () => {
     expect(hints[0]).toContain('Open Ideas & recommendations')
   })
 
-  /** The step's whole difficulty was finding the thing it names. */
-  it('can open what it names', () => {
-    expect(banner).toContain('onClick: onOpenIdeas')
-    expect(page).toContain('onOpenIdeas={() => setShowIdeasPanel(true)}')
-  })
-
   /** Completion is untouched: the same three flags, read the same way. */
   it('changes no completion condition', () => {
     for (const flag of ['step1', 'step2', 'step3']) expect(banner).toContain(`done: ${flag}`)
@@ -115,7 +109,7 @@ describe('the portfolio identity is compact', () => {
   it('no longer claims a 200px floor on a phone', () => {
     const trigger = page.slice(page.indexOf('onClick={() => setPortfolioDropdownOpen'))
     const classes = trigger.slice(0, 800)
-    expect(classes).toContain('max-w-[62vw]')
+    expect(classes).toContain('max-w-[40vw]')
     expect(classes).toContain('sm:min-w-[200px]')
     expect(classes).not.toContain('w-full sm:w-auto sm:min-w-[200px]')
   })
@@ -169,15 +163,30 @@ describe('the local tutorial', () => {
   })
 
   /**
-   * The step opens the thing it names, so its control says that thing's name.
-   * Otherwise the reader holds "Review a recommendation" and "Ideas &
-   * recommendations" as two separate ideas.
+   * The tutorial explains and the app control acts.
+   *
+   * It carried its own recommendations button, which put a second large
+   * control for the same action one line above the one in the toolbar — the
+   * reader had two things to choose between for one job. It points instead,
+   * and the surface emphasises its own control for as long as the step needs.
    */
-  it('carries the loud recommendations control itself', () => {
-    expect(banner).toContain('ctaLabel:')
-    expect(banner).toContain('Ideas & recommendations · ${ideasCount}')
-    expect(shell).toContain('ctaLabel?: string')
-    expect(shell).toContain('data-slot="pilot-steps-cta"')
+  it('carries no control of its own', () => {
+    const steps = banner.slice(banner.indexOf('steps={['))
+    expect(steps).not.toContain('onClick:')
+    expect(steps).not.toContain('ctaLabel')
+    expect(banner).not.toContain('onOpenIdeas')
+  })
+
+  it('points at the control that exists', () => {
+    const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
+    expect(hints[0]).toBe('Open Ideas & recommendations and add one to the simulation.')
+  })
+
+  /** Reported from the flags the banner already watches, not a second model. */
+  it('tells the surface which step is being taught', () => {
+    expect(banner).toContain('onCurrentStepChange')
+    expect(banner).toContain('const step = dismissed ? null : !step1 ? 1 : !step2 ? 2 : !step3 ? 3 : null')
+    expect(page).toContain('onCurrentStepChange={setLabBasicsStep}')
   })
 
   /**
@@ -192,5 +201,65 @@ describe('the local tutorial', () => {
   /** Completion is untouched: the same three flags, read the same way. */
   it('changes no completion fact', () => {
     for (const flag of ['step1', 'step2', 'step3']) expect(banner).toContain(`done: ${flag}`)
+  })
+})
+
+/*
+ * ── One control, emphasised while it is the answer ─────────────────────────
+ *
+ * Two large recommendation controls stood one line apart: the tutorial's and
+ * the toolbar's. There is one now, and the tutorial makes it obvious rather
+ * than competing with it.
+ */
+describe('the single recommendations control', () => {
+  it('wears the emphasis only while step one is being taught', () => {
+    const row = page.slice(page.indexOf('data-slot="mobile-lab-ideas"'))
+    const control = row.slice(0, 1400)
+    expect(control).toContain("data-emphasised={labBasicsStep === 1 ? 'true' : 'false'}")
+    expect(control).toContain('ring-2 ring-amber-300/60')
+    // Still the canonical path, emphasised or not.
+    expect(control).toContain('setShowIdeasPanel(true)')
+  })
+
+  /** The same action in two places, and this was the hidden one. */
+  it('is not repeated inside the overflow sheet', () => {
+    const sheet = page.slice(page.indexOf('open={mobileLabMenuOpen}'))
+    // The comment explaining the removal still says the words; the control
+    // that opened the panel is what must be gone.
+    expect(sheet.slice(0, 3000)).not.toContain('setShowIdeasPanel(true)')
+  })
+
+  /**
+   * What the sheet still holds is what the row has no space for, and none of
+   * it is reachable elsewhere on a phone.
+   */
+  it('leaves the sheet holding only what the row cannot', () => {
+    const sheet = page.slice(page.indexOf('open={mobileLabMenuOpen}'))
+    const body = sheet.slice(0, 3000)
+    for (const entry of ['Workspace', 'Snapshots', 'Save snapshot']) {
+      expect(body).toContain(entry)
+    }
+  })
+})
+
+describe('the utility row has room', () => {
+  it('gives the controls back the width the portfolio was taking', () => {
+    const trigger = page.slice(page.indexOf('onClick={() => setPortfolioDropdownOpen'))
+    expect(trigger.slice(0, 800)).toContain('max-w-[40vw]')
+  })
+
+  /**
+   * A bare glyph beside a holdings table is a control with no name. Matched
+   * on the visible child rather than the whole element, because the aria
+   * label contains the word too and would pass an unlabelled button.
+   */
+  it('says what Add does, visibly', () => {
+    const add = page.slice(page.indexOf('data-slot="mobile-lab-add"'))
+    const button = add.slice(0, add.indexOf('</button>'))
+    // A line of its own that is just the word: the aria label contains it
+    // too, and matching anywhere in the element would pass a bare glyph.
+    const lines = button.split('\n').map(l => l.trim())
+    expect(lines).toContain('Add')
+    expect(button).toContain('aria-label="Add trade"')
   })
 })

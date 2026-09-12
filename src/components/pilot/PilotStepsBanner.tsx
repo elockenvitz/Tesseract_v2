@@ -37,14 +37,6 @@ export interface PilotStep {
   done?: boolean
   /** Steps that are also the way to perform them. Optional by design. */
   onClick?: () => void
-  /**
-   * What the step's own control says, when the step IS the control.
-   *
-   * A step that opens the thing it names should say the thing's name, so the
-   * reader is not asked to hold "Review a recommendation" and "Ideas &
-   * recommendations" as the same idea. Falls back to a chevron.
-   */
-  ctaLabel?: string
 }
 
 /**
@@ -164,14 +156,15 @@ export function PilotStepsBanner({
             type="button"
             data-slot="pilot-steps-cta"
             onClick={current.onClick}
+            /* A real touch target rather than a 24px glyph, and nothing
+               more: a step that needs a named button is a step whose surface
+               should be offering one. */
             className={clsx(
-              'shrink-0 inline-flex items-center gap-1 rounded-lg font-semibold text-white no-touch-target',
-              current.ctaLabel ? 'h-9 px-2.5 text-[12px]' : 'h-9 w-9 justify-center',
+              'shrink-0 h-9 w-9 inline-flex items-center justify-center rounded-lg text-white no-touch-target',
               t.action,
             )}
-            aria-label={current.ctaLabel ?? current.title}
+            aria-label={current.title}
           >
-            {current.ctaLabel}
             <ArrowRight className="h-4 w-4 shrink-0" />
           </button>
         )}
