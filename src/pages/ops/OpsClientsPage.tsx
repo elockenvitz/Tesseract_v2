@@ -156,6 +156,17 @@ export function OpsClientsPage() {
       }
 
       queryClient.invalidateQueries({ queryKey: ['ops-clients'] })
+      /*
+       * The operator's own membership list is a ten-minute cache, so a new org
+       * they just provisioned would not appear in the header selector — and
+       * the selector is the only canonical way into it, because provisioning
+       * deliberately does not switch anybody's active org.
+       *
+       * Refreshing the list is NOT a switch. It makes the org selectable; the
+       * reader still chooses it, and `switchOrg` still writes
+       * `current_organization_id` before any org-scoped query runs.
+       */
+      queryClient.invalidateQueries({ queryKey: ['user-organizations'] })
       setShowProvision(false)
       setForm({ name: '', slug: '', email: '', isPilot: true })
       if (data?.organization_id) navigate(`/ops/clients/${data.organization_id}`)

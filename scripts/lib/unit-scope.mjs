@@ -98,6 +98,9 @@ export const GATED_DIRS = [
   // The pilot onboarding model: four steps, two of them marks and two of them
   // rows. It decides what a new pilot is shown, so it is gated on arrival.
   'src/lib/pilot',
+  // The current-org heal decides whether a durable tenant pointer may be
+  // rewritten. Getting it wrong stranded two live workspaces in another org.
+  'src/lib/org',
   'src/lib/notifications',
   'src/components/notifications',
   'src/lib/capture',
