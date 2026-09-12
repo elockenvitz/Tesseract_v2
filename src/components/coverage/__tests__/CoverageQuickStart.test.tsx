@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -166,7 +166,10 @@ describe('CoverageQuickStart — suggestions are never silently saved', () => {
   it('offers holdings as candidates', async () => {
     renderWithQuery(<CoverageQuickStart />)
     expect(await screen.findByText('HOLD')).toBeInTheDocument()
-    expect(screen.getByText('In your book')).toBeInTheDocument()
+    /* Renamed from "In your book": the query behind it reads the workspace's
+       holdings with no portfolio or user filter, so it is not the reader's own
+       book and must not claim to be. */
+    expect(screen.getByText('In holdings')).toBeInTheDocument()
   })
 
   /**
@@ -217,7 +220,13 @@ describe('CoverageQuickStart — no governed fields are reachable', () => {
     for (const forbidden of ['Lead Analyst', 'Role', 'Team', 'Primary', 'Secondary']) {
       expect(text).not.toContain(forbidden)
     }
-    // One text input only — the search box.
+    /* No text input at all on the holdings source, and exactly one — the
+       search box — once the reader asks for companies. The point is unchanged:
+       there is nowhere here to type a role, a team or an analyst name. */
+    expect(container.querySelectorAll('input')).toHaveLength(0)
+    expect(container.querySelectorAll('select')).toHaveLength(0)
+
+    fireEvent.click(screen.getByText('Companies'))
     expect(container.querySelectorAll('input')).toHaveLength(1)
     expect(container.querySelectorAll('select')).toHaveLength(0)
   })

@@ -7,6 +7,10 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useMyCoverage } from '../../hooks/useMyCoverage'
+import {
+  mergeCandidates, newFromSector, removeCandidate, toggleCandidate,
+  type CoverageCandidate,
+} from '../../lib/coverage/quick-start-selection'
 
 /**
  * "What do you follow?" — asked once, answerable in under a minute, on either
@@ -75,20 +79,42 @@ interface CoverageQuickStartProps {
   className?: string
 }
 
-interface AssetOption {
-  id: string
-  symbol: string
-  company_name: string | null
-  sector: string | null
-  /** Why this name is being offered, shown to the reader. */
-  reason?: 'holding' | 'sector' | 'team'
-}
+type AssetOption = CoverageCandidate
 
 const REASON_LABEL: Record<NonNullable<AssetOption['reason']>, string> = {
-  holding: 'In your book',
+  /*
+   * "In your book" was wrong and is now "In holdings".
+   *
+   * The query behind it reads `portfolio_holdings` with no portfolio or user
+   * filter — it is whatever RLS returns for the workspace, not this reader's
+   * book. Naming it after a thing it does not represent is how somebody ends
+   * up trusting it as their own position list.
+   */
+  holding: 'In holdings',
   sector: 'Your sector',
   team: 'Your team covers',
+  search: '',
 }
+
+/** Which source the reader is picking from. */
+type Source = 'holdings' | 'sectors' | 'companies'
+
+const SOURCE_LABEL: Record<Source, string> = {
+  holdings: 'Current holdings',
+  sectors: 'Sectors',
+  companies: 'Companies',
+}
+
+/*
+ * Capped, and the reader sees exactly what they got.
+ *
+ * A sector is not a rule here — the coverage model has no rule lane and
+ * inventing one would be a migration — so pressing a sector stages its current
+ * constituents as ordinary names. The cap keeps "Financials" from silently
+ * staging four hundred rows, and everything staged is listed and individually
+ * removable before anything is written.
+ */
+const SECTOR_CONSTITUENT_LIMIT = 50
 
 export function CoverageQuickStart({
   variant = 'card',
@@ -102,6 +128,7 @@ export function CoverageQuickStart({
   const { currentOrgId } = useOrganization()
   const coverage = useMyCoverage()
 
+  const [source, setSource] = useState<Source>('holdings')
   const [query, setQuery] = useState('')
   /** Staged, not saved. Nothing reaches the database until Save. */
   const [selected, setSelected] = useState<Map<string, AssetOption>>(new Map())
@@ -201,21 +228,90 @@ export function CoverageQuickStart({
     },
   })
 
-  const options = query.trim() ? searchResults : suggestions
-  const listLoading = query.trim() ? searching : suggestionsLoading
+  /**
+   * The sectors that exist in the catalogue.
+   *
+   * `assets` is a shared catalogue and PostgREST has no DISTINCT, so this is a
+   * capped scan of one column, deduped here and cached for the session. It is
+   * deliberately not derived from holdings: a reader following a sector they
+   * hold nothing in is the normal case, and offering only what is already
+   * owned would make this a second holdings list.
+   */
+  const { data: sectors = [], isLoading: sectorsLoading } = useQuery({
+    queryKey: ['coverage-quick-start-sectors'],
+    enabled: source === 'sectors',
+    staleTime: 30 * 60_000,
+    queryFn: async (): Promise<string[]> => {
+      const { data, error } = await supabase
+        .from('assets')
+        .select('sector')
+        .not('sector', 'is', null)
+        .limit(2000)
+      if (error) throw error
+      const seen = new Set<string>()
+      for (const row of (data ?? []) as { sector: string | null }[]) {
+        const value = row.sector?.trim()
+        if (value) seen.add(value)
+      }
+      return [...seen].sort((a, b) => a.localeCompare(b))
+    },
+  })
+
+  /**
+   * The sector the reader is looking at, and the names in it NOW.
+   *
+   * Largest first, because a sector's constituents are not equally worth
+   * following and a reader scanning fifty tickers needs the ones that matter
+   * at the top.
+   */
+  const [openSector, setOpenSector] = useState<string | null>(null)
+  const { data: constituents = [], isFetching: constituentsLoading } = useQuery({
+    queryKey: ['coverage-quick-start-constituents', openSector],
+    enabled: !!openSector,
+    staleTime: 5 * 60_000,
+    queryFn: async (): Promise<AssetOption[]> => {
+      const { data, error } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name, sector')
+        .eq('sector', openSector!)
+        .order('market_cap', { ascending: false, nullsFirst: false })
+        .limit(SECTOR_CONSTITUENT_LIMIT)
+      if (error) throw error
+      return ((data ?? []) as AssetOption[]).map(a => ({
+        ...a, reason: 'sector' as const, viaSector: openSector!,
+      }))
+    },
+  })
+
+  /*
+   * One list, three sources. Companies is the existing search; holdings is the
+   * existing suggestion set; sectors shows constituents once one is opened.
+   */
+  const options = source === 'companies'
+    ? (query.trim() ? searchResults : [])
+    : source === 'sectors'
+      ? constituents
+      : suggestions
+  const listLoading = source === 'companies'
+    ? searching
+    : source === 'sectors'
+      ? constituentsLoading
+      : suggestionsLoading
 
   /** Already covered — shown as done, never re-savable. */
   const alreadyCovered = coverage.assetIds
 
   const toggle = (asset: AssetOption) => {
-    if (alreadyCovered.has(asset.id)) return
     setError(null)
-    setSelected(prev => {
-      const next = new Map(prev)
-      if (next.has(asset.id)) next.delete(asset.id)
-      else next.set(asset.id, asset)
-      return next
-    })
+    setSelected(prev => toggleCandidate(prev, asset, alreadyCovered))
+  }
+
+  /* Everything the open sector would add that is not already staged or
+     covered. The merge rule refuses duplicates, so pressing it twice is
+     harmless and pressing it after searching the same name changes nothing. */
+  const addSector = () => {
+    setError(null)
+    setSelected(prev => mergeCandidates(prev, constituents, alreadyCovered))
   }
 
   const save = async () => {
@@ -320,20 +416,95 @@ export function CoverageQuickStart({
         )}
       </div>
 
-      <div className="relative mb-2">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-        <input
-          data-slot="coverage-quick-start-search"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search a ticker or company"
-          className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-8 pr-3 text-sm placeholder:text-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
-        />
+      {/* Three ways in, one selection out. A reader who thinks in sectors, one
+          who thinks in positions and one who has a name in mind all reach the
+          same staged list. */}
+      <div data-slot="coverage-quick-start-sources" className="mb-2 flex items-center gap-1">
+        {(['holdings', 'sectors', 'companies'] as Source[]).map(key => (
+          <button
+            key={key}
+            data-slot={`coverage-source-${key}`}
+            data-active={source === key ? 'true' : 'false'}
+            onClick={() => { setSource(key); setOpenSector(null) }}
+            className={clsx(
+              'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
+              source === key
+                ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+                : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700/50',
+            )}
+          >
+            {SOURCE_LABEL[key]}
+          </button>
+        ))}
       </div>
 
-      {!query.trim() && suggestions.length > 0 && (
+      {source === 'companies' && (
+        <div className="relative mb-2">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            data-slot="coverage-quick-start-search"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search a ticker or company"
+            className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-8 pr-3 text-sm placeholder:text-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+          />
+        </div>
+      )}
+
+      {/* Sector picking, until one is opened. Then its constituents render in
+          the ordinary list below and this becomes the way back. */}
+      {source === 'sectors' && (
+        <div className="mb-2">
+          {openSector ? (
+            <div className="flex items-center justify-between gap-2">
+              <button
+                onClick={() => setOpenSector(null)}
+                className="text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400"
+              >
+                All sectors
+              </button>
+              <button
+                data-slot="coverage-add-sector"
+                onClick={addSector}
+                disabled={constituentsLoading || newFromSector(constituents, selected, alreadyCovered) === 0}
+                className="rounded-lg bg-primary-600 px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-40"
+              >
+                {/* Counted before it is pressed: a sector adding eleven names
+                    and one adding none look identical on a button. */}
+                Add {newFromSector(constituents, selected, alreadyCovered)} from {openSector}
+              </button>
+            </div>
+          ) : (
+            <>
+              <p className="mb-1.5 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+                Adds the names in a sector today. It is a selection, not a standing rule &mdash;
+                companies added to the sector later will not appear on their own.
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {sectorsLoading && (
+                  <span className="flex items-center gap-1.5 py-1 text-xs text-gray-400">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading sectors&hellip;
+                  </span>
+                )}
+                {sectors.map(name => (
+                  <button
+                    key={name}
+                    data-slot="coverage-sector-option"
+                    onClick={() => setOpenSector(name)}
+                    className="rounded-full border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-primary-400 hover:text-primary-700 dark:border-gray-600 dark:text-gray-200"
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {source === 'holdings' && suggestions.length > 0 && (
         <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-          Suggestions — nothing is saved until you confirm
+          Suggestions &mdash; nothing is saved until you confirm
         </p>
       )}
 
@@ -346,7 +517,11 @@ export function CoverageQuickStart({
 
         {!listLoading && options.length === 0 && (
           <p className="px-1 py-3 text-xs text-gray-400">
-            {query.trim() ? 'No matching names.' : 'Search for a name to get started.'}
+            {source === 'companies'
+              ? (query.trim() ? 'No matching names.' : 'Search for a ticker or company.')
+              : source === 'sectors'
+                ? (openSector ? 'No names in this sector yet.' : 'Pick a sector above.')
+                : 'No holdings to suggest yet - try Sectors or Companies.'}
           </p>
         )}
 
@@ -391,7 +566,7 @@ export function CoverageQuickStart({
                 <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-gray-400">
                   Following
                 </span>
-              ) : asset.reason && !query.trim() ? (
+              ) : asset.reason && REASON_LABEL[asset.reason] ? (
                 <span className="shrink-0 text-[10px] text-gray-400">
                   {REASON_LABEL[asset.reason]}
                 </span>
@@ -409,6 +584,38 @@ export function CoverageQuickStart({
         >
           {error}
         </p>
+      )}
+
+      {selected.size > 0 && (
+        <div data-slot="coverage-quick-start-selection" className="mt-2.5 border-t border-gray-100 pt-2.5 dark:border-gray-700">
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+            {selected.size} selected
+          </p>
+          {/* Every staged name, removable one at a time. A sector press can
+              stage fifty; nobody should have to accept all fifty to accept
+              most of them. */}
+          <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+            {[...selected.values()].map(asset => (
+              <span
+                key={asset.id}
+                data-slot="coverage-selected-chip"
+                className="inline-flex items-center gap-1 rounded-full bg-primary-50 py-0.5 pl-2 pr-1 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-200"
+              >
+                {asset.symbol}
+                {asset.viaSector && (
+                  <span className="text-[10px] font-normal text-primary-400">{asset.viaSector}</span>
+                )}
+                <button
+                  onClick={() => setSelected(prev => removeCandidate(prev, asset.id))}
+                  aria-label={`Remove ${asset.symbol}`}
+                  className="no-touch-target rounded-full p-0.5 hover:bg-primary-100 dark:hover:bg-primary-800"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
       )}
 
       <div className="mt-3 flex items-center gap-2">
