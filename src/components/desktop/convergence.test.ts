@@ -600,7 +600,16 @@ describe('one Dashboard, five lenses', () => {
     for (const t of ['ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']) {
       expect(page).toContain(`case '${t}':`)
     }
-    expect(page).toMatch(/case 'today':\s*\n\s*return <DashboardShell initialLens="today" \/>/)
+    /*
+     * `today` mounts the shell on its own lens. Asserted as a mount rather
+     * than as the exact next line: a pilot now gets the same shell with the
+     * Get Started checklist and the first-session coverage prompt layered
+     * above it, so the case arm is a branch and the adjacency no longer holds.
+     * What matters is that both arms end at this shell and this lens.
+     */
+    const todayArm = page.slice(page.indexOf("case 'today':"), page.indexOf("case 'ideas':"))
+    expect(todayArm.match(/<DashboardShell initialLens="today" \/>/g)).toHaveLength(2)
+    expect(todayArm).toContain('pilotMode.effectiveIsPilot')
     const tabs = src('components/layout/TabManager.tsx')
     for (const t of ['ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']) {
       expect(tabs).toContain(t)

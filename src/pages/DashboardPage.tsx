@@ -1225,7 +1225,45 @@ export function DashboardPage() {
         and the irreversible collapse stays a separate decision.
       */
       case 'today':
-        return <DashboardShell initialLens="today" />
+        /*
+         * Pilot onboarding LAYERS onto the canonical Dashboard.
+         *
+         * Both of these lived above the retired legacy workbench, and moving
+         * them onto the pilot branch of `renderDashboardContent` put them
+         * somewhere a pilot cannot reach: nothing creates a `dashboard` tab
+         * any more, and a restored one is migrated to `today` before it
+         * renders. So a desktop pilot had no Get Started checklist and no
+         * first-session coverage prompt at all.
+         *
+         * The components and their persisted state are reused exactly as they
+         * are — `FirstSessionCoveragePrompt` still owns its own latched
+         * show/dismiss decision and `PilotWelcomeBanner` its own progress, so
+         * a pilot who has finished or dismissed either still sees neither.
+         *
+         * Layered, not substituted: the shell below is the same element a
+         * non-pilot gets, unchanged, and the lens content is untouched. The
+         * point is that a pilot learns the real product with guidance on top
+         * of it, rather than a separate surface that disappears later.
+         */
+        return pilotMode.effectiveIsPilot ? (
+          <div className="flex h-full flex-col">
+            <div className="shrink-0 space-y-2.5 p-3">
+              <FirstSessionCoveragePrompt
+                onGoToIdeas={() => handleSearchResult({
+                  id: 'ideas', title: 'Ideas', type: 'ideas', data: null,
+                })}
+              />
+              <PilotWelcomeBanner onNavigate={handleSearchResult} />
+            </div>
+            {/* `DashboardShell` is `flex h-full flex-col overflow-hidden`, so
+                it needs a flex parent that can shrink — hence `min-h-0`. */}
+            <div className="min-h-0 flex-1">
+              <DashboardShell initialLens="today" />
+            </div>
+          </div>
+        ) : (
+          <DashboardShell initialLens="today" />
+        )
       /*
        * Ideas — the standalone application.
        *
