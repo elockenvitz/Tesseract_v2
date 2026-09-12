@@ -228,6 +228,75 @@ export async function addPersonalCoverage(
 }
 
 /**
+ * Declare coverage on many assets at once.
+ *
+ * ── Why this exists beside `addPersonalCoverage` ──────────────────────────
+ *
+ * Selecting a sector stages up to fifty names, and saving them one at a time
+ * was two round trips each — a read to check for an existing row, then an
+ * insert — so a hundred requests for one press, taking long enough that the
+ * reader assumes it has hung.
+ *
+ * Same rules, batched: one read to find which of these assets this user
+ * already actively covers, then one multi-row insert for the rest. The
+ * per-row triggers still fire, because they are the database's and run inside
+ * the statement; what disappears is the client waiting for fifty acks.
+ *
+ * Idempotent for the same reason the single version is, and by the same test:
+ * `coverage` has no unique constraint on (asset_id, user_id), so uniqueness
+ * within this lane is the caller's job.
+ *
+ * Returns the rows it actually created. A caller that asked for fifty and got
+ * forty-two had eight already.
+ */
+export async function addPersonalCoverageMany(
+  organizationId: string | null | undefined,
+  assetIds: string[],
+  analystName: string | null,
+): Promise<MyCoverageRow[]> {
+  const tenant = resolveCoverageTenant(organizationId)
+  if (!tenant.ok) throw new NoTenantError('No workspace is selected, so coverage cannot be saved.')
+
+  const wanted = [...new Set(assetIds.filter(Boolean))]
+  if (wanted.length === 0) return []
+
+  const userId = await requireUserId()
+
+  const { data: existing, error: readError } = await supabase
+    .from('coverage')
+    .select('asset_id')
+    .eq('user_id', userId)
+    .eq('organization_id', tenant.organizationId)
+    .eq('coverage_scope', 'personal')
+    .eq('is_active', true)
+    .in('asset_id', wanted)
+  if (readError) throw readError
+
+  const already = new Set((existing ?? []).map((r: { asset_id: string }) => r.asset_id))
+  const fresh = wanted.filter(id => !already.has(id))
+  if (fresh.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('coverage')
+    .insert(fresh.map(assetId => ({
+      asset_id: assetId,
+      user_id: userId,
+      organization_id: tenant.organizationId,
+      analyst_name: analystName,
+      coverage_scope: 'personal',
+      is_active: true,
+      notes: null,
+      // team_id and is_lead are deliberately absent, exactly as in the single
+      // version — a personal row carries no organizational authority, and both
+      // the RLS WITH CHECK and a table CHECK constraint enforce that.
+    })) as never)
+    .select(SELECT_COLUMNS)
+
+  if (error) throw error
+  return (data ?? []) as unknown as MyCoverageRow[]
+}
+
+/**
  * Edit the note on one's own personal coverage.
  *
  * Notes only. The fields that decide what a row MEANS — its asset, owner,

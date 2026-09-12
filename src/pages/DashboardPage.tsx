@@ -1267,18 +1267,11 @@ export function DashboardPage() {
               {/* Personalisation under the story, and it still owns its own
                   latched show/dismiss decision — a pilot with coverage sees
                   nothing here. */}
-              <FirstSessionCoveragePrompt
-                /* Saved coverage returns to the mission, not to a feed. The
-                   reader is mid-onboarding and "See what's happening" reads
-                   as the end of it. */
-                onContinue={{ label: 'Continue getting started', onClick: () => {} }}
-                /* Offered only when the access map actually admits this
-                   reader. A control that explains why it cannot be pressed is
-                   worse than one that was never there. */
-                onManageCoverage={pilotMode.accessFor('coverage') === 'full'
-                  ? () => handleSearchResult({ id: 'coverage', title: 'Coverage', type: 'coverage', data: null })
-                  : undefined}
-              />
+              {/* No onward control. The reader is already on the page it
+                  would send them to, and the coverage manager is not reachable
+                  for a gated pilot — so the card simply stays usable and they
+                  keep adding names. */}
+              <FirstSessionCoveragePrompt />
             </div>
           </div>
         ) : (

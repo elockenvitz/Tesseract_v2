@@ -31,10 +31,7 @@ export function MobilePilotHome({ onNavigate }: { onNavigate: (result: any) => v
         <PilotMissionStrip onNavigate={onNavigate} />
         {/* Setup under the story, and it still owns its own latched
             show/dismiss decision — a pilot with coverage sees nothing here. */}
-        <FirstSessionCoveragePrompt
-          variant="sheet"
-          onContinue={{ label: 'Continue getting started', onClick: () => {} }}
-        />
+        <FirstSessionCoveragePrompt variant="sheet" />
       </div>
     </div>
   )

@@ -28,7 +28,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, CheckCircle2, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, CheckCircle2 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { usePilotMission, logMissionStep } from '../../hooks/usePilotMission'
@@ -59,12 +59,13 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
   }, [currentOrgId])
 
   /*
-   * Dismissal is allowed only once the mission is complete.
+   * There is no dismiss.
    *
-   * While it is unfinished this is the only onboarding affordance a pilot has,
-   * and a permanent hide would leave them no way back to it.
+   * It was offered once the mission completed, which sounds harmless and is
+   * the wrong shape: this module is how a pilot advances, so a control that
+   * removes it is a control that removes the way forward. Collapse is the
+   * affordance for "not now", and it is per device and reversible.
    */
-  const [dismissed, setDismissed] = useState(false)
 
   /*
    * One telemetry row per step, on the first transition only.
@@ -130,7 +131,7 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
     }
   }, [mission, onNavigate])
 
-  if (dismissed || mission.isLoading) return null
+  if (mission.isLoading) return null
 
   const { completedCount, total, currentStepId, complete } = mission
 
@@ -151,15 +152,6 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
             </p>
           </div>
         </button>
-        {complete && (
-          <button
-            onClick={() => setDismissed(true)}
-            aria-label="Dismiss getting started"
-            className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-white/60 dark:hover:bg-gray-800"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
       </div>
 
       {expanded && (

@@ -21,6 +21,7 @@ import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import {
   addPersonalCoverage,
+  addPersonalCoverageMany,
   coverageAnalystName,
   fetchMyCoverage,
   removePersonalCoverage,
@@ -52,6 +53,8 @@ export interface MyCoverageState {
 
 export interface MyCoverageActions {
   add: (assetId: string) => Promise<void>
+  /** Many at once. One read and one insert, not two round trips per name. */
+  addMany: (assetIds: string[]) => Promise<number>
   remove: (assetId: string) => Promise<void>
   setNotes: (assetId: string, notes: string | null) => Promise<void>
   isMutating: boolean
@@ -123,6 +126,15 @@ export function useMyCoverage(): MyCoverageState & MyCoverageActions {
     onSuccess: invalidate,
   })
 
+  const addManyMutation = useMutation({
+    mutationFn: (assetIds: string[]) =>
+      addPersonalCoverageMany(orgId, assetIds, analystName),
+    // One invalidation for the batch. Invalidating per name re-ran the feed's
+    // ranking index fifty times for one press, which is most of why saving a
+    // sector felt like it had hung.
+    onSuccess: invalidate,
+  })
+
   const removeMutation = useMutation({
     mutationFn: (assetId: string) => removePersonalCoverage(orgId, assetId),
     onSuccess: invalidate,
@@ -147,6 +159,11 @@ export function useMyCoverage(): MyCoverageState & MyCoverageActions {
       await addMutation.mutateAsync(assetId)
     }, [addMutation]),
 
+    addMany: useCallback(async (assetIds: string[]) => {
+      const created = await addManyMutation.mutateAsync(assetIds)
+      return created.length
+    }, [addManyMutation]),
+
     remove: useCallback(async (assetId: string) => {
       await removeMutation.mutateAsync(assetId)
     }, [removeMutation]),
@@ -156,6 +173,7 @@ export function useMyCoverage(): MyCoverageState & MyCoverageActions {
     }, [notesMutation]),
 
     isMutating:
-      addMutation.isPending || removeMutation.isPending || notesMutation.isPending,
+      addMutation.isPending || addManyMutation.isPending
+      || removeMutation.isPending || notesMutation.isPending,
   }
 }

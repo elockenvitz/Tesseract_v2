@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, Check, Loader2, Search, Sparkles, X } from 'lucide-react'
+import { Check, Loader2, Search, Sparkles, X } from 'lucide-react'
 
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -60,8 +60,6 @@ interface CoverageQuickStartProps {
   variant?: 'card' | 'sheet'
   /** Called after a successful save, with how many names were added. */
   onSaved?: (count: number) => void
-  /** Where "see what's happening" goes. Absent on surfaces already showing it. */
-  onGoToIdeas?: () => void
   /**
    * Where the reader goes after saving, when the caller has somewhere better
    * than the feed.
@@ -153,12 +151,19 @@ const SOURCE_LABEL: Record<Source, string> = {
  */
 const SECTOR_CONSTITUENT_LIMIT = 50
 
+/**
+ * Sector values that are not a research universe.
+ *
+ * `assets.sector` carries a few classifications that describe what an
+ * instrument IS rather than what it is about, and offering them here invites a
+ * reader to "follow cash". Matched case-insensitively because the catalogue is
+ * not consistent about capitalisation.
+ */
+const NON_COVERABLE_SECTORS = new Set(['cash', 'cash & equivalents', 'cash and equivalents'])
+
 export function CoverageQuickStart({
   variant = 'card',
   onSaved,
-  onGoToIdeas,
-  onContinue,
-  onManageCoverage,
   onDismiss,
   className,
   savedCount: savedCountProp = null,
@@ -308,7 +313,9 @@ export function CoverageQuickStart({
       const seen = new Set<string>()
       for (const row of (data ?? []) as { sector: string | null }[]) {
         const value = row.sector?.trim()
-        if (value) seen.add(value)
+        // `Cash` is a holding classification, not a sector anybody covers.
+        // Following it would stage cash instruments as names to watch.
+        if (value && !NON_COVERABLE_SECTORS.has(value.toLowerCase())) seen.add(value)
       }
       return [...seen].sort((a, b) => a.localeCompare(b))
     },
@@ -377,18 +384,22 @@ export function CoverageQuickStart({
     setError(null)
     const ids = [...selected.keys()]
     try {
-      // Sequential rather than a multi-row insert: `coverage` carries an INSERT
-      // trigger chain and the data layer de-duplicates per asset, so each row
-      // needs its own round trip. A partial failure keeps what landed, which is
-      // the right outcome — the user asked for five names and got four.
-      let ok = 0
-      for (const id of ids) {
-        await coverage.add(id)
-        ok += 1
-      }
-      setSavedCount(ok)
+      /*
+       * One read and one insert for the whole selection.
+       *
+       * This was a sequential loop — a lookup and an insert per name, plus a
+       * cache invalidation per name — so a fifty-name sector was a hundred
+       * round trips and fifty re-rankings of the feed index. Long enough that
+       * the reader assumes it has hung, which is exactly what was reported.
+       *
+       * The dedupe did not go away; it moved into the batch, which reads the
+       * whole asset set once. `created` is what was actually written, so a
+       * selection where eight were already covered reports forty-two.
+       */
+      const created = await coverage.addMany(ids)
+      setSavedCount(prev => (prev ?? 0) + created)
       setSelected(new Map())
-      onSaved?.(ok)
+      onSaved?.(created)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong.'
       setError(`${message} Nothing was lost — your selection is still here, try again.`)
@@ -399,70 +410,22 @@ export function CoverageQuickStart({
 
   const dense = variant === 'sheet'
 
-  // ── Confirmation ─────────────────────────────────────────────────────────
-  // Concise on purpose. One sentence about what Tesseract will do with it, and
-  // a way onwards. Over-explaining here is how a 40-second task becomes a
-  // dialogue somebody dismisses.
-  if (savedCount !== null) {
-    return (
-      <div
-        data-slot="coverage-quick-start-done"
-        className={clsx(
-          'rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800',
-          dense ? 'p-3' : 'p-4',
-          className,
-        )}
-      >
-        <div className="flex items-start gap-2.5">
-          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
-            <Check className="h-3 w-3" strokeWidth={3} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-gray-900 dark:text-white">
-              Following {savedCount} {savedCount === 1 ? 'name' : 'names'}
-            </p>
-            <p className="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-              Tesseract will use this to decide what to put in front of you. You can
-              change it any time from Coverage.
-            </p>
-            <div className="mt-2.5 flex items-center gap-2">
-              {/* The caller's own next step wins. Only when nobody has one does
-                  this fall back to the feed. */}
-              {onContinue ? (
-                <button
-                  data-slot="coverage-quick-start-continue"
-                  onClick={onContinue.onClick}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700"
-                >
-                  {onContinue.label}
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-              ) : onGoToIdeas ? (
-                <button
-                  data-slot="coverage-quick-start-to-ideas"
-                  onClick={onGoToIdeas}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700"
-                >
-                  See what&rsquo;s happening
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-              ) : null}
-              {onManageCoverage && (
-                <button
-                  data-slot="coverage-quick-start-manage"
-                  onClick={onManageCoverage}
-                  className="rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  Manage coverage
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
+  /*
+   * ── Confirmation, and why it is no longer a screen ──────────────────────
+   *
+   * Saving used to REPLACE the picker with a done panel, so the reader had
+   * declared four names and had no way to declare a fifth without leaving and
+   * coming back. That was survivable while the coverage manager was one click
+   * away; on the pilot home it is not reachable at all, so the picker was a
+   * one-shot.
+   *
+   * It is a line above the picker now. The count accumulates across saves, and
+   * the surface the reader was using is still there underneath it.
+   *
+   * The onward buttons are gone with the panel. "See what's happening" sent
+   * somebody mid-onboarding to a feed, and "Continue getting started" was a
+   * control that did nothing on a page they were already on.
+   */
   return (
     <div
       data-slot="coverage-quick-start"
@@ -472,6 +435,24 @@ export function CoverageQuickStart({
         className,
       )}
     >
+      {savedCount !== null && (
+        <div
+          data-slot="coverage-quick-start-done"
+          className="mb-3 flex items-start gap-2 rounded-lg bg-emerald-50 px-2.5 py-2 dark:bg-emerald-900/20"
+        >
+          <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+            <Check className="h-2.5 w-2.5" strokeWidth={3} />
+          </span>
+          <p className="text-xs leading-snug text-emerald-800 dark:text-emerald-200">
+            <span className="font-semibold">
+              Following {savedCount} {savedCount === 1 ? 'name' : 'names'}.
+            </span>{' '}
+            Tesseract will use this to decide what to put in front of you. Add more below
+            whenever you like.
+          </p>
+        </div>
+      )}
+
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-white">

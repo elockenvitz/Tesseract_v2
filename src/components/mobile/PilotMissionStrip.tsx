@@ -55,26 +55,32 @@ export function PilotMissionStrip({ onNavigate }: { onNavigate?: (result: any) =
   }
 
   return (
-    <div className="rounded-xl border border-indigo-200/60 bg-indigo-50/70 px-3 py-2.5 dark:border-indigo-800/40 dark:bg-indigo-950/25">
-      <div className="flex items-center gap-2">
-        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
-          Getting started · {mission.completedCount} of {mission.total}
+    /*
+     * Two lines and a control, not a card.
+     *
+     * The first version stacked a header, a label, a hint and a full-width
+     * button, which took a third of a phone screen to say one thing. The
+     * count and the step share a line, the control sits beside them, and the
+     * hint is gone — the step label already says what it is, and the reader
+     * has one move to make.
+     */
+    <div className="flex items-center gap-2.5 rounded-xl border border-indigo-200/60 bg-indigo-50/70 px-3 py-2 dark:border-indigo-800/40 dark:bg-indigo-950/25">
+      <CheckCircle2 className="h-4 w-4 shrink-0 text-indigo-400" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+          Step {mission.completedCount + 1} of {mission.total}
+        </p>
+        <p className="truncate text-[13px] font-medium leading-tight text-gray-900 dark:text-gray-100">
+          {/* Named honestly rather than hidden: the step is real, it is next,
+              and it happens somewhere this device cannot go. */}
+          {desktopOnly ? 'Continue on desktop' : step.label}
         </p>
       </div>
-      <p className="mt-1 text-[13px] font-medium leading-tight text-gray-900 dark:text-gray-100">
-        {step.label}
-      </p>
-      <p className="mt-0.5 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
-        {/* Named honestly rather than hidden: the step is real, it is next, and
-            it happens somewhere this device cannot go. */}
-        {desktopOnly ? 'Continue on desktop — Trade Lab needs a wider screen.' : step.hint}
-      </p>
       {!desktopOnly && (
         <button
           type="button"
           onClick={act}
-          className="mt-2 w-full rounded-lg bg-indigo-600 py-2 text-[13px] font-semibold text-white active:bg-indigo-700"
+          className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-[12px] font-semibold text-white active:bg-indigo-700"
         >
           {step.cta}
         </button>

@@ -17,10 +17,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const addCalls: string[] = []
 let coverageState: any
-let addImpl: (assetId: string) => Promise<void>
+/*
+ * The component saves through `addMany` now — one read and one insert for the
+ * whole selection, rather than two round trips per name. The stub takes the
+ * batch and records each id, so every assertion about WHAT reached the
+ * coverage layer reads the same as it did.
+ */
+let addImpl: (assetIds: string[]) => Promise<number>
 
 vi.mock('../../../hooks/useMyCoverage', () => ({
-  useMyCoverage: () => ({ ...coverageState, add: addImpl }),
+  useMyCoverage: () => ({ ...coverageState, addMany: addImpl }),
 }))
 
 vi.mock('../../../hooks/useAuth', () => ({
@@ -75,7 +81,7 @@ beforeEach(() => {
   resetCoverageSessionDecision()
   addCalls.length = 0
   localStorage.clear()
-  addImpl = async (assetId: string) => { addCalls.push(assetId) }
+  addImpl = async (assetIds: string[]) => { addCalls.push(...assetIds); return assetIds.length }
   coverageState = {
     rows: [], personal: [], assigned: [],
     assetIds: new Set<string>(), hasCoverage: false,
@@ -235,31 +241,44 @@ describe('CoverageQuickStart — no governed fields are reachable', () => {
    * The write path takes an asset id and nothing else. There is no signature
    * through which the surface could send a role, a team or another user.
    */
-  it('passes only an asset id to the coverage layer', async () => {
+  it('passes only asset ids to the coverage layer', async () => {
     const user = userEvent.setup()
-    const add = vi.fn(async () => {})
+    const add = vi.fn(async (ids: string[]) => ids.length)
     addImpl = add
     renderWithQuery(<CoverageQuickStart />)
     await user.click(await screen.findByText('HOLD'))
     await user.click(screen.getByRole('button', { name: /Follow 1 name/ }))
     await waitFor(() => expect(add).toHaveBeenCalledTimes(1))
-    expect(add).toHaveBeenCalledWith('asset-hold')
+    /* One call for the whole selection, carrying ids and nothing else. The
+       analyst name, the lane and the organization are the data layer's to
+       supply; a picker that could send them is a picker that could send the
+       wrong ones. */
+    expect(add).toHaveBeenCalledWith(['asset-hold'])
   })
 })
 
 // ── after save ─────────────────────────────────────────────────────────────
 
 describe('CoverageQuickStart — after save', () => {
-  it('confirms concisely and offers the way into Ideas', async () => {
+  /**
+   * Confirming no longer REPLACES the picker.
+   *
+   * It used to, so a reader who declared four names had no way to declare a
+   * fifth without leaving and coming back — survivable while the coverage
+   * manager was one click away, and not survivable on the pilot home, where it
+   * is not reachable at all. The confirmation is a line above the picker now
+   * and the picker is still there underneath it.
+   */
+  it('confirms without taking the picker away', async () => {
     const user = userEvent.setup()
-    const onGoToIdeas = vi.fn()
-    renderWithQuery(<CoverageQuickStart onGoToIdeas={onGoToIdeas} />)
+    renderWithQuery(<CoverageQuickStart />)
     await user.click(await screen.findByText('HOLD'))
     await user.click(screen.getByRole('button', { name: /Follow 1 name/ }))
 
-    expect(await screen.findByText('Following 1 name')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /See what/ }))
-    expect(onGoToIdeas).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText(/Following 1 name/)).toBeInTheDocument()
+    // Still able to add more, which is the point.
+    expect(screen.getByText('Set up your coverage')).toBeInTheDocument()
+    expect(screen.getByText('Sectors')).toBeInTheDocument()
   })
 
   /**
@@ -278,17 +297,15 @@ describe('CoverageQuickStart — after save', () => {
     const first = renderWithQuery(<FirstSessionCoveragePrompt />)
     await user.click(await screen.findByText('HOLD'))
     await user.click(screen.getByRole('button', { name: /Follow 1 name/ }))
-    expect(await screen.findByText('Following 1 name')).toBeInTheDocument()
+    expect(await screen.findByText(/Following 1 name/)).toBeInTheDocument()
 
     // The feed re-ranks and the subtree is swapped. Coverage now exists.
     first.unmount()
     coverageState.hasCoverage = true
 
     const second = renderWithQuery(<FirstSessionCoveragePrompt />)
-    expect(await screen.findByText('Following 1 name')).toBeInTheDocument()
+    expect(await screen.findByText(/Following 1 name/)).toBeInTheDocument()
     expect(second.container.querySelector('[data-slot="coverage-quick-start-done"]')).not.toBeNull()
-    // And emphatically NOT back to asking the question.
-    expect(screen.queryByText('Set up your coverage')).not.toBeInTheDocument()
   })
 
   it('reports the count it actually saved', async () => {
@@ -297,7 +314,7 @@ describe('CoverageQuickStart — after save', () => {
     await user.click(await screen.findByText('HOLD'))
     await user.click(await screen.findByText('SECT'))
     await user.click(screen.getByRole('button', { name: /Follow 2 names/ }))
-    expect(await screen.findByText('Following 2 names')).toBeInTheDocument()
+    expect(await screen.findByText(/Following 2 names/)).toBeInTheDocument()
   })
 
   /**
