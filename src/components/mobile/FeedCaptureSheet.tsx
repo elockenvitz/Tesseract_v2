@@ -88,7 +88,15 @@ export function FeedCaptureSheet({
   }, [open, initialKind])
 
   const close = () => {
-    setKind(null)
+    /*
+     * Close only. Clearing `kind` here put the four-way capture PICKER on
+     * screen while the sheet was still animating out, so submitting a trade
+     * idea flashed the base view before the sheet left.
+     *
+     * Nothing needs clearing: the effect above re-seeds `kind` on every open,
+     * which is why it exists. What animates away is now the form the reader
+     * just submitted.
+     */
     onClose()
   }
 

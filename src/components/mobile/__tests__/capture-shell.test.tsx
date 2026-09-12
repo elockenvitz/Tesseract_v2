@@ -387,3 +387,38 @@ describe('the way back does not scroll away with the form', () => {
     expect(screen.getByLabelText('Back to capture options').tagName).toBe('BUTTON')
   })
 })
+
+/**
+ * The submit transition.
+ *
+ * Submitting used to clear `kind` and then close, so the four-way capture
+ * PICKER appeared in the form's place and stayed there for the sheet's exit
+ * animation — the flash reported as the pane showing its base view before
+ * closing. What animates away must be the form the reader just submitted.
+ */
+describe('FeedCaptureSheet — submitting does not flash the picker', () => {
+  it('closes without swapping the form for the kind picker', () => {
+    const onClose = vi.fn()
+    /* `screen`, not the render container: the sheet portals its body, so a
+       container query finds nothing either way and would pass vacuously. */
+    render(
+      <FeedCaptureSheet
+        open
+        onClose={onClose}
+        assetId="a1"
+        assetSymbol="AMZN"
+        initialKind="trade-idea"
+      />,
+    )
+
+    expect(screen.getByTestId('form-trade')).toBeInTheDocument()
+
+    // What the capture form calls on a successful write.
+    seen.trade.onSuccess()
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    // Still the form, not the picker, for as long as the sheet is on screen.
+    expect(screen.queryByTestId('form-trade')).not.toBeNull()
+  })
+
+})

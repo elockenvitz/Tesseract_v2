@@ -247,7 +247,23 @@ export function ThoughtsSection({
       dismissPilotCaptureBanner()
     }
 
-    setCaptureMode('collapsed')
+    /*
+     * Close FIRST, and do not swap the visible view on the way out.
+     *
+     * This set `captureMode` to `collapsed` and then closed the pane on a
+     * 100ms timer. The pane slides out over 300ms
+     * (`transition-transform duration-300` in `CommunicationPane`), so the
+     * reader watched the form vanish, the collapsed base view appear in its
+     * place, sit there for the timer, and only then slide away — about four
+     * hundred milliseconds of a surface they had finished with. That is the
+     * hitch, and the timer was half of it.
+     *
+     * The reset is not needed at all: `openCapture` sets the mode on every
+     * open, so the next capture chooses its own. Leaving the form on screen
+     * means what slides away is the thing the reader just used.
+     */
+    onClose?.()
+
     setCapturedContext(null)
 
     // Refresh recent ideas list
@@ -264,11 +280,6 @@ export function ThoughtsSection({
     try {
       window.dispatchEvent(new CustomEvent('pilot-loop:refresh', { detail: { reason: 'trade-idea-submitted' } }))
     } catch { /* ignore */ }
-
-    // Close the pane after a brief delay
-    setTimeout(() => {
-      onClose?.()
-    }, 100)
   }
 
   const handleCaptureCancel = () => {
