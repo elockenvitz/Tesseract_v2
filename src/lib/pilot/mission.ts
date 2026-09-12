@@ -124,36 +124,44 @@ export function isPipelineAdvanced(stage: string | null | undefined): boolean {
   return !!resolved && ADVANCED_STAGES.has(resolved)
 }
 
+/*
+ * The steps say what each one is FOR, not which screen it happens on.
+ *
+ * "Develop it in Pipeline" and "Simulate the trade" named the surface and left
+ * the reason implicit, which taught the app rather than the argument for it.
+ * The CTAs still name the destination, because a button should say where it
+ * goes; the step says why you would want to.
+ */
 const COPY: Record<MissionStepId, { label: string; hint: string; cta: string; blocked: string }> = {
   idea_created: {
-    label: 'Create a Trade Idea',
-    hint: 'Write down something you think is worth doing.',
-    cta: 'Create idea',
+    label: 'Capture an investment idea',
+    hint: 'Put a real view into Tesseract so the reasoning has a starting point.',
+    cta: 'Capture idea',
     blocked: '',
   },
   pipeline_advanced: {
-    label: 'Develop it in Pipeline',
-    hint: 'Move it along as your thinking gets firmer.',
-    cta: 'Continue in Pipeline',
-    blocked: 'Create a trade idea first.',
+    label: 'Develop the thesis',
+    hint: 'Build the research and thinking that moves the idea toward a decision.',
+    cta: 'Open Pipeline',
+    blocked: 'Capture an investment idea first.',
   },
   simulation_completed: {
-    label: 'Simulate the trade',
-    hint: 'See what it would do to the book before you commit.',
-    cta: 'Simulate idea',
-    blocked: 'Advance your idea in Pipeline first.',
+    label: 'Test the trade',
+    hint: 'See how the proposed trade changes the portfolio before you act.',
+    cta: 'Open Trade Lab',
+    blocked: 'Develop the thesis first.',
   },
   decision_submitted: {
-    label: 'Submit your decision',
-    hint: 'Accept, defer or reject it — on the record.',
-    cta: 'Make decision',
-    blocked: 'Simulate the trade first.',
+    label: 'Make the decision',
+    hint: 'Record what you decided and why.',
+    cta: 'Decide',
+    blocked: 'Test the trade first.',
   },
   outcome_reviewed: {
-    label: 'Review Outcomes',
-    hint: 'Come back to what you decided and what happened.',
+    label: 'Close the loop',
+    hint: 'Review what happened afterward, and what Tesseract remembers about the decision.',
     cta: 'Review outcome',
-    blocked: 'Submit your decision first.',
+    blocked: 'Make the decision first.',
   },
 }
 

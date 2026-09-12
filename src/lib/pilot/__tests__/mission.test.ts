@@ -49,7 +49,7 @@ describe('the mission', () => {
   it('shows later steps as a journey, not as errors', () => {
     const m = missionState(facts())
     expect(m.steps[2].available).toBe(false)
-    expect(m.steps[2].blockedBy).toBe('Advance your idea in Pipeline first.')
+    expect(m.steps[2].blockedBy).toBe('Develop the thesis first.')
     // Every step is still listed, so the shape of the journey is legible.
     expect(m.steps).toHaveLength(5)
   })

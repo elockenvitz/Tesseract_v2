@@ -103,7 +103,6 @@ import {
 import { recordTriage, type TriageAction } from '../../lib/signals/feed-triage'
 import { SignalCardSection } from './SignalCardSection'
 import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoveragePrompt'
-import { PilotMissionStrip } from './PilotMissionStrip'
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
 import { SizeExplorer } from '../signals/SizeExplorer'
 import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
@@ -8144,13 +8143,12 @@ c.assetId ?? null,
           a phone user lands on, the feed is what coverage changes, and a setup
           prompt filed under a menu is a setup prompt nobody opens. No
           `onGoToIdeas`: they are already here. */}
-      {/* The mission first, coverage under it.
-          Coverage is personalisation and the mission is the product story, and
-          leading a first login with an administrative task teaches nothing
-          about what Tesseract is for. Same order as desktop, same truth behind
-          both — see `usePilotMission`. */}
-      <div className="flex-shrink-0 space-y-1.5 px-3 pb-1.5 empty:hidden">
-        <PilotMissionStrip onNavigate={onNavigate} />
+      {/* Coverage only. The pilot mission is NOT here: while it is unfinished
+          this dashboard does not render at all, and `MobilePilotHome` is the
+          phone's home instead. Stacking guidance on top of a full feed was the
+          arrangement that put three unrelated invitations on one phone
+          screen. */}
+      <div className="flex-shrink-0 px-3 pb-1.5 empty:hidden">
         <FirstSessionCoveragePrompt variant="sheet" />
       </div>
 

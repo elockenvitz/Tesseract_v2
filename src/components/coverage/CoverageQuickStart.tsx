@@ -62,6 +62,22 @@ interface CoverageQuickStartProps {
   onSaved?: (count: number) => void
   /** Where "see what's happening" goes. Absent on surfaces already showing it. */
   onGoToIdeas?: () => void
+  /**
+   * Where the reader goes after saving, when the caller has somewhere better
+   * than the feed.
+   *
+   * On the pilot home that is the mission they were already in the middle of.
+   * "See what's happening" sent them to a feed instead, which is a different
+   * activity and reads as the end of onboarding rather than a step in it.
+   */
+  onContinue?: { label: string; onClick: () => void }
+  /**
+   * The canonical coverage surface, when this reader may actually reach it.
+   *
+   * Omitted rather than disabled when access is gated: a control that explains
+   * why it cannot be pressed is worse than one that was never offered.
+   */
+  onManageCoverage?: () => void
   /** Rendered as a dismiss affordance when supplied. */
   onDismiss?: () => void
   /**
@@ -141,6 +157,8 @@ export function CoverageQuickStart({
   variant = 'card',
   onSaved,
   onGoToIdeas,
+  onContinue,
+  onManageCoverage,
   onDismiss,
   className,
   savedCount: savedCountProp = null,
@@ -407,16 +425,38 @@ export function CoverageQuickStart({
               Tesseract will use this to decide what to put in front of you. You can
               change it any time from Coverage.
             </p>
-            {onGoToIdeas && (
-              <button
-                data-slot="coverage-quick-start-to-ideas"
-                onClick={onGoToIdeas}
-                className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700"
-              >
-                See what&rsquo;s happening
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            )}
+            <div className="mt-2.5 flex items-center gap-2">
+              {/* The caller's own next step wins. Only when nobody has one does
+                  this fall back to the feed. */}
+              {onContinue ? (
+                <button
+                  data-slot="coverage-quick-start-continue"
+                  onClick={onContinue.onClick}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700"
+                >
+                  {onContinue.label}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              ) : onGoToIdeas ? (
+                <button
+                  data-slot="coverage-quick-start-to-ideas"
+                  onClick={onGoToIdeas}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700"
+                >
+                  See what&rsquo;s happening
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+              {onManageCoverage && (
+                <button
+                  data-slot="coverage-quick-start-manage"
+                  onClick={onManageCoverage}
+                  className="rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  Manage coverage
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -436,11 +476,14 @@ export function CoverageQuickStart({
         <div className="min-w-0">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-white">
             <Sparkles className="h-3.5 w-3.5 text-primary-500" />
-            What do you follow?
+            Set up your coverage
           </h3>
+          {/* Setup, and named as setup. It personalises what Tesseract puts in
+              front of the reader; it is not one of the five steps and does not
+              count toward finishing them. */}
           <p className="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-            Pick the names you actively watch. Tesseract uses this to decide what to
-            show you.
+            Tell Tesseract which names and sectors matter to you. It uses this to decide
+            what to surface — you can change it at any time.
           </p>
         </div>
         {onDismiss && (

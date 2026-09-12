@@ -27,6 +27,7 @@ import { ListTab } from '../components/tabs/ListTab'
 import { BlankTab } from '../components/tabs/BlankTab.tsx'
 import { DesktopOnlyCard } from '../components/mobile/DesktopOnlyCard'
 import { MobileDashboard } from '../components/mobile/MobileDashboard'
+import { MobilePilotHome } from '../components/mobile/MobilePilotHome'
 import { isDesktopOnly } from '../lib/mobile/mobile-surfaces'
 import { canonicalTabTarget } from '../lib/tabs/legacy-tab-aliases'
 import { useIsMobile } from '../hooks/useMediaQuery'
@@ -1267,9 +1268,16 @@ export function DashboardPage() {
                   latched show/dismiss decision — a pilot with coverage sees
                   nothing here. */}
               <FirstSessionCoveragePrompt
-                onGoToIdeas={() => handleSearchResult({
-                  id: 'ideas', title: 'Ideas', type: 'ideas', data: null,
-                })}
+                /* Saved coverage returns to the mission, not to a feed. The
+                   reader is mid-onboarding and "See what's happening" reads
+                   as the end of it. */
+                onContinue={{ label: 'Continue getting started', onClick: () => {} }}
+                /* Offered only when the access map actually admits this
+                   reader. A control that explains why it cannot be pressed is
+                   worse than one that was never there. */
+                onManageCoverage={pilotMode.accessFor('coverage') === 'full'
+                  ? () => handleSearchResult({ id: 'coverage', title: 'Coverage', type: 'coverage', data: null })
+                  : undefined}
               />
             </div>
           </div>
@@ -1480,6 +1488,18 @@ export function DashboardPage() {
     // multi-column workbenches; reflowed onto 390px they produce cramped cards
     // and horizontal overflow that breakpoints do not fix. See MobileDashboard.
     if (isMobile) {
+      /*
+       * An incomplete pilot gets the pilot home INSTEAD of the feed.
+       *
+       * Same rule as desktop and the same seam: `effectiveIsPilot` is already
+       * `hasGraduated ? false : isPilot`, so the ordinary dashboard returns on
+       * its own once the mission completes. Nothing of the feed renders
+       * underneath, so none of it is fetched and none of its seeded sample
+       * content competes with the one thing the reader is being asked to do.
+       */
+      if (pilotMode.effectiveIsPilot) {
+        return <MobilePilotHome onNavigate={handleSearchResult} />
+      }
       return (
         // No full-chart handler: Charting is desktop-only, so offering it here
         // just routes to a "desktop only" card. ReelsChartPanel hides its

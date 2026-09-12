@@ -89,7 +89,7 @@ beforeEach(() => {
 describe('FirstSessionCoveragePrompt — when it renders', () => {
   it('offers the prompt to a user with no coverage', async () => {
     renderWithQuery(<FirstSessionCoveragePrompt />)
-    expect(await screen.findByText('What do you follow?')).toBeInTheDocument()
+    expect(await screen.findByText('Set up your coverage')).toBeInTheDocument()
   })
 
   /**
@@ -116,9 +116,9 @@ describe('FirstSessionCoveragePrompt — when it renders', () => {
   it('stays dismissed after the user skips, across a remount', async () => {
     const user = userEvent.setup()
     const first = renderWithQuery(<FirstSessionCoveragePrompt />)
-    await screen.findByText('What do you follow?')
+    await screen.findByText('Set up your coverage')
     await user.click(screen.getByRole('button', { name: 'Not now' }))
-    expect(screen.queryByText('What do you follow?')).not.toBeInTheDocument()
+    expect(screen.queryByText('Set up your coverage')).not.toBeInTheDocument()
     first.unmount()
 
     const second = renderWithQuery(<FirstSessionCoveragePrompt />)
@@ -139,7 +139,7 @@ describe('FirstSessionCoveragePrompt — when it renders', () => {
    */
   it('survives a remount that happens after coverage lands', async () => {
     const first = renderWithQuery(<FirstSessionCoveragePrompt />)
-    await screen.findByText('What do you follow?')
+    await screen.findByText('Set up your coverage')
     first.unmount()
 
     // The world the second mount wakes up in: the save succeeded.
@@ -288,7 +288,7 @@ describe('CoverageQuickStart — after save', () => {
     expect(await screen.findByText('Following 1 name')).toBeInTheDocument()
     expect(second.container.querySelector('[data-slot="coverage-quick-start-done"]')).not.toBeNull()
     // And emphatically NOT back to asking the question.
-    expect(screen.queryByText('What do you follow?')).not.toBeInTheDocument()
+    expect(screen.queryByText('Set up your coverage')).not.toBeInTheDocument()
   })
 
   it('reports the count it actually saved', async () => {
@@ -340,7 +340,7 @@ describe('CoverageQuickStart — names already followed', () => {
 describe('CoverageQuickStart — one component, two shells', () => {
   it.each([['card'], ['sheet']] as const)('renders the same question in the %s variant', async (variant) => {
     renderWithQuery(<CoverageQuickStart variant={variant} />)
-    expect(await screen.findByText('What do you follow?')).toBeInTheDocument()
+    expect(await screen.findByText('Set up your coverage')).toBeInTheDocument()
   })
 
   /**

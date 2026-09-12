@@ -46,6 +46,15 @@ interface FirstSessionCoveragePromptProps {
   variant?: 'card' | 'sheet'
   /** Where "see what's happening" goes, if this surface is not already Ideas. */
   onGoToIdeas?: () => void
+  /**
+   * Where the reader goes after saving, when the caller has somewhere better.
+   *
+   * On the pilot home that is the mission they were in the middle of. Sending
+   * them to a feed reads as the end of onboarding rather than a step in it.
+   */
+  onContinue?: { label: string; onClick: () => void }
+  /** The canonical coverage surface, when this reader may actually reach it. */
+  onManageCoverage?: () => void
   className?: string
 }
 
@@ -105,6 +114,8 @@ export function resetCoverageSessionDecision() {
 export function FirstSessionCoveragePrompt({
   variant = 'card',
   onGoToIdeas,
+  onContinue,
+  onManageCoverage,
   className,
 }: FirstSessionCoveragePromptProps) {
   const { user } = useAuth()
@@ -178,6 +189,8 @@ export function FirstSessionCoveragePrompt({
       variant={variant}
       className={className}
       onGoToIdeas={onGoToIdeas}
+      onContinue={onContinue}
+      onManageCoverage={onManageCoverage}
       /**
        * The confirmation is owned here, not by the child.
        *
