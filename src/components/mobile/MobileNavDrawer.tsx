@@ -42,7 +42,10 @@ export function MobileNavDrawer({
   onTabChange,
   onTabClose,
 }: MobileNavDrawerProps) {
-  const { currentOrg, userOrgs, switchOrg } = useOrganization()
+  const { currentOrg, currentOrgId, userOrgs, switchOrg } = useOrganization()
+  /* See the note on `orgUnresolved` in Header: a named workspace the
+     list has not placed yet is not a workspace to choose. */
+  const orgUnresolved = !currentOrg && !!currentOrgId
   /*
    * Openable when there is a choice to make, or when no workspace is
    * active. One organization that is already current has nothing to switch
@@ -171,7 +174,8 @@ export function MobileNavDrawer({
                 ? 'text-gray-900 dark:text-white'
                 : 'text-amber-700 dark:text-amber-400',
             )}>
-              {currentOrg?.name ?? (userOrgs.length > 0 ? 'Choose workspace' : 'Tesseract')}
+              {currentOrg?.name
+                ?? (orgUnresolved ? '…' : userOrgs.length > 0 ? 'Choose workspace' : 'Tesseract')}
             </span>
             {canOpenOrgs && (
               <ChevronRight

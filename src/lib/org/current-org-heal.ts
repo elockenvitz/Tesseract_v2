@@ -29,11 +29,22 @@
  * confirms the membership is alive the right response is to refresh the cache,
  * not to change the org.
  *
- * ── Why a genuine heal still refuses to pick ─────────────────────────────
+ * ── Why a genuine heal now picks ─────────────────────────────────────────
  *
- * `userOrgs[0]` is alphabetical, which is not a guess about intent; it is no
- * guess at all. With exactly one org left there is nothing to decide. With
- * several, the reader decides, through the selector that already exists.
+ * It used to refuse whenever several organizations remained, on the grounds
+ * that `userOrgs[0]` is alphabetical and therefore not a guess about intent.
+ * True, and it was the wrong trade. Refusing means `currentOrgId` is null,
+ * which is a reader who has organizations being told they are in none — and
+ * for a reader with exactly one workspace besides the dead one, the "choice"
+ * was between it and nothing.
+ *
+ * The cost of picking is one tap to change it, in a selector that is now
+ * always on screen. The cost of not picking was a workspace that looked
+ * missing. So it picks the first available and leaves the reader to move.
+ *
+ * This is still not a licence to overwrite: it applies only where the durable
+ * org has been read back from the database and confirmed gone, or where there
+ * was never one. A value that might still be good is never replaced.
  *
  * Pure: no React, no Supabase, no clock.
  */
@@ -48,10 +59,11 @@ export type HealDecision =
   | { kind: 'verify'; orgId: string }
   /** The membership is alive. Keep the org and refresh the stale cache. */
   | { kind: 'keep'; orgId: string }
-  /** Genuinely gone, and exactly one org remains. Nothing to decide. */
+  /**
+   * Genuinely gone or never set, and somewhere to go. Take the first
+   * available and write it down; the selector is there to change it.
+   */
   | { kind: 'heal'; target: string }
-  /** Genuinely gone, and several remain. The reader chooses. */
-  | { kind: 'choose' }
   /** Genuinely gone, and there is nowhere to go. */
   | { kind: 'stranded' }
 
@@ -74,10 +86,20 @@ export interface HealInput {
 export function healDecision(input: HealInput): HealDecision {
   const { rawCurrentOrgId, cachedOrgIds, isLoading, authoritativeIsActive } = input
 
-  // Nothing to reason about until the list has loaded, and nothing to heal
-  // for a user who has no durable org at all.
+  // Nothing to reason about until the list has loaded.
   if (isLoading) return { kind: 'none' }
-  if (!rawCurrentOrgId) return { kind: 'none' }
+
+  /*
+   * No durable org at all — a first session, or a column the database nulled
+   * when the organization it named was deleted. There is nothing here that
+   * could be clobbered by choosing, so choose.
+   */
+  if (!rawCurrentOrgId) {
+    return cachedOrgIds.length > 0
+      ? { kind: 'heal', target: cachedOrgIds[0] }
+      : { kind: 'stranded' }
+  }
+
   if (cachedOrgIds.includes(rawCurrentOrgId)) return { kind: 'none' }
 
   // Absent from the cache. That is a question.
@@ -87,14 +109,14 @@ export function healDecision(input: HealInput): HealDecision {
   // Confirmed gone. Now, and only now, is a heal justified.
   const remaining = cachedOrgIds.filter(id => id !== rawCurrentOrgId)
   if (remaining.length === 0) return { kind: 'stranded' }
-  if (remaining.length === 1) return { kind: 'heal', target: remaining[0] }
-  return { kind: 'choose' }
+  return { kind: 'heal', target: remaining[0] }
 }
 
 /**
  * The org the app should operate in, given a decision.
  *
- * `null` means "ask the reader", which is the selector's cue. Note that a
+ * `null` means there is nowhere to be, which only happens when the reader
+ * belongs to no organization at all. Note that a
  * `verify` keeps the durable org: the check is in flight, nothing has been
  * disproved, and dropping the reader out of their workspace while a query
  * resolves is the flicker this whole file exists to avoid.
@@ -111,7 +133,6 @@ export function effectiveOrgId(
       return decision.orgId
     case 'heal':
       return decision.target
-    case 'choose':
     case 'stranded':
       return null
   }

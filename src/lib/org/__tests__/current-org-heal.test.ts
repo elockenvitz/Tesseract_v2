@@ -33,8 +33,25 @@ describe('nothing to do', () => {
       .toEqual({ kind: 'none' })
   })
 
-  it('decides nothing for a user with no durable org', () => {
+  /**
+   * No durable org is a first session, or a column the database nulled when
+   * the organization it named was deleted. Nothing here can be clobbered by
+   * choosing, and leaving it null showed a reader with a workspace a header
+   * saying they had none.
+   */
+  it('adopts the only workspace available when there is no durable org', () => {
     expect(healDecision(input({ rawCurrentOrgId: null, cachedOrgIds: [OTHER] })))
+      .toEqual({ kind: 'heal', target: OTHER })
+  })
+
+  it('has nowhere to put a user who belongs to nothing', () => {
+    expect(healDecision(input({ rawCurrentOrgId: null, cachedOrgIds: [] })))
+      .toEqual({ kind: 'stranded' })
+  })
+
+  /** Still never decided from a list that has not arrived. */
+  it('adopts nothing while the membership list is loading', () => {
+    expect(healDecision(input({ rawCurrentOrgId: null, cachedOrgIds: [], isLoading: true })))
       .toEqual({ kind: 'none' })
   })
 })
@@ -81,13 +98,15 @@ describe('a genuine revocation', () => {
   })
 
   /**
-   * `userOrgs[0]` was alphabetical, which is not a guess about intent — it is
-   * no guess at all. With several orgs the reader chooses, through the
-   * selector that already exists.
+   * It used to refuse here, on the grounds that `userOrgs[0]` is alphabetical
+   * and therefore not a guess about intent. True, and the wrong trade:
+   * refusing left `currentOrgId` null, which is a reader who has workspaces
+   * being told they are in none. Changing it is one tap in a selector that is
+   * always on screen; not picking looked like everything had vanished.
    */
-  it('refuses to choose when several orgs remain', () => {
-    expect(revoked([OTHER, THIRD])).toEqual({ kind: 'choose' })
-    expect(effectiveOrgId(revoked([OTHER, THIRD]), PILOT)).toBeNull()
+  it('takes the first available when several orgs remain', () => {
+    expect(revoked([OTHER, THIRD])).toEqual({ kind: 'heal', target: OTHER })
+    expect(effectiveOrgId(revoked([OTHER, THIRD]), PILOT)).toBe(OTHER)
   })
 
   it('says so plainly when there is nowhere to go', () => {

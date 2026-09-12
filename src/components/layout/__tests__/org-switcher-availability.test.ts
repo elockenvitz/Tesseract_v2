@@ -40,9 +40,15 @@ describe('the desktop switcher', () => {
     expect(header).toContain('showOrgSwitcher && canOpenOrgSwitcher')
   })
 
-  /** A reader whose workspace is gone is in none, and it should say so. */
-  it('names the state when no workspace is active', () => {
-    expect(header).toContain("{currentOrg?.name ?? 'Choose workspace'}")
+  /**
+   * A reader whose workspace is gone is in none, and it should say so — but
+   * only once that is actually known. While the durable org is being verified
+   * it is absent from the list without being gone, and claiming "Choose
+   * workspace" there is a claim about something still in flight.
+   */
+  it('names the state when no workspace is active, and waits when unknown', () => {
+    expect(header).toContain('const orgUnresolved = !currentOrg && !!currentOrgId')
+    expect(header).toContain("orgUnresolved ? '…' : 'Choose workspace'")
   })
 
   /** Every read of the current org has to survive its absence now. */
@@ -79,5 +85,36 @@ describe('the membership list stays fresh enough to pick from', () => {
 
   it('no longer trusts a ten-minute-old answer', () => {
     expect(ctx).not.toContain('staleTime: 10 * 60 * 1000')
+  })
+})
+
+/*
+ * ── Landing somewhere, rather than being asked ─────────────────────────────
+ *
+ * "Choose workspace" was showing on an ordinary return to the product, because
+ * the heal decision refused to pick whenever more than one organization
+ * remained after the current one turned out to be gone. Refusing left
+ * currentOrgId null, which is a reader who has workspaces being told they are
+ * in none.
+ */
+describe('a reader with a workspace is put in one', () => {
+  const heal = src('lib/org/current-org-heal.ts')
+
+  it('takes the first available rather than asking', () => {
+    expect(heal).toContain("return { kind: 'heal', target: remaining[0] }")
+    expect(heal).not.toContain("kind: 'choose'")
+  })
+
+  /** A first session, or a column the database nulled with its organization. */
+  it('adopts one when there was never a durable org', () => {
+    expect(heal).toContain("? { kind: 'heal', target: cachedOrgIds[0] }")
+  })
+
+  /**
+   * The guard that the original heal defect turned on: a cache that has not
+   * loaded is not evidence that anything is wrong.
+   */
+  it('still decides nothing from a list that has not arrived', () => {
+    expect(heal).toContain("if (isLoading) return { kind: 'none' }")
   })
 })

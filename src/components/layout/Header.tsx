@@ -62,7 +62,16 @@ export function Header({
   const orgSwitcherRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
   const { hasUnreadNotifications, unreadCount } = useNotifications()
-  const { currentOrg, userOrgs, switchOrg, isLoading } = useOrganization()
+  const { currentOrg, currentOrgId, userOrgs, switchOrg, isLoading } = useOrganization()
+  /*
+   * A workspace is named, and the list has not placed it yet.
+   *
+   * Only happens while the durable org is being verified against the
+   * database, which is the one moment it is absent from the cached list
+   * without being gone. Saying "Choose workspace" there claims something
+   * not yet known, so the label waits instead.
+   */
+  const orgUnresolved = !currentOrg && !!currentOrgId
   /*
    * Openable when there is a choice to make, or when no workspace is
    * active. One organization that is already current has nothing to
@@ -701,7 +710,7 @@ export function Header({
                   )}>
                     {/* Says what is true. A reader whose workspace is gone is
                         not in an unnamed one; they are in none. */}
-                    {currentOrg?.name ?? 'Choose workspace'}
+                    {currentOrg?.name ?? (orgUnresolved ? '…' : 'Choose workspace')}
                   </span>
                   {!!currentOrg?.settings?.pilot_mode && (
                     <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded">
