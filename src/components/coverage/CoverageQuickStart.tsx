@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { useQuery } from '@tanstack/react-query'
-import { Check, Loader2, Search, Sparkles, X } from 'lucide-react'
+import { Check, ChevronLeft, Loader2, Search, Sparkles, X } from 'lucide-react'
 
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useMyCoverage } from '../../hooks/useMyCoverage'
 import {
-  mergeCandidates, newFromSector, removeCandidate, toggleCandidate,
+  mergeCandidates, newFromSector, toggleCandidate,
   type CoverageCandidate,
 } from '../../lib/coverage/quick-start-selection'
 import { coverageSuggestionsKey, fetchCoverageSuggestions } from '../../lib/coverage/quick-start-suggestions'
@@ -169,6 +169,17 @@ const SECTOR_CONSTITUENT_LIMIT = 50
  * reader to "follow cash". Matched case-insensitively because the catalogue is
  * not consistent about capitalisation.
  */
+/*
+ * Skeleton geometry, written down rather than random.
+ *
+ * Uneven widths so the placeholder reads as text rather than as a progress
+ * bar, and a fixed set so it does not reshuffle on every render.
+ */
+const ROW_SKELETON: [string, string][] = [
+  ['3rem', '9rem'], ['2.5rem', '11rem'], ['3.25rem', '8rem'], ['2.75rem', '10rem'],
+]
+const SECTOR_PILL_SKELETON = ['5.5rem', '7rem', '4.5rem', '8rem', '6rem', '5rem', '7.5rem', '4rem']
+
 const NON_COVERABLE_SECTORS = new Set(['cash', 'cash & equivalents', 'cash and equivalents'])
 
 export function CoverageQuickStart({
@@ -387,10 +398,26 @@ export function CoverageQuickStart({
    * twice. On the browse list the useful fact is how many there are; when a
    * search or a sector has narrowed it, the useful fact is what narrowed it.
    */
+  /*
+   * How many of the open sector's names are staged.
+   *
+   * The list header says it, which is where a reader looking at fifty rows
+   * actually needs it — the footer count is about the whole answer, and while
+   * you are inside Consumer Discretionary the useful number is this one.
+   */
+  const selectedInSector = openSector
+    ? constituents.reduce((n, a) => n + (selected.has(a.id) ? 1 : 0), 0)
+    : 0
+  const remainingInSector = openSector
+    ? newFromSector(constituents, selected, alreadyCovered)
+    : 0
+
   const listTitle = isSearching
     ? `Matching “${query.trim()}”`
     : source === 'sectors'
-      ? (openSector ? `${openSector} — largest names today` : null)
+      ? (openSector
+        ? `${openSector}${selectedInSector > 0 ? ` · ${selectedInSector} selected` : ''}`
+        : null)
       : (options.length > 0 ? `${options.length} suggested` : null)
 
   const emptyMessage = isSearching
@@ -430,7 +457,7 @@ export function CoverageQuickStart({
           The question, once, at the size of a question. Everything under it
           was the same 11px as everything else, so the card had no hierarchy
           and read as a settings panel rather than as something being asked. */}
-      <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="mb-2.5 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className={clsx(
             'flex items-center gap-1.5 font-semibold text-gray-900 dark:text-white',
@@ -442,12 +469,14 @@ export function CoverageQuickStart({
           {/* Setup, and named as setup. It personalises what Tesseract puts in
               front of the reader; it is not one of the five steps and does not
               count toward finishing them. */}
+          {/* One sentence. It said the same thing twice — what to pick, and
+              that you can change it — and the card's job is to be answered,
+              not read. */}
           <p className={clsx(
-            'mt-1 leading-relaxed text-gray-500 dark:text-gray-400',
-            roomy ? 'text-sm' : 'text-xs',
+            'mt-0.5 leading-snug text-gray-500 dark:text-gray-400',
+            roomy ? 'text-[13px]' : 'text-xs',
           )}>
-            Pick the names and sectors that matter to you. Tesseract uses this to decide
-            what to put in front of you, and you can change it at any time.
+            Tesseract uses this to decide what to put in front of you.
           </p>
         </div>
         {onDismiss && !roomy && (
@@ -519,17 +548,24 @@ export function CoverageQuickStart({
           the ordinary list below and the header becomes the way back. */}
       {!isSearching && source === 'sectors' && !openSector && (
         <div className="mt-2.5">
-          <p className="mb-2 text-xs leading-snug text-gray-500 dark:text-gray-400">
-            Adds the largest names in a sector as they are today, up to {SECTOR_CONSTITUENT_LIMIT}.
-            It is a selection, not a standing rule &mdash; companies that join the sector later
-            are not added for you.
+          {/* The pills are the content here. The rule they follow is worth one
+              line, not three — it is still a selection of today's largest
+              names and still not a standing rule. */}
+          <p className="mb-2 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+            Adds a sector&rsquo;s largest names as they are today, up to {SECTOR_CONSTITUENT_LIMIT}. Not a
+            standing rule.
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {sectorsLoading && (
-              <span className="flex items-center gap-1.5 py-1 text-xs text-gray-400">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading sectors&hellip;
-              </span>
-            )}
+            {/* Shaped like the pills they become, so the block does not jump
+                from one line of text to six rows of chips. */}
+            {sectorsLoading && SECTOR_PILL_SKELETON.map((w, i) => (
+              <span
+                key={i}
+                aria-hidden="true"
+                className="h-7 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700"
+                style={{ width: w }}
+              />
+            ))}
             {sectors.map(name => (
               <button
                 key={name}
@@ -557,31 +593,71 @@ export function CoverageQuickStart({
           {listTitle}
         </p>
         {!isSearching && source === 'sectors' && openSector && (
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2.5">
+            {/*
+              "Add all 0" was a live-looking control that could do nothing.
+              Nothing left to add is a finished state, not a disabled button,
+              and it is worth saying so.
+            */}
+            {constituentsLoading ? null : remainingInSector > 0 ? (
+              <button
+                data-slot="coverage-add-sector"
+                onClick={addSector}
+                className="rounded-lg border border-primary-200 px-2.5 py-1 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-50 dark:border-primary-800 dark:text-primary-300 dark:hover:bg-primary-900/20"
+              >
+                {/* Counted before it is pressed: a sector adding eleven names
+                    and one adding none look identical on a button. */}
+                Add all {remainingInSector}
+              </button>
+            ) : constituents.length > 0 ? (
+              <span
+                data-slot="coverage-sector-complete"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400"
+              >
+                <Check className="h-3 w-3" strokeWidth={3} /> All added
+              </span>
+            ) : null}
+            {/* Navigation, and shaped like it. It read as a second call to
+                action competing with the one beside it. */}
             <button
-              data-slot="coverage-add-sector"
-              onClick={addSector}
-              disabled={constituentsLoading || newFromSector(constituents, selected, alreadyCovered) === 0}
-              className="rounded-lg bg-primary-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-primary-700 disabled:opacity-40"
-            >
-              {/* Counted before it is pressed: a sector adding eleven names
-                  and one adding none look identical on a button. */}
-              Add all {newFromSector(constituents, selected, alreadyCovered)}
-            </button>
-            <button
+              data-slot="coverage-sector-back"
               onClick={() => setOpenSector(null)}
-              className="text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400"
+              className="inline-flex items-center gap-0.5 text-xs font-medium text-gray-500 transition-colors hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
             >
+              <ChevronLeft className="h-3.5 w-3.5" />
               All sectors
             </button>
           </div>
         )}
       </div>
 
-      <div className={clsx('overflow-y-auto', dense ? 'max-h-52' : roomy ? 'max-h-[min(28rem,44vh)]' : 'max-h-64')}>
+      {/*
+        A floor as well as a ceiling.
+
+        With only a ceiling the region was one line tall while a query was in
+        flight and fifty rows tall a moment later, so opening a sector threw
+        the footer half a screen down the page. The floor is four rows, which
+        is what the skeleton draws.
+      */}
+      <div
+        className={clsx(
+          'overflow-y-auto',
+          dense ? 'min-h-[11rem] max-h-52' : roomy ? 'min-h-[13rem] max-h-[min(28rem,44vh)]' : 'min-h-[12rem] max-h-64',
+        )}
+      >
+        {/* Rows, not a spinner. The reader is about to read a list, and a
+            centred spinner tells them nothing about what is coming. */}
         {listLoading && options.length === 0 && (
-          <div className="flex items-center gap-2 px-1 py-4 text-xs text-gray-400">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading&hellip;
+          <div aria-busy="true" aria-label="Loading">
+            {ROW_SKELETON.map((w, i) => (
+              <div key={i} aria-hidden="true" className={clsx('flex items-center gap-3 px-2', roomy ? 'py-2.5' : 'py-2')}>
+                <span className="h-5 w-5 shrink-0 animate-pulse rounded-md bg-gray-100 dark:bg-gray-700" />
+                <span className="min-w-0 flex-1 space-y-1.5">
+                  <span className="block h-3 animate-pulse rounded bg-gray-100 dark:bg-gray-700" style={{ width: w[0] }} />
+                  <span className="block h-2.5 animate-pulse rounded bg-gray-100 dark:bg-gray-700" style={{ width: w[1] }} />
+                </span>
+              </div>
+            ))}
           </div>
         )}
 
@@ -602,11 +678,13 @@ export function CoverageQuickStart({
               className={clsx(
                 'flex w-full items-center gap-3 rounded-lg px-2 text-left transition-colors',
                 roomy ? 'py-2.5' : 'py-2',
-                isCovered
-                  ? 'opacity-60'
-                  : isSelected
-                    ? 'bg-primary-50/70 dark:bg-primary-900/20'
-                    : 'hover:bg-gray-50 dark:hover:bg-gray-700/50',
+                /*
+                  A staged row used to take a tinted block, so selecting forty
+                  names turned the list into a wall of blue and the screen got
+                  busier the further the reader got. The tick carries the
+                  state; the row stays a row.
+                */
+                isCovered ? 'opacity-60' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50',
               )}
             >
               {/*
@@ -672,65 +750,52 @@ export function CoverageQuickStart({
           from the list. The staged names and the button were two stacked
           blocks below a scrolling list, so on a long list the reader scrolled
           past what they were choosing to find out what they had chosen. */}
-      <div className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
-        {selected.size > 0 && (
-          <div data-slot="coverage-quick-start-selection" className="mb-2.5">
-            {/* Every staged name, removable one at a time. A sector press can
-                stage fifty; nobody should have to accept all fifty to accept
-                most of them. */}
-            <div className={clsx('flex flex-wrap gap-1 overflow-y-auto', roomy ? 'max-h-28' : 'max-h-20')}>
-              {[...selected.values()].map(asset => (
-                <span
-                  key={asset.id}
-                  data-slot="coverage-selected-chip"
-                  className="inline-flex items-center gap-1 rounded-full bg-primary-50 py-0.5 pl-2 pr-1 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-200"
-                >
-                  {asset.symbol}
-                  {asset.viaSector && (
-                    <span className="text-[10px] font-normal text-primary-400">{asset.viaSector}</span>
-                  )}
-                  <button
-                    onClick={() => setSelected(prev => removeCandidate(prev, asset.id))}
-                    aria-label={`Remove ${asset.symbol}`}
-                    className="no-touch-target rounded-full p-0.5 hover:bg-primary-100 dark:hover:bg-primary-800"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+      {/*
+        ── Commit ────────────────────────────────────────────────────────
 
-        <div className="flex items-center justify-between gap-3">
-          <p className="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400">
-            {selected.size === 0
-              ? 'Nothing is saved until you confirm.'
-              : `${selected.size} ready to follow.`}
-          </p>
-          <div className="flex shrink-0 items-center gap-1">
-            {onDismiss && (
-              <button
-                data-slot="coverage-quick-start-skip"
-                onClick={onDismiss}
-                disabled={saving}
-                className="rounded-lg px-2.5 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-              >
-                Not now
-              </button>
-            )}
+        One count and one decision.
+
+        The staged names were also listed here as removable chips, which is a
+        second full copy of a fact the ticked rows already carry — and a copy
+        that grew to fifty pills and pushed the button off the screen. Unstaging
+        is what the row's own tick is for, which is where the reader ticked it.
+        A count that does not move when the list does is what belongs here.
+      */}
+      <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+        <p
+          data-slot="coverage-quick-start-status"
+          className="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400"
+        >
+          {selected.size === 0
+            ? 'Nothing is saved until you confirm.'
+            : `${selected.size} selected`}
+        </p>
+        <div className="flex shrink-0 items-center gap-1">
+          {onDismiss && (
             <button
-              data-slot="coverage-quick-start-save"
-              onClick={save}
-              disabled={selected.size === 0 || saving}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-default disabled:opacity-40"
+              data-slot="coverage-quick-start-skip"
+              onClick={onDismiss}
+              disabled={saving}
+              className="rounded-lg px-2.5 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
             >
-              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {selected.size === 0
+              Not now
+            </button>
+          )}
+          <button
+            data-slot="coverage-quick-start-save"
+            onClick={save}
+            disabled={selected.size === 0 || saving}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-default disabled:opacity-40"
+          >
+            {/* The selection stays on screen through the write, so the button
+                is the only thing that changes state. */}
+            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {saving
+              ? 'Following…'
+              : selected.size === 0
                 ? 'Follow'
                 : `Follow ${selected.size} ${selected.size === 1 ? 'name' : 'names'}`}
-            </button>
-          </div>
+          </button>
         </div>
       </div>
     </div>

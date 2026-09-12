@@ -48,6 +48,9 @@ const FOUND   = { id: 'asset-find', symbol: 'FIND', company_name: 'Found Co', se
 function stubTable(table: string) {
   const api: any = {
     select: () => api, eq: () => api, in: () => api, or: () => api,
+    // The sector list filters out null sectors, so the stub needs `.not` or
+    // that query throws and the Sectors tab silently has nothing in it.
+    not: () => api,
     order: () => api, limit: () => api,
     maybeSingle: () => Promise.resolve({ data: { sector_focus: ['Tech'] }, error: null }),
     then: undefined,
@@ -458,5 +461,156 @@ describe('CoverageQuickStart — followed is not selected', () => {
     const followed = rows().find(r => r.textContent?.includes('HOLD'))!
     expect(followed.getAttribute('data-selected')).toBe('false')
     expect(followed.querySelector('.bg-primary-500')).toBeNull()
+  })
+})
+
+/*
+ * ── One fact, one representation ───────────────────────────────────────────
+ *
+ * A staged name could be shown four ways at once: a ticked row, a tinted row,
+ * a removable chip in a cloud below the list, and a count. Selecting forty
+ * names therefore made the screen busier the further the reader got, and the
+ * chip cloud grew until it pushed the button off the screen.
+ */
+describe('CoverageQuickStart — the selection is shown once', () => {
+  it('has no chip cloud under the list', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    await user.click(await screen.findByText('HOLD'))
+
+    expect(container.querySelector('[data-slot="coverage-selected-chip"]')).toBeNull()
+    expect(container.querySelector('[data-slot="coverage-quick-start-selection"]')).toBeNull()
+  })
+
+  /** The tick carries the state; the row stays a row. */
+  it('does not paint a block behind every staged name', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    await user.click(await screen.findByText('HOLD'))
+
+    const row = container.querySelector('[data-slot="coverage-quick-start-option"][data-selected="true"]')!
+    expect(row).not.toBeNull()
+    expect(row.className).not.toContain('bg-primary-50')
+    // The mark itself still says so.
+    expect(row.querySelector('.bg-primary-500')).not.toBeNull()
+  })
+
+  it('keeps one count, beside the one action', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    await user.click(await screen.findByText('HOLD'))
+
+    const status = container.querySelector('[data-slot="coverage-quick-start-status"]')!
+    expect(status.textContent).toBe('1 selected')
+    expect(screen.getByRole('button', { name: /Follow 1 name/ })).toBeInTheDocument()
+  })
+})
+
+/*
+ * ── Browsing a sector ──────────────────────────────────────────────────────
+ *
+ * "Add all 0" was a live-looking control that could do nothing, and the way
+ * back out of a sector was styled like a second call to action competing with
+ * it.
+ */
+describe('CoverageQuickStart — sector browsing', () => {
+  const openSector = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByText('Sectors'))
+    await user.click(await screen.findByText('Tech'))
+  }
+
+  it('says which sector is open and how much of it is staged', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    await screen.findByText('HOLD')
+    await openSector(user)
+
+    const title = () => container.querySelector('[data-slot="coverage-quick-start-list-title"]')!.textContent
+    expect(title()).toBe('Tech')
+    await user.click(await screen.findByText('SECT'))
+    expect(title()).toBe('Tech · 1 selected')
+  })
+
+  /** Nothing left to add is a finished state, not a disabled button. */
+  it('replaces Add all with a completed state once nothing remains', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    await screen.findByText('HOLD')
+    await openSector(user)
+
+    await user.click(await screen.findByRole('button', { name: /Add all/ }))
+    expect(container.querySelector('[data-slot="coverage-add-sector"]')).toBeNull()
+    expect(container.querySelector('[data-slot="coverage-sector-complete"]')).not.toBeNull()
+  })
+
+  it('offers a way back that reads as navigation', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    await screen.findByText('HOLD')
+    await openSector(user)
+
+    const back = container.querySelector('[data-slot="coverage-sector-back"]')! as HTMLElement
+    expect(back.className).not.toContain('bg-primary-600')
+    await user.click(back)
+    expect(await screen.findByText('Tech')).toBeInTheDocument()
+  })
+})
+
+/*
+ * ── Loading keeps the shape ────────────────────────────────────────────────
+ *
+ * The list region had a ceiling and no floor, so it was one line tall while a
+ * query was in flight and fifty rows tall a moment later. Opening a sector
+ * threw the footer half a screen down the page.
+ */
+describe('CoverageQuickStart — loading geometry', () => {
+  it('reserves the list region rather than collapsing it', () => {
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    const region = container.querySelector('[data-slot="coverage-quick-start-list-title"]')!
+      .parentElement!.nextElementSibling!
+    expect(region.className).toMatch(/min-h-\[/)
+  })
+
+  /** Rows, not a spinner: the reader is about to read a list. */
+  it('draws rows while the first list is in flight', () => {
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(3)
+  })
+
+  it('never blanks the card while it loads', () => {
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    expect(screen.getByText('What do you follow?')).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="coverage-quick-start-search"]')).not.toBeNull()
+    expect(container.querySelector('[data-slot="coverage-quick-start-save"]')).not.toBeNull()
+  })
+})
+
+/*
+ * ── Saving ─────────────────────────────────────────────────────────────────
+ *
+ * The write is the only thing that changes state. The list, the ticks and the
+ * card all stay, so a save never looks like a navigation.
+ */
+describe('CoverageQuickStart — saving', () => {
+  it('keeps the selection on screen and moves only the button', async () => {
+    const user = userEvent.setup()
+    let release: (n: number) => void = () => {}
+    addImpl = (ids: string[]) => new Promise<number>(res => {
+      release = () => res(ids.length)
+    })
+
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    await user.click(await screen.findByText('HOLD'))
+    await user.click(screen.getByRole('button', { name: /Follow 1 name/ }))
+
+    expect(await screen.findByRole('button', { name: /Following/ })).toBeInTheDocument()
+    // Still selected, still listed, card intact.
+    expect(container.querySelector('[data-slot="coverage-quick-start-option"][data-selected="true"]')).not.toBeNull()
+    expect(screen.getByText('What do you follow?')).toBeInTheDocument()
+
+    release(1)
+    await waitFor(() =>
+      expect(container.querySelector('[data-slot="coverage-quick-start-done"]')).not.toBeNull())
   })
 })
