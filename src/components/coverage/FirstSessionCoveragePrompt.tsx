@@ -56,6 +56,13 @@ interface FirstSessionCoveragePromptProps {
    * one of several things to look at rather than the only one.
    */
   dismissible?: boolean
+  /**
+   * Whether a successful save is confirmed in place. See the note on the same
+   * prop in `CoverageQuickStart`: false where declaring coverage is what
+   * replaces this card, so the confirmation would be displaced before it
+   * could be read.
+   */
+  confirmOnSave?: boolean
 }
 
 const dismissKey = (userId: string, orgId: string) =>
@@ -115,6 +122,7 @@ export function FirstSessionCoveragePrompt({
   variant = 'card',
   className,
   dismissible = true,
+  confirmOnSave = true,
 }: FirstSessionCoveragePromptProps) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
@@ -202,6 +210,7 @@ export function FirstSessionCoveragePrompt({
     <CoverageQuickStart
       variant={variant}
       className={className}
+      confirmOnSave={confirmOnSave}
       /**
        * The confirmation is owned here, not by the child.
        *

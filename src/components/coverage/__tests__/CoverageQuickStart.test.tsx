@@ -519,7 +519,12 @@ describe('CoverageQuickStart — sector browsing', () => {
     await user.click(await screen.findByText('Tech'))
   }
 
-  it('says which sector is open and how much of it is staged', async () => {
+  /**
+   * The name, and nothing appended to it. A selected count lived here too,
+   * which at 390px truncated the sector name in order to repeat a number the
+   * footer already owns.
+   */
+  it('names the open sector and leaves counting to the footer', async () => {
     const user = userEvent.setup()
     const { container } = renderWithQuery(<CoverageQuickStart />)
     await screen.findByText('HOLD')
@@ -528,7 +533,9 @@ describe('CoverageQuickStart — sector browsing', () => {
     const title = () => container.querySelector('[data-slot="coverage-quick-start-list-title"]')!.textContent
     expect(title()).toBe('Tech')
     await user.click(await screen.findByText('SECT'))
-    expect(title()).toBe('Tech · 1 selected')
+    expect(title()).toBe('Tech')
+    expect(container.querySelector('[data-slot="coverage-quick-start-status"]')!.textContent)
+      .toBe('1 selected')
   })
 
   /** Nothing left to add is a finished state, not a disabled button. */
@@ -612,5 +619,72 @@ describe('CoverageQuickStart — saving', () => {
     release(1)
     await waitFor(() =>
       expect(container.querySelector('[data-slot="coverage-quick-start-done"]')).not.toBeNull())
+  })
+})
+
+/*
+ * ── The first-run save has no middle ───────────────────────────────────────
+ *
+ * On the pilot home, declaring coverage is what replaces this card with the
+ * mission. The confirmation panel rendered there for exactly one refetch of
+ * `my-coverage` and was then thrown away — a success screen nobody had time
+ * to read, arriving between the write and the screen the write was for. The
+ * selection cleared and the button dropped back to a disabled "Follow" in the
+ * same frame, which was a second intermediate state for the same round trip.
+ *
+ * Everywhere the card survives its own save, the confirmation is the only
+ * feedback there is, and it stays.
+ */
+describe('CoverageQuickStart — confirmOnSave', () => {
+  const saveOne = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(await screen.findByText('HOLD'))
+    await user.click(screen.getByRole('button', { name: /Follow 1 name/ }))
+  }
+
+  it('holds the selection and the button when the card is about to be replaced', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithQuery(<CoverageQuickStart confirmOnSave={false} />)
+    await saveOne(user)
+
+    await waitFor(() => expect(addCalls).toEqual(['asset-hold']))
+    // No success panel, and nothing un-ticked itself.
+    expect(container.querySelector('[data-slot="coverage-quick-start-done"]')).toBeNull()
+    expect(container.querySelector('[data-slot="coverage-quick-start-option"][data-selected="true"]')).not.toBeNull()
+    expect(screen.getByRole('button', { name: /Following/ })).toBeInTheDocument()
+  })
+
+  /** Where nothing replaces the card, the confirmation is all the reader gets. */
+  it('still confirms in place by default', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    await saveOne(user)
+
+    expect(await screen.findByText(/Following 1 name/)).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="coverage-quick-start-done"]')).not.toBeNull()
+  })
+
+  /** A failure always comes back, whichever surface it is on. */
+  it('releases the button and keeps the selection when the write fails', async () => {
+    const user = userEvent.setup()
+    addImpl = async () => { throw new Error('Nope') }
+    const { container } = renderWithQuery(<CoverageQuickStart confirmOnSave={false} />)
+    await saveOne(user)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nope')
+    expect(screen.getByRole('button', { name: /Follow 1 name/ })).toBeEnabled()
+    expect(container.querySelector('[data-slot="coverage-quick-start-option"][data-selected="true"]')).not.toBeNull()
+  })
+})
+
+describe('the pilot home lets the mission be the confirmation', () => {
+  const read = (p: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('node:fs').readFileSync(require('node:path').join(process.cwd(), 'src', p), 'utf8')
+
+  it.each([
+    ['desktop', 'pages/DashboardPage.tsx'],
+    ['mobile', 'components/mobile/MobilePilotHome.tsx'],
+  ])('%s suppresses the in-place confirmation', (_name, file) => {
+    expect(read(file)).toContain('confirmOnSave={false}')
   })
 })

@@ -47,7 +47,12 @@ export function MobilePilotHome({ onNavigate }: { onNavigate: (result: any) => v
         {/* Not dismissible while it is the whole screen: "Not now" there
             leaves a reader on an empty home with no way forward. */}
         {stage === 'coverage' && (
-          <FirstSessionCoveragePrompt variant="sheet" dismissible={false} />
+          <FirstSessionCoveragePrompt
+            variant="sheet"
+            dismissible={false}
+            /* The mission appearing IS the confirmation here. */
+            confirmOnSave={false}
+          />
         )}
         {stage === 'mission' && (
           <>

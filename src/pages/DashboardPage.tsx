@@ -1304,7 +1304,12 @@ export function DashboardPage() {
                   Holding the room keeps the swap from moving the page. */}
               {pilotEntry.stage === 'loading' && <PilotHomeSkeleton />}
               {pilotEntry.stage === 'coverage' && (
-                <FirstSessionCoveragePrompt variant="page" dismissible={false} />
+                <FirstSessionCoveragePrompt
+                  variant="page"
+                  dismissible={false}
+                  /* The mission appearing IS the confirmation here. */
+                  confirmOnSave={false}
+                />
               )}
               {pilotEntry.stage === 'mission' && (
                 <>

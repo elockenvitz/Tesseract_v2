@@ -83,6 +83,20 @@ interface CoverageQuickStartProps {
   /** Rendered as a dismiss affordance when supplied. */
   onDismiss?: () => void
   /**
+   * Whether a successful save is confirmed in place.
+   *
+   * True everywhere the card stays on screen afterwards, which is where a
+   * confirmation is the only feedback there is.
+   *
+   * False on the pilot's first run, where declaring coverage is what replaces
+   * this card with the mission. The confirmation rendered there for exactly
+   * one refetch of `my-coverage` and was then thrown away — a success panel
+   * nobody had time to read, arriving between the write and the screen that
+   * write was for. With it off, the card holds its selection and its
+   * "Following…" button until the surface changes underneath it.
+   */
+  confirmOnSave?: boolean
+  /**
    * The confirmation state, when a caller keeps it somewhere this component
    * cannot lose it.
    *
@@ -187,6 +201,7 @@ export function CoverageQuickStart({
   onSaved,
   onDismiss,
   className,
+  confirmOnSave = true,
   savedCount: savedCountProp = null,
 }: CoverageQuickStartProps) {
   const { user } = useAuth()
@@ -360,13 +375,29 @@ export function CoverageQuickStart({
        * selection where eight were already covered reports forty-two.
        */
       const created = await coverage.addMany(ids)
+      onSaved?.(created)
+
+      /*
+       * Nothing moves.
+       *
+       * The rows the reader ticked stay ticked and the button stays on
+       * "Following…" until the coverage read lands and the surface above
+       * swaps this card for the mission. Clearing the selection and dropping
+       * the button back to a disabled "Follow" for one round trip was a
+       * second intermediate state between the write and its result, and the
+       * reader had no use for either.
+       */
+      if (!confirmOnSave) return
+
       setSavedCount(prev => (prev ?? 0) + created)
       setSelected(new Map())
-      onSaved?.(created)
+      setSaving(false)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong.'
       setError(`${message} Nothing was lost — your selection is still here, try again.`)
-    } finally {
+      /* Released here rather than in a `finally`: a save that succeeded on a
+         surface about to be replaced deliberately stays held. A failed one
+         must always come back, selection intact, so it can be retried. */
       setSaving(false)
     }
   }
@@ -398,16 +429,6 @@ export function CoverageQuickStart({
    * twice. On the browse list the useful fact is how many there are; when a
    * search or a sector has narrowed it, the useful fact is what narrowed it.
    */
-  /*
-   * How many of the open sector's names are staged.
-   *
-   * The list header says it, which is where a reader looking at fifty rows
-   * actually needs it — the footer count is about the whole answer, and while
-   * you are inside Consumer Discretionary the useful number is this one.
-   */
-  const selectedInSector = openSector
-    ? constituents.reduce((n, a) => n + (selected.has(a.id) ? 1 : 0), 0)
-    : 0
   const remainingInSector = openSector
     ? newFromSector(constituents, selected, alreadyCovered)
     : 0
@@ -415,9 +436,10 @@ export function CoverageQuickStart({
   const listTitle = isSearching
     ? `Matching “${query.trim()}”`
     : source === 'sectors'
-      ? (openSector
-        ? `${openSector}${selectedInSector > 0 ? ` · ${selectedInSector} selected` : ''}`
-        : null)
+      /* The sector's name only. It carried a selected count too, which at
+         390px truncated the name it was appended to in order to repeat a
+         number the footer already owns. */
+      ? openSector
       : (options.length > 0 ? `${options.length} suggested` : null)
 
   const emptyMessage = isSearching
