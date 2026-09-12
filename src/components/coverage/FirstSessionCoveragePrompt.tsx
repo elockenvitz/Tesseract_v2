@@ -120,8 +120,13 @@ export function FirstSessionCoveragePrompt({
   const { currentOrgId } = useOrganization()
   const { hasCoverage, isLoading } = useMyCoverage()
 
-  // Starts dismissed so nothing can flash before the real answer is known.
-  const [dismissed, setDismissed] = useState(true)
+  /*
+   * Starts dismissed so nothing can flash before the real answer is known —
+   * except where dismissal is not on offer, and there is nothing to read.
+   * Starting true there cost a frame of blank between the skeleton going
+   * and the card arriving, for a stored value that would be ignored anyway.
+   */
+  const [dismissed, setDismissed] = useState(dismissible)
 
   /**
    * The decision to show, latched on the first trustworthy evaluation.
@@ -153,7 +158,17 @@ export function FirstSessionCoveragePrompt({
     return () => { listeners.delete(sync) }
   }, [decisionKey])
 
-  const show = session.show ?? null
+  /*
+   * Latched once, but decided on the first render that can decide it.
+   *
+   * The latch is written by an effect, which runs after paint — so the
+   * render where the coverage query resolved still saw `null` and drew
+   * nothing. On the pilot home that is a frame of blank between the
+   * skeleton disappearing and the card appearing. The fallback is the same
+   * answer the effect is about to store, so nothing can disagree; once the
+   * store has it, the store wins and the latch behaves exactly as before.
+   */
+  const show = session.show ?? (isLoading ? null : !hasCoverage)
 
   // Read after mount rather than during render: localStorage throws in some
   // embedded contexts, and this renders inside the gallery harness too.

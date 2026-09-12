@@ -1,6 +1,7 @@
 import { CheckCircle2 } from 'lucide-react'
 import { usePilotMission } from '../../hooks/usePilotMission'
 import { isDesktopOnly } from '../../lib/mobile/mobile-surfaces'
+import { PilotMissionStripSkeleton } from '../pilot/PilotHomeSkeletons'
 
 /**
  * The pilot mission on a phone: the count, the next step, one control.
@@ -27,7 +28,10 @@ import { isDesktopOnly } from '../../lib/mobile/mobile-surfaces'
 export function PilotMissionStrip({ onNavigate }: { onNavigate?: (result: any) => void }) {
   const mission = usePilotMission()
 
-  if (mission.isLoading || mission.complete) return null
+  // Held while loading so the banner below does not start at the top of
+  // the screen and get pushed down. Gone for good once complete.
+  if (mission.isLoading) return <PilotMissionStripSkeleton />
+  if (mission.complete) return null
   const step = mission.steps.find(s => s.id === mission.currentStepId)
   if (!step) return null
 

@@ -2,6 +2,7 @@ import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoverageProm
 import { CoverageSummaryBanner } from '../coverage/CoverageSummaryBanner'
 import { PilotMissionStrip } from './PilotMissionStrip'
 import { usePilotEntry } from '../../hooks/usePilotEntry'
+import { PilotHomeSkeleton } from '../pilot/PilotHomeSkeletons'
 
 /**
  * The phone's home while a pilot is still working through the mission.
@@ -42,6 +43,7 @@ export function MobilePilotHome({ onNavigate }: { onNavigate: (result: any) => v
   return (
     <div className="h-full overflow-y-auto bg-gray-50 px-3 [padding-top:calc(0.75rem+env(safe-area-inset-top))] pb-6 dark:bg-gray-900">
       <div className="space-y-2.5">
+        {stage === 'loading' && <PilotHomeSkeleton dense />}
         {/* Not dismissible while it is the whole screen: "Not now" there
             leaves a reader on an empty home with no way forward. */}
         {stage === 'coverage' && (

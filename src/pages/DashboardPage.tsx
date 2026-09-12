@@ -60,6 +60,7 @@ import { useOrganization } from '../contexts/OrganizationContext'
 import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
 import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
 import { CoverageSummaryBanner } from '../components/coverage/CoverageSummaryBanner'
+import { PilotHomeSkeleton } from '../components/pilot/PilotHomeSkeletons'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotSeeding } from '../hooks/usePilotSeeding'
 import { usePilotEntry } from '../hooks/usePilotEntry'
@@ -1299,6 +1300,9 @@ export function DashboardPage() {
                 the mission. One line says what they follow and opens the
                 Coverage app, which is reachable for them now.
               */}
+              {/* The coverage read decides which of the two below this is.
+                  Holding the room keeps the swap from moving the page. */}
+              {pilotEntry.stage === 'loading' && <PilotHomeSkeleton />}
               {pilotEntry.stage === 'coverage' && (
                 <FirstSessionCoveragePrompt variant="page" dismissible={false} />
               )}

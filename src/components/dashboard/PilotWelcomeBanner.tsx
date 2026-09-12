@@ -33,6 +33,7 @@ import { clsx } from 'clsx'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { usePilotMission, logMissionStep } from '../../hooks/usePilotMission'
 import type { MissionStepId } from '../../lib/pilot/mission'
+import { PilotMissionSkeleton } from '../pilot/PilotHomeSkeletons'
 
 interface PilotWelcomeBannerProps {
   onNavigate: (result: any) => void
@@ -131,7 +132,14 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
     }
   }, [mission, onNavigate])
 
-  if (mission.isLoading) return null
+  /*
+   * Held, not hidden.
+   *
+   * This returned null, and the coverage banner underneath it therefore
+   * rendered at the top of the page and was pushed down a beat later when
+   * the mission arrived. Nothing was slow; the page just moved.
+   */
+  if (mission.isLoading) return <PilotMissionSkeleton />
 
   const { completedCount, total, currentStepId, complete } = mission
 
