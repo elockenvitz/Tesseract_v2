@@ -116,12 +116,20 @@ export function ThoughtsSection({
   const writeCaptureStep = (n: 1 | 2 | 3) => {
     try { localStorage.setItem(captureStepKey(n), '1') } catch { /* ignore */ }
   }
-  const [captureStep1Done, setCaptureStep1Done] = useState(() => readCaptureStep(1))
+  /*
+   * Step 1 of the row is flag 2, not flag 1.
+   *
+   * Flag 1 is "a ticker was picked", which fires on the FIRST leg of a pair —
+   * true, and not yet enough to submit. Flag 2 is "the form is ready to
+   * send": one asset for a single idea, both legs for a pair. That is the
+   * condition the row is describing for either shape, so it is the one it
+   * reads. Flag 1 is still written, because it is durable state a pilot may
+   * already carry and renaming or dropping it would reset them.
+   */
   const [captureStep2Done, setCaptureStep2Done] = useState(() => readCaptureStep(2))
   const [captureStep3Done, setCaptureStep3Done] = useState(() => readCaptureStep(3))
   // Reload from localStorage when user/org changes.
   useEffect(() => {
-    setCaptureStep1Done(readCaptureStep(1))
     setCaptureStep2Done(readCaptureStep(2))
     setCaptureStep3Done(readCaptureStep(3))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -134,7 +142,8 @@ export function ThoughtsSection({
   // render.
   useEffect(() => {
     const defer = (fn: () => void) => () => queueMicrotask(fn)
-    const onStep1 = defer(() => { writeCaptureStep(1); setCaptureStep1Done(true) })
+    // Still recorded, still under its own key; simply not drawn any more.
+    const onStep1 = defer(() => { writeCaptureStep(1) })
     const onStep2 = defer(() => { writeCaptureStep(2); setCaptureStep2Done(true) })
     const onStep3 = defer(() => { writeCaptureStep(3); setCaptureStep3Done(true) })
     window.addEventListener('pilot-capture:ticker-picked', onStep1)
@@ -648,7 +657,7 @@ export function ThoughtsSection({
                 dismiss. Same visual family as the Trade Lab + Idea
                 Pipeline banners for cross-surface consistency. */}
             {showPilotCaptureBanner && (
-              <PilotCaptureTracker done={[captureStep1Done, captureStep2Done, captureStep3Done]} />
+              <PilotCaptureTracker done={[captureStep2Done, captureStep3Done]} />
             )}
 
             <CaptureGuidance mode="trade_idea" />
@@ -1239,18 +1248,24 @@ function PendingReviewList() {
 }
 
 /*
- * ── Why the middle step is not "Add a thesis and portfolio" ──────────────
+ * ── Why there are two steps and not three ────────────────────────────────
  *
- * It required both, and the form requires neither. Submit is enabled by an
- * asset (or both legs of a pair) and nothing else; the thesis field is
- * labelled optional in the form itself. So the tracker asked for one thing
- * the form calls optional and a second thing it never asks for at all, and a
- * reader who did as the form told them watched the step refuse to tick.
+ * The middle one asked for a thesis and a portfolio, and the form requires
+ * neither — submit is enabled by an asset, or by both legs of a pair, and the
+ * thesis field is labelled optional in that same form. Rewriting it as "the
+ * form is ready to send" made it truthful and made it redundant: for an
+ * ordinary single-name idea, picking the ticker is what makes the form ready,
+ * so the tracker ticked two steps on one action and jumped from one to three.
  *
- * It is the form being ready to send now, which is the one fact between
- * picking a name and submitting that is actually true.
+ * Inventing a third required action to keep the shape would be the tracker
+ * teaching a chore the product does not have. Two steps is the journey:
+ * choose what you are trading, then send it. Rationale, portfolio and context
+ * tags are all still there, and all still optional.
+ *
+ * Nothing durable moved. The three progress keys and the three events keep
+ * their names and keep being written; this is which of them the row draws.
  */
-const CAPTURE_STEPS = ['Pick a ticker', 'Set the trade details', 'Submit'] as const
+const CAPTURE_STEPS = ['Pick a ticker', 'Submit the idea'] as const
 
 /**
  * The three capture steps, in one row that never leaves the screen.

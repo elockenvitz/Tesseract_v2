@@ -31,36 +31,38 @@ afterEach(cleanup)
 const tracker = (done: boolean[]) => render(<PilotCaptureTracker done={done} />)
 
 describe('the capture tracker', () => {
-  it('names the step the reader is on, not all three', () => {
-    tracker([false, false, false])
-    expect(screen.getByText(/Step 1 of 3/)).toBeInTheDocument()
+  it('names the step the reader is on, not both', () => {
+    tracker([false, false])
+    expect(screen.getByText(/Step 1 of 2/)).toBeInTheDocument()
     expect(screen.getByText('Pick a ticker')).toBeInTheDocument()
-    expect(screen.queryByText('Submit')).toBeNull()
+    expect(screen.queryByText('Submit the idea')).toBeNull()
   })
 
   /**
-   * The middle step said "Add a thesis and portfolio" and the form requires
-   * neither — Submit is enabled by an asset, or by both legs of a pair, and
-   * the thesis field is labelled optional in that same form. So it asked for
-   * one thing the form calls optional and a second it never asks for.
+   * There were three. The middle one asked for a thesis and a portfolio, and
+   * the form requires neither — so rewriting it as "the form is ready to
+   * send" made it truthful and made it redundant: picking the ticker is what
+   * makes a single-name idea ready, and the tracker ticked two steps on one
+   * action. Inventing a third required action to keep the shape would be the
+   * tracker teaching a chore the product does not have.
    */
-  it('follows the form forward, and names what the form actually wants', () => {
-    tracker([true, false, false])
-    expect(screen.getByText(/Step 2 of 3/)).toBeInTheDocument()
-    expect(screen.getByText('Set the trade details')).toBeInTheDocument()
+  it('is the journey the form actually requires', () => {
+    tracker([true, false])
+    expect(screen.getByText(/Step 2 of 2/)).toBeInTheDocument()
+    expect(screen.getByText('Submit the idea')).toBeInTheDocument()
   })
 
   it('never asks for a field the form calls optional', () => {
-    for (const done of [[false, false, false], [true, false, false], [true, true, false]]) {
+    for (const done of [[false, false], [true, false]]) {
       cleanup()
       const { container } = tracker(done)
-      expect(container.textContent).not.toMatch(/thesis/i)
+      expect(container.textContent).not.toMatch(/thesis|portfolio|context/i)
     }
   })
 
   /** Completion is unchanged; only how much of it is drawn. */
   it('says so when every step is done', () => {
-    tracker([true, true, true])
+    tracker([true, true])
     expect(screen.getByText(/done/i)).toBeInTheDocument()
   })
 
@@ -70,7 +72,7 @@ describe('the capture tracker', () => {
    * everything under it at the moment you start reading.
    */
   it('stays put without a second, larger state to shrink from', () => {
-    const { container } = tracker([false, false, false])
+    const { container } = tracker([false, false])
     const el = container.querySelector('[data-slot="pilot-capture-tracker"]')!
     expect(el.className).toContain('sticky')
     expect(el.className).toContain('top-0')
@@ -85,7 +87,7 @@ describe('the capture tracker', () => {
    * moment hiding it is the right answer.
    */
   it('offers no way to hide the instructions', () => {
-    const { container } = tracker([false, false, false])
+    const { container } = tracker([false, false])
     expect(screen.queryByLabelText('Dismiss capture intro')).toBeNull()
     expect(container.querySelectorAll('button')).toHaveLength(0)
   })
@@ -127,5 +129,54 @@ describe('where back lives', () => {
   /** The desktop rail has the room, and keeps the row it had. */
   it('leaves the desktop row alone', () => {
     expect(thoughts()).toContain("captureMode !== 'collapsed' && !isMobileViewport && (")
+  })
+})
+
+/*
+ * ── Which durable flag the row reads ───────────────────────────────────────
+ *
+ * Flag 1 is "a ticker was picked", which fires on the FIRST leg of a pair:
+ * true, and not yet enough to submit. Flag 2 is "the form is ready to send" —
+ * one asset for a single idea, both legs for a pair — which is the condition
+ * the row describes for either shape.
+ *
+ * All three keys and all three events keep their names and keep being
+ * written. A pilot part-way through does not lose progress because the
+ * presentation changed.
+ */
+describe('the two steps are drawn from existing state', () => {
+  const thoughts = () => readFileSync(
+    path.join(process.cwd(), 'src/components/communication/ThoughtsSection.tsx'), 'utf8')
+
+  it('reads readiness, not the first ticker', () => {
+    expect(thoughts()).toContain('<PilotCaptureTracker done={[captureStep2Done, captureStep3Done]} />')
+  })
+
+  it('keeps writing every durable flag', () => {
+    const s = thoughts()
+    for (const n of [1, 2, 3]) expect(s).toContain(`writeCaptureStep(${n})`)
+  })
+
+  /**
+   * Checked at both ends. The listener subscribes and unsubscribes by name,
+   * and the form dispatches by name, so a rename that misses any one of the
+   * three leaves a step that can never tick.
+   */
+  it('renames no event a stored flag is keyed on', () => {
+    const listener = thoughts()
+    const form = readFileSync(
+      path.join(process.cwd(), 'src/components/thoughts/QuickTradeIdeaCapture.tsx'), 'utf8')
+    for (const e of [
+      'pilot-capture:ticker-picked',
+      'pilot-capture:thesis-portfolio-set',
+    ]) {
+      expect(listener).toContain(`addEventListener('${e}'`)
+      expect(listener).toContain(`removeEventListener('${e}'`)
+      expect(form).toContain(e)
+    }
+    // Submit is announced by the pane itself, not by the form.
+    expect(listener).toContain("addEventListener('pilot-capture:submitted'")
+    expect(listener).toContain("removeEventListener('pilot-capture:submitted'")
+    expect(listener).toContain("CustomEvent('pilot-capture:submitted')")
   })
 })
