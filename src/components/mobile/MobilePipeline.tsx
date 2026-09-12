@@ -73,7 +73,16 @@ export function MobilePipeline() {
   const [search, setSearch] = useState('')
   const [stagePickerOpen, setStagePickerOpen] = useState(false)
   const [detail, setDetail] = useState<PipelineRow | null>(null)
-  const [moveTarget, setMoveTarget] = useState<PipelineRow | null>(null)
+  /*
+   * Whether the open detail is showing its stage chooser.
+   *
+   * This was a second row-shaped state and a sheet mounted beside the
+   * detail, which meant two full-screen portals were siblings on the body
+   * and the one the reader saw came down to z-[90] against z-[60]. The
+   * chooser lost, so tapping Move appeared to do nothing until the detail
+   * was closed. It is a mode of the detail, so it is a flag on the detail.
+   */
+  const [moving, setMoving] = useState(false)
 
   const busy = isMoving || isMovingPairTrade
 
@@ -129,14 +138,14 @@ export function MobilePipeline() {
     } else {
       moveTrade({ tradeId: row.id, targetStatus: target as any, uiSource })
     }
-    setMoveTarget(null)
+    setMoving(false)
     setDetail(null)
   }
 
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950">
       <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-        <div className="flex gap-1 px-3 pt-2">
+        <div className="flex gap-1 px-3 pt-1.5">
           {VIEWS.map(v => {
             const count =
               v.key === 'pipeline' ? pipelineTotal
@@ -162,22 +171,12 @@ export function MobilePipeline() {
           })}
         </div>
 
-        {/* The Pipeline Get Started banner, in its compact phone form.
-            It lived inline in `TradeQueuePage`, which a phone never renders,
-            so it had simply never appeared here. Same steps and the same
-            completion flags as desktop — see `usePilotPipelineBanner`. Placed
-            under the view tabs and above the stage selector so it belongs to
-            the board rather than floating over the whole surface. */}
-        {pilotBanner.show && view === 'pipeline' && (
-          <PilotStepsBanner steps={pilotBanner.steps} />
-        )}
-
         {/* Stage selector. Paging chevrons plus a tappable label, rather than a
             horizontally scrolling strip of pills: the strip hid stages off the
             edge, gave no sense of position in a five-step process, and made the
             last stage a scroll away. */}
         {view === 'pipeline' && (
-          <div className="flex items-center gap-1.5 px-3 py-2">
+          <div className="flex items-center gap-1.5 px-3 pt-1.5 pb-1.5">
             <button
               type="button"
               disabled={stageIndex === 0}
@@ -219,7 +218,7 @@ export function MobilePipeline() {
           </div>
         )}
 
-        <div className={clsx('px-3 pb-2', view !== 'pipeline' && 'pt-2')}>
+        <div className={clsx('px-3 pb-2', view !== 'pipeline' && 'pt-1.5')}>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
@@ -249,6 +248,21 @@ export function MobilePipeline() {
             ? 'Approved and executed. Read-only here — corrections stay on desktop.'
             : 'Rejected, deferred and archived. Read-only here.'}
       </p>
+
+      {/* The Pipeline Get Started banner, in its compact phone form.
+
+          It lived inline in `TradeQueuePage`, which a phone never renders, so
+          it had simply never appeared here. Same steps and the same completion
+          flags as desktop — see `usePilotPipelineBanner`.
+
+          Below the board's own controls rather than wedged between the view
+          tabs and the stage pager, and inset rather than full-bleed: three
+          stacked strips before the first card read as three pieces of chrome
+          of equal standing, and guidance about the board should not outrank
+          the board. */}
+      {pilotBanner.show && view === 'pipeline' && (
+        <PilotStepsBanner steps={pilotBanner.steps} variant="inset" />
+      )}
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-safe space-y-2">
         {isLoading ? (
@@ -309,17 +323,12 @@ export function MobilePipeline() {
           row={detail}
           readOnly={view !== 'pipeline'}
           movable={view === 'pipeline' && canMove(detail)}
-          onClose={() => setDetail(null)}
-          onRequestMove={() => setMoveTarget(detail)}
-        />
-      )}
-
-      {moveTarget && (
-        <MoveSheet
-          row={moveTarget}
+          moving={moving}
           busy={busy}
-          onClose={() => setMoveTarget(null)}
-          onConfirm={target => commit(moveTarget, target, 'mobile_sheet')}
+          onClose={() => { setMoving(false); setDetail(null) }}
+          onRequestMove={() => setMoving(true)}
+          onCancelMove={() => setMoving(false)}
+          onConfirmMove={target => commit(detail, target, 'mobile_sheet')}
         />
       )}
     </div>
@@ -424,28 +433,67 @@ function IdeaDetail({
   row,
   readOnly,
   movable,
+  moving,
+  busy,
   onClose,
   onRequestMove,
+  onCancelMove,
+  onConfirmMove,
 }: {
   row: PipelineRow
   readOnly: boolean
   movable: boolean
+  moving: boolean
+  busy: boolean
   onClose: () => void
   onRequestMove: () => void
+  onCancelMove: () => void
+  onConfirmMove: (target: ResearchStage) => void
 }) {
+  /*
+   * The node the stage chooser is drawn into.
+   *
+   * State rather than a ref so attaching it re-renders: the chooser must not
+   * fall back to the body on the render that opens it, which is the exact
+   * layering the whole change exists to remove.
+   */
+  const [host, setHost] = useState<HTMLDivElement | null>(null)
+
   if (typeof document === 'undefined') return null
 
   const subject: any = row.kind === 'pair' ? row.legs[0] : row.item
   const stageCfg = RESEARCH_STAGE_CONFIG[row.stage as ResearchStage]
+  const company = row.kind === 'pair' ? row.pair?.description : row.item.assets?.company_name
 
   return createPortal(
-    <div className="fixed inset-0 z-[90] flex flex-col bg-white dark:bg-gray-900">
-      <div className="flex-shrink-0 flex items-center gap-2 px-3 h-14 pt-safe border-b border-gray-200 dark:border-gray-700">
-        <span className="min-w-0 flex-1 truncate text-base font-bold text-gray-900 dark:text-white">
-          {row.kind === 'pair'
-            ? row.pair?.name || 'Pair trade'
-            : `${row.item.assets?.symbol ?? '—'}`}
-        </span>
+    <div ref={setHost} className="fixed inset-0 z-[90] flex flex-col bg-white dark:bg-gray-900">
+      {/* Identity and stage on one line each, in the header.
+
+          The stage chip used to be the first thing in the scrolling body, on a
+          row of its own with nothing beside it — a whole line of chrome before
+          any fact about the idea. It belongs with the name it describes. */}
+      <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 pt-safe border-b border-gray-200 dark:border-gray-700">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 truncate text-base font-bold text-gray-900 dark:text-white">
+              {row.kind === 'pair'
+                ? row.pair?.name || 'Pair trade'
+                : `${row.item.assets?.symbol ?? '—'}`}
+            </span>
+            {stageCfg && (
+              <span className={clsx('shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide', stageCfg.color)}>
+                {stageCfg.label}
+              </span>
+            )}
+          </div>
+          {(company || row.status) && (
+            <p className="mt-0.5 truncate text-[11px] text-gray-400">
+              {[company, row.status ? String(row.status).replace(/_/g, ' ') : null]
+                .filter(Boolean)
+                .join(' \u00b7 ')}
+            </p>
+          )}
+        </div>
         <button
           type="button"
           onClick={onClose}
@@ -456,20 +504,7 @@ function IdeaDetail({
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-4">
-        <div className="flex items-center gap-2">
-          {stageCfg && (
-            <span className={clsx('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide', stageCfg.color)}>
-              {stageCfg.label}
-            </span>
-          )}
-          {row.status && (
-            <span className="text-[11px] text-gray-400 capitalize">
-              {String(row.status).replace(/_/g, ' ')}
-            </span>
-          )}
-        </div>
-
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-3 pb-2 space-y-3">
         {row.kind === 'pair' ? (
           <div className="space-y-2">
             {row.legs.map((leg: any) => (
@@ -543,7 +578,14 @@ function IdeaDetail({
       </div>
 
       {!readOnly && (
-        <div className="flex-shrink-0 px-4 py-3 pb-safe border-t border-gray-200 dark:border-gray-700">
+        <div className="flex-shrink-0 px-4 pt-2.5 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))] border-t border-gray-200 dark:border-gray-700">
+          {/* Names where the idea is now, so the control below reads as being
+              about this idea rather than as a generic footer button. */}
+          {movable && stageCfg && (
+            <p className="mb-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+              Currently in <span className="font-semibold text-gray-700 dark:text-gray-200">{stageCfg.label}</span>
+            </p>
+          )}
           <button
             type="button"
             disabled={!movable}
@@ -557,6 +599,19 @@ function IdeaDetail({
             )}
           </button>
         </div>
+      )}
+
+      {/* Inside this pane, not beside it. `container` puts the sheet in this
+          element's stacking context, so it is above the detail by construction
+          and no global layer had to be renumbered. */}
+      {moving && (
+        <MoveSheet
+          row={row}
+          busy={busy}
+          container={host}
+          onClose={onCancelMove}
+          onConfirm={onConfirmMove}
+        />
       )}
     </div>,
     document.body
@@ -579,11 +634,14 @@ function IdeaDetail({
 function MoveSheet({
   row,
   busy,
+  container,
   onClose,
   onConfirm,
 }: {
   row: PipelineRow
   busy: boolean
+  /** The pane that opened it — see the note where it is rendered. */
+  container: HTMLElement | null
   onClose: () => void
   onConfirm: (target: ResearchStage) => void
 }) {
@@ -592,7 +650,13 @@ function MoveSheet({
   const label = row.kind === 'pair' ? (row.pair?.name || 'this pair') : (row.item.assets?.symbol ?? 'this idea')
 
   return (
-    <BottomSheet open onClose={onClose} title={chosen ? 'Confirm move' : `Move ${label}`} fitContent>
+    <BottomSheet
+      open
+      onClose={onClose}
+      title={chosen ? 'Confirm move' : `Move ${label}`}
+      fitContent
+      container={container}
+    >
       {chosen ? (
         <div className="px-4 pb-4">
           <p className="text-[15px] leading-relaxed text-gray-900 dark:text-gray-100">

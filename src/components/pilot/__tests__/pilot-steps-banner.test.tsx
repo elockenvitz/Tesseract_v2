@@ -32,11 +32,31 @@ describe('currentStep', () => {
 })
 
 describe('the phone treatment', () => {
-  it('shows the current step and a count, not all three', () => {
+  /**
+   * Position, not a completed-count.
+   *
+   * It read "Get started · 0 of 3" beside step one's own title and
+   * instruction — the opposite of what the rest of the row was saying, because
+   * a step counts as nothing until it is finished. The reader was told zero
+   * while being shown one.
+   */
+  it('says which step the reader is on', () => {
     render(<PilotStepsBanner steps={steps([true, false, false])} />)
-    // The phone half and the desktop half are both in the DOM; the assertion
-    // that matters is the count, which only the phone half renders.
-    expect(screen.getByText(/Get started · 1 of 3/)).toBeInTheDocument()
+    // The phone half and the desktop half are both in the DOM; the position
+    // line is only rendered by the phone half.
+    expect(screen.getByText(/Get started · step 2 of 3/)).toBeInTheDocument()
+  })
+
+  it('leads with step 1, not with nothing done', () => {
+    render(<PilotStepsBanner steps={steps([false, false, false])} />)
+    expect(screen.getByText(/step 1 of 3/)).toBeInTheDocument()
+    expect(screen.queryByText(/0 of 3/)).toBeNull()
+  })
+
+  /** Completion is untouched; it just stops being counted at the reader. */
+  it('says so once every step is done', () => {
+    render(<PilotStepsBanner steps={steps([true, true, true])} />)
+    expect(screen.getByText(/Get started · done/)).toBeInTheDocument()
   })
 
   /**
@@ -80,5 +100,24 @@ describe('identity is preserved, density is shared', () => {
   it('renders nothing at all without steps', () => {
     const { container } = render(<PilotStepsBanner steps={[]} />)
     expect(container.firstChild).toBeNull()
+  })
+
+  /**
+   * Three full-bleed strips before the first card read as three pieces of
+   * chrome of equal standing, and guidance about a board should not outrank
+   * the board. Same content either way.
+   */
+  it('can sit under a surface s own controls as a card', () => {
+    const bar = render(<PilotStepsBanner steps={steps([false, false, false])} />)
+    const barEl = bar.container.querySelector('[data-slot="pilot-steps-banner"]')!
+    expect(barEl.getAttribute('data-variant')).toBe('bar')
+    expect(barEl.className).not.toContain('rounded-xl')
+    cleanup()
+
+    const inset = render(<PilotStepsBanner steps={steps([false, false, false])} variant="inset" />)
+    const insetEl = inset.container.querySelector('[data-slot="pilot-steps-banner"]')!
+    expect(insetEl.getAttribute('data-variant')).toBe('inset')
+    expect(insetEl.className).toContain('rounded-xl')
+    expect(insetEl.className).toContain('mx-3')
   })
 })

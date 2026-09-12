@@ -34,6 +34,17 @@ export interface BottomSheetProps {
   className?: string
   contentClassName?: string
   'aria-label'?: string
+  /**
+   * Where the sheet is portaled. Defaults to `document.body`.
+   *
+   * A sheet opened from inside another full-screen portal is a sibling of it
+   * on the body, so which one the reader sees is decided by two z-indexes
+   * that were chosen independently — and the sheet loses. Handing it the
+   * opening surface's own node puts it inside that surface's stacking
+   * context, where it is above the thing that opened it by construction, and
+   * no global layer has to be renumbered to make it so.
+   */
+  container?: HTMLElement | null
   children: React.ReactNode
 }
 
@@ -64,6 +75,7 @@ export function BottomSheet({
   className,
   contentClassName,
   'aria-label': ariaLabel,
+  container,
   children,
 }: BottomSheetProps) {
   const viewportHeight = useViewportHeight()
@@ -401,6 +413,11 @@ export function BottomSheet({
         )}
       </div>
     </div>,
-    document.body
+    /*
+     * The opening surface's node when it gave us one. `z-[60]` below then
+     * resolves inside that surface's stacking context rather than against
+     * every other portal on the body.
+     */
+    container ?? document.body
   )
 }

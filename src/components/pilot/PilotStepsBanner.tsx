@@ -72,20 +72,54 @@ export function PilotStepsBanner({
   label = 'Get started',
   tone = 'amber',
   icon: Icon = Sparkles,
+  variant = 'bar',
 }: {
   steps: PilotStep[]
   /** Each banner keeps its own words. Outcomes is not "get started". */
   label?: string
   tone?: PilotBannerTone
   icon?: typeof Sparkles
+  /**
+   * `bar` spans its container and rules off beneath it, which is right where
+   * the banner is the first thing under the app bar.
+   *
+   * `inset` is a card with a margin, for a surface whose own controls come
+   * first. On the phone's Pipeline the banner sat between the view tabs and
+   * the stage pager as a third full-bleed strip, so guidance about the board
+   * read as another piece of the board's chrome. Same content, same steps,
+   * one rung quieter.
+   */
+  variant?: 'bar' | 'inset'
 }) {
   const t = TONE[tone]
   const current = currentStep(steps)
-  const doneCount = steps.filter(s => s.done).length
+  /*
+   * Where the reader is, not how much they have banked.
+   *
+   * The phone line read "Get started \u00b7 0 of 3" beside step one's title
+   * and instruction, which says the opposite of what the rest of the row is
+   * doing: it counts a step as nothing until it is finished, so the reader is
+   * told zero while being shown one. A position reads as progress on a first
+   * screen; a completed-count reads as a failure on it.
+   *
+   * Completion is untouched — `currentStep` still finds the first unfinished
+   * step, the pip still shows a tick when everything is done, and the desktop
+   * half still draws every step's own state.
+   */
   if (!current) return null
 
   return (
-    <div className={clsx('flex-shrink-0 border-b', t.shell)}>
+    <div
+      data-slot="pilot-steps-banner"
+      data-variant={variant}
+      className={clsx(
+        'flex-shrink-0 border',
+        variant === 'inset'
+          ? 'mx-3 mb-2 rounded-xl'
+          : 'border-x-0 border-t-0',
+        t.shell,
+      )}
+    >
       {/* ── Phone ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2.5 px-3 py-2 sm:hidden">
         <span
@@ -98,7 +132,7 @@ export function PilotStepsBanner({
         </span>
         <div className="min-w-0 flex-1">
           <p className={clsx('text-[10px] font-semibold uppercase tracking-wider', t.label)}>
-            {label} · {doneCount} of {steps.length}
+            {label} · {current.done ? 'done' : `step ${current.n} of ${steps.length}`}
           </p>
           {/* Wrapping, not clipping. The hint is the instruction — truncating
               it leaves a step nobody can follow. */}

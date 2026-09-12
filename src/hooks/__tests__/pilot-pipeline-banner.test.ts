@@ -73,7 +73,9 @@ describe('both shells render it through the shared shell', () => {
   ])('%s uses PilotStepsBanner and the hook', (_name, file) => {
     const page = src(file)
     expect(page).toContain('usePilotPipelineBanner')
-    expect(page).toContain('<PilotStepsBanner steps={pilotBanner.steps} />')
+    // The phone passes `variant="inset"` as well, so match the opening tag
+    // and the steps prop rather than one exact spelling of the element.
+    expect(page).toMatch(/<PilotStepsBanner\s+steps=\{pilotBanner\.steps\}/)
     expect(page).toContain('pilotBanner.show')
   })
 
