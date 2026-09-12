@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePilotMode } from './usePilotMode'
@@ -49,7 +49,15 @@ export interface PilotMission extends MissionState {
   markOutcomeReviewed: () => void
 }
 
+interface MissionFacts {
+  ideaExists: boolean
+  ideaStage: string | null
+  hasSimulationTrade: boolean
+  hasDecision: boolean
+}
+
 export function usePilotMission(): PilotMission {
+  const queryClient = useQueryClient()
   const { currentOrgId } = useOrganization()
   const { effectiveIsPilot } = usePilotMode()
   const { progress, tutorialIdeaId, setTutorialIdea, mark, hasGraduated, isLoading: progressLoading } = usePilotProgress()
@@ -60,7 +68,7 @@ export function usePilotMission(): PilotMission {
     // at all for a reader who is not a pilot.
     enabled: !!tutorialIdeaId && effectiveIsPilot,
     staleTime: 0,
-    queryFn: async () => {
+    queryFn: async (): Promise<MissionFacts> => {
       const id = tutorialIdeaId!
       const [ideaRes, simRes, acceptedRes] = await Promise.all([
         supabase.from('trade_queue_items').select('id, stage, outcome').eq('id', id).maybeSingle(),
@@ -129,11 +137,33 @@ export function usePilotMission(): PilotMission {
     const onCreated = (e: Event) => {
       const id = (e as CustomEvent<{ tradeIdeaId?: string }>).detail?.tradeIdeaId
       if (!id || !effectiveIsPilot) return
+      /*
+       * Seed the facts for the idea that was just created, so adopting it does
+       * not blank the module.
+       *
+       * Adoption changes the query key, and a new key has no data — so
+       * `isLoading` went true and the whole Getting Started module unmounted
+       * until three reads came back. A pilot who had just captured their first
+       * idea watched the thing tracking their progress disappear and return.
+       * That was the hitch.
+       *
+       * These are not guesses. The row was created a moment ago by this
+       * reader, so it exists; nothing can have simulated or decided a trade on
+       * an id that did not exist until now; and a fresh capture has not been
+       * advanced, which a null stage says. The query keeps `staleTime: 0`, so
+       * the authoritative read still runs immediately and overwrites all four.
+       */
+      queryClient.setQueryData<MissionFacts>(['pilot-mission', currentOrgId, id], prev => prev ?? {
+        ideaExists: true,
+        ideaStage: null,
+        hasSimulationTrade: false,
+        hasDecision: false,
+      })
       void setTutorialIdea(id)
     }
     window.addEventListener('pilot-mission:trade-idea-created', onCreated)
     return () => window.removeEventListener('pilot-mission:trade-idea-created', onCreated)
-  }, [effectiveIsPilot, setTutorialIdea])
+  }, [effectiveIsPilot, setTutorialIdea, queryClient, currentOrgId])
 
   const recordIdea = useCallback((ideaId: string) => {
     if (!effectiveIsPilot) return

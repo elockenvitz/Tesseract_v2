@@ -16,6 +16,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePilotProgress } from './usePilotProgress'
+import { useHasCoverage } from './useMyCoverage'
 import {
   mergePilotAccess,
   PILOT_ACCESS_DEFAULTS,
@@ -182,6 +183,10 @@ export function usePilotMode(): PilotModeState {
 
   const isPilot = !!orgFlags?.pilotMode
 
+  // Coverage is the pilot's setup step, and having done it is what opens the
+  // Coverage app for the rest of the pilot. Read-only here.
+  const { hasCoverage } = useHasCoverage()
+
   // Self-heal trade_book_unlocked at the hook level so the dashboard
   // (and any other pilot surface that isn't the locked Trade Book
   // preview) recovers when `pilot_progress.trade_book_unlocked_at_<orgId>`
@@ -245,8 +250,21 @@ export function usePilotMode(): PilotModeState {
     const perOrgUnlocked = !!hasCommittedTradeInOrg
     if (perOrgUnlocked && hasUnlockedTradeBook && base.tradeBook === 'preview') base.tradeBook = 'full'
     if (perOrgUnlocked && hasUnlockedOutcomes && base.outcomes === 'preview') base.outcomes = 'full'
+    /*
+     * Coverage opens as soon as the pilot has declared any.
+     *
+     * It is the pilot's first step now — the setup that precedes the mission —
+     * and a step you can complete but never revisit is a step the product took
+     * away from you. The unlock is the artifact itself rather than a flag, for
+     * the reason `FirstSessionCoveragePrompt` gives at length: the rows ARE
+     * the state, so there is nothing here that can disagree with them.
+     *
+     * Only this key. Nothing else about a pilot's access changes, and an org
+     * override that already says 'full' or 'preview' is left alone.
+     */
+    if (hasCoverage && base.coverage === 'hidden') base.coverage = 'full'
     return base
-  }, [isPilot, hasGraduated, orgFlags?.accessOverride, hasUnlockedTradeBook, hasUnlockedOutcomes, hasCommittedTradeInOrg])
+  }, [isPilot, hasGraduated, orgFlags?.accessOverride, hasUnlockedTradeBook, hasUnlockedOutcomes, hasCommittedTradeInOrg, hasCoverage])
 
   const accessFor = (feature: keyof PilotAccessConfig) => access[feature]
   const canSee = (feature: keyof PilotAccessConfig) => access[feature] !== 'hidden'

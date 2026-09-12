@@ -45,6 +45,17 @@ import { CoverageQuickStart } from './CoverageQuickStart'
 interface FirstSessionCoveragePromptProps {
   variant?: 'card' | 'sheet'
   className?: string
+  /**
+   * Whether "Not now" is offered, and whether a stored dismissal is honoured.
+   *
+   * False where this prompt is the whole surface — the pilot's setup stage,
+   * where the mission is deliberately not shown yet. Dismissing there leaves
+   * a reader on an empty home with no way forward, which is the same argument
+   * the pilot Get Started banners already make for having no dismiss control.
+   * It also ignores a dismissal stored earlier, on a screen where the card was
+   * one of several things to look at rather than the only one.
+   */
+  dismissible?: boolean
 }
 
 const dismissKey = (userId: string, orgId: string) =>
@@ -103,6 +114,7 @@ export function resetCoverageSessionDecision() {
 export function FirstSessionCoveragePrompt({
   variant = 'card',
   className,
+  dismissible = true,
 }: FirstSessionCoveragePromptProps) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
@@ -147,12 +159,13 @@ export function FirstSessionCoveragePrompt({
   // embedded contexts, and this renders inside the gallery harness too.
   useEffect(() => {
     if (!user?.id || !currentOrgId) return
+    if (!dismissible) { setDismissed(false); return }
     try {
       setDismissed(!!localStorage.getItem(dismissKey(user.id, currentOrgId)))
     } catch {
       setDismissed(false)
     }
-  }, [user?.id, currentOrgId])
+  }, [user?.id, currentOrgId, dismissible])
 
   // Latch the decision once the coverage query has actually resolved.
   useEffect(() => {
@@ -183,7 +196,7 @@ export function FirstSessionCoveragePrompt({
        */
       savedCount={session.savedCount ?? null}
       onSaved={count => { if (decisionKey) patchSession(decisionKey, { savedCount: count }) }}
-      onDismiss={() => {
+      onDismiss={!dismissible ? undefined : () => {
         try {
           localStorage.setItem(dismissKey(user.id, currentOrgId), '1')
         } catch {

@@ -343,7 +343,21 @@ export function usePilotProgress() {
     if (writeInFlightRef.current.has(key)) return
     writeInFlightRef.current.add(key)
 
+    const previous = queryClient.getQueryData<PilotProgress>(['pilot-progress', user.id])
     const nextProgress: PilotProgress = { ...progress, [key]: ideaId }
+
+    /*
+     * Optimistic, for exactly the reason `markStage` above is.
+     *
+     * The mission module reads this id to decide whether step one is done and
+     * which idea the remaining four are about. Writing the cache only AFTER
+     * the round trip meant a pilot who had just captured their first idea
+     * watched the module still say nothing had happened, for as long as the
+     * update took. The reconcile below is authoritative and the catch rolls
+     * back, so nothing is claimed that does not end up true.
+     */
+    queryClient.setQueryData(['pilot-progress', user.id], nextProgress)
+
     try {
       const { error } = await supabase
         .from('users')
@@ -354,6 +368,7 @@ export function usePilotProgress() {
       logPilotEvent({ eventType: 'pilot_mission_idea_created', organizationId: currentOrgId })
     } catch (err) {
       writeInFlightRef.current.delete(key)
+      if (previous !== undefined) queryClient.setQueryData(['pilot-progress', user.id], previous)
       Sentry.captureException(err)
     }
   }, [user?.id, currentOrgId, progress, queryClient])

@@ -177,3 +177,37 @@ export function useMyCoverage(): MyCoverageState & MyCoverageActions {
       || removeMutation.isPending || notesMutation.isPending,
   }
 }
+
+/**
+ * Just the question "does this reader cover anything", for callers that are
+ * not a coverage surface.
+ *
+ * `useMyCoverage` returns four mutations along with the rows, and the pilot
+ * gate and the pilot entry sequence want neither — they want one boolean. This
+ * reads the SAME query key, so mounting it beside the full hook costs one
+ * cache entry rather than a second request.
+ *
+ * `isLoading` matters to both callers: coverage is now the pilot's first step,
+ * and a caller that treats "not loaded yet" as "no coverage" would show the
+ * setup surface for a frame to somebody who finished it last week.
+ */
+export function useHasCoverage(): { hasCoverage: boolean; isLoading: boolean } {
+  const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
+  const userId = user?.id ?? null
+  const orgId = currentOrgId ?? null
+
+  const query = useQuery({
+    queryKey: ['my-coverage', userId, orgId],
+    enabled: !!userId && !!orgId,
+    staleTime: 30_000,
+    queryFn: () => fetchMyCoverage(orgId),
+  })
+
+  return {
+    hasCoverage: (query.data?.length ?? 0) > 0,
+    // No org yet is not an answer about coverage, and the query is disabled in
+    // that state rather than pending — so say so explicitly.
+    isLoading: query.isLoading || !userId || !orgId,
+  }
+}

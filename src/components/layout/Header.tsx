@@ -461,6 +461,30 @@ export function Header({
                     })}
                   </div>
 
+                  {/*
+                    Coverage — the pilot's own setup, still reachable.
+
+                    It opens once they have declared any, through the same
+                    access map every other tile here reads; nothing routes
+                    around the gate. Editing it has no bearing on the mission
+                    or on graduation, which is why it sits down here with
+                    Organization rather than among the decision-loop tiles.
+                  */}
+                  {pilotMode.canUse('coverage') && (
+                    <div className="border-t border-gray-100 dark:border-gray-700 pt-2 px-2 pb-1">
+                      <button
+                        onClick={() => {
+                          setShowAppMenu(false)
+                          onSearchResult({ id: 'coverage', title: 'Coverage', type: 'coverage', data: null })
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <Users className="h-4 w-4 text-gray-400" />
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Coverage</span>
+                      </button>
+                    </div>
+                  )}
+
                   {/* Organization (always allowed so pilots can manage members) */}
                   {pilotMode.canSee('organization') && (
                     <div className="border-t border-gray-100 dark:border-gray-700 pt-2 px-2 pb-1">

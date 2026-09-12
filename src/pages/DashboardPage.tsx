@@ -61,6 +61,7 @@ import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
 import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotSeeding } from '../hooks/usePilotSeeding'
+import { usePilotEntry } from '../hooks/usePilotEntry'
 import { TAB_TYPE_TO_PILOT_FEATURE, PILOT_ACCESS_DEFAULTS } from '../lib/pilot/pilot-access'
 import { PilotTeaserModal } from '../components/pilot/PilotTeaserModal'
 import { PilotGraduationModal } from '../components/pilot/PilotGraduationModal'
@@ -260,6 +261,9 @@ export function DashboardPage() {
    * No-ops for everyone who is not a pilot. See `usePilotSeeding`.
    */
   usePilotSeeding()
+
+  /* Coverage setup, then the five-step mission. See the `today` branch. */
+  const pilotEntry = usePilotEntry()
   const [pilotTeaser, setPilotTeaser] = useState<{ featureLabel: string; reason: 'preview' | 'hidden' } | null>(null)
 
   // Pilot users never see tabs backed by a pilot-hidden feature. Filtering
@@ -1273,15 +1277,35 @@ export function DashboardPage() {
            */
           <div className="h-full overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl space-y-2.5 p-4">
-              <PilotWelcomeBanner onNavigate={handleSearchResult} />
-              {/* Personalisation under the story, and it still owns its own
-                  latched show/dismiss decision — a pilot with coverage sees
-                  nothing here. */}
+              {/*
+                Setup precedes the mission.
+
+                These two rendered together, so a pilot's first screen asked
+                two unrelated things at once — tell us what you follow, and
+                also capture an investment idea. Coverage is what makes the
+                mission's destinations worth visiting, so it goes first and
+                alone; the mission appears the moment coverage is saved.
+                Sequence, not a sixth step — nothing about the five steps or
+                about graduation changes. `usePilotEntry` decides.
+
+                Both are keyed so the prompt is the SAME instance either side
+                of the change: saving flips the stage on the tick the first row
+                lands, and an unkeyed sibling list reconciles by position,
+                which would unmount the card mid-save and take its
+                confirmation with it.
+              */}
+              {pilotEntry.stage === 'mission' && (
+                <PilotWelcomeBanner key="mission" onNavigate={handleSearchResult} />
+              )}
               {/* No onward control. The reader is already on the page it
-                  would send them to, and the coverage manager is not reachable
-                  for a gated pilot — so the card simply stays usable and they
-                  keep adding names. */}
-              <FirstSessionCoveragePrompt />
+                  would send them to. Not dismissible while it is the whole
+                  screen — "Not now" there leaves an empty home. */}
+              {pilotEntry.stage !== 'loading' && (
+                <FirstSessionCoveragePrompt
+                  key="coverage-setup"
+                  dismissible={pilotEntry.stage === 'mission'}
+                />
+              )}
             </div>
           </div>
         ) : (
