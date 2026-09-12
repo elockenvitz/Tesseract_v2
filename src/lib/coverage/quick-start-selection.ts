@@ -37,6 +37,13 @@ export interface CoverageCandidate {
    * lane and inventing one would be a migration.
    */
   viaSector?: string
+  /**
+   * The portfolios this name is held in, where the source knew.
+   *
+   * Presentation only, and plural because one asset can sit in several books.
+   * The row shows the first plus a count rather than choosing one silently.
+   */
+  portfolioNames?: string[]
 }
 
 /**

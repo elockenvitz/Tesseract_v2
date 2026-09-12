@@ -81,26 +81,47 @@ interface CoverageQuickStartProps {
 
 type AssetOption = CoverageCandidate
 
+/*
+ * The right-hand label on a candidate row.
+ *
+ * A holding names its actual portfolio instead — see `portfolioLabel` — because
+ * "In holdings" told the reader nothing they could act on. The generic label
+ * survives only as the fallback for a holding whose portfolio RLS did not
+ * return.
+ */
 const REASON_LABEL: Record<NonNullable<AssetOption['reason']>, string> = {
-  /*
-   * "In your book" was wrong and is now "In holdings".
-   *
-   * The query behind it reads `portfolio_holdings` with no portfolio or user
-   * filter — it is whatever RLS returns for the workspace, not this reader's
-   * book. Naming it after a thing it does not represent is how somebody ends
-   * up trusting it as their own position list.
-   */
-  holding: 'In holdings',
+  holding: 'Preloaded',
   sector: 'Your sector',
   team: 'Your team covers',
   search: '',
+}
+
+/**
+ * Which portfolios hold this name, in the smallest truthful form.
+ *
+ * One name reads as one name. Several read as the first plus a count, because
+ * the row is 40px wide and "held in three books, and here they are" is a
+ * question for the asset page.
+ */
+function portfolioLabel(asset: AssetOption): string | null {
+  const names = asset.portfolioNames ?? []
+  if (names.length === 0) return null
+  return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`
 }
 
 /** Which source the reader is picking from. */
 type Source = 'holdings' | 'sectors' | 'companies'
 
 const SOURCE_LABEL: Record<Source, string> = {
-  holdings: 'Current holdings',
+  /*
+   * Named for what it actually is.
+   *
+   * A pilot workspace is provisioned with a seeded template portfolio, and the
+   * query behind this reads `portfolio_holdings` with no portfolio or user
+   * filter. Calling it "Current holdings" invited a reader to treat a sample
+   * book as their own positions.
+   */
+  holdings: 'Preloaded portfolio',
   sectors: 'Sectors',
   companies: 'Companies',
 }
@@ -163,7 +184,10 @@ export function CoverageQuickStart({
       const [holdingsRes, profileRes, teamRes] = await Promise.all([
         supabase
           .from('portfolio_holdings')
-          .select('asset_id, assets:asset_id(id, symbol, company_name, sector)')
+          /* The portfolio comes back on the same read. A second query for a
+             label the join already reaches would be a round trip for a
+             string. */
+          .select('asset_id, assets:asset_id(id, symbol, company_name, sector), portfolios:portfolio_id(id, name)')
           .limit(60),
         supabase
           .from('user_profile_extended')
@@ -182,7 +206,22 @@ export function CoverageQuickStart({
 
       for (const row of (holdingsRes.data ?? []) as any[]) {
         const a = row.assets
-        if (a?.id && !out.has(a.id)) out.set(a.id, { ...a, reason: 'holding' })
+        if (!a?.id) continue
+        const portfolioName: string | null = row.portfolios?.name ?? null
+        const existing = out.get(a.id)
+        if (existing) {
+          // The same name in a second book: record it rather than drop it, so
+          // the row can say "+1" instead of picking one arbitrarily.
+          if (portfolioName && !existing.portfolioNames?.includes(portfolioName)) {
+            existing.portfolioNames = [...(existing.portfolioNames ?? []), portfolioName]
+          }
+          continue
+        }
+        out.set(a.id, {
+          ...a,
+          reason: 'holding',
+          portfolioNames: portfolioName ? [portfolioName] : [],
+        })
       }
 
       const sectors: string[] = ((profileRes.data as any)?.sector_focus as string[]) ?? []
@@ -472,13 +511,15 @@ export function CoverageQuickStart({
                 {/* Counted before it is pressed: a sector adding eleven names
                     and one adding none look identical on a button. */}
                 Add {newFromSector(constituents, selected, alreadyCovered)} from {openSector}
+                {constituents.length >= SECTOR_CONSTITUENT_LIMIT ? ' (top 50)' : ''}
               </button>
             </div>
           ) : (
             <>
               <p className="mb-1.5 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
-                Adds the names in a sector today. It is a selection, not a standing rule &mdash;
-                companies added to the sector later will not appear on their own.
+                Adds the largest names in a sector as they are today, up to {SECTOR_CONSTITUENT_LIMIT}.
+                It is a selection, not a standing rule &mdash; companies that join the sector later
+                are not added for you.
               </p>
               <div className="flex flex-wrap gap-1">
                 {sectorsLoading && (
@@ -503,8 +544,9 @@ export function CoverageQuickStart({
       )}
 
       {source === 'holdings' && suggestions.length > 0 && (
-        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-          Suggestions &mdash; nothing is saved until you confirm
+        <p className="mb-1.5 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+          Start with names from the sample portfolio already loaded into your pilot
+          workspace. Nothing is saved until you confirm.
         </p>
       )}
 
@@ -565,6 +607,12 @@ export function CoverageQuickStart({
               {isCovered ? (
                 <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-gray-400">
                   Following
+                </span>
+              ) : portfolioLabel(asset) ? (
+                /* The book it is actually in, which is the fact worth knowing
+                   when deciding whether to follow it. */
+                <span className="shrink-0 max-w-[45%] truncate text-[10px] text-gray-400">
+                  {portfolioLabel(asset)}
                 </span>
               ) : asset.reason && REASON_LABEL[asset.reason] ? (
                 <span className="shrink-0 text-[10px] text-gray-400">

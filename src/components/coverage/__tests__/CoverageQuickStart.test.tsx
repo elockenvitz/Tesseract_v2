@@ -166,10 +166,10 @@ describe('CoverageQuickStart — suggestions are never silently saved', () => {
   it('offers holdings as candidates', async () => {
     renderWithQuery(<CoverageQuickStart />)
     expect(await screen.findByText('HOLD')).toBeInTheDocument()
-    /* Renamed from "In your book": the query behind it reads the workspace's
-       holdings with no portfolio or user filter, so it is not the reader's own
-       book and must not claim to be. */
-    expect(screen.getByText('In holdings')).toBeInTheDocument()
+    /* The source is named for what it is — a seeded pilot workspace's sample
+       book, not the reader's own positions — and each row names the portfolio
+       it is actually in rather than repeating a generic label. */
+    expect(screen.getByText('Preloaded portfolio')).toBeInTheDocument()
   })
 
   /**

@@ -608,8 +608,16 @@ describe('one Dashboard, five lenses', () => {
      * What matters is that both arms end at this shell and this lens.
      */
     const todayArm = page.slice(page.indexOf("case 'today':"), page.indexOf("case 'ideas':"))
-    expect(todayArm.match(/<DashboardShell initialLens="today" \/>/g)).toHaveLength(2)
+    /*
+     * One mount, on the arm that is not the pilot first run. An incomplete
+     * pilot gets the mission INSTEAD of the Dashboard rather than on top of
+     * it — layering meant the lens bar and every lens query sat under the
+     * guidance — and `effectiveIsPilot` is already `hasGraduated ? false :
+     * isPilot`, so the shell returns the moment the mission completes.
+     */
+    expect(todayArm.match(/<DashboardShell initialLens="today" \/>/g)).toHaveLength(1)
     expect(todayArm).toContain('pilotMode.effectiveIsPilot')
+    expect(todayArm).toContain('PilotWelcomeBanner')
     const tabs = src('components/layout/TabManager.tsx')
     for (const t of ['ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']) {
       expect(tabs).toContain(t)

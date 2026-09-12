@@ -1245,22 +1245,42 @@ export function DashboardPage() {
          * of it, rather than a separate surface that disappears later.
          */
         return pilotMode.effectiveIsPilot ? (
-          <div className="flex h-full flex-col">
-            <div className="shrink-0 space-y-2.5 p-3">
+          /*
+           * An incomplete pilot gets the first run INSTEAD of the Dashboard,
+           * not on top of it.
+           *
+           * Layering the mission above the lens shell defeated the point: the
+           * lens bar and a full analytics surface sat under the guidance, so
+           * the reader was offered five ordered steps and a whole product at
+           * once. It also mounted every lens query for somebody who cannot
+           * use the answers yet — which is why this is a branch and not
+           * `hidden`. Nothing behind it is rendered, so nothing behind it is
+           * fetched.
+           *
+           * The tab is still `today` and still the home. What changes is what
+           * is inside it.
+           */
+          <div className="h-full overflow-y-auto">
+            <div className="mx-auto w-full max-w-3xl space-y-2.5 p-4">
+              <PilotWelcomeBanner onNavigate={handleSearchResult} />
+              {/* Personalisation under the story, and it still owns its own
+                  latched show/dismiss decision — a pilot with coverage sees
+                  nothing here. */}
               <FirstSessionCoveragePrompt
                 onGoToIdeas={() => handleSearchResult({
                   id: 'ideas', title: 'Ideas', type: 'ideas', data: null,
                 })}
               />
-              <PilotWelcomeBanner onNavigate={handleSearchResult} />
-            </div>
-            {/* `DashboardShell` is `flex h-full flex-col overflow-hidden`, so
-                it needs a flex parent that can shrink — hence `min-h-0`. */}
-            <div className="min-h-0 flex-1">
-              <DashboardShell initialLens="today" />
             </div>
           </div>
         ) : (
+          /*
+           * Everyone else, including a graduated pilot. `effectiveIsPilot` is
+           * already `hasGraduated ? false : isPilot`, and completing the five
+           * steps writes `graduated` through an optimistic mutation — so the
+           * full Dashboard appears on the same tick the mission finishes, with
+           * no reload.
+           */
           <DashboardShell initialLens="today" />
         )
       /*
