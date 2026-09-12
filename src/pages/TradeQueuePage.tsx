@@ -199,10 +199,10 @@ export function TradeQueuePage() {
   // on every Trade Lab button click) don't repeatedly hit the server.
   // markStage itself is also burst-deduped, but checking here saves a
   // function call + a render cycle.
-  const markPilotStep1 = useCallback(() => {
-    if (pilotStep1Done) return
-    markPilotStage('pipeline_step_moved')
-  }, [pilotStep1Done, markPilotStage])
+  // Step 1 has no marker here: a stage change is committed by the move
+  // mutation, not by the board, so it is marked in `useTradeIdeaService` where
+  // the phone's stage sheet arrives at the same write. See
+  // `usePipelineMoveMarker`.
   const markPilotStep2 = useCallback(() => {
     if (pilotStep2Done) return
     markPilotStage('pipeline_step_inbox')
@@ -1274,8 +1274,14 @@ export function TradeQueuePage() {
     // recommendation" indicator that opens the recommendation flow on click.
     moveTrade({ tradeId: itemId, targetStatus: targetStatus as TradeQueueStatus, uiSource: 'drag_drop' })
     setDraggedItem(null)
-    if (pilotMode.effectiveIsPilot) markPilotStep1()
-  }, [tradeItems, pairTradeGroups, moveTrade, movePairTrade, user?.id, pilotMode.effectiveIsPilot, markPilotStep1])
+    /*
+     * Pilot step 1 used to be marked here, which credited the step for a drop
+     * the server could still reject, and credited it only for a drag — so the
+     * same stage change made on a phone earned nothing. It is now marked by
+     * the move mutation's success path in `useTradeIdeaService`, which both
+     * shells go through. See `usePipelineMoveMarker`.
+     */
+  }, [tradeItems, pairTradeGroups, moveTrade, movePairTrade, user?.id])
 
   const handleSort = useCallback((field: typeof sortBy) => {
     if (sortBy === field) {

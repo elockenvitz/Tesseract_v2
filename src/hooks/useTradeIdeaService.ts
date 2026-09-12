@@ -13,6 +13,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from './useAuth'
 import { useToast } from '../components/common/Toast'
+import { usePipelineMoveMarker } from './usePipelineMoveMarker'
 import { usePendingLineageStore } from '../stores/pendingLineageStore'
 import {
   moveTradeIdea,
@@ -95,6 +96,14 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const toast = useToast()
+  /*
+   * Advancing an idea through the stages is the first Pipeline lesson, and it
+   * is earned here rather than on a board, because the desktop board and the
+   * phone's stage sheet are two entrances to these same two mutations. It was
+   * previously marked in the desktop drag handler only, so the same action on
+   * mobile never completed the step. No-ops for everyone who is not a pilot.
+   */
+  const markPipelineMoved = usePipelineMoveMarker()
 
   const invalidateQueries = () => {
     queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
@@ -197,6 +206,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       // Surgical cache update: refetch only the moved item's detail
       queryClient.invalidateQueries({ queryKey: ['trade-detail', params.tradeId] })
       queryClient.invalidateQueries({ queryKey: ['audit-events'] })
+      markPipelineMoved()
       options.onMoveSuccess?.()
     },
     onSettled: () => {
@@ -462,6 +472,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     onSuccess: (_data, params) => {
       queryClient.invalidateQueries({ queryKey: ['trade-detail', params.pairTradeId] })
       queryClient.invalidateQueries({ queryKey: ['audit-events'] })
+      markPipelineMoved()
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })

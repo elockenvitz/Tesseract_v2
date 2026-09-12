@@ -49,12 +49,20 @@ describe('the Pipeline banner is defined once', () => {
     }
   })
 
-  /** Reading is shared; writing is not. A step is completed by a surface. */
+  /**
+   * Reading is shared; writing is not. This hook decides what to SHOW, and a
+   * step is completed by whatever surface the user acted on.
+   *
+   * Step 1 is the exception, and it moved: a stage change is a write, not a
+   * gesture, so it is now marked by the move mutation both shells call. See
+   * `usePipelineMoveMarker`. Steps 2 and 3 are still opening a drawer and
+   * clicking through to Trade Lab, which only the desktop board can observe.
+   */
   it('does not write progress from the shared hook', () => {
     expect(hook).not.toContain('markPilotStage')
     expect(hook).not.toContain("mark(")
-    // The markers stay with the board, where the actions happen.
-    expect(desktop).toContain("markPilotStage('pipeline_step_moved')")
+    expect(desktop).toContain("markPilotStage('pipeline_step_inbox')")
+    expect(desktop).toContain("markPilotStage('pipeline_step_tradelab')")
   })
 })
 
