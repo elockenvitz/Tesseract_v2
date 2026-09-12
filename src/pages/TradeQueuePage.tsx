@@ -55,6 +55,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useOrgMembers } from '../hooks/useOrgMembers'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePipelineItems } from '../hooks/usePipelineItems'
+import { PilotStepsBanner } from '../components/pilot/PilotStepsBanner'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
 import { Button } from '../components/ui/Button'
@@ -1521,49 +1522,32 @@ export function TradeQueuePage() {
           one-liner hint so a pilot reads exactly what to do.
           Dismissible per localStorage so a returning user isn't
           re-nagged. */}
+      {/* Steps and semantics unchanged, shell shared with the other three.
+          No dismiss control: each step gates the path into the next surface
+          (drag → Inbox → Trade Lab), and it auto-retires when all are done. */}
       {showPilotBanner && (
-        <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/90 to-amber-100/30 dark:from-amber-900/25 dark:via-amber-900/15 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
-          <div className="px-6 py-3 flex items-start gap-4">
-            <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
-              <Sparkles className="h-4 w-4" />
-              <span className="text-[12px] uppercase tracking-wider">Get started</span>
-            </div>
-            {/*
-              Stack steps vertically on narrow screens, horizontal on wider
-              ones. flex-wrap (the previous approach) produced confusing
-              orderings when steps overflowed — pilot tester saw step 3
-              wrap to a new row below step 1 instead of below step 2. Same
-              fix is applied in PilotTradeLabIntroBanner.
-            */}
-            <div className="flex flex-col md:flex-row md:items-start gap-y-2 md:gap-x-4 text-gray-700 dark:text-gray-300 min-w-0">
-              <PilotPipelineStep
-                n={1}
-                title="Drag ideas through the pipeline"
-                hint="Click and drag ideas left to right through stages as they mature."
-                done={pilotStep1Done}
-              />
-              <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
-              <PilotPipelineStep
-                n={2}
-                title="Open the Decision Inbox"
-                hint="The bottom drawer is where recommendations wait for your decision — click it."
-                done={pilotStep2Done}
-              />
-              <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
-              <PilotPipelineStep
-                n={3}
-                title="Open Trade Lab"
-                hint="Click the portfolio name on the recommendation card to jump into Trade Lab."
-                done={pilotStep3Done}
-              />
-            </div>
-            {/* Banner intentionally has no dismiss control — each step
-                gates the user's path into the next surface (drag → Inbox
-                → Trade Lab), and letting the user X-out lost them the
-                signposting without actually progressing. Banner auto-
-                retires once all three steps are marked complete. */}
-          </div>
-        </div>
+        <PilotStepsBanner
+          steps={[
+            {
+              n: 1,
+              title: 'Drag ideas through the pipeline',
+              hint: 'Click and drag ideas left to right through stages as they mature.',
+              done: pilotStep1Done,
+            },
+            {
+              n: 2,
+              title: 'Open the Decision Inbox',
+              hint: 'The bottom drawer is where recommendations wait for your decision — click it.',
+              done: pilotStep2Done,
+            },
+            {
+              n: 3,
+              title: 'Open Trade Lab',
+              hint: 'Click the portfolio name on the recommendation card to jump into Trade Lab.',
+              done: pilotStep3Done,
+            },
+          ]}
+        />
       )}
 
       {/* Header */}

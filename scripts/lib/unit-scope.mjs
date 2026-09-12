@@ -101,6 +101,8 @@ export const GATED_DIRS = [
   // The current-org heal decides whether a durable tenant pointer may be
   // rewritten. Getting it wrong stranded two live workspaces in another org.
   'src/lib/org',
+  // The shared pilot banner shell — four surfaces now render through it.
+  'src/components/pilot',
   'src/lib/notifications',
   'src/components/notifications',
   'src/lib/capture',

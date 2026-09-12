@@ -135,11 +135,17 @@ export function FeedCaptureSheet({
         lived in, which is what was clipping the form — see the branch below.
       */
       title={kind ? (
-        <div className="flex items-center gap-2 -ml-2">
+        /* Tight to the title. A 36px circular button with its own negative
+           margin was spending a phone's header width on a control that is one
+           glyph — it read as a gap between the edge of the sheet and the name
+           of what you are writing. The hit area is unchanged where it matters:
+           the button still fills its box and the row is still 44px tall, so
+           this is padding coming off, not touch target. */
+        <div className="-ml-1 flex items-center gap-1">
           <button
             type="button"
             onClick={() => setKind(null)}
-            className="flex items-center justify-center h-9 w-9 rounded-full text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+            className="no-touch-target flex h-8 w-7 items-center justify-center rounded-lg text-gray-500 active:bg-gray-100 dark:text-gray-400 dark:active:bg-gray-800"
             aria-label="Back to capture options"
           >
             <ArrowLeft className="h-5 w-5" />

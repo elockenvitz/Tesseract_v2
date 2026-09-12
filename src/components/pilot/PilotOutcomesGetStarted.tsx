@@ -27,8 +27,8 @@
  */
 
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
-import { X, ArrowRight, Check, Trophy } from 'lucide-react'
-import { clsx } from 'clsx'
+import { PilotStepsBanner } from './PilotStepsBanner'
+import { Trophy } from 'lucide-react'
 import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
 
 interface PilotOutcomesGetStartedProps {
@@ -174,9 +174,6 @@ export function PilotOutcomesGetStarted({
 
   if (dismissed) return null
 
-  const dismiss = () => {
-    if (userId) setFlag(userId, orgId, DISMISS)
-  }
 
   // Step 2 click — scroll the right pane to the "Why this decision
   // was made" section. The actual step completion fires when the
@@ -199,85 +196,37 @@ export function PilotOutcomesGetStarted({
     } catch { /* ignore */ }
   }
 
+  /* The shell is shared; the identity is not. Outcomes is the terminal stage
+     of the loop and still says "Finish the loop" in its own colour. No dismiss
+     control, and it auto-retires once all steps complete. */
   return (
-    <div className="flex-shrink-0 bg-gradient-to-r from-emerald-50 via-teal-50 to-primary-50 dark:from-emerald-950/40 dark:via-teal-950/20 dark:to-primary-950/30 border-b border-emerald-200 dark:border-emerald-800/60">
-      <div className="px-6 py-3 flex items-start gap-4">
-        <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-semibold shrink-0 mt-0.5">
-          <Trophy className="h-4 w-4" />
-          <span className="text-[12px] uppercase tracking-wider whitespace-nowrap">Finish the loop</span>
-        </div>
-        <div className="flex items-start gap-x-4 text-gray-700 dark:text-gray-300 min-w-0 flex-wrap">
-          <Step
-            n={1}
-            title="Inspect the result"
-            hint="Click your decision in the table to see how Outcomes scored the thesis."
-            done={step1}
-          />
-          <ArrowRight className="h-3.5 w-3.5 text-emerald-400 dark:text-emerald-500 shrink-0 mt-[3px]" />
-          <button
-            type="button"
-            onClick={handleReviewThesis}
-            className="flex items-start gap-2 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
-          >
-            <Step
-              n={2}
-              title="Review why the decision was made"
-              hint="Open the “Why this decision was made” section in the right pane to revisit the thesis."
-              done={step2}
-            />
-          </button>
-          <ArrowRight className="h-3.5 w-3.5 text-emerald-400 dark:text-emerald-500 shrink-0 mt-[3px]" />
-          <button
-            type="button"
-            onClick={handleCheckPerformance}
-            className="flex items-start gap-2 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
-          >
-            <Step
-              n={3}
-              title="Check how the trade is performing"
-              hint="Open the “How it's performing” section to see the price move, P&L, and decision scoring."
-              done={step3}
-            />
-          </button>
-        </div>
-        {/* Banner intentionally has no dismiss control — Outcomes is the
-            terminal stage of the pilot loop, and each step guides the
-            user through what graduation actually unlocks. Auto-retires
-            once all steps complete. */}
-      </div>
-    </div>
+    <PilotStepsBanner
+      label="Finish the loop"
+      tone="emerald"
+      icon={Trophy}
+      steps={[
+        {
+          n: 1,
+          title: 'Inspect the result',
+          hint: 'Click your decision in the table to see how Outcomes scored the thesis.',
+          done: step1,
+        },
+        {
+          n: 2,
+          title: 'Review why the decision was made',
+          hint: 'Open the \u201cWhy this decision was made\u201d section in the right pane to revisit the thesis.',
+          done: step2,
+          onClick: handleReviewThesis,
+        },
+        {
+          n: 3,
+          title: 'Check how the trade is performing',
+          hint: 'Open the \u201cHow it\u2019s performing\u201d section to see the price move, P&L, and decision scoring.',
+          done: step3,
+          onClick: handleCheckPerformance,
+        },
+      ]}
+    />
   )
 }
 
-function Step({ n, title, hint, done }: { n: number; title: string; hint: string; done: boolean }) {
-  return (
-    <div className="flex items-start gap-2 min-w-0">
-      <span
-        className={clsx(
-          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm",
-          done ? "bg-emerald-500 text-white" : "bg-emerald-600 text-white",
-        )}
-      >
-        {done ? <Check className="h-3 w-3" /> : n}
-      </span>
-      <div className="min-w-0 text-left">
-        <div
-          className={clsx(
-            "text-[12px] font-semibold leading-tight whitespace-nowrap",
-            done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-900 dark:text-white",
-          )}
-        >
-          {title}
-        </div>
-        <div
-          className={clsx(
-            "text-[11px] leading-snug whitespace-nowrap",
-            done ? "text-emerald-600/60 dark:text-emerald-400/60" : "text-gray-600 dark:text-gray-400",
-          )}
-        >
-          {hint}
-        </div>
-      </div>
-    </div>
-  )
-}

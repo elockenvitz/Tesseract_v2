@@ -21,8 +21,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import { Sparkles, X, ArrowRight, Check } from 'lucide-react'
-import { clsx } from 'clsx'
+import { PilotStepsBanner } from './PilotStepsBanner'
 import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
 
 interface PilotTradeBookGetStartedProps {
@@ -108,10 +107,6 @@ export function PilotTradeBookGetStarted({ userId, orgId, onOpenOutcomes }: Pilo
 
   if (dismissed) return null
 
-  const dismiss = () => {
-    if (userId) writeFlag(userId, orgId, DISMISS)
-    setDismissed(true)
-  }
 
   const handleOpenOutcomes = () => {
     markStep(STEP3, setStep3)
@@ -119,78 +114,33 @@ export function PilotTradeBookGetStarted({ userId, orgId, onOpenOutcomes }: Pilo
     onOpenOutcomes()
   }
 
+  /* Steps and semantics unchanged; only the shell is shared now. The banner
+     still has no dismiss control, because each step gates the path into the
+     next surface, and it still auto-retires once all three are done. */
   return (
-    <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/90 to-amber-100/30 dark:from-amber-900/25 dark:via-amber-900/15 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
-      <div className="px-6 py-3 flex items-start gap-4">
-        <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
-          <Sparkles className="h-4 w-4" />
-          <span className="text-[12px] uppercase tracking-wider">Get started</span>
-        </div>
-        <div className="flex items-start gap-x-4 text-gray-700 dark:text-gray-300 min-w-0 flex-wrap">
-          <Step
-            n={1}
-            title="Review the recorded decision"
-            hint="Click any trade row to expand its full audit (price, sizing, batch context)."
-            done={step1}
-          />
-          <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
-          <Step
-            n={2}
-            title="Capture your rationale"
-            hint="Add a why-now note on the trade row — Tesseract scores against this later."
-            done={step2}
-          />
-          <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
-          <button
-            type="button"
-            onClick={handleOpenOutcomes}
-            className="flex items-start gap-2 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
-          >
-            <Step
-              n={3}
-              title="Open Outcomes"
-              hint="See how the decision is performing and unlock the rest of Tesseract."
-              done={step3}
-            />
-          </button>
-        </div>
-        {/* Banner intentionally has no dismiss control — each step
-            gates the user's path into the next surface (Outcomes).
-            Banner auto-retires once all three steps are marked complete. */}
-      </div>
-    </div>
+    <PilotStepsBanner
+      steps={[
+        {
+          n: 1,
+          title: 'Review the recorded decision',
+          hint: 'Click any trade row to expand its full audit (price, sizing, batch context).',
+          done: step1,
+        },
+        {
+          n: 2,
+          title: 'Capture your rationale',
+          hint: 'Add a why-now note on the trade row — Tesseract scores against this later.',
+          done: step2,
+        },
+        {
+          n: 3,
+          title: 'Open Outcomes',
+          hint: 'See how the decision is performing and unlock the rest of Tesseract.',
+          done: step3,
+          onClick: handleOpenOutcomes,
+        },
+      ]}
+    />
   )
 }
 
-function Step({ n, title, hint, done }: { n: number; title: string; hint: string; done?: boolean }) {
-  return (
-    <div className="flex items-start gap-2 min-w-0">
-      <span
-        className={clsx(
-          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm",
-          done ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"
-        )}
-      >
-        {done ? <Check className="h-3 w-3" /> : n}
-      </span>
-      <div className="min-w-0 text-left">
-        <div
-          className={clsx(
-            "text-[12px] font-semibold leading-tight whitespace-nowrap",
-            done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-900 dark:text-white"
-          )}
-        >
-          {title}
-        </div>
-        <div
-          className={clsx(
-            "text-[11px] leading-snug whitespace-nowrap",
-            done ? "text-emerald-600/60 dark:text-emerald-400/60" : "text-gray-600 dark:text-gray-400"
-          )}
-        >
-          {hint}
-        </div>
-      </div>
-    </div>
-  )
-}

@@ -18,8 +18,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import { Sparkles, X, ArrowRight, Check } from 'lucide-react'
-import { clsx } from 'clsx'
+import { PilotStepsBanner } from './PilotStepsBanner'
 import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
 
 interface PilotTradeLabIntroBannerProps {
@@ -115,85 +114,32 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
 
   if (dismissed) return null
 
-  const dismiss = () => {
-    writeFlag(userId, orgId, DISMISS)
-    setDismissed(true)
-  }
 
+  /* Steps and semantics unchanged. No dismiss control, and it auto-retires
+     once all three are done, exactly as before. */
   return (
-    <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/90 to-amber-100/30 dark:from-amber-900/25 dark:via-amber-900/15 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
-      <div className="px-6 py-3 flex items-start gap-4">
-        <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
-          <Sparkles className="h-4 w-4" />
-          <span className="text-[12px] uppercase tracking-wider">Get started</span>
-        </div>
-        {/*
-          Stack steps vertically on narrow screens (mobile/laptop side-panel
-          widths) and lay them out horizontally on wider screens. The
-          previous `flex-wrap` approach put steps in the wrong visual order
-          when the row ran out of space — pilot tester saw step 3 appear
-          below step 1 instead of below step 2. The inter-step arrows are
-          decorative; we hide them in the stacked layout.
-        */}
-        <div className="flex flex-col md:flex-row md:items-start gap-y-2 md:gap-x-4 text-gray-700 dark:text-gray-300 min-w-0">
-          <Step
-            n={1}
-            title="Review and add the recommendation"
-            hint="Check the box on the recommendation card on the left to import it into the holdings table."
-            done={step1}
-          />
-          <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
-          <Step
-            n={2}
-            title="Pick your trade"
-            hint="Check the box on the trade row in the table below."
-            done={step2}
-          />
-          <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
-          <Step
-            n={3}
-            title="Execute"
-            hint="Click Execute Trade to commit it to the Trade Book."
-            done={step3}
-          />
-        </div>
-        {/* Banner intentionally has no dismiss control — each step
-            gates the user's path into the next surface (Trade Book).
-            Banner auto-retires once all three steps are marked complete. */}
-      </div>
-    </div>
+    <PilotStepsBanner
+      steps={[
+        {
+          n: 1,
+          title: 'Review and add the recommendation',
+          hint: 'Check the box on the recommendation card on the left to import it into the holdings table.',
+          done: step1,
+        },
+        {
+          n: 2,
+          title: 'Pick your trade',
+          hint: 'Check the box on the trade row in the table below.',
+          done: step2,
+        },
+        {
+          n: 3,
+          title: 'Execute',
+          hint: 'Click Execute Trade to commit it to the Trade Book.',
+          done: step3,
+        },
+      ]}
+    />
   )
 }
 
-function Step({ n, title, hint, done }: { n: number; title: string; hint: string; done?: boolean }) {
-  return (
-    <div className="flex items-start gap-2 min-w-0">
-      <span
-        className={clsx(
-          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm",
-          done ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"
-        )}
-      >
-        {done ? <Check className="h-3 w-3" /> : n}
-      </span>
-      <div className="min-w-0">
-        <div
-          className={clsx(
-            "text-[12px] font-semibold leading-tight whitespace-nowrap",
-            done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-900 dark:text-white"
-          )}
-        >
-          {title}
-        </div>
-        <div
-          className={clsx(
-            "text-[11px] leading-snug whitespace-nowrap",
-            done ? "text-emerald-600/60 dark:text-emerald-400/60" : "text-gray-600 dark:text-gray-400"
-          )}
-        >
-          {hint}
-        </div>
-      </div>
-    </div>
-  )
-}
