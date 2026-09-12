@@ -95,7 +95,7 @@ beforeEach(() => {
 describe('FirstSessionCoveragePrompt — when it renders', () => {
   it('offers the prompt to a user with no coverage', async () => {
     renderWithQuery(<FirstSessionCoveragePrompt />)
-    expect(await screen.findByText('Set up your coverage')).toBeInTheDocument()
+    expect(await screen.findByText('What do you follow?')).toBeInTheDocument()
   })
 
   /**
@@ -122,9 +122,9 @@ describe('FirstSessionCoveragePrompt — when it renders', () => {
   it('stays dismissed after the user skips, across a remount', async () => {
     const user = userEvent.setup()
     const first = renderWithQuery(<FirstSessionCoveragePrompt />)
-    await screen.findByText('Set up your coverage')
+    await screen.findByText('What do you follow?')
     await user.click(screen.getByRole('button', { name: 'Not now' }))
-    expect(screen.queryByText('Set up your coverage')).not.toBeInTheDocument()
+    expect(screen.queryByText('What do you follow?')).not.toBeInTheDocument()
     first.unmount()
 
     const second = renderWithQuery(<FirstSessionCoveragePrompt />)
@@ -145,7 +145,7 @@ describe('FirstSessionCoveragePrompt — when it renders', () => {
    */
   it('survives a remount that happens after coverage lands', async () => {
     const first = renderWithQuery(<FirstSessionCoveragePrompt />)
-    await screen.findByText('Set up your coverage')
+    await screen.findByText('What do you follow?')
     first.unmount()
 
     // The world the second mount wakes up in: the save succeeded.
@@ -206,7 +206,7 @@ describe('CoverageQuickStart — suggestions are never silently saved', () => {
   it('keeps the save button inert until something is selected', async () => {
     renderWithQuery(<CoverageQuickStart />)
     await screen.findByText('HOLD')
-    expect(screen.getByRole('button', { name: 'Select names to follow' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Follow' })).toBeDisabled()
   })
 })
 
@@ -226,13 +226,18 @@ describe('CoverageQuickStart — no governed fields are reachable', () => {
     for (const forbidden of ['Lead Analyst', 'Role', 'Team', 'Primary', 'Secondary']) {
       expect(text).not.toContain(forbidden)
     }
-    /* No text input at all on the holdings source, and exactly one — the
-       search box — once the reader asks for companies. The point is unchanged:
-       there is nowhere here to type a role, a team or an analyst name. */
-    expect(container.querySelectorAll('input')).toHaveLength(0)
+    /* Exactly one text input — the search box, which is now always present
+       rather than hidden behind a Companies tab — and no select at all. The
+       point is unchanged: there is nowhere here to type a role, a team or an
+       analyst name. */
+    expect(container.querySelectorAll('input')).toHaveLength(1)
+    expect(container.querySelector('input')).toHaveAttribute(
+      'data-slot', 'coverage-quick-start-search',
+    )
     expect(container.querySelectorAll('select')).toHaveLength(0)
 
-    fireEvent.click(screen.getByText('Companies'))
+    // Browsing by sector adds no control of any other kind either.
+    fireEvent.click(screen.getByText('Sectors'))
     expect(container.querySelectorAll('input')).toHaveLength(1)
     expect(container.querySelectorAll('select')).toHaveLength(0)
   })
@@ -277,7 +282,7 @@ describe('CoverageQuickStart — after save', () => {
 
     expect(await screen.findByText(/Following 1 name/)).toBeInTheDocument()
     // Still able to add more, which is the point.
-    expect(screen.getByText('Set up your coverage')).toBeInTheDocument()
+    expect(screen.getByText('What do you follow?')).toBeInTheDocument()
     expect(screen.getByText('Sectors')).toBeInTheDocument()
   })
 
@@ -347,7 +352,7 @@ describe('CoverageQuickStart — names already followed', () => {
 
     expect(screen.getByText('Following')).toBeInTheDocument()
     await user.click(screen.getByText('HOLD'))
-    expect(screen.getByRole('button', { name: 'Select names to follow' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Follow' })).toBeDisabled()
     expect(addCalls).toEqual([])
   })
 })
@@ -357,7 +362,7 @@ describe('CoverageQuickStart — names already followed', () => {
 describe('CoverageQuickStart — one component, two shells', () => {
   it.each([['card'], ['sheet']] as const)('renders the same question in the %s variant', async (variant) => {
     renderWithQuery(<CoverageQuickStart variant={variant} />)
-    expect(await screen.findByText('Set up your coverage')).toBeInTheDocument()
+    expect(await screen.findByText('What do you follow?')).toBeInTheDocument()
   })
 
   /**
@@ -372,5 +377,86 @@ describe('CoverageQuickStart — one component, two shells', () => {
     card.unmount()
     const sheet = renderWithQuery(<FirstSessionCoveragePrompt variant="sheet" />)
     expect(sheet.container).toBeEmptyDOMElement()
+  })
+})
+
+/*
+ * ── Finding a name you already have in mind ────────────────────────────────
+ *
+ * Search was one of three sources, so it was reachable only by first pressing
+ * a Companies tab: the reader had to tell the card what KIND of thing they
+ * were about to do before they could do it. The box is always present now and
+ * takes over the list whenever it has anything in it.
+ */
+describe('CoverageQuickStart — search', () => {
+  it('can be typed into without choosing a mode first', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    await screen.findByText('HOLD')
+
+    const box = container.querySelector('[data-slot="coverage-quick-start-search"]')
+    expect(box).not.toBeNull()
+    await user.type(box as HTMLElement, 'FIND')
+    expect(await screen.findByText('FIND')).toBeInTheDocument()
+  })
+
+  /** While there is a query, the list is the results — not the browse list. */
+  it('takes the list over, and hands it back when cleared', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    await screen.findByText('HOLD')
+
+    const box = container.querySelector('[data-slot="coverage-quick-start-search"]') as HTMLElement
+    await user.type(box, 'FIND')
+    await waitFor(() => expect(screen.queryByText('HOLD')).toBeNull())
+    // The browse chips go with it: the list is not the reader's to choose.
+    expect(container.querySelector('[data-slot="coverage-quick-start-sources"]')).toBeNull()
+
+    await user.click(screen.getByLabelText('Clear search'))
+    expect(await screen.findByText('HOLD')).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="coverage-quick-start-sources"]')).not.toBeNull()
+  })
+
+  /**
+   * A name selected from search survives clearing it. The staged set is the
+   * reader's answer, not a property of whichever list produced it.
+   */
+  it('keeps a staged name after the search is cleared', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+    await screen.findByText('HOLD')
+
+    const box = container.querySelector('[data-slot="coverage-quick-start-search"]') as HTMLElement
+    await user.type(box, 'FIND')
+    await user.click(await screen.findByText('FIND'))
+    await user.click(screen.getByLabelText('Clear search'))
+
+    expect(screen.getByRole('button', { name: /Follow 1 name/ })).toBeInTheDocument()
+  })
+})
+
+/*
+ * ── Two states that drew the same mark ─────────────────────────────────────
+ *
+ * A name the reader already follows and one they have just staged both drew a
+ * filled primary check, so a list of names they already followed looked like a
+ * list they had just selected.
+ */
+describe('CoverageQuickStart — followed is not selected', () => {
+  it('marks them differently', async () => {
+    const user = userEvent.setup()
+    coverageState.assetIds = new Set(['asset-hold'])
+    coverageState.hasCoverage = true
+    const { container } = renderWithQuery(<CoverageQuickStart />)
+
+    await screen.findByText('HOLD')
+    await user.click(screen.getByText('Sectors'))
+    const rows = () => [...container.querySelectorAll('[data-slot="coverage-quick-start-option"]')]
+
+    // Back to the suggestions, where the followed name is.
+    await user.click(screen.getByText('Preloaded portfolio'))
+    const followed = rows().find(r => r.textContent?.includes('HOLD'))!
+    expect(followed.getAttribute('data-selected')).toBe('false')
+    expect(followed.querySelector('.bg-primary-500')).toBeNull()
   })
 })

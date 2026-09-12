@@ -127,8 +127,15 @@ function portfolioLabel(asset: AssetOption): string | null {
   return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`
 }
 
-/** Which source the reader is picking from. */
-type Source = 'holdings' | 'sectors' | 'companies'
+/**
+ * Which list the reader is browsing.
+ *
+ * Search used to be a third one, which meant a reader with a ticker in mind
+ * had to find and press a tab before they could type it. The box is always
+ * there now and takes over the list while it has anything in it, so these are
+ * only the two ways of browsing when you do not already know the name.
+ */
+type Source = 'holdings' | 'sectors'
 
 const SOURCE_LABEL: Record<Source, string> = {
   /*
@@ -141,7 +148,6 @@ const SOURCE_LABEL: Record<Source, string> = {
    */
   holdings: 'Preloaded portfolio',
   sectors: 'Sectors',
-  companies: 'Companies',
 }
 
 /*
@@ -289,15 +295,20 @@ export function CoverageQuickStart({
   })
 
   /*
-   * One list, three sources. Companies is the existing search; holdings is the
-   * existing suggestion set; sectors shows constituents once one is opened.
+   * One list, and search wins whenever there is a query.
+   *
+   * Search was a third source, so it was reachable only by first pressing a
+   * tab — the reader had to tell the card what KIND of thing they were about
+   * to do before doing it. Typing is now unambiguous on its own, and the
+   * browse chips are for the reader who does not have a name in mind.
    */
-  const options = source === 'companies'
-    ? (query.trim() ? searchResults : [])
+  const isSearching = query.trim().length > 0
+  const options = isSearching
+    ? searchResults
     : source === 'sectors'
       ? constituents
       : suggestions
-  const listLoading = source === 'companies'
+  const listLoading = isSearching
     ? searching
     : source === 'sectors'
       ? constituentsLoading
@@ -369,11 +380,30 @@ export function CoverageQuickStart({
    * somebody mid-onboarding to a feed, and "Continue getting started" was a
    * control that did nothing on a page they were already on.
    */
+  /*
+   * What the list is, said only where it adds something.
+   *
+   * Repeating the active chip's own label above it told the reader nothing
+   * twice. On the browse list the useful fact is how many there are; when a
+   * search or a sector has narrowed it, the useful fact is what narrowed it.
+   */
+  const listTitle = isSearching
+    ? `Matching “${query.trim()}”`
+    : source === 'sectors'
+      ? (openSector ? `${openSector} — largest names today` : null)
+      : (options.length > 0 ? `${options.length} suggested` : null)
+
+  const emptyMessage = isSearching
+    ? 'No matching names.'
+    : source === 'sectors'
+      ? (openSector ? 'No names in this sector yet.' : 'Pick a sector above.')
+      : 'Nothing to suggest yet — search for a name, or browse by sector.'
+
   return (
     <div
       data-slot="coverage-quick-start"
       className={clsx(
-        'rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800',
+        'flex flex-col rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800',
         dense ? 'p-3' : roomy ? 'p-5' : 'p-4',
         className,
       )}
@@ -381,7 +411,7 @@ export function CoverageQuickStart({
       {savedCount !== null && (
         <div
           data-slot="coverage-quick-start-done"
-          className="mb-3 flex items-start gap-2 rounded-lg bg-emerald-50 px-2.5 py-2 dark:bg-emerald-900/20"
+          className="mb-3 flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2 dark:bg-emerald-900/20"
         >
           <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
             <Check className="h-2.5 w-2.5" strokeWidth={3} />
@@ -396,21 +426,31 @@ export function CoverageQuickStart({
         </div>
       )}
 
+      {/* ── Ask ──────────────────────────────────────────────────────────
+          The question, once, at the size of a question. Everything under it
+          was the same 11px as everything else, so the card had no hierarchy
+          and read as a settings panel rather than as something being asked. */}
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-white">
-            <Sparkles className="h-3.5 w-3.5 text-primary-500" />
-            Set up your coverage
+          <h3 className={clsx(
+            'flex items-center gap-1.5 font-semibold text-gray-900 dark:text-white',
+            roomy ? 'text-base' : 'text-sm',
+          )}>
+            <Sparkles className={clsx('text-primary-500', roomy ? 'h-4 w-4' : 'h-3.5 w-3.5')} />
+            What do you follow?
           </h3>
           {/* Setup, and named as setup. It personalises what Tesseract puts in
               front of the reader; it is not one of the five steps and does not
               count toward finishing them. */}
-          <p className="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-            Tell Tesseract which names and sectors matter to you. It uses this to decide
-            what to surface — you can change it at any time.
+          <p className={clsx(
+            'mt-1 leading-relaxed text-gray-500 dark:text-gray-400',
+            roomy ? 'text-sm' : 'text-xs',
+          )}>
+            Pick the names and sectors that matter to you. Tesseract uses this to decide
+            what to put in front of you, and you can change it at any time.
           </p>
         </div>
-        {onDismiss && (
+        {onDismiss && !roomy && (
           <button
             data-slot="coverage-quick-start-dismiss"
             onClick={onDismiss}
@@ -422,119 +462,131 @@ export function CoverageQuickStart({
         )}
       </div>
 
-      {/* Three ways in, one selection out. A reader who thinks in sectors, one
-          who thinks in positions and one who has a name in mind all reach the
-          same staged list. */}
-      <div data-slot="coverage-quick-start-sources" className="mb-2 flex items-center gap-1">
-        {(['holdings', 'sectors', 'companies'] as Source[]).map(key => (
+      {/* ── Find ─────────────────────────────────────────────────────────
+          Always here, and it takes over the list the moment it has anything
+          in it. A reader who knows the ticker types it; a reader who does not
+          uses the two chips underneath. It used to be a third tab, so finding
+          a name you already had in mind began by telling the card what kind
+          of thing you were about to do. */}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <input
+          data-slot="coverage-quick-start-search"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search a ticker or company"
+          className={clsx(
+            'w-full rounded-lg border border-gray-300 bg-white pl-9 pr-8 text-sm placeholder:text-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white',
+            roomy ? 'py-2.5' : 'py-2',
+          )}
+        />
+        {isSearching && (
           <button
-            key={key}
-            data-slot={`coverage-source-${key}`}
-            data-active={source === key ? 'true' : 'false'}
-            onClick={() => { setSource(key); setOpenSector(null) }}
-            className={clsx(
-              'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
-              source === key
-                ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
-                : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700/50',
-            )}
+            data-slot="coverage-quick-start-search-clear"
+            onClick={() => setQuery('')}
+            aria-label="Clear search"
+            className="no-touch-target absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
           >
-            {SOURCE_LABEL[key]}
+            <X className="h-3.5 w-3.5" />
           </button>
-        ))}
+        )}
       </div>
 
-      {source === 'companies' && (
-        <div className="relative mb-2">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-          <input
-            data-slot="coverage-quick-start-search"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search a ticker or company"
-            className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-8 pr-3 text-sm placeholder:text-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
-          />
+      {/* Browse, for the reader without a name in mind. Hidden while
+          searching, because the list is not theirs to choose then. */}
+      {!isSearching && (
+        <div data-slot="coverage-quick-start-sources" className="mt-2.5 flex items-center gap-1.5">
+          {(['holdings', 'sectors'] as Source[]).map(key => (
+            <button
+              key={key}
+              data-slot={`coverage-source-${key}`}
+              data-active={source === key ? 'true' : 'false'}
+              onClick={() => { setSource(key); setOpenSector(null) }}
+              className={clsx(
+                'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                source === key
+                  ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+                  : 'border border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-600 dark:text-gray-300',
+              )}
+            >
+              {SOURCE_LABEL[key]}
+            </button>
+          ))}
         </div>
       )}
 
       {/* Sector picking, until one is opened. Then its constituents render in
-          the ordinary list below and this becomes the way back. */}
-      {source === 'sectors' && (
-        <div className="mb-2">
-          {openSector ? (
-            <div className="flex items-center justify-between gap-2">
+          the ordinary list below and the header becomes the way back. */}
+      {!isSearching && source === 'sectors' && !openSector && (
+        <div className="mt-2.5">
+          <p className="mb-2 text-xs leading-snug text-gray-500 dark:text-gray-400">
+            Adds the largest names in a sector as they are today, up to {SECTOR_CONSTITUENT_LIMIT}.
+            It is a selection, not a standing rule &mdash; companies that join the sector later
+            are not added for you.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {sectorsLoading && (
+              <span className="flex items-center gap-1.5 py-1 text-xs text-gray-400">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading sectors&hellip;
+              </span>
+            )}
+            {sectors.map(name => (
               <button
-                onClick={() => setOpenSector(null)}
-                className="text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                key={name}
+                data-slot="coverage-sector-option"
+                onClick={() => setOpenSector(name)}
+                className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-primary-400 hover:bg-primary-50 hover:text-primary-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-primary-900/20"
               >
-                All sectors
+                {name}
               </button>
-              <button
-                data-slot="coverage-add-sector"
-                onClick={addSector}
-                disabled={constituentsLoading || newFromSector(constituents, selected, alreadyCovered) === 0}
-                className="rounded-lg bg-primary-600 px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-40"
-              >
-                {/* Counted before it is pressed: a sector adding eleven names
-                    and one adding none look identical on a button. */}
-                Add {newFromSector(constituents, selected, alreadyCovered)} from {openSector}
-                {constituents.length >= SECTOR_CONSTITUENT_LIMIT ? ' (top 50)' : ''}
-              </button>
-            </div>
-          ) : (
-            <>
-              <p className="mb-1.5 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
-                Adds the largest names in a sector as they are today, up to {SECTOR_CONSTITUENT_LIMIT}.
-                It is a selection, not a standing rule &mdash; companies that join the sector later
-                are not added for you.
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {sectorsLoading && (
-                  <span className="flex items-center gap-1.5 py-1 text-xs text-gray-400">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading sectors&hellip;
-                  </span>
-                )}
-                {sectors.map(name => (
-                  <button
-                    key={name}
-                    data-slot="coverage-sector-option"
-                    onClick={() => setOpenSector(name)}
-                    className="rounded-full border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-primary-400 hover:text-primary-700 dark:border-gray-600 dark:text-gray-200"
-                  >
-                    {name}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+            ))}
+          </div>
         </div>
       )}
 
-      {source === 'holdings' && suggestions.length > 0 && (
-        <p className="mb-1.5 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
-          Start with names from the sample portfolio already loaded into your pilot
-          workspace. Nothing is saved until you confirm.
+      {/* ── Choose ───────────────────────────────────────────────────────
+          The list always says what it is. Several sources reaching one
+          unlabelled list is how a reader loses track of what they are looking
+          at, and the sector controls used to sit above the heading rather
+          than on it. */}
+      <div className="mt-3 flex min-h-[1.5rem] items-center justify-between gap-3 border-b border-gray-100 pb-1.5 dark:border-gray-700">
+        <p
+          data-slot="coverage-quick-start-list-title"
+          className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-gray-400"
+        >
+          {listTitle}
         </p>
-      )}
+        {!isSearching && source === 'sectors' && openSector && (
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              data-slot="coverage-add-sector"
+              onClick={addSector}
+              disabled={constituentsLoading || newFromSector(constituents, selected, alreadyCovered) === 0}
+              className="rounded-lg bg-primary-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-primary-700 disabled:opacity-40"
+            >
+              {/* Counted before it is pressed: a sector adding eleven names
+                  and one adding none look identical on a button. */}
+              Add all {newFromSector(constituents, selected, alreadyCovered)}
+            </button>
+            <button
+              onClick={() => setOpenSector(null)}
+              className="text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400"
+            >
+              All sectors
+            </button>
+          </div>
+        )}
+      </div>
 
-      {/* Capped against the viewport rather than a fixed rem on `page`, so a
-          laptop and a large monitor both fill what they have without the list
-          growing past the fold. */}
-      <div className={clsx('overflow-y-auto', dense ? 'max-h-52' : roomy ? 'max-h-[min(30rem,48vh)]' : 'max-h-64')}>
+      <div className={clsx('overflow-y-auto', dense ? 'max-h-52' : roomy ? 'max-h-[min(28rem,44vh)]' : 'max-h-64')}>
         {listLoading && options.length === 0 && (
-          <div className="flex items-center gap-2 px-1 py-3 text-xs text-gray-400">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+          <div className="flex items-center gap-2 px-1 py-4 text-xs text-gray-400">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading&hellip;
           </div>
         )}
 
         {!listLoading && options.length === 0 && (
-          <p className="px-1 py-3 text-xs text-gray-400">
-            {source === 'companies'
-              ? (query.trim() ? 'No matching names.' : 'Search for a ticker or company.')
-              : source === 'sectors'
-                ? (openSector ? 'No names in this sector yet.' : 'Pick a sector above.')
-                : 'No holdings to suggest yet - try Sectors or Companies.'}
-          </p>
+          <p className="px-1 py-4 text-xs text-gray-400">{emptyMessage}</p>
         )}
 
         {options.map(asset => {
@@ -548,24 +600,35 @@ export function CoverageQuickStart({
               onClick={() => toggle(asset)}
               disabled={isCovered || saving}
               className={clsx(
-                'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors',
+                'flex w-full items-center gap-3 rounded-lg px-2 text-left transition-colors',
+                roomy ? 'py-2.5' : 'py-2',
                 isCovered
-                  ? 'opacity-50'
-                  : 'hover:bg-gray-50 dark:hover:bg-gray-700/50',
+                  ? 'opacity-60'
+                  : isSelected
+                    ? 'bg-primary-50/70 dark:bg-primary-900/20'
+                    : 'hover:bg-gray-50 dark:hover:bg-gray-700/50',
               )}
             >
+              {/*
+                A followed name and a staged one are not the same state, and
+                they drew the identical filled primary check — so a list of
+                names the reader already follows looked like a list they had
+                just selected. Staged is the accent; followed is grey and done.
+              */}
               <span
                 className={clsx(
                   'flex h-5 w-5 shrink-0 items-center justify-center rounded-md border',
-                  isSelected || isCovered
+                  isSelected
                     ? 'border-primary-500 bg-primary-500 text-white'
-                    : 'border-gray-300 text-transparent dark:border-gray-600',
+                    : isCovered
+                      ? 'border-gray-300 bg-gray-200 text-gray-500 dark:border-gray-600 dark:bg-gray-600 dark:text-gray-300'
+                      : 'border-gray-300 text-transparent dark:border-gray-600',
                 )}
               >
                 <Check className="h-3 w-3" strokeWidth={3} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-gray-900 dark:text-white">
+                <span className="block text-sm font-semibold text-gray-900 dark:text-white">
                   {asset.symbol}
                 </span>
                 {asset.company_name && (
@@ -598,66 +661,77 @@ export function CoverageQuickStart({
         <p
           data-slot="coverage-quick-start-error"
           role="alert"
-          className="mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-xs leading-relaxed text-red-700 dark:bg-red-900/20 dark:text-red-300"
+          className="mt-2.5 rounded-lg bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-700 dark:bg-red-900/20 dark:text-red-300"
         >
           {error}
         </p>
       )}
 
-      {selected.size > 0 && (
-        <div data-slot="coverage-quick-start-selection" className="mt-2.5 border-t border-gray-100 pt-2.5 dark:border-gray-700">
-          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-            {selected.size} selected
-          </p>
-          {/* Every staged name, removable one at a time. A sector press can
-              stage fifty; nobody should have to accept all fifty to accept
-              most of them. */}
-          <div className={clsx('flex flex-wrap gap-1 overflow-y-auto', roomy ? 'max-h-40' : 'max-h-24')}>
-            {[...selected.values()].map(asset => (
-              <span
-                key={asset.id}
-                data-slot="coverage-selected-chip"
-                className="inline-flex items-center gap-1 rounded-full bg-primary-50 py-0.5 pl-2 pr-1 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-200"
-              >
-                {asset.symbol}
-                {asset.viaSector && (
-                  <span className="text-[10px] font-normal text-primary-400">{asset.viaSector}</span>
-                )}
-                <button
-                  onClick={() => setSelected(prev => removeCandidate(prev, asset.id))}
-                  aria-label={`Remove ${asset.symbol}`}
-                  className="no-touch-target rounded-full p-0.5 hover:bg-primary-100 dark:hover:bg-primary-800"
+      {/* ── Commit ───────────────────────────────────────────────────────
+          One bar, always in the same place, under a rule that separates it
+          from the list. The staged names and the button were two stacked
+          blocks below a scrolling list, so on a long list the reader scrolled
+          past what they were choosing to find out what they had chosen. */}
+      <div className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+        {selected.size > 0 && (
+          <div data-slot="coverage-quick-start-selection" className="mb-2.5">
+            {/* Every staged name, removable one at a time. A sector press can
+                stage fifty; nobody should have to accept all fifty to accept
+                most of them. */}
+            <div className={clsx('flex flex-wrap gap-1 overflow-y-auto', roomy ? 'max-h-28' : 'max-h-20')}>
+              {[...selected.values()].map(asset => (
+                <span
+                  key={asset.id}
+                  data-slot="coverage-selected-chip"
+                  className="inline-flex items-center gap-1 rounded-full bg-primary-50 py-0.5 pl-2 pr-1 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-200"
                 >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
+                  {asset.symbol}
+                  {asset.viaSector && (
+                    <span className="text-[10px] font-normal text-primary-400">{asset.viaSector}</span>
+                  )}
+                  <button
+                    onClick={() => setSelected(prev => removeCandidate(prev, asset.id))}
+                    aria-label={`Remove ${asset.symbol}`}
+                    className="no-touch-target rounded-full p-0.5 hover:bg-primary-100 dark:hover:bg-primary-800"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400">
+            {selected.size === 0
+              ? 'Nothing is saved until you confirm.'
+              : `${selected.size} ready to follow.`}
+          </p>
+          <div className="flex shrink-0 items-center gap-1">
+            {onDismiss && (
+              <button
+                data-slot="coverage-quick-start-skip"
+                onClick={onDismiss}
+                disabled={saving}
+                className="rounded-lg px-2.5 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                Not now
+              </button>
+            )}
+            <button
+              data-slot="coverage-quick-start-save"
+              onClick={save}
+              disabled={selected.size === 0 || saving}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-default disabled:opacity-40"
+            >
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {selected.size === 0
+                ? 'Follow'
+                : `Follow ${selected.size} ${selected.size === 1 ? 'name' : 'names'}`}
+            </button>
           </div>
         </div>
-      )}
-
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          data-slot="coverage-quick-start-save"
-          onClick={save}
-          disabled={selected.size === 0 || saving}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-default disabled:opacity-40"
-        >
-          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {selected.size === 0
-            ? 'Select names to follow'
-            : `Follow ${selected.size} ${selected.size === 1 ? 'name' : 'names'}`}
-        </button>
-        {onDismiss && (
-          <button
-            data-slot="coverage-quick-start-skip"
-            onClick={onDismiss}
-            disabled={saving}
-            className="rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-          >
-            Not now
-          </button>
-        )}
       </div>
     </div>
   )
