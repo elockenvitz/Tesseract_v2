@@ -56,8 +56,10 @@ export function usePilotPipelineBanner(): PilotPipelineBanner {
     steps: [
       {
         n: 1,
-        title: 'Drag ideas through the pipeline',
-        hint: 'Click and drag ideas left to right through stages as they mature.',
+        // Named by what it accomplishes, not by how a mouse does it: a phone
+        // completes this step from a stage sheet, with nothing to drag.
+        title: 'Move an idea to the next stage',
+        hint: 'Move ideas forward through the stages as they mature.',
         done: hasCompletedPipelineStepMoved,
       },
       {

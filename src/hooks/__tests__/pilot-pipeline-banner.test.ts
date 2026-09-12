@@ -23,7 +23,7 @@ const mobile = src('components/mobile/MobilePipeline.tsx')
 describe('the Pipeline banner is defined once', () => {
   it('holds all three steps in the hook', () => {
     for (const title of [
-      'Drag ideas through the pipeline',
+      'Move an idea to the next stage',
       'Open the Decision Inbox',
       'Open Trade Lab',
     ]) {
@@ -33,7 +33,7 @@ describe('the Pipeline banner is defined once', () => {
 
   it('leaves no copy of the step copy in either shell', () => {
     for (const page of [desktop, mobile]) {
-      expect(page).not.toContain('Drag ideas through the pipeline')
+      expect(page).not.toContain('Move an idea to the next stage')
       expect(page).not.toContain('Open the Decision Inbox')
     }
   })
