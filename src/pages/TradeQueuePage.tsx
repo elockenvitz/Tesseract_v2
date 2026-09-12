@@ -56,6 +56,7 @@ import { useOrgMembers } from '../hooks/useOrgMembers'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePipelineItems } from '../hooks/usePipelineItems'
 import { PilotStepsBanner } from '../components/pilot/PilotStepsBanner'
+import { usePilotPipelineBanner } from '../hooks/usePilotPipelineBanner'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
 import { Button } from '../components/ui/Button'
@@ -216,7 +217,7 @@ export function TradeQueuePage() {
   // it once all steps are done — no flash from a useEffect dismissing it
   // a frame later.
   const allStepsDone = pilotStep1Done && pilotStep2Done && pilotStep3Done
-  const showPilotBanner = pilotMode.effectiveIsPilot && !pilotBannerDismissed && !allStepsDone
+  const pilotBanner = usePilotPipelineBanner()
   const dismissPilotBanner = useCallback(() => {
     markPilotStage('pipeline_banner_dismissed')
   }, [markPilotStage])
@@ -1522,33 +1523,10 @@ export function TradeQueuePage() {
           one-liner hint so a pilot reads exactly what to do.
           Dismissible per localStorage so a returning user isn't
           re-nagged. */}
-      {/* Steps and semantics unchanged, shell shared with the other three.
-          No dismiss control: each step gates the path into the next surface
-          (drag → Inbox → Trade Lab), and it auto-retires when all are done. */}
-      {showPilotBanner && (
-        <PilotStepsBanner
-          steps={[
-            {
-              n: 1,
-              title: 'Drag ideas through the pipeline',
-              hint: 'Click and drag ideas left to right through stages as they mature.',
-              done: pilotStep1Done,
-            },
-            {
-              n: 2,
-              title: 'Open the Decision Inbox',
-              hint: 'The bottom drawer is where recommendations wait for your decision — click it.',
-              done: pilotStep2Done,
-            },
-            {
-              n: 3,
-              title: 'Open Trade Lab',
-              hint: 'Click the portfolio name on the recommendation card to jump into Trade Lab.',
-              done: pilotStep3Done,
-            },
-          ]}
-        />
-      )}
+      {/* Same steps, same flags, same visibility rule as the phone's
+          pipeline — see `usePilotPipelineBanner`. The board is where the
+          steps are performed, so the markers below stay with this page. */}
+      {pilotBanner.show && <PilotStepsBanner steps={pilotBanner.steps} />}
 
       {/* Header */}
       <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">

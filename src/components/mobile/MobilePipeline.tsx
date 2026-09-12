@@ -7,6 +7,8 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { usePipelineItems } from '../../hooks/usePipelineItems'
+import { usePilotPipelineBanner } from '../../hooks/usePilotPipelineBanner'
+import { PilotStepsBanner } from '../pilot/PilotStepsBanner'
 import { useTradeIdeaService } from '../../hooks/useTradeIdeaService'
 import { isCreatorOrCoAnalyst } from '../../lib/permissions/trade-idea-permissions'
 import { RESEARCH_STAGES, RESEARCH_STAGE_CONFIG } from '../../lib/trade-status-semantics'
@@ -63,6 +65,7 @@ const VIEWS: { key: View; label: string }[] = [
 export function MobilePipeline() {
   const { user } = useAuth()
   const { data: items = [], isLoading } = usePipelineItems()
+  const pilotBanner = usePilotPipelineBanner()
   const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
 
   const [view, setView] = useState<View>('pipeline')
@@ -158,6 +161,16 @@ export function MobilePipeline() {
             )
           })}
         </div>
+
+        {/* The Pipeline Get Started banner, in its compact phone form.
+            It lived inline in `TradeQueuePage`, which a phone never renders,
+            so it had simply never appeared here. Same steps and the same
+            completion flags as desktop — see `usePilotPipelineBanner`. Placed
+            under the view tabs and above the stage selector so it belongs to
+            the board rather than floating over the whole surface. */}
+        {pilotBanner.show && view === 'pipeline' && (
+          <PilotStepsBanner steps={pilotBanner.steps} />
+        )}
 
         {/* Stage selector. Paging chevrons plus a tappable label, rather than a
             horizontally scrolling strip of pills: the strip hid stages off the
