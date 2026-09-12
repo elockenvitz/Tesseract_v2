@@ -5366,6 +5366,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             userId={user.id}
             orgId={currentOrgId}
             onOpenIdeas={() => setShowIdeasPanel(true)}
+            ideasCount={filteredItems.proposals.length + filteredItems.ideas.length}
           />
         )}
 
@@ -5374,7 +5375,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         {/* Top row: Portfolio selector and actions */}
         <div className="px-3 sm:px-6 py-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Beaker className="h-5 w-5 text-primary-600 shrink-0" />
+            {/* Desktop only. On a phone it is a 20px picture of a
+                laboratory beside the word Trade Lab in the tab bar, on the
+                one row the portfolio has to fit into. */}
+            <Beaker className="hidden sm:block h-5 w-5 text-primary-600 shrink-0" />
             <h1 className="hidden sm:block text-lg font-semibold text-gray-900 dark:text-white">
               {isSharedView ? 'Shared Simulation' : 'Trade Lab'}
             </h1>
@@ -5385,7 +5389,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{sharedSimData.name}</span>
               </>
             )}
-            {!isSharedView && <span className="text-gray-300 dark:text-gray-600">|</span>}
+            {!isSharedView && <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>}
             {/* Portfolio Selector - Searchable Dropdown — hidden in shared view */}
             {!isSharedView && <div className="relative flex-1 min-w-0 sm:flex-none" ref={portfolioDropdownRef}>
               <button
@@ -5484,6 +5488,49 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 spread across two header rows for actions taken occasionally;
                 the tabs that get used constantly — Simulation / Impact /
                 Trades — now own the row below on their own. */}
+            {/*
+              ── One utility row ──────────────────────────────────────────
+
+              Which book you are in, the two things you do to it, and
+              everything else. These were three bands: the portfolio on its
+              own, then a full-width pair of actions, then the mode switch —
+              chrome stacked on chrome before a single holding.
+
+              Recommendations keeps a named control here because it is the
+              durable way in; while the tutorial is teaching that step it also
+              offers one, and the two are deliberately not the same size. The
+              loud one belongs to the step that is asking.
+            */}
+            {isMobileViewport && !isSharedView && selectedPortfolioId && selectedViewType !== 'lists' && (
+              <>
+                <button
+                  type="button"
+                  data-slot="mobile-lab-ideas"
+                  onClick={() => setShowIdeasPanel(true)}
+                  className="shrink-0 h-9 inline-flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 px-2 text-[12px] font-medium text-gray-600 dark:text-gray-300"
+                >
+                  <Layers className="h-3.5 w-3.5 text-gray-400" />
+                  Ideas
+                  {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
+                    <span className="rounded-full bg-primary-100 px-1 text-[11px] font-semibold tabular-nums text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                      {filteredItems.proposals.length + filteredItems.ideas.length}
+                    </span>
+                  )}
+                </button>
+                {!tableReadOnly && (
+                  <button
+                    type="button"
+                    data-slot="mobile-lab-add"
+                    onClick={() => setMobileAddOpen(true)}
+                    aria-label="Add trade"
+                    title="Add trade"
+                    className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                )}
+              </>
+            )}
             {isMobileViewport && !isSharedView && (
               <button
                 type="button"
@@ -5556,51 +5603,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           </div>
         </div>
 
-        {/*
-          ── The phone's action row ──────────────────────────────────────
-
-          Recommendations had no visible route here at all. There WAS an
-          inline Ideas button, but its container carries `hidden` on a phone,
-          so it rendered into nothing — the only way in was an unlabelled
-          overflow sheet, while the tutorial told the reader to go and review
-          a recommendation.
-
-          Both controls are named, both are the canonical ones: this opens the
-          same ideas panel the desktop rail does, and Add trade opens the same
-          sheet the floating button used to. Placed between the portfolio you
-          are in and the view you are looking at, which is the order the
-          questions come in.
-        */}
-        {isMobileViewport && !isSharedView && selectedPortfolioId && selectedViewType !== 'lists' && (
-          <div className="px-3 pb-2 flex items-center gap-2">
-            <button
-              type="button"
-              data-slot="mobile-lab-ideas"
-              onClick={() => setShowIdeasPanel(true)}
-              className="flex min-w-0 flex-1 items-center justify-center gap-1.5 h-9 rounded-lg border border-gray-200 dark:border-gray-700 px-2 text-[13px] font-medium text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800"
-            >
-              <Layers className="h-4 w-4 shrink-0 text-gray-400" />
-              <span className="truncate">Ideas &amp; recommendations</span>
-              {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
-                <span className="shrink-0 rounded-full bg-primary-100 px-1.5 text-[11px] font-semibold tabular-nums text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
-                  {filteredItems.proposals.length + filteredItems.ideas.length}
-                </span>
-              )}
-            </button>
-            {!tableReadOnly && (
-              <button
-                type="button"
-                data-slot="mobile-lab-add"
-                onClick={() => setMobileAddOpen(true)}
-                className="flex shrink-0 items-center gap-1.5 h-9 rounded-lg border border-gray-200 dark:border-gray-700 px-2.5 text-[13px] font-medium text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800"
-              >
-                <Plus className="h-4 w-4 text-gray-400" />
-                Add trade
-              </button>
-            )}
-          </div>
-        )}
-
         {/* View Tabs Row */}
         {(selectedPortfolioId || isSharedView) && (
           <div className="px-3 sm:px-6 pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -5641,11 +5643,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             {/* Right: View Toggle (only show for workbench views, not Trade Sheets) */}
             {selectedViewType !== 'lists' && (simulation || isSharedView) && (
               <div className="flex items-center gap-2 w-full sm:w-auto">
-                <div className="flex sm:inline-flex w-full sm:w-auto items-center p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                {/* The primary control on the surface, and sized like it:
+                    a taller band than the utilities above it and than the
+                    measure switch inside the table below. */}
+                <div className="flex sm:inline-flex w-full sm:w-auto items-center p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg h-11 sm:h-auto">
                   <button
                     onClick={() => setImpactView('simulation')}
                     className={clsx(
-                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all",
                       impactView === 'simulation'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
@@ -5662,7 +5667,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <button
                     onClick={() => setImpactView('impact')}
                     className={clsx(
-                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all",
                       impactView === 'impact'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
@@ -5678,7 +5683,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <button
                     onClick={() => setImpactView('trades')}
                     className={clsx(
-                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all",
                       impactView === 'trades'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"

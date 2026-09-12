@@ -29,9 +29,16 @@ const list = src('components/mobile/trade-lab/MobileSimulationList.tsx')
 const banner = src('components/pilot/PilotTradeLabIntroBanner.tsx')
 
 describe('recommendations have a named control', () => {
+  /**
+   * Named, and deliberately not the loudest thing on the surface. It shared a
+   * band with a second, equally large control while the tutorial was already
+   * asking for the same thing one line above.
+   */
   it('is labelled, not an icon', () => {
     expect(page).toContain('data-slot="mobile-lab-ideas"')
-    expect(page).toContain('Ideas &amp; recommendations')
+    const row = page.slice(page.indexOf('data-slot="mobile-lab-ideas"'))
+    expect(row.slice(0, 500)).toContain('Ideas')
+    expect(row.slice(0, 500)).toContain('<Layers')
   })
 
   /** The canonical panel, the same one the desktop rail opens. */
@@ -57,9 +64,11 @@ describe('adding a position', () => {
     expect(list).not.toContain('rounded-full bg-primary-600')
   })
 
-  it('is a labelled control in the toolbar instead', () => {
+  /** Compact and secondary, but still named to anything that reads labels. */
+  it('is a control in the utility row instead', () => {
     expect(page).toContain('data-slot="mobile-lab-add"')
-    expect(page).toContain('Add trade')
+    const row = page.slice(page.indexOf('data-slot="mobile-lab-add"'))
+    expect(row.slice(0, 400)).toContain('aria-label="Add trade"')
   })
 
   /** Same sheet, same handler — only who opens it moved. */
@@ -116,5 +125,72 @@ describe('the portfolio identity is compact', () => {
     expect(page).toContain('portfolioDropdownOpen && (')
     const trigger = page.slice(page.indexOf('onClick={() => setPortfolioDropdownOpen'))
     expect(trigger.slice(0, 1200)).toContain('truncate')
+  })
+})
+
+/*
+ * ── One interface, not five toolbars ───────────────────────────────────────
+ *
+ * The teaching band, the portfolio, a full-width pair of actions and the mode
+ * switch were four bands before a single holding, and the measure switch made
+ * five before the first number. Everything was individually legible and the
+ * stack was not.
+ */
+describe('the bands above the table', () => {
+  it('puts the portfolio, the two actions and the overflow on one row', () => {
+    const top = page.slice(page.indexOf('{/* Top row: Portfolio selector and actions */}'))
+    const band = top.slice(0, top.indexOf('{/* View Tabs Row */}'))
+    for (const slot of ['mobile-lab-ideas', 'mobile-lab-add', 'setMobileLabMenuOpen(true)']) {
+      expect(band).toContain(slot)
+    }
+    expect(band).toContain('setPortfolioDropdownOpen')
+  })
+
+  /** The lab beaker and its divider cost a row that had none to spare. */
+  it('drops the decorative icon and rule on a phone', () => {
+    expect(page).toContain('<Beaker className="hidden sm:block')
+    expect(page).toContain('className="hidden sm:inline text-gray-300 dark:text-gray-600">|')
+  })
+
+  /** The mode switch is the primary control, and is sized like it. */
+  it('gives Simulation / Impact / Trades the tallest band', () => {
+    const toggle = page.slice(page.indexOf("onClick={() => setImpactView('simulation')}") - 900)
+    expect(toggle.slice(0, 900)).toContain('h-11 sm:h-auto')
+  })
+})
+
+describe('the local tutorial', () => {
+  const banner = src('components/pilot/PilotTradeLabIntroBanner.tsx')
+  const shell = src('components/pilot/PilotStepsBanner.tsx')
+
+  /** Local product teaching, like Pipeline basics — not the pilot mission. */
+  it('calls itself what it teaches', () => {
+    expect(banner).toContain('label="Trade Lab basics"')
+  })
+
+  /**
+   * The step opens the thing it names, so its control says that thing's name.
+   * Otherwise the reader holds "Review a recommendation" and "Ideas &
+   * recommendations" as two separate ideas.
+   */
+  it('carries the loud recommendations control itself', () => {
+    expect(banner).toContain('ctaLabel:')
+    expect(banner).toContain('Ideas & recommendations · ${ideasCount}')
+    expect(shell).toContain('ctaLabel?: string')
+    expect(shell).toContain('data-slot="pilot-steps-cta"')
+  })
+
+  /**
+   * Once a step is behind them the reader has seen the pattern, and a module
+   * that keeps spending a line on instructions keeps costing the surface it
+   * is teaching.
+   */
+  it('drops the instruction line once a step is done', () => {
+    expect(shell).toContain('{!steps.some(s => s.done) && (')
+  })
+
+  /** Completion is untouched: the same three flags, read the same way. */
+  it('changes no completion fact', () => {
+    for (const flag of ['step1', 'step2', 'step3']) expect(banner).toContain(`done: ${flag}`)
   })
 })

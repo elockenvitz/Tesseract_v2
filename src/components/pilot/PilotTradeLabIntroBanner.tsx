@@ -30,6 +30,8 @@ interface PilotTradeLabIntroBannerProps {
    * a route.
    */
   onOpenIdeas?: () => void
+  /** How many ideas and recommendations are waiting, for the CTA. */
+  ideasCount?: number
   userId: string
   /** Active org id, used to scope the banner state per pilot client. */
   orgId?: string | null
@@ -59,7 +61,7 @@ function writeFlag(userId: string, orgId: string | null | undefined, suffix: str
   try { localStorage.setItem(flagKey(userId, orgId, suffix), '1') } catch { /* ignore */ }
 }
 
-export function PilotTradeLabIntroBanner({ userId, orgId, onOpenIdeas }: PilotTradeLabIntroBannerProps) {
+export function PilotTradeLabIntroBanner({ userId, orgId, onOpenIdeas, ideasCount = 0 }: PilotTradeLabIntroBannerProps) {
   const [dismissed, setDismissed] = useState<boolean>(() => readFlag(userId, orgId, DISMISS))
   const [step1, setStep1] = useState<boolean>(() => readFlag(userId, orgId, STEP1))
   const [step2, setStep2] = useState<boolean>(() => readFlag(userId, orgId, STEP2))
@@ -127,6 +129,9 @@ export function PilotTradeLabIntroBanner({ userId, orgId, onOpenIdeas }: PilotTr
      once all three are done, exactly as before. */
   return (
     <PilotStepsBanner
+      /* Local product teaching, like Pipeline basics — not the global
+         five-step pilot mission, which is what "Get started" names. */
+      label="Trade Lab basics"
       steps={[
         {
           n: 1,
@@ -137,6 +142,10 @@ export function PilotTradeLabIntroBanner({ userId, orgId, onOpenIdeas }: PilotTr
           hint: 'Open Ideas & recommendations, then check one to bring it into the holdings table.',
           done: step1,
           onClick: onOpenIdeas,
+          /* The step opens the thing it names, so its control says that
+             thing's name — otherwise the reader holds "Review a
+             recommendation" and "Ideas & recommendations" as two ideas. */
+          ctaLabel: ideasCount > 0 ? `Ideas & recommendations · ${ideasCount}` : 'Ideas & recommendations',
         },
         {
           n: 2,

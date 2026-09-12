@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Sparkles } from 'lucide-react'
+import { ArrowRight, Check, ChevronRight, Sparkles } from 'lucide-react'
 import { clsx } from 'clsx'
 
 /**
@@ -37,6 +37,14 @@ export interface PilotStep {
   done?: boolean
   /** Steps that are also the way to perform them. Optional by design. */
   onClick?: () => void
+  /**
+   * What the step's own control says, when the step IS the control.
+   *
+   * A step that opens the thing it names should say the thing's name, so the
+   * reader is not asked to hold "Review a recommendation" and "Ideas &
+   * recommendations" as the same idea. Falls back to a chevron.
+   */
+  ctaLabel?: string
 }
 
 /**
@@ -139,18 +147,32 @@ export function PilotStepsBanner({
           <p className="text-[12px] font-semibold leading-tight text-gray-900 dark:text-white">
             {current.title}
           </p>
-          <p className="mt-0.5 text-[11px] leading-snug text-gray-600 dark:text-gray-400">
-            {current.hint}
-          </p>
+          {/*
+            Only until the reader has done one.
+            Once a step is behind them they have seen the pattern, and a
+            module that keeps spending a line on instructions is a module
+            that keeps costing the surface it is teaching.
+          */}
+          {!steps.some(s => s.done) && (
+            <p className="mt-0.5 text-[11px] leading-snug text-gray-600 dark:text-gray-400">
+              {current.hint}
+            </p>
+          )}
         </div>
         {current.onClick && (
           <button
             type="button"
+            data-slot="pilot-steps-cta"
             onClick={current.onClick}
-            aria-label={current.title}
-            className={clsx('shrink-0 rounded-lg p-1.5 text-white', t.action)}
+            className={clsx(
+              'shrink-0 inline-flex items-center gap-1 rounded-lg font-semibold text-white no-touch-target',
+              current.ctaLabel ? 'h-9 px-2.5 text-[12px]' : 'h-9 w-9 justify-center',
+              t.action,
+            )}
+            aria-label={current.ctaLabel ?? current.title}
           >
-            <ChevronRight className="h-4 w-4" />
+            {current.ctaLabel}
+            <ArrowRight className="h-4 w-4 shrink-0" />
           </button>
         )}
       </div>
