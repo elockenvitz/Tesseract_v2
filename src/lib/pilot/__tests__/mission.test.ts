@@ -186,4 +186,30 @@ describe('reviewing an outcome is not pressing a button', () => {
     expect(src('components/dashboard/PilotWelcomeBanner.tsx'))
       .toContain("type: 'outcomes', data: { tradeQueueItemId: ideaId }")
   })
+
+  /*
+   * The routed id has to survive into the page, or the pilot lands on the
+   * right screen with their decision filtered out of it — correct page,
+   * invisible row, step stuck.
+   */
+  it('hands the routed id to Outcomes as a focus', () => {
+    expect(src('pages/DashboardPage.tsx'))
+      .toContain('focusDecisionId={activeTab.data?.tradeQueueItemId ?? null}')
+  })
+
+  it('widens the local filters for a focused arrival, and only then', () => {
+    const page = src('pages/DecisionAccountabilityPage.tsx')
+    // Reuses the page's own focus semantics rather than adding a second one.
+    expect(page).toContain('setSelectedId(focusDecisionId)')
+    // The filter that silently hides an old decision.
+    expect(page).toContain('dateRange: undefined')
+    // Once per focused id, and never for an ordinary visit.
+    expect(page).toContain('if (!focusDecisionId || focusRef.current === focusDecisionId) return')
+  })
+
+  /** The reader's own portfolio, dates and searches must survive the visit. */
+  it('does not persist a focused view over the reader s own filters', () => {
+    expect(src('pages/DecisionAccountabilityPage.tsx'))
+      .toContain('if (focusRef.current) return')
+  })
 })

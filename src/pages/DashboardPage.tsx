@@ -1344,7 +1344,14 @@ export function DashboardPage() {
           data: user
         })} />
       case 'outcomes':
-        return <DecisionAccountabilityPage onItemSelect={handleSearchResult} />
+        return (
+          <DecisionAccountabilityPage
+            onItemSelect={handleSearchResult}
+            /* Carried by the pilot mission's "Review outcome" so the decision
+               being reviewed is the one on screen. Absent otherwise. */
+            focusDecisionId={activeTab.data?.tradeQueueItemId ?? null}
+          />
+        )
       case 'files':
         return <FilesPage onItemSelect={handleSearchResult} />
       case 'charting':

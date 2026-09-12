@@ -17,7 +17,7 @@
  * - Rationale content from trade_event_rationales
  */
 
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import {
   Target, Search, ChevronDown, ChevronRight, Clock,
   CheckCircle2, TrendingUp, TrendingDown, Briefcase,
@@ -232,6 +232,14 @@ const UNMATCHED_GRID = 'grid-cols-[88px_1fr_72px_110px_80px_80px]'
 
 interface DecisionAccountabilityPageProps {
   onItemSelect?: (item: any) => void
+  /**
+   * A decision to land on, by `trade_queue_item_id`.
+   *
+   * Supplied by the pilot mission's "Review outcome", which routes here with
+   * the tutorial idea. Absent for every ordinary visit, and nothing below
+   * behaves differently when it is.
+   */
+  focusDecisionId?: string | null
 }
 
 // ============================================================
@@ -3017,7 +3025,7 @@ function ScorecardsView({ portfolioId }: { portfolioId: string | null }) {
 // Main Page
 // ============================================================
 
-export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabilityPageProps) {
+export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = null }: DecisionAccountabilityPageProps) {
   // Hoisted above state so the lazy initializers can hydrate from the
   // sessionStorage snapshot keyed per (user, org).
   const { user: pilotBannerUser } = useAuth()
@@ -3053,10 +3061,25 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
   const [sortBy, setSortBy] = useState<string>(() => persisted?.sortBy ?? 'date')
   const [sortDesc, setSortDesc] = useState(() => persisted?.sortDesc ?? true)
 
+  /* Declared above the writer that reads it, so the guard against persisting a
+     focused view is never evaluating a binding defined further down. */
+  const focusRef = useRef<string | null>(null)
+
   // Persist the user-visible "place" so leaving and returning to this
   // tab restores the same selection / filters / sort. Keyed per user+org
   // so each pilot client (and each user) tracks independently.
   useEffect(() => {
+    /*
+     * A focused arrival is not a place the reader chose.
+     *
+     * Landing here from the pilot mission widens the local filters so the one
+     * decision being reviewed is actually on screen. Writing that widened view
+     * to the snapshot would replace the portfolio, dates and searches the
+     * reader had set, and they would find them gone on their next ordinary
+     * visit. So while a focus is being honoured nothing is persisted; the
+     * moment they touch a control the focus is released and this resumes.
+     */
+    if (focusRef.current) return
     writeOutcomesState(pilotBannerUser?.id, pilotBannerOrgId, {
       activeTab,
       selectedPortfolioId,
@@ -3079,6 +3102,44 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     typeFilter, tickerSearch, nameSearch, portfolioFilter,
     issueSearch, actionFilter, ownerFilter, sortBy, sortDesc, filters,
   ])
+
+  /*
+   * Land on the decision the mission sent them to see.
+   *
+   * `selectedId` is the page's own focus semantics, keyed on `decision_id`,
+   * and it is reused rather than replaced. The rest is the minimum widening
+   * that makes a specific decision reachable: this page scopes by portfolio,
+   * by date range and by several local searches, so a pilot could arrive at
+   * exactly the right screen and find their decision filtered out of it —
+   * correct page, invisible row, step stuck.
+   *
+   * Once only, per focused id. Nothing is written to the persisted snapshot
+   * while it holds, so the reader's own portfolio, dates and searches survive
+   * untouched — see the writer above. The filters are widened, never
+   * narrowed, so this can only ever reveal rows.
+   */
+  useEffect(() => {
+    if (!focusDecisionId || focusRef.current === focusDecisionId) return
+    focusRef.current = focusDecisionId
+    setSelectedPortfolioId(null)
+    setPortfolioFilter(null)
+    setTypeFilter(null)
+    setTickerSearch('')
+    setNameSearch('')
+    setIssueSearch('')
+    setActiveChipKey('all')
+    setFilters(prev => ({
+      ...prev,
+      showApproved: true,
+      showRejected: true,
+      showCancelled: true,
+      resultFilter: 'all',
+      // The one that silently hides an old decision. Cleared rather than
+      // widened to a guessed window, because the tutorial idea may be any age.
+      dateRange: undefined,
+    }))
+    setSelectedId(focusDecisionId)
+  }, [focusDecisionId])
 
   // Reaching Outcomes is the graduation moment — the user has walked
   // the full pilot loop (capture → develop → decide → review → analyze)
