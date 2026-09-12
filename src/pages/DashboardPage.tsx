@@ -60,6 +60,7 @@ import { useOrganization } from '../contexts/OrganizationContext'
 import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
 import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
 import { usePilotMode } from '../hooks/usePilotMode'
+import { usePilotSeeding } from '../hooks/usePilotSeeding'
 import { TAB_TYPE_TO_PILOT_FEATURE, PILOT_ACCESS_DEFAULTS } from '../lib/pilot/pilot-access'
 import { PilotTeaserModal } from '../components/pilot/PilotTeaserModal'
 import { PilotGraduationModal } from '../components/pilot/PilotGraduationModal'
@@ -250,6 +251,15 @@ export function DashboardPage() {
 
   // ─── Pilot Mode gating ───────────────────────────────────────────────
   const pilotMode = usePilotMode()
+
+  /*
+   * A pilot's workspace is seeded from here because this is the one component
+   * both shells render, whatever tab is open. It used to be seeded by a hook
+   * inside Trade Lab, so a fresh pilot who went coverage → capture → Idea
+   * Pipeline arrived at an empty board that nothing had ever written to.
+   * No-ops for everyone who is not a pilot. See `usePilotSeeding`.
+   */
+  usePilotSeeding()
   const [pilotTeaser, setPilotTeaser] = useState<{ featureLabel: string; reason: 'preview' | 'hidden' } | null>(null)
 
   // Pilot users never see tabs backed by a pilot-hidden feature. Filtering
