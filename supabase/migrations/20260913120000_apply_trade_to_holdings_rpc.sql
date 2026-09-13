@@ -204,7 +204,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.apply_trade_to_holdings(uuid, uuid, numeric, numeric, numeric) IS
-  'Applies one committed trade to portfolio_holdings at CURRENT_DATE, rolling '
+  'Applies one committed trade to portfolio_holdings at the current UTC date, rolling '
   'the complete prior snapshot forward first and adjusting CASH_USD by the '
   'realised position delta. Serialised per portfolio by a transaction advisory '
   'lock so a concurrent batch cannot produce a partial or duplicated date. '

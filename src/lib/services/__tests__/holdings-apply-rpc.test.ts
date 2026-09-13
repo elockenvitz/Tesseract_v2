@@ -164,6 +164,9 @@ describe('the function keeps the properties the fix depends on', () => {
   it('decides the day in UTC, not from the session', () => {
     expect(migration).toContain("v_today       date := (now() AT TIME ZONE 'UTC')::date;")
     expect(migration).not.toMatch(/:=\s*CURRENT_DATE/)
+    // The catalogue comment is what a reader of the live function sees.
+    expect(migration).not.toMatch(/portfolio_holdings at CURRENT_DATE/)
+    expect(migration).toContain('portfolio_holdings at the current UTC date')
   })
 })
 
