@@ -178,8 +178,11 @@ export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange }:
         },
         {
           n: 3,
-          title: 'Execute',
-          hint: 'Click Execute Trade to commit it to the Trade Book.',
+          title: 'Execute the simulated trade',
+          /* "Click Execute Trade" named a desktop button. The phone's control
+             is a bar under the table and says how many trades it will
+             commit, so the hint names the act and where it lives. */
+          hint: 'Tap Execute at the bottom of the table to commit it to the Trade Book.',
           done: step3,
         },
       ]}

@@ -6798,6 +6798,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             assetSearchResults={phantomAssetResults ?? []}
                             addOpen={mobileAddOpen}
                             onAddOpenChange={setMobileAddOpen}
+                            // The same mutation and the same PM-only gate as
+                            // the desktop table's onBulkPromote below. Omitting
+                            // the handler hides the control, which is how
+                            // execute stays PM-only on both surfaces.
+                            onExecute={!isSharedView && selectedPortfolioId && isCurrentUserPM ? (variantIds, opts) => {
+                              bulkExecuteM.mutate({
+                                variantIds,
+                                batchName: opts?.batchName ?? null,
+                                batchDescription: opts?.batchDescription ?? null,
+                                reasons: opts?.reasons,
+                              })
+                            } : undefined}
+                            isExecuting={bulkExecuteM.isPending}
                           />
                         </div>
                       ) : (

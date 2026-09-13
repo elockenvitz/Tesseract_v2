@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { AlertTriangle, ChevronDown, ChevronUp, Layers, Lock, Search, X } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronUp, Layers, Loader2, Lock, Search, X } from 'lucide-react'
 import type { SimulationRow, SimulationRowSummary } from '../../../hooks/useSimulationRows'
 import { useAssetGroupingMeta } from '../../../hooks/useAssetGroupingMeta'
 import type { TradeAction } from '../../../types/trading'
@@ -37,6 +37,20 @@ interface MobileSimulationListProps {
   assetSearch?: string
   onAssetSearchChange?: (v: string) => void
   assetSearchResults?: AddableAsset[]
+  /**
+   * Commit the chosen trades to the Trade Book.
+   *
+   * Same signature as the desktop table's `onBulkPromote`, and the page wires
+   * both to the same `bulkExecuteM` mutation — there is no mobile execute
+   * path, only a mobile control for the one that already exists. Omitted for
+   * non-PMs and shared views, exactly as the desktop table omits it, which is
+   * what hides the control.
+   */
+  onExecute?: (
+    variantIds: string[],
+    opts?: { batchName?: string | null; batchDescription?: string | null; reasons?: Record<string, string> },
+  ) => void
+  isExecuting?: boolean
 }
 
 /**
@@ -166,6 +180,8 @@ export function MobileSimulationList({
   assetSearchResults = [],
   addOpen: controlledAddOpen,
   onAddOpenChange,
+  onExecute,
+  isExecuting = false,
 }: MobileSimulationListProps) {
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -179,6 +195,36 @@ export function MobileSimulationList({
   const setAddOpen = onAddOpenChange ?? setOwnAddOpen
   const [sortKey, setSortKey] = useState<string>('wt')
   const [sortDesc, setSortDesc] = useState(true)
+  const [executeOpen, setExecuteOpen] = useState(false)
+  /** Variant ids the PM has excluded from this commit. Empty = commit all. */
+  const [excludedVariantIds, setExcludedVariantIds] = useState<Set<string>>(new Set())
+  const [executeSubmitted, setExecuteSubmitted] = useState(false)
+
+  /*
+   * What the desktop table calls `promotableRows`: rows carrying a sizing
+   * input, cash excluded. Cash is derived from the trades, not traded.
+   */
+  const promotable = useMemo(
+    () => rows.filter(r => r.variant?.sizing_input && !r.isCash && r.variant?.id),
+    [rows],
+  )
+  const chosen = useMemo(
+    () => promotable.filter(r => !excludedVariantIds.has(r.variant!.id)),
+    [promotable, excludedVariantIds],
+  )
+
+  /*
+   * Close once the commit lands. The page's Decision Recorded modal takes
+   * over from here, the same hand-off the desktop table performs — so the
+   * sheet must not still be sitting over it.
+   */
+  useEffect(() => {
+    if (executeSubmitted && !isExecuting) {
+      setExecuteOpen(false)
+      setExecuteSubmitted(false)
+      setExcludedVariantIds(new Set())
+    }
+  }, [executeSubmitted, isExecuting])
 
   const cols = useMemo(() => columnsFor(measure), [measure])
 
@@ -406,6 +452,132 @@ export function MobileSimulationList({
           </table>
         )}
       </div>
+
+      {/*
+        Execute, on a phone.
+
+        The desktop path is: tick rows in the holdings table → an Execute
+        button in its bottom bar → onBulkPromote → bulkExecuteM →
+        executeSimVariants. MobileSimulationList renders in place of that
+        table and had no selection column and no bottom bar, so none of it
+        was reachable: the tutorial's third step said Execute and the screen
+        offered nothing that did.
+
+        The bar is the smallest control that closes that. It commits every
+        sized trade by default and the confirm sheet lets the PM drop any of
+        them first, which is the same set of choices the desktop checkboxes
+        offer without a selection column in a 390px table. The mutation,
+        the batch, the Decision Recorded hand-off and the step-3 event are
+        all the page's existing ones.
+      */}
+      {onExecute && !readOnly && promotable.length > 0 && (
+        <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 pb-safe">
+          <button
+            type="button"
+            data-slot="mobile-lab-execute"
+            onClick={() => { setExcludedVariantIds(new Set()); setExecuteOpen(true) }}
+            disabled={isExecuting}
+            className="w-full h-11 inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold active:bg-emerald-700 disabled:opacity-60 no-touch-target"
+          >
+            {isExecuting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            {isExecuting
+              ? 'Executing…'
+              : `Execute ${promotable.length} trade${promotable.length !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+      )}
+
+      {onExecute && (
+        <BottomSheet
+          open={executeOpen}
+          onClose={() => setExecuteOpen(false)}
+          title="Execute trades"
+          dismissible={!isExecuting && !executeSubmitted}
+          fitContent
+          footer={
+            <div className="flex gap-2 px-3 pb-3">
+              <button
+                type="button"
+                onClick={() => setExecuteOpen(false)}
+                disabled={isExecuting || executeSubmitted}
+                className="flex-1 h-11 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 disabled:opacity-50 no-touch-target"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-slot="mobile-lab-execute-confirm"
+                onClick={() => {
+                  if (isExecuting || executeSubmitted || chosen.length === 0) return
+                  setExecuteSubmitted(true)
+                  // Same payload shape the desktop confirm modal sends. No
+                  // batch name or per-trade rationale on a phone — both are
+                  // optional there too, and typing them on a 390px screen
+                  // before a commit is not what this step is for.
+                  onExecute(chosen.map(r => r.variant!.id), {
+                    batchName: null,
+                    batchDescription: null,
+                    reasons: {},
+                  })
+                }}
+                disabled={isExecuting || executeSubmitted || chosen.length === 0}
+                className="flex-1 h-11 inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold active:bg-emerald-700 disabled:opacity-60 no-touch-target"
+              >
+                {(isExecuting || executeSubmitted) && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isExecuting || executeSubmitted
+                  ? 'Executing…'
+                  : `Commit ${chosen.length}`}
+              </button>
+            </div>
+          }
+        >
+          <div className="px-3 pb-2">
+            <p className="mb-2 text-[12px] leading-snug text-gray-500 dark:text-gray-400">
+              These commit to the Trade Book. Tap one to leave it out.
+            </p>
+            <div className="space-y-1.5">
+              {promotable.map(r => {
+                const included = !excludedVariantIds.has(r.variant!.id)
+                return (
+                  <button
+                    key={r.variant!.id}
+                    type="button"
+                    onClick={() => setExcludedVariantIds(prev => {
+                      const next = new Set(prev)
+                      if (next.has(r.variant!.id)) next.delete(r.variant!.id)
+                      else next.add(r.variant!.id)
+                      return next
+                    })}
+                    disabled={isExecuting || executeSubmitted}
+                    aria-pressed={included}
+                    className={clsx(
+                      'w-full flex items-center gap-2 rounded-xl border px-3 py-2 text-left no-touch-target',
+                      included
+                        ? 'border-emerald-300 bg-emerald-50/60 dark:border-emerald-800 dark:bg-emerald-900/15'
+                        : 'border-gray-200 bg-white opacity-50 dark:border-gray-700 dark:bg-gray-900',
+                    )}
+                  >
+                    <span className={clsx(
+                      'h-5 w-5 shrink-0 rounded-md border-2 flex items-center justify-center',
+                      included ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-gray-300 dark:border-gray-600',
+                    )}>
+                      {included && <Check className="h-3.5 w-3.5" />}
+                    </span>
+                    <span className="text-sm font-bold text-gray-900 dark:text-white">{r.symbol}</span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400">{r.company_name}</span>
+                    <span className={clsx(
+                      'shrink-0 text-[13px] font-semibold tabular-nums',
+                      r.deltaWeight >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                    )}>
+                      {signed(r.deltaWeight, 2)}%
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </BottomSheet>
+      )}
 
       {onAddAsset && onAssetSearchChange && (
         <MobileAddPositionSheet

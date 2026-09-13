@@ -30,13 +30,23 @@ function MetricRow({ metric }: { metric: PortfolioFundamentalMetric }) {
   const afterStr = formatValue(metric.after, metric.format)
   const deltaStr = formatValue(metric.delta, metric.format)
 
+  /*
+   * The label shared a line with ~234px of fixed-width numbers. At 390px that
+   * leaves it about 108px, so "Forward P/E" rendered as "Forward…",
+   * "EV/EBITDA" as "EV/EBI…" and "Revenue Growth" as "Revenu…" — a column of
+   * metrics you cannot name is not a metric table.
+   *
+   * On a phone the name gets its own line at full width and the figures line
+   * up underneath it. Nothing is dropped and nothing is smaller; the row is
+   * two lines instead of one. Desktop keeps the single row.
+   */
   return (
-    <div className="flex items-center justify-between py-1.5 text-sm">
+    <div className="flex flex-col gap-0.5 py-1.5 text-sm md:flex-row md:items-center md:justify-between md:gap-0">
       {/* Label */}
-      <span className="text-gray-600 dark:text-gray-400 min-w-0 truncate">{metric.label}</span>
+      <span className="text-gray-600 dark:text-gray-400 min-w-0 md:truncate">{metric.label}</span>
 
       {/* Values */}
-      <div className="flex items-center gap-3 flex-shrink-0 ml-3">
+      <div className="flex items-center gap-3 flex-shrink-0 md:ml-3">
         {/* Before → After */}
         <div className="flex items-center gap-1.5 tabular-nums">
           <span className="text-gray-400 dark:text-gray-500 w-10 text-right">{beforeStr}</span>
@@ -56,8 +66,10 @@ function MetricRow({ metric }: { metric: PortfolioFundamentalMetric }) {
           ({deltaStr})
         </span>
 
-        {/* Coverage */}
-        <span className="text-xs text-gray-400 dark:text-gray-500 w-14 text-right tabular-nums">
+        {/* Coverage. Labelled on a phone, where the column header that
+            explained this "3/12" does not apply to a stacked row. */}
+        <span className="text-xs text-gray-400 dark:text-gray-500 md:w-14 md:text-right tabular-nums">
+          <span className="md:hidden">cov </span>
           {metric.coverageCount}/{metric.coverageTotal}
         </span>
       </div>
@@ -96,8 +108,9 @@ export function PortfolioFundamentalsCard({ holdingsAfterCount }: PortfolioFunda
         Portfolio-weighted (Before → After).
       </p>
 
-      {/* Column headers */}
-      <div className="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500 pb-1.5 border-b border-gray-100 dark:border-gray-700/50 mb-1">
+      {/* Column headers. Hidden on a phone, where the rows are stacked and
+          there are no columns for these to head. */}
+      <div className="hidden md:flex items-center justify-between text-xs text-gray-400 dark:text-gray-500 pb-1.5 border-b border-gray-100 dark:border-gray-700/50 mb-1">
         <span>Metric</span>
         <div className="flex items-center gap-3">
           <span className="w-[92px] text-center">Before → After</span>

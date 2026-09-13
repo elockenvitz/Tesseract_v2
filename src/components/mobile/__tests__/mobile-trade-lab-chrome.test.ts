@@ -30,6 +30,9 @@ const banner = src('components/pilot/PilotTradeLabIntroBanner.tsx')
 const drawer = src('components/mobile/trade-lab/MobileIdeasDrawer.tsx')
 const modal = src('components/trading/TradeIdeaDetailModal.tsx')
 const css = src('index.css')
+const fundamentals = src('components/trading/PortfolioFundamentalsCard.tsx')
+const sector = src('components/trading/SectorExposureChart.tsx')
+const holdings = src('components/trading/HoldingsComparison.tsx')
 
 describe('recommendations have a named control', () => {
   /**
@@ -438,6 +441,127 @@ describe('the recommendation detail on a phone', () => {
     expect(shell.slice(0, 600)).toContain('h-viewport-85 max-h-[900px]')
     const header = modal.slice(modal.indexOf("'flex-shrink-0 border-b border-gray-200"))
     expect(header.slice(0, 200)).toContain("isMobile ? 'px-3 pt-2 pb-1.5' : 'p-4'")
+  })
+})
+
+/*
+ * ── Step 3 has a control ───────────────────────────────────────────────────
+ *
+ * The desktop path is: tick rows in HoldingsSimulationTable → the Execute
+ * button in its bottom bar → onBulkPromote → bulkExecuteM → executeSimVariants
+ * → onSuccess dispatches `pilot-tradelab:executed`. A phone renders
+ * MobileSimulationList in place of that table, and it had no selection column
+ * and no bottom bar — so the banner said "STEP 3 OF 3 — Execute" over a screen
+ * with nothing on it that could.
+ */
+describe('executing from a phone', () => {
+  it('has a control at all', () => {
+    expect(list).toContain('data-slot="mobile-lab-execute"')
+    expect(list).toContain('data-slot="mobile-lab-execute-confirm"')
+  })
+
+  /** The same mutation the desktop table drives — no second execute path. */
+  it('runs the page mutation the desktop table runs', () => {
+    const mobile = page.slice(page.indexOf('<MobileSimulationList'), page.indexOf('onExecute={') + 900)
+    expect(mobile).toContain('bulkExecuteM.mutate({')
+    expect(mobile).toContain('isExecuting={bulkExecuteM.isPending}')
+    // And it carries the same payload the desktop confirm modal sends.
+    for (const key of ['variantIds', 'batchName', 'batchDescription', 'reasons']) {
+      expect(mobile).toContain(key)
+    }
+    // Exactly two call sites for the one mutation: this and onBulkPromote.
+    expect([...page.matchAll(/bulkExecuteM\.mutate\(\{/g)].length).toBe(2)
+  })
+
+  /**
+   * Execute is PM-only, and on the desktop that is enforced by not passing
+   * the handler at all — which is what removes the control. Same gate, or a
+   * non-PM gets a button the desktop would not have given them.
+   */
+  it('is PM-only, gated the same way', () => {
+    const mobile = page.slice(page.indexOf('<MobileSimulationList'))
+    expect(mobile.slice(0, 2200)).toContain('!isSharedView && selectedPortfolioId && isCurrentUserPM ?')
+    // Anchored to the start of the JSX expression: `{false && onExecute …`
+    // still contains the condition, and would render nothing.
+    expect(list).toContain('{onExecute && !readOnly && promotable.length > 0 && (')
+  })
+
+  /**
+   * Progress is not this component's to report. Step 3 fires from the
+   * mutation's onSuccess, after executeSimVariants has actually committed —
+   * so a failed or empty commit ticks nothing.
+   */
+  it('leaves step three to the mutation that really committed', () => {
+    expect(list).not.toContain('pilot-tradelab:executed')
+    // The bulk mutation's success handler: the dispatch sits inside the
+    // `committed > 0` branch, before the else that reports a failed execute.
+    const success = page.slice(page.lastIndexOf('if (committed > 0) {'))
+    expect(success.indexOf('pilot-tradelab:executed')).toBeGreaterThan(-1)
+    expect(success.indexOf('pilot-tradelab:executed')).toBeLessThan(success.indexOf("toast.error('Execute failed'"))
+  })
+
+  /** What it commits is what it shows, and the PM can drop any of it. */
+  it('says what will commit before it commits', () => {
+    expect(list).toContain("r.variant?.sizing_input && !r.isCash && r.variant?.id")
+    expect(list).toContain('These commit to the Trade Book. Tap one to leave it out.')
+    expect(list).toContain('onExecute(chosen.map(r => r.variant!.id)')
+  })
+
+  it('names the act in the tutorial', () => {
+    const titles = [...banner.matchAll(/title: '([^']*)'/g)].map(m => m[1])
+    expect(titles[2]).toBe('Execute the simulated trade')
+    const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
+    expect(hints[2]).toContain('Execute at the bottom of the table')
+  })
+})
+
+/*
+ * ── Impact reads at 390px ──────────────────────────────────────────────────
+ *
+ * Both of these put a name on the same line as a block of fixed-width
+ * figures, which at 390px left the name ~100px: "Forward P/E" rendered as
+ * "Forward…", "EV/EBITDA" as "EV/EBI…", and sector names collided with the
+ * numbers beside them. The fix is the row shape, not the type size.
+ */
+describe('impact metric labels', () => {
+  it('gives the fundamentals label its own line on a phone', () => {
+    expect(fundamentals).toContain('flex flex-col gap-0.5 py-1.5 text-sm md:flex-row md:items-center md:justify-between')
+    // The label only truncates once it is sharing a line again.
+    expect(fundamentals).toContain('min-w-0 md:truncate')
+    // Column headers describe columns a stacked row does not have.
+    expect(fundamentals).toContain('hidden md:flex items-center justify-between text-xs')
+    // Nothing got smaller and nothing was dropped.
+    expect(fundamentals).toContain('text-sm')
+    expect(fundamentals).toContain('{metric.coverageCount}/{metric.coverageTotal}')
+  })
+
+  it('stops sector names colliding with their figures', () => {
+    expect(sector).toContain('flex flex-col gap-0.5 md:flex-row md:items-center md:justify-between text-sm mb-1')
+    expect(sector).toContain('pl-5 md:pl-0 md:ml-2')
+    expect(sector).toContain("'w-16 md:w-20 text-right text-xs tabular-nums'")
+  })
+})
+
+/*
+ * ── Holdings Comparison fits ───────────────────────────────────────────────
+ *
+ * Six filter pills in a nested row that does not wrap, inside a wrapper that
+ * does — about 620px of them at 390px, each inflated further by the global
+ * 44px minimum.
+ */
+describe('holdings comparison at 390px', () => {
+  it('scrolls the filters instead of overflowing the card', () => {
+    expect(holdings).toContain('-mx-3 px-3 overflow-x-auto no-scrollbar md:mx-0 md:px-0 md:overflow-visible')
+    expect(holdings).toContain('w-full md:flex-1 md:min-w-[200px] md:max-w-xs')
+    // Every pill holds its width and its own size.
+    const pills = [...holdings.matchAll(/shrink-0 no-touch-target tap-pad px-3 py-1\.5 text-xs rounded-full/g)]
+    expect(pills.length).toBe(6)
+  })
+
+  it('puts the before → after weight at the top of the row hierarchy', () => {
+    expect(holdings).toContain('mt-0.5 flex items-baseline gap-1.5 text-[13px] tabular-nums')
+    // The sector no longer shares the line it was competing with.
+    expect(holdings).not.toContain("{holding.sector && <span className=\"ml-2 text-gray-400\">{holding.sector}</span>}")
   })
 })
 

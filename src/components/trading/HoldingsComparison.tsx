@@ -165,9 +165,18 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
         Holdings Comparison
       </h3>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
+      {/*
+        Filters.
+
+        Six pills in a nested row that does not wrap — about 620px of them —
+        inside a wrapper that does. At 390px the group simply overflowed the
+        card, and the global phone rule's 44px minimum on every button made
+        each one wider still. The search takes its own line and the pills
+        become one strip that scrolls sideways, which is what a filter row
+        that cannot fit should do. Desktop wraps exactly as before.
+      */}
+      <div className="flex flex-col gap-2 mb-3 md:flex-row md:flex-wrap md:items-center md:gap-3 md:mb-4">
+        <div className="relative w-full md:flex-1 md:min-w-[200px] md:max-w-xs">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
             placeholder="Search holdings..."
@@ -177,11 +186,11 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 -mx-3 px-3 overflow-x-auto no-scrollbar md:mx-0 md:px-0 md:overflow-visible">
           <button
             onClick={() => setFilter('changed')}
             className={clsx(
-              "px-3 py-1.5 text-xs rounded-full transition-colors flex items-center gap-1",
+              "shrink-0 no-touch-target tap-pad px-3 py-1.5 text-xs rounded-full transition-colors flex items-center gap-1",
               filter === 'changed'
                 ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
                 : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
@@ -193,7 +202,7 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
           <button
             onClick={() => setFilter('all')}
             className={clsx(
-              "px-3 py-1.5 text-xs rounded-full transition-colors",
+              "shrink-0 no-touch-target tap-pad px-3 py-1.5 text-xs rounded-full transition-colors",
               filter === 'all'
                 ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
                 : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
@@ -204,7 +213,7 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
           <button
             onClick={() => setFilter('increased')}
             className={clsx(
-              "px-3 py-1.5 text-xs rounded-full transition-colors flex items-center gap-1",
+              "shrink-0 no-touch-target tap-pad px-3 py-1.5 text-xs rounded-full transition-colors flex items-center gap-1",
               filter === 'increased'
                 ? "bg-green-600 text-white"
                 : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-200"
@@ -216,7 +225,7 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
           <button
             onClick={() => setFilter('decreased')}
             className={clsx(
-              "px-3 py-1.5 text-xs rounded-full transition-colors flex items-center gap-1",
+              "shrink-0 no-touch-target tap-pad px-3 py-1.5 text-xs rounded-full transition-colors flex items-center gap-1",
               filter === 'decreased'
                 ? "bg-red-600 text-white"
                 : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200"
@@ -228,7 +237,7 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
           <button
             onClick={() => setFilter('new')}
             className={clsx(
-              "px-3 py-1.5 text-xs rounded-full transition-colors flex items-center gap-1",
+              "shrink-0 no-touch-target tap-pad px-3 py-1.5 text-xs rounded-full transition-colors flex items-center gap-1",
               filter === 'new'
                 ? "bg-blue-600 text-white"
                 : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200"
@@ -240,7 +249,7 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
           <button
             onClick={() => setFilter('removed')}
             className={clsx(
-              "px-3 py-1.5 text-xs rounded-full transition-colors flex items-center gap-1",
+              "shrink-0 no-touch-target tap-pad px-3 py-1.5 text-xs rounded-full transition-colors flex items-center gap-1",
               filter === 'removed'
                 ? "bg-gray-600 text-white"
                 : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-300"
@@ -293,10 +302,19 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
                   {change > 0 ? '+' : ''}{change.toFixed(2)}%
                 </span>
               </div>
-              <div className="mt-1 text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
-                {beforeWeight.toFixed(2)}% → <span className="font-semibold text-gray-700 dark:text-gray-200">{holding.weight.toFixed(2)}%</span>
-                {holding.sector && <span className="ml-2 text-gray-400">{holding.sector}</span>}
+              {/* The before→after weight is the point of this table and was
+                  the smallest thing on the card, tied for size with the
+                  sector name sitting next to it. It reads at the same weight
+                  as the symbol now; the sector drops to its own quiet line
+                  rather than competing on the same one. */}
+              <div className="mt-0.5 flex items-baseline gap-1.5 text-[13px] tabular-nums">
+                <span className="text-gray-400 dark:text-gray-500">{beforeWeight.toFixed(2)}%</span>
+                <span className="text-gray-300 dark:text-gray-600">→</span>
+                <span className="font-semibold text-gray-900 dark:text-white">{holding.weight.toFixed(2)}%</span>
               </div>
+              {holding.sector && (
+                <div className="mt-0.5 truncate text-[11px] text-gray-400">{holding.sector}</div>
+              )}
             </div>
           )
         })}
