@@ -120,7 +120,7 @@ describe('the function keeps the properties the fix depends on', () => {
    * guessed. Buys make this positive and debit cash; sells credit it.
    */
   it('moves cash by the position delta that actually happened', () => {
-    expect(migration).toContain('v_cash_delta := (v_after - v_before) * COALESCE(p_price, 0);')
+    expect(migration).toContain('v_cash_delta := (v_after - v_before) * p_price;')
     expect(migration).toContain('SET shares = shares - v_cash_delta')
     expect(migration).toContain("a.symbol = 'CASH_USD'")
   })
@@ -137,6 +137,31 @@ describe('the function keeps the properties the fix depends on', () => {
   it('closes a liquidated position', () => {
     expect(migration).toContain('IF v_new <= 0 THEN')
     expect(migration).toContain('DELETE FROM portfolio_holdings')
+  })
+
+  /**
+   * The old client did `trade.price_at_acceptance || 0`, which stored a
+   * worthless position and settled the cash leg for free. A trade whose price
+   * we do not know is one we cannot apply correctly.
+   */
+  it('refuses to apply a trade with no usable price', () => {
+    expect(migration).toContain('IF p_price IS NULL OR p_price <= 0 THEN')
+    // And nothing downstream papers over a missing price any more.
+    const body = migration.slice(migration.indexOf('PERFORM pg_advisory_xact_lock'))
+    expect(body).not.toContain('COALESCE(p_price, 0)')
+    expect(body).toContain('v_cash_delta := (v_after - v_before) * p_price;')
+  })
+
+  /**
+   * CURRENT_DATE is the session's date, and a PostgREST connection's TimeZone
+   * is whatever the role was configured with. The client this replaces used
+   * toISOString(), and the audit read UTC dates — three notions of "today"
+   * over one dated table is how a near-midnight trade starts a second partial
+   * snapshot for a day that already has one.
+   */
+  it('decides the day in UTC, not from the session', () => {
+    expect(migration).toContain("v_today       date := (now() AT TIME ZONE 'UTC')::date;")
+    expect(migration).not.toMatch(/:=\s*CURRENT_DATE/)
   })
 })
 
@@ -155,6 +180,8 @@ describe('the database tests cover the scenarios the RPC exists for', () => {
       'pure delta_shares moves the CARRIED-FORWARD position',
       'a buy debits cash, a sell credits it',
       'liquidation removes the row',
+      'no usable price is refused',
+      'the day is decided in UTC',
     ]) {
       expect(sql).toContain(claim)
     }

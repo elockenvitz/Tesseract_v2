@@ -57,7 +57,18 @@ SECURITY INVOKER
 SET search_path = public
 AS $$
 DECLARE
-  v_today       date := CURRENT_DATE;
+  /*
+   * UTC, explicitly.
+   *
+   * CURRENT_DATE is the session's date, and a PostgREST connection's TimeZone
+   * is whatever the role or the server was configured with. The client this
+   * replaces computed its day with toISOString(), which is UTC, and the audit
+   * that found the damaged rows read them as UTC dates. Three different
+   * notions of "today" over one dated table is how a trade lands on a day
+   * nothing else agrees with — and near midnight it would silently start a
+   * second partial snapshot for a day that already had one.
+   */
+  v_today       date := (now() AT TIME ZONE 'UTC')::date;
   v_last        date;
   v_before      numeric := 0;
   v_new         numeric;
@@ -81,6 +92,24 @@ BEGIN
 
   -- Serialise concurrent applies for THIS portfolio. Transaction-scoped, so
   -- it releases on commit or abort. One key, so there is no deadlock path.
+  /*
+   * A trade that moves a position has to have a price.
+   *
+   * Both writes below depend on it: the holdings row stores it, so a zero
+   * price makes the position worth nothing and every weight derived from it
+   * wrong; and cash moves by movement x price, so a NULL coalesced to 0
+   * settles the trade for free. The old client did exactly that —
+   * `trade.price_at_acceptance || 0` — and a missing price silently produced
+   * a position nobody paid for. Refused here instead, because a trade whose
+   * price we do not know is a trade we cannot apply correctly, and failing
+   * loudly is recoverable in a way that a silently free position is not.
+   */
+  IF p_price IS NULL OR p_price <= 0 THEN
+    RAISE EXCEPTION
+      'apply_trade_to_holdings: price is required and must be positive (got %) '
+      'for portfolio % asset %', p_price, p_portfolio_id, p_asset_id;
+  END IF;
+
   PERFORM pg_advisory_xact_lock(hashtext(p_portfolio_id::text));
 
   -- ── Roll the date forward, completely, or not at all ────────────────────
@@ -134,7 +163,8 @@ BEGIN
   -- liquidation's delta is whatever the client guessed. (after - before) is
   -- the movement the book just recorded, so it is the movement cash pays for.
   -- Buys make it positive and debit cash; sells make it negative and credit.
-  v_cash_delta := (v_after - v_before) * COALESCE(p_price, 0);
+  -- p_price is guaranteed non-null and positive by the guard above.
+  v_cash_delta := (v_after - v_before) * p_price;
 
   IF v_cash_delta <> 0 THEN
     SELECT ph.asset_id INTO v_cash_id
@@ -159,7 +189,7 @@ BEGIN
   RETURN jsonb_build_object(
     'shares_before',  v_before,
     'shares_after',   v_after,
-    'price_used',     COALESCE(p_price, 0),
+    'price_used',     p_price,
     'applied',        true,
     'rolled_forward', v_rolled,
     'cash_delta',     v_cash_delta

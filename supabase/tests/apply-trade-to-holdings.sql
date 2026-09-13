@@ -11,6 +11,8 @@
 --   [E] pure delta_shares moves the CARRIED-FORWARD position, not zero
 --   [F] a buy debits cash, a sell credits it, by (after - before) x price
 --   [G] liquidation removes the row and credits the whole position to cash
+--   [H] a trade with no usable price is refused, not settled for free
+--   [I] the day is decided in UTC, not by the session's TimeZone
 --
 -- Reproduced against the unpatched client path: [A] leaves a date holding one
 -- row (the traded asset) and 35 positions stranded on the prior date, which is
@@ -231,6 +233,67 @@ BEGIN
    WHERE portfolio_id = 'cccc0000-0000-0000-0000-00000000e001'::uuid
      AND asset_id = 'dddd0000-0000-0000-0000-00000000e003'::uuid AND date = CURRENT_DATE;
   IF n <> 1 THEN RAISE EXCEPTION '[C] expected exactly one NVDA row, found %', n; END IF;
+END $$;
+
+-- ---- [H] a trade with no usable price is refused, not settled for free -----
+-- The old client did `price_at_acceptance || 0`: a worthless position and a
+-- cash leg that cost nothing.
+DO $$
+DECLARE ok boolean := false;
+BEGIN
+  BEGIN
+    PERFORM apply_trade_to_holdings(
+      'cccc0000-0000-0000-0000-00000000e001'::uuid,
+      'dddd0000-0000-0000-0000-00000000e001'::uuid,
+      NULL, 5, NULL);
+  EXCEPTION WHEN others THEN ok := true;
+  END;
+  IF NOT ok THEN RAISE EXCEPTION '[H] a NULL price should have been refused'; END IF;
+
+  ok := false;
+  BEGIN
+    PERFORM apply_trade_to_holdings(
+      'cccc0000-0000-0000-0000-00000000e001'::uuid,
+      'dddd0000-0000-0000-0000-00000000e001'::uuid,
+      NULL, 5, 0);
+  EXCEPTION WHEN others THEN ok := true;
+  END;
+  IF NOT ok THEN RAISE EXCEPTION '[H] a zero price should have been refused'; END IF;
+END $$;
+
+-- A trade carrying neither target nor delta still returns cleanly: there is
+-- nothing to apply, so there is no price to require.
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := apply_trade_to_holdings(
+        'cccc0000-0000-0000-0000-00000000e001'::uuid,
+        'dddd0000-0000-0000-0000-00000000e001'::uuid,
+        NULL, NULL, NULL);
+  IF (r->>'applied')::boolean THEN
+    RAISE EXCEPTION '[H] a no-op trade should report applied=false';
+  END IF;
+END $$;
+
+-- ---- [I] the day is UTC, not the session's -------------------------------
+-- Asserted by behaviour: under a deliberately shifted session TimeZone the
+-- function must still write to the UTC date.
+DO $$
+DECLARE r jsonb; n int;
+BEGIN
+  SET LOCAL TimeZone = 'Pacific/Kiritimati';   -- UTC+14
+  r := apply_trade_to_holdings(
+        'cccc0000-0000-0000-0000-00000000e001'::uuid,
+        'dddd0000-0000-0000-0000-00000000e003'::uuid,
+        NULL, 1, 4);
+  SELECT count(*) INTO n FROM portfolio_holdings
+   WHERE portfolio_id = 'cccc0000-0000-0000-0000-00000000e001'::uuid
+     AND asset_id = 'dddd0000-0000-0000-0000-00000000e003'::uuid
+     AND date = (now() AT TIME ZONE 'UTC')::date;
+  IF n <> 1 THEN
+    RAISE EXCEPTION '[I] wrote to the session date, not the UTC date';
+  END IF;
+  RESET TimeZone;
 END $$;
 
 -- ---- Invariant sweep: no partial or duplicated dates ------------------------
