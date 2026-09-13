@@ -1,10 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { authorizeAutomationRequest } from "./authorize.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// Not a browser endpoint: no CORS headers, so no page on any origin can read
+// a response, and no preflight is answered.
 
 interface AutomationResult {
   rule_id: string;
@@ -34,9 +33,24 @@ interface UniverseRule {
 }
 
 Deno.serve(async (req: Request) => {
-  // Handle CORS preflight requests
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  // Authorize before anything privileged exists. The request body and query
+  // string are never read, so a caller cannot name an org, user or branch.
+  const auth = authorizeAutomationRequest(
+    req.method,
+    req.headers,
+    Deno.env.get("WORKFLOW_AUTOMATION_SECRET"),
+  );
+  if (!auth.ok) {
+    console.warn(`[Automation] Rejected: ${auth.reason}`);
+    return new Response(
+      JSON.stringify({ error: auth.status === 405 ? "method not allowed" : "unauthorized" }),
+      {
+        headers: auth.status === 405
+          ? { "Content-Type": "application/json", "Allow": "POST" }
+          : { "Content-Type": "application/json" },
+        status: auth.status,
+      }
+    );
   }
 
   try {
@@ -102,7 +116,7 @@ Deno.serve(async (req: Request) => {
         executed_at: new Date().toISOString(),
       }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         status: 200,
       }
     );
@@ -114,7 +128,7 @@ Deno.serve(async (req: Request) => {
         error: error.message || "Unknown error occurred",
       }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         status: 500,
       }
     );
