@@ -25,16 +25,22 @@
 --
 -- executeSimVariants commits a batch with Promise.all — every variant runs
 -- concurrently. A carry-forward done client-side is a read-then-write with no
--- lock: N branches all observe "no rows at today" and all clone the prior
--- date, producing N duplicate sets. maybeSingle() then throws on every later
--- read and every holdings sum multiplies by N. That is worse than the bug it
--- replaces, and no arrangement of client statements fixes it — there is no
--- unique constraint on (portfolio_id, asset_id, date) to conflict against.
+-- lock: N branches all observe "no rows at today" and all try to clone the
+-- prior date.
+--
+-- Production does have UNIQUE (portfolio_id, asset_id, date)
+-- (portfolio_holdings_portfolio_asset_date_key), so those racing clones
+-- cannot produce duplicate rows — the losers fail with a unique violation
+-- instead. That stops duplicates; it does not make the operation atomic. A
+-- loser's trade is lost or errors out, and a client that carries forward and
+-- then applies in separate statements can still leave a date half-built
+-- between them. Uniqueness constrains the result, not the sequence.
 --
 -- A transaction-scoped advisory lock keyed on the portfolio serialises the
 -- applies for that portfolio and nothing else. The first caller completes the
--- whole carry-forward before any other caller evaluates the guard, so a date
--- is never partially populated and each trade applies exactly once.
+-- whole carry-forward and its trade before any other caller evaluates the
+-- guard, so a date is never partially populated and each trade applies
+-- exactly once.
 --
 -- ── RLS posture ────────────────────────────────────────────────────────────
 --
@@ -205,5 +211,9 @@ COMMENT ON FUNCTION public.apply_trade_to_holdings(uuid, uuid, numeric, numeric,
   'SECURITY INVOKER — runs under the caller''s RLS.';
 
 -- Callable by signed-in users only; RLS still decides what they may touch.
+-- Revoking from PUBLIC is not enough on Supabase: default privileges grant
+-- EXECUTE on new public functions to anon explicitly, and that grant survives
+-- a PUBLIC revoke. Observed on production when this was first applied.
 REVOKE ALL ON FUNCTION public.apply_trade_to_holdings(uuid, uuid, numeric, numeric, numeric) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.apply_trade_to_holdings(uuid, uuid, numeric, numeric, numeric) FROM anon;
 GRANT EXECUTE ON FUNCTION public.apply_trade_to_holdings(uuid, uuid, numeric, numeric, numeric) TO authenticated;

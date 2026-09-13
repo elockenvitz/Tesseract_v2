@@ -130,6 +130,8 @@ describe('the function keeps the properties the fix depends on', () => {
     expect(migration).toContain('SECURITY INVOKER')
     expect(migration).not.toContain('SECURITY DEFINER')
     expect(migration).toContain('REVOKE ALL ON FUNCTION public.apply_trade_to_holdings')
+    // Supabase grants anon EXECUTE explicitly; a PUBLIC revoke leaves it.
+    expect(migration).toContain('REVOKE EXECUTE ON FUNCTION public.apply_trade_to_holdings(uuid, uuid, numeric, numeric, numeric) FROM anon')
     expect(migration).toContain('GRANT EXECUTE ON FUNCTION public.apply_trade_to_holdings(uuid, uuid, numeric, numeric, numeric) TO authenticated')
   })
 
