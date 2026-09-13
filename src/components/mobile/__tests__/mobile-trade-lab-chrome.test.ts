@@ -157,7 +157,16 @@ describe('the bands above the table', () => {
    */
   it('gives Simulation / Impact / Trades the tallest band', () => {
     const toggle = page.slice(page.indexOf("onClick={() => setImpactView('simulation')}") - 1100)
-    expect(toggle.slice(0, 1100)).toContain('h-[38px] sm:h-auto')
+    expect(toggle.slice(0, 1100)).toContain('h-10 sm:h-auto')
+
+    /*
+     * Its segments are buttons, so the global phone rule would give each one
+     * min-height:44px and burst them out of the 40px pill meant to contain
+     * them. They opt out; the band is the hit area.
+     */
+    const segments = [...page.matchAll(/flex-1 sm:flex-none flex items-center justify-center gap-1\.5 px-3 h-full[^"]*/g)]
+    expect(segments.length).toBe(3)
+    for (const s of segments) expect(s[0]).toContain('no-touch-target')
 
     // The claim is the ordering, not the number: every other control in the
     // cluster must be shorter than the band that navigates between modes.

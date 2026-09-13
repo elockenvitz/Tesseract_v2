@@ -5925,11 +5925,16 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     a table that only gets ~55% of the screen was more weight
                     than the job needs. 38 still reads as primary next to the
                     32px utilities above and the 32px measure switch below. */}
-                <div className="flex sm:inline-flex w-full sm:w-auto items-center p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg h-[38px] sm:h-auto">
+                <div className="flex sm:inline-flex w-full sm:w-auto items-center p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg h-10 sm:h-auto">
                   <button
                     onClick={() => setImpactView('simulation')}
                     className={clsx(
-                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all",
+                      /* no-touch-target: these are the segments of a 40px
+                         band, and the global phone rule would otherwise give
+                         each one min-height:44px — bursting out of the pill
+                         that is meant to contain them. The band itself is the
+                         hit area, and it is 40px. */
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all no-touch-target",
                       impactView === 'simulation'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
@@ -5946,7 +5951,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <button
                     onClick={() => setImpactView('impact')}
                     className={clsx(
-                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all",
+                      /* no-touch-target: these are the segments of a 40px
+                         band, and the global phone rule would otherwise give
+                         each one min-height:44px — bursting out of the pill
+                         that is meant to contain them. The band itself is the
+                         hit area, and it is 40px. */
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all no-touch-target",
                       impactView === 'impact'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
@@ -5962,7 +5972,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <button
                     onClick={() => setImpactView('trades')}
                     className={clsx(
-                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all",
+                      /* no-touch-target: these are the segments of a 40px
+                         band, and the global phone rule would otherwise give
+                         each one min-height:44px — bursting out of the pill
+                         that is meant to contain them. The band itself is the
+                         hit area, and it is 40px. */
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all no-touch-target",
                       impactView === 'trades'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
