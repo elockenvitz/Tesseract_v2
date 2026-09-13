@@ -810,74 +810,58 @@ async function applyTradeToHoldings(
   portfolioId: string,
   trade: AcceptedTradeWithJoins
 ): Promise<ApplyTradeResult> {
-  const today = new Date().toISOString().split('T')[0]
   const price = trade.price_at_acceptance || 0
   const assetId = trade.asset_id
 
-  // ── portfolio_holdings (daily view) ──
-  const { data: existing } = await supabase
-    .from('portfolio_holdings')
-    .select('id, shares, price')
-    .eq('portfolio_id', portfolioId)
-    .eq('asset_id', assetId)
-    .eq('date', today)
-    .maybeSingle()
+  /*
+   * ── portfolio_holdings (daily view) ──
+   *
+   * One RPC, not four statements.
+   *
+   * This used to read (portfolio, asset, CURRENT_DATE) and insert a row when
+   * it found nothing — which on the first trade of any day it always does.
+   * The result was a dated snapshot containing only the traded position, with
+   * every other holding left behind on the previous date. `latestSnapshotRows`
+   * then correctly returned that one row as "current holdings", so the traded
+   * name read 100% and everything else looked newly opened at 0%.
+   *
+   * Rolling the prior date forward first is the fix, and it cannot be done
+   * from here: executeSimVariants commits a batch with Promise.all, so N
+   * concurrent callers would each see an empty date and each clone it. The
+   * carry-forward, the apply and the cash adjustment happen inside one
+   * transaction behind a per-portfolio advisory lock instead.
+   *
+   * The RPC is SECURITY INVOKER, so every write it performs is still subject
+   * to exactly the policies these client statements were subject to.
+   */
+  const { data: applied, error: applyError } = await supabase.rpc('apply_trade_to_holdings', {
+    p_portfolio_id: portfolioId,
+    p_asset_id: assetId,
+    p_target_shares: trade.target_shares ?? null,
+    p_delta_shares: trade.delta_shares ?? null,
+    p_price: price,
+  })
 
-  const sharesBefore = Number(existing?.shares ?? 0)
-
-  let newShares: number | null = null
-  if (trade.target_shares != null) {
-    newShares = trade.target_shares
-  } else if (trade.delta_shares != null) {
-    newShares = sharesBefore + trade.delta_shares
+  if (applyError) {
+    throw new Error(
+      `Failed to apply trade to holdings for asset ${assetId} in portfolio ${portfolioId}: ${applyError.message}`,
+    )
   }
 
-  if (newShares == null) {
-    // No share info on the trade — nothing to apply.
+  const result = (applied ?? {}) as {
+    shares_before?: number
+    shares_after?: number
+    applied?: boolean
+  }
+  const sharesBefore = Number(result.shares_before ?? 0)
+  const sharesAfter = Number(result.shares_after ?? 0)
+
+  if (result.applied === false) {
+    // No share information on the trade — nothing was written.
     return { sharesBefore, sharesAfter: sharesBefore, priceUsed: price, applied: false }
   }
 
-  /*
-    Same rule as the reversal path: a refused write must not read as an applied
-    one. All three branches now surface their error.
-
-    The INSERT deliberately does not set `created_by`. The column DEFAULTS to
-    `auth.uid()`, which is what the INSERT policy's WITH CHECK compares against,
-    so naming it here would change nothing except to let a caller pass somebody
-    else's id. Leaving it to the default keeps authorship a fact the database
-    establishes rather than one the client asserts.
-  */
-  // Same idiom as the reversal path above, for the same reason.
-  const rowId = existing ? ((existing as any).id as string) : null
-
-  if (newShares <= 0) {
-    if (rowId) {
-      const { error } = await supabase.from('portfolio_holdings').delete().eq('id', rowId)
-      if (error) throw new Error(`Failed to close holding ${rowId}: ${error.message}`)
-    }
-  } else if (rowId) {
-    const { error } = await supabase
-      .from('portfolio_holdings')
-      .update({ shares: newShares, price, updated_at: new Date().toISOString() })
-      .eq('id', rowId)
-    if (error) throw new Error(`Failed to update holding ${rowId}: ${error.message}`)
-  } else {
-    const { error } = await supabase.from('portfolio_holdings').insert({
-      portfolio_id: portfolioId,
-      asset_id: assetId,
-      shares: newShares,
-      price,
-      cost: price,
-      date: today,
-    })
-    if (error) {
-      throw new Error(
-        `Failed to create holding for asset ${assetId} in portfolio ${portfolioId}: ${error.message}`,
-      )
-    }
-  }
-
-  const sharesAfter = Math.max(newShares, 0)
+  const newShares = sharesAfter
 
   // ── portfolio_holdings_snapshots (keep latest snapshot in sync) ──
   try {

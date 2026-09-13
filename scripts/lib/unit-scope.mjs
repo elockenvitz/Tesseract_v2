@@ -65,6 +65,7 @@ export const GATED_DIRS = [
   'src/lib/brand',
   'src/lib/charts',
   'src/lib/security',
+  'src/lib/services',
   'src/lib/coverage',
   'src/components/coverage',
   'src/components/signals',
