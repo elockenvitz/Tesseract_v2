@@ -27,6 +27,9 @@ const src = (p: string) => readFileSync(path.join(process.cwd(), 'src', p), 'utf
 const page = src('pages/SimulationPage.tsx')
 const list = src('components/mobile/trade-lab/MobileSimulationList.tsx')
 const banner = src('components/pilot/PilotTradeLabIntroBanner.tsx')
+const drawer = src('components/mobile/trade-lab/MobileIdeasDrawer.tsx')
+const modal = src('components/trading/TradeIdeaDetailModal.tsx')
+const css = src('index.css')
 
 describe('recommendations have a named control', () => {
   /**
@@ -49,7 +52,7 @@ describe('recommendations have a named control', () => {
 
   it('carries a count when there is something to review', () => {
     const row = page.slice(page.indexOf('data-slot="mobile-lab-ideas"'))
-    expect(row.slice(0, 900)).toContain('filteredItems.proposals.length + filteredItems.ideas.length')
+    expect(row.slice(0, 1400)).toContain('filteredItems.proposals.length + filteredItems.ideas.length')
   })
 
   /** One route in, not two. The dead inline button is gone. */
@@ -108,7 +111,7 @@ describe('the local Trade Lab tutorial', () => {
 describe('the portfolio identity is compact', () => {
   it('no longer claims a 200px floor on a phone', () => {
     const trigger = page.slice(page.indexOf('onClick={() => setPortfolioDropdownOpen'))
-    const classes = trigger.slice(0, 800)
+    const classes = trigger.slice(0, 1400)
     expect(classes).toContain('max-w-[40vw]')
     expect(classes).toContain('sm:min-w-[200px]')
     expect(classes).not.toContain('w-full sm:w-auto sm:min-w-[200px]')
@@ -118,7 +121,7 @@ describe('the portfolio identity is compact', () => {
   it('keeps the dropdown and the truncation', () => {
     expect(page).toContain('portfolioDropdownOpen && (')
     const trigger = page.slice(page.indexOf('onClick={() => setPortfolioDropdownOpen'))
-    expect(trigger.slice(0, 1200)).toContain('truncate')
+    expect(trigger.slice(0, 1800)).toContain('truncate')
   })
 })
 
@@ -146,10 +149,40 @@ describe('the bands above the table', () => {
     expect(page).toContain('className="hidden sm:inline text-gray-300 dark:text-gray-600">|')
   })
 
-  /** The mode switch is the primary control, and is sized like it. */
+  /**
+   * The mode switch is the primary control, and is sized like it — taller
+   * than the utilities above it and the measure switch below, both of which
+   * are 32px. It came down from 44 because the chrome above the table was
+   * still costing more of the screen than the table got.
+   */
   it('gives Simulation / Impact / Trades the tallest band', () => {
-    const toggle = page.slice(page.indexOf("onClick={() => setImpactView('simulation')}") - 900)
-    expect(toggle.slice(0, 900)).toContain('h-11 sm:h-auto')
+    const toggle = page.slice(page.indexOf("onClick={() => setImpactView('simulation')}") - 1100)
+    expect(toggle.slice(0, 1100)).toContain('h-[38px] sm:h-auto')
+
+    // The claim is the ordering, not the number: every other control in the
+    // cluster must be shorter than the band that navigates between modes.
+    const top = page.slice(page.indexOf('{/* Top row: Portfolio selector and actions */}'))
+    const band = top.slice(0, top.indexOf('{/* View Tabs Row */}'))
+    for (const utility of ['mobile-lab-ideas', 'mobile-lab-add']) {
+      const control = band.slice(band.indexOf(`data-slot="${utility}"`))
+      expect(control.slice(0, 800)).toContain('h-8')
+    }
+    expect(list).toContain("'flex-1 h-8 rounded-md text-[12px] font-semibold")
+  })
+
+  /**
+   * Everything to the right of it is shrink-0 and the portfolio button is the
+   * only flexible thing in the row, so "Saved about an hour ago" — 130-odd
+   * pixels of prose about finished work — came straight out of the name that
+   * says which book you are trading.
+   */
+  it('does not spend the row on a sentence about a finished save', () => {
+    const top = page.slice(page.indexOf('{/* Workbench Status Indicator'))
+    const indicator = top.slice(0, top.indexOf('{/* Save Snapshot'))
+    expect(indicator).toContain('!workbenchSaving && !isMobileViewport && (')
+    expect(indicator).toContain('formatDistanceToNow(workbenchLastSaved')
+    // The states that are about work in progress stay — they are two words.
+    expect(indicator).toContain('Unsaved')
   })
 })
 
@@ -179,7 +212,48 @@ describe('the local tutorial', () => {
 
   it('points at the control that exists', () => {
     const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
-    expect(hints[0]).toBe('Open Ideas & recommendations and add one to the simulation.')
+    expect(hints[0]).toBe('Open Ideas & recommendations, pick one, and tap Add to simulation.')
+  })
+
+  /**
+   * "Review a recommendation" named an action that did not satisfy the step.
+   * Reading one and closing it again left the step open — correctly, because
+   * the step is about the simulation — so the title said the wrong thing
+   * about work the reader had genuinely done.
+   */
+  it('names the action that actually completes the step', () => {
+    const titles = [...banner.matchAll(/title: '([^']*)'/g)].map(m => m[1])
+    expect(titles[0]).toBe('Add a recommendation')
+    expect(titles[0]).not.toMatch(/review|read|look/i)
+    // And the hint names the control the phone actually renders.
+    const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
+    expect(hints[0]).toContain('Add to simulation')
+    expect(drawer).toContain('Add to simulation')
+  })
+
+  /**
+   * Step 2's only dispatch was HoldingsSimulationTable's promote checkbox,
+   * and a phone never renders that table — MobileSimulationList has no
+   * promote selection — so the step was uncompletable on a phone and the
+   * pilot stalled between adding a trade and being told to execute it. The
+   * predicate also said "pick the row you want to execute", which is not
+   * what setting a size is.
+   */
+  it('names, and watches for, the act of sizing a trade', () => {
+    const titles = [...banner.matchAll(/title: '([^']*)'/g)].map(m => m[1])
+    expect(titles[1]).toBe('Size the trade')
+    const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
+    expect(hints[1]).toBe('Tap the trade row and set its weight or shares.')
+
+    // The predicate now lives on the sizing path both surfaces share.
+    const sizing = page.slice(page.indexOf('const handleVariantSizingUpdate'))
+    const head = sizing.slice(0, sizing.indexOf('// Temp variants'))
+    expect(head).toContain("updates.sizingInput !== undefined && updates.sizingInput !== ''")
+    expect(head).toContain('pilot-tradelab:rec-sized')
+
+    // And the phone's sizing sheet reaches it through that same prop.
+    expect(list).toContain('onUpdateVariant(editingRow.variant.id, { sizingInput })')
+    expect(page).toContain('onUpdateVariant={handleVariantSizingUpdate}')
   })
 
   /** Reported from the flags the banner already watches, not a second model. */
@@ -242,10 +316,216 @@ describe('the single recommendations control', () => {
   })
 })
 
+/*
+ * ── A recommendation you can actually add ──────────────────────────────────
+ *
+ * A trade_queue_item that carries a proposal is filed under `proposals` and
+ * excluded from `ideas`, so on a phone the pilot's seeded recommendation
+ * appeared only in the Recommendations tab — where every row was one button
+ * whose sole action was "open the detail modal". The apply/unapply logic
+ * existed, but inside the desktop row's own render closure, unreachable.
+ *
+ * So the first tutorial step asked for an add that the surface could not do.
+ */
+describe('adding a recommendation from a phone', () => {
+  it('has a named action on the row, not just a way in to reading it', () => {
+    expect(drawer).toContain('data-slot="mobile-rec-add"')
+    const action = drawer.slice(drawer.lastIndexOf('<button', drawer.indexOf('data-slot="mobile-rec-add"')))
+    const button = action.slice(0, action.indexOf('</button>'))
+    expect(button).toContain("added ? 'Added — tap to remove' : 'Add to simulation'")
+    expect(button).toContain('onClick={onToggle}')
+  })
+
+  /** Reading and adding are separate intentions, so separate targets. */
+  it('keeps opening the detail on a different target from adding', () => {
+    const row = drawer.slice(drawer.indexOf('function ProposalRow'))
+    expect(row).toContain('onClick={onOpen}')
+    expect(row).toContain('onClick={onToggle}')
+  })
+
+  /**
+   * Opening a detail dismisses the full-screen list, and closing it used to
+   * land you back in the lab with the list gone — so deciding to add the
+   * thing you had just finished reading cost two taps to find again. Reading
+   * is a detour from the list, not an exit from it.
+   */
+  it('puts the list back when the detail is closed', () => {
+    expect(page).toContain('setReopenIdeasAfterDetail(true)')
+    const close = page.slice(page.indexOf('onClose={() => {\n            setSelectedTradeId(null)'))
+    const body = close.slice(0, 500)
+    expect(body).toContain('if (reopenIdeasAfterDetail) {')
+    expect(body).toContain('setShowIdeasPanel(true)')
+    expect(body).toContain('setReopenIdeasAfterDetail(false)')
+  })
+
+  /**
+   * The same path the desktop checkbox runs — one apply/unapply, lifted to
+   * page level so both surfaces call it. A second implementation would be a
+   * second set of optimistic overrides to keep in step.
+   */
+  it('runs the same apply path the desktop checkbox does', () => {
+    expect(page).toContain('const toggleProposalInSimulation = useCallback((proposalItem: ProposalItem)')
+    expect(page).toContain('onToggleProposal={(p) => toggleProposalInSimulation(p)}')
+    // The desktop row delegates rather than keeping its own copy.
+    const desktop = page.slice(page.indexOf('const handleAddProposal'))
+    expect(desktop.slice(0, 300)).toContain('toggleProposalInSimulation(proposalItem)')
+    expect(desktop.slice(0, 300)).not.toContain('importTradeMutation.mutate')
+  })
+
+  /**
+   * Step 1 is "add a recommendation to the simulation" and now only an add
+   * fires it. Expanding a card, opening a detail modal and toggling a pair
+   * open all used to dispatch it, which ticked the step off for someone who
+   * had only looked.
+   */
+  it('ticks step one from the add, and from nothing else', () => {
+    const dispatches = [...page.matchAll(/dispatchEvent\(new CustomEvent\('pilot-tradelab:rec-reviewed'\)\)/g)]
+    // Two adds: an idea's checkbox and a recommendation's apply path.
+    expect(dispatches.length).toBe(2)
+
+    const addAsset = page.slice(page.indexOf('const handleAddAsset = useCallback'))
+    expect(addAsset.slice(0, 900)).toContain('pilot-tradelab:rec-reviewed')
+
+    const toggle = page.slice(page.indexOf('const toggleProposalInSimulation'))
+    expect(toggle.slice(0, toggle.indexOf('// Per-asset exclusivity'))).toContain('pilot-tradelab:rec-reviewed')
+
+    // The reading paths are silent.
+    for (const reader of ['const toggleExpand = (e: React.MouseEvent)', 'const toggleProposalExpand = (e: React.MouseEvent)']) {
+      const fn = page.slice(page.indexOf(reader))
+      expect(fn.slice(0, 400)).not.toContain('pilot-tradelab:rec-reviewed')
+    }
+  })
+})
+
+/*
+ * ── The detail is a screen, not a shrunken dialog ──────────────────────────
+ *
+ * It opened as a max-w-4xl window inset 16px inside a dimmed page and capped
+ * at 85% of the viewport: on a phone, a desktop dialog squeezed to 358px with
+ * a strip of greyed-out app above and below it doing nothing.
+ */
+describe('the recommendation detail on a phone', () => {
+  it('takes the whole screen instead of floating in the middle of one', () => {
+    const shell = modal.slice(modal.indexOf("'fixed inset-0 bg-black/50 flex z-50'"))
+    const head = shell.slice(0, 600)
+    expect(head).toContain("isMobile ? 'items-stretch justify-stretch' : 'items-center justify-center p-4'")
+    expect(head).toContain("? 'h-full max-h-full pt-safe pb-safe'")
+    expect(head).toContain(": 'rounded-xl max-w-4xl h-viewport-85 max-h-[900px]'")
+  })
+
+  /**
+   * Five tabs plus badges do not fit across 390px, and a flex row that cannot
+   * fit squashes its children rather than clipping them.
+   */
+  it('lets the five tabs scroll rather than be crushed', () => {
+    const tabs = modal.slice(modal.indexOf('{/* Tabs — compact text-only'))
+    expect(tabs.slice(0, 700)).toContain("isMobile && '-mx-3 px-3 overflow-x-auto scrollbar-hide'")
+    expect(tabs.slice(0, 2000)).toContain('whitespace-nowrap shrink-0')
+  })
+
+  /** Desktop keeps every dimension it had. */
+  it('changes nothing above phone width', () => {
+    const shell = modal.slice(modal.indexOf("'fixed inset-0 bg-black/50 flex z-50'"))
+    expect(shell.slice(0, 600)).toContain('h-viewport-85 max-h-[900px]')
+    const header = modal.slice(modal.indexOf("'flex-shrink-0 border-b border-gray-200"))
+    expect(header.slice(0, 200)).toContain("isMobile ? 'px-3 pt-2 pb-1.5' : 'p-4'")
+  })
+})
+
+/*
+ * ── An idea is added the same way a recommendation is ──────────────────────
+ *
+ * The row carried a checkbox in its own column. It ran handleAddAsset /
+ * handleRemoveAsset — it put the trade in the simulation and took it out
+ * again — while looking exactly like the list-selection checkbox it was not.
+ */
+describe('adding an idea from a phone', () => {
+  it('replaces the ambiguous checkbox with a named action', () => {
+    expect(drawer).toContain('data-slot="mobile-idea-add"')
+    // The bare tick-in-a-box column is gone.
+    expect(drawer).not.toContain("'h-6 w-6 rounded-md border-2 flex items-center justify-center transition-colors'")
+    expect(drawer).not.toContain('shrink-0 w-12 flex items-center justify-center border-r')
+  })
+
+  it('uses the same words as a recommendation, for the same act', () => {
+    const idea = drawer.slice(drawer.lastIndexOf('<button', drawer.indexOf('data-slot="mobile-idea-add"')))
+    const rec = drawer.slice(drawer.lastIndexOf('<button', drawer.indexOf('data-slot="mobile-rec-add"')))
+    for (const button of [idea, rec]) {
+      const body = button.slice(0, button.indexOf('</button>'))
+      expect(body).toContain("added ? 'Added — tap to remove' : 'Add to simulation'")
+    }
+  })
+
+  /** Same mutation path as before — only the control changed. */
+  it('runs the handlers the checkbox ran', () => {
+    const button = drawer.slice(drawer.lastIndexOf('<button', drawer.indexOf('data-slot="mobile-idea-add"')))
+    expect(button.slice(0, button.indexOf('</button>'))).toContain('onClick={() => onToggleAsset(idea, added)}')
+    expect(page).toContain('if (isAdded) handleRemoveAsset(idea.asset_id)')
+    expect(page).toContain('else handleAddAsset(idea)')
+  })
+
+  /** Reading is still its own target, on both kinds of row. */
+  it('keeps Details separate from add/remove', () => {
+    const row = drawer.slice(drawer.indexOf('function IdeaRow'), drawer.indexOf('function PairRow'))
+    expect(row).toContain('onClick={() => onOpenIdea(idea.id)}')
+    expect(row).toContain('onClick={() => onToggleAsset(idea, added)}')
+    expect(row).toContain('Details')
+  })
+})
+
+/*
+ * ── The utility row stopped overlapping ────────────────────────────────────
+ *
+ * Every child of the right-hand cluster is shrink-0 but the cluster itself
+ * was not, so the row squeezed the box and its contents spilled out of it,
+ * over the portfolio name. Separately, the global phone rule forces every
+ * button to 44x44 unless it opts out — so the heights these controls asked
+ * for were not the heights they got, and a min-width cannot be capped by a
+ * max-width.
+ */
+describe('the utility row at 390px', () => {
+  it('makes the action cluster rigid so the portfolio is what gives way', () => {
+    const top = page.slice(page.indexOf('{/* Right side controls'))
+    expect(top.slice(0, 900)).toContain('className="flex shrink-0 sm:shrink items-center gap-1.5 sm:gap-2"')
+  })
+
+  /**
+   * Opting out of the 44px box, and buying the thumb back with a padded hit
+   * region rather than with height. Without the opt-out these classes are
+   * decoration: the global rule overrides both dimensions.
+   */
+  it('opts each control out of the 44px box and keeps a 44px thumb', () => {
+    const top = page.slice(page.indexOf('{/* Top row: Portfolio selector and actions */}'))
+    const band = top.slice(0, top.indexOf('{/* View Tabs Row */}'))
+    for (const marker of ['data-slot="mobile-lab-ideas"', 'data-slot="mobile-lab-add"', 'setMobileLabMenuOpen(true)']) {
+      // Slice to the element's own className, not to the first '>' — the
+      // arrow functions in these handlers are full of them.
+      const control = band.slice(band.lastIndexOf('<button', band.indexOf(marker)))
+      const head = control.slice(0, control.indexOf('</button>'))
+      expect(head).toContain('no-touch-target')
+      expect(head).toContain('tap-pad')
+    }
+    // The portfolio trigger too — a min-width:44px cannot be capped.
+    const trigger = page.slice(page.indexOf('onClick={() => setPortfolioDropdownOpen'))
+    expect(trigger.slice(0, 1400)).toContain('no-touch-target tap-pad')
+
+    // 32px drawn, 44px hit: 6px of padded region top and bottom.
+    expect(css).toContain('.tap-pad::before')
+    expect(css).toContain('top: -6px')
+    expect(css).toContain('bottom: -6px')
+  })
+
+  it('caps the portfolio at what is left once the actions have their width', () => {
+    const trigger = page.slice(page.indexOf('onClick={() => setPortfolioDropdownOpen'))
+    expect(trigger.slice(0, 1400)).toContain('max-w-[40vw]')
+    expect(trigger.slice(0, 1800)).toContain('truncate')
+  })
+})
+
 describe('the utility row has room', () => {
   it('gives the controls back the width the portfolio was taking', () => {
     const trigger = page.slice(page.indexOf('onClick={() => setPortfolioDropdownOpen'))
-    expect(trigger.slice(0, 800)).toContain('max-w-[40vw]')
+    expect(trigger.slice(0, 1400)).toContain('max-w-[40vw]')
   })
 
   /**

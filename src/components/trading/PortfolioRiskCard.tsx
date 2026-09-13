@@ -219,7 +219,7 @@ export function PortfolioRiskCard({
 
   if (!hasBenchmark) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 md:p-5">
         <div className="flex items-center justify-between mb-1">
           <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2 text-sm">
             <Shield className="h-4 w-4" />
@@ -238,7 +238,7 @@ export function PortfolioRiskCard({
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 md:p-5">
       {/* Header */}
       <div className="flex items-center justify-between mb-1">
         <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2 text-sm">

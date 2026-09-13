@@ -36,14 +36,23 @@ export function PortfolioImpactView({
     [simulationRows],
   )
 
+  /*
+   * Phones get this view unchanged from the desktop — there is no mobile
+   * variant — so every card arrives at 390px still carrying the 20px padding
+   * and 20px gutters it was drawn with for a two-column 1400px layout. Six
+   * stacked cards then spend roughly a fifth of their height on air.
+   *
+   * The `md:` prefix is deliberate rather than `sm:`: it is the same 768px
+   * boundary `useIsMobile()` uses, so nothing above phone width changes.
+   */
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 md:space-y-5">
       {/* Layer 1: Headline + KPI pills */}
       <ImpactHeadlineBand metrics={metrics} simulationRows={simulationRows} />
 
       {/* Row 1: Sector exposure + characteristics */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 md:p-4">
           <SectorExposureChart
             before={metrics.sector_exposure_before}
             after={metrics.sector_exposure_after}
@@ -54,7 +63,7 @@ export function PortfolioImpactView({
       </div>
 
       {/* Row 2: Portfolio fundamentals + Risk */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
         <PortfolioFundamentalsCard holdingsAfterCount={metrics.position_count_after} />
         <PortfolioRiskCard
           simulationRows={simulationRows}

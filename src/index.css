@@ -421,6 +421,26 @@
     min-width: 0;
   }
 
+  /* Opting out of the 44px box does not have to mean opting out of a 44px
+     thumb. This keeps the drawn control whatever height its classes say and
+     grows only the touch region around it, so a dense toolbar can be dense
+     and still be hittable. Vertical only: neighbours in a toolbar sit side by
+     side, and overlapping hit regions horizontally would steal each other's
+     taps. Pairs with `.no-touch-target`, which is what frees the height. */
+  .tap-pad {
+    position: relative;
+  }
+  @media (max-width: 767px) and (pointer: coarse) {
+    .tap-pad::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: -6px;
+      bottom: -6px;
+    }
+  }
+
   /* Hide the scrollbar on a strip that scrolls sideways by design — the
      pipeline's stage chips, for instance. iOS hides it anyway; this stops a
      desktop-width browser or an Android WebView from drawing a bar under a

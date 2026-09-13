@@ -103,8 +103,10 @@ export function PortfolioCharacteristics({ metrics, simulationRows }: PortfolioC
   }, [simulationRows])
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-      <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2 text-sm">
+    // p-3 below 768px — the same boundary useIsMobile() uses, so desktop is
+    // untouched. See PortfolioImpactView for why.
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 md:p-5">
+      <h3 className="font-semibold text-gray-900 dark:text-white mb-2.5 md:mb-4 flex items-center gap-2 text-sm">
         <BarChart3 className="h-4 w-4" />
         Portfolio Characteristics
       </h3>

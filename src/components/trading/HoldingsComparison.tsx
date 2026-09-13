@@ -159,8 +159,8 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
   }, [holdings, baseline])
 
   return (
-    <Card className="p-4">
-      <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+    <Card className="p-3 md:p-4">
+      <h3 className="font-semibold text-gray-900 dark:text-white mb-2.5 md:mb-4 flex items-center gap-2">
         <Table className="h-4 w-4" />
         Holdings Comparison
       </h3>

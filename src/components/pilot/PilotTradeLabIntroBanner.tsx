@@ -2,9 +2,13 @@
  * PilotTradeLabIntroBanner — top-of-page onboarding strip for pilots
  * landing in Trade Lab. Walks them through the three concrete moves
  * to commit a trade:
- *   1. Click / expand the recommendation card to review the details
- *   2. Add the recommendation and size the trade
+ *   1. Add a recommendation to the simulation
+ *   2. Size the trade — set its weight or shares
  *   3. Execute
+ *
+ * Step 1 fires only from a real add. Expanding a card or opening its detail
+ * modal used to fire it too, which ticked the step off for someone who had
+ * only looked — the banner then said "done" about work that had not happened.
  *
  * Steps tick off as the user does them — same progress pattern as the
  * Idea Pipeline banner. Each step listens for a window event:
@@ -149,17 +153,27 @@ export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange }:
       steps={[
         {
           n: 1,
-          title: 'Review a recommendation',
+          /* "Review a recommendation" described an action that did not
+             complete the step. The step completes when a recommendation is
+             added to the simulation, so the title says that — reading one and
+             closing it again leaves the step open, as it always did in the
+             data even while the copy implied otherwise. */
+          title: 'Add a recommendation',
           /* One line, naming the control rather than a side of a desktop
              screen. It carried a button too, which is what put two large
              controls for one action on top of each other. */
-          hint: 'Open Ideas & recommendations and add one to the simulation.',
+          hint: 'Open Ideas & recommendations, pick one, and tap Add to simulation.',
           done: step1,
         },
         {
           n: 2,
-          title: 'Pick your trade',
-          hint: 'Check the box on the trade row in the table below.',
+          /* "Pick your trade" described a desktop checkbox — and one a phone
+             never renders, so the step could not be completed there at all.
+             The act between adding a trade and committing it is deciding how
+             big it is, which is what the step now names and what its
+             predicate now watches. */
+          title: 'Size the trade',
+          hint: 'Tap the trade row and set its weight or shares.',
           done: step2,
         },
         {
