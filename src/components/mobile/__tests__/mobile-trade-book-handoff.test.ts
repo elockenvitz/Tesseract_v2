@@ -122,6 +122,43 @@ describe('the rationale model', () => {
   })
 })
 
+/*
+ * ── One writer for baseline_holdings ───────────────────────────────────────
+ *
+ * Two background tasks wrote the same JSONB column after a bulk execute and
+ * neither waited for the other: the service's pro-forma fold (existing
+ * baseline + this trade's deltas) and SimulationPage's re-snapshot (replace
+ * wholesale from portfolio_holdings). Whichever landed second won. Re-snapshot
+ * second was correct; fold second read a baseline that already contained the
+ * trade and added its deltas again, so the executed position showed at double
+ * size — and the fold's own gate means it runs on exactly the paper /
+ * manual_eod portfolios the re-snapshot also runs on, so they always collide.
+ */
+describe('the post-execute simulation baseline', () => {
+  it('hands the background work back instead of dropping it', () => {
+    expect(executeService).toContain('settled: Promise<void>')
+    expect(executeService).toContain('const settled = (async () => {')
+    expect(executeService).toContain('return { batch, trades, failures, settled }')
+    // The all-failed early return still satisfies the contract.
+    expect(executeService).toContain('settled: Promise.resolve()')
+  })
+
+  /** The fold is still not awaited before the modal — only before the write. */
+  it('does not delay the Decision Recorded moment', () => {
+    const tail = executeService.slice(executeService.indexOf('const settled = (async () => {'))
+    expect(tail.slice(0, 1200)).not.toContain('await settled')
+  })
+
+  it('orders the re-snapshot after the fold', () => {
+    const resnap = page.slice(page.indexOf('if (committed > 0 && selectedSimulationId && selectedPortfolioId) {'))
+    const body = resnap.slice(0, 2000)
+    expect(body).toContain('await result.settled')
+    // And it waits before reading, not after writing.
+    expect(body.indexOf('await result.settled'))
+      .toBeLessThan(body.indexOf("from('portfolio_holdings')"))
+  })
+})
+
 describe('Trade Book on a phone', () => {
   it('calls its tutorial what it teaches', () => {
     expect(tutorial).toContain('label="Trade Book basics"')

@@ -178,7 +178,22 @@ export function missionState(facts: MissionFacts): MissionState {
   const done: Record<MissionStepId, boolean> = {
     idea_created: hasIdea,
     pipeline_advanced: hasIdea && isPipelineAdvanced(facts.ideaStage),
-    simulation_completed: hasIdea && facts.hasSimulationTrade,
+    /*
+     * A simulation_trades row, OR anything downstream of one.
+     *
+     * Executing a trade DELETES its simulation_trades row — the trade has
+     * left the simulation and become a committed trade, and the execute
+     * service bulk-deletes the rows it committed. So the artifact this step
+     * was reading disappears at the exact moment the step's purpose is most
+     * thoroughly fulfilled, and the mission regressed: a pilot who had just
+     * executed was sent back to "Test the trade — Open Trade Lab", because
+     * `currentStepId` is the first step that is not done.
+     *
+     * A decision on the idea is proof the trade was tested, not evidence
+     * against it. The step is monotonic now: the transient artifact still
+     * completes it, and the durable one keeps it complete.
+     */
+    simulation_completed: hasIdea && (facts.hasSimulationTrade || facts.hasDecision),
     decision_submitted: hasIdea && facts.hasDecision,
     outcome_reviewed: hasIdea && !!facts.outcomeReviewedAt,
   }

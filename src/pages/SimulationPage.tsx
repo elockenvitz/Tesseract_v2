@@ -1661,6 +1661,22 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       if (committed > 0 && selectedSimulationId && selectedPortfolioId) {
         void (async () => {
           try {
+            /*
+             * Wait for the execute service's own background work first.
+             *
+             * It folds the committed trades into `baseline_holdings` while
+             * this block replaces that same column with a fresh snapshot of
+             * portfolio_holdings. Both used to start at once and neither
+             * waited, so which one the user ended up looking at was decided
+             * by round-trip timing: re-snapshot last was correct, fold last
+             * read a baseline that already contained the trade and added its
+             * deltas a second time — the executed position showed up at
+             * double size. `portfolio_holdings` is already written by then
+             * (finalizeTradeForHoldingsSource is awaited inside
+             * createAcceptedTrade), so ordering these makes the snapshot the
+             * last word rather than the lucky one.
+             */
+            await result.settled
             const { data: holdingsRaw } = await supabase
               .from('portfolio_holdings')
               .select('asset_id, shares, price, assets (id, symbol, company_name, sector), date')

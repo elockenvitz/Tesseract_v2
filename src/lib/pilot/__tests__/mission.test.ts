@@ -143,6 +143,44 @@ describe('steps 3 to 5', () => {
     expect(m.steps[3].done).toBe(true)
     expect(m.currentStepId).toBe('pipeline_advanced')
   })
+
+  /*
+   * Executing the trade DELETES its simulation_trades row — the execute
+   * service bulk-deletes the rows it committed, because the trade has left
+   * the simulation and become a committed one. Reading only that artifact
+   * made step 3 un-complete itself at the moment it was most thoroughly
+   * done, and `currentStepId` is the first step that is not done: a pilot
+   * who had just executed was sent back to "Test the trade — Open Trade Lab".
+   */
+  it('keeps the simulation step done after the simulated trade is executed', () => {
+    const afterExecute = withIdea({
+      ideaStage: 'ready_for_decision',
+      // Gone: execute deleted it.
+      hasSimulationTrade: false,
+      // Left behind: the accepted_trade it became.
+      hasDecision: true,
+    })
+    const m = missionState(afterExecute)
+    expect(m.steps[2].done).toBe(true)
+    expect(m.steps[3].done).toBe(true)
+    expect(m.currentStepId).toBe('outcome_reviewed')
+    expect(m.completedCount).toBe(4)
+  })
+
+  /** The mission never walks backwards across an execute. */
+  it('does not regress when the artifact is traded away', () => {
+    const before = missionState(withIdea({ ideaStage: 'ready_for_decision', hasSimulationTrade: true }))
+    const after = missionState(withIdea({ ideaStage: 'ready_for_decision', hasSimulationTrade: false, hasDecision: true }))
+    expect(after.completedCount).toBeGreaterThanOrEqual(before.completedCount)
+    expect(after.steps[2].done).toBe(true)
+  })
+
+  /** Absent a decision, the step still needs the simulated trade. */
+  it('still requires something to have happened', () => {
+    const m = missionState(withIdea({ ideaStage: 'deep_research' }))
+    expect(m.steps[2].done).toBe(false)
+    expect(m.currentStepId).toBe('simulation_completed')
+  })
 })
 
 describe('storage keys', () => {
