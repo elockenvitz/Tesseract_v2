@@ -435,7 +435,36 @@ function BatchTradesList({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+      {/* Phones get cards.
+
+          The table is 720px wide with a frozen ticker column, so on a 390px
+          screen reading one trade meant dragging sideways past Action, Tgt
+          Wt, Δ Wt, Δ Shrs and Notional with only the symbol still anchored.
+          The same fields stack instead, and tapping a card opens the same
+          TradeRationaleLog the desktop row expands to — including the step-1
+          event, so the tutorial's "tap a trade" is a real action here. */}
+      <div className="md:hidden space-y-3">
+        {buyTrades.length > 0 && (
+          <MobileTradeGroup
+            label={buyTrades.length === 1 ? 'Buy' : 'Buys'}
+            accent="emerald"
+            trades={buyTrades}
+            batchDescription={batchDescription}
+            onAddComment={onAddComment}
+          />
+        )}
+        {sellTrades.length > 0 && (
+          <MobileTradeGroup
+            label={sellTrades.length === 1 ? 'Sell' : 'Sells'}
+            accent="red"
+            trades={sellTrades}
+            batchDescription={batchDescription}
+            onAddComment={onAddComment}
+          />
+        )}
+      </div>
+
+      <div className="hidden md:block rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
         {/* Ten columns. Trade Book is registered as a full mobile surface, and
             the shell clips horizontal overflow, so without this the batch's
             numbers are invisible and unreachable on a phone. Matches the
@@ -478,6 +507,161 @@ function BatchTradesList({
         </table>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** One side of the buys/sells split, as cards. Same grouping and the same
+ *  order as the table — only the row shape differs. */
+function MobileTradeGroup({
+  label,
+  accent,
+  trades,
+  batchDescription,
+  onAddComment,
+}: {
+  label: string
+  accent: 'emerald' | 'red'
+  trades: AcceptedTradeWithJoins[]
+  batchDescription: string | null
+  onAddComment?: (tradeId: string, content: string) => void
+}) {
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className={clsx(
+          'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide',
+          accent === 'emerald'
+            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+            : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+        )}>
+          {label}
+        </span>
+        <span className="text-[11px] tabular-nums text-gray-400">{trades.length}</span>
+      </div>
+      <div className="space-y-1.5">
+        {trades.map(t => (
+          <MobileTradeCard
+            key={t.id}
+            trade={t}
+            batchDescription={batchDescription}
+            onAddComment={onAddComment}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/** One trade, stacked. Tap opens the same rationale log the table row does. */
+function MobileTradeCard({
+  trade,
+  batchDescription,
+  onAddComment,
+}: {
+  trade: AcceptedTradeWithJoins
+  batchDescription: string | null
+  onAddComment?: (tradeId: string, content: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const result = tradeLifecyclePhase(trade as any)
+  const meta = PHASE_META[result.phase]
+  const hasNote = !!(trade.acceptance_note && trade.acceptance_note.trim())
+  const canExpand = hasNote || !!onAddComment
+  const isSellSide = trade.action === 'sell' || trade.action === 'trim'
+
+  return (
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
+      <button
+        type="button"
+        data-slot="tradebook-mobile-trade"
+        onClick={canExpand ? () => {
+          setExpanded(v => !v)
+          // Same step-1 event the desktop row fires, for the same act:
+          // opening a committed trade's audit.
+          try { window.dispatchEvent(new CustomEvent('pilot-tradebook:trade-reviewed')) } catch { /* ignore */ }
+        } : undefined}
+        aria-expanded={canExpand ? expanded : undefined}
+        className="w-full text-left px-3 py-2 active:bg-gray-50 dark:active:bg-gray-800 no-touch-target"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-gray-900 dark:text-white">
+            {trade.asset?.symbol || 'Unknown'}
+          </span>
+          <span className={clsx(
+            'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase',
+            ACTION_COLORS[trade.action] || 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800',
+          )}>
+            {trade.action}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400">
+            {trade.asset?.company_name}
+          </span>
+          {hasNote && <MessageSquare className="w-3 h-3 shrink-0 text-gray-400" aria-label="Has rationale" />}
+          {canExpand && (expanded
+            ? <ChevronDown className="w-4 h-4 shrink-0 text-gray-400" />
+            : <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />)}
+        </div>
+
+        {/* The numbers that were behind a sideways drag. */}
+        <dl className="mt-1.5 grid grid-cols-3 gap-x-3">
+          <Cell label="Tgt Wt" value={trade.target_weight != null ? `${trade.target_weight.toFixed(2)}%` : '—'} />
+          <Cell
+            label="Δ Wt"
+            value={trade.delta_weight != null ? `${trade.delta_weight > 0 ? '+' : ''}${trade.delta_weight.toFixed(2)}%` : '—'}
+            tone={trade.delta_weight == null ? undefined : trade.delta_weight > 0 ? 'up' : trade.delta_weight < 0 ? 'down' : undefined}
+          />
+          <Cell
+            label="Notional"
+            value={trade.notional_value != null
+              ? `${isSellSide ? '-' : ''}$${Math.abs(trade.notional_value).toLocaleString()}`
+              : '—'}
+            tone={isSellSide ? 'down' : undefined}
+          />
+        </dl>
+
+        <div className="mt-1 flex items-center gap-2">
+          <span className={clsx(
+            'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold',
+            meta.pillClass,
+          )}>
+            <span className={clsx('w-1 h-1 rounded-full', meta.dotClass)} />
+            {meta.label}
+          </span>
+          <span className="text-[11px] tabular-nums text-gray-400">
+            {trade.delta_shares != null && trade.delta_shares !== 0
+              ? `${trade.delta_shares > 0 ? '+' : ''}${trade.delta_shares.toLocaleString()} sh`
+              : ''}
+          </span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-gray-100 dark:border-gray-800 px-3 py-2.5">
+          <TradeRationaleLog
+            tradeId={trade.id}
+            acceptanceNote={trade.acceptance_note}
+            batchDescription={batchDescription}
+            onAddComment={onAddComment}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Cell({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] uppercase tracking-wider text-gray-400">{label}</dt>
+      <dd className={clsx(
+        'text-[12px] font-medium tabular-nums truncate',
+        tone === 'up' ? 'text-emerald-600 dark:text-emerald-400'
+          : tone === 'down' ? 'text-red-600 dark:text-red-400'
+          : 'text-gray-700 dark:text-gray-200',
+      )}>
+        {value}
+      </dd>
     </div>
   )
 }
@@ -981,9 +1165,14 @@ function BatchDetailPanel({
             a textarea; if present, hovering reveals an Edit button.
             Saves back to trade_batches.description. */}
         <section>
+          {/* "Decision rationale", not "Rationale": this is the batch-level
+              explanation of why the decision happened, and it is the one the
+              trades inherited at commit. Naming it apart from the per-trade
+              rationale log below is what stops the two reading as the same
+              field asked twice. */}
           <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
             <FileText className="w-3 h-3" />
-            Rationale
+            Decision rationale
           </div>
           <BatchRationaleEditor batch={batch} />
         </section>
@@ -1518,9 +1707,13 @@ function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
     return (
       <div className="group relative rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/30 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">
         {existing}
+        {/* Revealed on hover — and a phone has no hover, so once a batch had
+            a rationale there was no way to change it there at all. Always
+            visible below 768px; unchanged above it. */}
         <button
           onClick={() => setEditing(true)}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 bg-white/80 dark:bg-gray-900/80 rounded-md border border-gray-200 dark:border-gray-700 px-1.5 py-0.5"
+          data-slot="batch-rationale-edit"
+          className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 bg-white/80 dark:bg-gray-900/80 rounded-md border border-gray-200 dark:border-gray-700 px-1.5 py-0.5 no-touch-target tap-pad"
         >
           <Pencil className="w-3 h-3" />
           Edit

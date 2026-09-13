@@ -119,17 +119,27 @@ export function PilotTradeBookGetStarted({ userId, orgId, onOpenOutcomes }: Pilo
      next surface, and it still auto-retires once all three are done. */
   return (
     <PilotStepsBanner
+      /* Local product teaching for this surface, like Pipeline basics and
+         Trade Lab basics — not the global five-step pilot mission, which is
+         what "Get started" names. Unlabelled it read as a second one. */
+      label="Trade Book basics"
       steps={[
         {
           n: 1,
           title: 'Review the recorded decision',
-          hint: 'Click any trade row to expand its full audit (price, sizing, batch context).',
+          /* "Click any trade row" described a desktop table. The phone shows
+             the batch's trades as cards, and tapping one opens the same
+             audit the desktop row expands to. */
+          hint: 'Tap a trade in the batch to open its audit — price, sizing and rationale.',
           done: step1,
         },
         {
           n: 2,
           title: 'Capture your rationale',
-          hint: 'Add a why-now note on the trade row — Tesseract scores against this later.',
+          /* Two real write paths satisfy this: the batch's Decision
+             rationale, and a rationale note on a single trade. The batch one
+             is the primary explanation, so the hint names that first. */
+          hint: 'Write the Decision rationale on the batch, or a note on one trade.',
           done: step2,
         },
         {
