@@ -224,7 +224,7 @@ describe('the local tutorial', () => {
 
   it('points at the control that exists', () => {
     const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
-    expect(hints[0]).toBe('Open Ideas & recommendations, pick one, and tap Add to simulation.')
+    expect(hints[0]).toBe('Open Ideas & recommendations, find the idea you captured, and tap Add to simulation.')
   })
 
   /**
@@ -235,12 +235,53 @@ describe('the local tutorial', () => {
    */
   it('names the action that actually completes the step', () => {
     const titles = [...banner.matchAll(/title: '([^']*)'/g)].map(m => m[1])
-    expect(titles[0]).toBe('Add a recommendation')
+    expect(titles[0]).toBe('Add your idea to the simulation')
     expect(titles[0]).not.toMatch(/review|read|look/i)
     // And the hint names the control the phone actually renders.
     const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
     expect(hints[0]).toContain('Add to simulation')
     expect(drawer).toContain('Add to simulation')
+  })
+
+  /*
+   * ── One object carries the journey ──────────────────────────────────────
+   *
+   * The global mission follows ONE trade_queue_item — the idea the pilot
+   * captured — and every later step reads against it. Trade Lab basics told
+   * them to add the seeded recommendation, which wraps a DIFFERENT item, and
+   * ticked its step for anything added at all. So a pilot could finish this
+   * tutorial, execute, and leave the mission sitting on "Test the trade" with
+   * nothing on the screen able to satisfy it. Observed live on 2026-09-13:
+   * tutorial idea 1fbc81dd, executed idea 0640af41.
+   */
+  it('ticks step one only for the captured tutorial idea', () => {
+    expect(page).toContain('const isTutorialIdea = useCallback(')
+    expect(page).toContain('tradeQueueItemId === tutorialIdeaId')
+
+    // Both add paths are gated on it, and neither dispatches unguarded.
+    const dispatches = [...page.matchAll(/dispatchEvent\(new CustomEvent\('pilot-tradelab:rec-reviewed'\)\)/g)]
+    expect(dispatches.length).toBe(2)
+    expect(page).toContain('if (isTutorialIdea(idea.id)) {')
+    expect(page).toContain('if (isTutorialIdea(tradeItem?.id)) {')
+  })
+
+  /** The banner's own words must not send them back to demo content. */
+  it('does not teach the seeded recommendation as the graduating object', () => {
+    const steps = banner.slice(banner.indexOf('steps={['))
+    const firstStep = steps.slice(0, steps.indexOf('n: 2'))
+    expect(firstStep).not.toMatch(/title: '[^']*recommendation/i)
+  })
+
+  /**
+   * The mission's decision fact is derived from accepted_trades, and an
+   * execute is the moment one appears — but the key was not in the
+   * invalidation list, so the mission kept stale facts until something else
+   * happened to refetch it.
+   */
+  it('refreshes the mission when a trade is committed', () => {
+    const invalidations = [...page.matchAll(/invalidateQueries\(\{ queryKey: \['pilot-mission'\] \}\)/g)]
+    // Both execute paths: single and bulk.
+    expect(invalidations.length).toBe(2)
   })
 
   /**
@@ -396,7 +437,7 @@ describe('adding a recommendation from a phone', () => {
     expect(dispatches.length).toBe(2)
 
     const addAsset = page.slice(page.indexOf('const handleAddAsset = useCallback'))
-    expect(addAsset.slice(0, 900)).toContain('pilot-tradelab:rec-reviewed')
+    expect(addAsset.slice(0, 2600)).toContain('pilot-tradelab:rec-reviewed')
 
     const toggle = page.slice(page.indexOf('const toggleProposalInSimulation'))
     expect(toggle.slice(0, toggle.indexOf('// Per-asset exclusivity'))).toContain('pilot-tradelab:rec-reviewed')

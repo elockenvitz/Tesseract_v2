@@ -368,7 +368,18 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const { isMorphing } = useMorphSession()
   const pilotMode = usePilotMode()
   const { scenario: pilotScenario } = usePilotScenario()
-  const { mark: markPilotStage } = usePilotProgress()
+  const { mark: markPilotStage, tutorialIdeaId } = usePilotProgress()
+  /*
+   * One object, end to end. The mission follows the captured tutorial idea
+   * through simulation → accepted trade → outcome, so Trade Lab basics has to
+   * be teaching that same trade_queue_item and nothing else. A non-pilot has
+   * no tutorial idea and no banner, so the predicate is simply false there.
+   */
+  const isTutorialIdea = useCallback(
+    (tradeQueueItemId: string | null | undefined) =>
+      !!tutorialIdeaId && !!tradeQueueItemId && tradeQueueItemId === tutorialIdeaId,
+    [tutorialIdeaId],
+  )
   const queryClient = useQueryClient()
   const toast = useToast()
 
@@ -1388,6 +1399,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       queryClient.invalidateQueries({ queryKey: ['intent-variants'] })
       queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })
       queryClient.invalidateQueries({ queryKey: ['trade-batches'] })
+      // Same reason as the bulk path: an accepted_trade just appeared, and
+      // that is the fact the mission's decision step is derived from.
+      queryClient.invalidateQueries({ queryKey: ['pilot-mission'] })
     },
     onError: (err: any) => {
       toast.error('Execute failed', err.message)
@@ -1636,6 +1650,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         }))
         // Tick step 3 of the pilot Trade Lab Get Started banner.
         try { window.dispatchEvent(new CustomEvent('pilot-tradelab:executed')) } catch { /* ignore */ }
+        /*
+         * The global mission derives "decided" from accepted_trades, and this
+         * is the moment one appears. It was not in the invalidation list, so
+         * the mission kept whatever facts it had cached until something else
+         * happened to refetch it.
+         */
+        queryClient.invalidateQueries({ queryKey: ['pilot-mission'] })
         // Surface partial-state warnings as a small toast since the modal is the hero.
         if (failed > 0 || stillSaving.length > 0) {
           const descParts: string[] = []
@@ -3415,12 +3436,23 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     checkboxOverridesRef.current.set(assetId, true)
     setCheckboxOverrides(new Map(checkboxOverridesRef.current))
 
-    // Tick step 1 of the pilot Trade Lab Get Started banner.
-    // Step 1 is "review the recommendation and add it to the holdings
-    // table" — checking the rec in the LEFT pane fulfills that. Step 2
-    // (select the trade row in the holdings table to execute) is
-    // independent and fires from HoldingsSimulationTable's row checkbox.
-    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
+    /*
+     * Tick step 1 of Trade Lab basics — but only for the tutorial idea.
+     *
+     * The mission follows ONE trade_queue_item, the one the pilot captured in
+     * step one, and every later step reads against it. Trade Lab used to tick
+     * its first step for anything added to the simulation, and taught the
+     * pilot to add the seeded recommendation — a different trade_queue_item.
+     * They would then execute that, and the mission, watching their own idea,
+     * correctly saw no simulation trade and no decision and sat on "Test the
+     * trade" forever. Two objects, one journey, and the journey lost.
+     *
+     * The seeded recommendation is demo content. It is still addable and
+     * still executable; it just is not what graduates the pilot.
+     */
+    if (isTutorialIdea(idea.id)) {
+      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
+    }
 
     // Prime priceMap with a price hint for this asset so quickEstimate in
     // useSimulationRows can compute a non-zero notional immediately. Without
@@ -4144,12 +4176,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
     // === CHECK: add proposal to simulation ===
 
-    // Tick step 1 of the pilot Trade Lab banner. The pilot's seeded
-    // "Recommendation" is rendered as a proposal (this code path), NOT as an
-    // idea. Step 1 is "add a recommendation to the simulation", and this is
-    // the add — reading the card no longer fires it. Step 2 fires later from
-    // the holdings table's row checkbox.
-    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
+    /*
+     * Tick step 1 only if this recommendation IS the tutorial idea.
+     *
+     * A proposal wraps a trade_queue_item, and the pilot-seeded one wraps a
+     * different item from the idea the mission follows. Ticking the step here
+     * unconditionally is what let a pilot finish Trade Lab basics against demo
+     * content while the mission, watching their own captured idea, stayed on
+     * "Test the trade" with nothing they could do to satisfy it.
+     *
+     * A recommendation raised ON the tutorial idea still counts — same object,
+     * so the lineage holds.
+     */
+    if (isTutorialIdea(tradeItem?.id)) {
+      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
+    }
 
     // Per-asset exclusivity: uncheck any idea-sourced trade first
     proposalAssetIds.forEach((aid: string) => uncheckOtherSourcesForAsset(aid, 'proposal'))

@@ -2,9 +2,15 @@
  * PilotTradeLabIntroBanner — top-of-page onboarding strip for pilots
  * landing in Trade Lab. Walks them through the three concrete moves
  * to commit a trade:
- *   1. Add a recommendation to the simulation
+ *   1. Add the tutorial idea to the simulation
  *   2. Size the trade — set its weight or shares
  *   3. Execute
+ *
+ * Step 1 fires only for the captured tutorial idea. It used to fire for
+ * anything added, and the copy pointed at the seeded recommendation — a
+ * different trade_queue_item from the one the global mission follows, so a
+ * pilot could complete this banner and leave the mission stuck on "Test the
+ * trade". One object carries the whole journey.
  *
  * Step 1 fires only from a real add. Expanding a card or opening its detail
  * modal used to fire it too, which ticked the step off for someone who had
@@ -158,11 +164,18 @@ export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange }:
              added to the simulation, so the title says that — reading one and
              closing it again leaves the step open, as it always did in the
              data even while the copy implied otherwise. */
-          title: 'Add a recommendation',
+          /* Your idea, not a recommendation.
+             The mission follows the one trade_queue_item the pilot captured,
+             and every later step reads against it. Teaching "add a
+             recommendation" here pointed at seeded demo content — a different
+             item — so a pilot could finish this tutorial and still be told to
+             test a trade, with nothing on the screen able to satisfy it.
+             Recommendations remain addable; they just do not graduate anyone. */
+          title: 'Add your idea to the simulation',
           /* One line, naming the control rather than a side of a desktop
              screen. It carried a button too, which is what put two large
              controls for one action on top of each other. */
-          hint: 'Open Ideas & recommendations, pick one, and tap Add to simulation.',
+          hint: 'Open Ideas & recommendations, find the idea you captured, and tap Add to simulation.',
           done: step1,
         },
         {
