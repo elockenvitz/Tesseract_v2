@@ -10,9 +10,11 @@
  * cannot match. A "refresh" is a new query client over the same rows and the
  * same localStorage.
  */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, waitFor, cleanup } from '@testing-library/react'
+import { renderHook, waitFor, cleanup, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const ORG = 'ef21e7c7-6cef-4785-a082-cf54ef1f59bc'
@@ -184,6 +186,59 @@ describe('a pilot whose tutorial LLY idea has an accepted trade', () => {
     seed({ accepted: [TUTORIAL], progress: { [key('trade_book_unlocked')]: 't', [key('outcomes_unlocked')]: 't' } })
     const { result } = await load()
     expect(result.current.mode.accessFor('outcomes')).toBe('full')
+  })
+})
+
+describe('executing the tutorial idea, without a reload', () => {
+  const src = (p: string) => readFileSync(path.join(process.cwd(), 'src', p), 'utf8')
+
+  /**
+   * "Immediately" is the invalidations the execute handlers fire. This mounts
+   * once, writes the accepted trade the way execute does, fires those
+   * invalidations on the same client, and expects the unlock and the mission
+   * to follow with no remount.
+   */
+  it('unlocks Trade Book and moves the roadmap to Close the loop in the same session', async () => {
+    seed({ simulated: [TUTORIAL] })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client }, children)
+    const { result } = renderHook(() => usePilot(), { wrapper })
+    await waitFor(() => expect(result.current.mission.currentStepId).toBe('decision_submitted'))
+    expect(result.current.mode.accessFor('tradeBook')).toBe('preview')
+
+    // Execute: the simulation row is deleted and the accepted trade carries the idea.
+    db.tables.simulation_trades = []
+    db.tables.accepted_trades.push({ id: 'acc-lly', trade_queue_item_id: TUTORIAL, accepted_by: USER })
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['accepted-trades'] })
+      await client.invalidateQueries({ queryKey: ['pilot-mission'] })
+    })
+
+    await waitFor(() => expect(result.current.mode.accessFor('tradeBook')).toBe('full'))
+    expect(result.current.mission.currentStepId).toBe('outcome_reviewed')
+    expect(result.current.mode.accessFor('outcomes')).toBe('preview')
+    expect(result.current.mode.hasGraduated).toBe(false)
+    expect(progress()[key('graduated')]).toBeUndefined()
+  })
+
+  it('both execute handlers fire those invalidations', () => {
+    const page = src('pages/SimulationPage.tsx')
+    const single = page.slice(page.indexOf("setDecisionRecord(buildDecisionRecord({\n        trades: data.trades"), page.indexOf("toast.error('Execute failed', err.message)"))
+    const bulk = page.slice(page.lastIndexOf('if (committed > 0) {'), page.indexOf("queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })"))
+    for (const handler of [single, bulk]) {
+      expect(handler).toContain("queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })")
+      expect(handler).toContain("queryClient.invalidateQueries({ queryKey: ['pilot-mission'] })")
+    }
+  })
+
+  it('and the idea id rides from the simulation to the accepted trade', () => {
+    // Importing the idea writes it to the variant...
+    expect(src('pages/SimulationPage.tsx')).toContain('tradeQueueItemId: tradeIdea.id,')
+    // ...and execute carries the variant's idea onto the accepted trade.
+    const exec = src('lib/services/execute-sim-variants-service.ts')
+    expect(exec).toContain('if (v.trade_queue_item_id) return v.trade_queue_item_id')
+    expect(exec).toContain('trade_queue_item_id: tradeQueueItemId,')
   })
 })
 
