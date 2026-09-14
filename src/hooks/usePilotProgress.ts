@@ -35,7 +35,13 @@ import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
 import { onboardingStageKey } from '../lib/pilot/onboarding'
-import { tutorialIdeaKey, tutorialOutcomeReviewedKey } from '../lib/pilot/mission'
+import {
+  tutorialIdeaKey,
+  tutorialOutcomeReviewedKey,
+  pipelineStepMovedKey,
+  pipelineStepInboxKey,
+  pipelineStepTradeLabKey,
+} from '../lib/pilot/mission'
 
 export type PilotStage =
   | 'trade_book_unlocked'
@@ -100,9 +106,8 @@ const tradeBookUnlockedKey = (orgId: string | null) => `trade_book_unlocked_at_$
 const outcomesUnlockedKey  = (orgId: string | null) => `outcomes_unlocked_at_${orgId || 'no-org'}`
 const graduatedKey         = (orgId: string | null) => `graduated_at_${orgId || 'no-org'}`
 const pipelineBannerDismissedKey = (orgId: string | null) => `pipeline_banner_dismissed_at_${orgId || 'no-org'}`
-const pipelineStepMovedKey       = (orgId: string | null) => `pipeline_step_moved_at_${orgId || 'no-org'}`
-const pipelineStepInboxKey       = (orgId: string | null) => `pipeline_step_inbox_at_${orgId || 'no-org'}`
-const pipelineStepTradeLabKey    = (orgId: string | null) => `pipeline_step_tradelab_at_${orgId || 'no-org'}`
+// The three Pipeline basics keys come from `lib/pilot/mission`, which reads them
+// to decide mission stage 2 — one spelling for the writer and the reader.
 const postGradAppLauncherKey     = (orgId: string | null) => `post_grad_step_app_launcher_at_${orgId || 'no-org'}`
 const postGradFeedbackKey        = (orgId: string | null) => `post_grad_step_feedback_at_${orgId || 'no-org'}`
 const postGradRecommendKey       = (orgId: string | null) => `post_grad_step_recommend_at_${orgId || 'no-org'}`

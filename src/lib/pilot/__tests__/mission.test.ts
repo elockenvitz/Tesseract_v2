@@ -12,7 +12,10 @@ import { describe, it, expect } from 'vitest'
 import {
   MISSION_STEP_IDS, isPipelineAdvanced, missionState, tutorialIdeaKey,
   tutorialOutcomeReviewedKey, type MissionFacts,
+  pipelineBasicsFromProgress, pipelineStepMovedKey, pipelineStepInboxKey, pipelineStepTradeLabKey,
 } from '../mission'
+
+const ALL_BASICS = { moved: true, inboxOpened: true, tradeLabOpened: true }
 
 const facts = (over: Partial<MissionFacts> = {}): MissionFacts => ({
   tutorialIdeaId: null,
@@ -177,9 +180,140 @@ describe('steps 3 to 5', () => {
 
   /** Absent a decision, the step still needs the simulated trade. */
   it('still requires something to have happened', () => {
-    const m = missionState(withIdea({ ideaStage: 'deep_research' }))
+    const m = missionState(withIdea({ ideaStage: 'deep_research', pipelineBasics: ALL_BASICS }))
     expect(m.steps[2].done).toBe(false)
     expect(m.currentStepId).toBe('simulation_completed')
+  })
+})
+
+/*
+ * ── Stage 2 waits for Pipeline basics ──────────────────────────────────────
+ *
+ * The defect: stage 2 read only "the tutorial idea has left `aware`", which is
+ * the same act that completes Pipeline basics step 1. One move completed 1 of 3
+ * and the whole stage, and the home screen jumped to "Test the trade".
+ *
+ * These walk the journey as the pilot does it, against the same idea, with the
+ * marks read out of a `pilot_progress` object exactly as the server returns it.
+ */
+describe('stage 2 — develop the thesis — completes with Pipeline basics, not before', () => {
+  const ORG = 'org-1'
+  const IDEA = 'tq-tutorial'
+
+  /** Facts as `usePilotMission` builds them: the idea's row plus the stored marks. */
+  const journey = (progress: Record<string, string>, idea: Partial<MissionFacts> = {}) =>
+    missionState(facts({
+      tutorialIdeaId: IDEA,
+      ideaExists: true,
+      ideaStage: 'investigate',
+      pipelineBasics: pipelineBasicsFromProgress(progress, ORG),
+      ...idea,
+    }))
+
+  const at = '2026-09-14T12:00:00.000Z'
+  const afterStep1 = { [tutorialIdeaKey(ORG)]: IDEA, [pipelineStepMovedKey(ORG)]: at }
+  const afterStep2 = { ...afterStep1, [pipelineStepInboxKey(ORG)]: at }
+  const afterStep3 = { ...afterStep2, [pipelineStepTradeLabKey(ORG)]: at }
+
+  it('starts on stage 2 once the idea exists and has not moved', () => {
+    const m = journey({ [tutorialIdeaKey(ORG)]: IDEA }, { ideaStage: 'idea' })
+    expect(m.currentStepId).toBe('pipeline_advanced')
+  })
+
+  it('stays on stage 2 after Pipeline basics 1/3 — the idea moved', () => {
+    const m = journey(afterStep1)
+    expect(m.steps[1].done).toBe(false)
+    expect(m.currentStepId).toBe('pipeline_advanced')
+    expect(m.completedCount).toBe(1)
+  })
+
+  it('stays on stage 2 after Pipeline basics 2/3 — the Decision Inbox opened', () => {
+    const m = journey(afterStep2)
+    expect(m.steps[1].done).toBe(false)
+    expect(m.currentStepId).toBe('pipeline_advanced')
+    expect(m.completedCount).toBe(1)
+  })
+
+  it('advances to stage 3 after Pipeline basics 3/3 — Trade Lab opened', () => {
+    const m = journey(afterStep3)
+    expect(m.steps[1].done).toBe(true)
+    expect(m.currentStepId).toBe('simulation_completed')
+    expect(m.completedCount).toBe(2)
+  })
+
+  it('does not credit the stage for the marks alone while the idea has not moved', () => {
+    const m = journey(afterStep3, { ideaStage: 'idea' })
+    expect(m.steps[1].done).toBe(false)
+    expect(m.currentStepId).toBe('pipeline_advanced')
+  })
+
+  it('reads the marks for this org only', () => {
+    const otherOrg = pipelineBasicsFromProgress(afterStep3, 'org-2')
+    expect(otherOrg).toEqual({ moved: false, inboxOpened: false, tradeLabOpened: false })
+    expect(journey(afterStep3, { pipelineBasics: otherOrg }).currentStepId).toBe('pipeline_advanced')
+  })
+
+  it('treats a caller that never read the marks as not done, not done-by-default', () => {
+    const m = missionState(facts({ tutorialIdeaId: IDEA, ideaExists: true, ideaStage: 'investigate' }))
+    expect(m.steps[1].done).toBe(false)
+  })
+
+  /*
+   * A hard refresh drops every in-memory flag. What survives is the
+   * `pilot_progress` JSON on the users row, which arrives as a plain object
+   * after a JSON round trip. The state has to come back the same from that
+   * alone.
+   */
+  it.each([
+    ['1/3', afterStep1, 'pipeline_advanced'],
+    ['2/3', afterStep2, 'pipeline_advanced'],
+    ['3/3', afterStep3, 'simulation_completed'],
+  ] as const)('comes back at the same stage after a hard refresh at %s', (_label, stored, expected) => {
+    const fromServer = JSON.parse(JSON.stringify(stored)) as Record<string, string>
+    expect(journey(fromServer).currentStepId).toBe(expected)
+    expect(journey(fromServer).tutorialIdeaId).toBe(IDEA)
+  })
+
+  /*
+   * Pilots already past this stage when the rule changed — idea moved, trade
+   * simulated or executed, inbox never opened — must not be sent back.
+   */
+  it('keeps the stage done for a pilot who has already simulated the trade', () => {
+    const m = journey(afterStep1, { hasSimulationTrade: true })
+    expect(m.steps[1].done).toBe(true)
+    expect(m.currentStepId).toBe('decision_submitted')
+  })
+
+  it('keeps the stage done for a pilot who has already decided', () => {
+    const m = journey(afterStep1, { hasDecision: true })
+    expect(m.steps[1].done).toBe(true)
+  })
+})
+
+describe('the marks the mission reads are the marks the app writes', () => {
+  const src = (p: string) => readFileSync(path.join(process.cwd(), 'src', p), 'utf8')
+
+  it('shares one key spelling between writer and reader', () => {
+    expect(pipelineStepMovedKey('o')).toBe('pipeline_step_moved_at_o')
+    expect(pipelineStepInboxKey('o')).toBe('pipeline_step_inbox_at_o')
+    expect(pipelineStepTradeLabKey('o')).toBe('pipeline_step_tradelab_at_o')
+    const progress = src('hooks/usePilotProgress.ts')
+    // Imported, not redefined beside the writer.
+    expect(progress).toMatch(/pipelineStepMovedKey,\s*pipelineStepInboxKey,\s*pipelineStepTradeLabKey,\s*\} from '\.\.\/lib\/pilot\/mission'/)
+    expect(progress).not.toMatch(/const pipelineStep(Moved|Inbox|TradeLab)Key\s*=/)
+  })
+
+  it('feeds the stored marks into the mission for the current org', () => {
+    expect(src('hooks/usePilotMission.ts')).toContain('pipelineBasics: pipelineBasicsFromProgress(progress, currentOrgId)')
+  })
+
+  /** Step 3 has to be earnable on both shells, or a phone pilot can never finish stage 2. */
+  it('marks Trade Lab from the board on both shells', () => {
+    for (const f of ['pages/TradeQueuePage.tsx', 'components/mobile/MobilePipeline.tsx']) {
+      const s = src(f)
+      expect(s).toContain("window.addEventListener('openTradeLab'")
+      expect(s).toContain("'pipeline_step_tradelab'")
+    }
   })
 })
 

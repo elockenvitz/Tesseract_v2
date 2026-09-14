@@ -68,6 +68,48 @@ export interface MissionFacts {
   hasDecision: boolean
   /** `tutorial_outcome_reviewed_at_<orgId>`. */
   outcomeReviewedAt: string | null
+  /**
+   * The three Pipeline basics steps, from `pilot_progress`.
+   *
+   * Optional so a caller that has not read them is treated as not having done
+   * them, never as having done them.
+   */
+  pipelineBasics?: PipelineBasics
+}
+
+/** Pipeline basics — move an idea, open the Decision Inbox, open Trade Lab. */
+export interface PipelineBasics {
+  moved: boolean
+  inboxOpened: boolean
+  tradeLabOpened: boolean
+}
+
+/*
+ * Per-org keys for the Pipeline basics marks.
+ *
+ * Defined here, beside the rule that reads them, and imported by the writer in
+ * `usePilotProgress`, so the step that is marked and the step the mission
+ * checks cannot be spelled two ways.
+ */
+export const pipelineStepMovedKey = (orgId: string | null) => `pipeline_step_moved_at_${orgId || 'no-org'}`
+export const pipelineStepInboxKey = (orgId: string | null) => `pipeline_step_inbox_at_${orgId || 'no-org'}`
+export const pipelineStepTradeLabKey = (orgId: string | null) => `pipeline_step_tradelab_at_${orgId || 'no-org'}`
+
+/** Read the three marks out of a `users.pilot_progress` object for one org. */
+export function pipelineBasicsFromProgress(
+  progress: Record<string, unknown> | null | undefined,
+  orgId: string | null,
+): PipelineBasics {
+  const p = progress ?? {}
+  return {
+    moved: !!p[pipelineStepMovedKey(orgId)],
+    inboxOpened: !!p[pipelineStepInboxKey(orgId)],
+    tradeLabOpened: !!p[pipelineStepTradeLabKey(orgId)],
+  }
+}
+
+export function pipelineBasicsComplete(b: PipelineBasics | undefined): boolean {
+  return !!b && b.moved && b.inboxOpened && b.tradeLabOpened
 }
 
 export interface MissionStep {
@@ -177,7 +219,28 @@ export function missionState(facts: MissionFacts): MissionState {
 
   const done: Record<MissionStepId, boolean> = {
     idea_created: hasIdea,
-    pipeline_advanced: hasIdea && isPipelineAdvanced(facts.ideaStage),
+    /*
+     * The tutorial idea has moved AND Pipeline basics is finished.
+     *
+     * This read `isPipelineAdvanced(stage)` alone — which is exactly the act
+     * that completes Pipeline basics step 1 — so the first move completed step
+     * 1 of 3 and this whole stage together, and the home screen jumped to "Test
+     * the trade" while the Pipeline banner still said 1 of 3. The stage is
+     * "Develop the thesis", and Pipeline basics is how it is taught: move the
+     * idea, open the Decision Inbox, open Trade Lab. It is done when that is.
+     *
+     * Or when something downstream on the same idea already exists. A
+     * simulated trade or a decision is proof the pilot got past this stage, and
+     * without that a pilot who was mid-mission when this rule changed — idea
+     * advanced, trade simulated or executed, inbox never opened — would be sent
+     * back to step 2. Same monotonic rule as `simulation_completed` below. The
+     * idea still has to have moved: a decision on an idea still at `aware` is a
+     * later truth with this step genuinely outstanding.
+     */
+    pipeline_advanced:
+      hasIdea
+      && isPipelineAdvanced(facts.ideaStage)
+      && (pipelineBasicsComplete(facts.pipelineBasics) || facts.hasSimulationTrade || facts.hasDecision),
     /*
      * A simulation_trades row, OR anything downstream of one.
      *

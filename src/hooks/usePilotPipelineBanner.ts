@@ -32,9 +32,10 @@ export interface PilotPipelineBanner {
    * What it calls itself.
    *
    * "Get started" is what the five-step pilot MISSION on the home screen calls
-   * itself, and this is not that: three gestures local to this board, which
-   * neither feed the mission nor gate graduation. Two modules with one name,
-   * one tap apart, tracking different facts, is a reader being asked to guess
+   * itself, and this is not that: three gestures local to this board. They do
+   * feed one mission step — stage 2, "Develop the thesis", is complete when all
+   * three are (see `missionState`) — but this is the lesson, not the mission.
+   * Two modules with one name, one tap apart, is a reader being asked to guess
    * which of them they are looking at.
    */
   label: string

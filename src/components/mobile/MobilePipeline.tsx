@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import {
@@ -70,7 +70,7 @@ export function MobilePipeline() {
   const { data: items = [], isLoading } = usePipelineItems()
   const pilotBanner = usePilotPipelineBanner()
   const pilotMode = usePilotMode()
-  const { hasCompletedPipelineStepInbox, mark: markPilotStage } = usePilotProgress()
+  const { hasCompletedPipelineStepInbox, hasCompletedPipelineStepTradeLab, mark: markPilotStage } = usePilotProgress()
   const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
 
   const [view, setView] = useState<View>('pipeline')
@@ -108,6 +108,22 @@ export function MobilePipeline() {
     }
     return !prev
   })
+
+  /*
+   * Pipeline basics step 3 — handing off to Trade Lab from this board.
+   *
+   * The desktop board marks it by listening for `openTradeLab` while it is
+   * mounted; the phone board had no marker at all. That was invisible while
+   * the three steps fed nothing, but mission stage 2 now waits for all three,
+   * so without this a pilot on a phone could never finish it. Same event and
+   * same stage key as `TradeQueuePage`.
+   */
+  useEffect(() => {
+    if (!pilotMode.effectiveIsPilot || hasCompletedPipelineStepTradeLab) return
+    const handler = () => markPilotStage('pipeline_step_tradelab')
+    window.addEventListener('openTradeLab', handler)
+    return () => window.removeEventListener('openTradeLab', handler)
+  }, [pilotMode.effectiveIsPilot, hasCompletedPipelineStepTradeLab, markPilotStage])
 
   const busy = isMoving || isMovingPairTrade
 

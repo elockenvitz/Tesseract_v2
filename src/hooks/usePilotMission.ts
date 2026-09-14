@@ -4,7 +4,12 @@ import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePilotMode } from './usePilotMode'
 import { usePilotProgress } from './usePilotProgress'
-import { missionState, tutorialOutcomeReviewedKey, type MissionState } from '../lib/pilot/mission'
+import {
+  missionState,
+  pipelineBasicsFromProgress,
+  tutorialOutcomeReviewedKey,
+  type MissionState,
+} from '../lib/pilot/mission'
 import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
 
 /**
@@ -31,6 +36,9 @@ import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
  *                  on the idea itself, which covers defer and reject
  *
  * The fifth is a mark, because reading Outcomes writes nothing.
+ *
+ * Step two also reads the three Pipeline basics marks from `pilot_progress`:
+ * the idea having moved is only the first of them. See `missionState`.
  *
  * ── RLS posture ───────────────────────────────────────────────────────────
  *
@@ -99,6 +107,8 @@ export function usePilotMission(): PilotMission {
     hasSimulationTrade: facts?.hasSimulationTrade ?? false,
     hasDecision: facts?.hasDecision ?? false,
     outcomeReviewedAt: (progress[tutorialOutcomeReviewedKey(currentOrgId)] as string | undefined) ?? null,
+    // Server-backed marks, so the stage survives a refresh and a second device.
+    pipelineBasics: pipelineBasicsFromProgress(progress, currentOrgId),
   })
 
   /*
