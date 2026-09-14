@@ -115,7 +115,7 @@ export function OpsSupportPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
+    <div className="max-w-5xl mx-auto p-4 md:p-6 space-y-6">
       <h1 className="text-xl font-bold text-gray-900 dark:text-white">Support</h1>
 
       {/* Tabs */}
@@ -143,12 +143,12 @@ export function OpsSupportPage() {
       {tab === 'bugs' && (
         <div className="space-y-4">
           {/* Status filter */}
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit dark:bg-gray-800">
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit max-w-full overflow-x-auto no-scrollbar dark:bg-gray-800">
             {['open', 'investigating', 'resolved', 'all'].map((s) => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
-                className={clsx('px-3 py-1.5 text-xs font-medium rounded-md transition-colors', statusFilter === s ? 'bg-white text-gray-800 shadow-sm dark:text-gray-100 dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400')}
+                className={clsx('px-3 py-1.5 text-xs font-medium rounded-md transition-colors shrink-0 whitespace-nowrap', statusFilter === s ? 'bg-white text-gray-800 shadow-sm dark:text-gray-100 dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400')}
               >
                 {s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
@@ -169,10 +169,10 @@ export function OpsSupportPage() {
                 const reporter = bug.reporter
                 const reporterName = reporter?.first_name ? `${reporter.first_name} ${reporter.last_name || ''}`.trim() : reporter?.email || 'Unknown'
                 return (
-                  <div key={bug.id} className="px-5 py-4 space-y-2">
-                    <div className="flex items-start justify-between gap-3">
+                  <div key={bug.id} className="px-4 md:px-5 py-4 space-y-2">
+                    <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between md:gap-3">
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className={clsx('inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium', SEVERITY_CLS[bug.severity])}>
                             <SevIcon className="w-3 h-3" />
                             {bug.severity}
@@ -181,18 +181,20 @@ export function OpsSupportPage() {
                             {bug.status}
                           </span>
                         </div>
-                        <p className="text-sm font-medium text-gray-900 mt-1 dark:text-white">{bug.title}</p>
+                        <p className="text-sm font-medium text-gray-900 mt-1 break-words dark:text-white">{bug.title}</p>
                         {bug.description && <p className="text-xs text-gray-500 mt-0.5 line-clamp-2 dark:text-gray-400">{bug.description}</p>}
                       </div>
-                      <div className="text-right flex-shrink-0">
+                      {/* Phone: one wrapping metadata line under the title rather
+                          than a right-hand column that squeezes the title. */}
+                      <div className="flex flex-wrap gap-x-2 md:block md:text-right md:flex-shrink-0">
                         <p className="text-[10px] text-gray-400">{new Date(bug.created_at).toLocaleDateString()}</p>
-                        <p className="text-[10px] text-gray-400">{reporterName}</p>
-                        <p className="text-[10px] text-indigo-500">{bug.org?.name || ''}</p>
+                        <p className="text-[10px] text-gray-400 break-words">{reporterName}</p>
+                        <p className="text-[10px] text-indigo-500 break-words">{bug.org?.name || ''}</p>
                       </div>
                     </div>
                     {bug.page_url && <p className="text-[10px] text-gray-400 font-mono truncate">Page: {bug.page_url}</p>}
                     {/* Status actions */}
-                    <div className="flex gap-1.5">
+                    <div className="flex flex-wrap gap-1.5">
                       {bug.status === 'open' && (
                         <button onClick={() => updateBugStatus.mutate({ id: bug.id, status: 'investigating' })} className="px-2 py-1 text-[10px] font-medium rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50">Investigate</button>
                       )}
@@ -230,10 +232,10 @@ export function OpsSupportPage() {
             {morphUsers.length > 0 && (
               <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-48 overflow-y-auto dark:border-gray-700 dark:divide-gray-800">
                 {morphUsers.map((u: any) => (
-                  <div key={u.id} className="px-4 py-2.5 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.email}</p>
-                      <p className="text-xs text-gray-400">{u.email}</p>
+                  <div key={u.id} className="px-4 py-2.5 flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 break-words dark:text-white">{u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.email}</p>
+                      <p className="text-xs text-gray-400 break-all">{u.email}</p>
                     </div>
                     {morphTargetId === u.id ? (
                       <div className="flex items-center gap-1.5">
@@ -242,7 +244,7 @@ export function OpsSupportPage() {
                           placeholder="Reason..."
                           value={morphReason}
                           onChange={(e) => setMorphReason(e.target.value)}
-                          className="w-40 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500 dark:border-gray-600"
+                          className="flex-1 min-w-0 md:flex-none md:w-40 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500 dark:border-gray-600"
                           autoFocus
                           onKeyDown={(e) => { if (e.key === 'Enter') handleMorph(u.id); if (e.key === 'Escape') { setMorphTargetId(null); setMorphReason('') } }}
                         />
@@ -253,7 +255,7 @@ export function OpsSupportPage() {
                       <button
                         onClick={() => setMorphTargetId(u.id)}
                         disabled={isMorphing}
-                        className="px-2 py-1 text-[10px] font-medium rounded border border-orange-200 text-orange-600 hover:bg-orange-50 disabled:opacity-40 flex items-center gap-1"
+                        className="px-2 py-1 text-[10px] font-medium rounded border border-orange-200 text-orange-600 hover:bg-orange-50 disabled:opacity-40 flex items-center gap-1 self-start md:self-auto"
                       >
                         <Eye className="w-3 h-3" />
                         Morph
@@ -276,16 +278,16 @@ export function OpsSupportPage() {
                   const target = s.target
                   const targetName = target?.first_name ? `${target.first_name} ${target.last_name || ''}`.trim() : target?.email || 'Unknown'
                   return (
-                    <div key={s.id} className="px-5 py-3 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-900 dark:text-white">
+                    <div key={s.id} className="px-4 md:px-5 py-3 flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm text-gray-900 break-words dark:text-white">
                           <Eye className="w-3 h-3 inline mr-1 text-orange-500" />
                           {targetName}
                           <span className="text-gray-400 ml-1.5 text-xs">{s.target_org?.name}</span>
                         </p>
-                        <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">{s.reason}</p>
+                        <p className="text-xs text-gray-500 mt-0.5 break-words dark:text-gray-400">{s.reason}</p>
                       </div>
-                      <div className="text-right text-xs">
+                      <div className="flex flex-wrap gap-x-2 text-xs md:block md:text-right">
                         <p className={s.is_active ? 'text-orange-600 font-medium' : 'text-gray-400'}>{s.is_active ? 'Active' : 'Ended'}</p>
                         <p className="text-gray-400">{new Date(s.created_at).toLocaleString()}</p>
                       </div>

@@ -535,11 +535,11 @@ export function OpsDashboardPage() {
   // ─── Render ─────────────────────────────────────────────────
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
       <h1 className="text-xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
 
       {/* Top-level metrics */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricCard icon={Activity} label="Active Now" value={totalActiveNow} accent="text-green-600" />
         <MetricCard icon={Building2} label="Clients" value={totalClients} accent="text-indigo-600" />
         <MetricCard icon={Users} label="Total Users" value={totalMembers} accent="text-gray-700 dark:text-gray-300" />
@@ -552,7 +552,44 @@ export function OpsDashboardPage() {
           <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Client Health</h2>
           <span className="text-xs text-gray-400">{clientsWithActivity} of {totalClients} active</span>
         </div>
-        <table className="w-full text-sm">
+        {/* Phone: one card per client. Eight columns do not fit 390px, and the
+            card's overflow-hidden would have clipped the rest out of reach. */}
+        <ul className="md:hidden divide-y divide-gray-100 dark:divide-gray-800">
+          {clientHealth.map((client) => (
+            <li key={client.org.id}>
+              <button
+                type="button"
+                onClick={() => navigate(`/ops/clients/${client.org.id}`)}
+                className="w-full text-left px-4 py-3 space-y-2 active:bg-gray-50 dark:active:bg-gray-700/40"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 dark:text-white break-words">{client.org.name}</p>
+                    <p className="text-[11px] text-gray-400 break-all">{client.org.slug}</p>
+                  </div>
+                  {client.activeUsersNow > 0 ? (
+                    <span className="shrink-0 inline-flex items-center gap-1 text-green-600 text-xs font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                      {client.activeUsersNow} active
+                    </span>
+                  ) : null}
+                </div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                  <div className="flex items-center justify-between gap-2"><dt className="text-gray-400">Users</dt><dd className="text-gray-700 dark:text-gray-300 tabular-nums">{client.totalMembers}</dd></div>
+                  <div className="flex items-center justify-between gap-2"><dt className="text-gray-400">Bugs</dt><dd className={client.openBugReports > 0 ? 'text-red-600 font-semibold tabular-nums' : 'text-gray-400 tabular-nums'}>{client.openBugReports}</dd></div>
+                  <div className="flex items-center justify-between gap-2"><dt className="text-gray-400">Last login</dt><dd className="text-gray-700 dark:text-gray-300">{client.lastLoginAt ? formatTimeAgo(client.lastLoginAt) : 'Never'}</dd></div>
+                  <div className="flex items-center justify-between gap-2"><dt className="text-gray-400">Engagement</dt><dd><EngagementDot score={client.engagementScore} /></dd></div>
+                  <div className="flex items-center justify-between gap-2"><dt className="text-gray-400">Holdings</dt><dd><HealthPill health={client.holdingsHealth} date={client.holdingsLastDate} /></dd></div>
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="text-gray-400">Onboarding</dt>
+                    <dd>{client.onboardingPct === null ? <span className="text-gray-300">—</span> : <ProgressBar pct={client.onboardingPct} tooltip={`${client.onboardingStepsCompleted} of ${client.onboardingStepsTotal} Get Started steps`} />}</dd>
+                  </div>
+                </dl>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <table className="hidden md:table w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
             <tr>
               <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Client</th>
@@ -633,7 +670,43 @@ export function OpsDashboardPage() {
         {topUsers.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-gray-400">No activity in the last 30 days</div>
         ) : (
-          <table className="w-full text-sm">
+          <>
+          <ul className="md:hidden divide-y divide-gray-100 dark:divide-gray-800">
+            {topUsers.map((u, i) => (
+              <li key={u.userId} className="px-4 py-3 space-y-2">
+                <div className="flex items-start gap-2.5">
+                  <span className={clsx(
+                    'w-5 h-5 mt-0.5 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0',
+                    i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-gray-400' : i === 2 ? 'bg-amber-700' : 'bg-gray-300'
+                  )}>
+                    {i + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 break-words dark:text-white">{u.name || u.email}</p>
+                    {u.name && <p className="text-[11px] text-gray-400 break-all">{u.email}</p>}
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 break-words">{u.orgName}</p>
+                  </div>
+                </div>
+                <div className="pl-7 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
+                  <span><span className="font-semibold text-gray-800 dark:text-gray-100 tabular-nums">{u.totalActions}</span> actions</span>
+                  <span><span className="tabular-nums">{u.sessions}</span> sessions</span>
+                  <span>{u.totalTimeMin > 60 ? `${Math.round(u.totalTimeMin / 60)}h` : `${u.totalTimeMin}m`}</span>
+                </div>
+                <div className="pl-7 flex flex-wrap gap-1">
+                  {u.topActivity.map(a => (
+                    <span key={a.type} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-medium">
+                      {ACTIVITY_LABELS[a.type] || a.type}
+                      <span className="text-indigo-400">{a.count}</span>
+                    </span>
+                  ))}
+                  {u.topActivity.length === 0 && (
+                    <span className="text-[10px] text-gray-300">Sessions only</span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <table className="hidden md:table w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
               <tr>
                 <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400">User</th>
@@ -684,6 +757,7 @@ export function OpsDashboardPage() {
               ))}
             </tbody>
           </table>
+          </>
         )}
       </div>
     </div>

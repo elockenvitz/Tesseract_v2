@@ -200,7 +200,7 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
 
       {/* Feature access matrix */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 dark:border-gray-700 dark:bg-gray-800">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div>
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Pilot feature access</h3>
             <p className="text-xs text-gray-500 dark:text-gray-400">Flip these to roll out new pilot stages without code changes.</p>
@@ -214,7 +214,7 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
             Reset to defaults
           </Button>
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           {(Object.keys(pilotAccess) as (keyof PilotAccessConfig)[]).map(key => (
             <AccessPicker
               key={key}
@@ -290,7 +290,7 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
                     />
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       size="sm"
                       variant="outline"
@@ -355,7 +355,7 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
 
       {/* Pilot scenarios */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden dark:border-gray-700 dark:bg-gray-800">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
+        <div className="px-4 py-3 border-b border-gray-200 flex flex-col items-start gap-2 md:flex-row md:items-center md:justify-between dark:border-gray-700">
           <div>
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Staged pilot scenarios</h3>
             <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -469,7 +469,7 @@ function ScenarioRow({ scenario, members, onUpdate, onRemove }: {
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{scenario.title}</span>
+            <span className="text-sm font-medium text-gray-900 break-words md:truncate dark:text-white">{scenario.title}</span>
             {scenario.is_template && (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wide">
                 Template
@@ -557,20 +557,23 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
   return (
     <div className="fixed inset-0 z-[60]">
       <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
-      <div className="fixed inset-0 flex items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-xl w-full max-h-viewport-90 flex flex-col overflow-hidden dark:bg-gray-800">
-          <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
+      {/* Phone: a full-height sheet with the actions pinned at the bottom.
+          Desktop: the centred dialog. The body is the only scroller, so the
+          Stage button never ends up below the fold of a nested scroll. */}
+      <div className="fixed inset-0 flex items-center justify-center md:p-4">
+        <div className="relative bg-white shadow-xl w-full h-full rounded-none md:h-auto md:max-w-xl md:rounded-xl md:max-h-viewport-90 flex flex-col overflow-hidden dark:bg-gray-800">
+          <div className="px-4 md:px-5 py-3 border-b border-gray-200 flex items-center justify-between gap-3 dark:border-gray-700">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Stage pilot scenario</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <button onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="px-5 py-4 space-y-3 overflow-y-auto">
+          <div className="flex-1 min-h-0 px-4 md:px-5 py-4 space-y-3 overflow-y-auto overscroll-contain">
             <Field label="Title (required)">
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. NVDA — add on weakness"
                 className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800" autoFocus />
             </Field>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <Field label="Symbol">
                 <input value={symbol} onChange={e => setSymbol(e.target.value.toUpperCase())} placeholder="NVDA"
                   className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white uppercase dark:border-gray-700 dark:bg-gray-800" />
@@ -604,7 +607,7 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
               <textarea value={proposedAction} onChange={e => setProposedAction(e.target.value)} rows={2}
                 className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white resize-none dark:border-gray-700 dark:bg-gray-800" />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label="Portfolio">
                 <select value={portfolioId} onChange={e => setPortfolioId(e.target.value)}
                   className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800">
@@ -659,7 +662,7 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
               </div>
             )}
           </div>
-          <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-end gap-2 dark:border-gray-700">
+          <div className="flex-shrink-0 px-4 md:px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-gray-200 flex items-center justify-end gap-2 dark:border-gray-700">
             <Button size="sm" variant="outline" onClick={onClose}>Cancel</Button>
             <Button
               size="sm"
@@ -711,7 +714,7 @@ function StatusChip({ label, ok, detail }: { label: string; ok: boolean; detail?
     >
       <span className={clsx('w-1 h-1 rounded-full', ok ? 'bg-emerald-500' : 'bg-gray-300')} />
       <span>{label}</span>
-      {detail && <span className="text-gray-400 font-normal truncate max-w-[96px]">· {detail}</span>}
+      {detail && <span className="text-gray-400 font-normal truncate max-w-[160px] md:max-w-[96px]">· {detail}</span>}
     </span>
   )
 }

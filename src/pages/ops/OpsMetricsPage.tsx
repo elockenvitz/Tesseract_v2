@@ -295,7 +295,7 @@ export function OpsMetricsPage() {
   // ─── Render ────────────────────────────────────────────────
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-8">
+    <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-8">
       <div>
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">Platform Metrics</h1>
         <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Engagement, workflow adoption, and time-to-value</p>
@@ -304,7 +304,7 @@ export function OpsMetricsPage() {
       {/* ── DAU / WAU / MAU ────────────────────────────────── */}
       <section>
         <h2 className="text-sm font-semibold text-gray-800 mb-3 dark:text-gray-100">User Engagement</h2>
-        <div className="grid grid-cols-5 gap-3 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
           <MetricTile label="DAU" value={engagement?.dau ?? 0} sublabel="Today" accent="text-green-600" />
           <MetricTile label="WAU" value={engagement?.wau ?? 0} sublabel="Last 7 days" accent="text-blue-600" />
           <MetricTile label="MAU" value={engagement?.mau ?? 0} sublabel="Last 30 days" accent="text-indigo-600" />
@@ -341,7 +341,9 @@ export function OpsMetricsPage() {
                       )}
                       style={{ height: `${Math.max(height, 2)}%` }}
                     />
-                    <span className="text-[8px] text-gray-300">
+                    {/* Every other date on a phone: fourteen "Sep 13" labels
+                        need ~340px and overlapped at 390px. */}
+                    <span className={clsx('text-[8px] text-gray-300 whitespace-nowrap', i % 2 === 1 && 'invisible md:visible')}>
                       {new Date(day.date).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
                     </span>
                   </div>
@@ -373,8 +375,8 @@ export function OpsMetricsPage() {
                         <Icon className="w-3.5 h-3.5 text-indigo-500" />
                       </div>
                       <div className="flex-1">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{step.label}</span>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-xs font-medium text-gray-700 min-w-0 break-words dark:text-gray-300">{step.label}</span>
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-semibold text-gray-900 tabular-nums dark:text-white">{step.count}</span>
                             <span className="text-[10px] text-gray-400 tabular-nums w-8 text-right">{pct}%</span>
@@ -407,7 +409,7 @@ export function OpsMetricsPage() {
         <h2 className="text-sm font-semibold text-gray-800 mb-3 dark:text-gray-100">Time-to-Value</h2>
         <p className="text-xs text-gray-400 mb-4">How quickly new users take their first meaningful action after first login</p>
 
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <MetricTile
             label="Activation Rate"
             value={ttv ? `${ttv.activationRate}%` : '—'}

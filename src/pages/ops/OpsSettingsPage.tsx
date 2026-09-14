@@ -124,7 +124,7 @@ export function OpsSettingsPage() {
   })
 
   return (
-    <div className="p-6 max-w-4xl space-y-8">
+    <div className="p-4 md:p-6 max-w-4xl space-y-8">
       <div>
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">Platform Settings</h1>
         <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Manage platform admins and client organizations</p>
@@ -148,12 +148,12 @@ export function OpsSettingsPage() {
           ) : platformAdmins.length === 0 ? (
             <div className="p-4 text-center text-sm text-gray-400">No platform admins found</div>
           ) : platformAdmins.map(admin => (
-            <div key={admin.userId} className="flex items-center justify-between px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">{admin.email}</p>
-                {admin.name && <p className="text-xs text-gray-400">{admin.name}</p>}
+            <div key={admin.userId} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 break-all dark:text-white">{admin.email}</p>
+                {admin.name && <p className="text-xs text-gray-400 break-words">{admin.name}</p>}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 {admin.userId === user?.id && (
                   <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-800">You</span>
                 )}
@@ -224,19 +224,19 @@ export function OpsSettingsPage() {
           ) : clientOrgs.map(org => {
             const isPilot = (org.settings as any)?.pilot_mode === true
             return (
-              <div key={org.id} className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">{org.name}</p>
+              <div key={org.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <p className="text-sm font-medium text-gray-900 break-words dark:text-white">{org.name}</p>
                     {isPilot && (
                       <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 rounded">
                         Pilot
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400">{org.slug} &middot; {new Date(org.created_at).toLocaleDateString()}</p>
+                  <p className="text-xs text-gray-400 break-all">{org.slug} &middot; {new Date(org.created_at).toLocaleDateString()}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => togglePilotModeM.mutate({ orgId: org.id, enabled: !isPilot })}
                     disabled={togglePilotModeM.isPending}

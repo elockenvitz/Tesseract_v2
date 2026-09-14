@@ -175,16 +175,16 @@ export function OpsClientsPage() {
   })
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
+    <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Clients</h1>
           <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">{clients.length} organization{clients.length !== 1 ? 's' : ''}</p>
         </div>
         <button
           onClick={() => setShowProvision(!showProvision)}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shrink-0 whitespace-nowrap"
         >
           <Plus className="w-4 h-4" />
           New Client
@@ -250,7 +250,7 @@ export function OpsClientsPage() {
               </p>
             </div>
           </label>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => provisionMutation.mutate()}
               disabled={!form.name.trim() || !form.slug.trim() || !form.email.trim() || provisionMutation.isPending}
@@ -292,18 +292,23 @@ export function OpsClientsPage() {
             <button
               key={client.id}
               onClick={() => navigate(`/ops/clients/${client.id}`)}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
+              className="w-full px-4 md:px-5 py-4 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
                   <Building2 className="w-4 h-4 text-indigo-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate dark:text-white">{client.name}</p>
-                  <p className="text-xs text-gray-400">{client.slug}</p>
+                  <p className="text-sm font-semibold text-gray-900 break-words md:truncate dark:text-white">{client.name}</p>
+                  <p className="text-xs text-gray-400 break-all">{client.slug}</p>
+                  {/* Phone: the counts the desktop row lays out to the right. */}
+                  <p className="md:hidden mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                    {client.member_count} member{client.member_count !== 1 ? 's' : ''} · {client.portfolio_count} portfolio{client.portfolio_count !== 1 ? 's' : ''} · {new Date(client.created_at).toLocaleDateString()}
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center gap-5 flex-shrink-0">
+              <ChevronRight className="md:hidden w-4 h-4 text-gray-300 shrink-0" />
+              <div className="hidden md:flex items-center gap-5 flex-shrink-0">
                 <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                   <Users className="w-3.5 h-3.5" />
                   {client.member_count}
