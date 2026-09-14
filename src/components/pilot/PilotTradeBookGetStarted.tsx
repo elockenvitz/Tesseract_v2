@@ -2,8 +2,8 @@
  * PilotTradeBookGetStarted — the "Trade Book basics" step banner, shown at
  * the top of the Trade Book once a pilot has a committed trade visible.
  *
- * Trade Book is where stage 5 of the pilot starts and Outcomes is where it
- * finishes; these three local steps walk the pilot between them:
+ * Trade Book is pilot mission stage 4, "Make the decision"; finishing these
+ * three local steps completes it, and the last one opens Outcomes (stage 5):
  *   1. Review the trade — open a trade in the batch
  *   2. Add your rationale — "Why this decision?" or a trade-specific note
  *   3. Open Outcomes — unlocks Outcomes (`outcomes_unlocked_at_<orgId>`).

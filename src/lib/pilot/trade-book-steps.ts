@@ -1,9 +1,9 @@
 /**
  * Trade Book basics — the three steps, in one place.
  *
- * Trade Book is where stage 5 of the pilot starts (the decision is recorded;
- * now look at it) and Outcomes is where it finishes. These are the local steps
- * that walk a pilot from one to the other. They are not new mission stages.
+ * Trade Book is pilot mission stage 4, "Make the decision", and finishing these
+ * three steps completes it (see `usePilotTradeBookSteps`); the last one opens
+ * Outcomes, which is stage 5. They are not new mission stages.
  *
  * The step banner and the phone's next-steps card both read this, so the words
  * a pilot is told and the controls they are given cannot drift apart. Each
