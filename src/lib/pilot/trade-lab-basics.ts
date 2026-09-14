@@ -1,18 +1,13 @@
 /**
- * Trade Lab basics, step 1 — "the simulation gained the tutorial idea".
+ * Trade Lab basics, step 1 — "add a trade from Ideas & recommendations".
  *
  * ── What counts ───────────────────────────────────────────────────────────
  *
- * A `simulation_trades` row the add mutation actually wrote, whose
- * `trade_queue_item_id` is the pilot's tutorial idea. That covers both
- * acceptable actions with one fact, because both write that lineage:
- *
- *   - adding the tutorial idea itself writes its own id;
- *   - adding a recommendation raised on it writes the recommendation's source
- *     `trade_queue_item_id`, which is the tutorial idea.
- *
- * A seeded recommendation wraps a different trade_queue_item, so its row names
- * that item and does not count. A manual position has no idea at all.
+ * A `simulation_trades` row the add mutation actually wrote, that came from a
+ * recommendation, or whose `trade_queue_item_id` is the pilot's tutorial idea.
+ * See `completesTradeLabStep1` for why a seeded recommendation now teaches the
+ * local step while the global mission still follows only the tutorial idea.
+ * A manual position has no idea at all and never counts.
  *
  * ── What does not ─────────────────────────────────────────────────────────
  *
@@ -39,20 +34,45 @@ export function addedTutorialIdea(
 }
 
 /**
+ * Whether a written add completes the LOCAL Trade Lab basics step 1.
+ *
+ * The step teaches an action — put a trade from Ideas & recommendations into
+ * the simulation — so any recommendation the write actually persisted counts,
+ * seeded or not. A plain idea counts when it is the tutorial idea. A manual
+ * position (no idea) never does, and nothing counts without a written row.
+ *
+ * This is the banner's step only. The global mission does not listen to it: it
+ * reads `simulation_trades` and decisions for the tutorial idea id directly
+ * (`usePilotMission`), so an unrelated recommendation teaching the action here
+ * cannot satisfy the mission's simulation or decision facts.
+ */
+export function completesTradeLabStep1(
+  rows: ReadonlyArray<AddedSimulationRow | null | undefined> | null | undefined,
+  tutorialIdeaId: string | null | undefined,
+  options: { fromRecommendation?: boolean } = {},
+): boolean {
+  const written = (rows ?? []).filter((r): r is AddedSimulationRow => !!r)
+  if (written.length === 0) return false
+  if (options.fromRecommendation && written.some(r => !!r.trade_queue_item_id)) return true
+  return addedTutorialIdea(written, tutorialIdeaId)
+}
+
+/**
  * Tell the Trade Lab basics banner, if the rows earn it. Called from the add
  * mutations' success handlers only. Returns whether it fired.
  */
 export function reportTradeLabStep1(
   rows: ReadonlyArray<AddedSimulationRow | null | undefined> | null | undefined,
   tutorialIdeaId: string | null | undefined,
+  options: { fromRecommendation?: boolean } = {},
   target: Pick<EventTarget, 'dispatchEvent'> = window,
 ): boolean {
-  if (!addedTutorialIdea(rows, tutorialIdeaId)) return false
+  if (!completesTradeLabStep1(rows, tutorialIdeaId, options)) return false
   try { target.dispatchEvent(new CustomEvent(TRADE_LAB_STEP1_EVENT)) } catch { return false }
   return true
 }
 
-/** Step 1's instruction, naming the idea once it is known. */
+/** Step 1's instruction, naming the tutorial idea once it is known. */
 export function tradeLabStep1Hint(symbol?: string | null): string {
-  return `In Ideas & recommendations, tap Add to simulation on ${symbol || 'the idea you captured'} — the idea itself, or a recommendation made on it. Other recommendations don't count.`
+  return `In Ideas & recommendations, tap Add to simulation on a recommendation${symbol ? ` or on ${symbol}` : ''}.`
 }

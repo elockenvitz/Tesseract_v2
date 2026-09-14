@@ -2,15 +2,14 @@
  * PilotTradeLabIntroBanner — top-of-page onboarding strip for pilots
  * landing in Trade Lab. Walks them through the three concrete moves
  * to commit a trade:
- *   1. Add the tutorial idea to the simulation
+ *   1. Add a recommendation (or the tutorial idea) to the simulation
  *   2. Size the trade — set its weight or shares
  *   3. Execute
  *
- * Step 1 fires only for the captured tutorial idea. It used to fire for
- * anything added, and the copy pointed at the seeded recommendation — a
- * different trade_queue_item from the one the global mission follows, so a
- * pilot could complete this banner and leave the mission stuck on "Test the
- * trade". One object carries the whole journey.
+ * Step 1 teaches the action — a recommendation, or the tutorial idea, written
+ * into the simulation. It does not decide the global mission, which reads the
+ * tutorial idea's own simulation and decision rows (`usePilotMission`), so an
+ * unrelated recommendation can teach this step without advancing the mission.
  *
  * Step 1 fires only from a real add. Expanding a card or opening its detail
  * modal used to fire it too, which ticked the step off for someone who had
@@ -176,11 +175,11 @@ export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange, t
              item — so a pilot could finish this tutorial and still be told to
              test a trade, with nothing on the screen able to satisfy it.
              Recommendations remain addable; they just do not graduate anyone. */
-          title: 'Add your idea to the simulation',
-          /* Names the idea and exactly what counts: the idea itself, or a
-             recommendation made on it. "Find the idea you captured" left a
-             pilot looking at the seeded recommendation first, adding that,
-             and watching the step stay open with no reason given. */
+          title: 'Add a trade to the simulation',
+          /* Names what counts: any recommendation from Ideas & recommendations,
+             or the tutorial idea. It completes only once the add has been
+             written. This is the local lesson; the global mission still
+             follows the tutorial idea alone. */
           hint: tradeLabStep1Hint(tutorialSymbol),
           done: step1,
         },

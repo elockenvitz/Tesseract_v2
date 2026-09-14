@@ -104,6 +104,12 @@ import { HoldingsSimulationTable } from '../components/trading/HoldingsSimulatio
 import { PilotTradeLabIntroBanner } from '../components/pilot/PilotTradeLabIntroBanner'
 import { reportTradeLabStep1 } from '../lib/pilot/trade-lab-basics'
 import { TesseractLoader } from '../components/ui/TesseractLoader'
+import {
+  deriveProposalMembership,
+  type MembershipProposal,
+  type MembershipTrade,
+  type ProposalTarget,
+} from '../lib/trade-lab/proposal-membership'
 import { SharedSimulationBanner } from '../components/trading/SharedSimulationBanner'
 import { SharedWithMeList } from '../components/trading/SharedWithMeList'
 import { useIntentVariants } from '../hooks/useIntentVariants'
@@ -526,11 +532,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [leftPaneSearch, setLeftPaneSearch] = useState('')
   const [leftPaneStageFilter, setLeftPaneStageFilter] = useState<'all' | 'investigate' | 'deep_research' | 'thesis_forming' | 'ready_for_decision'>('all')
 
-  // Track which proposals have been applied to the simulation
-  const [appliedProposalIds, setAppliedProposalIds] = useState<Set<string>>(new Set())
-
-  // Track asset_ids that were added via proposals (not via idea checkbox)
-  const [proposalAddedAssetIds, setProposalAddedAssetIds] = useState<Set<string>>(new Set())
+  // Which recommendations are in the simulation is derived from persisted
+  // membership below (`deriveProposalMembership`), not held in state here.
 
   // Local optimistic state for instant checkbox feedback (avoids full re-render through React Query)
   // Single override map for instant checkbox feedback.
@@ -1157,35 +1160,36 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     enabled: canSuggest || (!isSharedView && !!selectedSimulationId),
   })
 
-  // Hydrate appliedProposalIds + proposalAddedAssetIds from DB on mount/refresh.
-  // Cross-references simulation_trades (by trade_queue_item_id) with activeProposals
-  // so proposal checkboxes reflect what's already in the simulation.
-  const hydratedRef = useRef(false)
-  useEffect(() => {
-    if (hydratedRef.current) return
-    if (!simulation?.simulation_trades?.length || !activeProposals?.length) return
-    hydratedRef.current = true
-
-    const tradeItemIds = new Set(
-      simulation.simulation_trades.map((t: any) => t.trade_queue_item_id).filter(Boolean)
-    )
-
-    const proposalIds = new Set<string>()
-    const assetIds = new Set<string>()
-
-    for (const proposal of activeProposals) {
-      if (tradeItemIds.has(proposal.trade_queue_item_id)) {
-        proposalIds.add(proposal.id)
-        const assetId = (proposal.trade_queue_items as any)?.assets?.id
-        if (assetId) assetIds.add(assetId)
-      }
-    }
-
-    if (proposalIds.size > 0) {
-      setAppliedProposalIds(proposalIds)
-      setProposalAddedAssetIds(assetIds)
-    }
-  }, [simulation?.simulation_trades, activeProposals])
+  /*
+   * Which recommendations are in the simulation, derived every render.
+   *
+   * These were two sets in state, hydrated once on load and changed only by
+   * the recommendation's own toggle — so removing its row from the table (or
+   * the phone sheet's trash, or clear all) left "Added to simulation" showing
+   * on every reopen until a hard refresh. Now they are a function of the
+   * persisted `simulation_trades` for each recommendation's source idea, with
+   * the per-asset `checkboxOverrides` covering the moment between a tap and
+   * its write. See `lib/trade-lab/proposal-membership`.
+   *
+   * Pair legs resolve the way `toggleProposalInSimulation` resolves them: by
+   * leg id, else by symbol among pair ideas.
+   */
+  const { appliedProposalIds, proposalAddedAssetIds } = useMemo(() => {
+    const proposals: MembershipProposal[] = (activeProposals ?? []).map((proposal: any) => {
+      const sizingContext = proposal.sizing_context
+      const legs = sizingContext?.isPairTrade === true ? (sizingContext?.legs ?? []) : []
+      const targets: ProposalTarget[] = legs.length
+        ? legs.map((l: any) => {
+            const legItem = l.legId
+              ? tradeIdeas?.find(t => t.id === l.legId)
+              : tradeIdeas?.find(t => t.assets?.symbol === l.symbol && (t.pair_id || t.pair_trade_id))
+            return { assetId: legItem?.asset_id, tradeQueueItemId: legItem?.id || l.legId }
+          })
+        : [{ assetId: proposal.trade_queue_items?.assets?.id, tradeQueueItemId: proposal.trade_queue_item_id }]
+      return { id: proposal.id, targets }
+    })
+    return deriveProposalMembership(proposals, simulation?.simulation_trades as MembershipTrade[] | undefined, checkboxOverrides)
+  }, [activeProposals, tradeIdeas, simulation?.simulation_trades, checkboxOverrides])
 
   // Handler for fixing conflicts via one-click action change
   const handleFixConflict = async (variantId: string, suggestedAction: string) => {
@@ -2913,12 +2917,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
          *
          * Every single add — an idea, a recommendation, a pair leg, a manual
          * position — arrives here, and only once the upsert has succeeded and
-         * the reader has not toggled it back off. The row's
-         * `trade_queue_item_id` is the recorded lineage: the tutorial idea
-         * itself, or the idea a recommendation was raised on. See
-         * `lib/pilot/trade-lab-basics`.
+         * the reader has not toggled it back off. A recommendation add carries
+         * `_proposalId`; a plain idea counts when it is the tutorial idea. This
+         * is the local banner step only — the mission reads the tutorial idea's
+         * own rows. See `lib/pilot/trade-lab-basics`.
          */
-        reportTradeLabStep1([data], tutorialIdeaId)
+        reportTradeLabStep1([data], tutorialIdeaId, {
+          fromRecommendation: !!(tradeIdea as TradeQueueItemWithDetails & { _proposalId?: string | null })._proposalId,
+        })
 
         // User still wants this trade — sync lab_variant
         if (tradeLab?.id && simulation) {
@@ -3235,15 +3241,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       // Return assetId for onSuccess to clear from proposal tracking
       return { assetId, unlinkFromIdea }
     },
-    onSuccess: (result) => {
-      // Clear from proposal tracking if unlinked
-      if (result?.unlinkFromIdea && result?.assetId) {
-        setProposalAddedAssetIds(prev => {
-          const next = new Set(prev)
-          next.delete(result.assetId)
-          return next
-        })
-      }
+    onSuccess: () => {
+      // An unlinked trade has no trade_queue_item_id, so the refetch below drops
+      // it from derived recommendation membership on its own.
       queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
       setEditingTradeId(null)
     },
@@ -3415,17 +3415,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         return tradeItem?.assets?.id === assetId && appliedProposalIds.has(p.id)
       })
       if (appliedProposal) {
-        setAppliedProposalIds(prev => {
-          const next = new Set(prev)
-          next.delete(appliedProposal.id)
-          return next
-        })
-        setProposalAddedAssetIds(prev => {
-          const next = new Set(prev)
-          next.delete(assetId)
-          return next
-        })
-        // Remove the simulation trade for this asset
+        // Membership is derived from the trades, so removing the trade is what
+        // un-applies the recommendation. Remove the simulation trade for this asset
         const trade = simulation?.simulation_trades?.find(t => t.asset_id === assetId)
         if (trade && !trade.id.startsWith('temp-')) {
           supabase.from('simulation_trades').delete().eq('id', trade.id).then(() => {
@@ -4160,16 +4151,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
     if (isProposalApplied) {
       // === UNCHECK: remove proposal from simulation ===
-      setAppliedProposalIds(prev => {
-        const next = new Set(prev)
-        next.delete(proposal.id)
-        return next
-      })
-      setProposalAddedAssetIds(prev => {
-        const next = new Set(prev)
-        proposalAssetIds.forEach((id: string) => next.delete(id))
-        return next
-      })
+      // Membership is derived from the trades, so the remove path is all it takes.
       // Reuse the battle-tested remove path (optimistic variant removal,
       // cancelQueries, DB delete via removeTradeMutation, convergence cleanup)
       proposalAssetIds.forEach((aid: string) => handleRemoveAsset(aid))
@@ -4179,8 +4161,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     // === CHECK: add proposal to simulation ===
 
     // Trade Lab basics step 1 is reported by importTradeMutation.onSuccess once
-    // the row exists; a recommendation raised on the tutorial idea writes that
-    // idea as its trade_queue_item_id, so it counts there.
+    // the row exists; `_proposalId` below is what tells it this was a
+    // recommendation.
 
     // Per-asset exclusivity: uncheck any idea-sourced trade first
     proposalAssetIds.forEach((aid: string) => uncheckOtherSourcesForAsset(aid, 'proposal'))
@@ -4192,17 +4174,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       convergenceRemovalsInFlightRef.current.delete(aid)
     })
 
-    // Track proposal-level state
-    setAppliedProposalIds(prev => {
-      const next = new Set(prev)
-      next.add(proposal.id)
-      return next
-    })
-    setProposalAddedAssetIds(prev => {
-      const next = new Set(prev)
-      proposalAssetIds.forEach((id: string) => next.add(id))
-      return next
-    })
+    // No proposal-level state to track: the per-asset overrides set below show
+    // it as added at once, and persisted membership takes over when they converge.
 
     // Build per-asset info for the import
     const assetsToAdd = isPairTrade && enrichedLegs.length
@@ -6595,6 +6568,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                                       proposed_weight: signedWeight,
                                                       target_price: null,
                                                       assets: { id: legAssetId, symbol: leg.symbol, company_name: leg.companyName || '', sector: leg.sector || null },
+                                                      _proposalId: proposal.id, // Provenance: the recommendation this leg came from
                                                     } as unknown as TradeQueueItemWithDetails
                                                     checkboxOverridesRef.current.set(legAssetId, true)
                                                     // Temp variant for instant table row + quickEstimate
@@ -6843,6 +6817,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             onUpdateVariant={handleVariantSizingUpdate}
                             onCreateVariant={handleCreateVariantForHolding}
                             onDeleteVariant={handleVariantDelete}
+                            onRemoveAsset={handleRemoveAsset}
                             // Same handler and same search the desktop table
                             // uses for its inline "add trade" row, so an ad-hoc
                             // ticker takes the identical import + variant path.

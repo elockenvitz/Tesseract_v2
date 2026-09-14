@@ -238,7 +238,7 @@ describe('the local tutorial', () => {
    */
   it('names the action that actually completes the step', () => {
     const titles = [...banner.matchAll(/title: '([^']*)'/g)].map(m => m[1])
-    expect(titles[0]).toBe('Add your idea to the simulation')
+    expect(titles[0]).toBe('Add a trade to the simulation')
     expect(titles[0]).not.toMatch(/review|read|look/i)
     // And the hint names the control the phone actually renders.
     expect(tradeLabStep1Hint('LLY')).toContain('Add to simulation')
@@ -256,9 +256,9 @@ describe('the local tutorial', () => {
    * nothing on the screen able to satisfy it. Observed live on 2026-09-13:
    * tutorial idea 1fbc81dd, executed idea 0640af41.
    */
-  it('ticks step one only for the captured tutorial idea', () => {
-    // One rule, over the written rows, against the tutorial id.
-    expect(page).toContain('reportTradeLabStep1([data], tutorialIdeaId)')
+  it('ticks step one from the written rows, never from the page directly', () => {
+    // One rule, over the written rows: a recommendation add, or the tutorial id.
+    expect(page).toContain('reportTradeLabStep1([data], tutorialIdeaId, {')
     // Nothing in the page dispatches the step directly any more.
     expect(page).not.toContain("new CustomEvent('pilot-tradelab:rec-reviewed')")
   })

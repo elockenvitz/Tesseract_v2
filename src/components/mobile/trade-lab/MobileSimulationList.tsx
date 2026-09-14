@@ -19,6 +19,14 @@ interface MobileSimulationListProps {
    *  and the real action is derived from the deltas once sizing is entered. */
   onCreateVariant: (assetId: string, action: TradeAction) => void
   onDeleteVariant?: (variantId: string) => void
+  /**
+   * Take the asset out of the simulation — its `simulation_trades` row as well
+   * as its variant. The desktop table's Delete key calls this; the sizing
+   * sheet's trash deleted only the variant, which left the trade behind: the
+   * recommendation it came from still read "Added to simulation", and the next
+   * load re-created the row from the surviving trade.
+   */
+  onRemoveAsset?: (assetId: string) => void
   /** Adds an asset the portfolio does not hold. Omit to hide the add control. */
   onAddAsset?: (asset: AddableAsset) => void
   /**
@@ -174,6 +182,7 @@ export function MobileSimulationList({
   onUpdateVariant,
   onCreateVariant,
   onDeleteVariant,
+  onRemoveAsset,
   onAddAsset,
   assetSearch = '',
   onAssetSearchChange,
@@ -629,7 +638,15 @@ export function MobileSimulationList({
           onRemove={
             onDeleteVariant && editingRow.variant
               ? () => {
-                  onDeleteVariant(editingRow.variant!.id)
+                  // Same as the desktop table's Delete key: remove the asset
+                  // from the simulation (trade and variant) when the page
+                  // provides that, and fall back to the variant alone.
+                  if (onRemoveAsset) {
+                    onRemoveAsset(editingRow.asset_id)
+                    if (editingRow.baseline && !editingRow.isNew) onDeleteVariant(editingRow.variant!.id)
+                  } else {
+                    onDeleteVariant(editingRow.variant!.id)
+                  }
                   setEditing(null)
                 }
               : undefined
