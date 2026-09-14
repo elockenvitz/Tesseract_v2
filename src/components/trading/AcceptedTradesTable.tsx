@@ -26,6 +26,8 @@ import { PairBadge } from './PairBadge'
 import { CreateCorrectionModal } from './CreateCorrectionModal'
 import { buildPairInfoByAsset } from '../../lib/trade-lab/pair-info'
 import { useAcceptedTradeComments } from '../../hooks/useAcceptedTrades'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { MobileNoteField } from '../mobile/MobileNoteField'
 import { useAuth } from '../../hooks/useAuth'
 import {
   tradeLifecyclePhase,
@@ -261,6 +263,7 @@ export function TradeRationaleLog({
 }) {
   const { data: additions = [] } = useAcceptedTradeComments(tradeId)
   const [draft, setDraft] = useState('')
+  const isMobile = useIsMobile()
 
   const initial = (acceptanceNote || '').trim()
   const batchDesc = (batchDescription || '').trim()
@@ -273,6 +276,83 @@ export function TradeRationaleLog({
     // first time a rationale comment is added to any trade row.
     try { window.dispatchEvent(new CustomEvent('pilot-tradebook:rationale-added')) } catch { /* ignore */ }
     setDraft('')
+  }
+
+  if (isMobile) {
+    /*
+     * Phone: the same log and the same write, stacked.
+     *
+     * Desktop runs a 64px label column beside each entry and a one-line input
+     * beside its button; at 390px that left the placeholder cut off and the
+     * button crowding the field. Here the commit-time reason is its own tinted
+     * block with its label on top, later notes follow as a plain list with who
+     * and when, and the note field is full width with Add note under it. An
+     * inherited batch rationale is shown as inherited — nothing asks for it
+     * again.
+     */
+    return (
+      <div data-slot="trade-rationale-mobile" className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/60">
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          Trade rationale
+        </div>
+
+        <div className="p-3 space-y-3">
+          <div data-slot="trade-rationale-initial" className="rounded-lg border-l-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/50 px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              {initial ? (isInherited ? 'From batch rationale' : 'At commit') : 'At commit'}
+            </div>
+            {initial ? (
+              <p className="mt-1 text-sm leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{initial}</p>
+            ) : (
+              <p className="mt-1 text-sm italic text-gray-400 dark:text-gray-500">No reason was captured at commit time.</p>
+            )}
+          </div>
+
+          {additions.length > 0 && (
+            <ul data-slot="trade-rationale-additions" className="space-y-2.5">
+              {additions.map((c: AcceptedTradeComment) => (
+                <li key={c.id} className="min-w-0">
+                  <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                    <span className="font-semibold uppercase tracking-wider text-[10px]">Added</span>
+                    {' · '}
+                    {c.user?.first_name || c.user?.email?.split('@')[0] || 'User'}
+                    {' · '}
+                    {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
+                  </div>
+                  <p className="mt-0.5 text-sm leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{c.content}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {onAddComment && (
+          <div className="px-3 pb-3 pt-3 border-t border-gray-100 dark:border-gray-700/60">
+            <MobileNoteField
+              value={draft}
+              onChange={setDraft}
+              minRows={2}
+              placeholder="Add to rationale — what's changed, what you learned..."
+              ariaLabel="Add to trade rationale"
+              inputClassName="focus:ring-primary-400"
+              onSubmitShortcut={handleSubmit}
+              dataSlot="trade-rationale-add-mobile"
+              actions={
+                <button
+                  type="button"
+                  data-slot="trade-rationale-add-note"
+                  onClick={handleSubmit}
+                  disabled={!draft.trim()}
+                  className="w-full h-11 rounded-lg bg-primary-600 active:bg-primary-700 text-sm font-semibold text-white disabled:bg-gray-200 disabled:text-gray-500 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
+                >
+                  Add note
+                </button>
+              }
+            />
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (

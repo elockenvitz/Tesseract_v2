@@ -45,6 +45,7 @@ import {
   type LifecyclePhase,
 } from '../../lib/trade-book/lifecycle'
 import { TradeRationaleLog } from './AcceptedTradesTable'
+import { MobileNoteField } from '../mobile/MobileNoteField'
 import { supabase } from '../../lib/supabase'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -1586,8 +1587,11 @@ function BatchNameEditor({
 // the trade-batches query so every surface picks up the new text.
 // ---------------------------------------------------------------------------
 
-function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
+export function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
   const queryClient = useQueryClient()
+  // Phones get their own composition of the same editor: same draft, same
+  // mutation, same trade_batches.description. Desktop markup is unchanged.
+  const isMobile = useIsMobile()
   const existing = (batch.description || '').trim()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(existing)
@@ -1661,6 +1665,58 @@ function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
       setDraft(existing)
       setEditing(false)
     }
+    const unchanged = draft.trim() === existing
+    if (isMobile) {
+      /*
+       * Phone: the field full width at a readable four lines that grows with
+       * the text, and Cancel / Save as a proper footer row under it rather
+       * than two 11px links. Save is the solid primary; it looks disabled only
+       * while it is — nothing changed yet, or the save is in flight.
+       */
+      return (
+        <div data-slot="batch-rationale-editor-mobile" className="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-900/10 p-3">
+          <MobileNoteField
+            value={draft}
+            onChange={setDraft}
+            minRows={4}
+            autoFocus
+            disabled={saveM.isPending}
+            placeholder="Why these trades? What's the thesis for the batch?"
+            ariaLabel="Decision rationale"
+            inputClassName="focus:ring-amber-400"
+            onSubmitShortcut={handleSave}
+            onEscape={handleCancel}
+            actions={
+              <>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={saveM.isPending}
+                  className="flex-1 h-11 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm font-medium text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  data-slot="batch-rationale-save"
+                  onClick={handleSave}
+                  disabled={saveM.isPending || unchanged}
+                  className="flex-[2] h-11 rounded-lg bg-amber-600 active:bg-amber-700 text-sm font-semibold text-white inline-flex items-center justify-center gap-1.5 disabled:bg-gray-200 disabled:text-gray-500 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
+                >
+                  {saveM.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckIcon className="w-4 h-4" />}
+                  {saveM.isPending ? 'Saving…' : 'Save rationale'}
+                </button>
+              </>
+            }
+          />
+          {saveM.isError && (
+            <p className="text-xs text-red-600 mt-2">
+              {saveM.error instanceof Error ? saveM.error.message : 'Failed to save rationale'}
+            </p>
+          )}
+        </div>
+      )
+    }
     return (
       <div className="rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50/30 dark:bg-amber-900/10 px-3 py-2.5">
         <textarea
@@ -1685,7 +1741,7 @@ function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
           </button>
           <button
             onClick={handleSave}
-            disabled={saveM.isPending || draft.trim() === existing}
+            disabled={saveM.isPending || unchanged}
             className="text-[11px] font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:text-gray-500 rounded-md px-2.5 py-1 inline-flex items-center gap-1"
           >
             {saveM.isPending
@@ -1699,6 +1755,33 @@ function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
             {(saveM.error as any)?.message || 'Failed to save rationale'}
           </p>
         )}
+      </div>
+    )
+  }
+
+  if (existing && isMobile) {
+    /*
+     * Phone: the rationale as plain readable text, with Edit on its own row
+     * underneath. The desktop layout pins a small Edit chip to the top-right
+     * corner over the text, which on a narrow card sat on top of the first
+     * line. Editing reopens the same editor with this text in it.
+     */
+    return (
+      <div data-slot="batch-rationale-saved-mobile" className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/30 p-3">
+        <p className="text-[15px] leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">
+          {existing}
+        </p>
+        <div className="mt-2.5 pt-2.5 border-t border-gray-200/80 dark:border-gray-700/60 flex justify-end">
+          <button
+            type="button"
+            data-slot="batch-rationale-edit-mobile"
+            onClick={() => { setDraft(existing); setEditing(true) }}
+            className="h-11 px-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            Edit rationale
+          </button>
+        </div>
       </div>
     )
   }
