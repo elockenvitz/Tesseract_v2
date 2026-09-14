@@ -1,11 +1,11 @@
 /**
  * The phone's Trade Book during Trade Book basics: one page, in step order.
  *
- * The amber banner carries progress and nothing else. The batch reads in the
- * order the steps are done — summary, then the trades (step 1: review one),
- * then "Why this decision?" (step 2), then one Open Outcomes button (step 3) —
- * and that button is the only way to Outcomes on the page. Step 2 is the
- * batch's answer; a trade-specific note is optional and does not count.
+ * The amber banner carries tutorial progress and nothing else; the batch page
+ * itself carries no step labels, because it is the same page outside Getting
+ * Started. It reads summary, trades, "Why this decision?", and during the
+ * tutorial ends with one Open Outcomes button — the only way to Outcomes on the
+ * page. Step 2 is the batch's answer; a trade-specific note does not count.
  *
  * Rendered for real at 390px: the banner and BatchListView.
  */
@@ -83,7 +83,7 @@ describe('a pilot on a phone during Trade Book basics', () => {
     expect(slot('batch-trades-section')).not.toBeNull()
   })
 
-  it('reads in step order: summary, trades (1), why this decision (2), open outcomes (3)', () => {
+  it('reads summary, trades, why this decision, then open outcomes', () => {
     render(<Page guide={guide()} />)
     const trades = slot('batch-trades-section')!
     const rationale = slot('batch-rationale-section')!
@@ -92,10 +92,26 @@ describe('a pilot on a phone during Trade Book basics', () => {
     expect(follows(summary, trades)).toBe(true)
     expect(follows(trades, rationale)).toBe(true)
     expect(follows(rationale, cta)).toBe(true)
-    expect(within(trades).getByText('Step 1')).toBeTruthy()
-    expect(within(rationale).getByText('Step 2')).toBeTruthy()
-    expect(within(cta).getByText('Step 3')).toBeTruthy()
     expect(within(rationale).getByRole('heading', { name: /Why this decision\?/ })).toBeTruthy()
+  })
+
+  /**
+   * The batch page is the durable page, not the tutorial. Getting Started
+   * progress lives in the banner only, so the sections carry no step labels.
+   */
+  it('labels no section with a tutorial step', () => {
+    render(<Page guide={guide()} />)
+    const detail = slot('batch-trades-section')!.parentElement!
+    expect(detail.textContent).not.toMatch(/Step [123]/)
+  })
+
+  it('shows the same sections, with the same names, with or without the tutorial', () => {
+    const headings = () => Array.from(document.querySelectorAll('[data-slot="batch-trades-section"] h3, [data-slot="batch-rationale-section"] h3')).map(h => h.textContent)
+    const { unmount } = render(<Page guide={guide()} />)
+    const during = headings()
+    unmount()
+    render(<Page initialSelection="b-1" />)
+    expect(headings()).toEqual(during)
   })
 
   it('has no Next steps card', () => {
@@ -186,15 +202,13 @@ describe('unchanged elsewhere', () => {
     render(<Page guide={guide()} initialSelection="b-1" />)
     expect(follows(slot('batch-rationale-section')!, slot('batch-trades-section')!)).toBe(true)
     expect(slot('tradebook-outcomes-cta')).toBeNull()
-    expect(screen.queryByText('Step 1')).toBeNull()
     // The banner's desktop half still offers step 3.
     const desktopHalf = slot('pilot-steps-banner')!.querySelector('.sm\\:flex') as HTMLElement
     expect(within(desktopHalf).getByRole('button', { name: /Open Outcomes/ })).toBeTruthy()
   })
 
-  it('a phone without the tutorial gets no step labels and no Outcomes button', () => {
+  it('a phone without the tutorial gets no bottom Outcomes button', () => {
     render(<Page initialSelection="b-1" />)
-    expect(screen.queryByText('Step 1')).toBeNull()
     expect(slot('tradebook-outcomes-cta')).toBeNull()
   })
 

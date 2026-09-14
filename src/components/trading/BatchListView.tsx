@@ -965,10 +965,11 @@ function BatchDetailPanel({
   guide?: TradeBookGuide
 }) {
   /*
-   * Phone + pilot: the batch reads in the order Trade Book basics is done —
-   * summary, then the trades (step 1: review one), then "Why this decision?"
-   * (step 2), then one Open Outcomes button (step 3). The amber banner above
-   * carries progress; nothing else on the page repeats it.
+   * Phone: summary, then the trades, then "Why this decision?" — the order a
+   * batch is read in, which is also the order Trade Book basics asks for. The
+   * page carries no tutorial step labels: it is the same page with or without
+   * Getting Started, and the amber banner alone carries tutorial progress.
+   * During the tutorial it ends with one Open Outcomes button.
    */
   const isMobile = useIsMobile()
   const showGuide = isMobile && !!guide
@@ -1035,7 +1036,6 @@ function BatchDetailPanel({
     <section data-slot="batch-rationale-section">
       {isMobile ? (
         <div className="mb-2">
-          {showGuide && <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">Step 2</p>}
           <h3 className="flex items-center gap-1.5 text-[15px] font-semibold text-gray-900 dark:text-white">
             <FileText className="w-4 h-4 text-gray-400" />
             Why this decision?
@@ -1057,7 +1057,6 @@ function BatchDetailPanel({
     <section data-slot="batch-trades-section">
       {isMobile ? (
         <div className="mb-2">
-          {showGuide && <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">Step 1</p>}
           <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white">Trades in this batch</h3>
           <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Tap a trade to review it</p>
         </div>
@@ -1245,8 +1244,7 @@ function BatchDetailPanel({
 
         {showGuide && (
           <section data-slot="tradebook-outcomes-cta" className="rounded-2xl border border-teal-200 dark:border-teal-800/60 bg-teal-50/60 dark:bg-teal-900/15 p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-300">Step 3</p>
-            <h3 className="mt-0.5 text-[15px] font-semibold text-gray-900 dark:text-white">See how it plays out</h3>
+            <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white">See how it plays out</h3>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
               Outcomes tracks how this decision performs.
             </p>
