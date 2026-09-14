@@ -71,7 +71,6 @@ import { useOrganization } from '../contexts/OrganizationContext'
 import { useToast } from '../components/common/Toast'
 import { PilotOutcomesGetStarted } from '../components/pilot/PilotOutcomesGetStarted'
 import { usePilotMode } from '../hooks/usePilotMode'
-import { usePilotProgress } from '../hooks/usePilotProgress'
 import { usePilotMission } from '../hooks/usePilotMission'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -3141,31 +3140,21 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
     setSelectedId(focusDecisionId)
   }, [focusDecisionId])
 
-  // Reaching Outcomes is the graduation moment — the user has walked
-  // the full pilot loop (capture → develop → decide → review → analyze)
-  // and now gets the full app: full dashboard, all tabs, no banners.
-  // Mark once, then `usePilotMode.effectiveIsPilot` flips to false on
-  // the next render and the rest of the app reconfigures itself.
   const pilotMode = usePilotMode()
-  const { mark: markPilotStage, hasGraduated, hasUnlockedOutcomes } = usePilotProgress()
-  // True only on the very first time the user lands here (before
-  // graduation has been marked). After graduation, the org-pilot
-  // gate flips off and `pilotMode.isPilot` may still be true (org
-  // flag) but we no longer want to show this banner.
   const showPilotOutcomesBanner = pilotMode.isPilot && !pilotMode.isLoading
-  // Graduation requires the user to have walked the full Get Started
-  // chain — `hasUnlockedOutcomes` flips only after the explicit
-  // "Open Outcomes" click on the Trade Book Get Started banner, which
-  // itself only appears once Trade Lab was actually executed (which
-  // sets `hasUnlockedTradeBook`). Without this guard a pilot who lands
-  // on Outcomes via a teaser or direct URL — but never completed the
-  // Trade Lab/Trade Book onboarding — would auto-graduate on mount.
-  useEffect(() => {
-    if (hasGraduated) return
-    if (!pilotMode.isPilot || pilotMode.isLoading) return
-    if (!hasUnlockedOutcomes) return
-    markPilotStage('graduated')
-  }, [pilotMode.isPilot, pilotMode.isLoading, hasGraduated, hasUnlockedOutcomes, markPilotStage])
+  /*
+   * Arriving here is not graduating.
+   *
+   * This page used to write `graduated` on mount once `outcomes_unlocked` was
+   * set — and that is set by Trade Book basics step 3, "Open Outcomes". So
+   * finishing Trade Book basics and landing here graduated the pilot before
+   * Close the loop, and graduation is what opens the whole app, the standalone
+   * Ideas app included.
+   *
+   * The mission is the one writer now (`usePilotMission`, mounted below). It
+   * writes `graduated` when all five steps are done, and step 5 is marked by
+   * this page only once it has loaded the tutorial decision.
+   */
 
   // Merge portfolio selection into filters
   const effectiveFilters = useMemo(() => ({
