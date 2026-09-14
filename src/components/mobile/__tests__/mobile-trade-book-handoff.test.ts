@@ -118,7 +118,9 @@ describe('the rationale model', () => {
   it('keeps the decision rationale in the column it already has', () => {
     const editor = batchView.slice(batchView.indexOf('function BatchRationaleEditor'))
     expect(editor).toContain('description: saved || null')
-    expect(batchView).toContain('Decision rationale')
+    // Named as the batch's one question, apart from per-trade notes.
+    expect(batchView).toContain('Why this decision?')
+    expect(acceptedTable).toContain('Trade-specific notes')
   })
 })
 
@@ -170,17 +172,21 @@ describe('Trade Book on a phone', () => {
    * the per-trade note and not the batch rationale, which is the primary
    * field and the one the trades inherit.
    */
-  it('names actions that exist on a phone', () => {
-    const hints = [...tutorial.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
-    expect(hints[0]).toBe('Tap a trade in the batch to open its audit — price, sizing and rationale.')
-    expect(hints[0]).not.toMatch(/\bclick\b/i)
-    expect(hints[1]).toContain('Decision rationale')
+  it('names actions that exist on a phone, with the page’s own labels', () => {
+    expect(tutorial).toContain('TRADE_BOOK_STEPS.map(')
+    const steps = src('lib/pilot/trade-book-steps.ts')
+    const hints = [...steps.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
+    expect(hints[0]).toBe('Open a trade in this batch to check its price, size and notes.')
+    expect(hints.join(' ')).not.toMatch(/\bclick\b/i)
+    expect(hints[1]).toContain('“Why this decision?”')
+    expect(hints[1]).toContain('trade-specific note')
   })
 
   /** Step 1 fires from opening a real committed trade's audit, both surfaces. */
   it('ticks step one from the same act on either surface', () => {
     const dispatches = [...batchView.matchAll(/dispatchEvent\(new CustomEvent\('pilot-tradebook:trade-reviewed'\)\)/g)]
-    expect(dispatches.length).toBe(2)
+    // Desktop row, phone card tap, and the phone card opened by "Review the trade".
+    expect(dispatches.length).toBe(3)
     const card = batchView.slice(batchView.indexOf('function MobileTradeCard'))
     expect(card.slice(0, 2600)).toContain('pilot-tradebook:trade-reviewed')
   })

@@ -445,6 +445,18 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
     setSelectedBatchId(justCommittedBatchId)
   }, [justCommittedBatchId])
 
+  // Trade Book basics are shown once the pilot has executed a trade (Trade Book
+  // unlocked) and has trades here. The banner and, on a phone, the batch's Next
+  // steps card and Open Outcomes button all follow this.
+  const showPilotBasics = pilotMode.effectiveIsPilot && hasUnlockedTradeBook && !!trades && trades.length > 0
+  const navigateToOutcomes = () => {
+    window.dispatchEvent(
+      new CustomEvent('decision-engine-action', {
+        detail: { id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: null },
+      }),
+    )
+  }
+
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header.
@@ -608,17 +620,11 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
           do NOT gate showing the banner on `hasUnlockedOutcomes` — the
           banner is the path that unlocks outcomes, not its consequence.
           Dismissible per-user. */}
-      {pilotMode.effectiveIsPilot && hasUnlockedTradeBook && trades && trades.length > 0 && (
+      {showPilotBasics && (
         <PilotTradeBookGetStarted
           userId={user?.id}
           orgId={currentOrgId}
-          onOpenOutcomes={() => {
-            window.dispatchEvent(
-              new CustomEvent('decision-engine-action', {
-                detail: { id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: null },
-              }),
-            )
-          }}
+          onOpenOutcomes={navigateToOutcomes}
         />
       )}
 
@@ -639,6 +645,7 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
             onSelectBatch={handleSelectBatch}
             onViewBatchTrades={handleViewBatchTrades}
             onAddComment={handleAddComment}
+            guide={showPilotBasics ? { userId: user?.id, orgId: currentOrgId, navigateToOutcomes } : undefined}
           />
         ) : (
           <AcceptedTradesTable

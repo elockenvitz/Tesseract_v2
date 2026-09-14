@@ -292,14 +292,18 @@ export function TradeRationaleLog({
      */
     return (
       <div data-slot="trade-rationale-mobile" className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/60">
-        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-          Trade rationale
+        {/* "Trade-specific notes", not "Trade rationale": the batch already has
+            the one rationale — "Why this decision?" — and this is the per-trade
+            log beside it. The line under the title says so. */}
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60">
+          <div className="text-[13px] font-semibold text-gray-900 dark:text-white">Trade-specific notes</div>
+          <div className="text-[11px] text-gray-500 dark:text-gray-400">Only for this trade</div>
         </div>
 
         <div className="p-3 space-y-3">
           <div data-slot="trade-rationale-initial" className="rounded-lg border-l-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/50 px-3 py-2">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              {initial ? (isInherited ? 'From batch rationale' : 'At commit') : 'At commit'}
+              {initial ? (isInherited ? 'From “Why this decision?”' : 'At commit') : 'At commit'}
             </div>
             {initial ? (
               <p className="mt-1 text-sm leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{initial}</p>
@@ -332,8 +336,8 @@ export function TradeRationaleLog({
               value={draft}
               onChange={setDraft}
               minRows={2}
-              placeholder="Add to rationale — what's changed, what you learned..."
-              ariaLabel="Add to trade rationale"
+              placeholder="Add a note about this trade — what's changed, what you learned…"
+              ariaLabel="Add a trade-specific note"
               inputClassName="focus:ring-primary-400"
               onSubmitShortcut={handleSubmit}
               dataSlot="trade-rationale-add-mobile"
@@ -358,7 +362,7 @@ export function TradeRationaleLog({
   return (
     <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/60">
       <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-        Trade rationale
+        Trade-specific notes
       </div>
 
       <div className="px-3 py-2 space-y-2.5">
@@ -413,7 +417,7 @@ export function TradeRationaleLog({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            placeholder="Add to rationale — what's changed, what you learned..."
+            placeholder="Add a note about this trade — what's changed, what you learned…"
             className="flex-1 text-xs px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder:text-gray-400"
           />
           <button

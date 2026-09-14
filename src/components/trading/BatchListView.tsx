@@ -48,6 +48,8 @@ import { TradeRationaleLog } from './AcceptedTradesTable'
 import { MobileNoteField } from '../mobile/MobileNoteField'
 import { supabase } from '../../lib/supabase'
 import { useIsMobile } from '../../hooks/useMediaQuery'
+import { usePilotTradeBookSteps } from '../../hooks/usePilotTradeBookSteps'
+import { TradeBookNextSteps } from '../pilot/TradeBookNextSteps'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type {
   TradeBatch,
@@ -183,6 +185,19 @@ interface BatchListViewProps {
    * landed without switching to the full Trades view.
    */
   onAddComment?: (tradeId: string, content: string) => void
+  /**
+   * The pilot's Trade Book basics, when they are active. On a phone the batch
+   * then leads with a Next steps card and ends with an Open Outcomes button,
+   * and the latest batch opens on arrival. Desktop ignores it.
+   */
+  guide?: TradeBookGuide
+}
+
+export interface TradeBookGuide {
+  userId: string | undefined
+  orgId: string | null | undefined
+  /** Navigation to Outcomes; recording the step is handled here. */
+  navigateToOutcomes: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -407,10 +422,13 @@ function BatchTradesList({
   trades,
   batchDescription,
   onAddComment,
+  openFirstSignal = 0,
 }: {
   trades: AcceptedTradeWithJoins[]
   batchDescription: string | null
   onAddComment?: (tradeId: string, content: string) => void
+  /** Phone: bump to open the first trade card (the "Review the trade" step). */
+  openFirstSignal?: number
 }) {
   // Group trades by side — buys (buy, add) first, then sells (everything
   // else). A batch's buys and sells are meaningfully different: they're
@@ -452,6 +470,7 @@ function BatchTradesList({
             trades={buyTrades}
             batchDescription={batchDescription}
             onAddComment={onAddComment}
+            openFirstSignal={openFirstSignal}
           />
         )}
         {sellTrades.length > 0 && (
@@ -461,6 +480,7 @@ function BatchTradesList({
             trades={sellTrades}
             batchDescription={batchDescription}
             onAddComment={onAddComment}
+            openFirstSignal={buyTrades.length === 0 ? openFirstSignal : 0}
           />
         )}
       </div>
@@ -520,12 +540,14 @@ function MobileTradeGroup({
   trades,
   batchDescription,
   onAddComment,
+  openFirstSignal = 0,
 }: {
   label: string
   accent: 'emerald' | 'red'
   trades: AcceptedTradeWithJoins[]
   batchDescription: string | null
   onAddComment?: (tradeId: string, content: string) => void
+  openFirstSignal?: number
 }) {
   return (
     <section>
@@ -541,12 +563,13 @@ function MobileTradeGroup({
         <span className="text-[11px] tabular-nums text-gray-400">{trades.length}</span>
       </div>
       <div className="space-y-1.5">
-        {trades.map(t => (
+        {trades.map((t, i) => (
           <MobileTradeCard
             key={t.id}
             trade={t}
             batchDescription={batchDescription}
             onAddComment={onAddComment}
+            openSignal={i === 0 ? openFirstSignal : 0}
           />
         ))}
       </div>
@@ -559,16 +582,28 @@ function MobileTradeCard({
   trade,
   batchDescription,
   onAddComment,
+  openSignal = 0,
 }: {
   trade: AcceptedTradeWithJoins
   batchDescription: string | null
   onAddComment?: (tradeId: string, content: string) => void
+  /** Bump to open this card, as tapping it would. */
+  openSignal?: number
 }) {
   const [expanded, setExpanded] = useState(false)
   const result = tradeLifecyclePhase(trade as any)
   const meta = PHASE_META[result.phase]
   const hasNote = !!(trade.acceptance_note && trade.acceptance_note.trim())
   const canExpand = hasNote || !!onAddComment
+
+  // Opening from "Review the trade" is the same act as tapping the card, so it
+  // fires the same step event.
+  React.useEffect(() => {
+    if (openSignal <= 0 || !canExpand) return
+    setExpanded(true)
+    try { window.dispatchEvent(new CustomEvent('pilot-tradebook:trade-reviewed')) } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSignal])
   const isSellSide = trade.action === 'sell' || trade.action === 'trim'
 
   return (
@@ -942,12 +977,28 @@ function BatchDetailPanel({
   trades,
   onViewInTradesView,
   onAddComment,
+  guide,
 }: {
   batch: TradeBatch
   trades: AcceptedTradeWithJoins[]
   onViewInTradesView: () => void
   onAddComment?: (tradeId: string, content: string) => void
+  guide?: TradeBookGuide
 }) {
+  /*
+   * Phone + pilot: the batch is the page the Trade Book basics steps happen on,
+   * so it leads with a Next steps card whose rows take you to each action, and
+   * ends with Open Outcomes. The section refs and signals below are how a row
+   * gets you there: scroll to the section, then open what the step needs.
+   */
+  const isMobile = useIsMobile()
+  const showGuide = isMobile && !!guide
+  const tradesRef = React.useRef<HTMLElement>(null)
+  const rationaleRef = React.useRef<HTMLElement>(null)
+  const [reviewSignal, setReviewSignal] = useState(0)
+  const [rationaleSignal, setRationaleSignal] = useState(0)
+  const { openOutcomes } = usePilotTradeBookSteps(guide?.userId, guide?.orgId)
+  const scrollTo = (el: HTMLElement | null) => el?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
   // Derive "just committed" purely from batch.created_at. No prop
   // threading, no sticky flag — the continuity card appears for any
   // batch committed in the last JUST_COMMITTED_WINDOW_MS and quietly
@@ -1000,7 +1051,17 @@ function BatchDetailPanel({
 
   return (
     <div className="h-full overflow-auto overscroll-contain">
-      <div className="px-3 sm:px-6 py-3 sm:py-4 space-y-3 sm:space-y-4">
+      <div className={clsx('px-3 sm:px-6 py-3 sm:py-4 space-y-3 sm:space-y-4', showGuide && 'space-y-4 pb-6')}>
+        {showGuide && (
+          <TradeBookNextSteps
+            userId={guide!.userId}
+            orgId={guide!.orgId}
+            onReview={() => { scrollTo(tradesRef.current); setReviewSignal(n => n + 1) }}
+            onRationale={() => { scrollTo(rationaleRef.current); setRationaleSignal(n => n + 1) }}
+            onOpenOutcomes={guide!.navigateToOutcomes}
+          />
+        )}
+
         {/* Header — identity on one line, the escape hatch under it on a
             phone rather than beside it.
 
@@ -1165,30 +1226,68 @@ function BatchDetailPanel({
             Editable in-place: if empty, clicking the placeholder opens
             a textarea; if present, hovering reveals an Edit button.
             Saves back to trade_batches.description. */}
-        <section>
-          {/* "Decision rationale", not "Rationale": this is the batch-level
-              explanation of why the decision happened, and it is the one the
-              trades inherited at commit. Naming it apart from the per-trade
-              rationale log below is what stops the two reading as the same
-              field asked twice. */}
-          <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            <FileText className="w-3 h-3" />
-            Decision rationale
-          </div>
-          <BatchRationaleEditor batch={batch} />
+        <section ref={rationaleRef} data-slot="batch-rationale-section" className="scroll-mt-3">
+          {/* "Why this decision?", not "Decision rationale": it is the ONE
+              answer for the whole batch — the one every trade inherited at
+              commit — and the question says so better than a noun. Each trade's
+              own log below is "Trade-specific notes". Two different names for
+              two different scopes is what stops them reading as the same field
+              asked twice. */}
+          {isMobile ? (
+            <div className="mb-2">
+              <h3 className="flex items-center gap-1.5 text-[15px] font-semibold text-gray-900 dark:text-white">
+                <FileText className="w-4 h-4 text-gray-400" />
+                Why this decision?
+              </h3>
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Applies to the whole batch</p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              <FileText className="w-3 h-3" />
+              Why this decision?
+              <span className="normal-case tracking-normal font-normal text-gray-400 dark:text-gray-500">· applies to the whole batch</span>
+            </div>
+          )}
+          <BatchRationaleEditor batch={batch} openSignal={rationaleSignal} />
         </section>
 
         {/* Trades inline */}
-        <section>
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Trades in this batch
-          </div>
+        <section ref={tradesRef} data-slot="batch-trades-section" className="scroll-mt-3">
+          {isMobile ? (
+            <div className="mb-2">
+              <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white">Trades in this batch</h3>
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Tap a trade for its details and trade-specific notes</p>
+            </div>
+          ) : (
+            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Trades in this batch
+            </div>
+          )}
           <BatchTradesList
             trades={trades}
             batchDescription={batch.description}
             onAddComment={onAddComment}
+            openFirstSignal={reviewSignal}
           />
         </section>
+
+        {showGuide && (
+          <section data-slot="tradebook-outcomes-cta" className="rounded-2xl border border-teal-200 dark:border-teal-800/60 bg-teal-50/60 dark:bg-teal-900/15 p-4">
+            <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white">Next: see how it plays out</h3>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              Outcomes tracks how this decision performs. It’s where the last pilot stage finishes.
+            </p>
+            <button
+              type="button"
+              data-slot="tradebook-open-outcomes"
+              onClick={() => openOutcomes(guide!.navigateToOutcomes)}
+              className="mt-3 w-full h-11 rounded-xl bg-teal-600 active:bg-teal-700 text-sm font-semibold text-white inline-flex items-center justify-center gap-1.5"
+            >
+              Open Outcomes
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </section>
+        )}
 
         {/* System-of-record reinforcement — a quiet footnote that
             reframes Trade Book from "a list of trades" into "the
@@ -1235,6 +1334,7 @@ export function BatchListView({
   onSelectBatch,
   onViewBatchTrades,
   onAddComment,
+  guide,
 }: BatchListViewProps) {
   const isMobileViewport = useIsMobile()
 
@@ -1360,6 +1460,23 @@ export function BatchListView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batches.length, selectedBatchId, isMobileViewport])
 
+  /*
+   * Phone + pilot: open the latest batch on arrival, once.
+   *
+   * The Trade Book basics steps all happen inside a batch, and on a phone a
+   * batch replaces the list — so a pilot who arrived without a selection saw a
+   * list of cards and had to find the batch before any step was in view. Once
+   * only, so "All batches" still takes them back to the list and stays there.
+   */
+  const guideOpenedRef = React.useRef(false)
+  React.useEffect(() => {
+    if (!isMobileViewport || !guide || guideOpenedRef.current) return
+    if (batches.length === 0) return
+    guideOpenedRef.current = true
+    if (!selectedBatchId) onSelectBatch(batches[0].id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobileViewport, !!guide, batches.length])
+
   if (batches.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -1461,6 +1578,7 @@ export function BatchListView({
             trades={selectedBatchTrades}
             onViewInTradesView={() => onViewBatchTrades(selectedBatch.id)}
             onAddComment={onAddComment}
+            guide={guide}
           />
         </div>
       ) : (
@@ -1587,7 +1705,11 @@ function BatchNameEditor({
 // the trade-batches query so every surface picks up the new text.
 // ---------------------------------------------------------------------------
 
-export function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
+export function BatchRationaleEditor({ batch, openSignal = 0 }: {
+  batch: TradeBatch
+  /** Bump to open the editor — the phone's "Add your rationale" step does. */
+  openSignal?: number
+}) {
   const queryClient = useQueryClient()
   // Phones get their own composition of the same editor: same draft, same
   // mutation, same trade_batches.description. Desktop markup is unchanged.
@@ -1603,6 +1725,14 @@ export function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
     setDraft(existing)
     setEditing(false)
   }, [batch.id, existing])
+
+  React.useEffect(() => {
+    if (openSignal <= 0) return
+    setDraft(existing)
+    setEditing(true)
+    // Only the signal opens it; a changed description must not reopen it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSignal])
 
   const saveM = useMutation({
     mutationFn: async (nextDescription: string) => {
@@ -1682,7 +1812,7 @@ export function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
             autoFocus
             disabled={saveM.isPending}
             placeholder="Why these trades? What's the thesis for the batch?"
-            ariaLabel="Decision rationale"
+            ariaLabel="Why this decision?"
             inputClassName="focus:ring-amber-400"
             onSubmitShortcut={handleSave}
             onEscape={handleCancel}
@@ -1814,10 +1944,10 @@ export function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
         <Pencil className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <div className="text-[12px] font-semibold text-amber-800 dark:text-amber-300">
-            Add rationale to explain this decision
+            Explain why you made this decision
           </div>
           <div className="text-[11px] text-amber-700/80 dark:text-amber-300/70 mt-0.5 leading-relaxed">
-            Capture your thinking now, or revisit it later in Outcomes.
+            One answer for every trade in this batch. You can edit it later.
           </div>
         </div>
       </div>
