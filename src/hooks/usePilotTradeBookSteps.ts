@@ -24,6 +24,11 @@ const STORAGE_SUFFIX: Record<TradeBookStepKey, string> = {
 }
 const DISMISS = 'dismissed'
 
+/** (user, org) pairs whose stage-4 mark this session has already asked for. */
+const stageMarkRequested = new Set<string>()
+/** Test seam: forget the session's requests. */
+export function resetTradeBookStageMarkRequests() { stageMarkRequested.clear() }
+
 const STEP_TO_TELEMETRY: Record<TradeBookStepKey, PilotEventType> = {
   reviewed: 'pilot_tradebook_step_trade_reviewed',
   rationale: 'pilot_tradebook_step_rationale_added',
@@ -64,6 +69,31 @@ export function usePilotTradeBookSteps(userId: string | undefined, orgId: string
     setDismissed(readFlag(userId, orgId, DISMISS))
   }, [userId, orgId])
 
+  /*
+   * Trade Book basics finished is pilot mission stage 4.
+   *
+   * The steps themselves are browser-local, so finishing them writes one
+   * server-backed mark the roadmap reads — which is what keeps stage 4 done
+   * after a refresh or on another device.
+   *
+   * Written IN the step that finishes the set, not in an effect after it. The
+   * last step is usually Open Outcomes, which navigates away and unmounts Trade
+   * Book in the same tap, so an effect waiting for the next render never ran:
+   * the Dashboard stayed on stage 4 until Trade Book happened to mount again.
+   * `mark` updates the progress cache synchronously and its write carries on
+   * after the page has gone. Requested once per session per (user, org), so the
+   * banner and the batch page — two copies of this hook — do not both write.
+   */
+  const { progress, mark } = usePilotProgress()
+  const stageMarked = !!progress[tradeBookBasicsKey(orgId ?? null)]
+  const requestStageMark = useCallback(() => {
+    if (!userId) return
+    const once = `${userId}:${orgId ?? 'no-org'}`
+    if (stageMarkRequested.has(once)) return
+    stageMarkRequested.add(once)
+    mark('tradebook_basics_completed')
+  }, [userId, orgId, mark])
+
   const markStep = useCallback((key: TradeBookStepKey) => {
     if (!userId) return
     const suffix = STORAGE_SUFFIX[key]
@@ -72,7 +102,9 @@ export function usePilotTradeBookSteps(userId: string | undefined, orgId: string
       logPilotEvent({ eventType: STEP_TO_TELEMETRY[key], organizationId: orgId ?? null })
     }
     setDone(prev => (prev[key] ? prev : { ...prev, [key]: true }))
-  }, [userId, orgId])
+    const all = readAll(userId, orgId)
+    if (all.reviewed && all.rationale && all.outcomes && !stageMarked) requestStageMark()
+  }, [userId, orgId, stageMarked, requestStageMark])
 
   useEffect(() => {
     // Deferred so an event fired during another component's render does not
@@ -98,21 +130,12 @@ export function usePilotTradeBookSteps(userId: string | undefined, orgId: string
     }
   }, [dismissed, allDone, userId, orgId])
 
-  /*
-   * Trade Book basics finished is pilot mission stage 4.
-   *
-   * The steps themselves are browser-local, so finishing them writes one
-   * server-backed mark the roadmap reads — which is what keeps stage 4 done
-   * after a refresh or on another device. Written whenever all three are done
-   * and the mark is missing, so a pilot who finished before this existed gets
-   * it on their next visit. `mark` is idempotent per (stage, org).
-   */
-  const { progress, mark } = usePilotProgress()
-  const stageMarked = !!progress[tradeBookBasicsKey(orgId ?? null)]
+  // Catch-up: a pilot who finished the steps before the mark existed (or whose
+  // write failed) gets it the next time Trade Book mounts.
   useEffect(() => {
     if (!userId || !allDone || stageMarked) return
-    mark('tradebook_basics_completed')
-  }, [userId, allDone, stageMarked, mark])
+    requestStageMark()
+  }, [userId, allDone, stageMarked, requestStageMark])
 
   const openOutcomes = useCallback((navigate: () => void) => {
     markStep('outcomes')

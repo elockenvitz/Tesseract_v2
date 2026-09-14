@@ -27,6 +27,7 @@ vi.mock('../../../hooks/usePilotProgress', () => ({ usePilotProgress: () => ({ p
 
 import { BatchListView, type TradeBookGuide } from '../BatchListView'
 import { PilotTradeBookGetStarted } from '../../pilot/PilotTradeBookGetStarted'
+import { resetTradeBookStageMarkRequests } from '../../../hooks/usePilotTradeBookSteps'
 
 function setViewport(width: number) {
   window.matchMedia = ((query: string) => {
@@ -72,6 +73,7 @@ const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & No
 beforeEach(() => {
   localStorage.clear()
   progressMark.mockReset()
+  resetTradeBookStageMarkRequests()
   setViewport(390)
 })
 afterEach(cleanup)
@@ -193,6 +195,44 @@ describe('the steps complete from the page', () => {
     expect(slot('pilot-steps-banner')).toBeNull()
     expect(progressMark).toHaveBeenCalledWith('tradebook_basics_completed')
     window.removeEventListener('pilot-tradebook:opened-outcomes', opened)
+  })
+})
+
+describe('finishing with Open Outcomes, which leaves Trade Book in the same tap', () => {
+  /**
+   * The reported bug (Golf Cap, 2026-09-14): Open Outcomes navigated away and
+   * unmounted Trade Book before the stage-4 mark was written, so the Dashboard
+   * stayed on stage 4 until Trade Book mounted again ~7s later. Here the
+   * navigation unmounts the page synchronously, as switching tabs does.
+   */
+  it('writes the stage 4 mark before the page is gone', async () => {
+    localStorage.setItem('pilot_tradebook_intro_reviewed_u1_o1', '1')
+    localStorage.setItem('pilot_tradebook_intro_rationale_u1_o1', '1')
+    let unmountPage = () => {}
+    const view = render(<Page guide={guide(() => unmountPage())} />)
+    unmountPage = view.unmount
+    fireEvent.click(slot('tradebook-open-outcomes')!)
+    expect(slot('tradebook-open-outcomes')).toBeNull()
+    expect(progressMark).toHaveBeenCalledWith('tradebook_basics_completed')
+  })
+
+  it('asks for the mark once, though the banner and the batch page both track the steps', async () => {
+    localStorage.setItem('pilot_tradebook_intro_reviewed_u1_o1', '1')
+    localStorage.setItem('pilot_tradebook_intro_rationale_u1_o1', '1')
+    render(<Page guide={guide()} />)
+    fireEvent.click(slot('tradebook-open-outcomes')!)
+    await flush()
+    await flush()
+    expect(progressMark.mock.calls.filter(c => c[0] === 'tradebook_basics_completed')).toHaveLength(1)
+  })
+
+  it('does not write it when an earlier step is still open', async () => {
+    localStorage.setItem('pilot_tradebook_intro_reviewed_u1_o1', '1')
+    let unmountPage = () => {}
+    const view = render(<Page guide={guide(() => unmountPage())} />)
+    unmountPage = view.unmount
+    fireEvent.click(slot('tradebook-open-outcomes')!)
+    expect(progressMark).not.toHaveBeenCalledWith('tradebook_basics_completed')
   })
 })
 
