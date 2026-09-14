@@ -344,19 +344,21 @@ describe('reviewing an outcome is not pressing a button', () => {
     }
   })
 
-  it('marks from Outcomes, and only once it has resolved the tutorial decision', () => {
+  it('marks from Outcomes, and only once it has resolved one of the pilot’s decisions', () => {
     const page = src('pages/DecisionAccountabilityPage.tsx')
     expect(page).toContain('markOutcomeReviewed()')
-    // The identity every other step is read against.
-    expect(page).toContain('r.decision_id === tutorialId')
+    // The tutorial decision or any trade the pilot executed.
+    expect(page).toContain('const reviewable = mission.decisionIdeaIds')
+    expect(page).toContain('rows.some(r => reviewable.includes(r.decision_id))')
     // Nothing to resolve means nothing to mark: a failed or empty load leaves
     // the step open rather than graduating somebody who saw an error.
     expect(page).toContain('if (isLoading || isError) return')
   })
 
-  it('still routes the tutorial identity to Outcomes', () => {
-    expect(src('components/dashboard/PilotWelcomeBanner.tsx'))
-      .toContain("type: 'outcomes', data: { tradeQueueItemId: ideaId }")
+  it('routes the decision to review to Outcomes, falling back to the tutorial idea', () => {
+    for (const f of ['components/dashboard/PilotWelcomeBanner.tsx', 'components/mobile/PilotMissionStrip.tsx']) {
+      expect(src(f)).toContain("type: 'outcomes', data: { tradeQueueItemId: mission.reviewIdeaId ?? ideaId }")
+    }
   })
 
   /*

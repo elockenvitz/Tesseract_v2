@@ -3,8 +3,8 @@
  * the Outcomes tab. Shows what the real surface will do once enabled.
  *
  * Self-heal: if the user lands here having already completed Trade Book
- * (an accepted trade on the tutorial idea + Trade Book unlocked — a trade
- * on any other idea does not count), they've earned Outcomes —
+ * (a committed trade in this org + Trade Book unlocked), they've earned
+ * Outcomes —
  * mark outcomes_unlocked so the next render swaps in the real surface.
  * Catches the case where the event-based unlock from Trade Book's
  * "Open Outcomes" button missed silently (pilot tester hit this).
@@ -34,7 +34,7 @@ export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewPro
     if (
       !pilotMode.isLoading &&
       pilotMode.isPilot &&
-      pilotMode.hasCommittedTutorialTrade &&
+      pilotMode.hasCommittedPilotTrade &&
       hasUnlockedTradeBook &&
       !hasUnlockedOutcomes
     ) {
@@ -43,7 +43,7 @@ export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewPro
   }, [
     pilotMode.isLoading,
     pilotMode.isPilot,
-    pilotMode.hasCommittedTutorialTrade,
+    pilotMode.hasCommittedPilotTrade,
     hasUnlockedTradeBook,
     hasUnlockedOutcomes,
     mark,
@@ -57,8 +57,8 @@ export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewPro
         tone="teal"
         surface="Outcomes"
         description="Where decisions are checked against their thesis."
-        lockTitle="Opens once your pilot idea reaches Trade Book"
-        lockBody="Commit your pilot idea first. Then come back to see whether the thesis played out."
+        lockTitle="Opens once a trade you execute reaches Trade Book"
+        lockBody="Execute a trade in Trade Lab first. Then come back to see whether the thesis played out."
         ctaLabel="Go to Trade Lab"
         onCta={onGoToTradeLab}
         itemsLabel="What it tracks"
@@ -95,13 +95,13 @@ export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewPro
           </div>
           <div>
             <h2 className="text-base font-semibold text-gray-900 mb-1 dark:text-white">
-              This opens after your pilot idea is committed and reaches Trade Book
+              This opens once a trade you execute reaches Trade Book
             </h2>
             <p className="text-sm text-gray-700 leading-relaxed mb-4 dark:text-gray-300">
-              A trade on any other idea doesn't count. Once your pilot idea's decision is in
-              Trade Book, Outcomes is where you come back to see whether the thesis played
-              out — scorecards per analyst, hit rate on price targets, and post-mortem reviews
-              when a thesis is invalidated.
+              Execute a trade in Trade Lab first. Once that decision is in Trade Book, Outcomes
+              is where you come back to see whether the thesis played out — scorecards per
+              analyst, hit rate on price targets, and post-mortem reviews when a thesis is
+              invalidated.
             </p>
             <Button size="sm" onClick={onGoToTradeLab}>
               <ArrowRight className="w-3.5 h-3.5 mr-1" />

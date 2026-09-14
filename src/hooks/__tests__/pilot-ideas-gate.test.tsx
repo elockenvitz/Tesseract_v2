@@ -58,7 +58,7 @@ vi.mock('../../lib/supabase', () => ({
             return { count: db.simulated ? 1 : 0, error: null }
           case 'accepted_trades':
             // usePilotMode reads rows; the mission reads a head count.
-            return { data: db.decided ? [{ id: 't1' }] : [], count: db.decided ? 1 : 0, error: null }
+            return { data: db.decided ? [{ id: 't1', trade_queue_item_id: 'idea1' }] : [], count: db.decided ? 1 : 0, error: null }
           default:
             return { data: null, error: null }
         }
@@ -66,6 +66,7 @@ vi.mock('../../lib/supabase', () => ({
       const chain: Record<string, unknown> = {
         select: () => chain,
         eq: () => chain,
+        order: () => chain,
         update: (v: { pilot_progress: Record<string, unknown> }) => { update = v; return chain },
         limit: async () => result(),
         maybeSingle: async () => result(),

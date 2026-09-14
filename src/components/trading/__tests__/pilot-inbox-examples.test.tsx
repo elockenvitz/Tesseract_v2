@@ -93,7 +93,8 @@ describe('an active pilot', () => {
     mount()
     const aapl = await card('AAPL')
     expect(within(aapl).getByText('Example', { selector: '[data-slot="pilot-example-note"] span' })).toBeTruthy()
-    expect(within(aapl).getByText(/Decide your own pilot idea in Trade Lab/)).toBeTruthy()
+    // It points at where the recommendation can be used: Trade Lab.
+    expect(within(aapl).getByText(/Add it in Trade Lab to size and execute it/)).toBeTruthy()
     expect(decisionButtons(aapl)).toHaveLength(0)
     expect(within(aapl).queryByText('Pending your decision')).toBeNull()
   })

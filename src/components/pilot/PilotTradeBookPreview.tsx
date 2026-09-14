@@ -3,10 +3,9 @@
  * the Trade Book tab. Shows what the real surface will do once enabled,
  * without exposing the operational workflow.
  *
- * Self-heal: if the user lands here and the tutorial idea already has an
- * accepted trade, they've earned Trade Book — mark trade_book_unlocked so
- * the next render swaps in the real surface. A trade on any other idea
- * (e.g. the seeded Inbox recommendation) does not count; see
+ * Self-heal: if the user lands here having already committed a trade in
+ * this org — any trade — they've earned Trade Book; mark trade_book_unlocked
+ * so the next render swaps in the real surface. See
  * `lib/pilot/pilot-unlocks`. Mirrors the same pattern used by
  * PilotOutcomesPreview.
  *
@@ -37,13 +36,13 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
   const isMobile = useIsMobile()
 
   useEffect(() => {
-    // If we're rendering this preview but the tutorial idea already has
-    // an accepted trade, mark trade_book_unlocked now.
+    // If we're rendering this preview but the pilot has already committed
+    // a trade in this org, mark trade_book_unlocked now.
     // The mutation is idempotent so re-firing is a no-op.
     if (
       !pilotMode.isLoading &&
       pilotMode.isPilot &&
-      pilotMode.hasCommittedTutorialTrade &&
+      pilotMode.hasCommittedPilotTrade &&
       !hasUnlockedTradeBook
     ) {
       mark('trade_book_unlocked')
@@ -51,7 +50,7 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
   }, [
     pilotMode.isLoading,
     pilotMode.isPilot,
-    pilotMode.hasCommittedTutorialTrade,
+    pilotMode.hasCommittedPilotTrade,
     hasUnlockedTradeBook,
     mark,
   ])
@@ -64,8 +63,8 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
         tone="indigo"
         surface="Trade Book"
         description="Where committed decisions are recorded."
-        lockTitle="Opens after you commit your pilot idea"
-        lockBody="Test your pilot idea in Trade Lab and execute it. That decision lands here — example recommendations don't count."
+        lockTitle="Opens after you execute a trade"
+        lockBody="Add any idea to Trade Lab, size it and execute it. That decision lands here."
         ctaLabel="Go to Trade Lab"
         onCta={onGoToTradeLab}
         itemsLabel="What it keeps"
@@ -104,13 +103,12 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
           </div>
           <div>
             <h2 className="text-base font-semibold text-gray-900 mb-1 dark:text-white">
-              This opens after you commit the idea you're working through in the pilot
+              This opens after you execute a trade in Trade Lab
             </h2>
             <p className="text-sm text-gray-700 leading-relaxed mb-4 dark:text-gray-300">
-              Test your pilot idea in Trade Lab and execute it. That decision lands here with
-              full provenance: the thesis that drove it, the sizing chosen, and the portfolio
-              context at the moment of commit. Example recommendations in the Decision Inbox
-              don't open it.
+              Add any idea or recommendation to Trade Lab, size it and execute it. That decision
+              lands here with full provenance: the thesis that drove it, the sizing chosen, and
+              the portfolio context at the moment of commit.
             </p>
             <Button size="sm" onClick={onGoToTradeLab}>
               <ArrowRight className="w-3.5 h-3.5 mr-1" />

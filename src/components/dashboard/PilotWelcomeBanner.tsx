@@ -127,7 +127,8 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
          * it has actually resolved this decision; if it cannot, the step
          * stays open, which is the honest result.
          */
-        onNavigate({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: ideaId } })
+        // The decision that was executed, which may not be the captured idea.
+        onNavigate({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: mission.reviewIdeaId ?? ideaId } })
         return
     }
   }, [mission, onNavigate])

@@ -2,9 +2,10 @@
  * Trade Lab basics step 1 — the LOCAL banner step.
  *
  * It completes when a trade from Ideas & recommendations is actually written
- * into the simulation: any recommendation, or the tutorial idea. It never
- * completes from inspecting, from a removal, or from an add that failed. And
- * it is not the global mission, which reads the tutorial idea's own rows.
+ * into the simulation: any idea or recommendation. It never completes from
+ * inspecting, from a removal, from a manual position, or from an add that
+ * failed. And adding is not executing: the global mission moves on an
+ * executed trade, not on this step.
  *
  * The rule runs on the rows the add mutation returned, so these walk it with
  * rows shaped as `simulation_trades` comes back, then pin that it is called
@@ -33,44 +34,39 @@ const target = () => {
 describe('what completes the local step', () => {
   it('completes for a recommendation add that was written — even a seeded one', () => {
     const t = target()
-    expect(reportTradeLabStep1([row(SEEDED)], TUTORIAL, { fromRecommendation: true }, t)).toBe(true)
+    expect(reportTradeLabStep1([row(SEEDED)], t)).toBe(true)
     expect(t.fired()).toEqual([TRADE_LAB_STEP1_EVENT])
   })
 
-  it('completes for the tutorial idea itself', () => {
-    expect(completesTradeLabStep1([row(TUTORIAL)], TUTORIAL)).toBe(true)
+  it('completes for the tutorial idea', () => {
+    expect(completesTradeLabStep1([row(TUTORIAL)])).toBe(true)
   })
 
-  it('completes for a recommendation raised on the tutorial idea', () => {
-    expect(completesTradeLabStep1([row(TUTORIAL)], TUTORIAL, { fromRecommendation: true })).toBe(true)
-  })
-
-  it('does not complete for a plain idea that is not the tutorial idea', () => {
-    expect(completesTradeLabStep1([row(SEEDED)], TUTORIAL)).toBe(false)
+  it('completes for any other idea too — pilots may use any idea', () => {
+    expect(completesTradeLabStep1([row(SEEDED)])).toBe(true)
   })
 
   it('does not complete for a manual position, which names no idea', () => {
-    expect(completesTradeLabStep1([row(null)], TUTORIAL)).toBe(false)
-    expect(completesTradeLabStep1([row(null)], TUTORIAL, { fromRecommendation: true })).toBe(false)
+    expect(completesTradeLabStep1([row(null)])).toBe(false)
   })
 
   /** Inspecting or opening writes nothing, so there are no rows to report. */
   it('does not complete when nothing was written', () => {
     const t = target()
-    expect(reportTradeLabStep1([], TUTORIAL, { fromRecommendation: true }, t)).toBe(false)
-    expect(reportTradeLabStep1(null, TUTORIAL, { fromRecommendation: true }, t)).toBe(false)
+    expect(reportTradeLabStep1([], t)).toBe(false)
+    expect(reportTradeLabStep1(null, t)).toBe(false)
     expect(t.dispatchEvent).not.toHaveBeenCalled()
   })
 })
 
 /*
  * The local step does not reach the mission. Adding the seeded recommendation
- * teaches the banner step; the mission's "Test the trade" still needs a
- * simulation row naming the tutorial idea, which that add did not write.
+ * teaches the banner step; the mission's "Test the trade" moves on a simulation
+ * row for the tutorial idea or on an executed trade, and an add is neither.
  */
-describe('the global mission is not loosened', () => {
-  it('leaves the mission on its simulation step after an unrelated recommendation completes the local step', () => {
-    expect(completesTradeLabStep1([row(SEEDED)], TUTORIAL, { fromRecommendation: true })).toBe(true)
+describe('adding is not executing', () => {
+  it('leaves the mission on its simulation step after an unrelated add completes the local step', () => {
+    expect(completesTradeLabStep1([row(SEEDED)])).toBe(true)
     const m = missionState({
       tutorialIdeaId: TUTORIAL,
       ideaExists: true,
@@ -101,7 +97,7 @@ describe('only after the add mutation succeeds', () => {
     const observer = new MutationObserver(new QueryClient(), {
       mutationFn: write,
       onSuccess: (data: { trade_queue_item_id: string | null }) => {
-        reportTradeLabStep1([data], TUTORIAL, { fromRecommendation: true }, t)
+        reportTradeLabStep1([data], t)
       },
     })
     await observer.mutate().catch(() => undefined)
@@ -123,12 +119,11 @@ describe('the page reports from the writes, and from nothing else', () => {
   const page = readFileSync(path.join(process.cwd(), 'src/pages/SimulationPage.tsx'), 'utf8')
   const block = (start: string, end: string) => page.slice(page.indexOf(start), page.indexOf(end, page.indexOf(start)))
 
-  it('reports a single add from importTradeMutation.onSuccess, marking recommendation adds, after a toggle-off is undone', () => {
+  it('reports a single add from importTradeMutation.onSuccess, after a toggle-off is undone', () => {
     const importTrade = block('const importTradeMutation = useMutation({', 'const importPairTradeMutation = useMutation({')
     const onSuccess = importTrade.slice(importTrade.indexOf('onSuccess:'), importTrade.indexOf('onError:'))
-    const report = onSuccess.indexOf('reportTradeLabStep1([data], tutorialIdeaId, {')
+    const report = onSuccess.indexOf('reportTradeLabStep1([data])')
     expect(report).toBeGreaterThan(onSuccess.indexOf('return\n'))
-    expect(onSuccess).toContain('_proposalId?: string | null })._proposalId')
     expect(importTrade.slice(importTrade.indexOf('onError:'))).not.toContain('reportTradeLabStep1')
     expect(importTrade.slice(0, importTrade.indexOf('onSuccess:'))).not.toContain('reportTradeLabStep1')
   })
@@ -156,9 +151,9 @@ describe('the page reports from the writes, and from nothing else', () => {
 })
 
 describe('the wording says what counts', () => {
-  it('names the action and the tutorial idea', () => {
-    expect(tradeLabStep1Hint('LLY')).toBe('In Ideas & recommendations, tap Add to simulation on a recommendation or on LLY.')
-    expect(tradeLabStep1Hint(null)).toBe('In Ideas & recommendations, tap Add to simulation on a recommendation.')
+  it('names the action, says any idea works, and offers the tutorial idea as an example', () => {
+    expect(tradeLabStep1Hint('LLY')).toBe('In Ideas & recommendations, tap Add to simulation on any idea or recommendation, like LLY.')
+    expect(tradeLabStep1Hint(null)).toBe('In Ideas & recommendations, tap Add to simulation on any idea or recommendation.')
   })
 
   it('is what the banner shows', () => {

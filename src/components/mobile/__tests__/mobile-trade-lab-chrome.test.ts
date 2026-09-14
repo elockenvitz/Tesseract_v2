@@ -257,8 +257,8 @@ describe('the local tutorial', () => {
    * tutorial idea 1fbc81dd, executed idea 0640af41.
    */
   it('ticks step one from the written rows, never from the page directly', () => {
-    // One rule, over the written rows: a recommendation add, or the tutorial id.
-    expect(page).toContain('reportTradeLabStep1([data], tutorialIdeaId, {')
+    // One rule, over the written rows: any add that carries an idea.
+    expect(page).toContain('reportTradeLabStep1([data])')
     // Nothing in the page dispatches the step directly any more.
     expect(page).not.toContain("new CustomEvent('pilot-tradelab:rec-reviewed')")
   })

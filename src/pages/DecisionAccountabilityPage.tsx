@@ -3182,11 +3182,12 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
    * mark; what changed is that the mark belongs to the surface that can
    * actually tell whether the decision resolved.
    *
-   * The condition is the tutorial decision being present in the rows this page
-   * has loaded. `decision_id` IS the `trade_queue_item_id`, so it is the same
-   * identity every other step is read against. Nothing to resolve means
-   * nothing to mark, and the step stays open — which is the honest result and
-   * the one the reader can act on by coming back.
+   * The condition is one of the pilot's decisions being present in the rows
+   * this page has loaded — the tutorial idea's, or any trade the pilot
+   * executed, since pilots may take any idea through Trade Lab
+   * (`mission.decisionIdeaIds`). `decision_id` IS the `trade_queue_item_id`.
+   * Nothing to resolve means nothing to mark, and the step stays open — which
+   * is the honest result and the one the reader can act on by coming back.
    *
    * `markOutcomeReviewed` is idempotent per (stage, org); no second progress
    * mechanism is introduced.
@@ -3196,7 +3197,8 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
     if (isLoading || isError) return
     const tutorialId = mission.tutorialIdeaId
     if (!tutorialId || mission.steps[4]?.done) return
-    if (!rows.some(r => r.decision_id === tutorialId)) return
+    const reviewable = mission.decisionIdeaIds
+    if (!rows.some(r => reviewable.includes(r.decision_id))) return
     mission.markOutcomeReviewed()
   }, [isLoading, isError, rows, mission])
 

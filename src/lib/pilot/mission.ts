@@ -64,7 +64,12 @@ export interface MissionFacts {
   ideaStage: string | null
   /** A `simulation_trades` row naming the tutorial idea. */
   hasSimulationTrade: boolean
-  /** An `accepted_trades` row naming it, or a decided outcome on the idea. */
+  /**
+   * A decision was executed: an `accepted_trades` row the pilot committed in
+   * this org — on ANY idea — or one naming the tutorial idea, or a decided
+   * outcome on the tutorial idea. Pilots may take any idea through Trade Lab;
+   * the trade they execute is the decision the mission follows from here.
+   */
   hasDecision: boolean
   /** `tutorial_outcome_reviewed_at_<orgId>`. */
   outcomeReviewedAt: string | null

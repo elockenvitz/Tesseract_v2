@@ -23,7 +23,7 @@ import {
   type PilotAccessConfig,
   type PilotAccessLevel,
 } from '../lib/pilot/pilot-access'
-import { pilotUnlocks, pilotTutorialTradeKey } from '../lib/pilot/pilot-unlocks'
+import { pilotUnlocks, pilotCommittedTradeKey } from '../lib/pilot/pilot-unlocks'
 
 export interface PilotModeState {
   /** True if user or org marks this session as pilot. */
@@ -52,11 +52,10 @@ export interface PilotModeState {
    *  "+" new-tab button, swapping pilot/non-pilot menus). Callers that need
    *  the authoritative value should use `isPilot` + `isLoading`. */
   effectiveIsPilot: boolean
-  /** True once an accepted_trade exists for this org's pilot tutorial idea.
-   *  Drives the pilot's Trade Book / Outcomes unlocks — an unrelated trade
-   *  (e.g. the seeded Inbox recommendation) does not count. See
-   *  `lib/pilot/pilot-unlocks`. */
-  hasCommittedTutorialTrade: boolean
+  /** True once this user has committed an accepted_trade in the current org —
+   *  any trade, on any idea. Drives the pilot's Trade Book / Outcomes
+   *  unlocks. See `lib/pilot/pilot-unlocks`. */
+  hasCommittedPilotTrade: boolean
   /** True once the pilot mission is complete in this org, Close the loop
    *  included (written only by usePilotMission — reaching Outcomes is not
    *  enough). The user then gets the full app experience. */
@@ -74,7 +73,7 @@ export interface PilotModeState {
 export function usePilotMode(): PilotModeState {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
-  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading, hasReadyProgress, mark: markPilotStage, tutorialIdeaId } = usePilotProgress()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading, hasReadyProgress, mark: markPilotStage } = usePilotProgress()
 
   // Cached hint from the previous session: was this user a pilot? Read
   // synchronously on mount so we can answer "is this a pilot session?"
@@ -117,72 +116,65 @@ export function usePilotMode(): PilotModeState {
     }
   })
 
-  // Is there an accepted_trade for THIS org's tutorial idea? That, not "any
-  // committed trade in the org", is what opens Trade Book and Outcomes for a
-  // pilot — the seeded Inbox recommendation is a trade in the org too. See
-  // `lib/pilot/pilot-unlocks`. It is also per-org, as the old check was: the
-  // tutorial id is stored per org, so an unlock never carries between orgs.
+  // Has this user committed any accepted_trade in THIS org? That is what opens
+  // Trade Book and Outcomes for a pilot: any idea, any trade, executed in Trade
+  // Lab or accepted from the Inbox. See `lib/pilot/pilot-unlocks`. Per-org and
+  // per-user, so an unlock never carries between pilot orgs.
   //
   // Cached in localStorage per-(user, org) for synchronous render-time
   // fallback. The access useMemo below ANDs this with hasUnlockedTradeBook —
   // both have to be true for Trade Book to render unlocked, so caching
   // pilot_progress alone wasn't enough to kill the cold-load locked
   // preview flash. Tri-state ('1' / '0' / null) so first-time users
-  // (no cache) are distinguishable from a cached `false`. The key is new
-  // with this rule, so a '1' cached by an unrelated trade is not read.
-  const tutorialTradeCacheKey = user?.id && currentOrgId
-    ? `has_committed_tutorial_trade_${user.id}_${currentOrgId}`
+  // (no cache) are distinguishable from a cached `false`.
+  const pilotTradeCacheKey = user?.id && currentOrgId
+    ? `has_committed_trade_${user.id}_${currentOrgId}`
     : null
-  const cachedHasTutorialTrade = useMemo<boolean | null>(() => {
-    if (!tutorialTradeCacheKey) return null
+  const cachedHasPilotTrade = useMemo<boolean | null>(() => {
+    if (!pilotTradeCacheKey) return null
     try {
-      const raw = localStorage.getItem(tutorialTradeCacheKey)
+      const raw = localStorage.getItem(pilotTradeCacheKey)
       return raw === '1' ? true : raw === '0' ? false : null
     } catch {
       return null
     }
-  }, [tutorialTradeCacheKey])
+  }, [pilotTradeCacheKey])
 
-  const { data: hasTutorialTradeQuery } = useQuery({
-    queryKey: pilotTutorialTradeKey(currentOrgId, tutorialIdeaId),
-    enabled: !!currentOrgId && !!tutorialIdeaId,
+  const { data: pilotTradeResolved } = useQuery({
+    queryKey: pilotCommittedTradeKey(currentOrgId, user?.id),
+    enabled: !!currentOrgId && !!user?.id,
     staleTime: 60_000,
     queryFn: async () => {
       // accepted_trades is scoped through portfolio_id (no direct org_id
       // column), so we use an embedded filter on portfolios.organization_id.
-      // `portfolios!inner` makes it a required join. Same identity the
-      // mission's decision step reads.
+      // `portfolios!inner` makes it a required join.
       const { data, error } = await supabase
         .from('accepted_trades')
         .select('id, portfolios!inner(organization_id)')
         .eq('portfolios.organization_id', currentOrgId!)
-        .eq('trade_queue_item_id', tutorialIdeaId!)
+        .eq('accepted_by', user!.id)
         .limit(1)
       if (error) return false
       return (data?.length ?? 0) > 0
     }
   })
 
-  // No tutorial idea yet means no tutorial trade — that is an answer, not a
-  // loading state. Otherwise the real result if we have one, else the cache.
-  const tutorialTradeResolved = hasReadyProgress && !tutorialIdeaId
-    ? false
-    : hasTutorialTradeQuery
-  const hasCommittedTutorialTrade =
-    typeof tutorialTradeResolved === 'boolean'
-      ? tutorialTradeResolved
-      : (cachedHasTutorialTrade ?? false)
+  // The real result if we have one, else the cache.
+  const hasCommittedPilotTrade =
+    typeof pilotTradeResolved === 'boolean'
+      ? pilotTradeResolved
+      : (cachedHasPilotTrade ?? false)
 
   // Persist on each resolved answer so the next cold load starts from the
   // right value. Only when resolved, not when showing the cached fallback.
   useEffect(() => {
-    if (!tutorialTradeCacheKey || typeof tutorialTradeResolved !== 'boolean') return
+    if (!pilotTradeCacheKey || typeof pilotTradeResolved !== 'boolean') return
     try {
-      localStorage.setItem(tutorialTradeCacheKey, tutorialTradeResolved ? '1' : '0')
+      localStorage.setItem(pilotTradeCacheKey, pilotTradeResolved ? '1' : '0')
     } catch {
       /* ignore */
     }
-  }, [tutorialTradeCacheKey, tutorialTradeResolved])
+  }, [pilotTradeCacheKey, pilotTradeResolved])
 
   const isPilot = !!orgFlags?.pilotMode
 
@@ -193,8 +185,8 @@ export function usePilotMode(): PilotModeState {
   // Self-heal trade_book_unlocked at the hook level so the dashboard
   // (and any other pilot surface that isn't the locked Trade Book
   // preview) recovers when `pilot_progress.trade_book_unlocked_at_<orgId>`
-  // is missing for the current org despite the tutorial idea having an
-  // accepted trade. This is now the only writer of that mark from the
+  // is missing for the current org despite the pilot having committed a
+  // trade in it. This is now the only writer of that mark from the
   // app shell, so it is written by the tutorial decision and nothing
   // else. Symptom we saw repeatedly: the System Loop stayed
   // stuck on Decide because hasUnlockedTradeBook resolved false, and
@@ -212,7 +204,7 @@ export function usePilotMode(): PilotModeState {
   // commit history on usePilotProgress), so the heal can live here
   // safely again.
   const unlocks = pilotUnlocks({
-    hasTutorialTrade: hasCommittedTutorialTrade,
+    hasPilotTrade: hasCommittedPilotTrade,
     tradeBookMarked: hasUnlockedTradeBook,
     outcomesMarked: hasUnlockedOutcomes,
   })
@@ -222,7 +214,7 @@ export function usePilotMode(): PilotModeState {
     if (!isPilot || progressLoading || orgLoading) return
     if (!hasReadyProgress) return
     // Read from the server, not the cache: a mark is durable.
-    if (tutorialTradeResolved !== true) return
+    if (pilotTradeResolved !== true) return
     if (!unlocks.shouldMarkTradeBook) return
     tradeBookHealFiredRef.current = true
     markPilotStage('trade_book_unlocked')
@@ -231,7 +223,7 @@ export function usePilotMode(): PilotModeState {
     progressLoading,
     orgLoading,
     hasReadyProgress,
-    tutorialTradeResolved,
+    pilotTradeResolved,
     unlocks.shouldMarkTradeBook,
     markPilotStage,
   ])
@@ -252,11 +244,10 @@ export function usePilotMode(): PilotModeState {
     const base = mergePilotAccess(orgFlags?.accessOverride)
     // Progressive unlocks layered on top of the org's static access map.
     // Unlock requires BOTH:
-    //   (a) an accepted trade for THIS org's tutorial idea, AND
+    //   (a) the pilot has committed a trade in THIS org — any trade, AND
     //   (b) the corresponding pilot_progress stage is marked.
-    // An unrelated trade — the seeded Inbox recommendation — satisfies
-    // neither. See `lib/pilot/pilot-unlocks`. Never downgrade — if the org
-    // override says 'full', leave it.
+    // See `lib/pilot/pilot-unlocks`. Never downgrade — if the org override
+    // says 'full', leave it.
     if (unlocks.tradeBook && base.tradeBook === 'preview') base.tradeBook = 'full'
     if (unlocks.outcomes && base.outcomes === 'preview') base.outcomes = 'full'
     /*
@@ -312,7 +303,7 @@ export function usePilotMode(): PilotModeState {
   const accessIsReady =
     hasReadyProgress
     && !!currentOrgId
-    && (typeof tutorialTradeResolved === 'boolean' || cachedHasTutorialTrade != null)
+    && (typeof pilotTradeResolved === 'boolean' || cachedHasPilotTrade != null)
 
   return {
     isPilot,
@@ -321,7 +312,7 @@ export function usePilotMode(): PilotModeState {
     /** See comment on `accessIsReady` above. */
     accessIsReady,
     effectiveIsPilot,
-    hasCommittedTutorialTrade,
+    hasCommittedPilotTrade,
     /** Once true, the user has finished the pilot loop and the app
      *  switches to the full experience (full dashboard, all tabs,
      *  no banners). The org may still be pilot-flagged for audit. */

@@ -27,7 +27,6 @@ import {
 } from '../../../lib/trade-lab/proposal-membership'
 import { TRADE_LAB_STEP1_EVENT, reportTradeLabStep1 } from '../../../lib/pilot/trade-lab-basics'
 
-const TUTORIAL = 'tq-lly'
 const AAPL_ITEM = 'tq-aapl'
 const AAPL = 'asset-aapl'
 
@@ -82,7 +81,7 @@ describe('adding a recommendation', () => {
 
     // Write succeeded: the row is in the cache and the success handler reports.
     const events: string[] = []
-    const fired = reportTradeLabStep1([written()], TUTORIAL, { fromRecommendation: true }, {
+    const fired = reportTradeLabStep1([written()], {
       dispatchEvent: (e: Event) => { events.push(e.type); return true },
     })
     expect(fired).toBe(true)
@@ -97,7 +96,7 @@ describe('adding a recommendation', () => {
     // onError clears the override and no row was written.
     const failed = openPanel([], new Map())
     expect(failed.label()).toBe('Add')
-    expect(reportTradeLabStep1([], TUTORIAL, { fromRecommendation: true }, { dispatchEvent: () => { throw new Error('must not fire') } })).toBe(false)
+    expect(reportTradeLabStep1([], { dispatchEvent: () => { throw new Error('must not fire') } })).toBe(false)
   })
 })
 

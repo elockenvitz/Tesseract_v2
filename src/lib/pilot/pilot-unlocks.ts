@@ -1,23 +1,22 @@
 /**
  * Which of the pilot's downstream unlocks hold.
  *
- * ── Why the tutorial idea and not the org ─────────────────────────────────
+ * ── What opens Trade Book ─────────────────────────────────────────────────
  *
- * Trade Book and Outcomes unlocked once the pilot had committed ANY trade in
- * the org. A fresh pilot org is seeded with an AAPL recommendation waiting in
- * the Decision Inbox, and Pipeline basics sends the pilot to the Inbox — so
- * pilots accepted it, and that unrelated decision opened Trade Book (and from
- * there Outcomes) while the mission, correctly, still said "Test the trade".
+ * A pilot may add any idea to Trade Lab — their own, a seeded one, a
+ * recommendation — size it and execute it. Executing a trade is what earns
+ * Trade Book, whatever the trade was. So the fact is: has this pilot committed
+ * an `accepted_trades` row in this org?
  *
- * The unlock now asks the question the mission asks: is there an
- * `accepted_trades` row for the tutorial idea? Accepting or executing anything
- * else still works; it just teaches nothing about the pilot's own decision,
- * so it opens nothing.
+ * (For a while this was scoped to the tutorial idea only. Pilots executed the
+ * seeded recommendation in Trade Lab, which is exactly the flow the pilot is
+ * meant to teach, and were left locked out. The product rule is any trade.)
+ *
+ * Still per-org, and still the pilot's own: a trade in another org, or one
+ * someone else committed, opens nothing here.
  *
  * The stage marks (`trade_book_unlocked_at`, `outcomes_unlocked_at`) are still
- * required on top — they record that the pilot reached each surface in order
- * — but a mark alone is not enough, which is also what re-locks a pilot whose
- * mark was written by an unrelated trade before this rule existed.
+ * required on top — they record that the pilot reached each surface in order.
  *
  * Graduated pilots and non-pilots never reach this: `usePilotMode` gives them
  * full access before it asks.
@@ -25,8 +24,8 @@
  * Pure: no React, no Supabase.
  */
 export interface PilotUnlockFacts {
-  /** An `accepted_trades` row exists with `trade_queue_item_id` = the tutorial idea. */
-  hasTutorialTrade: boolean
+  /** The pilot has committed an `accepted_trades` row in this org. */
+  hasPilotTrade: boolean
   /** `trade_book_unlocked_at_<orgId>` is set. */
   tradeBookMarked: boolean
   /** `outcomes_unlocked_at_<orgId>` is set. */
@@ -36,24 +35,24 @@ export interface PilotUnlockFacts {
 export interface PilotUnlocks {
   tradeBook: boolean
   outcomes: boolean
-  /** The tutorial trade exists but the Trade Book mark was never written. */
+  /** The pilot has a committed trade but the Trade Book mark was never written. */
   shouldMarkTradeBook: boolean
 }
 
 export function pilotUnlocks(facts: PilotUnlockFacts): PilotUnlocks {
   return {
-    tradeBook: facts.hasTutorialTrade && facts.tradeBookMarked,
-    outcomes: facts.hasTutorialTrade && facts.outcomesMarked,
-    shouldMarkTradeBook: facts.hasTutorialTrade && !facts.tradeBookMarked,
+    tradeBook: facts.hasPilotTrade && facts.tradeBookMarked,
+    outcomes: facts.hasPilotTrade && facts.outcomesMarked,
+    shouldMarkTradeBook: facts.hasPilotTrade && !facts.tradeBookMarked,
   }
 }
 
 /**
- * Query key for the tutorial-trade read.
+ * Query key for the pilot's committed-trade read.
  *
  * Under `accepted-trades` on purpose: both Trade Lab execute paths and the
  * Decision Inbox acceptance already invalidate that prefix when they write a
- * row, so the unlock refreshes the moment the tutorial decision lands.
+ * row, so the unlock refreshes the moment the trade lands.
  */
-export const pilotTutorialTradeKey = (orgId: string | null, tutorialIdeaId: string | null) =>
-  ['accepted-trades', 'pilot-tutorial', orgId, tutorialIdeaId] as const
+export const pilotCommittedTradeKey = (orgId: string | null, userId: string | null | undefined) =>
+  ['accepted-trades', 'pilot-committed', orgId, userId ?? null] as const

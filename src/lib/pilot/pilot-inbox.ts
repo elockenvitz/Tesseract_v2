@@ -37,4 +37,4 @@ export function isPilotExampleRequest(
 
 /** Shown beside an example request. */
 export const PILOT_EXAMPLE_HINT =
-  'Example recommendation. Decide your own pilot idea in Trade Lab.'
+  'Example recommendation. Add it in Trade Lab to size and execute it.'

@@ -2907,14 +2907,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
          *
          * Every single add — an idea, a recommendation, a pair leg, a manual
          * position — arrives here, and only once the upsert has succeeded and
-         * the reader has not toggled it back off. A recommendation add carries
-         * `_proposalId`; a plain idea counts when it is the tutorial idea. This
-         * is the local banner step only — the mission reads the tutorial idea's
-         * own rows. See `lib/pilot/trade-lab-basics`.
+         * the reader has not toggled it back off. Any idea or recommendation
+         * counts; a manual position (no idea) does not. This is the local banner
+         * step only — the mission moves on an executed trade. See
+         * `lib/pilot/trade-lab-basics`.
          */
-        reportTradeLabStep1([data], tutorialIdeaId, {
-          fromRecommendation: !!(tradeIdea as TradeQueueItemWithDetails & { _proposalId?: string | null })._proposalId,
-        })
+        reportTradeLabStep1([data])
 
         // User still wants this trade — sync lab_variant
         if (tradeLab?.id && simulation) {
@@ -3162,7 +3160,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       reportTradeLabStep1(
         ((data ?? []) as Array<{ asset_id: string; trade_queue_item_id: string | null }>)
           .filter(trade => checkboxOverridesRef.current.get(trade.asset_id) !== false),
-        tutorialIdeaId,
       )
       // Rapid toggle reconciliation for each leg
       if (data) {

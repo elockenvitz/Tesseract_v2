@@ -84,7 +84,8 @@ export function PilotMissionStrip({ onNavigate }: { onNavigate?: (result: any) =
         /* Navigate only. Pressing a button is not reviewing an outcome, and
            marking here would graduate somebody who clicked and landed on an
            error. Outcomes marks it once it has resolved this decision. */
-        onNavigate?.({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: ideaId } })
+        // The decision that was executed, which may not be the captured idea.
+        onNavigate?.({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: mission.reviewIdeaId ?? ideaId } })
         return
     }
   }

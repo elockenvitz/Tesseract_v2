@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePilotMode } from './usePilotMode'
 import { usePilotProgress } from './usePilotProgress'
@@ -33,7 +34,9 @@ import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
  *                  actually simulated, not merely a lab link, because a link
  *                  proves an idea was pulled in and not that anything was run
  *   the decision   `accepted_trades.trade_queue_item_id`, or a decided outcome
- *                  on the idea itself, which covers defer and reject
+ *                  on the idea itself, which covers defer and reject — OR any
+ *                  trade the pilot executed in this org. Pilots may take any
+ *                  idea through Trade Lab, and the execution is the decision.
  *
  * The fifth is a mark, because reading Outcomes writes nothing.
  *
@@ -51,6 +54,14 @@ import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
  */
 export interface PilotMission extends MissionState {
   isLoading: boolean
+  /**
+   * The ideas whose decisions count for Close the loop: the tutorial idea when
+   * it was decided, and every idea the pilot executed a trade on in this org.
+   * Outcomes marks step 5 once it has loaded any of them.
+   */
+  decisionIdeaIds: string[]
+  /** The decision Close the loop sends the reader to review. */
+  reviewIdeaId: string | null
   /** Record the tutorial idea at creation. Write-once per org. */
   setTutorialIdea: (ideaId: string) => void
   /** The one step that has to be reported rather than derived. */
@@ -62,10 +73,15 @@ interface MissionFacts {
   ideaStage: string | null
   hasSimulationTrade: boolean
   hasDecision: boolean
+  /** Whether the tutorial idea itself was decided. */
+  tutorialDecided?: boolean
+  /** Ideas the pilot executed a trade on in this org, newest first. */
+  executedIdeaIds?: string[]
 }
 
 export function usePilotMission(): PilotMission {
   const queryClient = useQueryClient()
+  const { user } = useAuth()
   const { currentOrgId } = useOrganization()
   const { effectiveIsPilot } = usePilotMode()
   const { progress, tutorialIdeaId, setTutorialIdea, mark, hasGraduated, isLoading: progressLoading } = usePilotProgress()
@@ -78,10 +94,28 @@ export function usePilotMission(): PilotMission {
     staleTime: 0,
     queryFn: async (): Promise<MissionFacts> => {
       const id = tutorialIdeaId!
-      const [ideaRes, simRes, acceptedRes] = await Promise.all([
+      const [ideaRes, simRes, acceptedRes, executedRes] = await Promise.all([
         supabase.from('trade_queue_items').select('id, stage, outcome').eq('id', id).maybeSingle(),
         supabase.from('simulation_trades').select('id', { count: 'exact', head: true }).eq('trade_queue_item_id', id),
         supabase.from('accepted_trades').select('id', { count: 'exact', head: true }).eq('trade_queue_item_id', id),
+        /*
+         * Any trade this pilot executed in this org.
+         *
+         * Pilots may add any idea to Trade Lab — a recommendation, a seeded
+         * idea, their own — size it and execute it, and that execution is the
+         * decision the mission teaches. So the decision step reads the pilot's
+         * own committed trades here, not only the tutorial idea's. Scoped to
+         * the org through the portfolio, as every accepted-trade read is.
+         */
+        user?.id && currentOrgId
+          ? supabase
+              .from('accepted_trades')
+              .select('trade_queue_item_id, portfolios!inner(organization_id)')
+              .eq('portfolios.organization_id', currentOrgId)
+              .eq('accepted_by', user.id)
+              .order('created_at', { ascending: false })
+              .limit(20)
+          : Promise.resolve({ data: [] as Array<{ trade_queue_item_id: string | null }> }),
       ])
       const idea = ideaRes.data as { stage?: string | null; outcome?: string | null } | null
       /*
@@ -91,11 +125,19 @@ export function usePilotMission(): PilotMission {
        * exactly as much of a decision as taking it.
        */
       const decided = !!idea?.outcome && ['accepted', 'rejected', 'deferred'].includes(idea.outcome)
+      const tutorialDecided = decided || (acceptedRes.count ?? 0) > 0
+      const executedIdeaIds = Array.from(new Set(
+        ((executedRes.data ?? []) as Array<{ trade_queue_item_id: string | null }>)
+          .map(r => r.trade_queue_item_id)
+          .filter((v): v is string => !!v),
+      ))
       return {
         ideaExists: !!idea,
         ideaStage: idea?.stage ?? null,
         hasSimulationTrade: (simRes.count ?? 0) > 0,
-        hasDecision: decided || (acceptedRes.count ?? 0) > 0,
+        hasDecision: tutorialDecided || executedIdeaIds.length > 0,
+        tutorialDecided,
+        executedIdeaIds,
       }
     },
   })
@@ -180,8 +222,16 @@ export function usePilotMission(): PilotMission {
     void setTutorialIdea(ideaId)
   }, [effectiveIsPilot, setTutorialIdea])
 
+  // The tutorial idea first when it was decided, then what the pilot executed.
+  const decisionIdeaIds = Array.from(new Set([
+    ...(facts?.tutorialDecided && tutorialIdeaId ? [tutorialIdeaId] : []),
+    ...(facts?.executedIdeaIds ?? []),
+  ]))
+
   return {
     ...state,
+    decisionIdeaIds,
+    reviewIdeaId: decisionIdeaIds[0] ?? state.tutorialIdeaId,
     // An id with no facts yet is still loading, not a mission with nothing in
     // it — otherwise a refresh shows 0 of 5 for a beat to somebody on step 4.
     isLoading: progressLoading || (!!tutorialIdeaId && factsLoading),
