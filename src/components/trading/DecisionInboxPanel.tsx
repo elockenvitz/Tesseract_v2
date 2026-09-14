@@ -81,17 +81,29 @@ export function DecisionInboxPanel({
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
   const [internalSize, setInternalSize] = useState<DrawerSize>('collapsed')
-  const [resolvedPendingCount, setResolvedPendingCount] = useState<number | null>(null)
-  const handlePendingCountChange = useCallback((count: number) => setResolvedPendingCount(count), [])
-
-  // Whenever the active portfolio changes (e.g. analyst switches to a
-  // new pilot client), reset the resolved count back to null so we
-  // don't carry the previous portfolio's value across the boundary.
-  // The inner inbox refetches and fires `onPendingCountChange` with
-  // the new portfolio's number a moment later.
-  useEffect(() => {
-    setResolvedPendingCount(null)
-  }, [portfolioId])
+  /*
+   * The inbox's count, tagged with the portfolio it was reported for.
+   *
+   * A count from another portfolio must not carry across the boundary (an
+   * analyst switching pilot clients). That used to be done by an effect that
+   * reset the count to null whenever `portfolioId` changed — which also ran on
+   * MOUNT, after the child. React runs a child's effects before its parent's,
+   * so when the requests were already cached (coming back to the Pipeline) the
+   * inbox reported its count first and the reset wiped it straight after. The
+   * inbox only reports when its count changes, so it never reported again:
+   * the strip lost its amber "unviewed" tint and its badge on every return
+   * visit. A phone has no `pendingCount` fallback to hide that.
+   *
+   * Tagging instead of resetting: a count reported for a different portfolio
+   * simply reads as unknown, and nothing races the child.
+   */
+  const [reportedCount, setReportedCount] = useState<{ portfolioId: string | undefined; count: number } | null>(null)
+  const handlePendingCountChange = useCallback(
+    (count: number) => setReportedCount({ portfolioId, count }),
+    [portfolioId],
+  )
+  const resolvedPendingCount =
+    reportedCount && reportedCount.portfolioId === portfolioId ? reportedCount.count : null
 
   // The parent passes an UNFILTERED count (`pendingCount`) derived straight
   // from decision_requests by status. DecisionInbox re-filters by permission
