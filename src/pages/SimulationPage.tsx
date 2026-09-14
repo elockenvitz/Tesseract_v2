@@ -103,6 +103,7 @@ import { MobileIdeasDrawer } from '../components/mobile/trade-lab/MobileIdeasDra
 import { HoldingsSimulationTable } from '../components/trading/HoldingsSimulationTable'
 import { PilotTradeLabIntroBanner } from '../components/pilot/PilotTradeLabIntroBanner'
 import { reportTradeLabStep1 } from '../lib/pilot/trade-lab-basics'
+import { TesseractLoader } from '../components/ui/TesseractLoader'
 import { SharedSimulationBanner } from '../components/trading/SharedSimulationBanner'
 import { SharedWithMeList } from '../components/trading/SharedWithMeList'
 import { useIntentVariants } from '../hooks/useIntentVariants'
@@ -6110,10 +6111,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         {/* Loading state - unified loading for all initial data */}
         {(sharedSimLoading || tradeLabLoading || simulationsLoading || isAutoCreating || (selectedPortfolioId && !simulation && simulationLoading && !isSharedView)) ? (
           <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900/50">
-            <div className="text-center">
-              <RefreshCw className="h-8 w-8 text-gray-400 animate-spin mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-gray-400">Loading workbench...</p>
-            </div>
+            {/* The branded loader the boot screen and the feed use, in the same
+                centred slot: shared phase, so it continues rather than restarts
+                a loop already on screen, and a still mark under reduced motion. */}
+            <TesseractLoader size={64} compact text="Loading workbench..." />
           </div>
         ) : !selectedPortfolioId && !isSharedView ? (
           /* No portfolio selected state — pilot users see a bespoke copy
