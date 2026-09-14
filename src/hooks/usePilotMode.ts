@@ -55,8 +55,9 @@ export interface PilotModeState {
    *  selected pilot org. Drives per-org unlocks for Trade Book / Outcomes
    *  and auto-dismiss of the Get Started banner after the first execute. */
   hasCommittedTradeInOrg: boolean
-  /** True once the user has reached Outcomes — they've completed the
-   *  pilot loop and now get the full app experience. */
+  /** True once the pilot mission is complete in this org, Close the loop
+   *  included (written only by usePilotMission — reaching Outcomes is not
+   *  enough). The user then gets the full app experience. */
   hasGraduated: boolean
   /** Resolved per-feature access config. Defaults when not in pilot. */
   access: PilotAccessConfig
