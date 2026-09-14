@@ -56,6 +56,7 @@ import { useOrgMembers } from '../hooks/useOrgMembers'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePipelineItems } from '../hooks/usePipelineItems'
 import { PilotStepsBanner } from '../components/pilot/PilotStepsBanner'
+import { isPipelineBasicsCtaEvent } from '../lib/trade-lab/open-trade-lab'
 import { usePilotPipelineBanner } from '../hooks/usePilotPipelineBanner'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
@@ -1306,7 +1307,11 @@ export function TradeQueuePage() {
   // each call site.
   useEffect(() => {
     if (!pilotMode.effectiveIsPilot || pilotStep3Done) return
-    const handler = () => markPilotStep3()
+    const handler = (e: Event) => {
+      // The banner's own CTA marks only once its navigation is confirmed.
+      if (isPipelineBasicsCtaEvent(e)) return
+      markPilotStep3()
+    }
     window.addEventListener('openTradeLab', handler)
     return () => window.removeEventListener('openTradeLab', handler)
   }, [pilotMode.effectiveIsPilot, pilotStep3Done, markPilotStep3])

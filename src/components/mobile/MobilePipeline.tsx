@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { isPipelineBasicsCtaEvent } from '../../lib/trade-lab/open-trade-lab'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import {
@@ -120,7 +121,11 @@ export function MobilePipeline() {
    */
   useEffect(() => {
     if (!pilotMode.effectiveIsPilot || hasCompletedPipelineStepTradeLab) return
-    const handler = () => markPilotStage('pipeline_step_tradelab')
+    const handler = (e: Event) => {
+      // The banner's own CTA marks only once its navigation is confirmed.
+      if (isPipelineBasicsCtaEvent(e)) return
+      markPilotStage('pipeline_step_tradelab')
+    }
     window.addEventListener('openTradeLab', handler)
     return () => window.removeEventListener('openTradeLab', handler)
   }, [pilotMode.effectiveIsPilot, hasCompletedPipelineStepTradeLab, markPilotStage])

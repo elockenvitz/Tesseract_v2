@@ -864,15 +864,20 @@ export function DashboardPage() {
   // Listen for custom event to open Trade Lab with specific portfolio
   useEffect(() => {
     const handleOpenTradeLab = (event: CustomEvent) => {
-      const { labId, labName, portfolioId } = event.detail || {}
+      const { labId, labName, portfolioId, tradeQueueItemId } = event.detail || {}
       // Navigate to trade-lab tab with the portfolio/lab ID
       // Always use "Trade Lab" as the tab title for consistency
       navigateRef.current({
         id: labId || 'trade-lab',
         title: 'Trade Lab',
         type: 'trade-lab',
-        data: { id: labId, portfolioId }
+        // The idea is carried only when a caller named one, so every existing
+        // dispatch produces exactly the tab data it did before.
+        data: { id: labId, portfolioId, ...(tradeQueueItemId ? { tradeQueueItemId } : {}) }
       })
+      // Tell a cancelable dispatch that the navigation happened. A no-op for
+      // the non-cancelable ones. See `lib/trade-lab/open-trade-lab`.
+      event.preventDefault()
     }
 
     window.addEventListener('openTradeLab', handleOpenTradeLab as EventListener)

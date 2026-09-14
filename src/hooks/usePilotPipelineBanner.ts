@@ -1,6 +1,12 @@
+import { useCallback, useMemo } from 'react'
 import { usePilotMode } from './usePilotMode'
 import { usePilotProgress } from './usePilotProgress'
+import { useDecisionRequestsForIdea } from './useDecisionRequests'
 import type { PilotStep } from '../components/pilot/PilotStepsBanner'
+import { PIPELINE_BASICS_CTA_SOURCE, requestOpenTradeLab } from '../lib/trade-lab/open-trade-lab'
+
+/** Decision request statuses that are still waiting — the card Decision Inbox shows. */
+const WAITING = new Set(['pending', 'under_review', 'needs_discussion'])
 
 /**
  * The Idea Pipeline Get Started banner, for whichever shell is rendering it.
@@ -20,7 +26,9 @@ import type { PilotStep } from '../components/pilot/PilotStepsBanner'
  *
  * The step MARKERS do. Completing a step is something a surface does — a drag
  * on the board, opening the inbox drawer — and those actions differ between
- * the two shells. This reads the flags; it does not write them.
+ * the two shells. This reads the flags and writes one: step 3's own CTA, which
+ * is itself the action, marks when — and only when — the Trade Lab navigation
+ * it asked for actually happened.
  *
  * Reading `usePilotProgress` from both shells costs nothing: it is one React
  * Query entry, and only one of the two pages is mounted at a time anyway.
@@ -50,7 +58,38 @@ export function usePilotPipelineBanner(): PilotPipelineBanner {
     hasCompletedPipelineStepMoved,
     hasCompletedPipelineStepInbox,
     hasCompletedPipelineStepTradeLab,
+    tutorialIdeaId,
+    mark,
   } = usePilotProgress()
+
+  /*
+   * Step 3's direct route to Trade Lab, once the reader is on step 3.
+   *
+   * The same hand-off as the Trade Lab link on the tutorial idea's card in
+   * Decision Inbox: the `openTradeLab` event, with that card's portfolio — the
+   * decision request's `portfolio_id`, preferring the one still waiting — and
+   * the tutorial idea id alongside. Only fetched once it can be shown.
+   */
+  const onStep3 = pilotMode.effectiveIsPilot
+    && hasCompletedPipelineStepMoved
+    && hasCompletedPipelineStepInbox
+    && !hasCompletedPipelineStepTradeLab
+    && !!tutorialIdeaId
+  const { data: requests } = useDecisionRequestsForIdea(onStep3 ? tutorialIdeaId ?? undefined : undefined)
+  const portfolioId = useMemo(() => {
+    const list = requests ?? []
+    return (list.find(r => WAITING.has(r.status)) ?? list[0])?.portfolio_id
+  }, [requests])
+
+  const openTradeLab = useCallback(() => {
+    if (!tutorialIdeaId) return
+    const navigated = requestOpenTradeLab({
+      portfolioId,
+      tradeQueueItemId: tutorialIdeaId,
+      source: PIPELINE_BASICS_CTA_SOURCE,
+    })
+    if (navigated) mark('pipeline_step_tradelab')
+  }, [portfolioId, tutorialIdeaId, mark])
 
   /*
    * Derived synchronously from the flags rather than settled in an effect, so
@@ -88,6 +127,9 @@ export function usePilotPipelineBanner(): PilotPipelineBanner {
         title: 'Open Trade Lab',
         hint: 'Click the portfolio name on the recommendation card to jump into Trade Lab.',
         done: hasCompletedPipelineStepTradeLab,
+        // Offered once the card's portfolio is known, so the hand-off carries the
+        // same context the Decision Inbox link does rather than a bare Trade Lab.
+        ...(onStep3 && portfolioId ? { action: { label: 'Open Trade Lab', onClick: openTradeLab } } : {}),
       },
     ],
   }

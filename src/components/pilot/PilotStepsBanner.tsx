@@ -37,6 +37,13 @@ export interface PilotStep {
   done?: boolean
   /** Steps that are also the way to perform them. Optional by design. */
   onClick?: () => void
+  /**
+   * A named control for the step, shown on a phone while it is the current
+   * step. For a step whose surface is a hop away — on a 390px board the Trade
+   * Lab link lives inside a recommendation card inside a drawer, and a bare
+   * arrow does not say where it goes. Desktop draws its steps as before.
+   */
+  action?: { label: string; onClick: () => void }
 }
 
 /**
@@ -151,7 +158,20 @@ export function PilotStepsBanner({
             </p>
           )}
         </div>
-        {current.onClick && (
+        {!current.done && current.action ? (
+          <button
+            type="button"
+            data-slot="pilot-steps-action"
+            onClick={current.action.onClick}
+            className={clsx(
+              'shrink-0 h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-[12px] font-semibold text-white whitespace-nowrap no-touch-target',
+              t.action,
+            )}
+          >
+            {current.action.label}
+            <ArrowRight className="h-4 w-4 shrink-0" />
+          </button>
+        ) : current.onClick && (
           <button
             type="button"
             data-slot="pilot-steps-cta"

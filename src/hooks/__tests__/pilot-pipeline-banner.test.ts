@@ -70,12 +70,19 @@ describe('the Pipeline banner is defined once', () => {
    *
    * Step 1 is the exception, and it moved: a stage change is a write, not a
    * gesture, so it is now marked by the move mutation both shells call. See
-   * `usePipelineMoveMarker`. Steps 2 and 3 are still opening a drawer and
-   * clicking through to Trade Lab, which only the desktop board can observe.
+   * `usePipelineMoveMarker`. Steps 2 and 3 are opening a drawer and clicking
+   * through to Trade Lab, which the boards observe.
+   *
+   * One write lives here on purpose: step 3's own "Open Trade Lab" CTA. The
+   * banner is the surface the reader acted on in that case, so it records the
+   * step — and only once the canonical navigation confirms it happened. It is
+   * the only write, and it is gated.
    */
-  it('does not write progress from the shared hook', () => {
+  it('writes nothing from the shared hook except the gated step-3 CTA', () => {
     expect(hook).not.toContain('markPilotStage')
-    expect(hook).not.toContain("mark(")
+    const writes = hook.match(/\bmark\(/g) ?? []
+    expect(writes).toHaveLength(1)
+    expect(hook).toContain("if (navigated) mark('pipeline_step_tradelab')")
     expect(desktop).toContain("markPilotStage('pipeline_step_inbox')")
     expect(desktop).toContain("markPilotStage('pipeline_step_tradelab')")
   })
