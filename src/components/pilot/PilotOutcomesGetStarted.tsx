@@ -12,8 +12,8 @@
  *   2. Review why the decision was made — open the "Why this
  *      decision was made" section in the right pane to revisit
  *      the original thesis, why-now, and recommendation.
- *   3. Check how the trade is performing — open the "How it's
- *      performing" section to see price move, P&L, and the
+ *   3. Check how the trade is performing — open the "Performance
+ *      so far" section to see price move, P&L, and the
  *      decision-level scoring. Opening it graduates the user.
  *
  * Graduation now happens entirely on Outcomes — no navigation away
@@ -131,7 +131,7 @@ export function PilotOutcomesGetStarted({
   //
   // Steps 2 and 3 both key off `outcomes:section-opened` — Step 2
   // when the "Why this decision was made" section opens
-  // (sectionId='thesis'), Step 3 when "How it's performing" opens
+  // (sectionId='thesis'), Step 3 when "Performance so far" opens
   // (sectionId='performance'). One listener handles both.
   useEffect(() => {
     if (!userId) return
@@ -199,7 +199,7 @@ export function PilotOutcomesGetStarted({
     } catch { /* ignore */ }
   }
 
-  // Step 3 click — open the "How it's performing" section. The section's
+  // Step 3 click — open the "Performance so far" section. The section's
   // own open broadcast (sectionId='performance') ticks step 3.
   const handleCheckPerformance = () => {
     try {
@@ -227,14 +227,14 @@ export function PilotOutcomesGetStarted({
         {
           n: 2,
           title: 'Review why the decision was made',
-          hint: 'Open the \u201cWhy this decision was made\u201d section in the right pane to revisit the thesis.',
+          hint: 'Open the \u201cWhy this decision was made\u201d section to revisit the thesis.',
           done: step2,
           onClick: handleReviewThesis,
         },
         {
           n: 3,
           title: 'Check how the trade is performing',
-          hint: 'Open the \u201cHow it\u2019s performing\u201d section to see the price move, P&L, and decision scoring.',
+          hint: 'Open the \u201cPerformance so far\u201d section to see the price move, P&L, and decision scoring.',
           done: step3,
           onClick: handleCheckPerformance,
         },

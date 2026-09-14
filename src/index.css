@@ -883,3 +883,30 @@
     flex-shrink: 0;
   }
 }
+
+/*
+ * Outcomes decision detail on a phone: readable type, reachable buttons.
+ *
+ * The detail's sections are written at desktop sizes — 9px labels, 11px body,
+ * 20px-tall buttons — for a 440px side panel read at arm's length. On a phone
+ * that is unreadable and untappable. Rather than fork every class string in
+ * the page, the phone cards opt in with `outcomes-phone-body` (and badges with
+ * `outcomes-phone-badge`) and these rules lift the arbitrary pixel sizes one
+ * step. Desktop never gets the class, so it is untouched.
+ *
+ * `overflow-wrap: anywhere` is what stops a long thesis URL or ticker list from
+ * widening the card past the screen. 16px textareas stop iOS zooming on focus.
+ */
+@media (max-width: 767px) {
+  .outcomes-phone-body { overflow-wrap: anywhere; }
+  .outcomes-phone-body .text-\[7px\],
+  .outcomes-phone-body .text-\[8px\] { font-size: 11px; }
+  .outcomes-phone-body .text-\[9px\] { font-size: 11px; }
+  .outcomes-phone-body .text-\[10px\] { font-size: 13px; }
+  .outcomes-phone-body .text-\[11px\] { font-size: 14px; }
+  .outcomes-phone-body .text-\[12px\] { font-size: 15px; }
+  .outcomes-phone-body button { min-height: 44px; }
+  .outcomes-phone-body textarea { font-size: 16px; }
+  .outcomes-phone-badge .text-\[8px\],
+  .outcomes-phone-badge .text-\[9px\] { font-size: 11px; }
+}

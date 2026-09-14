@@ -26,7 +26,7 @@ import {
   DollarSign, Activity, ArrowUpRight, ArrowDownRight,
   Percent, Zap, Camera, Timer, Scale,
   Lightbulb, MessageSquare, BookOpen, Pencil, User,
-  Award, Users, Link2, Unlink, Sparkles,
+  Award, Users, Link2, Unlink, Sparkles, LineChart,
 } from 'lucide-react'
 import { format, subDays, parseISO } from 'date-fns'
 import { clsx } from 'clsx'
@@ -853,6 +853,7 @@ function StorySection({ icon: Icon, title, children, defaultOpen = false, badge,
    *  collapsed section (open it + scroll into view). */
   sectionId?: string
 }) {
+  const isPhone = useIsMobile()
   const [open, setOpen] = useState(defaultOpen)
   const wrapperRef = React.useRef<HTMLDivElement>(null)
 
@@ -884,6 +885,49 @@ function StorySection({ icon: Icon, title, children, defaultOpen = false, badge,
       }))
     } catch { /* ignore */ }
   }, [open, sectionId])
+
+  /*
+   * Phone: one card per section. The desktop header is an 11px uppercase label
+   * on a 40px row, which on a phone is both hard to read and a small target.
+   * Here the title is a real heading, the whole row is at least 52px, and
+   * "Needs info" sits under the title instead of competing with the badge for
+   * the same line. The body gets `outcomes-phone-body`, which lifts the
+   * desktop-sized type and gives its buttons a 44px target (index.css).
+   */
+  if (isPhone) {
+    return (
+      <div
+        ref={wrapperRef}
+        data-section-id={sectionId}
+        className="mx-3 mt-3 rounded-xl border border-gray-200 bg-white overflow-hidden dark:border-gray-700 dark:bg-gray-800"
+      >
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          className="w-full min-h-[52px] px-4 py-3 flex items-center gap-3 text-left active:bg-gray-50 dark:active:bg-gray-700/50"
+        >
+          <Icon className={`w-4 h-4 shrink-0 ${needsAttention ? 'text-amber-500' : 'text-gray-400'}`} />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-semibold leading-snug text-gray-900 dark:text-white">{title}</span>
+            {needsAttention && (
+              <span className="mt-0.5 flex items-center gap-1.5 text-[12px] text-amber-700 dark:text-amber-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                Needs info
+              </span>
+            )}
+          </span>
+          {badge && <span className="outcomes-phone-badge shrink-0 max-w-[40%] truncate">{badge}</span>}
+          <ChevronDown className={clsx('w-4 h-4 shrink-0 text-gray-400 transition-transform', open && 'rotate-180')} />
+        </button>
+        {open && (
+          <div className="outcomes-phone-body px-4 pt-3 pb-4 border-t border-gray-100 dark:border-gray-700/60">
+            {children}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div
@@ -1104,11 +1148,11 @@ function InsightBanner({ row }: { row: AccountabilityRow }) {
  *  Rendered as a quiet bulleted list, no card chrome, so it reads
  *  as a follow-up to the System Insight rail above rather than a
  *  separate section. */
-function ConsiderationsSection({ row }: { row: AccountabilityRow }) {
+function ConsiderationsSection({ row, embedded = false }: { row: AccountabilityRow; embedded?: boolean }) {
   const items = useMemo(() => buildConsiderations(row), [row])
   if (items.length === 0) return null
   return (
-    <div className="mx-4 mt-4 mb-1.5 px-2.5 pt-3 border-t border-gray-100 dark:border-gray-800">
+    <div className={embedded ? 'pt-3 border-t border-gray-100 dark:border-gray-800' : 'mx-4 mt-4 mb-1.5 px-2.5 pt-3 border-t border-gray-100 dark:border-gray-800'}>
       <div className="flex items-center gap-1.5 mb-1.5">
         <HelpCircle className="w-3 h-3 text-gray-400" />
         <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Things to consider</span>
@@ -1375,7 +1419,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
                     className="w-full text-[11px] px-2.5 py-1.5 rounded-md border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 leading-relaxed resize-none dark:border-gray-700 dark:text-white dark:bg-gray-800"
                   />
                   {threadDraft.trim() && (
-                    <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
                       <button
                         onClick={handleAddThreadEntry}
                         disabled={addReflection.isPending}
@@ -1384,7 +1428,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
                         {addReflection.isPending ? 'Saving…' : 'Post note'}
                       </button>
                       <button onClick={() => setThreadDraft('')} className="text-[10px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400">Cancel</button>
-                      <span className="text-[9px] text-gray-300 ml-auto">Enter to save, Shift+Enter for new line</span>
+                      <span className="text-[9px] text-gray-300 ml-auto max-md:hidden">Enter to save, Shift+Enter for new line</span>
                     </div>
                   )}
                 </div>
@@ -1423,7 +1467,7 @@ const ACTION_FALLBACK_SECTION: Partial<Record<SuggestedAction['key'], string>> =
   'update-thesis': 'thesis',
 }
 
-function PrimaryNextActionCTA({ row }: { row: AccountabilityRow }) {
+function PrimaryNextActionCTA({ row, embedded = false }: { row: AccountabilityRow; embedded?: boolean }) {
   const actions = useMemo(() => buildSuggestedActions(row), [row])
   const primary = actions.find(a => a.primary) ?? actions[0]
   if (!primary) return null
@@ -1447,7 +1491,7 @@ function PrimaryNextActionCTA({ row }: { row: AccountabilityRow }) {
     }
   }
   return (
-    <div className="px-4 pb-3">
+    <div className={embedded ? undefined : 'px-4 pb-3'}>
       <button
         type="button"
         onClick={handleClick}
@@ -1471,7 +1515,7 @@ function PrimaryNextActionCTA({ row }: { row: AccountabilityRow }) {
  *  ("Re-enter META on weakness", "Take partial gains on AAPL")
  *  instead of generic. Each click dispatches a CustomEvent on
  *  `window` so the dashboard shell can wire downstream flows. */
-function SuggestedActionsSection({ row }: { row: AccountabilityRow }) {
+function SuggestedActionsSection({ row, embedded = false }: { row: AccountabilityRow; embedded?: boolean }) {
   const actions = useMemo(() => buildSuggestedActions(row), [row])
   if (actions.length === 0) return null
 
@@ -1487,7 +1531,7 @@ function SuggestedActionsSection({ row }: { row: AccountabilityRow }) {
   }
 
   return (
-    <div className="mx-4 my-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2 dark:border-gray-800">
+    <div className={embedded ? 'pt-3 border-t border-gray-100 dark:border-gray-800' : 'mx-4 my-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2 dark:border-gray-800'}>
       <div className="flex items-center gap-1.5 mb-1">
         <Zap className="w-3 h-3 text-primary-500" />
         <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Suggested next action</span>
@@ -1578,13 +1622,25 @@ function LoopFooter({ row }: { row: AccountabilityRow }) {
   )
 }
 
-function DetailPanel({
+/** Exported for the phone layout test only; the page is its one caller. */
+export function DetailPanel({
   row,
   onClose,
+  onSelectDecision,
 }: {
   row: AccountabilityRow
   onClose: () => void
+  /** Phone only: the chart renders inside the panel there, and a tap on a
+   *  decision marker selects that decision. */
+  onSelectDecision?: (decisionId: string) => void
 }) {
+  const isPhone = useIsMobile()
+  // Phone: the chart is opt-in. It used to be pinned under the panel at
+  // ~270px, which on a 844px screen left the story less than half of it.
+  // Kept across decision changes (a marker tap should not hide the chart it
+  // came from); the panel unmounting on close resets it.
+  const [chartOpen, setChartOpen] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const dirCfg = DIRECTION_CONFIG[row.direction] || { color: 'text-gray-600 dark:text-gray-400', bgColor: 'bg-gray-100 dark:bg-gray-800' }
   const baseIntel = inferDecisionIntelligence(row)
 
@@ -1634,6 +1690,53 @@ function DetailPanel({
           it doing, what's next" without scanning through card chrome.
           Each element renders only when it carries information —
           blank fields don't reserve space. */}
+      {isPhone ? (
+        /* Phone header: identity on two wrapping lines instead of one
+           truncating one (the asset name and portfolio were cut to a few
+           letters at 390px), a 44px close, and the chart toggle. The state
+           summary moves into the Summary card below. */
+        <div className={`px-4 pt-2 pb-3 border-b shrink-0 ${headerTone}`}>
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1 pt-2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className={`text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded ${dirCfg.color} ${dirCfg.bgColor}`}>
+                  {row.direction}
+                </span>
+                <span className="text-[20px] font-semibold leading-tight text-gray-900 break-all dark:text-white">{row.asset_symbol}</span>
+                {intel.resultLabel && (
+                  <span className={`text-[18px] font-black tabular-nums leading-tight ${resultColor}`}>{intel.resultLabel}</span>
+                )}
+              </div>
+              <p className="mt-1 text-[13px] leading-snug text-gray-500 break-words dark:text-gray-400">
+                {[row.asset_name, ageDays <= 0 ? 'Decided today' : `Decided ${ageDays}d ago`, row.portfolio_name].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="-mr-2 w-11 h-11 shrink-0 flex items-center justify-center rounded-full text-gray-500 active:bg-gray-100 dark:text-gray-400 dark:active:bg-gray-700"
+              aria-label="Close detail"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <button
+            type="button"
+            data-slot="outcomes-chart-toggle"
+            aria-expanded={chartOpen}
+            onClick={() => {
+              const next = !chartOpen
+              setChartOpen(next)
+              // The chart opens at the top of the story, so bring it into view.
+              if (next) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+            }}
+            className="mt-3 w-full min-h-[44px] inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white text-[14px] font-medium text-gray-700 active:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:active:bg-gray-700"
+          >
+            <LineChart className="w-4 h-4" />
+            {chartOpen ? 'Hide chart' : 'Show chart'}
+          </button>
+        </div>
+      ) : (
       <div className={`px-4 pt-3 pb-3 border-b shrink-0 ${headerTone}`}>
         {/* Row 1 — identity + meta + result + close, all on one line.
             Age and portfolio now ride inline next to the asset name
@@ -1702,18 +1805,59 @@ function DetailPanel({
             Next-Action CTA below the System Insight handles this so
             the header doesn't say "Add context" three times.) */}
       </div>
+      )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className={clsx('flex-1 overflow-y-auto', isPhone && 'overscroll-contain pb-6')}>
         {/* ════════════════════════════════════════════════════════════
             PROGRESSIVE DISCLOSURE LAYOUT
             ────────────────────────────────────────────────────────────
             PRIMARY (always visible): System Insight + single Next Action
             SECONDARY (collapsed): Why made / Recommendation / Decision /
-                                    What happened / How it's performing
+                                    What happened / Performance so far
             TERTIARY (conditional): Reflection + Learnings only on rows
                                     with a meaningful outcome
             ════════════════════════════════════════════════════════════ */}
 
+        {isPhone ? (
+          <>
+            {/* Phone: the chart, when asked for, leads the story. */}
+            {chartOpen && (
+              <div data-slot="outcomes-phone-chart" className="mx-3 mt-3 rounded-xl border border-gray-200 overflow-hidden dark:border-gray-700">
+                <DeferredChartPanel row={row} onSelectDecision={onSelectDecision} />
+              </div>
+            )}
+
+            {/* Phone: Summary is the one section that is always open —
+                where this decision stands, what the system reads into it,
+                and the single next action. Everything else is a
+                collapsed card below it. */}
+            {(() => {
+              const summary = buildStateSummary(row, intel.verdict)
+              return (
+                <section
+                  data-section-id="summary"
+                  className="outcomes-phone-body mx-3 mt-3 rounded-xl border border-gray-200 bg-white px-4 py-4 space-y-3 dark:border-gray-700 dark:bg-gray-800"
+                >
+                  <h2 className="text-[15px] font-semibold leading-snug text-gray-900 dark:text-white">Summary</h2>
+                  <div className="space-y-1">
+                    <div className={`text-[12px] font-bold uppercase tracking-wider ${
+                      intel.urgency === 'critical' ? 'text-red-700'
+                      : intel.urgency === 'high' ? 'text-amber-700'
+                      : intel.verdict === 'resolved' ? 'text-emerald-700'
+                      : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      {summary.category}
+                    </div>
+                    <p className="text-[14px] leading-relaxed text-gray-700 dark:text-gray-300">{summary.explanation}</p>
+                  </div>
+                  <InsightBanner row={row} />
+                  <PrimaryNextActionCTA row={row} embedded />
+                </section>
+              )
+            })()}
+          </>
+        ) : (
+          <>
         {/* ── PRIMARY 1 — System Insight (always visible, top of stack) */}
         <div className="px-4 pt-3 pb-1">
           <InsightBanner row={row} />
@@ -1725,6 +1869,8 @@ function DetailPanel({
             The full SuggestedActions tertiary list still surfaces
             additional CTAs further down. */}
         <PrimaryNextActionCTA row={row} />
+          </>
+        )}
 
         {/* ── 1. Why this decision was made ──
             Cleaner layout — lead with the rationale (the answer the
@@ -1934,7 +2080,14 @@ function DetailPanel({
             deltas, and any rationale rendered as a quiet quote
             instead of an outlined card. The empty / pending states
             stay simple text + actions. */}
-        <StorySection icon={ArrowRight} title="Execution" badge={<ExecStatusPill status={row.execution_status} interactive row={row} />}>
+        {/* On a phone the status pill is plain: its tap-for-explanation
+            popover is 288px wide from the pill's left edge, which at the
+            right of a 390px header ran off the screen. The explanation is
+            written at the top of the section instead. */}
+        <StorySection icon={ArrowRight} title="Execution" badge={<ExecStatusPill status={row.execution_status} interactive={!isPhone} row={row} />}>
+          {isPhone && row.execution_status !== 'not_applicable' && getExecStatusExplanation(row) && (
+            <p className="text-[11px] text-gray-500 leading-snug mb-3 dark:text-gray-400">{getExecStatusExplanation(row)}</p>
+          )}
           {row.execution_status === 'not_applicable' ? (
             <EmptyField text={row.stage === 'rejected'
               ? `This idea was rejected — no trade was made.${row.move_since_decision_pct != null ? ` The stock has moved ${row.move_since_decision_pct > 0 ? '+' : ''}${row.move_since_decision_pct.toFixed(1)}% since then.` : ''}`
@@ -1947,7 +2100,7 @@ function DetailPanel({
                   ? `Not executed${row.days_since_decision !== null ? ` · ${row.days_since_decision}d since decision` : ''}`
                   : 'No matching execution found.'}
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <ManualMatchPanel row={row} />
                 <SkipDecisionButton decisionId={row.decision_id} />
               </div>
@@ -1987,7 +2140,9 @@ function DetailPanel({
           const tier = magnitudeTier(row)
           const hasMeaningfulOutcome =
             row.execution_status === 'executed' && tier !== 'noise' && tier !== 'no_data'
-          if (!hasMeaningfulOutcome) return null
+          // Phone: these move inside Next actions, so the story is exactly
+          // the seven sections and nothing floats between the cards.
+          if (!hasMeaningfulOutcome || isPhone) return null
           return (
             <>
               <ConsiderationsSection row={row} />
@@ -2008,7 +2163,15 @@ function DetailPanel({
             `sectionId="reflection"` so the "Add a reflection" CTA
             in NextStepsSection can pop it open. */}
         <ReflectionsSection row={row} intel={intel} />
-        <NextStepsSection row={row} />
+        <NextStepsSection
+          row={row}
+          extras={isPhone && row.execution_status === 'executed' && !['noise', 'no_data'].includes(magnitudeTier(row)) ? (
+            <>
+              <ConsiderationsSection row={row} embedded />
+              <SuggestedActionsSection row={row} embedded />
+            </>
+          ) : null}
+        />
 
         {/* (Execution lag moved into the Execution section above so
             it sits with the other execution facts. The loop-footer
@@ -2034,7 +2197,7 @@ function PriceJourney({ row }: { row: AccountabilityRow }) {
   if (prices.length === 0) return null
 
   return (
-    <div className="flex items-center gap-1 py-1.5">
+    <div className="flex flex-wrap items-center gap-1 py-1.5">
       {prices.map((p, i) => (
         <div key={p.label} className="flex items-center gap-1">
           {i > 0 && <ArrowRight className="w-3 h-3 text-gray-300 shrink-0" />}
@@ -2197,7 +2360,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
   // ── Not applicable (rejected/cancelled) ──
   if (isNotApplicable) {
     return (
-      <StorySection icon={TrendingUp} title="How it's performing" sectionId="performance" defaultOpen={false} badge={
+      <StorySection icon={TrendingUp} title="Performance so far" sectionId="performance" defaultOpen={false} badge={
         rawMove != null ? (
           <span className={`text-[8px] font-bold uppercase px-1.5 py-[2px] rounded ${
             directionalMove != null && directionalMove >= 0 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'
@@ -2240,7 +2403,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
   // ── Pending / Unmatched — approved but no trade yet ──
   if (isPending) {
     return (
-      <StorySection icon={TrendingUp} title="How it's performing" sectionId="performance" defaultOpen={false} badge={
+      <StorySection icon={TrendingUp} title="Performance so far" sectionId="performance" defaultOpen={false} badge={
         rawMove != null ? (
           <span className={`text-[8px] font-bold uppercase px-1.5 py-[2px] rounded bg-amber-50 text-amber-700`}>
             {fmtPct(rawMove)} missed
@@ -2286,7 +2449,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
 
   // ── Executed — has matched trade ──
   return (
-    <StorySection icon={TrendingUp} title="How it's performing" sectionId="performance" defaultOpen={false} badge={
+    <StorySection icon={TrendingUp} title="Performance so far" sectionId="performance" defaultOpen={false} badge={
       badgeLabel ? (
         <span className={`text-[8px] font-bold uppercase px-1.5 py-[2px] rounded ${
           (badgeValue || 0) >= 0 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'
@@ -2314,7 +2477,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                 visceral P&L stat for a single trade; the percent
                 gives the move that produced it. */}
             {(row.impact_proxy != null || row.move_since_decision_pct !== null) && (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
                 {row.impact_proxy != null && (
                   <DetailRow
                     label={<span title="Approximate dollar impact: trade size × directionalized price move. Not exact P&L.">P&amp;L (approx)</span>}
@@ -2376,7 +2539,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                   lifecycle.isOpen ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                 }`}>{lifecycle.isOpen ? 'Open' : 'Closed'}</span>
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
                 {lifecycle.avgEntryPrice != null && (
                   <DetailRow label="Avg entry" value={`$${lifecycle.avgEntryPrice.toFixed(2)}`} />
                 )}
@@ -2392,7 +2555,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                   } />
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 border-t border-gray-100 pt-1 mt-1 dark:border-gray-800">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 border-t border-gray-100 pt-1 mt-1 dark:border-gray-800">
                 {lifecycle.realizedPnl != null && (
                   <DetailRow label="Realized" value={
                     <span className={`text-[11px] font-semibold tabular-nums ${pnlColor(lifecycle.realizedPnl)}`}>
@@ -2436,13 +2599,13 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                 const isThis = ds.decisionId === row.decision_id
                 return (
                   <div key={ds.decisionId} className={`flex items-center justify-between text-[10px] py-0.5 px-1 rounded ${isThis ? 'bg-blue-50' : ''}`}>
-                    <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-1.5 min-w-0">
                       <span className="font-bold" style={{ color: cfg.color }}>{cfg.symbol}</span>
                       <span className="text-gray-600 capitalize dark:text-gray-400">{ds.action}</span>
                       <span className="text-gray-400">@ ${ds.decisionPrice?.toFixed(2) || '—'}</span>
                       <span className="text-gray-300">{format(parseISO(ds.decisionDate), 'MMM d')}</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <span className={`font-semibold tabular-nums ${pnlColor(ds.movePct)}`}>
                         {ds.movePct != null ? fmtPct(ds.movePct) : '—'}
                       </span>
@@ -2468,15 +2631,18 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
   )
 }
 
-// ─── Where to next — its OWN StorySection sibling to the
-// "How it's performing" block. Splitting it out keeps the
+// ─── Next actions — its OWN StorySection sibling to the
+// "Performance so far" block. Splitting it out keeps the
 // performance numbers focused on data and elevates the next-step
 // CTAs to peer status with the other story blocks. The Reflection
 // CTA dispatches `outcomes:open-section { sectionId: 'reflection' }`
 // which the Your Reflection StorySection's listener catches —
 // expanding that section and scrolling it into view.
 
-function NextStepsSection({ row }: { row: AccountabilityRow }) {
+function NextStepsSection({ row, extras }: { row: AccountabilityRow; extras?: React.ReactNode }) {
+  // Open on desktop, as it always was; collapsed on a phone like every
+  // section but Summary.
+  const isPhone = useIsMobile()
   // Banner step 2 = "Capture a reflection" (look BACKWARD).
   // Banner step 3 = "Start your next research thread" (look FORWARD).
   // Each CTA fires only the event that matches its loop-half so the
@@ -2517,7 +2683,7 @@ function NextStepsSection({ row }: { row: AccountabilityRow }) {
   }
 
   return (
-    <StorySection icon={ArrowUpRight} title="Where to next" defaultOpen={true}>
+    <StorySection icon={ArrowUpRight} title="Next actions" defaultOpen={!isPhone}>
       <div className="space-y-2">
         <p className="text-[10px] text-gray-500 leading-snug dark:text-gray-400">
           The loop runs continuously — pick the next move on this thesis.
@@ -2559,6 +2725,7 @@ function NextStepsSection({ row }: { row: AccountabilityRow }) {
             <ArrowRight className="w-3 h-3" />
           </button>
         </div>
+        {extras}
       </div>
     </StorySection>
   )
@@ -2602,7 +2769,7 @@ function DeferredChartPanel(props: {
     // not shift the layout under the user's thumb one frame later.
     return (
       <div
-        className="shrink-0 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
+        className={clsx('shrink-0 bg-white dark:bg-gray-800', !isMobileViewport && 'border-t border-gray-200 dark:border-gray-700')}
         style={{ height: isMobileViewport ? 268 : 260 }}
       />
     )
@@ -2684,7 +2851,7 @@ function BottomChartPanel({ row, onSelectDecision }: {
   } as any
 
   return (
-    <div className="shrink-0 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+    <div className={clsx('shrink-0 bg-white dark:bg-gray-800', !isMobileViewport && 'border-t border-gray-200 dark:border-gray-700')}>
       {/* Symbol, prices and the overlay toggle came to well over 390px on one
           row — "Price Only / Shares / Weight / Active Wt" alone is most of a
           phone's width, and a fixed overlay is not clipped by the shell, so
@@ -2783,9 +2950,8 @@ function BottomChartPanel({ row, onSelectDecision }: {
           )}
         </div>
       )}
-      {/* Shorter on a phone: the chart is pinned above the detail panel's own
-          scroll region there, so its height is taken directly out of the space
-          the story below it has to work with. */}
+      {/* Shorter on a phone: the chart opens inside the detail panel's scroll
+          there, above the story, so a tall one pushes the Summary off screen. */}
       <div className="px-2 py-1">
         {isLoading ? (
           <div className="flex items-center justify-center" style={{ height: chartHeight }}>
@@ -3677,8 +3843,10 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
                  trade appeared to show no chart at all.
 
                  Now the panel takes the flexible region (its `h-full` resolves
-                 against the wrapper, not the viewport) and the chart is pinned
-                 under it, so it is on screen the moment a trade is opened.
+                 against the wrapper, not the viewport). The chart is no longer
+                 pinned under it — that took ~270px from every decision — but
+                 sits behind the panel's own Show chart toggle, at the top of
+                 its scroll.
                  `overflow-hidden` clips both axes: a `position: fixed` element
                  is not clipped by the app shell's `overflow-x: clip`, because
                  its containing block is the viewport — which is what let the
@@ -3692,14 +3860,9 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
                   <DetailPanel
                     row={selectedRow}
                     onClose={() => setSelectedId(null)}
-                  />
-                </div>
-                {isMobileViewport && (
-                  <DeferredChartPanel
-                    row={selectedRow}
                     onSelectDecision={(decisionId) => setSelectedId(decisionId)}
                   />
-                )}
+                </div>
               </div>
             )}
           </div>
