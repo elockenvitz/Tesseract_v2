@@ -3,7 +3,8 @@
  * the Outcomes tab. Shows what the real surface will do once enabled.
  *
  * Self-heal: if the user lands here having already completed Trade Book
- * (committed a trade + Trade Book unlocked), they've earned Outcomes —
+ * (an accepted trade on the tutorial idea + Trade Book unlocked — a trade
+ * on any other idea does not count), they've earned Outcomes —
  * mark outcomes_unlocked so the next render swaps in the real surface.
  * Catches the case where the event-based unlock from Trade Book's
  * "Open Outcomes" button missed silently (pilot tester hit this).
@@ -30,7 +31,7 @@ export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewPro
     if (
       !pilotMode.isLoading &&
       pilotMode.isPilot &&
-      pilotMode.hasCommittedTradeInOrg &&
+      pilotMode.hasCommittedTutorialTrade &&
       hasUnlockedTradeBook &&
       !hasUnlockedOutcomes
     ) {
@@ -39,7 +40,7 @@ export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewPro
   }, [
     pilotMode.isLoading,
     pilotMode.isPilot,
-    pilotMode.hasCommittedTradeInOrg,
+    pilotMode.hasCommittedTutorialTrade,
     hasUnlockedTradeBook,
     hasUnlockedOutcomes,
     mark,

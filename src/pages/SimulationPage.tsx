@@ -376,7 +376,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const { isMorphing } = useMorphSession()
   const pilotMode = usePilotMode()
   const { scenario: pilotScenario } = usePilotScenario()
-  const { mark: markPilotStage, tutorialIdeaId } = usePilotProgress()
+  const { tutorialIdeaId } = usePilotProgress()
   /*
    * One object, end to end. The mission follows the captured tutorial idea
    * through simulation → accepted trade → outcome, so Trade Lab basics step 1
@@ -387,20 +387,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const queryClient = useQueryClient()
   const toast = useToast()
 
-  // Pilot sequential unlock: Trade Book unlocks only when the pilot
-  // actually executes a trade THROUGH Trade Lab (the step-3 event in
-  // the Trade Lab Get Started banner). Previously this also fired from
-  // the "View in Trade Book" button on the commit nudge / decision
-  // modal — but those only show after execution anyway, so the listener
-  // covers them. Critically, accepting a recommendation from the
-  // Decision Inbox does NOT fire this event, so it no longer bypasses
-  // the Trade Lab onboarding into the next stage.
-  useEffect(() => {
-    if (!pilotMode.isPilot) return
-    const handler = () => markPilotStage('trade_book_unlocked')
-    window.addEventListener('pilot-tradelab:executed', handler)
-    return () => window.removeEventListener('pilot-tradelab:executed', handler)
-  }, [pilotMode.isPilot, markPilotStage])
+  // Pilot Trade Book unlock is NOT written from here.
+  //
+  // This page marked `trade_book_unlocked` on every execute (and again from
+  // the "View in Trade Book" buttons), whatever was executed. The unlock is
+  // scoped to the tutorial idea now: `usePilotMode` writes the mark once an
+  // accepted trade exists for it, and both execute paths below invalidate
+  // `accepted-trades`, which is the prefix that read lives under — so it
+  // still flips the moment the tutorial trade lands. See
+  // `lib/pilot/pilot-unlocks`.
 
   // Share context — when viewing a shared simulation
   const [activeShareId, setActiveShareId] = useState<string | null>(propShareId || null)
@@ -1754,11 +1749,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
       queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
-      // Per-org "has committed ≥1 trade" flag — drives the pilot Get
-      // Started banner auto-dismiss and the Trade Book / Outcomes
-      // unlocks. Invalidating here makes them flip the instant the
-      // first trade lands, without waiting for the 60s staleTime.
-      queryClient.invalidateQueries({ queryKey: ['org-has-accepted-trade'] })
       // Outcomes (DecisionAccountabilityPage) keys its data under
       // 'decision-accountability'. Without this invalidate, switching
       // to Outcomes right after Execute shows the prior cached state
@@ -5623,7 +5613,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           (review, size, execute) or manually dismisses via the X. The
           banner manages its own per-(user, org) step state and auto-
           dismisses internally once step 3 fires. We deliberately do NOT
-          hide based on `hasCommittedTradeInOrg`: a pilot may have
+          hide based on a committed trade in the org: a pilot may have
           committed a trade via the Decision Inbox without ever using
           Trade Lab, and the intro needs to keep coaching them through
           the Trade Lab execute path until they actually do it here. */}
@@ -6047,7 +6037,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             </div>
             <button
               onClick={() => {
-                if (pilotMode.isPilot) markPilotStage('trade_book_unlocked')
                 window.dispatchEvent(new CustomEvent('navigate-to-asset', {
                   detail: {
                     id: 'trade-book',
@@ -7495,10 +7484,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           // They're going straight to Trade Book — no need for the persistent
           // in-lab nudge.
           setCommitNudge(null)
-          // Pilot unlock: the first decision the user views in Trade Book
-          // promotes Trade Book access from 'preview' to 'full'. Idempotent
-          // (the mutation guards against double-marks).
-          if (pilotMode.isPilot) markPilotStage('trade_book_unlocked')
           window.dispatchEvent(new CustomEvent('navigate-to-asset', {
             detail: {
               id: 'trade-book',

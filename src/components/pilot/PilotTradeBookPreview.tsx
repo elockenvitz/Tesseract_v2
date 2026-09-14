@@ -3,12 +3,11 @@
  * the Trade Book tab. Shows what the real surface will do once enabled,
  * without exposing the operational workflow.
  *
- * Self-heal: if the user lands here having already committed a trade in
- * this org, they've earned Trade Book — mark trade_book_unlocked so the
- * next render swaps in the real surface. Catches the case where the
- * event-based unlock from SimulationPage's `pilot-tradelab:executed`
- * listener missed (e.g., SimulationPage unmounted mid-dispatch on the
- * post-execute navigation). Mirrors the same pattern used by
+ * Self-heal: if the user lands here and the tutorial idea already has an
+ * accepted trade, they've earned Trade Book — mark trade_book_unlocked so
+ * the next render swaps in the real surface. A trade on any other idea
+ * (e.g. the seeded Inbox recommendation) does not count; see
+ * `lib/pilot/pilot-unlocks`. Mirrors the same pattern used by
  * PilotOutcomesPreview.
  *
  * This replaces the older unbounded self-heal that lived in
@@ -35,13 +34,13 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
   const { hasUnlockedTradeBook, mark } = usePilotProgress()
 
   useEffect(() => {
-    // If we're rendering this preview but the user has already
-    // committed a trade in this org, mark trade_book_unlocked now.
+    // If we're rendering this preview but the tutorial idea already has
+    // an accepted trade, mark trade_book_unlocked now.
     // The mutation is idempotent so re-firing is a no-op.
     if (
       !pilotMode.isLoading &&
       pilotMode.isPilot &&
-      pilotMode.hasCommittedTradeInOrg &&
+      pilotMode.hasCommittedTutorialTrade &&
       !hasUnlockedTradeBook
     ) {
       mark('trade_book_unlocked')
@@ -49,7 +48,7 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
   }, [
     pilotMode.isLoading,
     pilotMode.isPilot,
-    pilotMode.hasCommittedTradeInOrg,
+    pilotMode.hasCommittedTutorialTrade,
     hasUnlockedTradeBook,
     mark,
   ])
