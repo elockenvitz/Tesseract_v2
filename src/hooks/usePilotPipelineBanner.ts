@@ -1,4 +1,6 @@
 import { useCallback, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '../lib/supabase'
 import { usePilotMode } from './usePilotMode'
 import { usePilotProgress } from './usePilotProgress'
 import { useDecisionRequestsForIdea } from './useDecisionRequests'
@@ -7,6 +9,21 @@ import { PIPELINE_BASICS_CTA_SOURCE, requestOpenTradeLab } from '../lib/trade-la
 
 /** Decision request statuses that are still waiting — the card Decision Inbox shows. */
 const WAITING = new Set(['pending', 'under_review', 'needs_discussion'])
+
+interface TutorialIdea {
+  id: string
+  portfolio_id: string | null
+  assets: { symbol: string | null } | null
+  portfolios: { id: string; name: string } | null
+}
+
+/**
+ * Step 3's instruction, naming the idea and portfolio once they are known.
+ * Exported so the words are asserted once rather than restated in a test.
+ */
+export function testTheTradeHint(symbol?: string | null, portfolio?: string | null): string {
+  return `See how ${symbol || 'this trade'} would change ${portfolio || 'the portfolio'} before making a decision.`
+}
 
 /**
  * The Idea Pipeline Get Started banner, for whichever shell is rendering it.
@@ -63,23 +80,44 @@ export function usePilotPipelineBanner(): PilotPipelineBanner {
   } = usePilotProgress()
 
   /*
-   * Step 3's direct route to Trade Lab, once the reader is on step 3.
+   * Step 3: test the tutorial idea in Trade Lab, for its portfolio.
    *
-   * The same hand-off as the Trade Lab link on the tutorial idea's card in
-   * Decision Inbox: the `openTradeLab` event, with that card's portfolio — the
-   * decision request's `portfolio_id`, preferring the one still waiting — and
-   * the tutorial idea id alongside. Only fetched once it can be shown.
+   * The same hand-off as the portfolio link on a Pipeline card and the Trade
+   * Lab link in Decision Inbox — the `openTradeLab` event with a portfolio and
+   * the idea — so there is no second route. The portfolio is the idea's own;
+   * an idea captured without one takes the portfolio of its waiting decision
+   * request, which is the card Decision Inbox shows. Only fetched once the
+   * reader is on this step.
    */
   const onStep3 = pilotMode.effectiveIsPilot
     && hasCompletedPipelineStepMoved
     && hasCompletedPipelineStepInbox
     && !hasCompletedPipelineStepTradeLab
     && !!tutorialIdeaId
+  const { data: idea } = useQuery({
+    queryKey: ['pilot-pipeline-tutorial-idea', tutorialIdeaId],
+    enabled: onStep3,
+    staleTime: 30_000,
+    queryFn: async (): Promise<TutorialIdea | null> => {
+      const { data } = await supabase
+        .from('trade_queue_items')
+        .select('id, portfolio_id, assets (symbol), portfolios (id, name)')
+        .eq('id', tutorialIdeaId!)
+        .maybeSingle()
+      return (data as unknown as TutorialIdea | null) ?? null
+    },
+  })
   const { data: requests } = useDecisionRequestsForIdea(onStep3 ? tutorialIdeaId ?? undefined : undefined)
-  const portfolioId = useMemo(() => {
+  const { portfolioId, portfolioName, symbol } = useMemo(() => {
     const list = requests ?? []
-    return (list.find(r => WAITING.has(r.status)) ?? list[0])?.portfolio_id
-  }, [requests])
+    const waiting = list.find(r => WAITING.has(r.status)) ?? list[0]
+    const ownId = idea?.portfolios?.id || idea?.portfolio_id || undefined
+    return {
+      portfolioId: ownId ?? waiting?.portfolio_id,
+      portfolioName: ownId ? idea?.portfolios?.name : waiting?.portfolio?.name,
+      symbol: idea?.assets?.symbol ?? waiting?.trade_queue_item?.assets?.symbol,
+    }
+  }, [idea, requests])
 
   const openTradeLab = useCallback(() => {
     if (!tutorialIdeaId) return
@@ -124,11 +162,13 @@ export function usePilotPipelineBanner(): PilotPipelineBanner {
       },
       {
         n: 3,
-        title: 'Open Trade Lab',
-        hint: 'Click the portfolio name on the recommendation card to jump into Trade Lab.',
+        // Says what the step is for. "Open Trade Lab" named a screen; the
+        // control below still names the destination.
+        title: 'Test the trade',
+        hint: testTheTradeHint(symbol, portfolioName),
         done: hasCompletedPipelineStepTradeLab,
-        // Offered once the card's portfolio is known, so the hand-off carries the
-        // same context the Decision Inbox link does rather than a bare Trade Lab.
+        // Offered once the portfolio is known, so the hand-off always carries a
+        // portfolio, as the card link and Decision Inbox do.
         ...(onStep3 && portfolioId ? { action: { label: 'Open Trade Lab', onClick: openTradeLab } } : {}),
       },
     ],

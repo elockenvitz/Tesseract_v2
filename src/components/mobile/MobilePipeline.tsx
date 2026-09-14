@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { isPipelineBasicsCtaEvent } from '../../lib/trade-lab/open-trade-lab'
+import { isPipelineBasicsCtaEvent, requestOpenTradeLab } from '../../lib/trade-lab/open-trade-lab'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import {
-  ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight,
+  ArrowRight, Beaker, Check, ChevronDown, ChevronLeft, ChevronRight,
   Loader2, ListTodo, Lock, Search, X,
 } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
@@ -412,14 +412,31 @@ function actionTone(action: string): string {
  * where the idea can actually be read first — the previous inline arrows made
  * advancing an idea easier than opening it.
  */
-function PipelineCard({ row, onOpen }: { row: PipelineRow; onOpen: () => void }) {
+export function PipelineCard({ row, onOpen }: { row: PipelineRow; onOpen: () => void }) {
   const subject: any = row.kind === 'pair' ? row.legs[0] : row.item
+  const portfolioName: string | undefined = subject?.portfolios?.name
+  const portfolioId: string | undefined = subject?.portfolios?.id || subject?.portfolio_id || undefined
 
+  /*
+   * The portfolio is the way into Trade Lab, as it is on the desktop board.
+   *
+   * The card was one <button>, so its portfolio could only be grey text, and
+   * on a phone the sole route from an idea to Trade Lab was a link three
+   * layers down inside the Decision Inbox drawer. The card is a div with the
+   * button role now, so the portfolio can be a real control of its own: the
+   * same `openTradeLab` hand-off, scoped to this idea and this portfolio. The
+   * analyst's name stays plain text.
+   */
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      className="w-full text-left rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 active:bg-gray-50 dark:active:bg-gray-800"
+      onKeyDown={e => {
+        if (e.target !== e.currentTarget) return
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
+      }}
+      className="w-full text-left rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 active:bg-gray-50 dark:active:bg-gray-800 cursor-pointer"
     >
       {row.kind === 'pair' ? (
         <>
@@ -466,10 +483,26 @@ function PipelineCard({ row, onOpen }: { row: PipelineRow; onOpen: () => void })
       )}
 
       <p className="mt-1.5 text-[11px] text-gray-400 truncate">
-        {subject?.portfolios?.name ?? 'No portfolio'}
+        {portfolioName && portfolioId ? (
+          <button
+            type="button"
+            data-slot="pipeline-card-portfolio"
+            onClick={e => {
+              e.stopPropagation()
+              requestOpenTradeLab({ portfolioId, tradeQueueItemId: subject.id })
+            }}
+            aria-label={`Open ${portfolioName} in Trade Lab`}
+            className="-my-1 -ml-1 px-1 py-1 rounded inline-flex items-center gap-1 align-middle font-medium text-primary-600 dark:text-primary-400 active:bg-primary-50 dark:active:bg-primary-900/30"
+          >
+            <Beaker className="h-3 w-3 shrink-0" />
+            <span className="underline decoration-primary-300 underline-offset-2 dark:decoration-primary-700">{portfolioName}</span>
+          </button>
+        ) : (
+          portfolioName ?? 'No portfolio'
+        )}
         {subject?.users && ' · ' + [subject.users.first_name, subject.users.last_name].filter(Boolean).join(' ')}
       </p>
-    </button>
+    </div>
   )
 }
 

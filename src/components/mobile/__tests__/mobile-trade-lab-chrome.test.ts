@@ -322,7 +322,10 @@ describe('the local tutorial', () => {
    * is teaching.
    */
   it('drops the instruction line once a step is done', () => {
-    expect(shell).toContain('{!steps.some(s => s.done) && (')
+    // The one exception is a step carrying its own action (Pipeline basics
+    // step 3): it is telling the reader to do it now, so its hint stays.
+    expect(shell).toContain('{(!steps.some(s => s.done) || currentAction) && (')
+    expect(shell).toContain('const currentAction = !current.done ? current.action : undefined')
   })
 
   /** Completion is untouched: the same three flags, read the same way. */

@@ -115,6 +115,10 @@ export function PilotStepsBanner({
    */
   if (!current) return null
 
+  // A step with its own action is instructing the reader to do it now, so its
+  // hint stays and its control gets a row of its own.
+  const currentAction = !current.done ? current.action : undefined
+
   return (
     <div
       data-slot="pilot-steps-banner"
@@ -128,7 +132,8 @@ export function PilotStepsBanner({
       )}
     >
       {/* ── Phone ──────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2.5 px-3 py-2 sm:hidden">
+      <div className="px-3 py-2 sm:hidden">
+      <div className="flex items-center gap-2.5">
         <span
           className={clsx(
             'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold tabular-nums text-white shadow-sm',
@@ -152,26 +157,13 @@ export function PilotStepsBanner({
             module that keeps spending a line on instructions is a module
             that keeps costing the surface it is teaching.
           */}
-          {!steps.some(s => s.done) && (
+          {(!steps.some(s => s.done) || currentAction) && (
             <p className="mt-0.5 text-[11px] leading-snug text-gray-600 dark:text-gray-400">
               {current.hint}
             </p>
           )}
         </div>
-        {!current.done && current.action ? (
-          <button
-            type="button"
-            data-slot="pilot-steps-action"
-            onClick={current.action.onClick}
-            className={clsx(
-              'shrink-0 h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-[12px] font-semibold text-white whitespace-nowrap no-touch-target',
-              t.action,
-            )}
-          >
-            {current.action.label}
-            <ArrowRight className="h-4 w-4 shrink-0" />
-          </button>
-        ) : current.onClick && (
+        {!currentAction && current.onClick && (
           <button
             type="button"
             data-slot="pilot-steps-cta"
@@ -185,6 +177,21 @@ export function PilotStepsBanner({
             )}
             aria-label={current.title}
           >
+            <ArrowRight className="h-4 w-4 shrink-0" />
+          </button>
+        )}
+      </div>
+        {currentAction && (
+          <button
+            type="button"
+            data-slot="pilot-steps-action"
+            onClick={currentAction.onClick}
+            className={clsx(
+              'mt-2 w-full h-10 inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-semibold text-white',
+              t.action,
+            )}
+          >
+            {currentAction.label}
             <ArrowRight className="h-4 w-4 shrink-0" />
           </button>
         )}
