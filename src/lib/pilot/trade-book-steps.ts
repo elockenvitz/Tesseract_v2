@@ -17,8 +17,6 @@ export interface TradeBookStepCopy {
   n: number
   title: string
   hint: string
-  /** The verb on the phone's next-steps card. */
-  actionLabel: string
 }
 
 export const TRADE_BOOK_STEPS: readonly TradeBookStepCopy[] = [
@@ -26,22 +24,23 @@ export const TRADE_BOOK_STEPS: readonly TradeBookStepCopy[] = [
     key: 'reviewed',
     n: 1,
     title: 'Review the trade',
-    hint: 'Open a trade in this batch to check its price, size and notes.',
-    actionLabel: 'Show me',
+    hint: 'Tap a trade in this batch to check its price, size and notes.',
   },
   {
+    /*
+     * The batch's one answer. Trade-specific notes are optional and do not
+     * complete this step: only saving "Why this decision?" fires its event.
+     */
     key: 'rationale',
     n: 2,
     title: 'Add your rationale',
-    hint: 'Answer “Why this decision?” for the whole batch, or add a trade-specific note.',
-    actionLabel: 'Write it',
+    hint: 'Answer “Why this decision?” for the whole batch.',
   },
   {
     key: 'outcomes',
     n: 3,
     title: 'Open Outcomes',
-    hint: 'See how the decision plays out. That’s where the last pilot stage finishes.',
-    actionLabel: 'Open',
+    hint: 'See how the decision plays out.',
   },
 ]
 

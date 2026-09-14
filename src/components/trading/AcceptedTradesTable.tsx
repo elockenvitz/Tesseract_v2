@@ -272,9 +272,8 @@ export function TradeRationaleLog({
   const handleSubmit = () => {
     if (!draft.trim() || !onAddComment) return
     onAddComment(tradeId, draft.trim())
-    // Tick step 2 of the pilot Trade Book Get Started banner the
-    // first time a rationale comment is added to any trade row.
-    try { window.dispatchEvent(new CustomEvent('pilot-tradebook:rationale-added')) } catch { /* ignore */ }
+    // Deliberately no Trade Book basics event: a trade-specific note is
+    // optional, and step 2 is the batch's "Why this decision?".
     setDraft('')
   }
 
@@ -297,7 +296,7 @@ export function TradeRationaleLog({
             log beside it. The line under the title says so. */}
         <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60">
           <div className="text-[13px] font-semibold text-gray-900 dark:text-white">Trade-specific notes</div>
-          <div className="text-[11px] text-gray-500 dark:text-gray-400">Only for this trade</div>
+          <div className="text-[11px] text-gray-500 dark:text-gray-400">Optional · only for this trade</div>
         </div>
 
         <div className="p-3 space-y-3">

@@ -601,7 +601,14 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
               }))
             } catch { /* ignore */ }
           }}
-          className="order-2 sm:order-4 ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800/60 rounded-md transition-colors"
+          /* Hidden on a phone while Trade Book basics is active: the batch
+             page's own Open Outcomes button is the one way there, at the end
+             of the steps. */
+          className={clsx(
+            "order-2 sm:order-4 ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800/60 rounded-md transition-colors",
+            showPilotBasics && 'max-md:hidden',
+          )}
+          data-slot="tradebook-header-outcomes"
           title="See how these decisions are performing"
         >
           {/* A quiet shortcut in the corner, not a call to action — it is the

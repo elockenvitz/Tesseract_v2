@@ -1,22 +1,23 @@
 /**
- * The phone's Trade Book, arranged around Trade Book basics.
+ * The phone's Trade Book during Trade Book basics: one page, in step order.
  *
- * The step banner named three actions — review a trade, add rationale, open
- * Outcomes — and on a phone none of them were in view: the page opened on a
- * list of batch cards, the rationale and trades were inside a batch, and
- * Outcomes was a small chip in the header. Now, for a pilot on a phone, the
- * latest batch opens, it leads with a Next steps card whose rows take you to
- * each action, and it ends with Open Outcomes.
+ * The amber banner carries progress and nothing else. The batch reads in the
+ * order the steps are done — summary, then the trades (step 1: review one),
+ * then "Why this decision?" (step 2), then one Open Outcomes button (step 3) —
+ * and that button is the only way to Outcomes on the page. Step 2 is the
+ * batch's answer; a trade-specific note is optional and does not count.
  *
- * Rendered for real at 390px: BatchListView, the banner and the card.
+ * Rendered for real at 390px: the banner and BatchListView.
  */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, within, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 vi.mock('../../../lib/supabase', () => ({
-  supabase: { from: () => ({ update: () => ({ eq: () => ({ select: async () => ({ data: [{}], error: null }) }) }) }) },
+  supabase: { from: () => ({ update: () => ({ eq: () => ({ select: async () => ({ data: [{ id: 'b-1' }], error: null }) }) }) }) },
 }))
 vi.mock('../../../hooks/useAcceptedTrades', () => ({ useAcceptedTradeComments: () => ({ data: [] }) }))
 vi.mock('../../../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }))
@@ -44,7 +45,7 @@ const trade = {
   execution_status: 'complete', created_at: '2026-09-14T16:48:17Z',
 } as never
 
-function Page({ guide, initialSelection = null }: { guide?: TradeBookGuide; initialSelection?: string | null }) {
+function Page({ guide, initialSelection = null, onAddComment = vi.fn() }: { guide?: TradeBookGuide; initialSelection?: string | null; onAddComment?: (id: string, c: string) => void }) {
   const [selected, setSelected] = useState<string | null>(initialSelection)
   return (
     <QueryClientProvider client={new QueryClient()}>
@@ -55,7 +56,7 @@ function Page({ guide, initialSelection = null }: { guide?: TradeBookGuide; init
         selectedBatchId={selected}
         onSelectBatch={setSelected}
         onViewBatchTrades={vi.fn()}
-        onAddComment={vi.fn()}
+        onAddComment={onAddComment}
         guide={guide}
       />
     </QueryClientProvider>
@@ -64,138 +65,142 @@ function Page({ guide, initialSelection = null }: { guide?: TradeBookGuide; init
 
 const guide = (navigateToOutcomes = vi.fn()): TradeBookGuide => ({ userId: 'u1', orgId: 'o1', navigateToOutcomes })
 const slot = (name: string) => document.querySelector(`[data-slot="${name}"]`) as HTMLElement | null
-const stepRow = (key: string) => document.querySelector(`[data-slot="tradebook-next-step"][data-step="${key}"]`) as HTMLElement
 const flush = () => act(async () => { await new Promise(r => setTimeout(r, 0)) })
+const bannerPhone = () => slot('pilot-steps-banner')!.querySelector('.sm\\:hidden') as HTMLElement
+const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
 
-let scrolled: Element[]
 beforeEach(() => {
   localStorage.clear()
   progressMark.mockReset()
   setViewport(390)
-  scrolled = []
-  Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this) }
 })
 afterEach(cleanup)
 
-describe('a pilot opening Trade Book on a phone', () => {
-  it('lands inside the latest batch, not on the list of batches', () => {
+describe('a pilot on a phone during Trade Book basics', () => {
+  it('lands inside the latest batch', () => {
     render(<Page guide={guide()} />)
-    expect(slot('tradebook-next-steps')).not.toBeNull()
     expect(screen.getByRole('button', { name: /All batches/ })).toBeTruthy()
+    expect(slot('batch-trades-section')).not.toBeNull()
   })
 
-  it('reads top to bottom: next steps, batch summary, why this decision, trades, open outcomes', () => {
+  it('reads in step order: summary, trades (1), why this decision (2), open outcomes (3)', () => {
     render(<Page guide={guide()} />)
-    // The batch's own header, inside the opened batch (the hidden list card has the name too).
-    const detail = slot('tradebook-next-steps')!.parentElement!
-    const order = [
-      slot('tradebook-next-steps'),
-      within(detail).getByText('1 buy · 09/14/2026'),
-      slot('batch-rationale-section'),
-      slot('batch-trades-section'),
-      slot('tradebook-outcomes-cta'),
-    ]
-    for (let i = 1; i < order.length; i++) {
-      expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    }
-  })
-
-  it('labels the batch question and the per-trade notes by scope', () => {
-    render(<Page guide={guide()} />)
+    const trades = slot('batch-trades-section')!
     const rationale = slot('batch-rationale-section')!
+    const cta = slot('tradebook-outcomes-cta')!
+    const summary = within(trades.parentElement!).getByText('1 buy · 09/14/2026')
+    expect(follows(summary, trades)).toBe(true)
+    expect(follows(trades, rationale)).toBe(true)
+    expect(follows(rationale, cta)).toBe(true)
+    expect(within(trades).getByText('Step 1')).toBeTruthy()
+    expect(within(rationale).getByText('Step 2')).toBeTruthy()
+    expect(within(cta).getByText('Step 3')).toBeTruthy()
     expect(within(rationale).getByRole('heading', { name: /Why this decision\?/ })).toBeTruthy()
-    expect(within(rationale).getByText('Applies to the whole batch')).toBeTruthy()
-    expect(within(slot('batch-trades-section')!).getByText('Tap a trade for its details and trade-specific notes')).toBeTruthy()
+  })
+
+  it('has no Next steps card', () => {
+    render(<Page guide={guide()} />)
+    expect(slot('tradebook-next-steps')).toBeNull()
+    expect(document.querySelector('[data-slot="tradebook-next-step"]')).toBeNull()
+  })
+
+  it('has exactly one Open Outcomes action, at the bottom, and a banner that is progress only', () => {
+    // On step 3, where the banner used to offer its own Open Outcomes arrow.
+    localStorage.setItem('pilot_tradebook_intro_reviewed_u1_o1', '1')
+    localStorage.setItem('pilot_tradebook_intro_rationale_u1_o1', '1')
+    render(<Page guide={guide()} />)
+    const phone = bannerPhone()
+    expect(phone.textContent).toContain('Open Outcomes')
+    expect(phone.querySelector('[data-slot="pilot-steps-cta"]')).toBeNull()
+    expect(phone.querySelector('[data-slot="pilot-steps-action"]')).toBeNull()
+    expect(within(phone).queryAllByRole('button')).toHaveLength(0)
+    const outcomesButtons = Array.from(document.querySelectorAll('button')).filter(b => /Open Outcomes/.test(b.textContent ?? '') && !b.closest('.sm\\:flex'))
+    expect(outcomesButtons).toHaveLength(1)
+    expect(outcomesButtons[0].dataset.slot).toBe('tradebook-open-outcomes')
+  })
+
+  it('hides Open in Trades on a phone', () => {
+    render(<Page guide={guide()} />)
+    const openInTrades = screen.getByRole('button', { name: /Open in Trades/ })
+    expect(openInTrades.className).toContain('max-md:hidden')
   })
 })
 
-describe('the Next steps rows take you to each action', () => {
-  it('Review the trade scrolls to the trades, opens the first one, and ticks the step', async () => {
+describe('the steps complete from the page', () => {
+  it('step 1: tapping a trade reviews it', async () => {
     render(<Page guide={guide()} />)
-    expect(stepRow('reviewed').dataset.state).toBe('next')
-    fireEvent.click(stepRow('reviewed'))
-    expect(scrolled).toContain(slot('batch-trades-section'))
-    expect(screen.getByText('Trade-specific notes')).toBeTruthy()
-    expect(screen.getByText('Only for this trade')).toBeTruthy()
+    expect(bannerPhone().textContent).toContain('Review the trade')
+    fireEvent.click(document.querySelector('[data-slot="tradebook-mobile-trade"]')!)
     await flush()
-    expect(stepRow('reviewed').dataset.state).toBe('done')
-    expect(stepRow('rationale').dataset.state).toBe('next')
+    expect(bannerPhone().textContent).toContain('Add your rationale')
   })
 
-  it('Add your rationale scrolls to "Why this decision?" and opens its editor', () => {
+  it('step 2: a trade-specific note is optional and does not complete it', async () => {
+    const onAddComment = vi.fn()
+    render(<Page guide={guide()} onAddComment={onAddComment} />)
+    fireEvent.click(document.querySelector('[data-slot="tradebook-mobile-trade"]')!)
+    await flush()
+    expect(screen.getByText('Optional · only for this trade')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Add a trade-specific note'), { target: { value: 'Guidance raised.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add note' }))
+    await flush()
+    expect(onAddComment).toHaveBeenCalledWith('t-1', 'Guidance raised.')
+    expect(bannerPhone().textContent).toContain('Add your rationale')
+  })
+
+  it('step 2: saving "Why this decision?" completes it', async () => {
     render(<Page guide={guide()} />)
-    expect(screen.queryByLabelText('Why this decision?')).toBeNull()
-    fireEvent.click(stepRow('rationale'))
-    expect(scrolled).toContain(slot('batch-rationale-section'))
-    expect((screen.getByLabelText('Why this decision?') as HTMLElement).tagName).toBe('TEXTAREA')
+    fireEvent.click(document.querySelector('[data-slot="tradebook-mobile-trade"]')!)
+    await flush()
+    fireEvent.click(screen.getByText('Explain why you made this decision'))
+    fireEvent.change(screen.getByLabelText('Why this decision?'), { target: { value: 'Adding on weakness ahead of the print.' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save rationale/ }))
+    await flush()
+    await flush()
+    expect(bannerPhone().textContent).toContain('Open Outcomes')
   })
 
-  it('Open Outcomes goes there once and records the step — from the row or the button at the end', async () => {
+  it('step 3: Open Outcomes navigates once, records the step, and finishing all three writes stage 4', async () => {
     const navigate = vi.fn()
     const opened = vi.fn()
     window.addEventListener('pilot-tradebook:opened-outcomes', opened)
     render(<Page guide={guide(navigate)} />)
-    fireEvent.click(stepRow('outcomes'))
+    fireEvent.click(document.querySelector('[data-slot="tradebook-mobile-trade"]')!)
+    await flush()
+    act(() => { window.dispatchEvent(new CustomEvent('pilot-tradebook:rationale-added')) })
+    await flush()
+    expect(progressMark).not.toHaveBeenCalledWith('tradebook_basics_completed')
+    fireEvent.click(slot('tradebook-open-outcomes')!)
+    await flush()
     expect(navigate).toHaveBeenCalledTimes(1)
     expect(opened).toHaveBeenCalledTimes(1)
-    await flush()
-    expect(stepRow('outcomes').dataset.state).toBe('done')
-
-    fireEvent.click(slot('tradebook-open-outcomes')!)
-    expect(navigate).toHaveBeenCalledTimes(2)
+    expect(slot('pilot-steps-banner')).toBeNull()
+    expect(progressMark).toHaveBeenCalledWith('tradebook_basics_completed')
     window.removeEventListener('pilot-tradebook:opened-outcomes', opened)
   })
 })
 
-describe('the banner and the card are one progress', () => {
-  it('moves the banner to the next step when the card completes one', async () => {
-    render(<Page guide={guide()} />)
-    const banner = slot('pilot-steps-banner')!
-    expect(within(banner).getAllByText('Review the trade').length).toBeGreaterThan(0)
-    fireEvent.click(stepRow('reviewed'))
-    await flush()
-    // Phone half of the banner shows the current step.
-    expect(banner.querySelector('.sm\\:hidden')!.textContent).toContain('Add your rationale')
-  })
-
-  it('retires both once all three are done', async () => {
-    render(<Page guide={guide()} />)
-    fireEvent.click(stepRow('reviewed'))
-    await flush()
-    act(() => { window.dispatchEvent(new CustomEvent('pilot-tradebook:rationale-added')) })
-    await flush()
-    fireEvent.click(stepRow('outcomes'))
-    await flush()
-    expect(slot('tradebook-next-steps')).toBeNull()
-    expect(slot('pilot-steps-banner')).toBeNull()
-    // Finishing Trade Book basics is pilot mission stage 4: its server-backed mark is written.
-    expect(progressMark).toHaveBeenCalledWith('tradebook_basics_completed')
-  })
-
-  it('does not write the stage 4 mark before all three steps are done', async () => {
-    render(<Page guide={guide()} />)
-    fireEvent.click(stepRow('reviewed'))
-    await flush()
-    fireEvent.click(stepRow('outcomes'))
-    await flush()
-    expect(progressMark).not.toHaveBeenCalledWith('tradebook_basics_completed')
-  })
-})
-
 describe('unchanged elsewhere', () => {
-  it('a phone without the pilot guide gets the list, and no card or Outcomes button in a batch', () => {
-    const { unmount } = render(<Page />)
-    expect(screen.queryByRole('button', { name: /All batches/ })).toBeNull()
-    unmount()
-    render(<Page initialSelection="b-1" />)
-    expect(slot('tradebook-next-steps')).toBeNull()
-    expect(slot('tradebook-outcomes-cta')).toBeNull()
-  })
-
-  it('desktop with the guide shows neither the card nor the button', () => {
+  it('desktop keeps its order, Open in Trades, the clickable banner step and no bottom button', () => {
     setViewport(1440)
     render(<Page guide={guide()} initialSelection="b-1" />)
-    expect(slot('tradebook-next-steps')).toBeNull()
+    expect(follows(slot('batch-rationale-section')!, slot('batch-trades-section')!)).toBe(true)
     expect(slot('tradebook-outcomes-cta')).toBeNull()
+    expect(screen.queryByText('Step 1')).toBeNull()
+    // The banner's desktop half still offers step 3.
+    const desktopHalf = slot('pilot-steps-banner')!.querySelector('.sm\\:flex') as HTMLElement
+    expect(within(desktopHalf).getByRole('button', { name: /Open Outcomes/ })).toBeTruthy()
+  })
+
+  it('a phone without the tutorial gets no step labels and no Outcomes button', () => {
+    render(<Page initialSelection="b-1" />)
+    expect(screen.queryByText('Step 1')).toBeNull()
+    expect(slot('tradebook-outcomes-cta')).toBeNull()
+  })
+
+  it('the header Outcomes shortcut is hidden on a phone only while the tutorial is active', () => {
+    const page = readFileSync(path.join(process.cwd(), 'src/pages/TradeBookPage.tsx'), 'utf8')
+    const header = page.slice(page.indexOf('data-slot="tradebook-header-outcomes"') - 800, page.indexOf('data-slot="tradebook-header-outcomes"'))
+    expect(header).toContain("showPilotBasics && 'max-md:hidden'")
   })
 })

@@ -80,7 +80,14 @@ export function PilotStepsBanner({
   tone = 'amber',
   icon: Icon = Sparkles,
   variant = 'bar',
+  phoneStatusOnly = false,
 }: {
+  /**
+   * Phone: show progress only — no arrow or action control. For a surface
+   * whose page already carries the step's one action, so the banner does not
+   * offer a second copy of it.
+   */
+  phoneStatusOnly?: boolean
   steps: PilotStep[]
   /** Each banner keeps its own words. Outcomes is not "get started". */
   label?: string
@@ -117,7 +124,7 @@ export function PilotStepsBanner({
 
   // A step with its own action is instructing the reader to do it now, so its
   // hint stays and its control gets a row of its own.
-  const currentAction = !current.done ? current.action : undefined
+  const currentAction = !current.done && !phoneStatusOnly ? current.action : undefined
 
   return (
     <div
@@ -163,7 +170,7 @@ export function PilotStepsBanner({
             </p>
           )}
         </div>
-        {!currentAction && current.onClick && (
+        {!phoneStatusOnly && !currentAction && current.onClick && (
           <button
             type="button"
             data-slot="pilot-steps-cta"

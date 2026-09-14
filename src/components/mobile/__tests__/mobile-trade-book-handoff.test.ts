@@ -176,29 +176,29 @@ describe('Trade Book on a phone', () => {
     expect(tutorial).toContain('TRADE_BOOK_STEPS.map(')
     const steps = src('lib/pilot/trade-book-steps.ts')
     const hints = [...steps.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
-    expect(hints[0]).toBe('Open a trade in this batch to check its price, size and notes.')
+    expect(hints[0]).toBe('Tap a trade in this batch to check its price, size and notes.')
     expect(hints.join(' ')).not.toMatch(/\bclick\b/i)
-    expect(hints[1]).toContain('“Why this decision?”')
-    expect(hints[1]).toContain('trade-specific note')
+    // Step 2 is the batch's answer only.
+    expect(hints[1]).toBe('Answer “Why this decision?” for the whole batch.')
   })
 
   /** Step 1 fires from opening a real committed trade's audit, both surfaces. */
   it('ticks step one from the same act on either surface', () => {
     const dispatches = [...batchView.matchAll(/dispatchEvent\(new CustomEvent\('pilot-tradebook:trade-reviewed'\)\)/g)]
-    // Desktop row, phone card tap, and the phone card opened by "Review the trade".
-    expect(dispatches.length).toBe(3)
+    // Desktop row and phone card tap.
+    expect(dispatches.length).toBe(2)
     const card = batchView.slice(batchView.indexOf('function MobileTradeCard'))
     expect(card.slice(0, 2600)).toContain('pilot-tradebook:trade-reviewed')
   })
 
   /**
-   * Step 2 is a write, not a view: the batch rationale save fires it only for
-   * a non-empty value, and a per-trade note fires it on submit.
+   * Step 2 is the batch's "Why this decision?", saved non-empty. A
+   * trade-specific note is optional and does not fire it.
    */
-  it('ticks step two only from a real write', () => {
+  it('ticks step two only from saving the batch rationale', () => {
     const save = batchView.slice(batchView.indexOf('if (saved && saved.length > 0) {'))
     expect(save.slice(0, 300)).toContain('pilot-tradebook:rationale-added')
-    expect(acceptedTable).toContain("pilot-tradebook:rationale-added")
+    expect(acceptedTable).not.toContain("dispatchEvent(new CustomEvent('pilot-tradebook:rationale-added'))")
   })
 
   it('replaces the sideways table with stacked cards', () => {

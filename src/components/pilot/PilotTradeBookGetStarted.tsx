@@ -44,6 +44,10 @@ export function PilotTradeBookGetStarted({ userId, orgId, onOpenOutcomes }: Pilo
          Trade Lab basics — not the global five-step pilot mission, which is
          what "Get started" names. Unlabelled it read as a second one. */
       label="Trade Book basics"
+      /* On a phone the banner is progress only. The batch page carries each
+         step's action, ending in the one Open Outcomes button; desktop keeps
+         step 3 clickable here. */
+      phoneStatusOnly
       steps={TRADE_BOOK_STEPS.map(step => ({
         n: step.n,
         title: step.title,
