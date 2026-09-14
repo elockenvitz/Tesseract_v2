@@ -1,14 +1,16 @@
 /**
- * The pilot's locked Trade Book and Outcomes previews at 390px.
+ * The pilot's locked Trade Book and Outcomes.
  *
- * They were desktop compositions: `p-8`, a three-column card grid that cut
- * the cards off at 390px, and a root with no scroller inside a shell wrapper
- * that is `overflow-hidden` for both tabs. jsdom does not lay out, so these
- * assert the classes that decide it: phone values unprefixed or `max-md:`,
- * and every desktop value still in force from `md:` up.
+ * On a phone they are a compact locked state rather than the desktop's
+ * documentation page: no "Pilot preview" pill, a one-line description, a lock
+ * card with a short title and one or two sentences, one full-width CTA, and
+ * three one-line summary rows instead of six feature cards. Desktop renders the
+ * preview it always did.
+ *
+ * The phone is selected by the real `useIsMobile`, driven through matchMedia.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, within } from '@testing-library/react'
 
 vi.mock('../../../hooks/usePilotMode', () => ({
   usePilotMode: () => ({ isLoading: false, isPilot: true, hasCommittedTutorialTrade: false }),
@@ -20,79 +22,108 @@ vi.mock('../../../hooks/usePilotProgress', () => ({
 import { PilotTradeBookPreview } from '../PilotTradeBookPreview'
 import { PilotOutcomesPreview } from '../PilotOutcomesPreview'
 
+function setViewport(width: number) {
+  window.matchMedia = ((query: string) => {
+    const max = /max-width:\s*(\d+)px/.exec(query)
+    const min = /min-width:\s*(\d+)px/.exec(query)
+    const matches = (!max || width <= Number(max[1])) && (!min || width >= Number(min[1]))
+    return { matches, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false }
+  }) as unknown as typeof window.matchMedia
+}
+
 afterEach(cleanup)
 
-describe('the lock copy names the lineage', () => {
-  it('Trade Book opens after the pilot idea is committed, and its decision lands there', () => {
-    const text = render(<PilotTradeBookPreview onGoToTradeLab={vi.fn()} />).container.textContent ?? ''
-    expect(text).toContain("This opens after you commit the idea you're working through in the pilot")
-    expect(text).toContain('That decision lands here')
-    expect(text).toContain("Example recommendations in the Decision Inbox don't open it")
+const words = (s: string) => s.trim().split(/\s+/).length
+
+describe.each([
+  ['Trade Book', PilotTradeBookPreview, ['Decision rationale', 'Sizing', 'Portfolio context'], /pilot idea/],
+  ['Outcomes', PilotOutcomesPreview, ['Thesis preservation', 'Price targets', 'Post-mortems'], /pilot idea/],
+])('%s locked state on a phone', (surface, Preview, rows, lineage) => {
+  const mount = () => {
+    setViewport(390)
+    const onGoToTradeLab = vi.fn()
+    const { container } = render(<Preview onGoToTradeLab={onGoToTradeLab} />)
+    return { root: container.querySelector('[data-slot="pilot-locked-phone"]') as HTMLElement, onGoToTradeLab, container }
+  }
+
+  it('is the compact state, not the desktop preview, and scrolls itself', () => {
+    const { root, container } = mount()
+    expect(root).not.toBeNull()
+    expect(container.querySelector('[data-slot="pilot-locked-preview"]')).toBeNull()
+    expect(root.className).toContain('h-full')
+    expect(root.className).toContain('overflow-y-auto')
   })
 
-  it('Outcomes opens after the pilot idea reaches Trade Book, not after any trade', () => {
-    const text = render(<PilotOutcomesPreview onGoToTradeLab={vi.fn()} />).container.textContent ?? ''
-    expect(text).toContain('This opens after your pilot idea is committed and reaches Trade Book')
-    expect(text).toContain("A trade on any other idea doesn't count")
+  it('has no Pilot preview pill', () => {
+    expect(mount().root.textContent).not.toContain('Pilot preview')
+  })
+
+  it('leads with the surface, a one-line description, and a short lock title that names the pilot idea', () => {
+    const { root } = mount()
+    expect(within(root).getByRole('heading', { level: 1 }).textContent).toBe(surface)
+    const description = root.querySelector('h1')!.parentElement!.nextElementSibling as HTMLElement
+    expect(words(description.textContent!)).toBeLessThanOrEqual(10)
+    const lockTitle = within(root).getByRole('heading', { level: 2 }).textContent!
+    expect(lockTitle).toMatch(lineage)
+    expect(words(lockTitle)).toBeLessThanOrEqual(9)
+  })
+
+  it('explains the lock in at most two sentences', () => {
+    const card = mount().root.querySelector('[data-slot="pilot-locked-card"]') as HTMLElement
+    const body = card.querySelector('p')!.textContent!
+    expect(body.split(/[.;]\s/).filter(Boolean).length).toBeLessThanOrEqual(2)
+    expect(words(body)).toBeLessThanOrEqual(22)
+  })
+
+  it('offers one full-width CTA that goes to Trade Lab', () => {
+    const { root, onGoToTradeLab } = mount()
+    const ctas = root.querySelectorAll('[data-slot="pilot-locked-cta"]')
+    expect(ctas).toHaveLength(1)
+    const cta = ctas[0] as HTMLButtonElement
+    expect(cta.className).toContain('w-full')
+    expect(cta.className).toContain('h-11')
+    cta.click()
+    expect(onGoToTradeLab).toHaveBeenCalledTimes(1)
+  })
+
+  it('summarises value in three one-line rows', () => {
+    const list = mount().root.querySelector('[data-slot="pilot-locked-items"]') as HTMLElement
+    const items = Array.from(list.querySelectorAll('li'))
+    expect(items.map(li => li.querySelector('.text-sm')!.textContent)).toEqual(rows)
+    for (const li of items) {
+      expect(li.querySelector('svg')).not.toBeNull()
+      expect(words(li.querySelector('.text-xs')!.textContent!)).toBeLessThanOrEqual(8)
+    }
+  })
+
+  it('keeps the primary message above the summary rows', () => {
+    const { root } = mount()
+    const card = root.querySelector('[data-slot="pilot-locked-card"]')!
+    const list = root.querySelector('[data-slot="pilot-locked-items"]')!
+    expect(card.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
 
-const classes = (el: Element | null) => new Set((el?.getAttribute('class') ?? '').split(/\s+/))
-
 describe.each([
-  ['Trade Book', PilotTradeBookPreview, [
-    'Decision rationale', 'Sizing derivation', 'Portfolio context',
-    'Decision traceability', 'Pro-forma lifecycle', 'Audit trail',
-  ]],
-  ['Outcomes', PilotOutcomesPreview, [
-    'Thesis preservation', 'Price-target evaluation', 'Analyst scorecards',
-    'Post-mortem flow', 'Decision accountability', 'Historical dataset',
-  ]],
-])('%s locked preview', (_name, Preview, titles) => {
-  const mount = () => render(<Preview onGoToTradeLab={vi.fn()} />).container
+  ['Trade Book', PilotTradeBookPreview, "This opens after you commit the idea you're working through in the pilot"],
+  ['Outcomes', PilotOutcomesPreview, 'This opens after your pilot idea is committed and reaches Trade Book'],
+])('%s preview on desktop is unchanged', (_surface, Preview, lockTitle) => {
+  const mount = () => {
+    setViewport(1440)
+    return render(<Preview onGoToTradeLab={vi.fn()} />).container
+  }
 
-  it('stacks the cards in one column on a phone and keeps three columns from md', () => {
-    const grid = mount().querySelector('[data-slot="pilot-preview-cards"]')
-    const c = classes(grid)
-    expect(c.has('grid-cols-1')).toBe(true)
-    expect(c.has('md:grid-cols-3')).toBe(true)
-    // No unprefixed three-column grid left to overflow a phone.
-    expect(c.has('grid-cols-3')).toBe(false)
+  it('renders the original preview, not the phone state', () => {
+    const c = mount()
+    expect(c.querySelector('[data-slot="pilot-locked-phone"]')).toBeNull()
+    const root = c.querySelector('[data-slot="pilot-locked-preview"]') as HTMLElement
+    expect(root.className).toBe('p-8 max-w-4xl mx-auto space-y-6')
+    expect((c.querySelector('[data-slot="pilot-preview-cards"]') as HTMLElement).className).toBe('grid grid-cols-3 gap-3')
+    expect(c.textContent).toContain('Pilot preview')
+    expect(c.querySelectorAll('[data-slot="pilot-preview-cards"] > div')).toHaveLength(6)
   })
 
-  it('scrolls itself on a phone, inside the shell’s overflow-hidden wrapper', () => {
-    const c = classes(mount().querySelector('[data-slot="pilot-locked-preview"]'))
-    expect(c.has('max-md:h-full')).toBe(true)
-    expect(c.has('max-md:overflow-y-auto')).toBe(true)
-  })
-
-  it('uses phone padding, and restores the desktop padding and spacing from md', () => {
-    const c = classes(mount().querySelector('[data-slot="pilot-locked-preview"]'))
-    expect(c.has('px-4')).toBe(true)
-    expect(c.has('p-8')).toBe(false)
-    expect(c.has('md:p-8')).toBe(true)
-    expect(c.has('md:space-y-6')).toBe(true)
-    expect(c.has('max-w-4xl')).toBe(true)
-  })
-
-  it('gives the CTA the full width and a 44px target on a phone only', () => {
-    const cta = Array.from(mount().querySelectorAll('button')).find(b => b.textContent?.includes('Go to Trade Lab'))!
-    const c = classes(cta)
-    expect(c.has('max-md:w-full')).toBe(true)
-    expect(c.has('max-md:h-11')).toBe(true)
-    expect(c.has('w-full')).toBe(false)
-  })
-
-  it('says it opens on the pilot idea, not on any trade', () => {
-    const text = mount().textContent ?? ''
-    expect(text).toMatch(/pilot idea|idea you're working through in the pilot/)
-    expect(text).not.toContain('first accepted simulation')
-    expect(text).not.toContain('first committed trade')
-  })
-
-  it('keeps every explanatory card', () => {
-    const text = mount().textContent ?? ''
-    for (const t of titles) expect(text).toContain(t)
-    expect(text).toContain('Go to Trade Lab')
+  it('keeps the pilot-idea lock copy', () => {
+    expect(mount().textContent).toContain(lockTitle)
   })
 })

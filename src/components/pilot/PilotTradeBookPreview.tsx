@@ -20,10 +20,12 @@
  */
 
 import { useEffect } from 'react'
-import { BookOpen, CheckCircle2, Sparkles, ArrowRight, Lock } from 'lucide-react'
+import { BookOpen, CheckCircle2, Sparkles, ArrowRight, Lock, FileText, Scale, Briefcase } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { usePilotMode } from '../../hooks/usePilotMode'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { PilotLockedStatePhone } from './PilotLockedStatePhone'
 
 interface PilotTradeBookPreviewProps {
   onGoToTradeLab?: () => void
@@ -32,6 +34,7 @@ interface PilotTradeBookPreviewProps {
 export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewProps) {
   const pilotMode = usePilotMode()
   const { hasUnlockedTradeBook, mark } = usePilotProgress()
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     // If we're rendering this preview but the tutorial idea already has
@@ -53,24 +56,37 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
     mark,
   ])
 
-  /*
-   * Phone first, desktop restored at `md:`.
-   *
-   * The shell gives this tab an `overflow-hidden` wrapper, so on a phone the
-   * preview scrolls itself. Phone-only additions are `max-md:`; values that
-   * differ are set for the phone and restored with `md:`, so from `md` up the
-   * rendered CSS is what it was. The six cards stack in one column below
-   * `md`, where three columns cut them off at 390px.
-   */
+  // A phone gets a compact locked state; the preview below is desktop's.
+  if (isMobile) {
+    return (
+      <PilotLockedStatePhone
+        icon={BookOpen}
+        tone="indigo"
+        surface="Trade Book"
+        description="Where committed decisions are recorded."
+        lockTitle="Opens after you commit your pilot idea"
+        lockBody="Test your pilot idea in Trade Lab and execute it. That decision lands here — example recommendations don't count."
+        ctaLabel="Go to Trade Lab"
+        onCta={onGoToTradeLab}
+        itemsLabel="What it keeps"
+        items={[
+          { icon: FileText, title: 'Decision rationale', line: 'The thesis and why-now behind the trade.' },
+          { icon: Scale, title: 'Sizing', line: 'What you sized and the shares it became.' },
+          { icon: Briefcase, title: 'Portfolio context', line: 'Holdings and weights at the moment of commit.' },
+        ]}
+      />
+    )
+  }
+
   return (
-    <div data-slot="pilot-locked-preview" className="max-md:h-full max-md:overflow-y-auto max-md:overscroll-contain px-4 pt-5 pb-8 max-w-4xl mx-auto space-y-4 md:p-8 md:space-y-6">
+    <div data-slot="pilot-locked-preview" className="p-8 max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div>
-        <div className="flex max-md:flex-wrap items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1">
           <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
             <BookOpen className="w-4 h-4" />
           </div>
-          <h1 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">Trade Book</h1>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Trade Book</h1>
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary-50 text-primary-700 border border-primary-200">
             <Sparkles className="w-2.5 h-2.5" /> Pilot preview
           </span>
@@ -81,12 +97,12 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
       </div>
 
       {/* What you'll see */}
-      <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-100 rounded-xl p-4 md:p-6">
+      <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-100 rounded-xl p-6">
         <div className="flex items-start gap-3">
-          <div className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-white shadow-sm flex items-center justify-center shrink-0 dark:bg-gray-800">
+          <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center shrink-0 dark:bg-gray-800">
             <Lock className="w-4 h-4 text-indigo-500" />
           </div>
-          <div className="max-md:min-w-0 max-md:flex-1">
+          <div>
             <h2 className="text-base font-semibold text-gray-900 mb-1 dark:text-white">
               This opens after you commit the idea you're working through in the pilot
             </h2>
@@ -96,7 +112,7 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
               context at the moment of commit. Example recommendations in the Decision Inbox
               don't open it.
             </p>
-            <Button size="sm" onClick={onGoToTradeLab} className="max-md:w-full max-md:h-11">
+            <Button size="sm" onClick={onGoToTradeLab}>
               <ArrowRight className="w-3.5 h-3.5 mr-1" />
               Go to Trade Lab
             </Button>
@@ -107,7 +123,7 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
       {/* Preview: what metadata gets preserved */}
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-2 dark:text-white">What the Trade Book preserves</h3>
-        <div data-slot="pilot-preview-cards" className="grid grid-cols-1 gap-2 md:grid-cols-3 md:gap-3">
+        <div data-slot="pilot-preview-cards" className="grid grid-cols-3 gap-3">
           {[
             { title: 'Decision rationale', body: 'The thesis and why-now that drove the trade, linked for future review.' },
             { title: 'Sizing derivation', body: 'Sizing input (weight / shares / active-weight), computed deltas, and final shares.' },
@@ -116,12 +132,12 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
             { title: 'Pro-forma lifecycle', body: 'Pending → Settled transitions with reconciliation on real holdings.' },
             { title: 'Audit trail', body: 'Every mutation, who made it, and when.' },
           ].map(card => (
-            <div key={card.title} className="max-md:min-w-0 bg-white border border-gray-200 rounded-lg p-3 dark:border-gray-700 dark:bg-gray-800">
-              <div className="flex items-center gap-1.5 mb-1 md:mb-1.5">
+            <div key={card.title} className="bg-white border border-gray-200 rounded-lg p-3 dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex items-center gap-1.5 mb-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                <div className="text-xs md:text-[11px] font-semibold text-gray-900 uppercase tracking-wide dark:text-white">{card.title}</div>
+                <div className="text-[11px] font-semibold text-gray-900 uppercase tracking-wide dark:text-white">{card.title}</div>
               </div>
-              <p className="text-[13px] md:text-xs text-gray-600 leading-relaxed dark:text-gray-400">{card.body}</p>
+              <p className="text-xs text-gray-600 leading-relaxed dark:text-gray-400">{card.body}</p>
             </div>
           ))}
         </div>
