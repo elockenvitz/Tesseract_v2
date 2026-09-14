@@ -92,6 +92,12 @@ interface DecisionInboxProps {
   createdByFilter?: string
   /** Callback to report the permission-filtered pending count to the parent */
   onPendingCountChange?: (count: number) => void
+  /**
+   * Phone layout: status tabs scroll sideways, the ownership filter gets its
+   * own row, and cards stack instead of running as one line. Same data and
+   * the same actions — only the arrangement changes.
+   */
+  compact?: boolean
 }
 
 interface IdeaGroup {
@@ -182,7 +188,7 @@ const CONVICTION_CONFIG: Record<string, { label: string; color: string; bg: stri
 
 // ── Main Component ──────────────────────────────────────────────
 
-export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery, actionFilter, urgencyFilter, createdByFilter, onPendingCountChange }: DecisionInboxProps) {
+export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery, actionFilter, urgencyFilter, createdByFilter, onPendingCountChange, compact = false }: DecisionInboxProps) {
   const [activeTab, setActiveTab] = useState<InboxTab>('needs_decision')
   const [waitingFilter, setWaitingFilter] = useState<'all' | 'for_me' | 'for_others'>('all')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
@@ -629,6 +635,131 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
   const tabConfig = TAB_CONFIG[activeTab]
   const TabIcon = tabConfig.icon
 
+  // Ownership filter. Inline beside the tabs on desktop; its own full-width
+  // three-way row on a phone.
+  const renderWaitingFilter = () => (
+    <div className={clsx(
+      "bg-gray-100 dark:bg-gray-700/50 rounded-lg p-0.5 gap-0.5",
+      compact ? "grid grid-cols-3 w-full" : "flex items-center ml-auto",
+    )}>
+      {([
+        { key: 'all' as const, label: 'All', count: buckets.needs_decision.length },
+        { key: 'for_me' as const, label: 'For Me', count: waitingCounts.for_me },
+        { key: 'for_others' as const, label: 'Sent by Me', count: waitingCounts.sent_by_me },
+      ] as const).map(f => (
+        <button
+          key={f.key}
+          onClick={() => setWaitingFilter(f.key)}
+          aria-pressed={waitingFilter === f.key}
+          className={clsx(
+            'px-3 py-1.5 text-xs font-semibold rounded-md transition-colors',
+            compact && 'h-9 px-1 inline-flex items-center justify-center whitespace-nowrap no-touch-target',
+            waitingFilter === f.key
+              ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+          )}
+        >
+          {f.label}
+          {f.count > 0 && (
+            <span className={clsx(
+              'ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold min-w-[18px] inline-block text-center',
+              waitingFilter === f.key
+                ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-400'
+                : 'bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400'
+            )}>
+              {f.count}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  )
+
+  // Phone idea header. The desktop one is a single line — chevron, action,
+  // symbol, company, an italic truncated rationale, badges and a count — which
+  // at 390px truncated the rationale to nothing and pushed the count off the
+  // card. Here: action and symbol first, then company, badges, and the
+  // rationale as readable text.
+  const renderCompactIdeaHeader = (group: IdeaGroup, isExpanded: boolean) => {
+    const isBuy = group.action === 'buy' || group.action === 'add'
+    const urg = URGENCY_CONFIG[group.urgency || '']
+    const conv = CONVICTION_CONFIG[group.conviction || '']
+    const contextText = group.thesisText || group.rationale
+    const total = group.requests.length
+    const decided = group.requests.filter(r =>
+      r.status !== 'pending' && r.status !== 'under_review' && r.status !== 'needs_discussion'
+    ).length
+    return (
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <ChevronRight className={clsx('h-4 w-4 text-gray-400 transition-transform shrink-0', isExpanded && 'rotate-90')} />
+          {group.isPairTrade ? (
+            <>
+              <span className="text-[11px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 leading-none bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                Pair
+              </span>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onIdeaClick?.(group.tradeId) }}
+                className="min-w-0 truncate text-left text-[15px] font-bold text-gray-900 dark:text-white no-touch-target"
+              >
+                <span className="text-[11px] font-bold uppercase text-green-600 dark:text-green-400">Buy </span>
+                {group.pairBuySymbols.join(', ') || '?'}
+                <span className="text-[11px] font-bold uppercase text-red-600 dark:text-red-400"> · Sell </span>
+                {group.pairSellSymbols.join(', ') || '?'}
+              </button>
+            </>
+          ) : (
+            <>
+              <span className={clsx(
+                'text-[11px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 leading-none',
+                isBuy ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+              )}>
+                {group.action}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onIdeaClick?.(group.tradeId) }}
+                className="min-w-0 truncate text-left text-base font-bold text-gray-900 dark:text-white no-touch-target"
+              >
+                {group.symbol}
+              </button>
+            </>
+          )}
+          <span className="ml-auto shrink-0 text-[11px] text-gray-400 tabular-nums">
+            {group.isPairTrade
+              ? `${decided} of ${total} decided`
+              : `${total} ${total === 1 ? 'portfolio' : 'portfolios'}`}
+          </span>
+        </div>
+        {!group.isPairTrade && group.companyName && (
+          <p className="pl-6 text-xs text-gray-500 dark:text-gray-400 truncate">{group.companyName}</p>
+        )}
+        {(urg?.label || conv?.label) && (
+          <div className="pl-6 mt-1 flex flex-wrap gap-1">
+            {urg?.label && (
+              <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded flex items-center gap-0.5', urg.color, urg.bg)}>
+                <AlertTriangle className="h-3 w-3" />
+                {urg.label}
+              </span>
+            )}
+            {conv?.label && (
+              <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded', conv.color, conv.bg)}>
+                {conv.label}
+              </span>
+            )}
+          </div>
+        )}
+        {contextText && (
+          <p className="pl-6 mt-1 text-[13px] leading-snug text-gray-600 dark:text-gray-300 line-clamp-3">
+            {contextText}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className={clsx(panelMode ? "flex flex-col h-full" : "border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800/50")}>
       {/* Header — omitted in panel mode */}
@@ -646,8 +777,14 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
         </div>
       )}
 
-      {/* Tabs + waiting filter on same line */}
-      <div className="flex items-center border-b border-gray-200 dark:border-gray-700 px-1 gap-0.5 flex-shrink-0">
+      {/* Tabs + waiting filter on same line (desktop). On a phone the four
+          status tabs scroll sideways and the ownership filter drops to its own
+          row: side by side they need ~560px, and the phone base layer's 44px
+          touch minimum made every segment a block that collided. */}
+      <div className={clsx(
+        "flex items-center border-b border-gray-200 dark:border-gray-700 flex-shrink-0",
+        compact ? "px-2 gap-1 overflow-x-auto no-scrollbar bg-white dark:bg-gray-900" : "px-1 gap-0.5",
+      )}>
         {(Object.entries(TAB_CONFIG) as [InboxTab, typeof TAB_CONFIG[InboxTab]][]).map(([key, config]) => {
           const count = buckets[key].length
           const isActive = activeTab === key
@@ -657,6 +794,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
               onClick={() => { setActiveTab(key); if (key !== 'needs_decision') setWaitingFilter('all') }}
               className={clsx(
                 'flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium border-b-2 transition-colors -mb-px',
+                compact && 'shrink-0 whitespace-nowrap h-11 px-2.5 no-touch-target',
                 isActive
                   ? 'border-primary-500 text-primary-600 dark:text-primary-400'
                   : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
@@ -678,42 +816,17 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
         })}
 
         {/* Waiting filter — right-aligned, only on needs_decision tab */}
-        {activeTab === 'needs_decision' && buckets.needs_decision.length > 0 && (
-          <div className="flex items-center ml-auto bg-gray-100 dark:bg-gray-700/50 rounded-lg p-0.5 gap-0.5">
-            {([
-              { key: 'all' as const, label: 'All', count: buckets.needs_decision.length },
-              { key: 'for_me' as const, label: 'For Me', count: waitingCounts.for_me },
-              { key: 'for_others' as const, label: 'Sent by Me', count: waitingCounts.sent_by_me },
-            ] as const).map(f => (
-              <button
-                key={f.key}
-                onClick={() => setWaitingFilter(f.key)}
-                className={clsx(
-                  'px-3 py-1.5 text-xs font-semibold rounded-md transition-colors',
-                  waitingFilter === f.key
-                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                )}
-              >
-                {f.label}
-                {f.count > 0 && (
-                  <span className={clsx(
-                    'ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold min-w-[18px] inline-block text-center',
-                    waitingFilter === f.key
-                      ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-400'
-                      : 'bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400'
-                  )}>
-                    {f.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
+        {!compact && activeTab === 'needs_decision' && buckets.needs_decision.length > 0 && renderWaitingFilter()}
       </div>
 
+      {compact && activeTab === 'needs_decision' && buckets.needs_decision.length > 0 && (
+        <div className="flex-shrink-0 px-3 py-2 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+          {renderWaitingFilter()}
+        </div>
+      )}
+
       {/* Content */}
-      <div className={clsx("overflow-y-auto", panelMode ? "flex-1 min-h-0" : "max-h-[600px]")}>
+      <div className={clsx("overflow-y-auto", panelMode ? "flex-1 min-h-0" : "max-h-[600px]", compact && "overscroll-contain pb-safe pt-2")}>
         {isLoading ? (
           <div className="py-8 text-center text-sm text-gray-400">Loading decisions...</div>
         ) : grouped.length === 0 ? (
@@ -738,7 +851,8 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                     className="px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors"
                     onClick={() => toggleGroup(group.tradeId)}
                   >
-                    {/* Line 1: chevron + action/pair badge + symbol + company + urgency + count */}
+                    {compact ? renderCompactIdeaHeader(group, isExpanded) : (
+                    /* Line 1: chevron + action/pair badge + symbol + company + urgency + count */
                     <div className="flex items-center gap-2">
                       <ChevronRight className={clsx('h-4 w-4 text-gray-400 transition-transform shrink-0', isExpanded && 'rotate-90')} />
 
@@ -835,6 +949,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                         )
                       })()}
                     </div>
+                    )}
 
                   </div>
 
@@ -857,6 +972,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                         return Array.from(byPortfolio.entries()).map(([portfolioId, portfolioLegs]) => (
                           <PairPortfolioGroupRow
                             key={portfolioId}
+                            compact={compact}
                             legs={portfolioLegs}
                             currentUserId={user?.id}
                             userPortfolioRoles={userPortfolioRoles}
@@ -993,6 +1109,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                         return (
                         <PortfolioRow
                           key={req.id}
+                          compact={compact}
                           request={req}
                           isNeedsDecision={activeTab === 'needs_decision' && !legIsResolved}
                           isAcceptedTab={activeTab === 'accepted' || req.status === 'accepted' || req.status === 'accepted_with_modification'}
@@ -1104,9 +1221,12 @@ interface PairPortfolioGroupRowProps {
   userPortfolioRoles?: Map<string, string>
   portfolioHasPM?: (portfolioId: string | undefined | null) => boolean
   isOrgAdmin?: boolean
+  /** Phone layout: header, tile shortcuts and leg actions wrap instead of running off the card. */
+  compact?: boolean
 }
 
 function PairPortfolioGroupRow({
+  compact = false,
   legs,
   onAcceptLeg,
   onRejectLeg,
@@ -1346,7 +1466,7 @@ function PairPortfolioGroupRow({
 
     // Pending leg default state
     return (
-      <div key={leg.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-800/40 text-xs">
+      <div key={leg.id} className={clsx("flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-800/40 text-xs", compact && "flex-wrap")}>
         <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0', actionColor)}>{actionLabel}</span>
         <span className="font-semibold text-gray-900 dark:text-white shrink-0">{symbol}</span>
         {companyName && (
@@ -1354,7 +1474,7 @@ function PairPortfolioGroupRow({
         )}
         <span className="text-gray-500 dark:text-gray-400 tabular-nums shrink-0">{sizingDisplay}</span>
         {canAct && (
-          <div className="ml-auto flex items-center gap-1.5 shrink-0">
+          <div className={clsx(compact ? "w-full grid grid-cols-3 gap-2 [&>button]:justify-center [&>button]:h-11 [&>button]:text-sm" : "ml-auto flex items-center gap-1.5 shrink-0")}>
             <button
               onClick={() => onAcceptLeg(leg)}
               disabled={isPending}
@@ -1391,9 +1511,9 @@ function PairPortfolioGroupRow({
   return (
     <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2">
       {/* Header: portfolio + analyst + time + tile-level shortcuts */}
-      <div className="flex items-start justify-between gap-2">
+      <div className={clsx("flex gap-2", compact ? "flex-col items-stretch" : "items-start justify-between")}>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 text-xs">
+          <div className={clsx("flex items-center gap-1.5 text-xs", compact && "flex-wrap gap-y-1")}>
             <span className="font-semibold text-gray-900 dark:text-white">{portfolioName}</span>
             <span className="text-gray-300 dark:text-gray-600">|</span>
             <span className="text-gray-500 dark:text-gray-400">{requesterName}</span>
@@ -1417,7 +1537,7 @@ function PairPortfolioGroupRow({
                   e.stopPropagation()
                   onReview(anchor.trade_queue_item_id!)
                 }}
-                className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors flex-shrink-0"
+                className={clsx("flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors flex-shrink-0", compact && "px-2 py-1 text-[11px]")}
                 title="Open trade idea to review"
               >
                 <ArrowUpRight className="h-3 w-3" />
@@ -1430,7 +1550,7 @@ function PairPortfolioGroupRow({
           </div>
         </div>
         {canAct && unresolvedLegs.length > 0 && (
-          <div className="flex items-center gap-1 shrink-0">
+          <div className={clsx("flex items-center gap-1 shrink-0", compact && "flex-wrap")}>
             <button
               onClick={() => onAcceptAll(unresolvedLegs)}
               disabled={isPending}
@@ -1532,7 +1652,10 @@ function PortfolioRow({
   userPortfolioRoles,
   portfolioHasPM,
   isOrgAdmin,
+  compact = false,
 }: {
+  /** Phone layout: the sentence wraps, status gets its own line, actions go full width. */
+  compact?: boolean
   request: DecisionRequest
   isNeedsDecision: boolean
   isAcceptedTab?: boolean
@@ -1685,9 +1808,9 @@ function PortfolioRow({
   return (
     <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2">
       {/* Line 1: Natural language sentence — "Add to Vision Fund 10K from 0.50% → 2.00%" */}
-      <div className="flex items-center justify-between gap-2">
+      <div className={clsx("flex gap-2", compact ? "flex-col items-start" : "items-center justify-between")}>
         {!isPairTrade && tc && targetWeight != null ? (
-          <p className="text-xs text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+          <p className={clsx("text-xs text-gray-700 dark:text-gray-300 flex items-center gap-1.5", compact && "flex-wrap gap-y-1 text-[13px]")}>
             <span className={clsx('font-bold', tc.color)}>{tc.label}</span>
             <span className="text-gray-300 dark:text-gray-600">|</span>
             <span className="font-semibold text-gray-900 dark:text-white">{portfolioName}</span>
@@ -1739,7 +1862,7 @@ function PortfolioRow({
                     detail: { portfolioId: request.portfolio_id },
                   }))
                 }}
-                className="flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors flex-shrink-0"
+                className={clsx("flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors flex-shrink-0", compact && "px-2 py-1 text-[11px]")}
               >
                 <Beaker className="h-3 w-3" />
                 Trade Lab
@@ -1751,7 +1874,7 @@ function PortfolioRow({
                   e.stopPropagation()
                   onReview()
                 }}
-                className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors flex-shrink-0"
+                className={clsx("flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors flex-shrink-0", compact && "px-2 py-1 text-[11px]")}
                 title="Open trade idea to review"
               >
                 <ArrowUpRight className="h-3 w-3" />
@@ -1770,7 +1893,7 @@ function PortfolioRow({
               const legTc = classifyTrade(baseWeight, targetWt)
               const displayDelta = isAbsolute ? `→ ${absWeight.toFixed(2)}%` : `${legWeight > 0 ? '+' : ''}${legWeight.toFixed(2)}%`
               return (
-                <p key={i} className="text-xs text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                <p key={i} className={clsx("text-xs text-gray-700 dark:text-gray-300 flex items-center gap-1.5", compact && "flex-wrap gap-y-1")}>
                   <span className={clsx('font-bold', legTc.color)}>
                     {legTc.label}
                   </span>
@@ -1790,7 +1913,7 @@ function PortfolioRow({
                             detail: { portfolioId: request.portfolio_id },
                           }))
                         }}
-                        className="flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors flex-shrink-0"
+                        className={clsx("flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors flex-shrink-0", compact && "px-2 py-1 text-[11px]")}
                       >
                         <Beaker className="h-3 w-3" />
                         Trade Lab
@@ -1801,7 +1924,7 @@ function PortfolioRow({
                             e.stopPropagation()
                             onReview()
                           }}
-                          className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors flex-shrink-0"
+                          className={clsx("flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors flex-shrink-0", compact && "px-2 py-1 text-[11px]")}
                           title="Open trade idea to review"
                         >
                           <ArrowUpRight className="h-3 w-3" />
@@ -1815,7 +1938,7 @@ function PortfolioRow({
             })}
           </div>
         ) : (
-          <p className="text-xs text-gray-500 italic flex items-center gap-1.5 dark:text-gray-400">
+          <p className={clsx("text-xs text-gray-500 italic flex items-center gap-1.5 dark:text-gray-400", compact && "flex-wrap gap-y-1")}>
             <span>{actionLabel}</span>
             <span className="text-gray-300 dark:text-gray-600">|</span>
             <span>{portfolioName}</span>
@@ -1829,7 +1952,7 @@ function PortfolioRow({
                     detail: { portfolioId: request.portfolio_id },
                   }))
                 }}
-                className="flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors flex-shrink-0"
+                className={clsx("flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors flex-shrink-0", compact && "px-2 py-1 text-[11px]")}
               >
                 <Beaker className="h-3 w-3" />
                 Trade Lab
@@ -1841,7 +1964,7 @@ function PortfolioRow({
                   e.stopPropagation()
                   onReview()
                 }}
-                className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors flex-shrink-0"
+                className={clsx("flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors flex-shrink-0", compact && "px-2 py-1 text-[11px]")}
                 title="Open trade idea to review"
               >
                 <ArrowUpRight className="h-3 w-3" />
@@ -1855,7 +1978,10 @@ function PortfolioRow({
 
       {/* Line 2: Recommendation note (analyst's reasoning for this specific action) */}
       {request.context_note && (
-        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 leading-snug italic">{request.context_note}</p>
+        <p className={clsx(
+          "text-gray-500 dark:text-gray-400 mt-1 leading-snug",
+          compact ? "text-[13px] text-gray-600 dark:text-gray-300 line-clamp-4" : "text-[11px] line-clamp-2 italic",
+        )}>{request.context_note}</p>
       )}
 
       {/* Line 3: Who recommended + when */}
@@ -1867,7 +1993,12 @@ function PortfolioRow({
 
       {/* 5. Actions — pending tab (default state) */}
       {showActions && !acceptMode && !rejectMode && !deferMode && (
-        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/50">
+        <div className={clsx(
+          "mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/50",
+          compact
+            ? "grid grid-cols-3 gap-2 [&>button]:h-11 [&>button]:justify-center [&>button]:text-sm [&>button]:rounded-lg"
+            : "flex items-center gap-1.5",
+        )}>
           <button
             onClick={() => { setNoteValue(''); setAcceptMode(true) }}
             disabled={isPending}
@@ -1922,9 +2053,9 @@ function PortfolioRow({
             }}
             autoFocus
             placeholder="Add a note (optional)"
-            className="w-full px-2 py-1 text-xs rounded border border-green-200 dark:border-green-800 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-green-400 mb-2"
+            className={clsx("w-full px-2 py-1 text-xs rounded border border-green-200 dark:border-green-800 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-green-400 mb-2", compact && "h-11 px-3 rounded-lg")}
           />
-          <div className="flex items-center gap-1.5">
+          <div className={clsx("flex items-center gap-1.5", compact && "gap-2 [&>button]:flex-1 [&>button]:h-11 [&>button]:justify-center [&>button]:text-sm [&>button]:rounded-lg")}>
             <button
               onClick={() => {
                 const sizing = overrideWeight ?? (analystWeight != null ? String(analystWeight) : (isPairTrade ? 'pair' : ''))
@@ -1969,9 +2100,9 @@ function PortfolioRow({
             }}
             autoFocus
             placeholder="e.g. Insufficient conviction, timing not right..."
-            className="w-full px-2 py-1 text-xs rounded border border-red-200 dark:border-red-800 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-red-400 mb-2"
+            className={clsx("w-full px-2 py-1 text-xs rounded border border-red-200 dark:border-red-800 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-red-400 mb-2", compact && "h-11 px-3 rounded-lg")}
           />
-          <div className="flex items-center gap-1.5">
+          <div className={clsx("flex items-center gap-1.5", compact && "gap-2 [&>button]:flex-1 [&>button]:h-11 [&>button]:justify-center [&>button]:text-sm [&>button]:rounded-lg")}>
             <button
               onClick={() => {
                 if (rejectReason.trim()) {
@@ -2211,7 +2342,7 @@ function PortfolioRow({
               <button
                 onClick={handleDeferSubmit}
                 disabled={isPending || !canSubmit}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-gray-800 text-white hover:bg-gray-900 dark:bg-gray-600 dark:hover:bg-gray-500 transition-colors disabled:opacity-40"
+                className={clsx("w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-gray-800 text-white hover:bg-gray-900 dark:bg-gray-600 dark:hover:bg-gray-500 transition-colors disabled:opacity-40", compact && "h-11 text-sm rounded-lg")}
               >
                 {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock className="h-3.5 w-3.5" />}
                 Defer

@@ -2,6 +2,12 @@
  * DecisionInboxPanel — Bottom drawer for the Trade Queue page.
  *
  * Three states: collapsed (slim strip), half (55%), fullscreen (100%).
+ *
+ * `variant="sheet"` is the phone form. Collapsed it is the same strip; open
+ * it becomes a full-height pane over its container with a back affordance,
+ * because a 60% drawer on a 390px screen left the board half-visible behind
+ * a console too narrow to lay out, and the half/full toggle had nothing
+ * useful to switch between.
  */
 
 import { useState, useCallback, useEffect } from 'react'
@@ -9,6 +15,7 @@ import {
   Gavel,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
   Maximize2,
   Minimize2,
 } from 'lucide-react'
@@ -54,6 +61,8 @@ interface DecisionInboxPanelProps {
   actionFilter?: string
   urgencyFilter?: string
   createdByFilter?: string
+  /** `drawer` (default) is the desktop bottom drawer; `sheet` is the phone pane. */
+  variant?: 'drawer' | 'sheet'
 }
 
 export function DecisionInboxPanel({
@@ -66,7 +75,9 @@ export function DecisionInboxPanel({
   actionFilter,
   urgencyFilter,
   createdByFilter,
+  variant = 'drawer',
 }: DecisionInboxPanelProps) {
+  const isSheet = variant === 'sheet'
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
   const [internalSize, setInternalSize] = useState<DrawerSize>('collapsed')
@@ -162,24 +173,53 @@ export function DecisionInboxPanel({
     if (controlledCollapsed && onToggleCollapsed) onToggleCollapsed()
   }
 
+  // Phone, open: a full-height pane over the board rather than a partial
+  // drawer, so the Pipeline behind it does not compete. `inset-0` against the
+  // board's positioned container keeps the app header and bottom nav in view.
+  const sheetOpen = isSheet && isOpen
+
   return (
     <div
       className={clsx(
-        "absolute bottom-0 left-0 right-0 z-20 flex flex-col bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_16px_rgba(0,0,0,0.3)] transition-all duration-200 ease-in-out",
-        size === 'collapsed' && "h-10",
-        size === 'half' && "h-[60%]",
-        size === 'full' && "h-full",
+        sheetOpen
+          ? "absolute inset-0 z-30 flex flex-col overflow-x-hidden bg-gray-50 dark:bg-gray-950"
+          : "absolute bottom-0 left-0 right-0 z-20 flex flex-col bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_16px_rgba(0,0,0,0.3)] transition-all duration-200 ease-in-out",
+        !sheetOpen && size === 'collapsed' && "h-10",
+        !sheetOpen && size === 'half' && "h-[60%]",
+        !sheetOpen && size === 'full' && "h-full",
       )}
     >
-      {/* Header strip — always visible. Amber tint signals an
+      {sheetOpen ? (
+        <div className="flex-shrink-0 flex items-center gap-1 h-12 pl-1 pr-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label="Close Decision Inbox"
+            className="h-10 w-10 shrink-0 flex items-center justify-center rounded-lg text-gray-600 dark:text-gray-300 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <Gavel className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
+          <h2 className="min-w-0 truncate text-[15px] font-semibold text-gray-900 dark:text-white">
+            Decision Inbox
+          </h2>
+          {displayCount !== null && displayCount > 0 && (
+            <span className="ml-auto shrink-0 px-2 py-0.5 text-[11px] font-bold bg-amber-500 text-white rounded-full tabular-nums">
+              {displayCount} pending
+            </span>
+          )}
+        </div>
+      ) : (
+      /* Header strip — always visible. Amber tint signals an
           UNSEEN pending decision (collapsed AND the count is above
           the watermark from the last time the user opened the
           drawer). Once opened, the watermark catches up so the
-          strip stays neutral when the user closes it again. */}
-      {/* Outer is a div+role=button instead of <button> because the
+          strip stays neutral when the user closes it again.
+
+          Outer is a div+role=button instead of <button> because the
           fullscreen toggle inside is also a <button>, and nested
           buttons trip React's DOM nesting validator. We keep
-          keyboard accessibility via the role and a keydown handler. */}
+          keyboard accessibility via the role and a keydown handler. */
       <div
         role="button"
         tabIndex={0}
@@ -244,13 +284,15 @@ export function DecisionInboxPanel({
           </div>
         </div>
       </div>
+      )}
 
       {/* Inbox content — always mounted for count, hidden when collapsed */}
-      <div className={clsx("flex-1 min-h-0 overflow-hidden", isOpen ? "border-t border-gray-100 dark:border-gray-700" : "hidden")}>
+      <div className={clsx("flex-1 min-h-0 overflow-hidden", isOpen ? (sheetOpen ? "" : "border-t border-gray-100 dark:border-gray-700") : "hidden")}>
         <DecisionInbox
           portfolioId={portfolioId}
           onIdeaClick={onIdeaClick}
           panelMode
+          compact={isSheet}
           searchQuery={searchQuery}
           actionFilter={actionFilter}
           urgencyFilter={urgencyFilter}

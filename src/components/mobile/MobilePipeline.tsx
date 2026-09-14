@@ -346,9 +346,11 @@ export function MobilePipeline() {
 
       {/* The canonical drawer, on the board it belongs to. Not shown on the
           committed or archived tabs, which are read-only here and have no
-          decisions waiting. */}
+          decisions waiting. `sheet` opens it as a full-height pane over the
+          board instead of a 60% drawer with the Pipeline still showing. */}
       {view === 'pipeline' && (
         <DecisionInboxPanel
+          variant="sheet"
           collapsed={inboxCollapsed}
           onToggleCollapsed={toggleInbox}
           onIdeaClick={tradeId => {
