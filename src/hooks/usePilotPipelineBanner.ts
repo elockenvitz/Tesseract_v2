@@ -157,7 +157,11 @@ export function usePilotPipelineBanner(): PilotPipelineBanner {
         /* "Click it" named a mouse on a step both shells now have. The drawer
            is the same component in both, so the hint says where it is and
            stops there. */
-        hint: 'The bottom drawer is where recommendations wait for your decision.',
+        /* Opening it completes the step. The recommendation waiting there in a
+           fresh pilot is an Example that cannot be decided — this used to say
+           recommendations "wait for your decision", and pilots accepted it as
+           their own trade. See `lib/pilot/pilot-inbox`. */
+        hint: 'The bottom drawer is where recommendations wait for a decision. Open it to see one; examples there are just to look at.',
         done: hasCompletedPipelineStepInbox,
       },
       {

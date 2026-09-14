@@ -40,6 +40,9 @@ import {
   useRevertDecisionAccept,
 } from '../../hooks/useDecisionRequests'
 import type { DecisionRequest, DecisionRequestStatus, DeferralTrigger } from '../../types/trading'
+import { usePilotMode } from '../../hooks/usePilotMode'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { isPilotExampleRequest, PILOT_EXAMPLE_HINT } from '../../lib/pilot/pilot-inbox'
 
 type InboxTab = 'needs_decision' | 'accepted' | 'rejected' | 'deferred'
 
@@ -201,6 +204,21 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
   const acceptMutation = useAcceptFromInbox()
   const rejectMutation = useRejectFromInbox()
   const revertMutation = useRevertDecisionAccept()
+
+  /*
+   * Pilot examples. While a pilot has not graduated, a request that is not for
+   * their tutorial idea is shown as an Example and cannot be decided — the
+   * seeded AAPL recommendation was being accepted as if it were the pilot's
+   * own trade. Every handler below refuses one too, so no path mutates it.
+   * See `lib/pilot/pilot-inbox`.
+   */
+  const { effectiveIsPilot } = usePilotMode()
+  const { tutorialIdeaId } = usePilotProgress()
+  const isExample = useCallback(
+    (r: { trade_queue_item_id?: string | null }) =>
+      isPilotExampleRequest(r, { effectiveIsPilot, tutorialIdeaId }),
+    [effectiveIsPilot, tutorialIdeaId],
+  )
 
   // Nudge PM mutation
   const nudgeMutation = useMutation({
@@ -616,11 +634,13 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
   })
 
   const handleAction = (id: string, status: DecisionRequestStatus) => {
+    const request = allRequests.find(r => r.id === id)
+    if (!request || isExample(request)) return
     updateMutation.mutate({ requestId: id, input: { status } })
   }
 
   const handleUndo = useCallback(async (request: DecisionRequest) => {
-    if (!user) return
+    if (!user || isExample(request)) return
     revertMutation.mutate({
       decisionRequestId: request.id,
       context: {
@@ -630,7 +650,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
         requestId: `undo-${request.id}-${Date.now()}`,
       },
     })
-  }, [user, revertMutation])
+  }, [user, revertMutation, isExample])
 
   const tabConfig = TAB_CONFIG[activeTab]
   const TabIcon = tabConfig.icon
@@ -843,6 +863,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
               const isPair = group.isPairTrade
               const urg = URGENCY_CONFIG[group.urgency || '']
               const showUrgency = urg?.label
+              const groupIsExample = group.requests.length > 0 && group.requests.every(isExample)
 
               return (
                 <div key={group.tradeId} className={clsx("mx-2 mb-3 rounded-lg border overflow-hidden", "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/60")}>
@@ -953,6 +974,18 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
 
                   </div>
 
+                  {groupIsExample && (
+                    <div
+                      data-slot="pilot-example-note"
+                      className="flex items-center gap-2 px-3 py-1.5 border-t border-gray-100 dark:border-gray-700/50 bg-gray-50 dark:bg-gray-800"
+                    >
+                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200 shrink-0">
+                        Example
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 min-w-0">{PILOT_EXAMPLE_HINT}</span>
+                    </div>
+                  )}
+
                   {/* ── Portfolio Decision Tiles ─────────────── */}
                   {isExpanded && (
                     <div className="px-3 py-2 space-y-2 border-t border-gray-100 dark:border-gray-700/50">
@@ -978,10 +1011,11 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                             userPortfolioRoles={userPortfolioRoles}
                             portfolioHasPM={portfolioHasPM}
                             isOrgAdmin={isOrgAdmin}
+                            isExample={portfolioLegs.some(isExample)}
                             isPending={updateMutation.isPending || acceptMutation.isPending || rejectMutation.isPending}
                             isRevertPending={revertMutation.isPending}
                             onAcceptLeg={(leg) => {
-                              if (!user) return
+                              if (!user || isExample(leg)) return
                               const sizing = leg.sizing_weight != null ? String(leg.sizing_weight) : 'pair'
                               acceptMutation.mutate({
                                 decisionRequest: leg,
@@ -999,7 +1033,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                               })
                             }}
                             onRejectLeg={(leg, reason) => {
-                              if (!user) return
+                              if (!user || isExample(leg)) return
                               rejectMutation.mutate({
                                 decisionRequest: leg,
                                 reason: reason || null,
@@ -1012,7 +1046,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                               })
                             }}
                             onAcceptAll={(legsToAccept) => {
-                              if (!user) return
+                              if (!user || legsToAccept.some(isExample)) return
                               const ctx = {
                                 actorId: user.id,
                                 actorName: (user as any).first_name || user.email || 'PM',
@@ -1043,7 +1077,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                                 .catch((err: any) => toast.error('Accept all failed', err?.message || 'Unknown error'))
                             }}
                             onRejectAll={(legsToReject, reason) => {
-                              if (!user) return
+                              if (!user || legsToReject.some(isExample)) return
                               const ctx = {
                                 actorId: user.id,
                                 actorName: (user as any).first_name || user.email || 'PM',
@@ -1060,6 +1094,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                               toast.success(`Pair: rejected ${legsToReject.length} leg${legsToReject.length !== 1 ? 's' : ''}`)
                             }}
                             onDeferLeg={(leg, deferredUntil) => {
+                              if (isExample(leg)) return
                               updateMutation.mutate({
                                 requestId: leg.id,
                                 input: {
@@ -1074,6 +1109,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                               })
                             }}
                             onDeferAll={(legsToDefer, deferredUntil) => {
+                              if (legsToDefer.some(isExample)) return
                               legsToDefer.forEach(leg => {
                                 updateMutation.mutate({
                                   requestId: leg.id,
@@ -1113,8 +1149,9 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                           request={req}
                           isNeedsDecision={activeTab === 'needs_decision' && !legIsResolved}
                           isAcceptedTab={activeTab === 'accepted' || req.status === 'accepted' || req.status === 'accepted_with_modification'}
+                          isExample={isExample(req)}
                           onAcceptWithSizing={(sizingInput, note) => {
-                            if (!user) return
+                            if (!user || isExample(req)) return
                             // Per-leg accept: single mutation for just this
                             // leg. The pair-level "Accept all remaining"
                             // shortcut (see pair toolbar above) handles the
@@ -1140,7 +1177,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                             })
                           }}
                           onRejectWithReason={(reason) => {
-                            if (!user) return
+                            if (!user || isExample(req)) return
                             // Iterative reject — also deactivates the
                             // proposal and updates per-portfolio track.
                             rejectMutation.mutate({
@@ -1155,6 +1192,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                             })
                           }}
                           onDeferWithConfig={(deferredUntil, trigger, note) => {
+                            if (isExample(req)) return
                             updateMutation.mutate({
                               requestId: req.id,
                               input: {
@@ -1165,7 +1203,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                               },
                             })
                           }}
-                          onNudge={() => { setNudgingRequestId(req.id); nudgeMutation.mutate({ request: req }) }}
+                          onNudge={isExample(req) ? undefined : () => { setNudgingRequestId(req.id); nudgeMutation.mutate({ request: req }) }}
                           isNudging={nudgingRequestId === req.id && nudgeMutation.isPending}
                           onUndo={() => handleUndo(req)}
                           onReview={req.trade_queue_item_id ? () => onIdeaClick?.(req.trade_queue_item_id!) : undefined}
@@ -1215,6 +1253,8 @@ interface PairPortfolioGroupRowProps {
   onDeferAll: (legs: DecisionRequest[], deferredUntil: string) => void
   onUndoLeg: (leg: DecisionRequest) => void
   onReview?: (tradeIdeaId: string) => void
+  /** A pilot example (see `lib/pilot/pilot-inbox`): shown, never decidable. */
+  isExample?: boolean
   isPending: boolean
   isRevertPending: boolean
   currentUserId?: string
@@ -1242,6 +1282,7 @@ function PairPortfolioGroupRow({
   userPortfolioRoles,
   portfolioHasPM,
   isOrgAdmin,
+  isExample = false,
 }: PairPortfolioGroupRowProps) {
   const [rejectingLegId, setRejectingLegId] = useState<string | null>(null)
   const [legRejectReason, setLegRejectReason] = useState('')
@@ -1283,7 +1324,8 @@ function PairPortfolioGroupRow({
   // Org admins always have authority to act on decisions in portfolios
   // their org owns, regardless of portfolio_team membership. Mirrors
   // the RLS broadening for accepted_trades / trade_idea_portfolios.
-  const canAct = isOrgAdmin || isPM || !isMyRec || isFallbackDecider
+  // A pilot example is never decidable, whoever is looking.
+  const canAct = !isExample && (isOrgAdmin || isPM || !isMyRec || isFallbackDecider)
 
   // Partition legs by status
   const isLegResolved = (leg: DecisionRequest) =>
@@ -1356,7 +1398,7 @@ function PairPortfolioGroupRow({
           ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
           : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
 
-      const showUndo = leg.status === 'accepted' || leg.status === 'accepted_with_modification' || leg.status === 'rejected' || leg.status === 'deferred'
+      const showUndo = !isExample && (leg.status === 'accepted' || leg.status === 'accepted_with_modification' || leg.status === 'rejected' || leg.status === 'deferred')
       return (
         <div key={leg.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-gray-50 dark:bg-gray-800/40 text-xs opacity-75">
           <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0', actionColor)}>{actionLabel}</span>
@@ -1652,10 +1694,13 @@ function PortfolioRow({
   userPortfolioRoles,
   portfolioHasPM,
   isOrgAdmin,
+  isExample = false,
   compact = false,
 }: {
   /** Phone layout: the sentence wraps, status gets its own line, actions go full width. */
   compact?: boolean
+  /** A pilot example (see `lib/pilot/pilot-inbox`): shown, never decidable. */
+  isExample?: boolean
   request: DecisionRequest
   isNeedsDecision: boolean
   isAcceptedTab?: boolean
@@ -1734,8 +1779,9 @@ function PortfolioRow({
   // stuck in "Awaiting PM decision" — there's nobody to wait on.
   const isFallbackDecider = isMyRec && !(portfolioHasPM?.(request.portfolio_id) ?? false)
   // Org admin: full authority on decisions in portfolios their org owns.
-  const showActions = isNeedsDecision && (isOrgAdmin || isPM || !isMyRec || isFallbackDecider)
-  const isAwaiting = isMyRec && isNeedsDecision && !isPM && !isFallbackDecider && !isOrgAdmin
+  // A pilot example is never decidable and waits on nobody.
+  const showActions = !isExample && isNeedsDecision && (isOrgAdmin || isPM || !isMyRec || isFallbackDecider)
+  const isAwaiting = !isExample && isMyRec && isNeedsDecision && !isPM && !isFallbackDecider && !isOrgAdmin
 
   // Status badge
   // `pendingMyDecision` is the variant rendered as a button-sized pill with
@@ -1747,12 +1793,13 @@ function PortfolioRow({
     if (request.status === 'accepted') return { label: 'Accepted', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', pendingMyDecision: false }
     if (request.status === 'rejected') return { label: 'Rejected', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', pendingMyDecision: false }
     if (request.status === 'deferred') return { label: 'Deferred', color: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400', pendingMyDecision: false }
+    if (isExample) return { label: 'Example', color: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200', pendingMyDecision: false }
     if (isAwaiting) return { label: 'Awaiting PM decision', color: 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400', pendingMyDecision: false }
     if (isNeedsDecision) return { label: 'Pending your decision', color: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300', pendingMyDecision: true }
     return null
   })()
 
-  const showUndo = isResolvedTab && (request.status === 'accepted' || request.status === 'accepted_with_modification' || request.status === 'rejected' || request.status === 'deferred')
+  const showUndo = !isExample && isResolvedTab && (request.status === 'accepted' || request.status === 'accepted_with_modification' || request.status === 'rejected' || request.status === 'deferred')
 
   const undoBtn = showUndo ? (
     <button

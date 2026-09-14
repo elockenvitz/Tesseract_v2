@@ -71,12 +71,13 @@ export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewPro
           </div>
           <div className="max-md:min-w-0 max-md:flex-1">
             <h2 className="text-base font-semibold text-gray-900 mb-1 dark:text-white">
-              Outcomes unlocks with your first committed trade
+              This opens after your pilot idea is committed and reaches Trade Book
             </h2>
             <p className="text-sm text-gray-700 leading-relaxed mb-4 dark:text-gray-300">
-              For the pilot we're focused on the decision loop. Outcomes is where you'll come
-              back later to see whether the thesis played out — scorecards per analyst, hit
-              rate on price targets, and post-mortem reviews when a thesis is invalidated.
+              A trade on any other idea doesn't count. Once your pilot idea's decision is in
+              Trade Book, Outcomes is where you come back to see whether the thesis played
+              out — scorecards per analyst, hit rate on price targets, and post-mortem reviews
+              when a thesis is invalidated.
             </p>
             <Button size="sm" onClick={onGoToTradeLab} className="max-md:w-full max-md:h-11">
               <ArrowRight className="w-3.5 h-3.5 mr-1" />

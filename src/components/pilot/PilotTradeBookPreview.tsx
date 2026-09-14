@@ -88,13 +88,13 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
           </div>
           <div className="max-md:min-w-0 max-md:flex-1">
             <h2 className="text-base font-semibold text-gray-900 mb-1 dark:text-white">
-              This opens after your first accepted simulation
+              This opens after you commit the idea you're working through in the pilot
             </h2>
             <p className="text-sm text-gray-700 leading-relaxed mb-4 dark:text-gray-300">
-              For the pilot we're starting with the decision simulation workflow in Trade Lab.
-              Once you accept a simulated decision, it lands here with full provenance: the
-              thesis that drove it, the sizing chosen, the portfolio context at the moment of
-              commit, and every decision-request it answered.
+              Test your pilot idea in Trade Lab and execute it. That decision lands here with
+              full provenance: the thesis that drove it, the sizing chosen, and the portfolio
+              context at the moment of commit. Example recommendations in the Decision Inbox
+              don't open it.
             </p>
             <Button size="sm" onClick={onGoToTradeLab} className="max-md:w-full max-md:h-11">
               <ArrowRight className="w-3.5 h-3.5 mr-1" />

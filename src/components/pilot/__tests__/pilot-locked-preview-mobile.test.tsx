@@ -22,6 +22,21 @@ import { PilotOutcomesPreview } from '../PilotOutcomesPreview'
 
 afterEach(cleanup)
 
+describe('the lock copy names the lineage', () => {
+  it('Trade Book opens after the pilot idea is committed, and its decision lands there', () => {
+    const text = render(<PilotTradeBookPreview onGoToTradeLab={vi.fn()} />).container.textContent ?? ''
+    expect(text).toContain("This opens after you commit the idea you're working through in the pilot")
+    expect(text).toContain('That decision lands here')
+    expect(text).toContain("Example recommendations in the Decision Inbox don't open it")
+  })
+
+  it('Outcomes opens after the pilot idea reaches Trade Book, not after any trade', () => {
+    const text = render(<PilotOutcomesPreview onGoToTradeLab={vi.fn()} />).container.textContent ?? ''
+    expect(text).toContain('This opens after your pilot idea is committed and reaches Trade Book')
+    expect(text).toContain("A trade on any other idea doesn't count")
+  })
+})
+
 const classes = (el: Element | null) => new Set((el?.getAttribute('class') ?? '').split(/\s+/))
 
 describe.each([
@@ -66,6 +81,13 @@ describe.each([
     expect(c.has('max-md:w-full')).toBe(true)
     expect(c.has('max-md:h-11')).toBe(true)
     expect(c.has('w-full')).toBe(false)
+  })
+
+  it('says it opens on the pilot idea, not on any trade', () => {
+    const text = mount().textContent ?? ''
+    expect(text).toMatch(/pilot idea|idea you're working through in the pilot/)
+    expect(text).not.toContain('first accepted simulation')
+    expect(text).not.toContain('first committed trade')
   })
 
   it('keeps every explanatory card', () => {

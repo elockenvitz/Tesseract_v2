@@ -18,6 +18,8 @@ import { RecommendationQuickModal } from '../thoughts/RecommendationQuickModal'
 import { useRecentQuickIdeas } from '../../hooks/useRecentQuickIdeas'
 import { useDirectCounts } from '../../hooks/useDirectCounts'
 import { useUpdateDecisionRequest, useAcceptFromInbox } from '../../hooks/useDecisionRequests'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { isPilotExampleRequest } from '../../lib/pilot/pilot-inbox'
 import { useToast } from '../common/Toast'
 import { buildQuickThoughtsFilters } from '../../hooks/useIdeasRouting'
 import type { CapturedContext } from '../thoughts/ContextSelector'
@@ -918,6 +920,12 @@ function PendingReviewList() {
   const queryClient = useQueryClient()
   const updateDecision = useUpdateDecisionRequest()
   const acceptFromInbox = useAcceptFromInbox()
+  // Same pilot rule as the Decision Inbox: a request that is not for the
+  // tutorial idea is an example and cannot be decided here either.
+  const { effectiveIsPilot } = usePilotMode()
+  const { tutorialIdeaId } = usePilotProgress()
+  const isExample = (r: { trade_queue_item_id?: string | null }) =>
+    isPilotExampleRequest(r, { effectiveIsPilot, tutorialIdeaId })
 
   // Fetch portfolios where current user is PM/admin
   const { data: pmPortfolioIds = [] } = useQuery({
@@ -992,6 +1000,7 @@ function PendingReviewList() {
   const [actionNote, setActionNote] = useState('')
 
   const handleAccept = async (req: any) => {
+    if (isExample(req)) return
     const sizingInput = req.sizing_weight != null ? String(req.sizing_weight) : '0'
     await acceptFromInbox.mutateAsync({
       decisionRequest: req as any,
@@ -1011,6 +1020,7 @@ function PendingReviewList() {
   }
 
   const handleReject = async (req: any) => {
+    if (isExample(req)) return
     await updateDecision.mutateAsync({
       requestId: req.id,
       input: {
@@ -1063,7 +1073,8 @@ function PendingReviewList() {
         const isBuy = action === 'buy' || action === 'add'
         const isMyRequest = req.requested_by === user?.id
         const isPMForPortfolio = pmPortfolioSet.has(req.portfolio_id)
-        const canDecide = isPMForPortfolio
+        const reqIsExample = isExample(req)
+        const canDecide = isPMForPortfolio && !reqIsExample
 
         // Who submitted this
         const requesterName = req.requester?.first_name
@@ -1119,7 +1130,11 @@ function PendingReviewList() {
                   {portfolioName}
                 </button>
               )}
-              {canDecide ? (
+              {reqIsExample ? (
+                <span data-slot="pilot-example-badge" className="text-[10px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200 bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded">
+                  Example
+                </span>
+              ) : canDecide ? (
                 // I'm the PM — show who submitted it
                 isMyRequest ? (
                   <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/30 px-1.5 py-0.5 rounded">
