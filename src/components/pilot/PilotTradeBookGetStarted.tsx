@@ -8,9 +8,10 @@
  * Steps:
  *   1. Review the recorded decision — click a trade row to expand it
  *   2. Capture rationale — write a why-now note on that trade
- *   3. Open Outcomes — graduation event (flips
- *      `pilot_progress.graduated_at_<orgId>` and retires pilot gating
- *      for the rest of the org session)
+ *   3. Open Outcomes — unlocks Outcomes (`outcomes_unlocked_at_<orgId>`).
+ *      It does NOT graduate the pilot: `graduated_at_<orgId>` is written
+ *      only by usePilotMission once all five mission steps are done,
+ *      Close the loop included.
  *
  * Window events listened for:
  *   - 'pilot-tradebook:trade-reviewed'  (Step 1)

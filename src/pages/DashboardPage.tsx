@@ -65,7 +65,7 @@ import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotSeeding } from '../hooks/usePilotSeeding'
 import { usePilotEntry } from '../hooks/usePilotEntry'
 import { TAB_TYPE_TO_PILOT_FEATURE, PILOT_ACCESS_DEFAULTS } from '../lib/pilot/pilot-access'
-import { shouldHoldForPilotDecision } from '../lib/pilot/tab-gate'
+import { shouldHoldForPilotDecision, dashboardTabTypeForRender } from '../lib/pilot/tab-gate'
 import { PilotTeaserModal } from '../components/pilot/PilotTeaserModal'
 import { PilotGraduationModal } from '../components/pilot/PilotGraduationModal'
 import { PilotTradeBookPreview } from '../components/pilot/PilotTradeBookPreview'
@@ -1051,10 +1051,14 @@ export function DashboardPage() {
       return <BlankTab onSearchResult={handleSearchResult} />
     }
 
+    // A restored or deep-linked Dashboard lens tab is the pilot home until the
+    // pilot graduates. See `dashboardTabTypeForRender`.
+    const tabType = dashboardTabTypeForRender(activeTab.type, pilotMode.effectiveIsPilot, CANONICAL_HOME_TAB.type)
+
     // Surfaces with no phone treatment get an honest explanation rather than a
     // desktop layout crushed into 390px. What is and isn't supported lives in
     // lib/mobile/mobile-surfaces.ts — unregistered types default to desktop-only.
-    if (isMobile && isDesktopOnly(activeTab.type)) {
+    if (isMobile && isDesktopOnly(tabType)) {
       return (
         <DesktopOnlyCard
           type={activeTab.type}
@@ -1095,11 +1099,11 @@ export function DashboardPage() {
     //
     // Desktop is deliberately untouched: `today` still falls through to the
     // `case 'today'` DashboardShell below.
-    if (activeTab.type === 'dashboard' || (isMobile && activeTab.type === 'today')) {
+    if (activeTab.type === 'dashboard' || (isMobile && tabType === 'today')) {
       return renderDashboardContent()
     }
 
-    switch (activeTab.type) {
+    switch (tabType) {
       case 'asset':
         if (!activeTab.data) return <AssetLoadingState />
         // Phones get a purpose-built asset page. AssetTab is 4,300 lines of

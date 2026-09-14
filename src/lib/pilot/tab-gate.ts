@@ -40,6 +40,36 @@ export interface PilotTabGateInput {
   hiddenForThisPilot: boolean
 }
 
+/**
+ * The legacy Dashboard lens tab types. Each renders the Dashboard shell on its
+ * own lens (see DashboardPage and `LENS_FOR_TAB` in DashboardShell).
+ */
+export const DASHBOARD_LENS_TAB_TYPES: ReadonlySet<string> = new Set([
+  'ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2',
+])
+
+/**
+ * Which tab type to render for a Dashboard lens tab.
+ *
+ * A pilot's Dashboard is the pilot home until they graduate — that is the
+ * `today` branch in DashboardPage, which reads `effectiveIsPilot`
+ * (`hasGraduated ? false : isPilot`). The four lens types had no such branch
+ * and no pilot access entry, so a saved session or a deep link carrying
+ * `ideas-v2` put the full Dashboard shell in front of a pilot on step 1.
+ *
+ * They go through the same gate rather than a new one: for a pilot who has not
+ * graduated, a lens tab renders as the home. Anyone else, including a
+ * graduated pilot, gets the type unchanged. Every other type — Pipeline, Trade
+ * Lab, Trade Book, Outcomes — is returned as it is.
+ */
+export function dashboardTabTypeForRender(
+  tabType: string,
+  effectiveIsPilot: boolean,
+  homeType: string,
+): string {
+  return effectiveIsPilot && DASHBOARD_LENS_TAB_TYPES.has(tabType) ? homeType : tabType
+}
+
 export function shouldHoldForPilotDecision(input: PilotTabGateInput): boolean {
   const { orgKnown, pilotLoading, isPilot, hiddenByDefaults, hiddenForThisPilot } = input
 

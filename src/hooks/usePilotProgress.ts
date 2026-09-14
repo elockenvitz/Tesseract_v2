@@ -15,9 +15,11 @@
  *                                banner (or the parallel View Outcomes
  *                                CTA). Stored per-org as
  *                                `outcomes_unlocked_at_<orgId>`.
- *   - graduated                — first time the user reaches Outcomes
- *                                in a given org. Stored per-org as
- *                                `graduated_at_<orgId>`.
+ *   - graduated                — the pilot mission is complete in this
+ *                                org, Close the loop included. Written
+ *                                only by usePilotMission — reaching
+ *                                Outcomes is not enough. Stored per-org
+ *                                as `graduated_at_<orgId>`.
  *
  * All three flags are per-org so an analyst testing across multiple
  * pilot clients (or restarting a single client's onboarding) doesn't
@@ -431,7 +433,7 @@ export function usePilotProgress() {
     hasCompletedPostGradAppLauncher: !!progress[postGradAppLauncherKey(currentOrgId)],
     hasCompletedPostGradFeedback:    !!progress[postGradFeedbackKey(currentOrgId)],
     hasCompletedPostGradRecommend:   !!progress[postGradRecommendKey(currentOrgId)],
-    /** Per-org: true only if the user has reached Outcomes in the
+    /** Per-org: true only once the pilot mission is complete in the
      *  CURRENT org. Each new pilot client starts as not-yet-graduated
      *  even for an analyst who's graduated in prior clients. */
     hasGraduated,
