@@ -21,6 +21,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, it, expect } from 'vitest'
+import { tradeLabStep1Hint } from '../../../lib/pilot/trade-lab-basics'
 
 const src = (p: string) => readFileSync(path.join(process.cwd(), 'src', p), 'utf8')
 
@@ -102,7 +103,9 @@ describe('the local Trade Lab tutorial', () => {
     const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
     expect(hints.length).toBeGreaterThan(0)
     for (const hint of hints) expect(hint).not.toMatch(/on the (left|right)/)
-    expect(hints[0]).toContain('Open Ideas & recommendations')
+    // Step 1's hint is built from the tutorial symbol rather than a literal.
+    expect(tradeLabStep1Hint('LLY')).toContain('Ideas & recommendations')
+    expect(tradeLabStep1Hint('LLY')).not.toMatch(/on the (left|right)/)
   })
 
   /** Completion is untouched: the same three flags, read the same way. */
@@ -223,8 +226,8 @@ describe('the local tutorial', () => {
   })
 
   it('points at the control that exists', () => {
-    const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
-    expect(hints[0]).toBe('Open Ideas & recommendations, find the idea you captured, and tap Add to simulation.')
+    // Step 1's hint is built from the tutorial symbol; see trade-lab-basics.
+    expect(banner).toContain('hint: tradeLabStep1Hint(tutorialSymbol),')
   })
 
   /**
@@ -238,8 +241,7 @@ describe('the local tutorial', () => {
     expect(titles[0]).toBe('Add your idea to the simulation')
     expect(titles[0]).not.toMatch(/review|read|look/i)
     // And the hint names the control the phone actually renders.
-    const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
-    expect(hints[0]).toContain('Add to simulation')
+    expect(tradeLabStep1Hint('LLY')).toContain('Add to simulation')
     expect(drawer).toContain('Add to simulation')
   })
 
@@ -255,14 +257,10 @@ describe('the local tutorial', () => {
    * tutorial idea 1fbc81dd, executed idea 0640af41.
    */
   it('ticks step one only for the captured tutorial idea', () => {
-    expect(page).toContain('const isTutorialIdea = useCallback(')
-    expect(page).toContain('tradeQueueItemId === tutorialIdeaId')
-
-    // Both add paths are gated on it, and neither dispatches unguarded.
-    const dispatches = [...page.matchAll(/dispatchEvent\(new CustomEvent\('pilot-tradelab:rec-reviewed'\)\)/g)]
-    expect(dispatches.length).toBe(2)
-    expect(page).toContain('if (isTutorialIdea(idea.id)) {')
-    expect(page).toContain('if (isTutorialIdea(tradeItem?.id)) {')
+    // One rule, over the written rows, against the tutorial id.
+    expect(page).toContain('reportTradeLabStep1([data], tutorialIdeaId)')
+    // Nothing in the page dispatches the step directly any more.
+    expect(page).not.toContain("new CustomEvent('pilot-tradelab:rec-reviewed')")
   })
 
   /** The banner's own words must not send them back to demo content. */
@@ -295,8 +293,9 @@ describe('the local tutorial', () => {
   it('names, and watches for, the act of sizing a trade', () => {
     const titles = [...banner.matchAll(/title: '([^']*)'/g)].map(m => m[1])
     expect(titles[1]).toBe('Size the trade')
+    // Literal hints start at step 2; step 1's is built by tradeLabStep1Hint.
     const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
-    expect(hints[1]).toBe('Tap the trade row and set its weight or shares.')
+    expect(hints[0]).toBe('Tap the trade row and set its weight or shares.')
 
     // The predicate now lives on the sizing path both surfaces share.
     const sizing = page.slice(page.indexOf('const handleVariantSizingUpdate'))
@@ -435,19 +434,14 @@ describe('adding a recommendation from a phone', () => {
    * had only looked.
    */
   it('ticks step one from the add, and from nothing else', () => {
-    const dispatches = [...page.matchAll(/dispatchEvent\(new CustomEvent\('pilot-tradelab:rec-reviewed'\)\)/g)]
-    // Two adds: an idea's checkbox and a recommendation's apply path.
-    expect(dispatches.length).toBe(2)
-
-    const addAsset = page.slice(page.indexOf('const handleAddAsset = useCallback'))
-    expect(addAsset.slice(0, 2600)).toContain('pilot-tradelab:rec-reviewed')
-
-    const toggle = page.slice(page.indexOf('const toggleProposalInSimulation'))
-    expect(toggle.slice(0, toggle.indexOf('// Per-asset exclusivity'))).toContain('pilot-tradelab:rec-reviewed')
+    // Reported from the two add mutations' success handlers and nowhere else.
+    const reports = [...page.matchAll(/reportTradeLabStep1\(/g)]
+    expect(reports.length).toBe(2)
 
     // The reading paths are silent.
     for (const reader of ['const toggleExpand = (e: React.MouseEvent)', 'const toggleProposalExpand = (e: React.MouseEvent)']) {
       const fn = page.slice(page.indexOf(reader))
+      expect(fn.slice(0, 400)).not.toContain('reportTradeLabStep1')
       expect(fn.slice(0, 400)).not.toContain('pilot-tradelab:rec-reviewed')
     }
   })
@@ -555,7 +549,7 @@ describe('executing from a phone', () => {
     const titles = [...banner.matchAll(/title: '([^']*)'/g)].map(m => m[1])
     expect(titles[2]).toBe('Execute the simulated trade')
     const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
-    expect(hints[2]).toContain('Execute at the bottom of the table')
+    expect(hints[1]).toContain('Execute at the bottom of the table')
   })
 })
 

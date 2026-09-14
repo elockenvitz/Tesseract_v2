@@ -15,6 +15,8 @@
  * Step 1 fires only from a real add. Expanding a card or opening its detail
  * modal used to fire it too, which ticked the step off for someone who had
  * only looked — the banner then said "done" about work that had not happened.
+ * It is now reported by the add mutations' success handlers, from the rows the
+ * write returned: see `lib/pilot/trade-lab-basics`.
  *
  * Steps tick off as the user does them — same progress pattern as the
  * Idea Pipeline banner. Each step listens for a window event:
@@ -30,6 +32,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PilotStepsBanner } from './PilotStepsBanner'
 import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
+import { TRADE_LAB_STEP1_EVENT, tradeLabStep1Hint } from '../../lib/pilot/trade-lab-basics'
 
 interface PilotTradeLabIntroBannerProps {
   /**
@@ -47,6 +50,8 @@ interface PilotTradeLabIntroBannerProps {
   userId: string
   /** Active org id, used to scope the banner state per pilot client. */
   orgId?: string | null
+  /** The tutorial idea's symbol, so step 1 can name what to add. */
+  tutorialSymbol?: string | null
 }
 
 const STEP1 = 'rec_reviewed'
@@ -73,7 +78,7 @@ function writeFlag(userId: string, orgId: string | null | undefined, suffix: str
   try { localStorage.setItem(flagKey(userId, orgId, suffix), '1') } catch { /* ignore */ }
 }
 
-export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange }: PilotTradeLabIntroBannerProps) {
+export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange, tutorialSymbol }: PilotTradeLabIntroBannerProps) {
   const [dismissed, setDismissed] = useState<boolean>(() => readFlag(userId, orgId, DISMISS))
   const [step1, setStep1] = useState<boolean>(() => readFlag(userId, orgId, STEP1))
   const [step2, setStep2] = useState<boolean>(() => readFlag(userId, orgId, STEP2))
@@ -116,11 +121,11 @@ export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange }:
     const onStep1 = defer(() => markStep(STEP1, setStep1))
     const onStep2 = defer(() => markStep(STEP2, setStep2))
     const onStep3 = defer(() => markStep(STEP3, setStep3))
-    window.addEventListener('pilot-tradelab:rec-reviewed', onStep1)
+    window.addEventListener(TRADE_LAB_STEP1_EVENT, onStep1)
     window.addEventListener('pilot-tradelab:rec-sized', onStep2)
     window.addEventListener('pilot-tradelab:executed', onStep3)
     return () => {
-      window.removeEventListener('pilot-tradelab:rec-reviewed', onStep1)
+      window.removeEventListener(TRADE_LAB_STEP1_EVENT, onStep1)
       window.removeEventListener('pilot-tradelab:rec-sized', onStep2)
       window.removeEventListener('pilot-tradelab:executed', onStep3)
     }
@@ -172,10 +177,11 @@ export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange }:
              test a trade, with nothing on the screen able to satisfy it.
              Recommendations remain addable; they just do not graduate anyone. */
           title: 'Add your idea to the simulation',
-          /* One line, naming the control rather than a side of a desktop
-             screen. It carried a button too, which is what put two large
-             controls for one action on top of each other. */
-          hint: 'Open Ideas & recommendations, find the idea you captured, and tap Add to simulation.',
+          /* Names the idea and exactly what counts: the idea itself, or a
+             recommendation made on it. "Find the idea you captured" left a
+             pilot looking at the seeded recommendation first, adding that,
+             and watching the step stay open with no reason given. */
+          hint: tradeLabStep1Hint(tutorialSymbol),
           done: step1,
         },
         {

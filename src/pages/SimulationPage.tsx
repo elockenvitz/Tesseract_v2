@@ -102,6 +102,7 @@ import { MobileTradesView } from '../components/mobile/trade-lab/MobileTradesVie
 import { MobileIdeasDrawer } from '../components/mobile/trade-lab/MobileIdeasDrawer'
 import { HoldingsSimulationTable } from '../components/trading/HoldingsSimulationTable'
 import { PilotTradeLabIntroBanner } from '../components/pilot/PilotTradeLabIntroBanner'
+import { reportTradeLabStep1 } from '../lib/pilot/trade-lab-basics'
 import { SharedSimulationBanner } from '../components/trading/SharedSimulationBanner'
 import { SharedWithMeList } from '../components/trading/SharedWithMeList'
 import { useIntentVariants } from '../hooks/useIntentVariants'
@@ -371,15 +372,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const { mark: markPilotStage, tutorialIdeaId } = usePilotProgress()
   /*
    * One object, end to end. The mission follows the captured tutorial idea
-   * through simulation → accepted trade → outcome, so Trade Lab basics has to
-   * be teaching that same trade_queue_item and nothing else. A non-pilot has
-   * no tutorial idea and no banner, so the predicate is simply false there.
+   * through simulation → accepted trade → outcome, so Trade Lab basics step 1
+   * counts only a written simulation row whose trade_queue_item_id is that
+   * idea — see `reportTradeLabStep1`. A non-pilot has no tutorial idea, so it
+   * never fires for them.
    */
-  const isTutorialIdea = useCallback(
-    (tradeQueueItemId: string | null | undefined) =>
-      !!tutorialIdeaId && !!tradeQueueItemId && tradeQueueItemId === tutorialIdeaId,
-    [tutorialIdeaId],
-  )
   const queryClient = useQueryClient()
   const toast = useToast()
 
@@ -2910,6 +2907,18 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           return
         }
 
+        /*
+         * Trade Lab basics step 1, from the row the write returned.
+         *
+         * Every single add — an idea, a recommendation, a pair leg, a manual
+         * position — arrives here, and only once the upsert has succeeded and
+         * the reader has not toggled it back off. The row's
+         * `trade_queue_item_id` is the recorded lineage: the tutorial idea
+         * itself, or the idea a recommendation was raised on. See
+         * `lib/pilot/trade-lab-basics`.
+         */
+        reportTradeLabStep1([data], tutorialIdeaId)
+
         // User still wants this trade — sync lab_variant
         if (tradeLab?.id && simulation) {
           try {
@@ -3151,6 +3160,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       return data
     },
     onSuccess: (data, pairTradeLegs) => {
+      // Trade Lab basics step 1 — the legs that were written and are still
+      // wanted. A leg toggled off in flight is removed below and is not an add.
+      reportTradeLabStep1(
+        ((data ?? []) as Array<{ asset_id: string; trade_queue_item_id: string | null }>)
+          .filter(trade => checkboxOverridesRef.current.get(trade.asset_id) !== false),
+        tutorialIdeaId,
+      )
       // Rapid toggle reconciliation for each leg
       if (data) {
         (data as any[]).forEach((trade: any) => {
@@ -3436,23 +3452,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     checkboxOverridesRef.current.set(assetId, true)
     setCheckboxOverrides(new Map(checkboxOverridesRef.current))
 
-    /*
-     * Tick step 1 of Trade Lab basics — but only for the tutorial idea.
-     *
-     * The mission follows ONE trade_queue_item, the one the pilot captured in
-     * step one, and every later step reads against it. Trade Lab used to tick
-     * its first step for anything added to the simulation, and taught the
-     * pilot to add the seeded recommendation — a different trade_queue_item.
-     * They would then execute that, and the mission, watching their own idea,
-     * correctly saw no simulation trade and no decision and sat on "Test the
-     * trade" forever. Two objects, one journey, and the journey lost.
-     *
-     * The seeded recommendation is demo content. It is still addable and
-     * still executable; it just is not what graduates the pilot.
-     */
-    if (isTutorialIdea(idea.id)) {
-      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
-    }
+    // Trade Lab basics step 1 is reported by importTradeMutation.onSuccess,
+    // from the row the write returned — not here, before the write exists.
 
     // Prime priceMap with a price hint for this asset so quickEstimate in
     // useSimulationRows can compute a non-zero notional immediately. Without
@@ -4176,21 +4177,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
     // === CHECK: add proposal to simulation ===
 
-    /*
-     * Tick step 1 only if this recommendation IS the tutorial idea.
-     *
-     * A proposal wraps a trade_queue_item, and the pilot-seeded one wraps a
-     * different item from the idea the mission follows. Ticking the step here
-     * unconditionally is what let a pilot finish Trade Lab basics against demo
-     * content while the mission, watching their own captured idea, stayed on
-     * "Test the trade" with nothing they could do to satisfy it.
-     *
-     * A recommendation raised ON the tutorial idea still counts — same object,
-     * so the lineage holds.
-     */
-    if (isTutorialIdea(tradeItem?.id)) {
-      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
-    }
+    // Trade Lab basics step 1 is reported by importTradeMutation.onSuccess once
+    // the row exists; a recommendation raised on the tutorial idea writes that
+    // idea as its trade_queue_item_id, so it counts there.
 
     // Per-asset exclusivity: uncheck any idea-sourced trade first
     proposalAssetIds.forEach((aid: string) => uncheckOtherSourcesForAsset(aid, 'proposal'))
@@ -4227,7 +4216,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         })).filter((l: any) => l.assetId)
       : asset?.id ? [{
           assetId: asset.id,
-          tradeQueueItemId: tradeItem?.id,
+          /*
+           * The recommendation's source idea. The joined row supplies it when it
+           * came back; the proposal's own `trade_queue_item_id` is the same fact
+           * and is always selected. Without the fallback a missing join sent a
+           * random id below, which lost the lineage before the write.
+           */
+          tradeQueueItemId: tradeItem?.id ?? proposal.trade_queue_item_id ?? undefined,
           action: (tradeItem?.action || 'buy') as TradeAction,
           symbol: asset.symbol || '',
           companyName: asset.company_name || '',
@@ -5666,6 +5661,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             userId={user.id}
             orgId={currentOrgId}
             onCurrentStepChange={setLabBasicsStep}
+            tutorialSymbol={tradeIdeas?.find(i => i.id === tutorialIdeaId)?.assets?.symbol ?? null}
           />
         )}
 
