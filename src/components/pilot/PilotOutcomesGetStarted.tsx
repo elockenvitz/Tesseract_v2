@@ -2,9 +2,9 @@
  * PilotOutcomesGetStarted — Get Started banner shown at the top of
  * Outcomes for a pilot user the first time they land here.
  *
- * Reaching Outcomes is the graduation moment — pilot gating drops
- * away and the rest of Tesseract becomes available. This banner
- * acknowledges the milestone and walks the user through the loop:
+ * Outcomes is pilot mission stage 5, "Close the loop". Finishing this
+ * banner completes the stage (see the mark below), and with stages 1–4
+ * done the mission graduates the pilot. It walks the user through:
  *
  *   1. Inspect the result — click your committed decision in the
  *      table to see Outcomes's analysis (price move, performance,
@@ -30,6 +30,8 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { PilotStepsBanner } from './PilotStepsBanner'
 import { Trophy } from 'lucide-react'
 import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { tutorialOutcomeReviewedKey } from '../../lib/pilot/mission'
 
 interface PilotOutcomesGetStartedProps {
   userId: string | undefined
@@ -162,6 +164,17 @@ export function PilotOutcomesGetStarted({
   // PENDING_GRAD is the gate that prevents double-firing within a
   // session; GRAD_DISMISS is the gate that prevents re-celebrating
   // someone who already saw it.
+  // "Finish the loop" finished is pilot mission stage 5 — the last one. The
+  // steps are browser-local, so this writes the one server-backed mark the
+  // roadmap reads; the mission then graduates the pilot. Idempotent per
+  // (stage, org), and written for a pilot who finished before this existed.
+  const { progress, mark } = usePilotProgress()
+  const stageMarked = !!progress[tutorialOutcomeReviewedKey(orgId ?? null)]
+  useEffect(() => {
+    if (!userId || !step1 || !step2 || !step3 || stageMarked) return
+    mark('tutorial_outcome_reviewed')
+  }, [userId, step1, step2, step3, stageMarked, mark])
+
   useEffect(() => {
     if (!userId || !step1 || !step2 || !step3) return
     if (readFlag(userId, orgId, GRAD_DISMISS)) return

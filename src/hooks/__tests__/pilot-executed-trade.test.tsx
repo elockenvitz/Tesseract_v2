@@ -138,12 +138,12 @@ describe('Golf Cap: the pilot executed the seeded AAPL recommendation in Trade L
     expect(result.current.mode.accessFor('outcomes')).toBe('preview')
   })
 
-  it('completes Test the trade and Make the decision, and moves the roadmap to Close the loop', async () => {
+  it('completes Test the trade (Trade Lab) and moves the roadmap to Make the decision (Trade Book)', async () => {
     const { result } = await load()
     const { mission } = result.current
     expect(mission.steps[2].done).toBe(true)
-    expect(mission.steps[3].done).toBe(true)
-    expect(mission.currentStepId).toBe('outcome_reviewed')
+    expect(mission.steps[3].done).toBe(false)
+    expect(mission.currentStepId).toBe('decision_submitted')
     // Close the loop reviews the trade that was executed.
     expect(mission.decisionIdeaIds).toEqual([SEEDED_AAPL])
     expect(mission.reviewIdeaId).toBe(SEEDED_AAPL)
@@ -163,7 +163,7 @@ describe('Golf Cap: the pilot executed the seeded AAPL recommendation in Trade L
 
     const second = await load()
     expect(second.result.current.mode.accessFor('tradeBook')).toBe('full')
-    expect(second.result.current.mission.currentStepId).toBe('outcome_reviewed')
+    expect(second.result.current.mission.currentStepId).toBe('decision_submitted')
     expect(db.progressWrites.flat().filter(k => k === key('trade_book_unlocked'))).toHaveLength(1)
   })
 })
@@ -173,8 +173,21 @@ describe('executing the captured idea works the same way', () => {
     seed({ accepted: [executed(TUTORIAL)] })
     const { result } = await load()
     await waitFor(() => expect(result.current.mode.accessFor('tradeBook')).toBe('full'))
-    expect(result.current.mission.currentStepId).toBe('outcome_reviewed')
+    expect(result.current.mission.currentStepId).toBe('decision_submitted')
     expect(result.current.mission.reviewIdeaId).toBe(TUTORIAL)
+  })
+})
+
+describe('Trade Book basics finished', () => {
+  it('moves the roadmap to Close the loop, and a refresh keeps it there', async () => {
+    seed({ accepted: [executed(SEEDED_AAPL)], progress: { [key('tradebook_basics_completed')]: 't' } })
+    const first = await load()
+    expect(first.result.current.mission.steps[3].done).toBe(true)
+    expect(first.result.current.mission.currentStepId).toBe('outcome_reviewed')
+    first.unmount()
+    const second = await load()
+    expect(second.result.current.mission.currentStepId).toBe('outcome_reviewed')
+    expect(second.result.current.mode.hasGraduated).toBe(false)
   })
 })
 
@@ -212,7 +225,7 @@ describe('in the same session, without a reload', () => {
     })
 
     await waitFor(() => expect(result.current.mode.accessFor('tradeBook')).toBe('full'))
-    await waitFor(() => expect(result.current.mission.currentStepId).toBe('outcome_reviewed'))
+    await waitFor(() => expect(result.current.mission.currentStepId).toBe('decision_submitted'))
     expect(result.current.mode.hasGraduated).toBe(false)
   })
 

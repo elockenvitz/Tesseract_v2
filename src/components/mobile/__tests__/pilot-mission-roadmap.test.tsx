@@ -174,11 +174,9 @@ describe('where each step goes', () => {
       expect.objectContaining({ type: 'trade-lab', data: { tradeQueueItemId: 'idea-1' } }))
   })
 
-  it('decides in the Pipeline, on the deciding stage', () => {
-    expect(openStep(3)).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'trade-queue',
-      data: { focusIdeaId: 'idea-1', focusStage: 'ready_for_decision' },
-    }))
+  /** Stage 4 is Trade Book. It opened the Idea Pipeline, from when decisions were made there. */
+  it('makes the decision in Trade Book', () => {
+    expect(openStep(3)).toHaveBeenCalledWith(expect.objectContaining({ type: 'trade-book' }))
   })
 
   it('closes the loop in Outcomes', () => {

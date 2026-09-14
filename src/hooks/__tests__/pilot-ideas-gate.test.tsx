@@ -126,6 +126,8 @@ const pilotKeys = {
     [`trade_book_unlocked_at_${ORG}`]: 't',
     // Trade Book basics step 3, "Open Outcomes".
     [`outcomes_unlocked_at_${ORG}`]: 't',
+    // Trade Book basics finished: mission stage 4.
+    [`tradebook_basics_completed_at_${ORG}`]: 't',
   },
   outcomeReviewed: { [`tutorial_outcome_reviewed_at_${ORG}`]: 't' },
 }
@@ -163,7 +165,8 @@ describe('the standalone Ideas app during the mission', () => {
     db.stage = 'investigate'
     db.simulated = true
     const { result } = await load()
-    expect(result.current.mission.currentStepId).toBe('decision_submitted')
+    // Sized in Trade Lab but not executed: still on Trade Lab.
+    expect(result.current.mission.currentStepId).toBe('simulation_completed')
     expect(result.current.ideasOpen).toBe(false)
     expect(result.current.pipelineOpen).toBe(true)
   })

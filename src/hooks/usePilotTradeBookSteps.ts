@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { logPilotEvent, type PilotEventType } from '../lib/pilot/pilot-telemetry'
 import { TRADE_BOOK_STEP_EVENTS, type TradeBookStepKey } from '../lib/pilot/trade-book-steps'
+import { tradeBookBasicsKey } from '../lib/pilot/mission'
+import { usePilotProgress } from './usePilotProgress'
 
 /**
  * Trade Book basics progress, for any component that shows it.
@@ -86,13 +88,31 @@ export function usePilotTradeBookSteps(userId: string | undefined, orgId: string
     }
   }, [markStep])
 
+  const allDone = done.reviewed && done.rationale && done.outcomes
+
   // Retire once all three are done.
   useEffect(() => {
-    if (!dismissed && done.reviewed && done.rationale && done.outcomes && userId) {
+    if (!dismissed && allDone && userId) {
       writeFlag(userId, orgId, DISMISS)
       setDismissed(true)
     }
-  }, [dismissed, done, userId, orgId])
+  }, [dismissed, allDone, userId, orgId])
+
+  /*
+   * Trade Book basics finished is pilot mission stage 4.
+   *
+   * The steps themselves are browser-local, so finishing them writes one
+   * server-backed mark the roadmap reads — which is what keeps stage 4 done
+   * after a refresh or on another device. Written whenever all three are done
+   * and the mark is missing, so a pilot who finished before this existed gets
+   * it on their next visit. `mark` is idempotent per (stage, org).
+   */
+  const { progress, mark } = usePilotProgress()
+  const stageMarked = !!progress[tradeBookBasicsKey(orgId ?? null)]
+  useEffect(() => {
+    if (!userId || !allDone || stageMarked) return
+    mark('tradebook_basics_completed')
+  }, [userId, allDone, stageMarked, mark])
 
   const openOutcomes = useCallback((navigate: () => void) => {
     markStep('outcomes')

@@ -3172,35 +3172,19 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
   const { data: reviewsById } = useDecisionReviewsByIds(decisionIds)
 
   /*
-   * Step 5 of the pilot mission completes HERE, not at the button that sent
-   * them.
+   * Pilot mission stage 5 is NOT marked here any more.
    *
-   * The module's CTA used to mark it and then navigate, which meant pressing a
-   * button was the whole of "reviewed the outcome" — a pilot who clicked and
-   * landed on an error, an empty filter or a failed load was marked complete
-   * and graduated anyway. Reading is still not writing, so the step is still a
-   * mark; what changed is that the mark belongs to the surface that can
-   * actually tell whether the decision resolved.
+   * It was marked as soon as this page loaded one of the pilot's decisions,
+   * which completed "Close the loop" on arrival — before the reader had done
+   * anything on Outcomes. Each stage now completes when its app's Getting
+   * Started is finished, so the mark is written by PilotOutcomesGetStarted
+   * once "Finish the loop" is done.
    *
-   * The condition is one of the pilot's decisions being present in the rows
-   * this page has loaded — the tutorial idea's, or any trade the pilot
-   * executed, since pilots may take any idea through Trade Lab
-   * (`mission.decisionIdeaIds`). `decision_id` IS the `trade_queue_item_id`.
-   * Nothing to resolve means nothing to mark, and the step stays open — which
-   * is the honest result and the one the reader can act on by coming back.
-   *
-   * `markOutcomeReviewed` is idempotent per (stage, org); no second progress
-   * mechanism is introduced.
+   * The mission stays mounted here: it is the one graduation writer, and
+   * finishing Outcomes is what completes the mission, so graduation happens
+   * on this page rather than on the next visit home.
    */
-  const mission = usePilotMission()
-  useEffect(() => {
-    if (isLoading || isError) return
-    const tutorialId = mission.tutorialIdeaId
-    if (!tutorialId || mission.steps[4]?.done) return
-    const reviewable = mission.decisionIdeaIds
-    if (!rows.some(r => reviewable.includes(r.decision_id))) return
-    mission.markOutcomeReviewed()
-  }, [isLoading, isError, rows, mission])
+  usePilotMission()
 
   /** Promote a row's intel from `evaluate` → `resolved` once the user
    *  has captured a reflection (thesis call OR reflection note). The

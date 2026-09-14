@@ -60,21 +60,18 @@ describe('what completes the local step', () => {
 })
 
 /*
- * The local step does not reach the mission. Adding the seeded recommendation
- * teaches the banner step; the mission's "Test the trade" moves on a simulation
- * row for the tutorial idea or on an executed trade, and an add is neither.
+ * The local step does not reach the mission. Adding a trade teaches Trade Lab
+ * basics step 1; mission stage 3 (Trade Lab) finishes on its last step, an
+ * executed trade, and an add is not one.
  */
 describe('adding is not executing', () => {
-  it('leaves the mission on its simulation step after an unrelated add completes the local step', () => {
+  it('leaves the mission on Trade Lab after an add completes the local step', () => {
     expect(completesTradeLabStep1([row(SEEDED)])).toBe(true)
     const m = missionState({
       tutorialIdeaId: TUTORIAL,
       ideaExists: true,
-      ideaStage: 'investigate',
       pipelineBasics: { moved: true, inboxOpened: true, tradeLabOpened: true },
-      // What usePilotMission reads for the tutorial idea: no row of its own.
-      hasSimulationTrade: false,
-      hasDecision: false,
+      hasExecutedTrade: false,
       outcomeReviewedAt: null,
     })
     expect(m.currentStepId).toBe('simulation_completed')

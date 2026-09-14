@@ -10,7 +10,7 @@
  *
  * Rendered for real at 390px: BatchListView, the banner and the card.
  */
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, within, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -21,6 +21,8 @@ vi.mock('../../../lib/supabase', () => ({
 vi.mock('../../../hooks/useAcceptedTrades', () => ({ useAcceptedTradeComments: () => ({ data: [] }) }))
 vi.mock('../../../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }))
 vi.mock('../../../lib/pilot/pilot-telemetry', () => ({ logPilotEvent: vi.fn() }))
+const progressMark = vi.hoisted(() => vi.fn())
+vi.mock('../../../hooks/usePilotProgress', () => ({ usePilotProgress: () => ({ progress: {}, mark: progressMark }) }))
 
 import { BatchListView, type TradeBookGuide } from '../BatchListView'
 import { PilotTradeBookGetStarted } from '../../pilot/PilotTradeBookGetStarted'
@@ -68,6 +70,7 @@ const flush = () => act(async () => { await new Promise(r => setTimeout(r, 0)) }
 let scrolled: Element[]
 beforeEach(() => {
   localStorage.clear()
+  progressMark.mockReset()
   setViewport(390)
   scrolled = []
   Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this) }
@@ -165,6 +168,17 @@ describe('the banner and the card are one progress', () => {
     await flush()
     expect(slot('tradebook-next-steps')).toBeNull()
     expect(slot('pilot-steps-banner')).toBeNull()
+    // Finishing Trade Book basics is pilot mission stage 4: its server-backed mark is written.
+    expect(progressMark).toHaveBeenCalledWith('tradebook_basics_completed')
+  })
+
+  it('does not write the stage 4 mark before all three steps are done', async () => {
+    render(<Page guide={guide()} />)
+    fireEvent.click(stepRow('reviewed'))
+    await flush()
+    fireEvent.click(stepRow('outcomes'))
+    await flush()
+    expect(progressMark).not.toHaveBeenCalledWith('tradebook_basics_completed')
   })
 })
 

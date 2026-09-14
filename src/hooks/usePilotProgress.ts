@@ -40,6 +40,7 @@ import { onboardingStageKey } from '../lib/pilot/onboarding'
 import {
   tutorialIdeaKey,
   tutorialOutcomeReviewedKey,
+  tradeBookBasicsKey,
   pipelineStepMovedKey,
   pipelineStepInboxKey,
   pipelineStepTradeLabKey,
@@ -80,13 +81,12 @@ export type PilotStage =
   | 'ideas_viewed'
   | 'signal_worked'
   /*
-   * The one step of the pilot MISSION that leaves no artifact.
-   *
-   * The other four are a row, a stage, a simulated trade and a decision — all
-   * of them durable product truth about the same idea, none of them needing a
-   * flag. Reading Outcomes writes nothing, so it is marked. See
-   * `lib/pilot/mission.ts`.
+   * Pilot MISSION stages 4 and 5: Trade Book basics finished, and Outcomes'
+   * "Finish the loop" finished. Their steps are reading and opening things,
+   * which write nothing else, so each app's Getting Started writes one of these
+   * as it finishes. See `lib/pilot/mission.ts`.
    */
+  | 'tradebook_basics_completed'
   | 'tutorial_outcome_reviewed'
 
 export interface PilotProgress {
@@ -130,6 +130,7 @@ const stageToKey = (stage: PilotStage, orgId: string | null): string => {
     // and the reader cannot spell the same step differently.
     case 'ideas_viewed':               return onboardingStageKey('ideas_viewed', orgId)
     case 'signal_worked':              return onboardingStageKey('signal_worked', orgId)
+    case 'tradebook_basics_completed': return tradeBookBasicsKey(orgId)
     case 'tutorial_outcome_reviewed':  return tutorialOutcomeReviewedKey(orgId)
   }
 }
@@ -155,6 +156,7 @@ const STAGE_TO_EVENT: Record<PilotStage, string> = {
   post_grad_step_recommend:    'pilot_post_grad_step_recommend',
   ideas_viewed:                'pilot_onboarding_ideas_viewed',
   signal_worked:               'pilot_onboarding_signal_worked',
+  tradebook_basics_completed:  'pilot_mission_tradebook_basics_completed',
   tutorial_outcome_reviewed:   'pilot_mission_outcome_reviewed',
 }
 

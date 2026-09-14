@@ -15,20 +15,28 @@ import { toResearchStage } from '../trade-status-semantics'
  * product exists to hold, and walking it once teaches more than eleven
  * unrelated visits.
  *
- * ── Why the steps are derived, not ticked ─────────────────────────────────
+ * ── One stage per app ─────────────────────────────────────────────────────
  *
- * Four of the five leave durable product truth behind: a row, a stage, a
- * simulated trade, a decision. None of them needs a flag, and a flag beside
- * them could only ever disagree — which is the failure `pilot_progress`
- * already documents at length. Only "reviewed the outcome" leaves nothing,
- * because reading is not writing, so that one alone is a mark.
+ *   1  Capture an investment idea   the idea is created
+ *   2  Develop the thesis           Idea Pipeline — Pipeline basics finished
+ *   3  Test the trade               Trade Lab — its last step, executing a trade
+ *   4  Make the decision            Trade Book — Trade Book basics finished
+ *   5  Close the loop               Outcomes — "Finish the loop" finished
  *
- * ── Why identity matters here ─────────────────────────────────────────────
+ * Each stage completes when that app's Getting Started is finished, so the
+ * roadmap and the banner in front of the reader always agree about where they
+ * are. (Stage 4 used to complete the moment a trade executed, which put the
+ * roadmap on stage 5 while the reader was still doing Trade Book.)
  *
- * Every step is about the SAME `trade_queue_items.id`. "You have some idea at
- * some stage and some simulation somewhere" is not the lesson; carrying one
- * decision through is. The id is held in `pilot_progress` per org, and the
- * facts below are all read against it.
+ * ── What each stage reads ─────────────────────────────────────────────────
+ *
+ * Durable records only, so a refresh or a second device agrees. Stage 1 is the
+ * idea row; stage 3 the executed trade. Stages 2, 4 and 5 are server-backed
+ * marks in `pilot_progress`, written as their app's Getting Started finishes —
+ * reading and opening things writes nothing else that could stand in.
+ *
+ * The tutorial idea still anchors the journey: if it is gone, the mission
+ * returns to step one.
  *
  * Pure: no React, no Supabase, no clock.
  */
@@ -60,18 +68,16 @@ export interface MissionFacts {
    * pointing at an object that is not there. Nothing is stuck.
    */
   ideaExists: boolean
-  /** The tutorial idea's stage, in whichever vocabulary it was written. */
-  ideaStage: string | null
-  /** A `simulation_trades` row naming the tutorial idea. */
-  hasSimulationTrade: boolean
+  /** The tutorial idea's stage. Informational; no stage reads it. */
+  ideaStage?: string | null
   /**
-   * A decision was executed: an `accepted_trades` row the pilot committed in
-   * this org — on ANY idea — or one naming the tutorial idea, or a decided
-   * outcome on the tutorial idea. Pilots may take any idea through Trade Lab;
-   * the trade they execute is the decision the mission follows from here.
+   * Stage 3 — Trade Lab's last step: the pilot executed a trade in this org
+   * (an `accepted_trades` row they committed, on any idea).
    */
-  hasDecision: boolean
-  /** `tutorial_outcome_reviewed_at_<orgId>`. */
+  hasExecutedTrade: boolean
+  /** Stage 4 — `tradebook_basics_completed_at_<orgId>`: Trade Book basics finished. */
+  tradeBookBasicsAt?: string | null
+  /** Stage 5 — `tutorial_outcome_reviewed_at_<orgId>`: Outcomes' "Finish the loop" finished. */
   outcomeReviewedAt: string | null
   /**
    * The three Pipeline basics steps, from `pilot_progress`.
@@ -172,12 +178,8 @@ export function isPipelineAdvanced(stage: string | null | undefined): boolean {
 }
 
 /*
- * The steps say what each one is FOR, not which screen it happens on.
- *
- * "Develop it in Pipeline" and "Simulate the trade" named the surface and left
- * the reason implicit, which taught the app rather than the argument for it.
- * The CTAs still name the destination, because a button should say where it
- * goes; the step says why you would want to.
+ * The label says what each stage is FOR; the hint says which app it happens in
+ * and what finishes it, in that app's own words; the CTA opens that app.
  */
 const COPY: Record<MissionStepId, { label: string; hint: string; cta: string; blocked: string }> = {
   idea_created: {
@@ -188,26 +190,26 @@ const COPY: Record<MissionStepId, { label: string; hint: string; cta: string; bl
   },
   pipeline_advanced: {
     label: 'Develop the thesis',
-    hint: 'Build the research and thinking that moves the idea toward a decision.',
+    hint: 'In Idea Pipeline: move an idea, open the Decision Inbox, then open Trade Lab.',
     cta: 'Open Pipeline',
     blocked: 'Capture an investment idea first.',
   },
   simulation_completed: {
     label: 'Test the trade',
-    hint: 'See how the proposed trade changes the portfolio before you act.',
+    hint: 'In Trade Lab: add an idea, size it, and execute it.',
     cta: 'Open Trade Lab',
     blocked: 'Develop the thesis first.',
   },
   decision_submitted: {
     label: 'Make the decision',
-    hint: 'Record what you decided and why.',
-    cta: 'Decide',
+    hint: 'In Trade Book: review the trade, add your rationale, then open Outcomes.',
+    cta: 'Open Trade Book',
     blocked: 'Test the trade first.',
   },
   outcome_reviewed: {
     label: 'Close the loop',
-    hint: 'Review what happened afterward, and what Tesseract remembers about the decision.',
-    cta: 'Review outcome',
+    hint: 'In Outcomes: inspect the result, review why you made it, and check how it’s performing.',
+    cta: 'Open Outcomes',
     blocked: 'Make the decision first.',
   },
 }
@@ -222,47 +224,17 @@ export function missionState(facts: MissionFacts): MissionState {
    */
   const hasIdea = !!facts.tutorialIdeaId && facts.ideaExists
 
+  // One stage per app, each done when that app's Getting Started is finished.
   const done: Record<MissionStepId, boolean> = {
     idea_created: hasIdea,
-    /*
-     * The tutorial idea has moved AND Pipeline basics is finished.
-     *
-     * This read `isPipelineAdvanced(stage)` alone — which is exactly the act
-     * that completes Pipeline basics step 1 — so the first move completed step
-     * 1 of 3 and this whole stage together, and the home screen jumped to "Test
-     * the trade" while the Pipeline banner still said 1 of 3. The stage is
-     * "Develop the thesis", and Pipeline basics is how it is taught: move the
-     * idea, open the Decision Inbox, open Trade Lab. It is done when that is.
-     *
-     * Or when something downstream on the same idea already exists. A
-     * simulated trade or a decision is proof the pilot got past this stage, and
-     * without that a pilot who was mid-mission when this rule changed — idea
-     * advanced, trade simulated or executed, inbox never opened — would be sent
-     * back to step 2. Same monotonic rule as `simulation_completed` below. The
-     * idea still has to have moved: a decision on an idea still at `aware` is a
-     * later truth with this step genuinely outstanding.
-     */
-    pipeline_advanced:
-      hasIdea
-      && isPipelineAdvanced(facts.ideaStage)
-      && (pipelineBasicsComplete(facts.pipelineBasics) || facts.hasSimulationTrade || facts.hasDecision),
-    /*
-     * A simulation_trades row, OR anything downstream of one.
-     *
-     * Executing a trade DELETES its simulation_trades row — the trade has
-     * left the simulation and become a committed trade, and the execute
-     * service bulk-deletes the rows it committed. So the artifact this step
-     * was reading disappears at the exact moment the step's purpose is most
-     * thoroughly fulfilled, and the mission regressed: a pilot who had just
-     * executed was sent back to "Test the trade — Open Trade Lab", because
-     * `currentStepId` is the first step that is not done.
-     *
-     * A decision on the idea is proof the trade was tested, not evidence
-     * against it. The step is monotonic now: the transient artifact still
-     * completes it, and the durable one keeps it complete.
-     */
-    simulation_completed: hasIdea && (facts.hasSimulationTrade || facts.hasDecision),
-    decision_submitted: hasIdea && facts.hasDecision,
+    // Idea Pipeline: move an idea, open the Decision Inbox, open Trade Lab.
+    pipeline_advanced: hasIdea && pipelineBasicsComplete(facts.pipelineBasics),
+    // Trade Lab: add, size, execute — executing is the last step, and it cannot
+    // happen without the other two.
+    simulation_completed: hasIdea && facts.hasExecutedTrade,
+    // Trade Book: review the trade, add rationale, open Outcomes.
+    decision_submitted: hasIdea && !!facts.tradeBookBasicsAt,
+    // Outcomes: inspect the result, review why, check how it's performing.
     outcome_reviewed: hasIdea && !!facts.outcomeReviewedAt,
   }
 
@@ -296,6 +268,10 @@ export function missionState(facts: MissionFacts): MissionState {
 /** Per-org key for the tutorial idea id. Same shape as every other pilot key. */
 export const tutorialIdeaKey = (orgId: string | null) => `tutorial_idea_id_${orgId || 'no-org'}`
 
-/** Per-org key for the one step that cannot be derived. */
+/** Per-org key for stage 5: Outcomes' "Finish the loop" finished. */
 export const tutorialOutcomeReviewedKey = (orgId: string | null) =>
   `tutorial_outcome_reviewed_at_${orgId || 'no-org'}`
+
+/** Per-org key for stage 4: Trade Book basics finished. */
+export const tradeBookBasicsKey = (orgId: string | null) =>
+  `tradebook_basics_completed_at_${orgId || 'no-org'}`

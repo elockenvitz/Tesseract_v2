@@ -224,8 +224,7 @@ describe('adopting a just-captured idea', () => {
       expect(client.getQueryData(['pilot-mission', 'org1', 'idea1'])).toEqual({
         ideaExists: true,
         ideaStage: null,
-        hasSimulationTrade: false,
-        hasDecision: false,
+        hasExecutedTrade: false,
       })
     })
   })

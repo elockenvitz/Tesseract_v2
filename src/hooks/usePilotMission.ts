@@ -8,6 +8,7 @@ import { usePilotProgress } from './usePilotProgress'
 import {
   missionState,
   pipelineBasicsFromProgress,
+  tradeBookBasicsKey,
   tutorialOutcomeReviewedKey,
   type MissionState,
 } from '../lib/pilot/mission'
@@ -26,31 +27,25 @@ import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
  *
  * ── What is read ──────────────────────────────────────────────────────────
  *
- * Four of the five steps are durable product truth about ONE idea, so they are
- * read against the stored tutorial id and nothing else:
+ * One stage per app, each done when that app's Getting Started is finished
+ * (see `missionState`):
  *
- *   the row        `trade_queue_items` — does it still exist, and at what stage
- *   the simulation `simulation_trades.trade_queue_item_id` — a trade that was
- *                  actually simulated, not merely a lab link, because a link
- *                  proves an idea was pulled in and not that anything was run
- *   the decision   `accepted_trades.trade_queue_item_id`, or a decided outcome
- *                  on the idea itself, which covers defer and reject — OR any
- *                  trade the pilot executed in this org. Pilots may take any
- *                  idea through Trade Lab, and the execution is the decision.
- *
- * The fifth is a mark, because reading Outcomes writes nothing.
- *
- * Step two also reads the three Pipeline basics marks from `pilot_progress`:
- * the idea having moved is only the first of them. See `missionState`.
+ *   1 the idea      `trade_queue_items` — does the tutorial idea still exist
+ *   2 Pipeline      the three Pipeline basics marks in `pilot_progress`
+ *   3 Trade Lab     an `accepted_trades` row the pilot committed in this org —
+ *                   executing is Trade Lab basics' last step
+ *   4 Trade Book    `tradebook_basics_completed_at_<org>`, written as Trade
+ *                   Book basics finishes
+ *   5 Outcomes      `tutorial_outcome_reviewed_at_<org>`, written as Outcomes'
+ *                   "Finish the loop" finishes
  *
  * ── RLS posture ───────────────────────────────────────────────────────────
  *
- * No policy is widened and no new table is introduced. All three reads are
- * `head: true` counts on tables the product already reads through the same
- * client, filtered to one id the reader already had to be able to see in order
- * to create. A pilot who cannot see the row gets `ideaExists: false` and the
- * mission recovers to step one, which is the correct behaviour for a genuinely
- * missing idea as well.
+ * No policy is widened and no new table is introduced. The reads are on tables
+ * the product already reads through the same client: the idea by the id the
+ * reader created, and the reader's own accepted trades in the current org. A
+ * pilot who cannot see the idea gets `ideaExists: false` and the mission
+ * recovers to step one.
  */
 export interface PilotMission extends MissionState {
   isLoading: boolean
@@ -64,15 +59,15 @@ export interface PilotMission extends MissionState {
   reviewIdeaId: string | null
   /** Record the tutorial idea at creation. Write-once per org. */
   setTutorialIdea: (ideaId: string) => void
-  /** The one step that has to be reported rather than derived. */
+  /** Stage 5: Outcomes' "Finish the loop" finished. */
   markOutcomeReviewed: () => void
 }
 
 interface MissionFacts {
   ideaExists: boolean
   ideaStage: string | null
-  hasSimulationTrade: boolean
-  hasDecision: boolean
+  /** Stage 3: the pilot executed a trade in this org. */
+  hasExecutedTrade: boolean
   /** Whether the tutorial idea itself was decided. */
   tutorialDecided?: boolean
   /** Ideas the pilot executed a trade on in this org, newest first. */
@@ -94,18 +89,16 @@ export function usePilotMission(): PilotMission {
     staleTime: 0,
     queryFn: async (): Promise<MissionFacts> => {
       const id = tutorialIdeaId!
-      const [ideaRes, simRes, acceptedRes, executedRes] = await Promise.all([
+      const [ideaRes, acceptedRes, executedRes] = await Promise.all([
         supabase.from('trade_queue_items').select('id, stage, outcome').eq('id', id).maybeSingle(),
-        supabase.from('simulation_trades').select('id', { count: 'exact', head: true }).eq('trade_queue_item_id', id),
         supabase.from('accepted_trades').select('id', { count: 'exact', head: true }).eq('trade_queue_item_id', id),
         /*
-         * Any trade this pilot executed in this org.
+         * Any trade this pilot executed in this org — Trade Lab basics' last
+         * step, and so stage 3.
          *
          * Pilots may add any idea to Trade Lab — a recommendation, a seeded
-         * idea, their own — size it and execute it, and that execution is the
-         * decision the mission teaches. So the decision step reads the pilot's
-         * own committed trades here, not only the tutorial idea's. Scoped to
-         * the org through the portfolio, as every accepted-trade read is.
+         * idea, their own — size it and execute it. Scoped to the org through
+         * the portfolio, as every accepted-trade read is.
          */
         user?.id && currentOrgId
           ? supabase
@@ -125,7 +118,7 @@ export function usePilotMission(): PilotMission {
        * exactly as much of a decision as taking it.
        */
       const decided = !!idea?.outcome && ['accepted', 'rejected', 'deferred'].includes(idea.outcome)
-      const tutorialDecided = decided || (acceptedRes.count ?? 0) > 0
+      const tutorialAccepted = (acceptedRes.count ?? 0) > 0
       const executedIdeaIds = Array.from(new Set(
         ((executedRes.data ?? []) as Array<{ trade_queue_item_id: string | null }>)
           .map(r => r.trade_queue_item_id)
@@ -134,9 +127,8 @@ export function usePilotMission(): PilotMission {
       return {
         ideaExists: !!idea,
         ideaStage: idea?.stage ?? null,
-        hasSimulationTrade: (simRes.count ?? 0) > 0,
-        hasDecision: tutorialDecided || executedIdeaIds.length > 0,
-        tutorialDecided,
+        hasExecutedTrade: tutorialAccepted || executedIdeaIds.length > 0,
+        tutorialDecided: decided || tutorialAccepted,
         executedIdeaIds,
       }
     },
@@ -146,11 +138,11 @@ export function usePilotMission(): PilotMission {
     tutorialIdeaId,
     ideaExists: facts?.ideaExists ?? false,
     ideaStage: facts?.ideaStage ?? null,
-    hasSimulationTrade: facts?.hasSimulationTrade ?? false,
-    hasDecision: facts?.hasDecision ?? false,
-    outcomeReviewedAt: (progress[tutorialOutcomeReviewedKey(currentOrgId)] as string | undefined) ?? null,
-    // Server-backed marks, so the stage survives a refresh and a second device.
+    hasExecutedTrade: facts?.hasExecutedTrade ?? false,
+    // Server-backed marks, so each stage survives a refresh and a second device.
     pipelineBasics: pipelineBasicsFromProgress(progress, currentOrgId),
+    tradeBookBasicsAt: (progress[tradeBookBasicsKey(currentOrgId)] as string | undefined) ?? null,
+    outcomeReviewedAt: (progress[tutorialOutcomeReviewedKey(currentOrgId)] as string | undefined) ?? null,
   })
 
   /*
@@ -199,17 +191,15 @@ export function usePilotMission(): PilotMission {
        * idea watched the thing tracking their progress disappear and return.
        * That was the hitch.
        *
-       * These are not guesses. The row was created a moment ago by this
-       * reader, so it exists; nothing can have simulated or decided a trade on
-       * an id that did not exist until now; and a fresh capture has not been
-       * advanced, which a null stage says. The query keeps `staleTime: 0`, so
-       * the authoritative read still runs immediately and overwrites all four.
+       * The row was created a moment ago by this reader, so it exists, and a
+       * fresh capture has not been advanced, which a null stage says. Executed
+       * trades are seeded as none; the query keeps `staleTime: 0`, so the
+       * authoritative read runs immediately and overwrites all of it.
        */
       queryClient.setQueryData<MissionFacts>(['pilot-mission', currentOrgId, id], prev => prev ?? {
         ideaExists: true,
         ideaStage: null,
-        hasSimulationTrade: false,
-        hasDecision: false,
+        hasExecutedTrade: false,
       })
       void setTutorialIdea(id)
     }

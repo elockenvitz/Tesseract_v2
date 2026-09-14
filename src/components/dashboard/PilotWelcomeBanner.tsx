@@ -114,10 +114,9 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
         onNavigate({ id: 'trade-lab', title: 'Trade Lab', type: 'trade-lab', data: { tradeQueueItemId: ideaId } })
         return
       case 'decision_submitted':
-        onNavigate({
-          id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue',
-          data: { focusIdeaId: ideaId, focusStage: 'ready_for_decision' },
-        })
+        // Stage 4 is Trade Book. (This opened the Idea Pipeline, from when the
+        // decision was made there.)
+        onNavigate({ id: 'trade-book', title: 'Trade Book', type: 'trade-book', data: null })
         return
       case 'outcome_reviewed':
         /*
