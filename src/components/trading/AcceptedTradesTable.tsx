@@ -8,7 +8,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import {
-  ChevronDown,
   ChevronRight,
   MessageSquare,
   Undo2,
@@ -256,23 +255,15 @@ export function TradeRationaleLog({
   acceptanceNote,
   batchDescription,
   onAddComment,
-  startCollapsed = false,
 }: {
   tradeId: string
   acceptanceNote: string | null | undefined
   batchDescription?: string | null
   onAddComment?: (tradeId: string, content: string) => void
-  /**
-   * Phone only: start with the notes shut behind their header. The batch view
-   * sets it so an opened trade does not put an optional per-trade form in
-   * front of the batch's required "Why this decision?". Desktop ignores it.
-   */
-  startCollapsed?: boolean
 }) {
   const { data: additions = [] } = useAcceptedTradeComments(tradeId)
   const [draft, setDraft] = useState('')
   const isMobile = useIsMobile()
-  const [notesOpen, setNotesOpen] = useState(!startCollapsed)
 
   const initial = (acceptanceNote || '').trim()
   const batchDesc = (batchDescription || '').trim()
@@ -298,94 +289,75 @@ export function TradeRationaleLog({
      * inherited batch rationale is shown as inherited — nothing asks for it
      * again.
      */
+    /*
+     * No box of its own. It renders inside a trade card that has just been
+     * opened, and a bordered box with a divided header inside that card read
+     * as a second panel to open. One section, one header line, then the log
+     * and a compact field.
+     */
     return (
-      <div data-slot="trade-rationale-mobile" className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/60">
+      <div data-slot="trade-rationale-mobile" className="space-y-2.5">
         {/* "Trade-specific notes", not "Trade rationale": the batch already has
             the one rationale — "Why this decision?" — and this is the per-trade
-            log beside it. The line under the title says so. */}
-        {startCollapsed ? (
-          <button
-            type="button"
-            data-slot="trade-rationale-toggle"
-            onClick={() => setNotesOpen(v => !v)}
-            aria-expanded={notesOpen}
-            className={clsx(
-              'w-full flex items-center gap-2 px-3 py-2 text-left no-touch-target',
-              notesOpen && 'border-b border-gray-100 dark:border-gray-700/60',
-            )}
-          >
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-semibold text-gray-900 dark:text-white">Trade-specific notes</span>
-              <span className="block text-[11px] text-gray-500 dark:text-gray-400">Optional · only for this trade</span>
-            </span>
-            {notesOpen
-              ? <ChevronDown className="w-4 h-4 shrink-0 text-gray-400" />
-              : <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />}
-          </button>
-        ) : (
-          <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60">
-            <div className="text-[13px] font-semibold text-gray-900 dark:text-white">Trade-specific notes</div>
-            <div className="text-[11px] text-gray-500 dark:text-gray-400">Optional · only for this trade</div>
-          </div>
-        )}
+            log beside it. The hint beside the title says so. */}
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Trade-specific notes</h4>
+          <span className="text-[11px] text-gray-500 dark:text-gray-400">Optional · only for this trade</span>
+        </div>
 
-        {notesOpen && (<>
-        <div className="p-3 space-y-3">
-          <div data-slot="trade-rationale-initial" className="rounded-lg border-l-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/50 px-3 py-2">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              {initial ? (isInherited ? 'From “Why this decision?”' : 'At commit') : 'At commit'}
-            </div>
-            {initial ? (
-              <p className="mt-1 text-sm leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{initial}</p>
-            ) : (
-              <p className="mt-1 text-sm italic text-gray-400 dark:text-gray-500">No reason was captured at commit time.</p>
-            )}
+        <div data-slot="trade-rationale-initial" className="rounded-lg border-l-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            {initial ? (isInherited ? 'From “Why this decision?”' : 'At commit') : 'At commit'}
           </div>
-
-          {additions.length > 0 && (
-            <ul data-slot="trade-rationale-additions" className="space-y-2.5">
-              {additions.map((c: AcceptedTradeComment) => (
-                <li key={c.id} className="min-w-0">
-                  <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                    <span className="font-semibold uppercase tracking-wider text-[10px]">Added</span>
-                    {' · '}
-                    {c.user?.first_name || c.user?.email?.split('@')[0] || 'User'}
-                    {' · '}
-                    {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
-                  </div>
-                  <p className="mt-0.5 text-sm leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{c.content}</p>
-                </li>
-              ))}
-            </ul>
+          {initial ? (
+            <p className="mt-0.5 text-[13px] leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{initial}</p>
+          ) : (
+            <p className="mt-0.5 text-[13px] italic text-gray-400 dark:text-gray-500">No reason was captured at commit time.</p>
           )}
         </div>
 
-        {onAddComment && (
-          <div className="px-3 pb-3 pt-3 border-t border-gray-100 dark:border-gray-700/60">
-            <MobileNoteField
-              value={draft}
-              onChange={setDraft}
-              minRows={2}
-              placeholder="Add a note about this trade — what's changed, what you learned…"
-              ariaLabel="Add a trade-specific note"
-              inputClassName="focus:ring-primary-400"
-              onSubmitShortcut={handleSubmit}
-              dataSlot="trade-rationale-add-mobile"
-              actions={
-                <button
-                  type="button"
-                  data-slot="trade-rationale-add-note"
-                  onClick={handleSubmit}
-                  disabled={!draft.trim()}
-                  className="w-full h-11 rounded-lg bg-primary-600 active:bg-primary-700 text-sm font-semibold text-white disabled:bg-gray-200 disabled:text-gray-500 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
-                >
-                  Add note
-                </button>
-              }
-            />
-          </div>
+        {additions.length > 0 && (
+          <ul data-slot="trade-rationale-additions" className="space-y-2 pl-3">
+            {additions.map((c: AcceptedTradeComment) => (
+              <li key={c.id} className="min-w-0">
+                <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                  <span className="font-semibold uppercase tracking-wider text-[10px]">Added</span>
+                  {' · '}
+                  {c.user?.first_name || c.user?.email?.split('@')[0] || 'User'}
+                  {' · '}
+                  {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
+                </div>
+                <p className="mt-0.5 text-[13px] leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{c.content}</p>
+              </li>
+            ))}
+          </ul>
         )}
-        </>)}
+
+        {onAddComment && (
+          <MobileNoteField
+            value={draft}
+            onChange={setDraft}
+            minRows={2}
+            placeholder="Add a note about this trade…"
+            ariaLabel="Add a trade-specific note"
+            inputClassName="bg-gray-50 dark:bg-gray-800/60 focus:bg-white dark:focus:bg-gray-900 focus:ring-primary-400"
+            onSubmitShortcut={handleSubmit}
+            dataSlot="trade-rationale-add-mobile"
+            actions={
+              // Optional, so not a full-width primary: a right-aligned button
+              // that stays quiet until there is something to add.
+              <button
+                type="button"
+                data-slot="trade-rationale-add-note"
+                onClick={handleSubmit}
+                disabled={!draft.trim()}
+                className="ml-auto h-10 px-4 rounded-lg bg-primary-600 active:bg-primary-700 text-[13px] font-semibold text-white no-touch-target disabled:bg-gray-100 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
+              >
+                Add note
+              </button>
+            }
+          />
+        )}
       </div>
     )
   }

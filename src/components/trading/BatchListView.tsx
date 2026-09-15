@@ -680,7 +680,6 @@ function MobileTradeCard({
             acceptanceNote={trade.acceptance_note}
             batchDescription={batchDescription}
             onAddComment={onAddComment}
-            startCollapsed
           />
         </div>
       )}
@@ -1866,22 +1865,23 @@ export function BatchRationaleEditor({
     const unchanged = draft.trim() === existing
     if (isMobile) {
       /*
-       * Phone: the field full width at a readable four lines that grows with
-       * the text, and Cancel / Save as a proper footer row under it rather
-       * than two 11px links. Save is the solid primary; it looks disabled only
+       * Phone: the field full width at three lines that grows with the text,
+       * with Cancel / Save right-aligned under it. No tinted box of its own
+       * and no full-width buttons: it sits under the section's own heading
+       * and matches the trade notes field above it. Save looks disabled only
        * while it is — nothing changed yet, or the save is in flight.
        */
       return (
-        <div data-slot="batch-rationale-editor-mobile" className="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-900/10 p-3">
+        <div data-slot="batch-rationale-editor-mobile">
           <MobileNoteField
             value={draft}
             onChange={setDraft}
-            minRows={4}
+            minRows={3}
             autoFocus
             disabled={saveM.isPending}
             placeholder="Why these trades? What's the thesis for the batch?"
             ariaLabel="Why this decision?"
-            inputClassName="focus:ring-amber-400"
+            inputClassName="bg-gray-50 dark:bg-gray-800/60 focus:bg-white dark:focus:bg-gray-900 focus:ring-primary-400"
             onSubmitShortcut={handleSave}
             onEscape={handleCancel}
             actions={
@@ -1890,7 +1890,7 @@ export function BatchRationaleEditor({
                   type="button"
                   onClick={handleCancel}
                   disabled={saveM.isPending}
-                  className="flex-1 h-11 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm font-medium text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800 disabled:opacity-50"
+                  className="ml-auto h-10 px-3 rounded-lg text-[13px] font-medium text-gray-600 dark:text-gray-300 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -1899,9 +1899,9 @@ export function BatchRationaleEditor({
                   data-slot="batch-rationale-save"
                   onClick={handleSave}
                   disabled={saveM.isPending || unchanged}
-                  className="flex-[2] h-11 rounded-lg bg-amber-600 active:bg-amber-700 text-sm font-semibold text-white inline-flex items-center justify-center gap-1.5 disabled:bg-gray-200 disabled:text-gray-500 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
+                  className="h-10 px-4 rounded-lg bg-primary-600 active:bg-primary-700 text-[13px] font-semibold text-white inline-flex items-center justify-center gap-1.5 no-touch-target disabled:bg-gray-100 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
                 >
-                  {saveM.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckIcon className="w-4 h-4" />}
+                  {saveM.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckIcon className="w-3.5 h-3.5" />}
                   {saveM.isPending ? 'Saving…' : 'Save rationale'}
                 </button>
               </>

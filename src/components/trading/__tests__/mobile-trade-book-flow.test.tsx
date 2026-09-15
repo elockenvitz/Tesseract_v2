@@ -158,11 +158,10 @@ describe('the steps complete from the page', () => {
     render(<Page guide={guide()} onAddComment={onAddComment} />)
     fireEvent.click(document.querySelector('[data-slot="tradebook-mobile-trade"]')!)
     await flush()
-    // Step 1 moved the reader on; reopen the trade and its notes on purpose.
+    // Step 1 moved the reader on; reopen the trade on purpose.
     fireEvent.click(document.querySelector('[data-slot="tradebook-mobile-trade"]')!)
     await flush()
     expect(screen.getByText('Optional · only for this trade')).toBeTruthy()
-    fireEvent.click(slot('trade-rationale-toggle')!)
     fireEvent.change(screen.getByLabelText('Add a trade-specific note'), { target: { value: 'Guidance raised.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add note' }))
     await flush()
@@ -260,18 +259,18 @@ describe('moving from step 1 to step 2 on a phone', () => {
     expect(slot('batch-rationale-editor-mobile')).toBeNull()
   })
 
-  it('keeps an opened trade’s notes shut, labelled optional, until asked for', async () => {
+  it('keeps notes behind the trade’s own expand only, labelled optional', async () => {
     localStorage.setItem('pilot_tradebook_intro_reviewed_u1_o1', '1')
     render(<Page guide={guide()} />)
+    // Shut by default: the card is the one expand.
+    expect(screen.queryByText('Optional · only for this trade')).toBeNull()
     fireEvent.click(tradeCard())
     await flush()
-    const toggle = slot('trade-rationale-toggle')!
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(toggle.textContent).toContain('Trade-specific notes')
-    expect(toggle.textContent).toContain('Optional · only for this trade')
-    expect(screen.queryByLabelText('Add a trade-specific note')).toBeNull()
-    fireEvent.click(toggle)
-    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    // Opened once, the notes and their field are there — no second toggle.
+    const notes = slot('trade-rationale-mobile')!
+    expect(notes.textContent).toContain('Trade-specific notes')
+    expect(notes.textContent).toContain('Optional · only for this trade')
+    expect(notes.querySelector('[aria-expanded]')).toBeNull()
     expect(screen.getByLabelText('Add a trade-specific note')).toBeTruthy()
   })
 })

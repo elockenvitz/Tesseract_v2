@@ -63,25 +63,29 @@ describe('Decision rationale on a phone', () => {
     fireEvent.click(screen.getByText('Explain why you made this decision'))
     const field = screen.getByLabelText('Why this decision?') as HTMLTextAreaElement
     expect(field.tagName).toBe('TEXTAREA')
-    expect(field.rows).toBe(4)
+    expect(field.rows).toBe(3)
     expect(field.className).toContain('w-full')
     expect(field.className).toContain('resize-none')
     expect(field.getAttribute('placeholder')).toBe("Why these trades? What's the thesis for the batch?")
   })
 
-  it('puts Cancel and Save in a footer row under the field, with Save the primary', () => {
+  it('puts Cancel and Save right-aligned under the field, compact, with Save the primary', () => {
     const { container } = wrap(<BatchRationaleEditor batch={batch(null)} />)
     fireEvent.click(screen.getByText('Explain why you made this decision'))
     const field = screen.getByLabelText('Why this decision?')
     const cancel = screen.getByRole('button', { name: 'Cancel' })
     const save = screen.getByRole('button', { name: /Save rationale/ })
-    // Below the field, in document order, in one row.
+    // Below the field, in document order, in one row, Cancel then Save.
     expect(field.compareDocumentPosition(cancel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(cancel.parentElement).toBe(save.parentElement)
-    expect(save.className).toContain('flex-[2]')
-    expect(save.className).toContain('bg-amber-600')
-    expect(save.className).toContain('h-11')
-    expect(container.querySelector('[data-slot="batch-rationale-editor-mobile"]')).not.toBeNull()
+    expect(cancel.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(cancel.className).toContain('ml-auto')
+    expect(save.className).toContain('bg-primary-600')
+    expect(save.className).not.toMatch(/\bw-full\b|flex-1|flex-\[2\]/)
+    // No tinted box of its own around the field.
+    const editor = container.querySelector('[data-slot="batch-rationale-editor-mobile"]') as HTMLElement
+    expect(editor).not.toBeNull()
+    expect(editor.className).not.toMatch(/border|bg-amber/)
   })
 
   it('looks disabled only while it is: nothing typed, then enabled once there is text', () => {
@@ -150,15 +154,26 @@ describe('Decision rationale on desktop is unchanged', () => {
 })
 
 describe('Trade rationale notes on a phone', () => {
-  it('gives the note a full-width field with the whole placeholder, and Add note below it', () => {
+  it('gives the note a full-width field with a short placeholder, and a compact Add note below it', () => {
     wrap(<TradeRationaleLog tradeId="t-1" acceptanceNote="Reason at commit" batchDescription="Batch why" onAddComment={vi.fn()} />)
     const field = screen.getByLabelText('Add a trade-specific note') as HTMLTextAreaElement
     expect(field.tagName).toBe('TEXTAREA')
     expect(field.className).toContain('w-full')
-    expect(field.getAttribute('placeholder')).toBe("Add a note about this trade — what's changed, what you learned…")
+    expect(field.rows).toBe(2)
+    expect(field.getAttribute('placeholder')).toBe('Add a note about this trade…')
     const add = screen.getByRole('button', { name: 'Add note' })
-    expect(add.className).toContain('w-full')
+    expect(add.className).toContain('ml-auto')
+    expect(add.className).not.toMatch(/\bw-full\b/)
     expect(field.compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('is one section, not a box with its own open/close', () => {
+    const { container } = wrap(<TradeRationaleLog tradeId="t-1" acceptanceNote="Reason" onAddComment={vi.fn()} />)
+    const section = container.querySelector('[data-slot="trade-rationale-mobile"]') as HTMLElement
+    expect(section.className).not.toMatch(/border|rounded/)
+    expect(section.querySelector('[aria-expanded]')).toBeNull()
+    expect(section.textContent).toContain('Trade-specific notes')
+    expect(section.textContent).toContain('Optional · only for this trade')
   })
 
   it('adds the note through the same handler and clears the field', () => {
