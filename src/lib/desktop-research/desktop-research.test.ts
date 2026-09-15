@@ -59,7 +59,7 @@ describe('why-it-matters is an investment reason, never a bare age', () => {
   it('names the count of new items, not the number of days', () => {
     const text = whyItMatters(subject({ newSinceReview: 3 }))
     expect(text).toContain('3 new research notes')
-    expect(text).toContain('since the thesis was written')
+    expect(text).toContain('since the thesis was last updated')
   })
 
   it('singularises', () => {
@@ -203,9 +203,9 @@ describe('the engagement target binds object and issue', () => {
     const t = targetFor(subject({ evidenceCount: 0, newSinceReview: 0, weightPct: undefined }))!
     const labels = (t.contextChips ?? []).map(c => c.label)
     expect(labels).not.toContain('Research')
-    expect(labels).not.toContain('New since review')
+    expect(labels).not.toContain('New since update')
     expect(labels).not.toContain('Weight')
-    expect(labels).toContain('Last review')
+    expect(labels).toContain('Last updated')
   })
 
   it('seeds AI with the actual problem, not a generic prompt', () => {

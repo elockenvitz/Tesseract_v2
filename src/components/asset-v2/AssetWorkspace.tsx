@@ -247,7 +247,7 @@ export function AssetWorkspacePane({
 
   const priceSince = window ? (
     <DesktopModule key="price" title="Price">
-      <PriceSinceReview w={window} />
+      <PriceSinceReview w={window} since="written" />
     </DesktopModule>
   ) : null
 

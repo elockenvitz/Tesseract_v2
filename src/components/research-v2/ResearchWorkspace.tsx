@@ -21,6 +21,7 @@ interface Arrival { issue?: string | null; origin?: string | null }
 import {
   stateOf, whyItMatters, compareSubjects, issueFor, withCoverageSubjects, subjectFromCoverage,
   subscribeToOpenResearch, CORE_SECTIONS, SECTION_LABEL,
+  dateWords, ageKindOf, thesisDateKindOf,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
 import { useCoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
@@ -246,7 +247,7 @@ export function toRailCard(s: ResearchSubject): RailCard {
         ? { value: `${s.weightPct.toFixed(1)}%`, label: 'held' } : null,
       detail: arrivals === 1 && s.newestEvidenceTitle
         ? s.newestEvidenceTitle
-        : `${arrivals} arrived since the case was written`,
+        : `${arrivals} arrived ${dateWords(ageKindOf(s)).sinceThe}`,
       issue: issueFor(s),
     }
   }
@@ -257,7 +258,7 @@ export function toRailCard(s: ResearchSubject): RailCard {
       id: s.assetId, workspaceLens: 'research', objectType: 'asset',
       symbol: s.symbol, reason: issueFor(s), tone: STATE_TONE[state],
       figure: m != null ? `${m >= 0 ? '+' : ''}${m.toFixed(1)}%` : null,
-      figureLabel: m != null ? 'since review' : null,
+      figureLabel: m != null ? dateWords(ageKindOf(s)).since : null,
       secondary: s.weightPct != null
         ? { value: `${s.weightPct.toFixed(1)}%`, label: 'held' } : null,
       detail: whyItMatters(s),
@@ -324,6 +325,9 @@ function SubjectTile({
   const tone = STATE_TONE[state]
   const arrivedDays = subject.newestEvidenceAt ? daysSince(subject.newestEvidenceAt) : null
   const big = size === 'hero' || size === 'large'
+  // The age, new-note count and move count from this date: a recorded review
+  // only on a generated subject anchored on one (lib/desktop-research/anchor-words).
+  const age = dateWords(ageKindOf(subject))
 
   return (
     <DesktopTile
@@ -335,7 +339,7 @@ function SubjectTile({
       eyebrow={<>
         <TileState tone={tone}>{issueFor(subject)}</TileState>
         <TileFigure>
-          {subject.daysSinceReview != null ? `${subject.daysSinceReview}d since review` : 'never reviewed'}
+          {subject.daysSinceReview != null ? `${subject.daysSinceReview}d ${age.since}` : 'no thesis written'}
         </TileFigure>
       </>}
     >
@@ -359,7 +363,7 @@ function SubjectTile({
               {arrivedDays != null && ` · ${arrivedDays === 0 ? 'today' : `${arrivedDays}d ago`}`}
             </p>
             <p className="mt-auto pt-3 text-[11px] text-gray-500">
-              1 new note since the thesis was written
+              1 new note {age.sinceThe}
               {subject.weightPct != null && ` · ${subject.weightPct.toFixed(1)}% held`}
             </p>
           </div>
@@ -367,7 +371,7 @@ function SubjectTile({
           <div className="flex min-w-0 flex-1 flex-col">
             <TileLead
               figure={subject.newSinceReview}
-              label={<>new notes since<br />the thesis was written</>}
+              label={<>new notes since<br />{age.sinceThe.replace(/^since /, '')}</>}
               tone="review"
             />
             {big && subject.newestEvidenceTitle && (
@@ -426,7 +430,7 @@ function SubjectTile({
           <TileLead
             figure={`${(subject.generated?.movePct ?? 0) >= 0 ? '+' : ''}${(subject.generated?.movePct ?? 0).toFixed(1)}`}
             unit="%"
-            label={<>since the thesis<br />was last reviewed</>}
+            label={<>{age.sinceTheLines[0]}<br />{age.sinceTheLines[1]}</>}
             tone="review"
           />
           <div className="mt-auto pt-3">
@@ -442,7 +446,7 @@ function SubjectTile({
             <TileLead
               figure={subject.daysSinceReview ?? 0}
               unit="days"
-              label={<>since the thesis<br />was last reviewed</>}
+              label={<>{age.sinceTheLines[0]}<br />{age.sinceTheLines[1]}</>}
               tone={tone === 'review' ? 'review' : 'neutral'}
             />
           ) : (
@@ -470,6 +474,7 @@ function SubjectTile({
             writtenAt={subject.thesisUpdatedAt}
             newestAt={subject.newestEvidenceAt}
             count={subject.newSinceReview}
+            startLabel={dateWords(thesisDateKindOf(subject)).start}
           />
         </div>
       )}

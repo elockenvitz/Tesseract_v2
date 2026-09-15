@@ -844,8 +844,12 @@ export function TileSpark({ series, label }: { series: number[]; label: string }
  * distance between them, and the window named underneath.
  */
 export function TileTimeline({
-  writtenAt, newestAt, count,
-}: { writtenAt: string | null; newestAt: string | null; count: number }) {
+  writtenAt, newestAt, count, startLabel = 'Case written',
+}: {
+  writtenAt: string | null; newestAt: string | null; count: number
+  /** What the start date is, where a caller knows it is not a first write (e.g. "Case updated"). */
+  startLabel?: string
+}) {
   const track = useRef<HTMLDivElement | null>(null)
   const [pick, setPick] = useState<number | null>(null)
   const written = writtenAt ? new Date(writtenAt).getTime() : null
@@ -872,7 +876,7 @@ export function TileTimeline({
   return (
     <div>
       <div className="flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
-        <span>Case written</span>
+        <span>{startLabel}</span>
         <span className="font-mono tracking-normal normal-case text-gray-500">
           {pick != null
             ? `${day(pick)} · ${Math.max(0, Math.round((now - pick) / 86_400_000))}d ago`

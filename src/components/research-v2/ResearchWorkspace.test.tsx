@@ -119,7 +119,8 @@ describe('the scan', () => {
     const tile = screen.getByTestId('research-tile')
     expect(tile).toHaveTextContent('3')
     expect(tile).toHaveTextContent('new notes since')
-    expect(tile).toHaveTextContent('the thesis was written')
+    // The scan's clock is the last save of the thesis, not a review or a first write.
+    expect(tile).toHaveTextContent('the thesis was last updated')
   })
 
   it('says the core thesis is missing without implying no research exists', async () => {
@@ -283,8 +284,8 @@ describe('a typed arrival expands the right card, or says it cannot', () => {
     const asPrice = render(<ResearchWorkspace focusObjectId="a-amzn" intent="price" />)
     const priceOrder = headings(asPrice.container)
     // Price is promoted out of the context column and now leads the case.
-    expect(priceOrder).toContain('Price since the last review')
-    expect(priceOrder.indexOf('Price since the last review'))
+    expect(priceOrder).toContain('Price since the last update')
+    expect(priceOrder.indexOf('Price since the last update'))
       .toBeLessThan(priceOrder.indexOf('The case'))
     // And it appears exactly once -- promoted, never duplicated.
     expect(priceOrder.filter(h => h === 'Price')).toHaveLength(0)

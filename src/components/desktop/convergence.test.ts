@@ -411,7 +411,8 @@ describe('a detail page is not five white rectangles', () => {
     expect(src('components/ideas-v2/IdeaDetail.tsx'))
       .toMatch(/<DesktopModule\s+title="Decision"/)
     expect(src('components/research-v2/ResearchDetail.tsx'))
-      .toMatch(/title="New since review"/)
+      // Keyed by id: its title names the thesis date and changes with it.
+      .toMatch(/<DesktopModule\s+id="new-since-review"/)
   })
 
   it('emits the anchor its own scroll target looks for', () => {

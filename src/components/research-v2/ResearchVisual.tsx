@@ -29,6 +29,8 @@
  */
 
 
+import { dateWords, type ResearchDateKind } from '../../lib/desktop-research'
+
 export interface AnchoredWindow {
   series: number[]
   changePct: number
@@ -71,7 +73,13 @@ export function anchoredWindow(
   }
 }
 
-export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height?: number }) {
+/**
+ * `since` names the date the window starts from -- a review only where one was
+ * recorded. It is required: the chart used to say "since last review" about
+ * every anchor it was given.
+ */
+export function PriceSinceReview({ w, since, height = 88 }: { w: AnchoredWindow; since: ResearchDateKind; height?: number }) {
+  const words = dateWords(since)
   const W = 340
   const H = height
   const min = Math.min(...w.series)
@@ -85,10 +93,10 @@ export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height
     <div>
       <div className="mb-1 flex items-baseline gap-2">
         <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
-          {w.reachesAnchor ? 'Price since last review' : 'Price over available history'}
+          {w.reachesAnchor ? words.priceSince : 'Price over available history'}
         </span>
         <span className="ml-auto font-mono text-[10px] text-gray-500">
-          {w.reachesAnchor ? `since review · ${w.days}d` : `${w.days}d of history`}
+          {w.reachesAnchor ? `${words.since} · ${w.days}d` : `${w.days}d of history`}
         </span>
       </div>
 
@@ -102,7 +110,7 @@ export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height
             <line x1={0.5} y1={0} x2={0.5} y2={H - 2} strokeWidth={1} strokeDasharray="2 3"
                   className="stroke-gray-400 dark:stroke-gray-600" />
             <text x={4} y={9} className="fill-gray-500 text-[8px]" style={{ letterSpacing: '.05em' }}>
-              LAST REVIEW
+              {words.tick}
             </text>
           </>
         )}
@@ -115,7 +123,7 @@ export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height
       </div>
       {!w.reachesAnchor && (
         <p className="mt-1 text-[10px] text-gray-500">
-          History does not reach the review date, so this is not a since-review move.
+          History does not reach {words.the}, so this is not a {words.since} move.
         </p>
       )}
     </div>

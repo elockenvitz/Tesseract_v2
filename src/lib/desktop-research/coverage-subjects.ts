@@ -61,6 +61,7 @@ export function subjectFromCoverage(c: CoverageResearchCandidate): ResearchSubje
       framing: c.framing,
       coverage: c.coverage,
       movePct: c.framing === 'price_move' ? f.movePct : null,
+      anchoredOn: f.anchoredOn,
       context: coverageWorkContext(c),
       label: coverageWorkLabel(c),
       // The gap tile and the rail both lead with the position weight, so the
