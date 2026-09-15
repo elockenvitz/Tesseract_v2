@@ -143,6 +143,15 @@ export const GATED_DIRS = [
   'src/lib/ai',
   'src/lib/onboarding',
 
+  /*
+   * The mobile pilot surfaces: Outcomes, the Trade Book / Decision Inbox, and
+   * the ops layout. Their tests landed with the pilot lane and were caught
+   * here as unclassified; the pilot runs on these screens, so they are gated.
+   */
+  'src/components/outcomes/__tests__',
+  'src/components/trading/__tests__',
+  'src/components/ops/__tests__',
+
 ]
 
 /**
