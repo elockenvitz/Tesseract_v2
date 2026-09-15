@@ -3390,7 +3390,7 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
    * finishing Outcomes is what completes the mission, so graduation happens
    * on this page rather than on the next visit home.
    */
-  usePilotMission()
+  const pilotMission = usePilotMission()
 
   /** Promote a row's intel from `evaluate` → `resolved` once the user
    *  has captured a reflection (thesis call OR reflection note). The
@@ -3514,6 +3514,51 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
     // decision counts as inspecting the result.
     try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
   }
+
+  /*
+   * A section asked for while no decision is open.
+   *
+   * "Finish the loop" steps 2 and 3 send `outcomes:open-section` (thesis /
+   * performance). Only an open detail's StorySections listen for it, so from
+   * the page itself — where Open Outcomes now lands — the arrows did nothing.
+   *
+   * With no detail open, the page opens the decision the mission is reviewing
+   * (the first visible decision when that one is not on the list), then
+   * repeats the request once the detail has mounted, so its section opens and
+   * scrolls into view exactly as it does when the detail was already open.
+   * With a detail open the page stays out of it.
+   */
+  const selectedRowRef = useRef(selectedRow)
+  selectedRowRef.current = selectedRow
+  const sectionTargetRef = useRef({ displayRows, sortedRows, reviewId: pilotMission.reviewIdeaId })
+  sectionTargetRef.current = { displayRows, sortedRows, reviewId: pilotMission.reviewIdeaId }
+  const pendingSectionRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const onOpenSection = (e: Event) => {
+      const sectionId = (e as CustomEvent).detail?.sectionId as string | undefined
+      if (!sectionId || selectedRowRef.current) return
+      const { displayRows: visible, sortedRows: all, reviewId } = sectionTargetRef.current
+      const target = (reviewId && (visible.find(d => d.row.decision_id === reviewId)?.row ?? all.find(r => r.decision_id === reviewId)))
+        || visible[0]?.row
+      if (!target) return
+      pendingSectionRef.current = sectionId
+      setSelectedId(target.decision_id)
+      try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
+    }
+    window.addEventListener('outcomes:open-section', onOpenSection)
+    return () => window.removeEventListener('outcomes:open-section', onOpenSection)
+  }, [])
+
+  useEffect(() => {
+    const sectionId = pendingSectionRef.current
+    if (!selectedRow || !sectionId) return
+    pendingSectionRef.current = null
+    // After the detail's own effects have registered its section listeners.
+    setTimeout(() => {
+      try { window.dispatchEvent(new CustomEvent('outcomes:open-section', { detail: { sectionId } })) } catch { /* ignore */ }
+    }, 0)
+  }, [selectedRow])
 
   // Prefetch chart + reflection data for the top visible rows so
   // clicking a row paints with warm cache. Without this, the user

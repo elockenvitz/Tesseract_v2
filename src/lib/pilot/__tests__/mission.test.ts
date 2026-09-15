@@ -245,7 +245,7 @@ describe('the marks the mission reads are the marks the app writes', () => {
     const page = src('pages/DecisionAccountabilityPage.tsx')
     expect(page).not.toContain('markOutcomeReviewed()')
     // The graduation writer stays mounted on Outcomes.
-    expect(page).toContain('  usePilotMission()\n')
+    expect(page).toContain('const pilotMission = usePilotMission()\n')
   })
 })
 

@@ -25,7 +25,8 @@ vi.mock('../../components/outcomes/PositionChartMobile', () => ({ PositionChartM
 vi.mock('../../components/outcomes/ScorecardViews', () => ({ AnalystScorecardsView: () => null, PMScorecardsView: () => null }))
 vi.mock('../../components/pilot/PilotOutcomesGetStarted', () => ({ PilotOutcomesGetStarted: () => null }))
 vi.mock('../../hooks/usePilotMode', () => ({ usePilotMode: () => ({ isPilot: false, isLoading: false, effectiveIsPilot: false }) }))
-vi.mock('../../hooks/usePilotMission', () => ({ usePilotMission: () => ({}) }))
+const mission = vi.hoisted(() => ({ reviewIdeaId: null as string | null }))
+vi.mock('../../hooks/usePilotMission', () => ({ usePilotMission: () => ({ reviewIdeaId: mission.reviewIdeaId }) }))
 
 const mutation = { mutate: () => {}, isPending: false, isError: false, error: null }
 const rowsRef = vi.hoisted(() => ({ rows: [] as unknown[] }))
@@ -154,6 +155,79 @@ describe('returning to Outcomes on a phone', () => {
     expect(outcomes).toContain('onFocusConsumed=')
     expect(outcomes).toContain("t.type !== 'outcomes' || !t.data?.tradeQueueItemId")
     expect(outcomes).toContain('delete data.tradeQueueItemId')
+  })
+})
+
+describe('"Finish the loop" step arrows from the Outcomes page', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    mission.reviewIdeaId = null
+    rowsRef.rows = [makeRow({}), makeRow({ decision_id: 'd-2', asset_symbol: 'MSFT', direction: 'sell' })]
+    // jsdom has no scrolling; the opened section scrolls itself into view.
+    Element.prototype.scrollIntoView = () => {}
+  })
+  afterEach(cleanup)
+
+  // Exactly what the banner's step 2 and step 3 arrows send. Two act scopes:
+  // the page opens the decision when the first ends, and repeats the section
+  // request on a timer the second waits for.
+  const arrow = async (sectionId: 'thesis' | 'performance') => {
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('outcomes:open-section', { detail: { sectionId } }))
+    })
+    await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+  }
+  const sectionHeader = (title: string) => screen.getByRole('button', { name: new RegExp(title) })
+  const openedSymbol = () => (screen.getByRole('button', { name: 'Close detail' }).closest('.fixed') as HTMLElement).textContent
+
+  it('step 3 opens the reviewed decision at Performance so far', async () => {
+    mission.reviewIdeaId = 'd-2'
+    const opened: string[] = []
+    const onOpened = (e: Event) => opened.push((e as CustomEvent).detail?.sectionId)
+    window.addEventListener('outcomes:section-opened', onOpened)
+    try {
+      render(<DecisionAccountabilityPage />)
+      expect(detailOpen()).toBe(false)
+      await arrow('performance')
+      expect(detailOpen()).toBe(true)
+      expect(openedSymbol()).toContain('MSFT')
+      expect(sectionHeader('Performance so far').getAttribute('aria-expanded')).toBe('true')
+      // That open is what ticks step 3.
+      expect(opened).toContain('performance')
+    } finally {
+      window.removeEventListener('outcomes:section-opened', onOpened)
+    }
+  })
+
+  it('step 2 opens it at Why this decision was made, where the rationale is added', async () => {
+    mission.reviewIdeaId = 'd-2'
+    render(<DecisionAccountabilityPage />)
+    await arrow('thesis')
+    expect(openedSymbol()).toContain('MSFT')
+    expect(sectionHeader('Why this decision was made').getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('falls back to the first decision when the reviewed one is not listed', async () => {
+    mission.reviewIdeaId = 'not-on-this-page'
+    render(<DecisionAccountabilityPage />)
+    await arrow('performance')
+    expect(openedSymbol()).toContain('AAPL')
+  })
+
+  it('leaves an already open decision where it is', async () => {
+    mission.reviewIdeaId = 'd-2'
+    render(<DecisionAccountabilityPage />)
+    fireEvent.click(screen.getAllByRole('button', { name: /AAPL/ })[0])
+    await arrow('performance')
+    expect(openedSymbol()).toContain('AAPL')
+    expect(sectionHeader('Performance so far').getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('does nothing when there is no decision to open', async () => {
+    rowsRef.rows = []
+    render(<DecisionAccountabilityPage />)
+    await arrow('performance')
+    expect(detailOpen()).toBe(false)
   })
 })
 
