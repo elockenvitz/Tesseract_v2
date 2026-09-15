@@ -63,7 +63,9 @@ export function subjectFromCoverage(c: CoverageResearchCandidate): ResearchSubje
       movePct: c.framing === 'price_move' ? f.movePct : null,
       context: coverageWorkContext(c),
       label: coverageWorkLabel(c),
-      claim: coverageWorkClaim(c),
+      // The gap tile and the rail both lead with the position weight, so the
+      // sentence does not read it out again.
+      claim: coverageWorkClaim(c, { weightShown: true }),
       liveIdeaCount: c.liveIdeas.length,
       portfolioName: c.exposure.portfolioName,
     },

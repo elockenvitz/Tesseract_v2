@@ -107,8 +107,14 @@ export function coverageWorkLabel(c: CoverageResearchCandidate): string {
   }
 }
 
-/** Why this name deserves work now, as one sentence from the rule's facts. */
-export function coverageWorkClaim(c: CoverageResearchCandidate): string {
+/**
+ * Why this name deserves work now, as one sentence from the rule's facts.
+ *
+ * `weightShown`: the surface already leads with the position weight and book
+ * (Research's gap tiles do), so the sentence says why it matters without
+ * reading the same figure out again.
+ */
+export function coverageWorkClaim(c: CoverageResearchCandidate, { weightShown = false }: { weightShown?: boolean } = {}): string {
   const t = c.symbol
   const f = c.facts
   const where = position(c)
@@ -119,11 +125,13 @@ export function coverageWorkClaim(c: CoverageResearchCandidate): string {
       if (ctx === 'idea') {
         const n = c.liveIdeas.length
         const ideas = n === 1 ? 'an open idea' : `${n} open ideas`
+        if (where && weightShown) return `${t} is being worked without a written case: ${ideas}, on a live position.`
         return where
           ? `${t} is being worked without a written case: ${ideas}, and ${where}.`
           : `${t} is being worked without a written case: ${ideas}, and no thesis behind it.`
       }
       if (ctx === 'held') {
+        if (weightShown) return `A live position with no written thesis behind it.`
         const w = (c.exposure.weightPct ?? 0).toFixed(1)
         return c.exposure.portfolioName
           ? `A ${w}% position in ${c.exposure.portfolioName} with no written thesis.`
@@ -133,6 +141,7 @@ export function coverageWorkClaim(c: CoverageResearchCandidate): string {
     }
     case 'incomplete_case': {
       const missing = f.missingSections.map(s => (CORE_SECTION_LABEL[s] ?? s).toLowerCase()).join(' and ')
+      if (where && weightShown) return `The ${t} case is missing ${missing}, on a live position.`
       return where ? `The ${t} case is missing ${missing}, with ${where} behind it.` : `The ${t} case is missing ${missing}.`
     }
     case 'price_move':

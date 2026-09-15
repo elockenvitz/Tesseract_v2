@@ -250,6 +250,20 @@ function metricsFor(item: DecisionItem): TodayMetric[] {
     // guess: if a number cannot be named, it is not a metric.
     if (!label) continue
 
+    /*
+      An idea's age is how long it has been open, not how long since a review:
+      nothing has reviewed it. "0d · Since review" on an idea created this
+      morning claimed a review that never happened.
+    */
+    if (c.label === 'Age' && item.titleKey === 'IDEA_NOT_SIMULATED') {
+      const days = num(c.value)
+      out.push(days === 0
+        ? { label: 'Opened', value: 'Today', tone: 'neutral' }
+        : { label: 'Open', value: c.value, tone: 'neutral' })
+      if (out.length === 3) break
+      continue
+    }
+
     const lower = c.label.toLowerCase()
     // `warn` for something genuinely waiting on a person; neutral for
     // everything a reader can interpret from the number itself. An age is not

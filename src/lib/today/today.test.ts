@@ -131,6 +131,22 @@ describe('adaptation', () => {
     expect(t.metrics.map(m => m.label)).not.toContain('Age')
   })
 
+  it('never claims a review on an idea nobody has reviewed', () => {
+    const idea = (age: string) => adaptDecisionItem(item({
+      titleKey: 'IDEA_NOT_SIMULATED', title: 'Idea Being Worked On',
+      chips: [{ label: 'Ticker', value: 'LLY' }, { label: 'Age', value: age }, { label: 'Portfolio', value: 'Growth' }],
+    }))
+    const fresh = idea('0d')
+    expect(fresh.metrics[0]).toEqual({ label: 'Opened', value: 'Today', tone: 'neutral' })
+    expect(idea('6d').metrics[0]).toEqual({ label: 'Open', value: '6d', tone: 'neutral' })
+    for (const t of [fresh, idea('6d')]) {
+      expect(t.metrics.map(m => m.label)).not.toContain('Since review')
+      expect(t.metrics.map(m => m.label)).toContain('Portfolio')
+    }
+    // A thesis's age is still a review age.
+    expect(adaptDecisionItem(stale()).metrics[0].label).toBe('Since review')
+  })
+
   it('never renders an UNKNOWN metric, whatever chips arrive', () => {
     const t = adaptDecisionItem(item({
       titleKey: 'THESIS_STALE',

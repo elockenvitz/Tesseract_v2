@@ -138,14 +138,33 @@ describe('a fresh account', () => {
     render(<ResearchWorkspace />)
     const [amzn, tsla, , , firstUnheld] = tiles()
     expect(amzn).toHaveTextContent('Idea without a case')
-    expect(amzn).toHaveTextContent('AMZN is being worked without a written case: an open idea, and 5.4% of Tech & Consumer Growth.')
+    expect(amzn).toHaveTextContent('AMZN is being worked without a written case: an open idea, on a live position.')
     expect(amzn).toHaveTextContent('1 open idea')
     expect(tsla).toHaveTextContent('Position without a thesis')
-    expect(tsla).toHaveTextContent('A 3.2% position in Tech & Consumer Growth with no written thesis.')
+    expect(tsla).toHaveTextContent('A live position with no written thesis behind it.')
     expect(tsla).toHaveTextContent('3.2')
+    expect(tsla).toHaveTextContent('of Tech & Consumer Growth')
     expect(firstUnheld).toHaveTextContent('No thesis on file')
     expect(firstUnheld).toHaveTextContent('is on your coverage with no thesis yet.')
     expect(document.body.textContent).not.toContain('What best describes this position?')
+  })
+
+  it('does not read the hero weight out again in the reason sentence', () => {
+    env.gaps = {
+      status: 'ready', coveredCount: 3,
+      candidates: [
+        ...bogey().slice(0, 2),
+        candidate('NKE', 'incomplete_case', { exposure: held(1.8), facts: { ...candidate('NKE').facts, missingSections: ['risks_to_thesis'], presentSections: ['thesis', 'where_different'] } }),
+      ],
+    }
+    render(<ResearchWorkspace />)
+    const reasons = screen.getAllByTestId('research-tile-reason')
+    expect(reasons).toHaveLength(3)
+    for (const r of reasons) {
+      expect(r.textContent).not.toMatch(/\d\.\d%/)
+      expect(r.textContent).not.toContain('Tech & Consumer Growth')
+    }
+    expect(reasons[2]).toHaveTextContent('The NKE case is missing risks to thesis, on a live position.')
   })
 
   it('waits for coverage work instead of announcing an empty lens', () => {
