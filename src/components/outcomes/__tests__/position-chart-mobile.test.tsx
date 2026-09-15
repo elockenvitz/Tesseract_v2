@@ -15,6 +15,7 @@ import {
   type ChartRange, type OverlayField,
 } from '../position-chart-model'
 import type { PositionLifecycle, PricePoint, HoldingsTimePoint } from '../../../hooks/usePositionLifecycle'
+import type { BenchmarkWeight } from '../../../lib/holdings/benchmark-membership'
 
 // ── Layout stand-ins ───────────────────────────────────────────────────
 let plotWidth = 358
@@ -61,9 +62,13 @@ const holdings: HoldingsTimePoint[] = [
   { date: '2026-07-20', shares: 1500, marketValue: 205500, weightPct: 3.75 },
 ]
 
+const MEMBER: BenchmarkWeight = { status: 'member', weightPct: 1, asOfDate: '2026-08-14' }
+
 function Harness(props: {
   holdingsHistory?: HoldingsTimePoint[]
-  benchmarkWeightPct?: number | null
+  benchmark?: BenchmarkWeight | null
+  benchmarkLoading?: boolean
+  onRetryBenchmark?: () => void
   onSelectEvent?: (id: string, type: 'trade_queue_item' | 'portfolio_trade_event') => void
   initialMetric?: OverlayField
 }) {
@@ -74,7 +79,9 @@ function Harness(props: {
       lifecycle={lifecycle}
       priceHistory={priceHistory}
       holdingsHistory={props.holdingsHistory ?? holdings}
-      benchmarkWeightPct={props.benchmarkWeightPct === undefined ? 1 : props.benchmarkWeightPct}
+      benchmark={props.benchmark === undefined ? MEMBER : props.benchmark}
+      benchmarkLoading={props.benchmarkLoading}
+      onRetryBenchmark={props.onRetryBenchmark}
       onSelectEvent={props.onSelectEvent ?? (() => {})}
       symbol="AAPL"
       metric={metric}
@@ -314,9 +321,51 @@ describe('phone position chart', () => {
       expect(document.querySelector('.recharts-area')).not.toBeNull()
     })
 
-    it('says so when the benchmark weight is unknown and active weight is taken against 0%', () => {
-      render(<Harness benchmarkWeightPct={null} initialMetric="active_weight" />)
-      expect(screen.getByText('(no benchmark wt, taken as 0%)')).toBeTruthy()
+    it('treats a confirmed non-member as 0%: Active weight equals weight', () => {
+      render(<Harness benchmark={{ status: 'not_member', weightPct: 0, asOfDate: '2026-08-14' }} />)
+      expect((radio('Position metric', 'Active wt') as HTMLButtonElement).disabled).toBe(false)
+      fireEvent.click(radio('Position metric', 'Active wt'))
+      scrub(300, 330)
+      expect(tooltip()!.querySelector('[data-slot="tooltip-metric"]')!.textContent).toBe('+3.75%')
+      expect(screen.getByText('(not in benchmark)')).toBeTruthy()
+      expect(document.querySelector('[data-slot="metric-unavailable"]')).toBeNull()
+    })
+
+    it('disables Active weight when the benchmark is unknown, keeps Shares and Weight, and never shows a value', () => {
+      const onRetryBenchmark = vi.fn()
+      render(<Harness benchmark={null} onRetryBenchmark={onRetryBenchmark} />)
+      expect((radio('Position metric', 'Active wt') as HTMLButtonElement).disabled).toBe(true)
+      expect((radio('Position metric', 'Shares') as HTMLButtonElement).disabled).toBe(false)
+      expect((radio('Position metric', 'Weight') as HTMLButtonElement).disabled).toBe(false)
+      expect(screen.getByText('Benchmark data unavailable')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+      expect(onRetryBenchmark).toHaveBeenCalledTimes(1)
+
+      fireEvent.click(radio('Position metric', 'Weight'))
+      scrub(300, 330)
+      expect(tooltip()!.querySelector('[data-slot="tooltip-metric"]')!.textContent).toBe('3.75%')
+    })
+
+    it('draws price only if Active weight was selected and the benchmark is unknown', () => {
+      render(<Harness benchmark={{ status: 'unavailable' }} initialMetric="active_weight" />)
+      expect(screen.getByText('Benchmark data unavailable — showing price only.')).toBeTruthy()
+      expect(document.querySelector('.recharts-area')).toBeNull()
+      scrub(300, 330)
+      expect(tooltip()!.querySelector('[data-slot="tooltip-metric"]')).toBeNull()
+    })
+
+    it('says it is loading, without a retry, while the benchmark is on its way', () => {
+      render(<Harness benchmark={null} benchmarkLoading onRetryBenchmark={() => {}} />)
+      expect(screen.getByText('Loading benchmark data…')).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+    })
+
+    it('enables Active weight once benchmark data arrives', () => {
+      const { rerender } = render(<Harness benchmark={null} />)
+      expect((radio('Position metric', 'Active wt') as HTMLButtonElement).disabled).toBe(true)
+      rerender(<Harness benchmark={MEMBER} />)
+      expect((radio('Position metric', 'Active wt') as HTMLButtonElement).disabled).toBe(false)
+      expect(document.querySelector('[data-slot="metric-unavailable"]')).toBeNull()
     })
   })
 

@@ -55,6 +55,7 @@ import type { CandidateTradeEvent, Reflection } from '../hooks/useDecisionAccoun
 import { PositionChart } from '../components/outcomes/PositionChart'
 import { PositionChartMobile } from '../components/outcomes/PositionChartMobile'
 import { PLOT_HEIGHT as MOBILE_PLOT_HEIGHT, type ChartRange, type OverlayField } from '../components/outcomes/position-chart-model'
+import { fetchBenchmarkWeight, knownBenchmarkWeightPct, type BenchmarkQueryClient } from '../lib/holdings/benchmark-membership'
 import {
   inferDecisionIntelligence, buildProcessHealth, buildSmartChips,
   VERDICT_DISPLAY, VERDICT_EXPLANATIONS, HEALTH_DISPLAY,
@@ -2826,31 +2827,23 @@ function BottomChartPanel({ row, onSelectDecision, metric, onMetricChange, range
   const { data: holdingsHistory = [] } = useHoldingsTimeSeries(row.portfolio_id, row.asset_symbol, row.asset_id)
 
   // Per-asset benchmark weight, used for the active-weight overlay.
-  // Missing row → null → chart treats as 0 (off-benchmark asset).
-  const { data: benchmarkWeightPct } = useQuery({
+  //
+  // Member → its weight; read the file and the asset is absent → a real 0%;
+  // no benchmark file → unavailable. A failed lookup THROWS, so it is neither
+  // cached nor passed off as 0% — `benchmark` stays undefined, Active weight
+  // is disabled, and a retry or refetch can still fill it in. See
+  // lib/holdings/benchmark-membership.
+  const {
+    data: benchmark,
+    isLoading: benchmarkLoading,
+    refetch: refetchBenchmark,
+  } = useQuery({
     queryKey: ['position-chart-benchmark-weight', row.portfolio_id, row.asset_id],
-    queryFn: async () => {
-      if (!row.portfolio_id || !row.asset_id) return null
-      // Ordered and limited, NOT `.maybeSingle()` on the bare pair.
-      //
-      // This site fails harder than the others once benchmark history exists.
-      // `maybeSingle()` returns an error when more than one row matches, and
-      // the line below swallows it into `null` — so every asset in the book
-      // would read as off-benchmark, on a chart whose whole subject is active
-      // weight, with no error surfaced anywhere.
-      //
-      // Newest file wins, same rule as latestBenchmarkRows applies in bulk.
-      const { data, error } = await supabase
-        .from('portfolio_benchmark_weights')
-        .select('weight, as_of_date')
-        .eq('portfolio_id', row.portfolio_id)
-        .eq('asset_id', row.asset_id)
-        .order('as_of_date', { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle()
-      if (error) return null
-      return data?.weight != null ? Number(data.weight) : null
-    },
+    queryFn: () => fetchBenchmarkWeight(
+      supabase as unknown as BenchmarkQueryClient,
+      row.portfolio_id as string,
+      row.asset_id as string,
+    ),
     enabled: !!row.portfolio_id && !!row.asset_id,
     staleTime: 5 * 60 * 1000,
   })
@@ -2864,6 +2857,10 @@ function BottomChartPanel({ row, onSelectDecision, metric, onMetricChange, range
   const hasHoldings = holdingsHistory.length > 0
   const isMobileViewport = useIsMobile()
   const chartHeight = 240
+  const benchmarkPct = knownBenchmarkWeightPct(benchmark)
+  // An Active Wt overlay chosen before the benchmark failed draws price only
+  // rather than an empty area.
+  const desktopOverlay: PositionOverlay = overlay === 'active_weight' && benchmarkPct == null ? 'none' : overlay
   // PositionChart requires a non-null lifecycle. While the real
   // lifecycle loads, supply a minimal stub so the chart renders the
   // price line without markers; the markers fill in once the live
@@ -2906,7 +2903,9 @@ function BottomChartPanel({ row, onSelectDecision, metric, onMetricChange, range
             lifecycle={effectiveLifecycle}
             priceHistory={priceHistory}
             holdingsHistory={holdingsHistory}
-            benchmarkWeightPct={benchmarkWeightPct ?? null}
+            benchmark={benchmark ?? null}
+            benchmarkLoading={benchmarkLoading}
+            onRetryBenchmark={() => { void refetchBenchmark() }}
             symbol={row.asset_symbol}
             onSelectEvent={selectFromChart}
             metric={metric ?? localMetric}
@@ -2944,19 +2943,26 @@ function BottomChartPanel({ row, onSelectDecision, metric, onMetricChange, range
                 { value: 'shares' as PositionOverlay, label: 'Shares' },
                 { value: 'weight' as PositionOverlay, label: 'Weight' },
                 { value: 'active_weight' as PositionOverlay, label: 'Active Wt' },
-              ]).map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => setOverlay(opt.value)}
-                  className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${
-                    overlay === opt.value
-                      ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
-                      : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+              ]).map(opt => {
+                // Active weight needs a known benchmark weight; an unknown one
+                // is not 0%.
+                const blocked = opt.value === 'active_weight' && benchmarkPct == null
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setOverlay(opt.value)}
+                    disabled={blocked}
+                    title={blocked ? (benchmarkLoading ? 'Loading benchmark data…' : 'Benchmark data unavailable') : undefined}
+                    className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                      overlay === opt.value
+                        ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -2985,9 +2991,9 @@ function BottomChartPanel({ row, onSelectDecision, metric, onMetricChange, range
           <PositionChart
             lifecycle={effectiveLifecycle}
             priceHistory={priceHistory}
-            holdingsHistory={hasHoldings && overlay !== 'none' ? holdingsHistory : undefined}
-            overlayField={overlay !== 'none' ? overlay : undefined}
-            benchmarkWeightPct={benchmarkWeightPct ?? null}
+            holdingsHistory={hasHoldings && desktopOverlay !== 'none' ? holdingsHistory : undefined}
+            overlayField={desktopOverlay !== 'none' ? desktopOverlay : undefined}
+            benchmarkWeightPct={benchmarkPct}
             symbol={row.asset_symbol}
             onSelectEvent={selectFromChart}
             height={chartHeight}

@@ -125,11 +125,13 @@ export function buildPositionChartData(
   const isNewPosition = !!firstDecision && (firstDecision.action === 'buy' || firstDecision.action === 'initiate')
   let lastShares: number | null = onlyOneSnapshot && isNewPosition ? 0 : null
   let lastWeightPct: number | null = onlyOneSnapshot && isNewPosition ? 0 : null
-  // Missing benchmark weight is treated as 0 — an asset outside the
-  // benchmark has an active weight equal to its portfolio weight.
+  // The benchmark weight is subtracted only when it is KNOWN. A confirmed
+  // non-member arrives as 0 (see lib/holdings/benchmark-membership); null
+  // means the lookup failed or there is no benchmark, and then there is no
+  // active weight — never the portfolio weight passed off as one.
   const benchWt = benchmarkWeightPct != null && Number.isFinite(benchmarkWeightPct)
     ? benchmarkWeightPct
-    : 0
+    : null
 
   return sortedDates.map(date => {
     const cachedClose = priceByDate.get(date)
@@ -154,9 +156,9 @@ export function buildPositionChartData(
     }
     const shares = holding?.shares ?? lastShares
     const weightPct = holding?.weightPct ?? lastWeightPct
-    // Active weight = portfolio weight − benchmark weight. Null only
-    // when we have no portfolio weight yet (pre-entry).
-    const activeWt = weightPct != null ? weightPct - benchWt : null
+    // Active weight = portfolio weight − benchmark weight. Null before
+    // entry (no portfolio weight) and whenever the benchmark weight is unknown.
+    const activeWt = weightPct != null && benchWt != null ? weightPct - benchWt : null
 
     // Source id for click-to-isolate. Prefer decisions since those
     // are what the Decisions list keys on (trade_queue_item_id).
@@ -233,12 +235,13 @@ export const METRICS: Record<OverlayField, {
 
 export const METRIC_ORDER: OverlayField[] = ['shares', 'weight', 'active_weight']
 
-/** Which metrics have real history. Active weight is derived from weight, so
- *  it has history exactly when weight does. */
+/** Which metrics have real history. Active weight needs weight history AND a
+ *  known benchmark weight — rows carry it only when both exist. */
 export function metricAvailability(rows: PositionChartRow[]): Record<OverlayField, boolean> {
   const shares = rows.some(r => r.shares != null && Number.isFinite(r.shares) && r.shares > 0)
   const weight = rows.some(r => r.weightPct != null && Number.isFinite(r.weightPct) && r.weightPct > 0)
-  return { shares, weight, active_weight: weight }
+  const active = weight && rows.some(r => r.activeWt != null && Number.isFinite(r.activeWt))
+  return { shares, weight, active_weight: active }
 }
 
 export function rangeCutoff(rows: PositionChartRow[], range: Exclude<ChartRange, 'All'>) {

@@ -29,6 +29,7 @@ import { clsx } from 'clsx'
 import { format, parseISO } from 'date-fns'
 import type { PositionLifecycle, PricePoint, HoldingsTimePoint } from '../../hooks/usePositionLifecycle'
 import { DecisionDot } from './PositionChart'
+import { knownBenchmarkWeightPct, type BenchmarkWeight } from '../../lib/holdings/benchmark-membership'
 import {
   buildPositionChartData, getActionConfig, markerGeometry,
   METRICS, METRIC_ORDER, MARKER_HIT_RADIUS, PLOT_HEIGHT,
@@ -107,7 +108,12 @@ export interface PositionChartMobileProps {
   lifecycle: PositionLifecycle
   priceHistory: PricePoint[]
   holdingsHistory?: HoldingsTimePoint[]
-  benchmarkWeightPct?: number | null
+  /** The asset's benchmark weight; null/undefined while unknown (loading or
+   *  failed). Active weight is drawn only from a known weight. */
+  benchmark?: BenchmarkWeight | null
+  benchmarkLoading?: boolean
+  /** Offered beside "Benchmark data unavailable". */
+  onRetryBenchmark?: () => void
   onSelectEvent?: (sourceId: string, sourceType: 'trade_queue_item' | 'portfolio_trade_event') => void
   symbol?: string | null
   /** Controlled so the choice outlives the chart being hidden. */
@@ -121,11 +127,12 @@ export interface PositionChartMobileProps {
 type Point = { cx: number; cy: number }
 
 export function PositionChartMobile({
-  lifecycle, priceHistory, holdingsHistory, benchmarkWeightPct, onSelectEvent, symbol,
+  lifecycle, priceHistory, holdingsHistory, benchmark, benchmarkLoading = false, onRetryBenchmark, onSelectEvent, symbol,
   metric, onMetricChange, range, onRangeChange,
 }: PositionChartMobileProps) {
   const [plotRef, width] = useElementWidth<HTMLDivElement>()
   const rootRef = useRef<HTMLDivElement>(null)
+  const benchmarkWeightPct = knownBenchmarkWeightPct(benchmark)
 
   const allRows = useMemo(
     () => buildPositionChartData(lifecycle, priceHistory, holdingsHistory, benchmarkWeightPct),
@@ -328,6 +335,19 @@ export function PositionChartMobile({
   const axisDate = (d?: string) => (d ? format(parseISO(d), spanDays > 200 ? 'MMM yy' : 'MMM d') : '')
 
   const unavailable = METRIC_ORDER.filter(m => !availability[m])
+  // Weight history exists but the benchmark weight is unknown: the only
+  // thing standing between the reader and Active weight is benchmark data.
+  const benchmarkBlocks = availability.weight && benchmarkWeightPct == null
+  const benchmarkNote = benchmarkLoading ? 'Loading benchmark data…' : 'Benchmark data unavailable'
+  const note = !metricOn
+    ? metric === 'active_weight' && benchmarkBlocks
+      ? `${benchmarkNote} — showing price only.`
+      : `No ${cfg.label.toLowerCase()} history for this position — showing price only.`
+    : !availability.weight || !availability.shares
+      ? `${unavailable.map(m => METRICS[m].label).join(' and ')} ${unavailable.length > 1 ? 'aren’t' : 'isn’t'} available for this position.`
+      : benchmarkBlocks
+        ? benchmarkNote
+        : null
 
   return (
     <div ref={rootRef} data-slot="position-chart-mobile" className="w-full min-w-0 pt-3 pb-3">
@@ -381,11 +401,18 @@ export function PositionChartMobile({
           </div>
         )}
 
-        {unavailable.length > 0 && (
-          <p data-slot="metric-unavailable" className="text-[12px] leading-snug text-gray-500 dark:text-gray-400">
-            {!metricOn
-              ? `No ${cfg.label.toLowerCase()} history for this position — showing price only.`
-              : `${unavailable.map(m => METRICS[m].label).join(' and ')} ${unavailable.length > 1 ? 'aren’t' : 'isn’t'} available for this position.`}
+        {note && (
+          <p data-slot="metric-unavailable" className="flex flex-wrap items-center gap-x-2 text-[12px] leading-snug text-gray-500 dark:text-gray-400">
+            <span>{note}</span>
+            {benchmarkBlocks && !benchmarkLoading && onRetryBenchmark && (
+              <button
+                type="button"
+                onClick={onRetryBenchmark}
+                className="min-h-[32px] font-medium text-primary-600 dark:text-primary-400"
+              >
+                Retry
+              </button>
+            )}
           </p>
         )}
       </div>
@@ -462,7 +489,7 @@ export function PositionChartMobile({
           <span className="inline-flex items-center gap-1.5">
             <span className="w-3 h-2.5 rounded-sm" style={{ backgroundColor: `${cfg.color}26`, border: `1px solid ${cfg.color}73` }} />
             {cfg.label}
-            {metric === 'active_weight' && benchmarkWeightPct == null && <span className="text-gray-400">(no benchmark wt, taken as 0%)</span>}
+            {metric === 'active_weight' && benchmark?.status === 'not_member' && <span className="text-gray-400">(not in benchmark)</span>}
           </span>
         )}
         {lifecycle.avgEntryPrice != null && (

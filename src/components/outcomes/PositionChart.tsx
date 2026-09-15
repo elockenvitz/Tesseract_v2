@@ -23,19 +23,15 @@ import { buildPositionChartData, getActionConfig, markerGeometry, type OverlayFi
 
 export type { OverlayField }
 
-/** Benchmark weight for this asset, expressed as a percentage of the
- *  portfolio. Missing / null is treated as 0 when computing active
- *  weight — positions in the portfolio that aren't in the benchmark
- *  have an active weight equal to their full portfolio weight. */
 interface PositionChartProps {
   lifecycle: PositionLifecycle
   priceHistory: PricePoint[]
   holdingsHistory?: HoldingsTimePoint[]
   overlayField?: OverlayField
   /** Per-asset benchmark weight (percent). Used for the active-weight
-   *  overlay: active = portfolio_weight − benchmark_weight. Pass null or
-   *  undefined when the asset has no benchmark entry; the chart treats
-   *  that as 0 (off-benchmark exposure). */
+   *  overlay: active = portfolio_weight − benchmark_weight. Pass 0 only for
+   *  a confirmed non-member; null / undefined means UNKNOWN, and then no
+   *  active weight is computed. See lib/holdings/benchmark-membership. */
   benchmarkWeightPct?: number | null
   /** Called when the user clicks an annotation marker on the chart —
    *  the PM wants to isolate that specific historical trade in the
