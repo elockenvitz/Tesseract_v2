@@ -179,9 +179,10 @@ describe('where each step goes', () => {
     expect(openStep(3)).toHaveBeenCalledWith(expect.objectContaining({ type: 'trade-book' }))
   })
 
-  it('closes the loop in Outcomes', () => {
+  /** The Outcomes page itself: carrying a decision opened its detail instead. */
+  it('closes the loop on the Outcomes page, not inside a decision', () => {
     expect(openStep(4)).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'outcomes', data: { tradeQueueItemId: 'idea-1' } }))
+      expect.objectContaining({ type: 'outcomes', data: null }))
   })
 
   /** Nothing falls through any more, so every step gets its control. */

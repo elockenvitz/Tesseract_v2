@@ -83,8 +83,10 @@ export function PilotMissionStrip({ onNavigate }: { onNavigate?: (result: any) =
         /* Navigate only. Pressing a button is not reviewing an outcome, and
            marking here would graduate somebody who clicked and landed on an
            error. Outcomes marks it once it has resolved this decision. */
-        // The decision that was executed, which may not be the captured idea.
-        onNavigate?.({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: mission.reviewIdeaId ?? ideaId } })
+        // The Outcomes page, not a decision on it: the stage's own steps start
+        // with opening the decision there. (This carried the decision to
+        // review, which Outcomes opens as its full-screen detail.)
+        onNavigate?.({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: null })
         return
     }
   }

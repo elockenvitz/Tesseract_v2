@@ -126,8 +126,10 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
          * it has actually resolved this decision; if it cannot, the step
          * stays open, which is the honest result.
          */
-        // The decision that was executed, which may not be the captured idea.
-        onNavigate({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: mission.reviewIdeaId ?? ideaId } })
+        // The Outcomes page, not a decision on it: the stage's own steps start
+        // with opening the decision there. (This carried the decision to
+        // review, which Outcomes opens as its full-screen detail.)
+        onNavigate({ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: null })
         return
     }
   }, [mission, onNavigate])

@@ -275,9 +275,13 @@ describe('where each stage’s button goes', () => {
     for (const f of shells) expect(src(f)).not.toContain('markOutcomeReviewed()')
   })
 
-  it('routes the decision to review to Outcomes, falling back to the tutorial idea', () => {
+  it('opens the Outcomes page itself, not a decision on it', () => {
     for (const f of shells) {
-      expect(src(f)).toContain("type: 'outcomes', data: { tradeQueueItemId: mission.reviewIdeaId ?? ideaId }")
+      const s = src(f)
+      const review = s.slice(s.indexOf("case 'outcome_reviewed':"))
+      expect(review).toContain("type: 'outcomes', data: null")
+      // A decision id here is a focus, and Outcomes opens a focus as its detail.
+      expect(review.slice(0, review.indexOf('return'))).not.toContain('tradeQueueItemId')
     }
   })
 
