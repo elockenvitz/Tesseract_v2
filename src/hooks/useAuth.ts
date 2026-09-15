@@ -36,6 +36,145 @@ function detectRecoveryFromUrl(): boolean {
   }
 }
 
+/*
+  One auth read at a time, however many components ask.
+
+  `useAuth` is a hook, not a provider: every component that calls it runs its
+  own session read and profile fetch when it mounts. A desktop Dashboard mounts
+  about a hundred of them in the same few hundred milliseconds, and each
+  `getSession()` -- including the one supabase-js makes inside every REST
+  request to attach the token -- waits its turn on supabase-js's single auth
+  lock. A hundred duplicate profile reads queued there held every other request
+  on the page, Today's included, for over half a second before it could even
+  leave the browser.
+
+  So concurrent callers share the read already in flight. Only in flight: once
+  it settles the entry is dropped, and the next mount reads afresh exactly as it
+  did before, so nothing here can hand a component an older profile than the
+  one its own request would have returned.
+*/
+let sessionInFlight: Promise<Session | null> | null = null
+
+function readSession(): Promise<Session | null> {
+  if (!sessionInFlight) {
+    sessionInFlight = supabase.auth.getSession()
+      .then(({ data }) => data.session)
+      .finally(() => { sessionInFlight = null })
+  }
+  return sessionInFlight
+}
+
+type ResolvedUser = { userData: User; routeAttempted: boolean }
+
+const profilesInFlight = new Map<string, Promise<ResolvedUser>>()
+
+/** The profile-merged user for a session, shared with any identical read in flight. */
+function resolveSessionUser(session: Session, allowOrgRoute: boolean): Promise<ResolvedUser> {
+  const key = `${session.user.id}:${session.access_token}:${allowOrgRoute}`
+  let pending = profilesInFlight.get(key)
+  if (!pending) {
+    pending = loadSessionUser(session, allowOrgRoute).finally(() => profilesInFlight.delete(key))
+    profilesInFlight.set(key, pending)
+  }
+  return pending
+}
+
+async function loadSessionUser(session: Session, allowOrgRoute: boolean): Promise<ResolvedUser> {
+  let routeAttempted = false
+  try {
+    // First, try to fetch existing user profile
+    const { data: existingProfile, error: fetchError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', session.user.id)
+      .single()
+
+    if (fetchError && fetchError.code === 'PGRST116') {
+      // User doesn't exist in public.users table - create them
+      // Pull names from user_metadata if available (set during signup)
+      const meta = session.user.user_metadata || {}
+      const { error: insertError } = await supabase
+        .from('users')
+        .insert({
+          id: session.user.id,
+          email: session.user.email,
+          first_name: meta.first_name || null,
+          last_name: meta.last_name || null,
+        })
+
+      if (insertError) {
+        console.warn('Failed to create user record (non-blocking):', insertError)
+      }
+
+      // Fetch the newly created profile
+      const { data: newProfile, error: newFetchError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', session.user.id)
+        .single()
+
+      if (newFetchError) {
+        console.warn('Failed to fetch new user profile:', newFetchError)
+        return { userData: session.user, routeAttempted }
+      }
+      return { userData: { ...session.user, ...newProfile } as any, routeAttempted }
+    }
+
+    if (fetchError) {
+      console.warn('Failed to fetch user profile:', fetchError)
+      return { userData: session.user, routeAttempted }
+    }
+
+    // User exists - just update email if it changed (don't overwrite names)
+    if (existingProfile.email !== session.user.email) {
+      await supabase
+        .from('users')
+        .update({ email: session.user.email })
+        .eq('id', session.user.id)
+    }
+    // Merge auth user with profile data
+    let userData = { ...session.user, ...existingProfile } as any
+
+    // Route org if user has no current org set.
+    //
+    // There used to be a step before this one: auto_accept_pending_invites(),
+    // which joined the user to any organization with a pending invitation
+    // matching their email address. It has been retired — an email string
+    // match is not evidence that the person controls the mailbox, and with
+    // open signup and autoconfirm it was a way to walk into someone else's
+    // workspace as an org admin. Invitations are now claimed only by
+    // presenting the token, on /invite/:token.
+    if (!userData.current_organization_id && allowOrgRoute) {
+      routeAttempted = true
+
+      // Domain-based routing for organizations that opt into it.
+      const { profile, routeResult } = await routeOrgByEmail(session.user.email!, session.user.id)
+      if (profile) {
+        userData = { ...userData, ...profile }
+      }
+      // Attach route metadata for downstream screens (blocked/pending)
+      userData._routeAction = routeResult.action
+      userData._routeOrgName = routeResult.org_name
+      // Dispatch auto-join event for toast
+      if (routeResult.action === 'auto_join' && routeResult.org_name) {
+        window.dispatchEvent(new CustomEvent('org-auto-joined', {
+          detail: { orgName: routeResult.org_name },
+        }))
+      }
+
+      if (!userData.current_organization_id && !userData._routeAction) {
+        userData._routeAction = 'no_org'
+      }
+    }
+
+    return { userData, routeAttempted }
+  } catch (err) {
+    console.warn('Network error handling user session (non-blocking):', err)
+    // Fall back to auth user only
+    return { userData: session.user, routeAttempted }
+  }
+}
+
 export function useAuth() {
   // Initialize from cache for instant display
   const [user, setUser] = useState<User | null>(() => getCachedUser())
@@ -69,106 +208,10 @@ export function useAuth() {
 
     // If user is authenticated, fetch full profile from public.users table
     if (session?.user) {
-      try {
-        // First, try to fetch existing user profile
-        const { data: existingProfile, error: fetchError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .single()
-
-        if (fetchError && fetchError.code === 'PGRST116') {
-          // User doesn't exist in public.users table - create them
-          // Pull names from user_metadata if available (set during signup)
-          const meta = session.user.user_metadata || {}
-          const { error: insertError } = await supabase
-            .from('users')
-            .insert({
-              id: session.user.id,
-              email: session.user.email,
-              first_name: meta.first_name || null,
-              last_name: meta.last_name || null,
-            })
-
-          if (insertError) {
-            console.warn('Failed to create user record (non-blocking):', insertError)
-          }
-
-          // Fetch the newly created profile
-          const { data: newProfile, error: newFetchError } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single()
-
-          if (newFetchError) {
-            console.warn('Failed to fetch new user profile:', newFetchError)
-            const userData = session.user
-            setUser(userData)
-            cacheUser(userData)
-          } else {
-            const userData = { ...session.user, ...newProfile } as any
-            setUser(userData)
-            cacheUser(userData)
-          }
-        } else if (fetchError) {
-          console.warn('Failed to fetch user profile:', fetchError)
-          const userData = session.user
-          setUser(userData)
-          cacheUser(userData)
-        } else {
-          // User exists - just update email if it changed (don't overwrite names)
-          if (existingProfile.email !== session.user.email) {
-            await supabase
-              .from('users')
-              .update({ email: session.user.email })
-              .eq('id', session.user.id)
-          }
-          // Merge auth user with profile data
-          let userData = { ...session.user, ...existingProfile } as any
-
-          // Route org if user has no current org set.
-          //
-          // There used to be a step before this one: auto_accept_pending_invites(),
-          // which joined the user to any organization with a pending invitation
-          // matching their email address. It has been retired — an email string
-          // match is not evidence that the person controls the mailbox, and with
-          // open signup and autoconfirm it was a way to walk into someone else's
-          // workspace as an org admin. Invitations are now claimed only by
-          // presenting the token, on /invite/:token.
-          if (!userData.current_organization_id && !orgRouteAttemptedRef.current) {
-            orgRouteAttemptedRef.current = true
-
-            // Domain-based routing for organizations that opt into it.
-            const { profile, routeResult } = await routeOrgByEmail(session.user.email!, session.user.id)
-            if (profile) {
-              userData = { ...userData, ...profile }
-            }
-            // Attach route metadata for downstream screens (blocked/pending)
-            userData._routeAction = routeResult.action
-            userData._routeOrgName = routeResult.org_name
-            // Dispatch auto-join event for toast
-            if (routeResult.action === 'auto_join' && routeResult.org_name) {
-              window.dispatchEvent(new CustomEvent('org-auto-joined', {
-                detail: { orgName: routeResult.org_name },
-              }))
-            }
-
-            if (!userData.current_organization_id && !userData._routeAction) {
-              userData._routeAction = 'no_org'
-            }
-          }
-
-          setUser(userData)
-          cacheUser(userData)
-        }
-      } catch (err) {
-        console.warn('Network error handling user session (non-blocking):', err)
-        // Fall back to auth user only
-        const userData = session.user
-        setUser(userData)
-        cacheUser(userData)
-      }
+      const { userData, routeAttempted } = await resolveSessionUser(session, !orgRouteAttemptedRef.current)
+      if (routeAttempted) orgRouteAttemptedRef.current = true
+      setUser(userData)
+      cacheUser(userData)
     } else {
       setUser(null)
       cacheUser(null)
@@ -184,7 +227,7 @@ export function useAuth() {
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    readSession().then(session => {
       handleAuthSession(session)
     })
 
