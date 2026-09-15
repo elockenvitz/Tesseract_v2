@@ -220,7 +220,8 @@ function enrichMetrics(
       tone: 'neutral',
     })
   }
-  if (e.weightPct != null) {
+  // Once: a finding that already states its weight keeps its own figure.
+  if (e.weightPct != null && !out.some(m => m.label === 'Weight')) {
     out.push({ label: 'Weight', value: `${e.weightPct.toFixed(1)}%`, tone: 'neutral' })
   }
   if (e.researchCount) {
@@ -337,6 +338,17 @@ const ANCHORED_KEYS: Record<
   },
   PROPOSAL_AWAITING_DECISION: {
     since: 'the proposal', shortSince: 'proposal', the: 'the proposal date', tick: 'PROPOSAL',
+  },
+  // Coverage backfill sets `createdAt` to the case's review anchor, and only
+  // where the case has one (lib/today/coverage-items).
+  COVERAGE_PRICE_MOVE: {
+    since: 'last review', shortSince: 'review', the: 'the review date', tick: 'LAST REVIEW',
+  },
+  COVERAGE_STALE_THESIS: {
+    since: 'last review', shortSince: 'review', the: 'the review date', tick: 'LAST REVIEW',
+  },
+  COVERAGE_NEW_EVIDENCE: {
+    since: 'last review', shortSince: 'review', the: 'the review date', tick: 'LAST REVIEW',
   },
 }
 

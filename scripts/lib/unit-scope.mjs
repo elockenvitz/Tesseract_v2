@@ -153,6 +153,8 @@ export const GATED_DIRS = [
   'src/components/ops/__tests__',
   // Research's coverage-gap queue: the work queue a fresh account lands on.
   'src/components/research-v2/__tests__',
+  // Today's coverage backfill: what a thin or new account's home shows.
+  'src/components/today/__tests__',
 
 ]
 

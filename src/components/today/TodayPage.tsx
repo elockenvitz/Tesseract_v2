@@ -23,9 +23,11 @@ import { useAttentionState } from '../../hooks/useAttentionState'
 import { feedItemAttentionKey } from '../../lib/attention-state'
 import {
   adaptDecisionItem, selectToday, expandToObjects, diversify, applyEnrichment,
-  compareTodayItems, TODAY_LIMIT,
+  compareTodayItems, coverageTodayItems, TODAY_LIMIT,
 } from '../../lib/today'
 import { useTodayEnrichment } from '../../hooks/useTodayEnrichment'
+import { useCoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
+import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoveragePrompt'
 import type { TodayItem, AggregateNote } from '../../lib/today'
 import type { FocusSource } from '../../lib/dashboard/focus'
 import { TodayTile } from './TodayTile'
@@ -82,12 +84,44 @@ export function TodayPage() {
     }
   }, [engineSlice.action, engineSlice.intel, attention.suppressedKeys])
 
+  /*
+   * Coverage work, for a thin morning only (lib/today/coverage-items).
+   *
+   * Real findings above are computed and painted without waiting for this: the
+   * coverage scan is its own cached query, and its items append after the real
+   * ones when it answers. They are ordinary Today items -- adapted, enriched and
+   * drawn by the same tile -- and they drop out on their own as real findings
+   * take the slots. A name any real finding concerns is never raised again.
+   */
+  const gaps = useCoverageResearchGaps()
+  const generated = useMemo(() => {
+    const todayAssetIds = new Set(
+      [...surfaced, ...alsoWatching]
+        .map(i => i.source.context.assetId)
+        .filter((id): id is string => !!id),
+    )
+    return coverageTodayItems(gaps.candidates, {
+      realCount: surfaced.length,
+      todayAssetIds,
+      isSuppressed: id => {
+        const key = feedItemAttentionKey(id)
+        return !!key && attention.suppressedKeys.has(key)
+      },
+    }).map(adaptDecisionItem)
+  }, [gaps.candidates, surfaced, alsoWatching, attention.suppressedKeys])
+
   // Enrich ONLY what surfaced. Also-watching draws nothing, so it fetches
   // nothing -- four symbols of history rather than the whole candidate pool.
+  // Coverage items enrich on their own key, so their arrival never refetches
+  // (and blanks) the enrichment real findings already have.
+  const coverageEnrichment = useTodayEnrichment(generated)
   const enrichment = useTodayEnrichment(surfaced)
   const enriched = useMemo(
-    () => surfaced.map(i => applyEnrichment(i, enrichment[i.source.context.assetId ?? ''])),
-    [surfaced, enrichment],
+    () => [
+      ...surfaced.map(i => applyEnrichment(i, enrichment[i.source.context.assetId ?? ''])),
+      ...generated.map(i => applyEnrichment(i, coverageEnrichment[i.source.context.assetId ?? ''])),
+    ],
+    [surfaced, enrichment, generated, coverageEnrichment],
   )
 
   const handlePrimary = (item: TodayItem, source?: FocusSource) => {
@@ -240,7 +274,7 @@ function toRailCard(item: TodayItem): RailCard {
         <Summary
           isLoading={isLoading}
           surfaced={enriched.length}
-          evaluated={evaluated}
+          more={evaluated - surfaced.length}
           suppressed={suppressedCount}
         />
       </header>
@@ -248,7 +282,20 @@ function toRailCard(item: TodayItem): RailCard {
       {isLoading ? (
         <Loading />
       ) : enriched.length === 0 ? (
-        <Cleared evaluated={evaluated} suppressed={suppressedCount} />
+        /*
+         * Nothing real to show. Wait for the coverage scan rather than saying
+         * "You're current" a moment before coverage work arrives; with no
+         * coverage at all, the next step is choosing some.
+         */
+        gaps.status === 'loading' ? (
+          <Loading />
+        ) : gaps.status === 'ready' && gaps.coveredCount === 0 ? (
+          <div data-testid="today-choose-coverage" className="px-6 pt-4">
+            <FirstSessionCoveragePrompt variant="page" dismissible={false} />
+          </div>
+        ) : (
+          <Cleared evaluated={evaluated} suppressed={suppressedCount} />
+        )
       ) : (
         <>
           {/*
@@ -330,17 +377,18 @@ function toRailCard(item: TodayItem): RailCard {
 /* -------------------------------------------------------------- summary -- */
 
 function Summary({
-  isLoading, surfaced, evaluated, suppressed,
-}: { isLoading: boolean; surfaced: number; evaluated: number; suppressed: number }) {
+  isLoading, surfaced, more, suppressed,
+}: { isLoading: boolean; surfaced: number; more: number; suppressed: number }) {
   return (
     <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1 text-[11px] text-gray-500 dark:text-gray-500">
       <strong className="font-semibold text-gray-700 dark:text-gray-300">
         {isLoading ? 'Evaluating…' : `${surfaced} item${surfaced === 1 ? '' : 's'}`}
       </strong>
-      {!isLoading && evaluated > surfaced && (
+      {/* Real findings below the cut. Coverage work is not counted as "more". */}
+      {!isLoading && more > 0 && (
         <>
           <span className="text-gray-300 dark:text-gray-700">·</span>
-          <span>{evaluated - surfaced} more, lower priority</span>
+          <span>{more} more, lower priority</span>
         </>
       )}
       {!isLoading && suppressed > 0 && (

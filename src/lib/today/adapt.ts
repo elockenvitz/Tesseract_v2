@@ -186,6 +186,23 @@ export function visualFor(item: DecisionItem): TodayVisual {
       }
     }
 
+    case 'COVERAGE_NO_THESIS':
+    case 'COVERAGE_INCOMPLETE_THESIS': {
+      // The position the missing case sits under, where there is one. Bare
+      // coverage has no weight and draws nothing rather than a zero bar.
+      const weight = item.context.proposedWeight
+      if (weight == null) return fallback
+      return {
+        archetype: 'exposure',
+        caption: 'Position weight',
+        window: `${weight.toFixed(1)}% of ${item.context.portfolioName ?? 'the book'}`,
+        note: item.titleKey === 'COVERAGE_NO_THESIS'
+          ? 'No written thesis behind it.'
+          : 'The written case behind it is incomplete.',
+        exposure: { weightPct: weight },
+      }
+    }
+
     case 'IDEA_NOT_SIMULATED': {
       const weight = item.context.proposedWeight
       if (weight == null) return fallback
@@ -269,7 +286,7 @@ const METRIC_LABELS: Record<string, string> = {
 }
 
 /** Labels allowed through unmapped, because they already read correctly. */
-const KNOWN_METRIC_LABELS = new Set<string>([])
+const KNOWN_METRIC_LABELS = new Set<string>(['Open ideas'])
 
 // ---------------------------------------------------------------------------
 // Seed prompts
@@ -299,6 +316,16 @@ function seedPromptFor(item: DecisionItem): string | null {
       return `This deliverable is overdue. What is the smallest useful version that could ship now?`
     case 'HIGH_EV_NO_IDEA':
       return `The model implies ${chip(item, 'EV') ?? 'meaningful'} upside on ${t} with no idea against it. What would have to be true for that to be real rather than a data artefact?`
+    case 'COVERAGE_NO_THESIS':
+      return `We have no written case on ${t}. What would a defensible thesis claim, where would we differ from consensus, and what would break it?`
+    case 'COVERAGE_INCOMPLETE_THESIS':
+      return `Our case for ${t} is only partly written. What belongs in the missing sections, and does writing them change the view?`
+    case 'COVERAGE_PRICE_MOVE':
+      return `${t} has moved materially since our case was last reviewed. Which of its claims does the move test, and does the case still hold?`
+    case 'COVERAGE_NEW_EVIDENCE':
+      return `New research arrived on ${t} after our case was last written. Which of it most challenges the existing view?`
+    case 'COVERAGE_STALE_THESIS':
+      return `Our case for ${t} has not been revisited in ${chip(item, 'Age') ?? 'months'}. Which of its claims are most likely to be stale?`
     default:
       return null
   }
@@ -349,6 +376,12 @@ const OBJECT_VERB: Record<string, string> = {
   IDEA_NOT_SIMULATED: 'Simulate idea',
   OVERDUE_DELIVERABLE: 'Review deliverable',
   HIGH_EV_NO_IDEA: 'Create idea',
+  // Coverage backfill (lib/today/coverage-items): the reader's coverage work.
+  COVERAGE_NO_THESIS: 'Write thesis',
+  COVERAGE_INCOMPLETE_THESIS: 'Finish thesis',
+  COVERAGE_PRICE_MOVE: 'Revisit thesis',
+  COVERAGE_NEW_EVIDENCE: 'Review evidence',
+  COVERAGE_STALE_THESIS: 'Review thesis',
 }
 
 const GENERIC_VERBS = /^(review|open|manage|view|review all|simulate all|resolve all)$/i

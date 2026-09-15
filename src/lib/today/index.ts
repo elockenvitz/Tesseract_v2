@@ -29,4 +29,9 @@ export type { AggregateNote, ExpandedCandidates } from './expand'
 
 export { diversify, MAX_PER_KEY, TIER_REACH, SCORE_TOLERANCE } from './diversity'
 export { applyEnrichment, priceWindowSince, windowLabel } from './enrich'
+
+export {
+  coverageTodayItems, coverageDecisionItem, isCoverageTitleKey,
+  TODAY_COVERAGE_TARGET, TODAY_STRUCTURAL_CAPS, COVERAGE_TITLE_KEY,
+} from './coverage-items'
 export type { TodayEnrichment, EnrichmentMap, PriceWindow } from './enrich'

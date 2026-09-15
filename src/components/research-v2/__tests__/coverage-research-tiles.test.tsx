@@ -245,8 +245,8 @@ describe('generated tiles navigate like every Research tile', () => {
 })
 
 describe('scope', () => {
-  it('leaves Today and Ideas unwired, and the queue UI is gone', () => {
-    for (const file of ['src/components/today/TodayPage.tsx', 'src/components/ideas-v2/IdeasWorkspace.tsx']) {
+  it('leaves Ideas unwired, and the queue UI is gone', () => {
+    for (const file of ['src/components/ideas-v2/IdeasWorkspace.tsx']) {
       expect(readFileSync(path.join(process.cwd(), file), 'utf8'), file).not.toMatch(/useCoverageResearchGaps|withCoverageSubjects/)
     }
     expect(existsSync(path.join(process.cwd(), 'src/components/research-v2/CoverageGapQueue.tsx'))).toBe(false)
