@@ -202,7 +202,24 @@ export function useDerivedInsights() {
 
   return useQuery<DerivedInsight[]>({
     queryKey: ['derived-insights', 'research-v2', user?.id, currentOrgId],
-    queryFn: async () => {
+    queryFn: () => scanResearchInsights(user, currentOrgId),
+    enabled: !!user && !!currentOrgId,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+/**
+ * The scan itself, outside React.
+ *
+ * `useDerivedInsights` is the cached way in and every surface should use it.
+ * Named so the one scan can be exercised directly -- by tests over a database
+ * double, and by a measurement against the live project -- without mounting a
+ * provider tree. Moving it out changed nothing it does.
+ */
+export async function scanResearchInsights(
+  user: { id: string } | null | undefined,
+  currentOrgId: string | null | undefined,
+): Promise<DerivedInsight[]> {
       // Without an org there is nothing safe to show: these queries would
       // otherwise return positions and research from every organisation the
       // user belongs to and present them as the current book.
@@ -697,10 +714,6 @@ export function useDerivedInsights() {
       }
 
       return out.sort((a, b) => b.score - a.score)
-    },
-    enabled: !!user && !!currentOrgId,
-    staleTime: 5 * 60 * 1000,
-  })
 }
 
 export { insightSignalType } from '../../lib/signals/insight-type'
