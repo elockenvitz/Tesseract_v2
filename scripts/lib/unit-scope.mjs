@@ -151,6 +151,8 @@ export const GATED_DIRS = [
   'src/components/outcomes/__tests__',
   'src/components/trading/__tests__',
   'src/components/ops/__tests__',
+  // Research's coverage-gap queue: the work queue a fresh account lands on.
+  'src/components/research-v2/__tests__',
 
 ]
 

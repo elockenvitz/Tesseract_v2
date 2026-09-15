@@ -31,6 +31,8 @@ import {
 } from '../desktop/DesktopTile'
 import type { FocusIntent } from '../../lib/dashboard/focus'
 import { ResearchDetail } from './ResearchDetail'
+import { CoverageGapQueue } from './CoverageGapQueue'
+import { useCoverageResearchGaps, type CoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
 import { openAsset } from '../../lib/desktop-asset'
 import {
   openDashboardFocus, type RailCard,
@@ -92,6 +94,20 @@ export function ResearchWorkspace({
     .map(s => ({ ...s, weightPct: exposure[s.assetId] }))
     .sort(compareSubjects), [subjects, exposure])
 
+  /*
+   * The reader's coverage research gaps, as a queue after the research itself.
+   *
+   * Real research leads: a name that already has a tile above is not repeated
+   * in the queue, so the queue is the coverage work the scan above cannot show
+   * -- above all, covered names with nothing written. On a fresh account the
+   * scan is empty and the queue is the lens.
+   */
+  const gaps = useCoverageResearchGaps()
+  const queued = useMemo(() => {
+    const onRecord = new Set(ranked.map(s => s.assetId))
+    return gaps.candidates.filter(c => !onRecord.has(c.assetId))
+  }, [gaps.candidates, ranked])
+
   /**
    * Selection lives in the deck, not here.
    *
@@ -138,7 +154,18 @@ export function ResearchWorkspace({
   }), [ranked])
 
   if (isLoading) return <Loading />
-  if (!ranked.length) return <Empty />
+  if (!ranked.length && !activeId) {
+    if (gaps.status === 'loading') return <Loading />
+    if (queued.length) {
+      return (
+        <div className="h-full overflow-y-auto" data-testid="research-lens">
+          <CoverageGapQueue candidates={queued} />
+        </div>
+      )
+    }
+    return <Empty gaps={gaps} />
+  }
+  if (!ranked.length) return <Empty gaps={gaps} />
 
   if (activeId) {
     if (missing || !requested) {
@@ -184,6 +211,7 @@ export function ResearchWorkspace({
           />
         ))}
       </DesktopGallery>
+      <CoverageGapQueue candidates={queued} secondary />
     </div>
   )
 }
@@ -508,7 +536,7 @@ const ARRIVAL_ORIGIN: Record<string, string> = {
   today: 'Dashboard', portfolio: 'Portfolio', ideas: 'Ideas', decisions: 'Decisions',
 }
 
-function Empty() {
+function Empty({ gaps }: { gaps: CoverageResearchGaps }) {
   return (
     <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
       <h1 className="text-[21px] font-semibold tracking-tight">Research</h1>
@@ -516,8 +544,15 @@ function Empty() {
         <BookOpen className="mx-auto h-7 w-7 text-gray-400" />
         <h2 className="mt-4 text-[17px] font-semibold">No recorded evidence yet</h2>
         <p className="mx-auto mt-1.5 max-w-[46ch] text-[12px] text-gray-600 dark:text-gray-400">
-          Names appear here once they have a thesis or a research note on file.
+          {gaps.status === 'ready' && gaps.coveredCount > 0
+            ? `Your ${gaps.coveredCount} covered name${gaps.coveredCount === 1 ? ' has' : 's have'} no open research gaps.`
+            : 'Names appear here once they have a thesis or a research note on file.'}
         </p>
+        {gaps.status === 'error' && (
+          <p data-testid="coverage-gap-error" className="mx-auto mt-3 max-w-[46ch] text-[12px] text-amber-700 dark:text-amber-500">
+            Your coverage could not be loaded, so research gaps on it are not shown.
+          </p>
+        )}
       </div>
     </div>
   )

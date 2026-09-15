@@ -22,6 +22,7 @@ const env = vi.hoisted(() => ({
   orgId: 'org-a' as string | null,
   tables: {} as Record<string, Record<string, unknown>[]>,
   calls: [] as Array<{ table: string; filters: Array<[string, string, unknown]> }>,
+  failing: new Set<string>(),
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -38,7 +39,8 @@ vi.mock('../../lib/supabase', () => ({
       chain.not = (col: string, _is: string, val: unknown) => { filters.push(['not_is', col, val]); return chain }
       for (const op of ['order', 'limit', 'range']) chain[op] = () => chain
       chain.then = (resolve: (v: unknown) => unknown) => {
-        const rows = (env.tables[table] ?? []).filter(r => filters.every(([op, col, val]) => {
+        if (env.failing.has(table)) return Promise.resolve({ data: null, error: { message: `${table} unavailable` } }).then(resolve)
+        const rows =(env.tables[table] ?? []).filter(r => filters.every(([op, col, val]) => {
           const v = (r as Row)[col]
           switch (op) {
             case 'eq': return v === val
@@ -70,6 +72,7 @@ const core = (org: string, assetId: string, section: string, days: number) =>
 beforeEach(() => {
   env.orgId = 'org-a'
   env.calls.length = 0
+  env.failing.clear()
   localStorage.clear()
   env.tables = {
     coverage: [
@@ -139,6 +142,15 @@ describe('whose coverage', () => {
     expect(symbols).not.toContain('META')
     expect(symbols).not.toContain('INTC')
     expect(coveredCount).toBe(4)
+  })
+})
+
+describe('when a read fails', () => {
+  it('reports error, not an endless loading, when the coverage read fails', async () => {
+    env.failing.add('coverage')
+    const { result } = run()
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    expect(result.current.candidates).toEqual([])
   })
 })
 

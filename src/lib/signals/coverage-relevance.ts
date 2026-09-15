@@ -70,6 +70,12 @@ export type CoverageRelevance = 'direct' | 'assigned' | 'held' | 'none' | 'unkno
  */
 export interface CoverageIndex {
   ready: boolean
+  /**
+   * The coverage read failed. `ready` stays false, so ranking treats it as
+   * unknown exactly as before; a consumer that must tell "failed" from "still
+   * loading" reads this.
+   */
+  failed?: boolean
   direct: ReadonlySet<string>
   assigned: ReadonlySet<string>
   held: ReadonlySet<string>

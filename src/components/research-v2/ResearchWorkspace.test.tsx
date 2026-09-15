@@ -47,6 +47,15 @@ vi.mock('../../hooks/useDesktopResearch', () => ({
  * contribution form, this stub stops being rendered and the tests below fail.
  */
 const thesisContainerFor: string[] = []
+/*
+ * The coverage-gap queue has its own suite (research-v2/__tests__). Here the
+ * source reports a reader with no gaps, so these cases stay about the
+ * research scan they were written for.
+ */
+vi.mock('../../hooks/useCoverageResearchGaps', () => ({
+  useCoverageResearchGaps: () => ({ status: 'ready', candidates: [], coveredCount: 0 }),
+}))
+
 vi.mock('../contributions', () => ({
   ThesisContainer: ({ assetId }: { assetId: string }) => {
     thesisContainerFor.push(assetId)

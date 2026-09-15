@@ -29,6 +29,9 @@ import {
   type CoverageIndex,
 } from '../lib/signals/coverage-relevance'
 
+/** Not ready, and not going to be: the coverage read failed. */
+const FAILED_COVERAGE_INDEX: CoverageIndex = { ...EMPTY_COVERAGE_INDEX, failed: true }
+
 interface CoverageRow {
   asset_id: string
   coverage_scope: 'personal' | 'org'
@@ -96,8 +99,10 @@ export function useCoverageRelevance(): CoverageIndex {
     // `ready: false`, which `coverageRelevanceFor` turns into `unknown` — a
     // neutral score. A pending query must never look like "you cover nothing".
     if (!userId || !orgId) return EMPTY_COVERAGE_INDEX
+    // A failed coverage read is not pending: say so, or a consumer waiting for
+    // `ready` waits forever. Checked before the holdings wait for that reason.
+    if (coverage.isError) return FAILED_COVERAGE_INDEX
     if (coverage.isPending || holdings.isPending) return EMPTY_COVERAGE_INDEX
-    if (coverage.isError) return EMPTY_COVERAGE_INDEX
 
     const direct = new Set<string>()
     const assigned = new Set<string>()

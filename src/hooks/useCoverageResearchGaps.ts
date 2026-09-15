@@ -42,7 +42,8 @@ export function useCoverageResearchGaps(): CoverageResearchGaps {
 
   return useMemo<CoverageResearchGaps>(() => {
     if (!currentOrgId) return { status: 'no_org', candidates: [], coveredCount: 0 }
-    if (insights.isError) return { status: 'error', candidates: [], coveredCount: 0 }
+    // Either read failing is an error, never an endless "loading".
+    if (insights.isError || coverage.failed) return { status: 'error', candidates: [], coveredCount: 0 }
     if (!coverage.ready || insights.isPending) return { status: 'loading', candidates: [], coveredCount: 0 }
     const covered = new Set([...coverage.direct, ...coverage.assigned])
     return {
