@@ -47,6 +47,11 @@ const TOOLTIP_WIDTH = 168
 /** Share of the plot height the secondary metric may rise to. */
 const METRIC_BAND = 0.42
 
+/** One segment of the metric / range tracks. */
+const SEGMENT = 'no-touch-target tap-pad h-8 rounded-md text-[12px] font-medium whitespace-nowrap transition-colors'
+const SEGMENT_ON = 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+const SEGMENT_OFF = 'text-gray-500 active:text-gray-800 dark:text-gray-400 dark:active:text-gray-200'
+
 const PRICE_COLOR = '#2563eb'
 const ENTRY_COLOR = '#6366f1'
 
@@ -351,9 +356,18 @@ export function PositionChartMobile({
 
   return (
     <div ref={rootRef} data-slot="position-chart-mobile" className="w-full min-w-0 pt-3 pb-3">
-      {/* Controls */}
-      <div className="px-3 space-y-2">
-        <div role="radiogroup" aria-label="Position metric" className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-gray-100 dark:bg-gray-900">
+      {/* Controls — two compact segmented tracks, sized to their labels and
+          left-aligned. Each segment is drawn 32px tall (36px with the track)
+          and opts out of the global 44px button box (`no-touch-target`);
+          `tap-pad` grows its touch region back to 44px vertically without
+          growing what is drawn. */}
+      <div className="px-3 space-y-1.5">
+        <div
+          role="radiogroup"
+          aria-label="Position metric"
+          data-slot="metric-switch"
+          className="inline-flex items-center p-0.5 rounded-lg bg-gray-100 dark:bg-gray-900"
+        >
           {METRIC_ORDER.map(m => {
             const on = metric === m
             const ok = availability[m]
@@ -366,11 +380,11 @@ export function PositionChartMobile({
                 disabled={!ok}
                 onClick={() => onMetricChange(m)}
                 className={clsx(
-                  'min-h-[40px] min-w-0 px-1 rounded-md text-[13px] font-medium truncate transition-colors',
-                  on && ok && 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white',
-                  on && !ok && 'bg-white/60 text-gray-400 dark:bg-gray-700/60',
-                  !on && ok && 'text-gray-600 active:bg-white/60 dark:text-gray-300',
-                  !ok && 'text-gray-300 line-through decoration-gray-300 dark:text-gray-600',
+                  SEGMENT, 'min-w-[76px] px-2.5',
+                  on && ok && SEGMENT_ON,
+                  on && !ok && 'bg-white/60 text-gray-400 dark:bg-gray-800/60',
+                  !on && ok && SEGMENT_OFF,
+                  !ok && 'text-gray-300 dark:text-gray-600',
                 )}
               >
                 {METRICS[m].short}
@@ -380,7 +394,12 @@ export function PositionChartMobile({
         </div>
 
         {ranges.length > 1 && (
-          <div role="radiogroup" aria-label="Chart range" className="flex items-center gap-1">
+          <div
+            role="radiogroup"
+            aria-label="Chart range"
+            data-slot="range-switch"
+            className="flex w-fit items-center p-0.5 rounded-lg bg-gray-100 dark:bg-gray-900"
+          >
             {ranges.map(r => (
               <button
                 key={r}
@@ -388,12 +407,7 @@ export function PositionChartMobile({
                 role="radio"
                 aria-checked={effectiveRange === r}
                 onClick={() => onRangeChange(r)}
-                className={clsx(
-                  'h-9 min-w-[44px] px-2 rounded-md text-[13px] font-medium tabular-nums transition-colors',
-                  effectiveRange === r
-                    ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
-                    : 'text-gray-600 active:bg-gray-100 dark:text-gray-300 dark:active:bg-gray-700',
-                )}
+                className={clsx(SEGMENT, 'min-w-[44px] px-2 tabular-nums', effectiveRange === r ? SEGMENT_ON : SEGMENT_OFF)}
               >
                 {r}
               </button>

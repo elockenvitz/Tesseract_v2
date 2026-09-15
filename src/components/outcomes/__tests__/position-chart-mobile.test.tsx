@@ -6,6 +6,8 @@
  * recorded scrub geometry, the axes — is what Recharts actually produced.
  */
 import { useState } from 'react'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, act, within } from '@testing-library/react'
 import { format, addDays, parseISO } from 'date-fns'
@@ -366,6 +368,56 @@ describe('phone position chart', () => {
       rerender(<Harness benchmark={MEMBER} />)
       expect((radio('Position metric', 'Active wt') as HTMLButtonElement).disabled).toBe(false)
       expect(document.querySelector('[data-slot="metric-unavailable"]')).toBeNull()
+    })
+  })
+
+  describe('control size', () => {
+    const px = (cls: string, prefix: string) => Number(new RegExp(`${prefix}\\[(\\d+)px\\]`).exec(cls)?.[1] ?? NaN)
+
+    it('draws the metric switch as a compact track sized to its labels, not a full-width grid', () => {
+      render(<Harness />)
+      const track = document.querySelector('[data-slot="metric-switch"]') as HTMLElement
+      expect(track.className).toContain('inline-flex')
+      expect(track.className).not.toMatch(/\bgrid\b|\bw-full\b|grid-cols/)
+      const segments = within(track).getAllByRole('radio')
+      for (const s of segments) {
+        expect(s.className).toMatch(/\bh-8\b/)            // 32px segment, 36px with the p-0.5 track
+        expect(s.className).toContain('text-[12px]')
+        expect(s.className).not.toMatch(/min-h-\[/)
+      }
+      // Minimum drawn width: three segments plus the 2px track padding each side.
+      const width = segments.reduce((sum, s) => sum + px(s.className, 'min-w-'), 0) + 4
+      expect(width).toBeGreaterThanOrEqual(230)
+      expect(width).toBeLessThanOrEqual(260)
+    })
+
+    it('keeps a 44px touch region without drawing a 44px button', () => {
+      render(<Harness />)
+      const css = readFileSync(path.join(process.cwd(), 'src/index.css'), 'utf8')
+      // `tap-pad` extends the touch box 6px above and below a 32px segment.
+      expect(css).toMatch(/\.tap-pad::before\s*\{[^}]*top:\s*-6px;[^}]*bottom:\s*-6px;/)
+      // `no-touch-target` is what exempts it from the global 44px min-height.
+      expect(css).toContain('button:not(.no-touch-target)')
+      for (const s of [
+        ...within(screen.getByRole('radiogroup', { name: 'Position metric' })).getAllByRole('radio'),
+        ...within(screen.getByRole('radiogroup', { name: 'Chart range' })).getAllByRole('radio'),
+      ]) {
+        expect(s.className).toContain('no-touch-target')
+        expect(s.className).toContain('tap-pad')
+      }
+    })
+
+    it('draws the range switch in the same compact track', () => {
+      render(<Harness />)
+      const metric = document.querySelector('[data-slot="metric-switch"]') as HTMLElement
+      const range = document.querySelector('[data-slot="range-switch"]') as HTMLElement
+      expect(range.className).toContain('w-fit')
+      const trackClasses = (el: HTMLElement) => el.className.split(' ').filter(c => /^(p-|rounded|bg-gray-100)/.test(c)).sort()
+      expect(trackClasses(range)).toEqual(trackClasses(metric))
+      for (const s of within(range).getAllByRole('radio')) {
+        expect(s.className).toMatch(/\bh-8\b/)
+        expect(s.className).toContain('text-[12px]')
+      }
     })
   })
 
