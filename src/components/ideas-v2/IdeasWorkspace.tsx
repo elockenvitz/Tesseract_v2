@@ -31,6 +31,7 @@ import {
 } from '../../lib/desktop-ideas'
 import { useCoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
 import { usePilotMode } from '../../hooks/usePilotMode'
+import { operationalAfterPilot } from '../../lib/pilot/seed-visibility'
 import { openCreate } from '../../lib/today/create-actions'
 import { IdeaDetail } from './IdeaDetail'
 import { IdeaCard, densityForRank } from './IdeaCard'
@@ -87,14 +88,16 @@ export function IdeasWorkspace({
   /**
    * The pilot's seeded demo ideas leave the field once the pilot is over.
    *
-   * They are real rows and stay exactly as they are -- their records,
-   * provenance and history are untouched, and every other surface still shows
-   * them. What they must not do is fill a graduated reader's Ideas lens with
-   * fixed demo tickers so that genuine work ranks below a tour. Before
-   * graduation they ARE the work, so they stay.
+   * The rule is the Dashboard's, not this lens's (lib/pilot/seed-visibility):
+   * a seeded row stays stored with its provenance and every archival surface
+   * still shows it, but after graduation it stops being counted as live work.
+   * An open seeded idea is one nobody has acted on, so none of them survive
+   * the rule here; the seeded idea the reader decided and executed is already
+   * terminal and was never in this scan.
    */
   const ideas = useMemo(
-    () => (hasGraduated ? scanned.filter(i => !i.isPilotSeed) : scanned),
+    () => operationalAfterPilot(
+      scanned.map(i => ({ ...i, pilotSeed: i.isPilotSeed })), { hasGraduated }),
     [scanned, hasGraduated],
   )
   const exposure = useScanExposure(ideas)

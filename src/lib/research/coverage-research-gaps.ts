@@ -93,7 +93,14 @@ export interface CoverageResearchCandidate {
     portfolioCount: number
   }
   /** Live ideas on the name. Context only. */
-  liveIdeas: { id: string; action: string | null }[]
+  /**
+   * Live trade-queue items on this name, as context.
+   *
+   * A graduated reader's seeded ideas are filtered out upstream
+   * (useCoverageResearchGaps, lib/pilot/seed-visibility), so a name whose only
+   * idea was planted by the pilot reads as having none -- which is true.
+   */
+  liveIdeas: { id: string; action: string | null; pilotSeed?: boolean }[]
 
   /** The existing research surface for this asset. */
   open: OpenAssetRequest

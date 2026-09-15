@@ -38,6 +38,11 @@ vi.mock('../../lib/supabase', () => ({
       }
       chain.not = (col: string, _is: string, val: unknown) => { filters.push(['not_is', col, val]); return chain }
       for (const op of ['order', 'limit', 'range']) chain[op] = () => chain
+      // Row-at-a-time reads resolve like the real client: the first match, or
+      // null. Without these a caller that ends in `.maybeSingle()` threw here
+      // and its query looked like a failed read rather than an answered one.
+      let one = false
+      for (const op of ['maybeSingle', 'single']) chain[op] = () => { one = true; return chain }
       chain.then = (resolve: (v: unknown) => unknown) => {
         if (env.failing.has(table)) return Promise.resolve({ data: null, error: { message: `${table} unavailable` } }).then(resolve)
         const rows =(env.tables[table] ?? []).filter(r => filters.every(([op, col, val]) => {
@@ -51,7 +56,10 @@ vi.mock('../../lib/supabase', () => ({
             default: return true
           }
         }))
-        return Promise.resolve(head ? { count: rows.length, data: null, error: null } : { data: rows, error: null }).then(resolve)
+        const result = head ? { count: rows.length, data: null, error: null }
+          : one ? { data: rows[0] ?? null, error: null }
+          : { data: rows, error: null }
+        return Promise.resolve(result).then(resolve)
       }
       return chain
     },
@@ -145,6 +153,46 @@ describe('whose coverage', () => {
   })
 })
 
+describe('the pilot’s seeded ideas, after graduation', () => {
+  /** The seeder's AAPL idea, open and untouched, on a name the reader covers. */
+  const seededIdea = () => ({
+    id: 'seed-aapl', organization_id: 'org-a', asset_id: 'a-aapl',
+    action: 'buy', status: 'idea', origin_metadata: { pilot_seed: true },
+  })
+  const genuineIdea = () => ({
+    id: 'mine-aapl', organization_id: 'org-a', asset_id: 'a-aapl',
+    action: 'buy', status: 'idea', origin_metadata: null,
+  })
+  const graduate = () => {
+    env.tables.users = [
+      { id: 'me', first_name: 'Pilot', last_name: null, email: 'p@x.test', pilot_progress: { 'graduated_at_org-a': ago(0) } },
+      { id: 'colleague', first_name: 'Dana', last_name: null, email: 'd@x.test' },
+    ]
+  }
+  const aapl = async () => {
+    const { result } = run()
+    const { candidates } = await ready(result)
+    return candidates.find(c => c.symbol === 'AAPL')!
+  }
+
+  it('stops counting a seeded idea as work in progress on a covered name', async () => {
+    env.tables.trade_queue_items = [seededIdea()]
+    graduate()
+    expect((await aapl()).liveIdeas).toEqual([])
+  })
+
+  it('still counts it while the pilot is running', async () => {
+    env.tables.trade_queue_items = [seededIdea()]
+    expect((await aapl()).liveIdeas.map(i => i.id)).toEqual(['seed-aapl'])
+  })
+
+  it('never touches a genuine idea on the same name', async () => {
+    env.tables.trade_queue_items = [seededIdea(), genuineIdea()]
+    graduate()
+    expect((await aapl()).liveIdeas.map(i => i.id)).toEqual(['mine-aapl'])
+  })
+})
+
 describe('when a read fails', () => {
   it('reports error, not an endless loading, when the coverage read fails', async () => {
     env.failing.add('coverage')
@@ -156,15 +204,25 @@ describe('when a read fails', () => {
 
 describe('cost', () => {
   it('owns no query: a second lens mounting it inside the cache window reads nothing', async () => {
+    /*
+     * Counted over the hook's own sources.
+     *
+     * It also reads the pilot's graduation flag, which decides whether a
+     * seeded idea still counts as live work. That is one shared, cached read
+     * of `users` owned by `usePilotProgress` and paid for once by the whole
+     * Dashboard; it answers after the candidates do, so counting it here
+     * would measure when it resolved rather than what this hook costs.
+     */
+    const sources = () => env.calls.filter(c => c.table !== 'users').length
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const first = run(client)
     const a = await ready(first.result)
-    const requests = env.calls.length
+    const requests = sources()
     expect(requests).toBeGreaterThan(0)
 
     const second = run(client)
     const b = await ready(second.result)
-    expect(env.calls.length).toBe(requests)
+    expect(sources()).toBe(requests)
     expect(b.candidates.map(c => c.id)).toEqual(a.candidates.map(c => c.id))
   })
 })
