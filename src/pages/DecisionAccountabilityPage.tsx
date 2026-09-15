@@ -35,6 +35,10 @@ import { useDismissOnBack } from '../hooks/useDismissOnBack'
 import { DATE_PRESET_BUTTONS, activePresetFor, customRange, presetRange, type DatePreset } from '../lib/outcomes/date-presets'
 import { OutcomesRangeControl } from '../components/mobile/OutcomesRangeControl'
 import { OutcomesReviewStatusCard } from '../components/mobile/OutcomesReviewStatusCard'
+import { MobileBatchList, MobileBatchView } from '../components/mobile/MobileBatchList'
+import { DecisionsViewControls, type DecisionsView } from '../components/outcomes/DecisionsViewControls'
+import { DesktopBatchRows } from '../components/outcomes/DesktopBatchRows'
+import { groupByBatch, rowMatchesSearch } from '../lib/outcomes/batch-groups'
 import { MobileDecisionLedger } from '../components/mobile/MobileDecisionLedger'
 import {
   useDecisionAccountability,
@@ -120,6 +124,8 @@ interface PersistedOutcomesState {
   sortBy: string
   sortDesc: boolean
   filters: Partial<AccountabilityFilters>
+  /** Batches | Trades as last chosen; absent = the device default. */
+  decisionsView?: DecisionsView | null
 }
 function outcomesStateKey(userId: string | undefined, orgId: string | null) {
   return `outcomes_page_state_${userId || 'anon'}_${orgId || 'no-org'}`
@@ -3240,6 +3246,14 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
   const [ownerFilter, setOwnerFilter] = useState<string | null>(() => persisted?.ownerFilter ?? null)
   const [sortBy, setSortBy] = useState<string>(() => persisted?.sortBy ?? 'date')
   const [sortDesc, setSortDesc] = useState(() => persisted?.sortDesc ?? true)
+  // Batches | Trades. null = this device's default (phone Batches, desktop
+  // Trades), resolved where the viewport is known below.
+  const [decisionsViewChoice, setDecisionsViewChoice] = useState<DecisionsView | null>(() => persisted?.decisionsView ?? null)
+  // Transient, like the selected decision: an ordinary return lands unsearched
+  // on the batch list, not inside a batch.
+  const [decisionSearch, setDecisionSearch] = useState('')
+  const [openBatchId, setOpenBatchId] = useState<string | null>(null)
+  const [openBatchShowAll, setOpenBatchShowAll] = useState(false)
 
   /* Declared above the writer that reads it, so the guard against persisting a
      focused view is never evaluating a binding defined further down. */
@@ -3274,12 +3288,14 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
       sortBy,
       sortDesc,
       filters,
+      decisionsView: decisionsViewChoice,
     })
   }, [
     pilotBannerUser?.id, pilotBannerOrgId,
     activeTab, selectedPortfolioId, activeChipKey,
     typeFilter, tickerSearch, nameSearch, portfolioFilter,
     issueSearch, actionFilter, ownerFilter, sortBy, sortDesc, filters,
+    decisionsViewChoice,
   ])
 
   /*
@@ -3484,6 +3500,21 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
     [sortedRows, selectedId],
   )
 
+  // One search, both views: Trades by ticker / company / batch name; Batches
+  // by batch name, or by a trade inside the batch (lib/outcomes/batch-groups).
+  const searchedTrades = useMemo(
+    () => (decisionSearch.trim() ? displayRows.filter(({ row }) => rowMatchesSearch(row, decisionSearch)) : displayRows),
+    [displayRows, decisionSearch],
+  )
+  const batchGrouping = useMemo(() => groupByBatch(displayRows, decisionSearch), [displayRows, decisionSearch])
+  const openBatch = openBatchId ? batchGrouping.groups.find(g => g.batch.id === openBatchId) ?? null : null
+  const selectTrade = (row: AccountabilityRow) => {
+    setSelectedId(row.decision_id === selectedId ? null : row.decision_id)
+    // Tick step 1 of the pilot Outcomes Get Started banner — selecting a
+    // decision counts as inspecting the result.
+    try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
+  }
+
   // Prefetch chart + reflection data for the top visible rows so
   // clicking a row paints with warm cache. Without this, the user
   // hits a 1-2s cold-start (Yahoo Finance for price history, plus
@@ -3649,6 +3680,10 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
   // Phone: the detail is a full-screen layer over the list, so Back closes it
   // and leaves the reader on Outcomes rather than taking them out of the app.
   useDismissOnBack(isMobileViewport && !!selectedRow, () => setSelectedId(null), { enabled: isMobileViewport })
+  const decisionsView: DecisionsView = decisionsViewChoice ?? (isMobileViewport ? 'batches' : 'trades')
+  // An opened batch is a level of the list: Back returns to the batches.
+  useDismissOnBack(isMobileViewport && decisionsView === 'batches' && !!openBatch, () => setOpenBatchId(null), { enabled: isMobileViewport })
+  const openBatchOnPhone = (batchId: string) => { setOpenBatchId(batchId); setOpenBatchShowAll(false) }
 
   // Unique values for dropdown filters
   const uniquePortfolios = useMemo(() => [...new Set(rows.map(r => r.portfolio_name).filter(Boolean))].sort() as string[], [rows])
@@ -3700,7 +3735,17 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-            {activeTab === 'decisions' && <OutcomesRangeControl filters={filters} onChange={setFilters} />}
+            {activeTab === 'decisions' && (
+              <>
+                <DecisionsViewControls
+                  view={decisionsView}
+                  onViewChange={(v) => { setDecisionsViewChoice(v); setOpenBatchId(null) }}
+                  query={decisionSearch}
+                  onQueryChange={setDecisionSearch}
+                />
+                <OutcomesRangeControl filters={filters} onChange={setFilters} />
+              </>
+            )}
           </div>
         ) : (
         <>
@@ -3748,6 +3793,18 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
               ))}
             </select>
           </div>
+
+          {activeTab === 'decisions' && (
+            <div className="min-w-0 sm:ml-2">
+              <DecisionsViewControls
+                compact
+                view={decisionsView}
+                onViewChange={setDecisionsViewChoice}
+                query={decisionSearch}
+                onQueryChange={setDecisionSearch}
+              />
+            </div>
+          )}
 
           <div className="hidden sm:block flex-1" />
         </div>
@@ -3873,29 +3930,59 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
                   /* The desktop row is a twelve-track pixel grid over 1000px
                      wide; it does not compress, it overflows. */
                   <div className="px-3 pt-2 pb-6 space-y-2">
-                    {processHealth.counts.total > 0 && <OutcomesReviewStatusCard health={processHealth} />}
-                    <MobileDecisionLedger
-                      items={displayRows}
-                      selectedId={selectedId}
-                      onSelect={(row) => {
-                        setSelectedId(row.decision_id === selectedId ? null : row.decision_id)
-                        try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
-                      }}
-                    />
+                    {decisionsView === 'batches' && openBatch ? (
+                      <MobileBatchView
+                        group={openBatch}
+                        showAll={openBatchShowAll}
+                        onShowAll={() => setOpenBatchShowAll(true)}
+                        onBack={() => setOpenBatchId(null)}
+                        selectedId={selectedId}
+                        onSelectTrade={selectTrade}
+                      />
+                    ) : (
+                      <>
+                        {processHealth.counts.total > 0 && <OutcomesReviewStatusCard health={processHealth} />}
+                        {decisionsView === 'batches' ? (
+                          <MobileBatchList
+                            groups={batchGrouping.groups}
+                            standalone={batchGrouping.standalone}
+                            searching={!!decisionSearch.trim()}
+                            onOpenBatch={openBatchOnPhone}
+                            selectedId={selectedId}
+                            onSelectTrade={selectTrade}
+                          />
+                        ) : (
+                          <MobileDecisionLedger items={searchedTrades} selectedId={selectedId} onSelect={selectTrade} showBatch />
+                        )}
+                      </>
+                    )}
                   </div>
+                ) : decisionsView === 'batches' ? (
+                  <DesktopBatchRows
+                    groups={batchGrouping.groups}
+                    standalone={batchGrouping.standalone}
+                    searching={!!decisionSearch.trim()}
+                    renderRow={({ row, intel }) => (
+                      <DecisionRow
+                        row={row}
+                        intel={intel}
+                        isSelected={row.decision_id === selectedId}
+                        onSelect={() => selectTrade(row)}
+                        gridClass={MAIN_GRID}
+                        showPortfolio={!selectedPortfolioId}
+                      />
+                    )}
+                  />
+                ) : searchedTrades.length === 0 ? (
+                  <div className="flex items-center justify-center h-32 text-[12px] text-gray-400">No batch, ticker or company matches.</div>
                 ) : (
-                  displayRows.map(({ row, intel }) => (
+                  searchedTrades.map(({ row, intel }) => (
                     <DecisionRow
                       key={row.decision_id}
                       row={row}
                       intel={intel}
                       isSelected={row.decision_id === selectedId}
-                      onSelect={() => {
-                        setSelectedId(row.decision_id === selectedId ? null : row.decision_id)
-                        // Tick step 1 of the pilot Outcomes Get Started banner —
-                        // selecting a decision row counts as inspecting the result.
-                        try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
-                      }}
+                      onSelect={() => selectTrade(row)}
                       gridClass={MAIN_GRID}
                       showPortfolio={!selectedPortfolioId}
                     />

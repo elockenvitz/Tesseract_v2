@@ -28,6 +28,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { subDays, differenceInDays, parseISO } from 'date-fns'
+import { batchesByDecision } from '../lib/outcomes/batch-groups'
 import type {
   AccountabilityRow,
   AccountabilityFilters,
@@ -286,6 +287,9 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         acceptedTrades?: Array<{
           id: string; trade_queue_item_id: string; acceptance_note: string | null
           note_count: number | string; latest_note: string | null
+          /** Present once the payload carries batch fields; see the
+           *  outcomes_payload batch migration. */
+          batch_id?: string | null; batch_name?: string | null; batch_created_at?: string | null
         }>
       }
     },
@@ -865,8 +869,14 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       }
     })
 
-    return [...decisionRows, ...discretionaryRows, ...passedRows]
-  }, [decisionData, eventData, passedData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data, acceptedTradesQuery.data])
+    // The batch(es) each decision was committed in. Only decision rows can
+    // have one: discretionary rows are trade events and passed rows never
+    // became trades.
+    const batchMap = batchesByDecision(outcomesPayloadQuery.data?.acceptedTrades ?? [])
+    const withBatches = decisionRows.map(r => ({ ...r, batches: batchMap.get(r.decision_id) ?? [] }))
+
+    return [...withBatches, ...discretionaryRows, ...passedRows]
+  }, [decisionData, eventData, passedData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data, acceptedTradesQuery.data, outcomesPayloadQuery.data?.acceptedTrades])
 
   // ── Step 7: Apply client-side filters ─────────────────────────
   const filteredRows = useMemo(() => {

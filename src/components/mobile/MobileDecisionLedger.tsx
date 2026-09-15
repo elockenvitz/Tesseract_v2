@@ -1,6 +1,7 @@
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
-import { ChevronRight, Target } from 'lucide-react'
+import { ChevronRight, Layers, Target } from 'lucide-react'
+import { batchLabel } from '../../lib/outcomes/batch-groups'
 import type { AccountabilityRow } from '../../types/decision-accountability'
 import { VERDICT_DISPLAY, type DecisionIntelligence } from '../../lib/decision-intelligence'
 
@@ -8,6 +9,9 @@ interface MobileDecisionLedgerProps {
   items: Array<{ row: AccountabilityRow; intel: DecisionIntelligence }>
   selectedId: string | null
   onSelect: (row: AccountabilityRow) => void
+  /** Trades view: name the batch each trade was committed in. Off inside an
+   *  opened batch, where it would only repeat the heading. */
+  showBatch?: boolean
 }
 
 const ACTION: Record<string, { label: string; tone: string }> = {
@@ -51,7 +55,7 @@ function cardReturn(intel: DecisionIntelligence): string | null {
  * direction. The "no decision price" footnote is gone from the card: it is a
  * data-quality caveat for the detail, not something to scan past on every row.
  */
-export function MobileDecisionLedger({ items, selectedId, onSelect }: MobileDecisionLedgerProps) {
+export function MobileDecisionLedger({ items, selectedId, onSelect, showBatch = false }: MobileDecisionLedgerProps) {
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-16 px-4 text-gray-400">
@@ -99,6 +103,14 @@ export function MobileDecisionLedger({ items, selectedId, onSelect }: MobileDeci
                 </div>
                 {meta && (
                   <p data-slot="card-meta" className="mt-1 truncate text-[13px] text-gray-500 dark:text-gray-400">{meta}</p>
+                )}
+                {showBatch && (row.batches?.length ?? 0) > 0 && (
+                  <p data-slot="card-batch" className="mt-0.5 flex items-center gap-1 truncate text-[12px] text-gray-500 dark:text-gray-400">
+                    <Layers aria-hidden className="h-3 w-3 shrink-0" />
+                    <span className="truncate">
+                      {row.batches!.length === 1 ? batchLabel(row.batches![0]) : `In ${row.batches!.length} batches`}
+                    </span>
+                  </p>
                 )}
                 <span
                   data-slot="card-status"
