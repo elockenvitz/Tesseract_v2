@@ -211,6 +211,7 @@ function BatchCard({
   needsRationale,
   isSelected,
   onSelect,
+  onAddRationale,
 }: {
   batch: TradeBatch
   stats: { count: number; notional: number }
@@ -219,6 +220,8 @@ function BatchCard({
   needsRationale: boolean
   isSelected: boolean
   onSelect: () => void
+  /** Phone only: the rationale nudge opens the batch at its editor. */
+  onAddRationale?: () => void
 }) {
   const statusPill = batchStatusPill(phaseCounts)
   const isCancelledBatch = batch.status === 'cancelled'
@@ -235,7 +238,15 @@ function BatchCard({
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={(e) => {
+        // The nudge sits inside the card's one button (a nested button is not
+        // valid), so its tap is told apart by target rather than by element.
+        if (onAddRationale && (e.target as HTMLElement).closest?.('[data-slot="batch-card-add-rationale"]')) {
+          onAddRationale()
+        } else {
+          onSelect()
+        }
+      }}
       className={clsx(
         'w-full text-left rounded-lg border transition-all px-3 py-2.5',
         isCancelledBatch && 'opacity-60',
@@ -318,7 +329,7 @@ function BatchCard({
           is broken. Shown when the batch has no description AND no trade
           inside it has an acceptance_note. */}
       {needsRationale && (
-        <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+        <div data-slot="batch-card-add-rationale" className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">
           <Pencil className="w-3 h-3" />
           <span>Add rationale to explain this decision</span>
         </div>
@@ -421,10 +432,13 @@ function BatchTradesList({
   trades,
   batchDescription,
   onAddComment,
+  collapseSignal = 0,
 }: {
   trades: AcceptedTradeWithJoins[]
   batchDescription: string | null
   onAddComment?: (tradeId: string, content: string) => void
+  /** Each increment shuts any opened phone trade card. */
+  collapseSignal?: number
 }) {
   // Group trades by side — buys (buy, add) first, then sells (everything
   // else). A batch's buys and sells are meaningfully different: they're
@@ -466,6 +480,7 @@ function BatchTradesList({
             trades={buyTrades}
             batchDescription={batchDescription}
             onAddComment={onAddComment}
+            collapseSignal={collapseSignal}
           />
         )}
         {sellTrades.length > 0 && (
@@ -475,6 +490,7 @@ function BatchTradesList({
             trades={sellTrades}
             batchDescription={batchDescription}
             onAddComment={onAddComment}
+            collapseSignal={collapseSignal}
           />
         )}
       </div>
@@ -534,12 +550,14 @@ function MobileTradeGroup({
   trades,
   batchDescription,
   onAddComment,
+  collapseSignal,
 }: {
   label: string
   accent: 'emerald' | 'red'
   trades: AcceptedTradeWithJoins[]
   batchDescription: string | null
   onAddComment?: (tradeId: string, content: string) => void
+  collapseSignal: number
 }) {
   return (
     <section>
@@ -561,6 +579,7 @@ function MobileTradeGroup({
             trade={t}
             batchDescription={batchDescription}
             onAddComment={onAddComment}
+            collapseSignal={collapseSignal}
           />
         ))}
       </div>
@@ -573,12 +592,15 @@ function MobileTradeCard({
   trade,
   batchDescription,
   onAddComment,
+  collapseSignal,
 }: {
   trade: AcceptedTradeWithJoins
   batchDescription: string | null
   onAddComment?: (tradeId: string, content: string) => void
+  collapseSignal: number
 }) {
   const [expanded, setExpanded] = useState(false)
+  React.useEffect(() => { if (collapseSignal > 0) setExpanded(false) }, [collapseSignal])
   const result = tradeLifecyclePhase(trade as any)
   const meta = PHASE_META[result.phase]
   const hasNote = !!(trade.acceptance_note && trade.acceptance_note.trim())
@@ -658,6 +680,7 @@ function MobileTradeCard({
             acceptanceNote={trade.acceptance_note}
             batchDescription={batchDescription}
             onAddComment={onAddComment}
+            startCollapsed
           />
         </div>
       )}
@@ -957,12 +980,17 @@ function BatchDetailPanel({
   onViewInTradesView,
   onAddComment,
   guide,
+  openRationaleOnArrival = false,
+  onRationaleArrivalHandled,
 }: {
   batch: TradeBatch
   trades: AcceptedTradeWithJoins[]
   onViewInTradesView: () => void
   onAddComment?: (tradeId: string, content: string) => void
   guide?: TradeBookGuide
+  /** Phone: opened from the list card's rationale nudge. */
+  openRationaleOnArrival?: boolean
+  onRationaleArrivalHandled?: () => void
 }) {
   /*
    * Phone: summary, then the trades, then "Why this decision?" — the order a
@@ -973,7 +1001,56 @@ function BatchDetailPanel({
    */
   const isMobile = useIsMobile()
   const showGuide = isMobile && !!guide
-  const { openOutcomes } = usePilotTradeBookSteps(guide?.userId, guide?.orgId)
+  const { openOutcomes, done: stepsDone } = usePilotTradeBookSteps(guide?.userId, guide?.orgId)
+
+  /*
+   * Phone: take the reader to "Why this decision?".
+   *
+   * Reviewing a trade opens its card, and the opened card used to leave the
+   * optional per-trade notes in front of the reader while the batch's required
+   * answer sat below it. Moving on shuts the opened trade, scrolls the answer
+   * into view, and opens its editor when it is still empty (the editor focuses
+   * its own field; otherwise the section takes focus).
+   */
+  const rationaleRef = React.useRef<HTMLElement>(null)
+  const [tradesCollapseSignal, setTradesCollapseSignal] = useState(0)
+  const [rationaleRequest, setRationaleRequest] = useState(0)
+  const goToRationale = React.useCallback(() => {
+    setTradesCollapseSignal(n => n + 1)
+    setRationaleRequest(n => n + 1)
+  }, [])
+  React.useEffect(() => {
+    if (rationaleRequest === 0) return
+    const frame = requestAnimationFrame(() => {
+      const el = rationaleRef.current
+      if (!el) return
+      el.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+      if (!el.contains(document.activeElement)) el.focus?.({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [rationaleRequest])
+
+  // Step 1 completing is the act of reviewing a trade while step 1 is still
+  // open. Only during the tutorial, and never once step 2 is already done.
+  const stepsRef = React.useRef(stepsDone)
+  stepsRef.current = stepsDone
+  React.useEffect(() => {
+    if (!showGuide) return
+    const onReviewed = () => {
+      if (stepsRef.current.reviewed || stepsRef.current.rationale) return
+      queueMicrotask(goToRationale)
+    }
+    window.addEventListener('pilot-tradebook:trade-reviewed', onReviewed)
+    return () => window.removeEventListener('pilot-tradebook:trade-reviewed', onReviewed)
+  }, [showGuide, goToRationale])
+
+  // Arrived from the list card's "Add rationale to explain this decision".
+  React.useEffect(() => {
+    if (!openRationaleOnArrival) return
+    goToRationale()
+    onRationaleArrivalHandled?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRationaleOnArrival])
   // Derive "just committed" purely from batch.created_at. No prop
   // threading, no sticky flag — the continuity card appears for any
   // batch committed in the last JUST_COMMITTED_WINDOW_MS and quietly
@@ -1033,7 +1110,12 @@ function BatchDetailPanel({
      notes", optional. Two names for two scopes is what stops them reading as
      the same field asked twice. */
   const rationaleSection = (
-    <section data-slot="batch-rationale-section">
+    <section
+      ref={rationaleRef}
+      data-slot="batch-rationale-section"
+      tabIndex={isMobile ? -1 : undefined}
+      className={isMobile ? 'scroll-mt-3 outline-none' : undefined}
+    >
       {isMobile ? (
         <div className="mb-2">
           <h3 className="flex items-center gap-1.5 text-[15px] font-semibold text-gray-900 dark:text-white">
@@ -1049,7 +1131,7 @@ function BatchDetailPanel({
           <span className="normal-case tracking-normal font-normal text-gray-400 dark:text-gray-500">· applies to the whole batch</span>
         </div>
       )}
-      <BatchRationaleEditor batch={batch} />
+      <BatchRationaleEditor batch={batch} openRequest={isMobile ? rationaleRequest : 0} />
     </section>
   )
 
@@ -1069,6 +1151,7 @@ function BatchDetailPanel({
         trades={trades}
         batchDescription={batch.description}
         onAddComment={onAddComment}
+        collapseSignal={tradesCollapseSignal}
       />
     </section>
   )
@@ -1390,6 +1473,9 @@ export function BatchListView({
   // Debouncing isn't necessary — the batch list is in memory and the
   // filter pass is O(batches × tokens). Cleared via the in-input × icon.
   const [search, setSearch] = useState('')
+  // Phone: the batch whose list-card rationale nudge was tapped, until its
+  // detail has taken the reader to the editor.
+  const [rationaleArrivalId, setRationaleArrivalId] = useState<string | null>(null)
   const filteredBatches = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return batches
@@ -1529,6 +1615,10 @@ export function BatchListView({
                 needsRationale={needsRationale}
                 isSelected={selectedBatchId === batch.id}
                 onSelect={() => onSelectBatch(batch.id)}
+                onAddRationale={isMobileViewport ? () => {
+                  setRationaleArrivalId(batch.id)
+                  onSelectBatch(batch.id)
+                } : undefined}
               />
             )
           })}
@@ -1553,6 +1643,8 @@ export function BatchListView({
             onViewInTradesView={() => onViewBatchTrades(selectedBatch.id)}
             onAddComment={onAddComment}
             guide={guide}
+            openRationaleOnArrival={rationaleArrivalId === selectedBatch.id}
+            onRationaleArrivalHandled={() => setRationaleArrivalId(null)}
           />
         </div>
       ) : (
@@ -1679,7 +1771,14 @@ function BatchNameEditor({
 // the trade-batches query so every surface picks up the new text.
 // ---------------------------------------------------------------------------
 
-export function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
+export function BatchRationaleEditor({
+  batch,
+  openRequest = 0,
+}: {
+  batch: TradeBatch
+  /** Each increment opens the editor, when there is no rationale yet. */
+  openRequest?: number
+}) {
   const queryClient = useQueryClient()
   // Phones get their own composition of the same editor: same draft, same
   // mutation, same trade_batches.description. Desktop markup is unchanged.
@@ -1695,6 +1794,13 @@ export function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
     setDraft(existing)
     setEditing(false)
   }, [batch.id, existing])
+
+  // After the reset above, so a request that lands with a batch switch wins.
+  // An existing rationale stays as it reads, with its Edit control.
+  React.useEffect(() => {
+    if (openRequest > 0 && !existing) setEditing(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest])
 
   const saveM = useMutation({
     mutationFn: async (nextDescription: string) => {

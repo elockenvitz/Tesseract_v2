@@ -158,7 +158,11 @@ describe('the steps complete from the page', () => {
     render(<Page guide={guide()} onAddComment={onAddComment} />)
     fireEvent.click(document.querySelector('[data-slot="tradebook-mobile-trade"]')!)
     await flush()
+    // Step 1 moved the reader on; reopen the trade and its notes on purpose.
+    fireEvent.click(document.querySelector('[data-slot="tradebook-mobile-trade"]')!)
+    await flush()
     expect(screen.getByText('Optional · only for this trade')).toBeTruthy()
+    fireEvent.click(slot('trade-rationale-toggle')!)
     fireEvent.change(screen.getByLabelText('Add a trade-specific note'), { target: { value: 'Guidance raised.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add note' }))
     await flush()
@@ -170,7 +174,7 @@ describe('the steps complete from the page', () => {
     render(<Page guide={guide()} />)
     fireEvent.click(document.querySelector('[data-slot="tradebook-mobile-trade"]')!)
     await flush()
-    fireEvent.click(screen.getByText('Explain why you made this decision'))
+    // Step 1 opened the editor itself.
     fireEvent.change(screen.getByLabelText('Why this decision?'), { target: { value: 'Adding on weakness ahead of the print.' } })
     fireEvent.click(screen.getByRole('button', { name: /Save rationale/ }))
     await flush()
@@ -195,6 +199,109 @@ describe('the steps complete from the page', () => {
     expect(slot('pilot-steps-banner')).toBeNull()
     expect(progressMark).toHaveBeenCalledWith('tradebook_basics_completed')
     window.removeEventListener('pilot-tradebook:opened-outcomes', opened)
+  })
+})
+
+describe('moving from step 1 to step 2 on a phone', () => {
+  const tradeCard = () => document.querySelector('[data-slot="tradebook-mobile-trade"]') as HTMLElement
+  const scrolled = vi.fn()
+  beforeEach(() => {
+    scrolled.mockReset()
+    Element.prototype.scrollIntoView = function (this: Element) { scrolled(this) } as never
+  })
+  const waitFrame = () => act(async () => { await new Promise(r => setTimeout(r, 40)) })
+
+  it('shuts the reviewed trade, opens Why this decision? and takes the reader there', async () => {
+    render(<Page guide={guide()} />)
+    fireEvent.click(tradeCard())
+    await flush()
+    await waitFrame()
+    expect(tradeCard().getAttribute('aria-expanded')).toBe('false')
+    expect(slot('trade-rationale-mobile')).toBeNull()
+    const editor = screen.getByLabelText('Why this decision?')
+    expect(slot('batch-rationale-section')!.contains(editor)).toBe(true)
+    expect(document.activeElement).toBe(editor)
+    expect(scrolled).toHaveBeenCalledWith(slot('batch-rationale-section'))
+  })
+
+  it('scrolls to an existing rationale without forcing it into edit', async () => {
+    const described = { ...(batch as object), description: 'Already explained.' } as never
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <BatchListView batches={[described]} trades={[trade]} selectedBatchId="b-1" onSelectBatch={vi.fn()} onViewBatchTrades={vi.fn()} onAddComment={vi.fn()} guide={guide()} />
+      </QueryClientProvider>,
+    )
+    fireEvent.click(tradeCard())
+    await flush()
+    await waitFrame()
+    expect(slot('batch-rationale-editor-mobile')).toBeNull()
+    expect(slot('batch-rationale-saved-mobile')).not.toBeNull()
+    expect(scrolled).toHaveBeenCalledWith(slot('batch-rationale-section'))
+    expect(document.activeElement).toBe(slot('batch-rationale-section'))
+  })
+
+  it('does not move the reader once step 1 is already done', async () => {
+    localStorage.setItem('pilot_tradebook_intro_reviewed_u1_o1', '1')
+    render(<Page guide={guide()} />)
+    fireEvent.click(tradeCard())
+    await flush()
+    await waitFrame()
+    expect(tradeCard().getAttribute('aria-expanded')).toBe('true')
+    expect(slot('batch-rationale-editor-mobile')).toBeNull()
+    expect(scrolled).not.toHaveBeenCalled()
+  })
+
+  it('does not move the reader outside the tutorial', async () => {
+    render(<Page initialSelection="b-1" />)
+    fireEvent.click(tradeCard())
+    await flush()
+    await waitFrame()
+    expect(tradeCard().getAttribute('aria-expanded')).toBe('true')
+    expect(slot('batch-rationale-editor-mobile')).toBeNull()
+  })
+
+  it('keeps an opened trade’s notes shut, labelled optional, until asked for', async () => {
+    localStorage.setItem('pilot_tradebook_intro_reviewed_u1_o1', '1')
+    render(<Page guide={guide()} />)
+    fireEvent.click(tradeCard())
+    await flush()
+    const toggle = slot('trade-rationale-toggle')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle.textContent).toContain('Trade-specific notes')
+    expect(toggle.textContent).toContain('Optional · only for this trade')
+    expect(screen.queryByLabelText('Add a trade-specific note')).toBeNull()
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByLabelText('Add a trade-specific note')).toBeTruthy()
+  })
+})
+
+describe('the batch list card’s rationale nudge', () => {
+  it('on a phone opens that batch at Why this decision?, editor open', async () => {
+    Element.prototype.scrollIntoView = vi.fn() as never
+    render(<Page />)
+    fireEvent.click(slot('batch-card-add-rationale')!)
+    await flush()
+    expect(screen.getByRole('button', { name: /All batches/ })).toBeTruthy()
+    const editor = screen.getByLabelText('Why this decision?')
+    expect(slot('batch-rationale-section')!.contains(editor)).toBe(true)
+  })
+
+  it('elsewhere on the card just opens the batch', async () => {
+    render(<Page />)
+    fireEvent.click(screen.getByText('1 buy · 09/14/2026'))
+    await flush()
+    expect(screen.getByRole('button', { name: /All batches/ })).toBeTruthy()
+    expect(slot('batch-rationale-editor-mobile')).toBeNull()
+  })
+
+  it('on desktop selects the batch without opening the editor', async () => {
+    setViewport(1440)
+    render(<Page />)
+    fireEvent.click(slot('batch-card-add-rationale')!)
+    await flush()
+    expect(screen.queryByLabelText('Why this decision?')).toBeNull()
+    expect(screen.getByText('Explain why you made this decision')).toBeTruthy()
   })
 })
 

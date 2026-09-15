@@ -8,6 +8,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import {
+  ChevronDown,
   ChevronRight,
   MessageSquare,
   Undo2,
@@ -255,15 +256,23 @@ export function TradeRationaleLog({
   acceptanceNote,
   batchDescription,
   onAddComment,
+  startCollapsed = false,
 }: {
   tradeId: string
   acceptanceNote: string | null | undefined
   batchDescription?: string | null
   onAddComment?: (tradeId: string, content: string) => void
+  /**
+   * Phone only: start with the notes shut behind their header. The batch view
+   * sets it so an opened trade does not put an optional per-trade form in
+   * front of the batch's required "Why this decision?". Desktop ignores it.
+   */
+  startCollapsed?: boolean
 }) {
   const { data: additions = [] } = useAcceptedTradeComments(tradeId)
   const [draft, setDraft] = useState('')
   const isMobile = useIsMobile()
+  const [notesOpen, setNotesOpen] = useState(!startCollapsed)
 
   const initial = (acceptanceNote || '').trim()
   const batchDesc = (batchDescription || '').trim()
@@ -294,11 +303,33 @@ export function TradeRationaleLog({
         {/* "Trade-specific notes", not "Trade rationale": the batch already has
             the one rationale — "Why this decision?" — and this is the per-trade
             log beside it. The line under the title says so. */}
-        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60">
-          <div className="text-[13px] font-semibold text-gray-900 dark:text-white">Trade-specific notes</div>
-          <div className="text-[11px] text-gray-500 dark:text-gray-400">Optional · only for this trade</div>
-        </div>
+        {startCollapsed ? (
+          <button
+            type="button"
+            data-slot="trade-rationale-toggle"
+            onClick={() => setNotesOpen(v => !v)}
+            aria-expanded={notesOpen}
+            className={clsx(
+              'w-full flex items-center gap-2 px-3 py-2 text-left no-touch-target',
+              notesOpen && 'border-b border-gray-100 dark:border-gray-700/60',
+            )}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold text-gray-900 dark:text-white">Trade-specific notes</span>
+              <span className="block text-[11px] text-gray-500 dark:text-gray-400">Optional · only for this trade</span>
+            </span>
+            {notesOpen
+              ? <ChevronDown className="w-4 h-4 shrink-0 text-gray-400" />
+              : <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />}
+          </button>
+        ) : (
+          <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60">
+            <div className="text-[13px] font-semibold text-gray-900 dark:text-white">Trade-specific notes</div>
+            <div className="text-[11px] text-gray-500 dark:text-gray-400">Optional · only for this trade</div>
+          </div>
+        )}
 
+        {notesOpen && (<>
         <div className="p-3 space-y-3">
           <div data-slot="trade-rationale-initial" className="rounded-lg border-l-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/50 px-3 py-2">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -354,6 +385,7 @@ export function TradeRationaleLog({
             />
           </div>
         )}
+        </>)}
       </div>
     )
   }
