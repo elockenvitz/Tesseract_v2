@@ -478,7 +478,7 @@ export function DecisionConfirmationModal({
                 >
                   <FileText className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {isMulti ? 'Per-trade context' : 'What was captured'}
+                    {isMulti ? 'Per-trade context' : 'Decision context'}
                   </span>
                   <span className="ml-auto shrink-0 text-gray-400">
                     {capturedOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -562,9 +562,14 @@ export function DecisionConfirmationModal({
             <div className={clsx('text-center', isMobile ? 'mt-1 mb-1' : 'mt-2.5')}>
               <button
                 onClick={handleStay}
+                data-slot="decision-stay-in-trade-lab"
                 className={clsx(
-                  'inline-flex items-center gap-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors',
-                  isMobile ? 'text-[13px] py-1.5 px-3 no-touch-target' : 'text-[12px]',
+                  'inline-flex items-center gap-1 transition-colors',
+                  /* gray-400 on white read as disabled on a phone. Still text
+                     only and below the primary — just legible as a control. */
+                  isMobile
+                    ? 'text-[13px] font-medium py-1.5 px-3 no-touch-target text-gray-600 dark:text-gray-300 underline decoration-gray-300 dark:decoration-gray-600 underline-offset-4 active:text-gray-900 dark:active:text-white'
+                    : 'text-[12px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300',
                 )}
               >
                 Stay in Trade Lab
