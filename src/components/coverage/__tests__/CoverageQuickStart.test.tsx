@@ -159,6 +159,31 @@ describe('FirstSessionCoveragePrompt — when it renders', () => {
   })
 
   /**
+   * Reported after graduating: the pilot saved coverage on the setup screen,
+   * finished the mission, and the ideas feed — a different surface, mounted in
+   * the same page load — asked "What do you follow?" again. The setup screen's
+   * latched decision was reused by the feed's prompt.
+   */
+  it('does not ask again on the feed after coverage was saved on the pilot setup screen', async () => {
+    const user = userEvent.setup()
+    // The pilot setup screen: the only thing on screen, replaced by the mission.
+    const setup = renderWithQuery(<FirstSessionCoveragePrompt variant="sheet" dismissible={false} confirmOnSave={false} />)
+    await user.click(await screen.findByText('HOLD'))
+    await user.click(screen.getByRole('button', { name: /Follow 1 name/ }))
+    await waitFor(() => expect(addCalls).toEqual(['asset-hold']))
+    // Held on screen until the surface above replaces it — no blank frame.
+    expect(setup.container.querySelector('[data-slot="coverage-quick-start"]')).not.toBeNull()
+
+    // The mission replaces it; later the pilot graduates and the feed mounts
+    // its own prompt. Coverage exists.
+    setup.unmount()
+    coverageState.hasCoverage = true
+    const feed = renderWithQuery(<FirstSessionCoveragePrompt variant="sheet" />)
+    await new Promise(r => setTimeout(r, 20))
+    expect(feed.container.querySelector('[data-slot="coverage-quick-start"]')).toBeNull()
+  })
+
+  /**
    * Refresh after saving must not re-prompt. Simulated by the state the app
    * would be in on the next mount: rows exist.
    */

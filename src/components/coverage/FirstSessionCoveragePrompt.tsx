@@ -178,6 +178,17 @@ export function FirstSessionCoveragePrompt({
    */
   const show = session.show ?? (isLoading ? null : !hasCoverage)
 
+  /*
+   * A setup surface that has saved stays on screen until it is replaced.
+   *
+   * Where `confirmOnSave` is false — the pilot's setup screen — what follows a
+   * save is the surface above swapping this card for the mission. The session
+   * decision is set to "don't show" at that save (see `onSaved`), so the card
+   * keeps itself up with this until the swap, rather than blanking for the
+   * round trip before the coverage read lands.
+   */
+  const [heldAfterSave, setHeldAfterSave] = useState(false)
+
   // Read after mount rather than during render: localStorage throws in some
   // embedded contexts, and this renders inside the gallery harness too.
   useEffect(() => {
@@ -204,7 +215,7 @@ export function FirstSessionCoveragePrompt({
   // failure that makes onboarding feel like it is not paying attention.
   if (isLoading || show === null) return null
   if (dismissed) return null
-  if (!show) return null
+  if (!show && !heldAfterSave) return null
 
   return (
     <CoverageQuickStart
@@ -219,7 +230,25 @@ export function FirstSessionCoveragePrompt({
        * prop is what a replacement instance wakes up holding.
        */
       savedCount={session.savedCount ?? null}
-      onSaved={count => { if (decisionKey) patchSession(decisionKey, { savedCount: count }) }}
+      onSaved={count => {
+        if (!decisionKey) return
+        if (confirmOnSave) {
+          patchSession(decisionKey, { savedCount: count })
+          return
+        }
+        /*
+         * Saved on the setup surface: the question is answered for this session.
+         *
+         * The latched `show: true` from before the save used to stay in the
+         * store, so the NEXT surface to mount the prompt — the ideas feed, the
+         * moment a pilot graduates, in the same page load — reused it and asked
+         * "What do you follow?" of somebody who had just followed fifty names.
+         * The remount the latch exists for is the feed replacing its own
+         * confirming card, which is the branch above and is unchanged.
+         */
+        setHeldAfterSave(true)
+        patchSession(decisionKey, { savedCount: count, show: false })
+      }}
       onDismiss={!dismissible ? undefined : () => {
         try {
           localStorage.setItem(dismissKey(user.id, currentOrgId), '1')
