@@ -19,10 +19,11 @@ import {
 /** Why the reader was sent, preserved so the workspace can say it. */
 interface Arrival { issue?: string | null; origin?: string | null }
 import {
-  stateOf, whyItMatters, compareSubjects, issueFor,
+  stateOf, whyItMatters, compareSubjects, issueFor, withCoverageSubjects,
   subscribeToOpenResearch, STATE_LABEL, CORE_SECTIONS, SECTION_LABEL,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
+import { useCoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
 import {
   TileTimeline,
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileMeta,
@@ -31,8 +32,6 @@ import {
 } from '../desktop/DesktopTile'
 import type { FocusIntent } from '../../lib/dashboard/focus'
 import { ResearchDetail } from './ResearchDetail'
-import { CoverageGapQueue } from './CoverageGapQueue'
-import { useCoverageResearchGaps, type CoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
 import { openAsset } from '../../lib/desktop-asset'
 import {
   openDashboardFocus, type RailCard,
@@ -52,7 +51,9 @@ import type { SemanticTone } from '../../lib/semantic-tone'
  */
 const STATE_TONE: Record<string, SemanticTone> = {
   'evidence-since-review': 'review',
+  'moved-since-review': 'review',
   'no-thesis': 'review',
+  'incomplete-thesis': 'review',
   stale: 'review',
   thin: 'neutral',
   current: 'neutral',
@@ -90,23 +91,21 @@ export function ResearchWorkspace({
     if (selectedAssetId) setArrival({ issue, origin })
   }, [selectedAssetId, issue, origin])
 
-  const ranked = useMemo(() => subjects
+  const scanned = useMemo(() => subjects
     .map(s => ({ ...s, weightPct: exposure[s.assetId] }))
     .sort(compareSubjects), [subjects, exposure])
 
   /*
-   * The reader's coverage research gaps, as a queue after the research itself.
-   *
-   * Real research leads: a name that already has a tile above is not repeated
-   * in the queue, so the queue is the coverage work the scan above cannot show
-   * -- above all, covered names with nothing written. On a fresh account the
-   * scan is empty and the queue is the lens.
+   * The field: research on record, then work Tesseract can see on the reader's
+   * coverage filling whatever capacity that left (lib/desktop-research/
+   * coverage-subjects). Generated subjects are ordinary subjects from here on:
+   * same tile, same rail, same detail, same navigation.
    */
   const gaps = useCoverageResearchGaps()
-  const queued = useMemo(() => {
-    const onRecord = new Set(ranked.map(s => s.assetId))
-    return gaps.candidates.filter(c => !onRecord.has(c.assetId))
-  }, [gaps.candidates, ranked])
+  const ranked = useMemo(
+    () => withCoverageSubjects(scanned, gaps.candidates),
+    [scanned, gaps.candidates],
+  )
 
   /**
    * Selection lives in the deck, not here.
@@ -153,19 +152,10 @@ export function ResearchWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [ranked])
 
-  if (isLoading) return <Loading />
-  if (!ranked.length && !activeId) {
-    if (gaps.status === 'loading') return <Loading />
-    if (queued.length) {
-      return (
-        <div className="h-full overflow-y-auto" data-testid="research-lens">
-          <CoverageGapQueue candidates={queued} />
-        </div>
-      )
-    }
-    return <Empty gaps={gaps} />
-  }
-  if (!ranked.length) return <Empty gaps={gaps} />
+  // With nothing on record yet, wait for the coverage work rather than
+  // announcing an empty lens that is about to fill.
+  if (isLoading || (!scanned.length && gaps.status === 'loading')) return <Loading />
+  if (!ranked.length) return <Empty />
 
   if (activeId) {
     if (missing || !requested) {
@@ -211,7 +201,6 @@ export function ResearchWorkspace({
           />
         ))}
       </DesktopGallery>
-      <CoverageGapQueue candidates={queued} secondary />
     </div>
   )
 }
@@ -251,7 +240,21 @@ export function toRailCard(s: ResearchSubject): RailCard {
     }
   }
 
-  if (state === 'no-thesis') {
+  if (state === 'moved-since-review') {
+    const m = s.generated?.movePct
+    return {
+      id: s.assetId, workspaceLens: 'research', objectType: 'asset',
+      symbol: s.symbol, reason: STATE_LABEL[state], tone: STATE_TONE[state],
+      figure: m != null ? `${m >= 0 ? '+' : ''}${m.toFixed(1)}%` : null,
+      figureLabel: m != null ? 'since review' : null,
+      secondary: s.weightPct != null
+        ? { value: `${s.weightPct.toFixed(1)}%`, label: 'held' } : null,
+      detail: whyItMatters(s),
+      issue: issueFor(s),
+    }
+  }
+
+  if (state === 'no-thesis' || state === 'incomplete-thesis') {
     const missing = CORE_SECTIONS.filter(k => !s.coreSections.includes(k))
       .map(k => SECTION_LABEL[k] ?? k)
     return {
@@ -366,7 +369,7 @@ function SubjectTile({
             </TileMeta>
           </div>
         )
-      ) : state === 'no-thesis' ? (
+      ) : state === 'no-thesis' || state === 'incomplete-thesis' ? (
         /* The shape of what is missing, at whatever scale the card has. */
         <div className="flex min-w-0 flex-1 flex-col">
           <MissingThesis present={subject.coreSections} size={size} />
@@ -377,6 +380,22 @@ function SubjectTile({
                   {subject.weightPct.toFixed(1)}% held
                 </span>
               )}
+              <span>{subject.evidenceCount ? `${subject.evidenceCount} research on file` : 'Nothing on file yet'}</span>
+            </TileMeta>
+          </div>
+        </div>
+      ) : state === 'moved-since-review' ? (
+        /* The move is the finding: the figure leads, the case's age beneath. */
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TileLead
+            figure={`${(subject.generated?.movePct ?? 0) >= 0 ? '+' : ''}${(subject.generated?.movePct ?? 0).toFixed(1)}`}
+            unit="%"
+            label={<>since the thesis<br />was last reviewed</>}
+            tone="review"
+          />
+          <div className="mt-auto pt-3">
+            <TileMeta>
+              {subject.weightPct != null && <span>{subject.weightPct.toFixed(1)}% held</span>}
               <span>{subject.evidenceCount} research on file</span>
             </TileMeta>
           </div>
@@ -536,7 +555,7 @@ const ARRIVAL_ORIGIN: Record<string, string> = {
   today: 'Dashboard', portfolio: 'Portfolio', ideas: 'Ideas', decisions: 'Decisions',
 }
 
-function Empty({ gaps }: { gaps: CoverageResearchGaps }) {
+function Empty() {
   return (
     <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
       <h1 className="text-[21px] font-semibold tracking-tight">Research</h1>
@@ -544,15 +563,8 @@ function Empty({ gaps }: { gaps: CoverageResearchGaps }) {
         <BookOpen className="mx-auto h-7 w-7 text-gray-400" />
         <h2 className="mt-4 text-[17px] font-semibold">No recorded evidence yet</h2>
         <p className="mx-auto mt-1.5 max-w-[46ch] text-[12px] text-gray-600 dark:text-gray-400">
-          {gaps.status === 'ready' && gaps.coveredCount > 0
-            ? `Your ${gaps.coveredCount} covered name${gaps.coveredCount === 1 ? ' has' : 's have'} no open research gaps.`
-            : 'Names appear here once they have a thesis or a research note on file.'}
+          Names appear here once they have a thesis or a research note on file.
         </p>
-        {gaps.status === 'error' && (
-          <p data-testid="coverage-gap-error" className="mx-auto mt-3 max-w-[46ch] text-[12px] text-amber-700 dark:text-amber-500">
-            Your coverage could not be loaded, so research gaps on it are not shown.
-          </p>
-        )}
       </div>
     </div>
   )

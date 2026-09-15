@@ -296,7 +296,8 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // everything else keeps the sentence.
     expect(tile).toMatch(/state === 'evidence-since-review' \?/)
     expect(tile).toContain('<TileLead')
-    expect(tile).toMatch(/state === 'no-thesis' \?/)
+    // A thesis partly written is the same absence, drawn with what exists.
+    expect(tile).toMatch(/state === 'no-thesis' \|\| state === 'incomplete-thesis' \?/)
     // The missing structure, drawn: three named parts and what is behind each.
     expect(tile).toContain('<MissingThesis')
     // Never a completion score: the question is whether the case argues, not

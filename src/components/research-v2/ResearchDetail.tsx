@@ -105,7 +105,7 @@ export function ResearchDetail({
    * place that owns it. The primary action now takes the reader there, with
    * the reason intact.
    */
-  const authoring = state === 'no-thesis' || state === 'stale' || state === 'thin'
+  const authoring = state === 'no-thesis' || state === 'incomplete-thesis' || state === 'stale' || state === 'thin'
   const jump =
     state === 'evidence-since-review' ? (newEvidence.length ? 'new-since-review' : 'the-case')
     : 'the-case'

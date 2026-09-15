@@ -48,9 +48,8 @@ vi.mock('../../hooks/useDesktopResearch', () => ({
  */
 const thesisContainerFor: string[] = []
 /*
- * The coverage-gap queue has its own suite (research-v2/__tests__). Here the
- * source reports a reader with no gaps, so these cases stay about the
- * research scan they were written for.
+ * Coverage-generated subjects have their own suite (research-v2/__tests__).
+ * Here the reader has no coverage gaps, so these cases stay about the scan.
  */
 vi.mock('../../hooks/useCoverageResearchGaps', () => ({
   useCoverageResearchGaps: () => ({ status: 'ready', candidates: [], coveredCount: 0 }),

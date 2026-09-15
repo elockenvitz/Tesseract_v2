@@ -16,5 +16,10 @@ export {
   tierOf, scoreOf, compareSubjects,
 } from './model'
 
+export {
+  withCoverageSubjects, subjectFromCoverage, compareCoverageCandidates,
+  RESEARCH_FEED_CAPACITY, GENERATED_PER_STRUCTURAL_GAP,
+} from './coverage-subjects'
+
 export { openResearch, subscribeToOpenResearch, researchTabFor, OPEN_RESEARCH_EVENT } from './navigate'
 export type { OpenResearchRequest, ResearchFocus } from './navigate'

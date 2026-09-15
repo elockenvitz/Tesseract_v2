@@ -111,6 +111,22 @@ export interface ResearchSubject {
   /** Evidence created after `thesisUpdatedAt`. */
   newSinceReview: number
   weightPct?: number
+  /**
+   * Present only on a subject Tesseract generated from the reader's coverage
+   * (lib/desktop-research/coverage-subjects), never on one the scan read.
+   *
+   * The scan cannot see a covered name with nothing written, a thesis with a
+   * section missing, or a price move since review; the shared research rules
+   * can. A generated subject carries the rule's verdict so `stateOf` states it
+   * exactly, and renders through the same tile, rail and detail as any other.
+   */
+  generated?: {
+    source: 'coverage'
+    framing: 'new_evidence' | 'price_move' | 'no_case' | 'incomplete_case' | 'long_silence'
+    coverage: 'own' | 'assigned'
+    /** Signed move since the review anchor; `price_move` only. */
+    movePct: number | null
+  }
 }
 
 /**
@@ -122,14 +138,28 @@ export interface ResearchSubject {
  */
 export type ResearchState =
   | 'evidence-since-review'   // new material arrived after the case was written
-  | 'no-thesis'               // evidence exists, no case has been written
+  | 'moved-since-review'      // the price moved materially and the case has not (generated)
+  | 'no-thesis'               // no case has been written
+  | 'incomplete-thesis'       // part of the case is written (generated)
   | 'stale'                   // nothing new, but the case is old
   | 'thin'                    // a case with almost no evidence behind it
   | 'current'                 // reviewed recently, nothing outstanding
 
 const STALE_DAYS = 90
 
+/** A generated subject's framing, in this model's states. One to one. */
+const GENERATED_STATE: Record<NonNullable<ResearchSubject['generated']>['framing'], ResearchState> = {
+  new_evidence: 'evidence-since-review',
+  price_move: 'moved-since-review',
+  no_case: 'no-thesis',
+  incomplete_case: 'incomplete-thesis',
+  long_silence: 'stale',
+}
+
 export function stateOf(s: ResearchSubject): ResearchState {
+  // Generated subjects state the shared rule's verdict. Scan subjects keep the
+  // scan's own rule below, unchanged.
+  if (s.generated) return GENERATED_STATE[s.generated.framing]
   if (!s.thesisUpdatedAt) return s.evidenceCount > 0 ? 'no-thesis' : 'thin'
   if (s.newSinceReview > 0) return 'evidence-since-review'
   if ((s.daysSinceReview ?? 0) >= STALE_DAYS) return 'stale'
@@ -150,6 +180,8 @@ export const STATE_LABEL: Record<ResearchState, string> = {
   // Not "no research": supporting sections and notes may well exist. What is
   // missing is the thesis the review clock is measured from.
   'no-thesis': 'No thesis on file',
+  'moved-since-review': 'Moved since review',
+  'incomplete-thesis': 'Incomplete thesis',
   stale: 'Review due',
   thin: 'Thin evidence',
   current: 'Current',
@@ -174,8 +206,19 @@ export function whyItMatters(s: ResearchSubject, movePct?: number | null): strin
       if (s.evidenceCount) held.push(`${s.evidenceCount} research item${s.evidenceCount === 1 ? '' : 's'}`)
       const peripheral = s.sectionCount - s.coreSectionCount
       if (peripheral > 0) held.push(`${peripheral} supporting section${peripheral === 1 ? '' : 's'}`)
-      const have = held.length ? held.join(' and ') : 'material'
-      return `${have} on file for ${t}, but no thesis has been written.`
+      // Nothing at all on record: say that, rather than "material on file".
+      if (!held.length) return `No thesis has been written for ${t} yet.`
+      return `${held.join(' and ')} on file for ${t}, but no thesis has been written.`
+    }
+    case 'moved-since-review': {
+      const m = s.generated?.movePct ?? movePct
+      return m != null
+        ? `${t} has moved ${fmtPct(m)} since the thesis was last reviewed.`
+        : `${t} has moved materially since the thesis was last reviewed.`
+    }
+    case 'incomplete-thesis': {
+      const missing = CORE_SECTIONS.filter(k => !s.coreSections.includes(k)).map(k => SECTION_LABEL[k].toLowerCase())
+      return `The ${t} case is missing ${missing.join(' and ')}.`
     }
     case 'stale':
       return `Thesis last reviewed ${s.daysSinceReview} days ago`
@@ -213,6 +256,8 @@ export function primaryActionFor(s: ResearchSubject): string {
   switch (stateOf(s)) {
     case 'evidence-since-review': return 'Review new evidence'
     case 'no-thesis': return 'Write the case'
+    case 'moved-since-review': return 'Revisit the case'
+    case 'incomplete-thesis': return 'Finish the case'
     case 'stale': return 'Review thesis'
     case 'thin': return 'Add evidence'
     case 'current': return 'Read the case'
@@ -231,7 +276,13 @@ export function seedPromptFor(s: ResearchSubject): string {
     case 'evidence-since-review':
       return `${s.newSinceReview} research items arrived on ${t} after our case was last written. Summarise them against the existing view and say which most challenges it.`
     case 'no-thesis':
-      return `We hold research on ${t} but no written case. From the evidence on record, what would a defensible thesis claim, and what would it hinge on?`
+      return s.evidenceCount > 0
+        ? `We hold research on ${t} but no written case. From the evidence on record, what would a defensible thesis claim, and what would it hinge on?`
+        : `We cover ${t} but have written no case. What would a defensible thesis claim, where would we differ from consensus, and what would break it?`
+    case 'moved-since-review':
+      return `${t} has moved materially since our case was last reviewed. Which of its claims does the move test, and does the case still hold?`
+    case 'incomplete-thesis':
+      return `Our case for ${t} is only partly written. What belongs in the missing sections, and does writing them change the view?`
     case 'stale':
       return `Our case for ${t} has not been revisited in ${s.daysSinceReview} days. Which of its claims are most likely to be stale, and what would you check first?`
     case 'thin':
@@ -283,7 +334,9 @@ export function targetFor(s: ResearchSubject): EngagementTarget | null {
 export function tierOf(s: ResearchSubject): 0 | 1 | 2 | 3 {
   switch (stateOf(s)) {
     case 'evidence-since-review': return 0
+    case 'moved-since-review': return 0
     case 'no-thesis': return 1
+    case 'incomplete-thesis': return 2
     case 'stale': return 2
     default: return 3
   }
