@@ -21,7 +21,7 @@ import { clsx } from 'clsx'
 import { Briefcase, ChevronDown } from 'lucide-react'
 import {
   usePortfolioList, useBook, useBookFrames, usePositionDetail, useActiveWeights,
-  type ActiveWeight,
+  type BenchmarkComparison,
 } from '../../hooks/useDesktopPortfolio'
 import type { DayPerformance } from '../../hooks/useDayPerformance'
 import { ActiveWeights } from './ActiveWeights'
@@ -83,8 +83,8 @@ export function PortfolioWorkspace({
   const portfolio = portfolios.find(p => p.id === activeBookId) ?? null
   const { book, isLoading: bookLoading } = useBook(activeBookId)
   const { frames, pending: framesPending } = useBookFrames(book)
-  const active = useActiveWeights(book)
-  const day = useDayPerformance(book, active)
+  const benchmark = useActiveWeights(book)
+  const day = useDayPerformance(book, benchmark.rows)
 
   const rows = useMemo(() => {
     if (!book) return []
@@ -205,7 +205,7 @@ export function PortfolioWorkspace({
       <BookHeader
         portfolios={portfolios} portfolio={portfolio}
         book={book} rows={rows} onSelect={selectBook}
-        active={active}
+        benchmark={benchmark}
         day={day}
         onOpenAsset={id => {
           const r = rows.find(x => x.position.assetId === id)
@@ -284,10 +284,10 @@ export function toRailCard(r: { position: Position; frame: PositionFrame }): Rai
 /* ------------------------------------------------------------------ header */
 
 function BookHeader({
-  portfolios, portfolio, book, rows, onSelect, active, day, onOpenAsset,
+  portfolios, portfolio, book, rows, onSelect, benchmark, day, onOpenAsset,
 }: {
-  /** The book's decisions against its index, and how to open one. */
-  active: ActiveWeight[]
+  /** The book's decisions against its index -- or why there are none -- and how to open one. */
+  benchmark: BenchmarkComparison
   /** The last close, against the index, and what drove it. */
   day: DayPerformance | null
   onOpenAsset: (assetId: string) => void
@@ -434,7 +434,7 @@ function BookHeader({
           instead of letting the other move into it.
         */}
         <div className="min-w-0 xl:col-start-1"><DayPanel day={day} onOpen={onOpenAsset} /></div>
-        <div className="min-w-0 xl:col-start-2"><ActiveWeights rows={active} onOpen={onOpenAsset} /></div>
+        <div className="min-w-0 xl:col-start-2"><ActiveWeights comparison={benchmark} onOpen={onOpenAsset} /></div>
       </div>
 
       {/*

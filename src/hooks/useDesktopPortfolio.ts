@@ -28,6 +28,10 @@ import { selectCurrentLadders, type TargetRow } from '../lib/signals/current-lad
 import { CORE_SECTIONS } from '../lib/desktop-research'
 import { EMPTY_FRAME, type PositionFrame } from '../lib/desktop-portfolio/model'
 import { latestBenchmarkRows } from '../lib/holdings/latest-benchmark'
+import {
+  benchmarkFileFrom, compareToBenchmark, UNHELD_MIN_PCT,
+  type BenchmarkComparison, type BenchmarkFile,
+} from '../lib/desktop-portfolio/benchmark'
 
 const DAY = 86_400_000
 const daysSince = (iso: string | null) =>
@@ -322,22 +326,20 @@ export function usePositionDetail(position: Position | null) {
  * with the name's own move it is the contribution that decision has produced.
  * All three come from data already on the page.
  */
-export interface ActiveWeight {
-  assetId: string
-  symbol: string | null
-  companyName: string | null
-  /** The book's weight. */
-  weightPct: number
-  /** The index's weight, zero where the name is not in it. */
-  benchPct: number
-  /** Book minus index. The decision. */
-  activePct: number
-}
+export type { ActiveWeight, BenchmarkComparison } from '../lib/desktop-portfolio/benchmark'
 
-export function useActiveWeights(book: Book | null) {
+/**
+ * Active weights, with the state of the benchmark they are measured against.
+ *
+ * `rows` is non-empty only in state `ready`. A book with no benchmark file, or
+ * a read that failed, comes back as `none` / `unavailable` with no rows, so
+ * nothing downstream can compute an active share against an assumed-zero index
+ * (lib/desktop-portfolio/benchmark).
+ */
+export function useActiveWeights(book: Book | null): BenchmarkComparison {
   const portfolioId = book?.portfolioId ?? null
 
-  const { data } = useQuery<Record<string, number>>({
+  const { data, isError } = useQuery<BenchmarkFile>({
     queryKey: ['desktop-portfolio', 'benchmark', portfolioId],
     enabled: !!portfolioId,
     staleTime: 5 * 60_000,
@@ -353,12 +355,12 @@ export function useActiveWeights(book: Book | null) {
         .eq('portfolio_id', portfolioId as string)
       if (error) throw new Error(error.message)
       const rows = latestBenchmarkRows((data ?? []) as never[]) as unknown as
-        { asset_id: string; weight: number | null }[]
-      const out: Record<string, number> = {}
-      for (const r of rows) if (r.asset_id) out[r.asset_id] = Number(r.weight ?? 0)
-      return out
+        { asset_id: string | null; weight: unknown }[]
+      return benchmarkFileFrom(rows)
     },
   })
+
+  const weights = !isError && data?.kind === 'loaded' ? data.weights : null
 
   /*
    * Names the index holds and the book does not have no row in `positions`,
@@ -367,13 +369,13 @@ export function useActiveWeights(book: Book | null) {
    * held" with no way to tell which name is meant.
    */
   const unheld = useMemo(() => {
-    if (!book || !data) return []
+    if (!book || !weights) return []
     const held = new Set(book.positions.map(p => p.assetId))
-    return Object.entries(data)
-      .filter(([id, w]) => !held.has(id) && w >= 0.25)
+    return Object.entries(weights)
+      .filter(([id, w]) => !held.has(id) && w >= UNHELD_MIN_PCT)
       .map(([id]) => id)
       .sort()
-  }, [book, data])
+  }, [book, weights])
 
   const { data: names } = useQuery<Record<string, { symbol: string | null; name: string | null }>>({
     queryKey: ['desktop-portfolio', 'bench-names', unheld.join('|')],
@@ -391,40 +393,13 @@ export function useActiveWeights(book: Book | null) {
     },
   })
 
-  return useMemo<ActiveWeight[]>(() => {
-    if (!book || !data) return []
-    const held = book.positions.filter(p => !p.isCash)
-    const seen = new Set(held.map(p => p.assetId))
-
-    const rows: ActiveWeight[] = held.map(p => ({
-      assetId: p.assetId,
-      symbol: p.symbol,
-      companyName: p.companyName,
-      weightPct: p.weightPct,
-      benchPct: data[p.assetId] ?? 0,
-      activePct: p.weightPct - (data[p.assetId] ?? 0),
-    }))
-
-    /*
-     * The names the index holds and the book does not.
-     *
-     * These are decisions too -- and they are the half a holdings-only view
-     * cannot see. A manager who owns none of the largest index constituent
-     * has taken a position on it exactly as much as one who doubled it, and
-     * a list that only knows about things you own can never say so.
-     *
-     * Only the ones large enough to be a decision rather than rounding.
-     */
-    for (const [assetId, w] of Object.entries(data)) {
-      if (seen.has(assetId) || w < 0.25) continue
-      rows.push({
-        assetId,
-        symbol: names?.[assetId]?.symbol ?? null,
-        companyName: names?.[assetId]?.name ?? null,
-        weightPct: 0, benchPct: w, activePct: -w,
-      })
-    }
-
-    return rows.sort((a, b) => Math.abs(b.activePct) - Math.abs(a.activePct))
-  }, [book, data, names])
+  /*
+   * The names the index holds and the book does not are decisions too -- the
+   * half a holdings-only view cannot see. `compareToBenchmark` adds the ones
+   * large enough to be a decision rather than rounding.
+   */
+  return useMemo(
+    () => compareToBenchmark(book, isError ? { kind: 'failed' } : data ?? { kind: 'loading' }, names),
+    [book, data, isError, names],
+  )
 }

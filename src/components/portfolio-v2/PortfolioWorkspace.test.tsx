@@ -74,7 +74,7 @@ vi.mock('../../hooks/useDesktopPortfolio', () => ({
    * still exercising the real component path. `ActiveWeights` has its own
    * coverage where the population is large enough to draw.
    */
-  useActiveWeights: () => [],
+  useActiveWeights: () => ({ state: 'loading', rows: [] }),
   usePositionDetail: (p: any) => {
     if (p) detailRequestedFor.push(`${p.portfolioId}:${p.assetId}`)
     return { detail: p ? detail : undefined, isLoading: false }
