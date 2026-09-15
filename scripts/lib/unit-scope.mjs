@@ -155,6 +155,19 @@ export const GATED_DIRS = [
   'src/components/research-v2/__tests__',
   // Today's coverage backfill: what a thin or new account's home shows.
   'src/components/today/__tests__',
+  /*
+   * Today's domain layer: tiering, adaptation, diversity, enrichment and the
+   * time labels every tile reads from.
+   *
+   * It was deferred by history rather than by decision -- the commit that
+   * classified every directory put everything not already gated on the
+   * deferred list in one pass, and `src/lib/today` was simply ungated that
+   * day. Since then Today became the Dashboard's home surface and its
+   * component tests were gated, leaving the logic those components render
+   * outside the gate. Matched as a subtree, so `src/lib/today/__tests__` comes
+   * with it.
+   */
+  'src/lib/today',
 
 ]
 
@@ -209,8 +222,7 @@ export const DEFERRED_DIRS = [
   'src/lib/research',
   'src/lib/research/__tests__',
   'src/lib/storage',
-  'src/lib/today',
-  'src/lib/today/__tests__',
+  // 'src/lib/today' and its `__tests__` moved UP to the gated list.
   'src/lib/trade-lab',
 ]
 
