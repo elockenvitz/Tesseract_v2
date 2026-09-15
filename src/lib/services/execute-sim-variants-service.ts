@@ -668,6 +668,37 @@ async function markDRAccepted(decisionRequestId: string, ctx: ActionContext): Pr
   if (error) throw error
 }
 
+/**
+ * Record which trade executed the request, once the trade exists.
+ *
+ * The request is resolved (case A) or created (cases B/C) before
+ * `createAcceptedTrade` runs, so neither write can carry the trade's id. The
+ * trade already names its request (`accepted_trades.decision_request_id`); this
+ * writes the other direction, `decision_requests.accepted_trade_id`, which is
+ * what the Inbox accept path writes and what desktop Decisions reads. Without
+ * it an executed Trade Lab trade showed there as never executed.
+ *
+ * Only fills an empty link, so it never repoints a request another path
+ * already linked. Non-fatal like the other post-commit steps: the trade is
+ * committed, and Decisions can still resolve an unlinked request from the
+ * trade side (lib/desktop-decisions/execution-link).
+ */
+async function linkDecisionRequestToTrade(decisionRequestId: string, acceptedTradeId: string): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('decision_requests')
+      // The generated client types `decision_requests` updates as `never` (the
+      // same error every other update in this file carries); cast rather than
+      // add one more to the repo count.
+      .update({ accepted_trade_id: acceptedTradeId, updated_at: new Date().toISOString() } as never)
+      .eq('id', decisionRequestId)
+      .is('accepted_trade_id', null)
+    if (error) console.warn('[ExecuteSim] Failed to link decision request to its trade', error)
+  } catch (e) {
+    console.warn('[ExecuteSim] Link decision request to trade threw', e)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -767,6 +798,7 @@ export async function executeSimVariants(
         const trade = await createAcceptedTrade(
           buildAcceptedTradeInput(v, decisionRequestId, tradeQueueItemId, batch.id, context, reason, batchDescription),
         )
+        await linkDecisionRequestToTrade(decisionRequestId, trade.id)
 
         // Resolve orphan proposals + sibling DRs, and advance the TQI
         // in parallel — both are idempotent and non-fatal. Their helpers

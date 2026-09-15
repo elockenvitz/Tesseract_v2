@@ -233,6 +233,36 @@ describe('the header counts say what they mean', () => {
     expect(metric('decision rationales')).toHaveTextContent('0')
   })
 
+  it('never counts Trade Lab provenance as a rationale, and queues it for one', () => {
+    decisions = [
+      decision({ id: 'a', decisionNote: 'Accepted via Trade Lab Execute' }),
+      decision({ id: 'b', decisionNote: 'Self-proposed via Trade Lab Execute' }),
+    ]
+    render(<DecisionsWorkspace />)
+    expect(metric('decision rationales')).toHaveTextContent('0')
+    expect(screen.getAllByTestId('decision-tile')).toHaveLength(2)
+  })
+
+  it('counts a linked Trade Lab trade as executed, with its batch rationale', () => {
+    decisions = [
+      decision({
+        id: 'pilot',
+        decisionNote: 'Self-proposed via Trade Lab Execute',
+        execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(1), executedByName: 'Pilot' },
+        batch: { id: 'b-1', name: '1 buy', description: 'Adding on weakness ahead of the print.' },
+      }),
+      // Something still open, so the header counts render beside the queue.
+      decision({ id: 'open', symbol: 'MSFT', status: 'pending', decidedAt: null, decidedByName: null, decidedBy: null }),
+    ]
+    render(<DecisionsWorkspace />)
+    expect(metric('executed')).toHaveTextContent('1')
+    expect(metric('decision rationale')).toHaveTextContent('1')
+    // Decided and explained: it does not queue, so no "Never executed" card.
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles).toHaveLength(1)
+    expect(tiles[0]).not.toHaveTextContent('Never executed')
+  })
+
   it('counts resolved and executed separately', () => {
     decisions = [
       decision({ id: 'a', status: 'accepted',
@@ -509,6 +539,38 @@ describe('a system string is never shown as reasoning', () => {
     expect(screen.getByText(/Submitted by Seb Barbero/)).toBeInTheDocument()
     expect(screen.getByText(/the proposal rationale, not the decider/)).toBeInTheDocument()
     expect(screen.queryByText('Why we decided')).not.toBeInTheDocument()
+  })
+
+  it('shows the batch’s written rationale for a Trade Lab decision, as the batch’s', () => {
+    /*
+     * The pilot's executed trade: its own note is Trade Lab provenance, and the
+     * reason the desk wrote is Trade Book's "Why this decision?" on the batch.
+     */
+    decisions = [decision({
+      id: 'x',
+      decisionNote: 'Self-proposed via Trade Lab Execute',
+      execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(1), executedByName: 'Pilot' },
+      batch: { id: 'b-1', name: '1 buy · 09/14/2026', description: 'Adding on weakness ahead of the print.' },
+    })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    const quote = screen.getByTestId('decision-batch-reason')
+    expect(quote).toHaveTextContent('Adding on weakness ahead of the print.')
+    expect(quote.closest('section')).toHaveTextContent('Why this decision?')
+    expect(screen.getByText(/Written for the batch · 1 buy · 09\/14\/2026/)).toBeInTheDocument()
+    // Not presented as the decision note, and the system string is not a reason.
+    expect(screen.queryByText('Why we decided')).not.toBeInTheDocument()
+    expect(screen.queryByText('No human rationale was captured.')).not.toBeInTheDocument()
+  })
+
+  it('does not treat a system-written batch description as the batch’s rationale', () => {
+    decisions = [decision({
+      id: 'x',
+      decisionNote: 'Accepted via Trade Lab Execute',
+      batch: { id: 'b-1', name: null, description: 'Auto-generated from Trade Lab' },
+    })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    expect(screen.queryByTestId('decision-batch-reason')).not.toBeInTheDocument()
+    expect(screen.getByText('No human rationale was captured.')).toBeInTheDocument()
   })
 
   it('keeps both apart when both exist', () => {

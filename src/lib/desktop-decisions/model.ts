@@ -199,6 +199,9 @@ export type Provenance = 'human' | 'system'
 
 const SYSTEM_PREFIXES = [
   'Self-proposed via',
+  // Written by Trade Lab Execute when it resolves an existing pending request
+  // (execute-sim-variants-service `markDRAccepted`). Provenance, not a reason.
+  'Accepted via Trade Lab',
   'Withdrawn during cleanup',
   'Backfilled:',
   'Auto-',

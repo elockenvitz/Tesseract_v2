@@ -21,6 +21,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
 import type { DecisionRecord, DecisionStatus } from '../lib/desktop-decisions/model'
+import { fallbackExecutionFor, needsExecutionFallback } from '../lib/desktop-decisions/execution-link'
 
 const DAY = 86_400_000
 
@@ -70,12 +71,35 @@ export function useDecisionScan(portfolioId: string | null) {
       const { data, error } = await q
       if (error) throw new Error(error.message)
 
+      /*
+       * Executions Trade Lab never linked.
+       *
+       * Until the execute writer set `accepted_trade_id`, every Trade Lab
+       * execution arrived here with no embedded trade. The trade names its
+       * request through `accepted_trades.decision_request_id`, so those are
+       * read back by that FK -- for accepted requests only, within the books
+       * already scoped to this organisation above -- and kept only where
+       * exactly one active, original trade answers (lib/desktop-decisions/
+       * execution-link). A failure degrades to "no execution", as before.
+       */
+      const rows = (data ?? []) as any[]
+      const unlinked = rows.filter(r => !r.accepted_trades && needsExecutionFallback(r))
+      if (unlinked.length) {
+        const { data: trades } = await supabase.from('accepted_trades')
+          .select('id, decision_request_id, portfolio_id, is_active, corrects_accepted_trade_id, execution_status, execution_completed_at, executed_by, batch_id')
+          .in('decision_request_id', unlinked.map(r => r.id))
+          .in('portfolio_id', [...new Set(unlinked.map(r => r.portfolio_id))])
+        for (const r of unlinked) {
+          r.accepted_trades = fallbackExecutionFor(r, (trades ?? []) as any[])
+        }
+      }
+
       // `accepted_trades.executed_by` references auth.users, which PostgREST
       // cannot embed from the API schema -- asking for it fails the ENTIRE
       // query rather than blanking a field. Resolved separately against
       // public.users, which mirrors the same ids.
       const executorIds = [...new Set(
-        ((data ?? []) as any[])
+        rows
           .map(r => r.accepted_trades?.executed_by)
           .filter((x): x is string => !!x),
       )]
@@ -91,7 +115,7 @@ export function useDecisionScan(portfolioId: string | null) {
        * than to "no decisions".
        */
       const batchIds = [...new Set(
-        ((data ?? []) as any[])
+        rows
           .map(r => r.accepted_trades?.batch_id)
           .filter((x): x is string => !!x),
       )]
@@ -114,7 +138,7 @@ export function useDecisionScan(portfolioId: string | null) {
         }
       }
 
-      return ((data ?? []) as any[]).map((r): DecisionRecord => {
+      return rows.map((r): DecisionRecord => {
         const snap = r.submission_snapshot ?? {}
         const idea = r.trade_queue_items
         const exec = r.accepted_trades

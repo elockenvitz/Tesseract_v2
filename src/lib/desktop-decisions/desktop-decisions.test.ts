@@ -114,6 +114,18 @@ describe('a system string is not a reason', () => {
     expect(provenanceOf('Backfilled: resolved by Trade Lab Execute (executed 2026-04-13)')).toBe('system')
   })
 
+  it('classifies every note Trade Lab Execute writes as system provenance', () => {
+    // Each literal the execute service writes into decision_note.
+    for (const note of [
+      'Self-proposed via Trade Lab Execute',
+      'Accepted via Trade Lab Execute',
+      'Resolved by Trade Lab Execute (sibling of committed trade)',
+    ]) {
+      expect(provenanceOf(note), note).toBe('system')
+      expect(provable(decision({ decisionNote: note })).humanReason, note).toBe(false)
+    }
+  })
+
   it('classifies the one real human note as human', () => {
     expect(provenanceOf('i like this idea, makes sense')).toBe('human')
   })
