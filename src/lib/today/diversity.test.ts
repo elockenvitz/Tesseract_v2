@@ -323,6 +323,50 @@ describe('enrichment honesty', () => {
     expect(labels).toContain('Price since decision')
   })
 
+  it('draws a proposal and an execution as waiting on their own event, not as unreviewed', () => {
+    const tile = (key: string) => make('tsm', key, {
+      chips: [{ label: 'Ticker', value: 'TSM' }, { label: 'Age', value: '12d' }],
+    })
+    const proposal = applyEnrichment(tile('PROPOSAL_AWAITING_DECISION'), undefined).visual
+    const execution = applyEnrichment(tile('EXECUTION_NOT_CONFIRMED'), undefined).visual
+
+    expect(proposal).toMatchObject({ archetype: 'aging', caption: 'Awaiting decision for', window: '12 days' })
+    expect(proposal.aging!.milestones[0].label).toBe('proposed')
+    expect(execution).toMatchObject({ archetype: 'aging', caption: 'Unconfirmed for', window: '12 days' })
+    expect(execution.aging!.milestones[0].label).toBe('decided')
+    for (const v of [proposal, execution]) {
+      expect(`${v.caption} ${v.note} ${v.aging!.milestones[0].label}`).not.toMatch(/review|written/i)
+    }
+
+    // A stale thesis is still unreviewed.
+    expect(applyEnrichment(make('amzn', 'THESIS_STALE'), undefined).visual.caption).toBe('Unreviewed for')
+  })
+
+  it('gives Ask AI the event-true age and price window for a proposal and an execution', () => {
+    const from = new Date(Date.now() - 20 * 86_400_000).toISOString()
+    const history = Array.from({ length: 30 }, (_, i) => ({
+      date: new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10),
+      close: 100 + i,
+    }))
+    const ctx = (key: string) => applyEnrichment(make('tsm', key, {
+      chips: [{ label: 'Ticker', value: 'TSM' }, { label: 'Age', value: '20d' }],
+      createdAt: from,
+    }), { history, spot: 129 }).target!.contextChips!
+
+    const proposal = ctx('PROPOSAL_AWAITING_DECISION')
+    const execution = ctx('EXECUTION_NOT_CONFIRMED')
+    expect(proposal.map(c => c.label)).toEqual(expect.arrayContaining(['Since proposal', 'Move since proposal']))
+    expect(execution.map(c => c.label)).toEqual(expect.arrayContaining(['Since decision', 'Move since decision']))
+    for (const chips of [proposal, execution]) {
+      expect(chips.map(c => c.label).join(' ')).not.toMatch(/review/i)
+      // The age is stated once, not once per wording.
+      expect(chips.filter(c => c.value === '20d')).toHaveLength(1)
+    }
+
+    const thesis = ctx('THESIS_STALE').map(c => c.label)
+    expect(thesis).toEqual(expect.arrayContaining(['Since review', 'Move since review']))
+  })
+
   it('gives an overdue deliverable no price story to tell', () => {
     // No asset and no anchor, so there is nothing to draw and nothing is.
     const item = make('proj', 'OVERDUE_DELIVERABLE', {

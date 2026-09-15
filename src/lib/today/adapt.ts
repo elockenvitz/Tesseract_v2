@@ -20,6 +20,7 @@ import { fromDecisionContext } from '../engagement'
 import type { EngagementTarget } from '../engagement'
 import type { TodayArchetype, TodayItem, TodayMetric, TodayVisual } from './types'
 import { tierFor } from './tiers'
+import { ageEventFor } from './age-event'
 
 // ---------------------------------------------------------------------------
 // Chip reading
@@ -270,7 +271,8 @@ function metricsFor(item: DecisionItem): TodayMetric[] {
     // a loss, and an expected return is not a gain.
     const tone: TodayMetric['tone'] =
       lower === 'open' || lower === 'overdue' ? 'warn' : 'neutral'
-    out.push({ label, value: c.value, tone })
+    // An age is named by the event it counts from (lib/today/age-event).
+    out.push({ label: c.label === 'Age' ? ageEventFor(item.titleKey).label : label, value: c.value, tone })
     if (out.length === 3) break
   }
   return out
@@ -279,11 +281,12 @@ function metricsFor(item: DecisionItem): TodayMetric[] {
 /**
  * Chip label → the words an investor would use.
  *
- * "Age" is what the evaluator measured; "Since review" is what it means. The
- * strip is the densest text on the tile, so each label has to earn its width.
+ * The strip is the densest text on the tile, so each label has to earn its
+ * width. "Age" is listed so it is allowed through; what it is called depends on
+ * what it counts from, and `ageEventFor` names that per finding.
  */
 const METRIC_LABELS: Record<string, string> = {
-  Age: 'Since review',
+  Age: 'Age',
   Open: 'Open',
   Changed: 'Changed',
   From: 'Was',
@@ -369,7 +372,11 @@ export function targetFor(item: DecisionItem): EngagementTarget | null {
     },
     origin: { itemId: item.id, surface: 'today' },
     seedPrompt: seedPromptFor(item) ?? undefined,
-    contextChips: (item.chips ?? []).map(c => ({ label: c.label, value: c.value })),
+    // The AI reads the age under the event it counts from, as the tile does.
+    contextChips: (item.chips ?? []).map(c => ({
+      label: c.label === 'Age' ? ageEventFor(item.titleKey).label : c.label,
+      value: c.value,
+    })),
   })
 }
 

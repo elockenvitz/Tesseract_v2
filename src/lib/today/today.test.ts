@@ -147,6 +147,30 @@ describe('adaptation', () => {
     expect(adaptDecisionItem(stale()).metrics[0].label).toBe('Since review')
   })
 
+  it('names a proposal\'s and an execution\'s age by the event it counts from', () => {
+    const aged = (titleKey: string) => adaptDecisionItem(item({
+      titleKey,
+      chips: [{ label: 'Portfolio', value: 'Growth' }, { label: 'Ticker', value: 'TSM' }, { label: 'Age', value: '4d' }],
+      context: { assetId: 'a-tsm', assetTicker: 'TSM' },
+    }))
+    const proposal = aged('PROPOSAL_AWAITING_DECISION')
+    const execution = aged('EXECUTION_NOT_CONFIRMED')
+
+    expect(proposal.metrics).toContainEqual({ label: 'Since proposal', value: '4d', tone: 'neutral' })
+    expect(execution.metrics).toContainEqual({ label: 'Since decision', value: '4d', tone: 'neutral' })
+    for (const t of [proposal, execution]) {
+      expect(t.metrics.map(m => m.label).join(' ')).not.toMatch(/review|Age/i)
+      // Ask AI reads the same words.
+      const ctx = t.target!.contextChips!.map(c => c.label)
+      expect(ctx.join(' ')).not.toMatch(/review|^Age$/i)
+    }
+    expect(proposal.target!.contextChips).toContainEqual({ label: 'Since proposal', value: '4d' })
+    expect(execution.target!.contextChips).toContainEqual({ label: 'Since decision', value: '4d' })
+
+    // Review language stays where the age is counted from the case.
+    expect(adaptDecisionItem(stale()).target!.contextChips).toContainEqual({ label: 'Since review', value: '210d' })
+  })
+
   it('never renders an UNKNOWN metric, whatever chips arrive', () => {
     const t = adaptDecisionItem(item({
       titleKey: 'THESIS_STALE',

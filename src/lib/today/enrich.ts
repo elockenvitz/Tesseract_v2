@@ -24,6 +24,7 @@
 
 import type { CurrentLadder } from '../signals/current-ladder'
 import type { TodayItem, TodayMetric, TodayVisual } from './types'
+import { ageEventFor } from './age-event'
 
 /** One asset's enrichment. Every field is optional and independently absent. */
 export interface TodayEnrichment {
@@ -173,15 +174,18 @@ export function applyEnrichment(item: TodayItem, e: TodayEnrichment | undefined)
 /** The age as a duration, for a card that would otherwise draw nothing. */
 function ageVisual(item: TodayItem, ageDays: number | null): TodayVisual | null {
   if (item.visual.archetype !== 'metrics' || ageDays == null || ageDays <= 0) return null
+  // Worded by the event the age counts from: a proposal is awaiting a
+  // decision, not unreviewed.
+  const event = ageEventFor(item.source.titleKey)
   return {
     archetype: 'aging',
-    caption: 'Unreviewed for',
+    caption: event.caption,
     window: `${ageDays} day${ageDays === 1 ? '' : 's'}`,
-    note: 'Nothing has been recorded against this case since it was written.',
+    note: event.note,
     aging: {
       days: ageDays,
       milestones: [
-        { label: 'written', atPct: 0, hot: false },
+        { label: event.from, atPct: 0, hot: false },
         { label: 'today', atPct: 100, hot: ageDays >= 180 },
       ],
     },
@@ -189,7 +193,8 @@ function ageVisual(item: TodayItem, ageDays: number | null): TodayVisual | null 
 }
 
 function ageFromMetrics(item: TodayItem): number | null {
-  const m = item.metrics.find(x => x.label === 'Since review' || x.label === 'Open')
+  const ageLabel = ageEventFor(item.source.titleKey).label
+  const m = item.metrics.find(x => x.label === ageLabel || x.label === 'Open')
   if (!m) return null
   const n = Number(m.value.replace(/[^\d.-]/g, ''))
   return Number.isFinite(n) ? n : null
@@ -404,11 +409,16 @@ function enrichClaim(
 function enrichChips(
   item: TodayItem, e: TodayEnrichment, w: PriceWindow | null, ageDays: number | null,
 ): { label: string; value: string }[] {
+  const key = item.source.titleKey ?? ''
+  const ageLabel = ageEventFor(key).label
+  // The target already carries the evaluator's age under this label; say it once.
   const chips = [...(item.target?.contextChips ?? [])]
-  if (ageDays != null) chips.push({ label: 'Since review', value: `${ageDays}d` })
+  if (ageDays != null && !chips.some(c => c.label === ageLabel)) chips.push({ label: ageLabel, value: `${ageDays}d` })
   if (w) {
     chips.push({
-      label: w.reachesAnchor ? 'Move since review' : 'Move over history',
+      label: w.reachesAnchor
+        ? `Move since ${(ANCHORED_KEYS[key] ?? METRIC_ANCHOR[key])?.shortSince ?? 'review'}`
+        : 'Move over history',
       value: pct(w.changePct),
     })
   }
