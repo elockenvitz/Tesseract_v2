@@ -76,13 +76,17 @@ export function priceWindowSince(
   const hasAnchor = Number.isFinite(anchor)
 
   const firstDate = Date.parse(history[0].date)
-  const reachesAnchor = hasAnchor && Number.isFinite(firstDate) && firstDate <= anchor
+  const startsByAnchor = hasAnchor && Number.isFinite(firstDate) && firstDate <= anchor
 
-  const anchorIndex = reachesAnchor
+  const found = startsByAnchor
     ? history.findIndex(p => Date.parse(p.date) >= anchor)
-    : null
+    : -1
+  // An anchor newer than the last close (an idea opened today) has no price
+  // after it. The whole history is then measured, and it must not be called a
+  // move since the anchor.
+  const reachesAnchor = found >= 0
 
-  const startIndex = anchorIndex != null && anchorIndex >= 0 ? anchorIndex : 0
+  const startIndex = reachesAnchor ? found : 0
   const from = history[startIndex]
   const to = history[history.length - 1]
   if (!from || !to || !(from.close > 0)) return null
@@ -91,9 +95,9 @@ export function priceWindowSince(
     changePct: ((to.close - from.close) / from.close) * 100,
     fromDate: from.date,
     toDate: to.date,
-    reachesAnchor: !!reachesAnchor,
+    reachesAnchor,
     series: history.slice(startIndex).map(p => p.close),
-    anchorIndex: anchorIndex != null && anchorIndex >= 0 ? 0 : null,
+    anchorIndex: reachesAnchor ? 0 : null,
   }
 }
 
@@ -149,7 +153,8 @@ export function applyEnrichment(item: TodayItem, e: TodayEnrichment | undefined)
   if (!e) return aged ? { ...item, visual: aged } : item
   const window = priceWindowSince(e.history, item.source.createdAt)
 
-  const metrics = enrichMetrics(item, e, window, ANCHORED_KEYS[item.source.titleKey ?? ''])
+  const key = item.source.titleKey ?? ''
+  const metrics = enrichMetrics(item, e, window, ANCHORED_KEYS[key] ?? METRIC_ANCHOR[key])
   const enriched = enrichVisual(item, e, window, ageDays)
   const visual = enriched.archetype === 'metrics' ? (aged ?? enriched) : enriched
   const claim = enrichClaim(item, e, window, ageDays)
@@ -350,6 +355,17 @@ const ANCHORED_KEYS: Record<
   COVERAGE_NEW_EVIDENCE: {
     since: 'last review', shortSince: 'review', the: 'the review date', tick: 'LAST REVIEW',
   },
+}
+
+/**
+ * Anchor words for findings that name their price window in the metric strip
+ * but draw no review window.
+ *
+ * An idea's `createdAt` is when it was opened, not a review; without this its
+ * price move fell back to "Price since review".
+ */
+const METRIC_ANCHOR: Record<string, { shortSince: string }> = {
+  IDEA_NOT_SIMULATED: { shortSince: 'idea' },
 }
 
 /**

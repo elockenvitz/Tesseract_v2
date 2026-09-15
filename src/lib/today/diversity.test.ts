@@ -10,7 +10,7 @@ import type { DecisionItem, DecisionSeverity } from '../../engine/decisionEngine
 import { adaptDecisionItem } from './adapt'
 import { compareTodayItems, TODAY_LIMIT } from './tiers'
 import { diversify } from './diversity'
-import { applyEnrichment, priceWindowSince, windowLabel } from './enrich'
+import { applyEnrichment, priceWindowSince, windowLabel, type TodayEnrichment } from './enrich'
 import type { TodayItem } from './types'
 
 function make(id: string, titleKey: string, over: Partial<DecisionItem> = {}): TodayItem {
@@ -170,6 +170,27 @@ describe('enrichment honesty', () => {
     expect(windowLabel(w, 246)).toMatch(/of history/)
     // The move itself is still real -- it is the WINDOW that is not claimed.
     expect(w.changePct).toBeCloseTo(20, 5)
+  })
+
+  it('does not call the whole history a move since an anchor newer than every close', () => {
+    // An idea opened today, with closes only up to yesterday.
+    const w = priceWindowSince(hist('2026-01-01', [100, 110, 160]), '2026-01-10')!
+    expect(w.reachesAnchor).toBe(false)
+    expect(w.anchorIndex).toBeNull()
+    expect(w.changePct).toBeCloseTo(60, 5)
+    expect(windowLabel(w, 0)).not.toMatch(/since/)
+  })
+
+  it('never labels an idea\'s price move as since review', () => {
+    const idea = (createdAt: string) => applyEnrichment(adaptDecisionItem({
+      id: 'idea-lly', surface: 'action', severity: 'orange', category: 'process',
+      title: 'Idea Being Worked On', titleKey: 'IDEA_NOT_SIMULATED', description: 'x',
+      chips: [{ label: 'Ticker', value: 'LLY' }, { label: 'Age', value: '0d' }],
+      context: { assetId: 'a-lly', assetTicker: 'LLY' }, ctas: [], sortScore: 0, createdAt,
+    } as DecisionItem), { history: hist('2026-01-01', [100, 110, 160]) } as TodayEnrichment)
+    const price = (createdAt: string) => idea(createdAt).metrics.find(m => m.label.startsWith('Price'))!
+    expect(price('2026-01-10').label).toBe('Price over history')
+    expect(price('2026-01-02')).toMatchObject({ label: 'Price since idea', value: '+45.5%' })
   })
 
   it('names the window as since-review only when it truly is', () => {
