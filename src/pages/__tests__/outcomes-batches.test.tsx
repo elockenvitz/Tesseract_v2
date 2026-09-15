@@ -264,6 +264,52 @@ describe('phone: Batches | Trades', () => {
     expect(batchPnl).toBe(`${inferDecisionIntelligence(loss).pnlLabel} P&L`)
   })
 
+  it('keeps the batch card to a batch summary, with its P&L total on the right', () => {
+    render(<DecisionAccountabilityPage />)
+    const q3 = batchCard('Q3 rebalance')
+    // Count · portfolio · date on one line; the mix in phone status names.
+    expect(q3.querySelector('[data-slot="batch-count"]')!.parentElement!.textContent).toBe('2 trades · Growth Fund · Sep 5, 2026')
+    expect(q3.querySelector('[data-slot="batch-status-mix"]')!.textContent).toBe('2 Needs rationale')
+    // The total sits beside the summary, not as another line under it.
+    const pnl = q3.querySelector('[data-slot="batch-pnl"]') as HTMLElement
+    const summary = q3.querySelector('[data-slot="batch-name"]')!.closest('div.min-w-0') as HTMLElement
+    expect(summary.contains(pnl)).toBe(false)
+    // No trade-level detail on the batch card.
+    expect(q3.textContent).not.toMatch(/AAPL|MSFT|\bBuy\b/)
+  })
+
+  it('opens a batch to a quiet summary and trade cards that are the next thing to tap', () => {
+    render(<DecisionAccountabilityPage />)
+    fireEvent.click(batchCard('Q3 rebalance'))
+    const view = document.querySelector('[data-slot="batch-view"]') as HTMLElement
+    const summary = view.querySelector('[data-slot="batch-summary"]') as HTMLElement
+    expect(summary.className).not.toMatch(/\bborder\b|rounded-xl/)
+    expect(summary.textContent).toContain('Growth Fund · Sep 5, 2026 · 2 trades')
+    expect(view.querySelector('[data-slot="batch-trades-hint"]')!.textContent).toBe('Tap a trade to see its outcome')
+
+    const cards = Array.from(view.querySelectorAll('[data-slot="decision-card"]')) as HTMLElement[]
+    expect(cards).toHaveLength(2)
+    for (const card of cards) {
+      // Portfolio and date are in the summary, once.
+      expect(card.querySelector('[data-slot="card-meta"]')).toBeNull()
+      expect(card.className).toContain('shadow-sm')
+      expect(card.querySelector('[data-slot="card-status"]')!.textContent).toBe('Needs rationale')
+      expect(card.querySelector('[data-slot="card-result"]')).not.toBeNull()
+    }
+    // The summary itself is not a button competing with them.
+    expect(summary.querySelector('button')).toBeNull()
+  })
+
+  it('does not restate a one-trade batch’s status and P&L above its only trade', () => {
+    rowsRef.rows = [makeRow({ decision_id: 'd-one', impact_proxy: -14700, batches: [{ id: 'b-one', name: 'One', committedAt: '2026-09-14T16:48:16Z' }] })]
+    render(<DecisionAccountabilityPage />)
+    fireEvent.click(batchCard('One'))
+    const summary = document.querySelector('[data-slot="batch-summary"]') as HTMLElement
+    expect(summary.querySelector('[data-slot="batch-pnl"]')).toBeNull()
+    expect(summary.querySelector('[data-slot="batch-status-mix"]')).toBeNull()
+    expect(document.querySelector('[data-slot="batch-view"] [data-slot="card-result"]')).not.toBeNull()
+  })
+
   it('uses a search placeholder short enough for the phone field', () => {
     render(<DecisionAccountabilityPage />)
     expect(screen.getByRole('searchbox', { name: /Search batches/ }).getAttribute('placeholder')).toBe('Batches or tickers')
@@ -308,5 +354,11 @@ describe('desktop: Batches | Trades', () => {
     expect(container.textContent).toContain('AAPL')
     expect(container.textContent).toContain('MSFT')
     expect(document.querySelector('[data-slot="desktop-standalone"]')!.textContent).toContain('ORCL')
+  })
+
+  it('keeps the desktop status labels', () => {
+    render(<DecisionAccountabilityPage />)
+    expect(document.body.textContent).toContain('Needs Context')
+    expect(document.body.textContent).not.toMatch(/Needs rationale|Outcome not reviewed/)
   })
 })

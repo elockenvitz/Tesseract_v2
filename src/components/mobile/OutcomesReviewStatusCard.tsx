@@ -1,49 +1,43 @@
 import { clsx } from 'clsx'
-import { HEALTH_DISPLAY, type ProcessHealth } from '../../lib/decision-intelligence'
+import type { ProcessHealth } from '../../lib/decision-intelligence'
 
 /**
- * Review status for the Outcomes list on a phone.
+ * Review status for the Outcomes list on a phone: one quiet line of counts.
  *
- * The desktop strip is a loose line — "ATTENTION · Review discipline" and a
- * headline — that wrapped over three lines at 390px and read as copy rather
- * than a status. Here it is one compact card: the health level as a pill, the
- * headline on one clamped line, and three counts a reader can scan.
+ * It was a bordered card with a health pill, a headline and three large
+ * numbers, and at 390px it competed with the batch cards it sits above. Now it
+ * is a summary line — "2 to review · 1 not executed · 3 working" — that a
+ * reader takes in at a glance and scrolls past.
  *
  * Every number is `buildProcessHealth`'s own count; nothing is re-derived.
- * "To review" is decisions waiting on context or an outcome review;
- * "Execution" is decisions approved but stalled or never matched to a trade.
+ * "To review" is decisions missing a rationale or an outcome review;
+ * "Not executed" is decisions approved but stalled or never matched to a trade.
  */
 export function OutcomesReviewStatusCard({ health }: { health: ProcessHealth }) {
-  const hd = HEALTH_DISPLAY[health.level]
   const c = health.counts
   const stats = [
-    { key: 'review', label: 'To review', value: c.needsReview + c.needsEvaluation, tone: 'text-amber-700 dark:text-amber-400' },
-    { key: 'execution', label: 'Execution', value: c.stalled + c.unmatched, tone: 'text-red-700 dark:text-red-400' },
-    { key: 'working', label: 'Working', value: c.working, tone: 'text-emerald-700 dark:text-emerald-400' },
+    { key: 'review', label: 'to review', value: c.needsReview + c.needsEvaluation, dot: 'bg-amber-500' },
+    { key: 'execution', label: 'not executed', value: c.stalled + c.unmatched, dot: 'bg-red-500' },
+    { key: 'working', label: 'working', value: c.working, dot: 'bg-emerald-500' },
   ]
 
   return (
     <section
       data-slot="outcomes-review-status"
       aria-label="Review status"
-      className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-gray-50 px-3 py-2 text-[12px] dark:bg-gray-900/60"
     >
-      <div className="flex items-center gap-2 min-w-0">
-        <span className={clsx('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', hd.bgColor, hd.color)}>
-          {hd.label}
+      {stats.map(s => (
+        <span
+          key={s.key}
+          data-stat={s.key}
+          className={clsx('inline-flex items-center gap-1.5', s.value > 0 ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}
+        >
+          <span aria-hidden className={clsx('h-1.5 w-1.5 rounded-full', s.value > 0 ? s.dot : 'bg-gray-300 dark:bg-gray-600')} />
+          <span className="font-semibold tabular-nums">{s.value}</span>
+          <span>{s.label}</span>
         </span>
-        <p className="min-w-0 flex-1 truncate text-[13px] text-gray-700 dark:text-gray-300">{health.headline}</p>
-      </div>
-      <dl className="mt-2 grid grid-cols-3 gap-2">
-        {stats.map(s => (
-          <div key={s.key} data-stat={s.key} className="min-w-0">
-            <dt className="text-[11px] text-gray-500 dark:text-gray-400">{s.label}</dt>
-            <dd className={clsx('text-[17px] font-semibold tabular-nums leading-tight', s.value > 0 ? s.tone : 'text-gray-300 dark:text-gray-600')}>
-              {s.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
+      ))}
     </section>
   )
 }

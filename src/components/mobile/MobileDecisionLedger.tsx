@@ -4,6 +4,7 @@ import { ChevronRight, Layers, Target } from 'lucide-react'
 import { batchLabel } from '../../lib/outcomes/batch-groups'
 import type { AccountabilityRow } from '../../types/decision-accountability'
 import { VERDICT_DISPLAY, type DecisionIntelligence } from '../../lib/decision-intelligence'
+import { phoneStatusLabel } from '../../lib/outcomes/phone-status'
 
 interface MobileDecisionLedgerProps {
   items: Array<{ row: AccountabilityRow; intel: DecisionIntelligence }>
@@ -12,6 +13,12 @@ interface MobileDecisionLedgerProps {
   /** Trades view: name the batch each trade was committed in. Off inside an
    *  opened batch, where it would only repeat the heading. */
   showBatch?: boolean
+  /** Portfolio · date under the ticker. Off inside an opened batch, whose
+   *  summary already states both for every trade in it. */
+  showMeta?: boolean
+  /** Inside an opened batch the trades are the next thing to tap, so their
+   *  cards are drawn a step stronger than the summary above them. */
+  prominent?: boolean
 }
 
 const ACTION: Record<string, { label: string; tone: string }> = {
@@ -46,16 +53,17 @@ function cardReturn(intel: DecisionIntelligence): string | null {
  *   portfolio · date
  *   review / outcome status
  *
- * Status is the row's decision-intelligence verdict (Working, Monitoring,
- * Stalled…), the same label the desktop State column shows. The return is the
- * row's own `returnLabel` and `pnlLabel`; nothing is recomputed here.
+ * Status is the row's decision-intelligence verdict, named for a phone by
+ * `phoneStatusLabel` ("Needs rationale", "Outcome not reviewed", Working,
+ * Stalled…). The return is the row's own `returnLabel` and `pnlLabel`; nothing
+ * is recomputed here.
  *
  * The earlier card keyed its action chip on 'increase' / 'decrease', which no
  * row carries, so every card showed "—". It now reads the row's real
  * direction. The "no decision price" footnote is gone from the card: it is a
  * data-quality caveat for the detail, not something to scan past on every row.
  */
-export function MobileDecisionLedger({ items, selectedId, onSelect, showBatch = false }: MobileDecisionLedgerProps) {
+export function MobileDecisionLedger({ items, selectedId, onSelect, showBatch = false, showMeta = true, prominent = false }: MobileDecisionLedgerProps) {
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-16 px-4 text-gray-400">
@@ -86,7 +94,9 @@ export function MobileDecisionLedger({ items, selectedId, onSelect, showBatch = 
                 'w-full flex items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors',
                 selectedId === row.decision_id
                   ? 'border-primary-300 bg-primary-50/60 dark:border-primary-700 dark:bg-primary-900/20'
-                  : 'border-gray-200 bg-white active:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:active:bg-gray-700/50',
+                  : prominent
+                    ? 'border-gray-300 bg-white shadow-sm active:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:active:bg-gray-700/50'
+                    : 'border-gray-200 bg-white active:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:active:bg-gray-700/50',
               )}
             >
               <div className="min-w-0 flex-1">
@@ -101,8 +111,8 @@ export function MobileDecisionLedger({ items, selectedId, onSelect, showBatch = 
                     {row.asset_symbol ?? '—'}
                   </span>
                 </div>
-                {meta && (
-                  <p data-slot="card-meta" className="mt-1 truncate text-[13px] text-gray-500 dark:text-gray-400">{meta}</p>
+                {showMeta && meta && (
+                  <p data-slot="card-meta" className="mt-0.5 truncate text-[12px] text-gray-400 dark:text-gray-500">{meta}</p>
                 )}
                 {showBatch && (row.batches?.length ?? 0) > 0 && (
                   <p data-slot="card-batch" className="mt-0.5 flex items-center gap-1 truncate text-[12px] text-gray-500 dark:text-gray-400">
@@ -116,7 +126,7 @@ export function MobileDecisionLedger({ items, selectedId, onSelect, showBatch = 
                   data-slot="card-status"
                   className={clsx('mt-1.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium', vd.bgColor, vd.color)}
                 >
-                  {intel.verdictLabel}
+                  {phoneStatusLabel(intel)}
                 </span>
               </div>
 
@@ -135,7 +145,7 @@ export function MobileDecisionLedger({ items, selectedId, onSelect, showBatch = 
                   )}
                 </div>
               )}
-              <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-gray-300 dark:text-gray-600" />
+              <ChevronRight aria-hidden className={clsx('h-4 w-4 shrink-0', prominent ? 'text-gray-500 dark:text-gray-400' : 'text-gray-300 dark:text-gray-600')} />
             </button>
           </li>
         )

@@ -238,13 +238,18 @@ describe('phone Outcomes main page', () => {
   })
   afterEach(cleanup)
 
-  it('puts the review status in a compact card instead of the loose ATTENTION line', () => {
+  it('sums up review status in one quiet line instead of the ATTENTION card', () => {
     render(<DecisionAccountabilityPage />)
-    const card = document.querySelector('[data-slot="outcomes-review-status"]') as HTMLElement
-    expect(card).not.toBeNull()
-    expect(within(card).getByText('To review')).toBeTruthy()
-    expect(within(card).getByText('Execution')).toBeTruthy()
-    expect(within(card).getByText('Working')).toBeTruthy()
+    const line = document.querySelector('[data-slot="outcomes-review-status"]') as HTMLElement
+    expect(line).not.toBeNull()
+    const stat = (k: string) => line.querySelector(`[data-stat="${k}"]`)!.textContent
+    // AAPL executed without a rationale; MSFT approved, not yet executed.
+    expect(stat('review')).toBe('1to review')
+    expect(stat('execution')).toMatch(/^\dnot executed$/)
+    expect(stat('working')).toMatch(/^\dworking$/)
+    // No bordered card, no health pill, no headline, no large numbers.
+    expect(line.className).not.toMatch(/\bborder\b|rounded-xl/)
+    expect(line.innerHTML).not.toMatch(/text-\[17px\]|rounded-full px-2/)
     expect(document.body.textContent).not.toMatch(/ATTENTION|Attention ·/)
   })
 
@@ -275,9 +280,48 @@ describe('decision cards', () => {
     expect(order[0].textContent).toBe('Buy')
     expect(order[1].textContent).toBe('AAPL')
     expect(order[2].textContent).toBe('Global Long-Only Growth Fund · Sep 2, 2026')
-    expect(order[3].textContent).toBe(inferDecisionIntelligence(makeRow({})).verdictLabel)
+    expect(order[3].textContent).toBe('Needs rationale')
     expect(order[4].textContent).toContain('%')
     expect(card.querySelector('svg.lucide-chevron-right')).not.toBeNull()
+  })
+
+  /**
+   * "Needs Context" named the engine's bucket. The underlying state is an
+   * executed trade with no rationale on any matched execution; one with a
+   * rationale but no outcome review was "Monitoring", though its action is
+   * "Review outcome". The verdicts themselves are untouched.
+   */
+  it('names each status by what is actually missing, from the row’s own state', () => {
+    const noRationale = makeRow({ decision_id: 'd-a', matched_executions: [] })
+    const withRationale = makeRow({
+      decision_id: 'd-b', asset_symbol: 'MSFT',
+      matched_executions: [{ has_rationale: true, rationale_status: 'draft' }] as never,
+    })
+    const intelA = inferDecisionIntelligence(noRationale)
+    const intelB = inferDecisionIntelligence(withRationale)
+    // The data layer is unchanged.
+    expect([intelA.verdict, intelA.verdictLabel]).toEqual(['needs_review', 'Needs Context'])
+    expect([intelB.verdict, intelB.verdictLabel]).toEqual(['evaluate', 'Monitoring'])
+
+    render(<MobileDecisionLedger items={items([noRationale, withRationale])} selectedId={null} onSelect={() => {}} />)
+    const statuses = Array.from(document.querySelectorAll('[data-slot="card-status"]')).map(e => e.textContent)
+    expect(statuses).toEqual(['Needs rationale', 'Outcome not reviewed'])
+    expect(document.body.textContent).not.toMatch(/Needs Context|Monitoring/)
+  })
+
+  it('keeps other statuses as they are', () => {
+    const stalled = makeRow({ execution_status: 'pending', execution_lag_days: 20 })
+    render(<MobileDecisionLedger items={items([stalled])} selectedId={null} onSelect={() => {}} />)
+    expect(document.querySelector('[data-slot="card-status"]')!.textContent).toBe(inferDecisionIntelligence(stalled).verdictLabel)
+  })
+
+  it('can leave portfolio · date off a card, keeping ticker, action, status and result', () => {
+    render(<MobileDecisionLedger items={items([makeRow({})])} selectedId={null} onSelect={() => {}} showMeta={false} />)
+    const card = document.querySelector('[data-slot="decision-card"]') as HTMLElement
+    expect(card.querySelector('[data-slot="card-meta"]')).toBeNull()
+    for (const s of ['card-action', 'card-ticker', 'card-status', 'card-result']) {
+      expect(card.querySelector(`[data-slot="${s}"]`)).not.toBeNull()
+    }
   })
 
   it('shows the real action for every direction, never a dash', () => {
@@ -310,6 +354,21 @@ describe('range control', () => {
     const width = presets.reduce((s, p) => s + px(p.className, 'min-w-'), 0) + 4 + 6 + 36
     expect(custom.className).toMatch(/\bw-9\b/)
     expect(width).toBeLessThanOrEqual(390 - 24) // page gutter px-3 each side
+  })
+
+  it('reads as a light filter, not a raised control', () => {
+    render(<OutcomesRangeControl filters={{}} onChange={() => {}} />)
+    const group = screen.getByRole('radiogroup', { name: 'Date range' })
+    // No grey track behind the presets.
+    expect(group.className).not.toMatch(/\bbg-/)
+    const presets = within(group).getAllByRole('radio')
+    for (const p of presets) {
+      expect(p.className).toContain('text-[11px]')
+      expect(p.className).not.toContain('shadow')
+    }
+    expect(presets.find(p => p.getAttribute('aria-checked') === 'false')!.className).toContain('text-gray-400')
+    // The calendar button has no border of its own.
+    expect(screen.getByRole('button', { name: 'Custom range' }).className).not.toMatch(/\bborder\b/)
   })
 
   it('selects a preset, and opens Custom inline rather than as a popover', () => {

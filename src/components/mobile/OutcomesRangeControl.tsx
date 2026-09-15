@@ -31,10 +31,12 @@ export function OutcomesRangeControl({
   return (
     <div data-slot="outcomes-range" className="min-w-0">
       <div className="flex items-center gap-1.5">
+        {/* A filter, not a heading: no track, small grey labels, and the
+            chosen range marked by a light fill rather than a raised chip. */}
         <div
           role="radiogroup"
           aria-label="Date range"
-          className="flex min-w-0 items-center p-0.5 rounded-lg bg-gray-100 dark:bg-gray-900"
+          className="flex min-w-0 items-center p-0.5"
         >
           {DATE_PRESET_BUTTONS.map(p => (
             <button
@@ -44,10 +46,10 @@ export function OutcomesRangeControl({
               aria-checked={!showCustom && active === p}
               onClick={() => { setShowCustom(false); onChange({ ...filters, dateRange: presetRange(p as Exclude<typeof p, 'custom'>) }) }}
               className={clsx(
-                'no-touch-target tap-pad h-8 min-w-[38px] px-1.5 rounded-md text-[12px] font-medium tabular-nums whitespace-nowrap transition-colors',
+                'no-touch-target tap-pad h-7 min-w-[38px] px-1.5 rounded-md text-[11px] tabular-nums whitespace-nowrap transition-colors',
                 !showCustom && active === p
-                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
-                  : 'text-gray-500 active:text-gray-800 dark:text-gray-400',
+                  ? 'bg-gray-100 font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-200'
+                  : 'font-medium text-gray-400 active:text-gray-700 dark:text-gray-500',
               )}
             >
               {LABEL[p]}
@@ -60,13 +62,13 @@ export function OutcomesRangeControl({
           aria-expanded={showCustom}
           onClick={() => setShowCustom(v => !v)}
           className={clsx(
-            'no-touch-target tap-pad h-9 w-9 shrink-0 flex items-center justify-center rounded-lg border transition-colors',
+            'no-touch-target tap-pad h-7 w-9 shrink-0 flex items-center justify-center rounded-md transition-colors',
             customOn
-              ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-950/40 dark:text-primary-300'
-              : 'border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400',
+              ? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
+              : 'text-gray-400 dark:text-gray-500',
           )}
         >
-          <CalendarRange className="h-4 w-4" />
+          <CalendarRange className="h-3.5 w-3.5" />
         </button>
       </div>
 
