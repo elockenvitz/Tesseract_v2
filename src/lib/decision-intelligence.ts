@@ -111,10 +111,20 @@ function formatImpactDollars(impact: number | null | undefined, movePositive: bo
   if (impact == null || !Number.isFinite(impact)) return null
   const magnitude = Math.abs(impact)
   if (magnitude < 100) return null
-  const sign = movePositive ? '+' : '−'
-  if (magnitude >= 1_000_000) return `${sign}$${(magnitude / 1_000_000).toFixed(1)}M`
-  if (magnitude >= 1_000) return `${sign}$${(magnitude / 1_000).toFixed(0)}K`
-  return `${sign}$${Math.round(magnitude)}`
+  return formatCompactDollars(magnitude, movePositive ? '+' : '−')
+}
+
+/**
+ * The one compact dollar shape Outcomes uses for P&L: "$1.2M", "$15K",
+ * "$245" — millions to one decimal, thousands and below to whole numbers.
+ * A decision's P&L label and a batch's P&L total both go through here, so the
+ * same amount reads the same in both places.
+ */
+export function formatCompactDollars(magnitude: number, sign: '+' | '−' | '' = ''): string {
+  const m = Math.abs(magnitude)
+  if (m >= 1_000_000) return `${sign}$${(m / 1_000_000).toFixed(1)}M`
+  if (m >= 1_000) return `${sign}$${(m / 1_000).toFixed(0)}K`
+  return `${sign}$${Math.round(m)}`
 }
 
 // ─── Per-Row Intelligence ─────────────────────────────────────

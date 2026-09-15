@@ -195,7 +195,7 @@ describe('phone: Batches | Trades', () => {
     expect(within(q3).getByText('Growth Fund · Sep 5, 2026')).toBeTruthy()
     expect(q3.querySelector('[data-slot="batch-count"]')!.textContent).toBe('2 trades')
     expect(q3.querySelector('[data-slot="batch-status-mix"]')!.textContent).toMatch(/^2 /)
-    expect(q3.querySelector('[data-slot="batch-pnl"]')!.textContent).toBe('+$2.0K P&L')
+    expect(q3.querySelector('[data-slot="batch-pnl"]')!.textContent).toBe('+$2K P&L')
     expect(batchCard('Trim tech').querySelector('[data-slot="batch-pnl"]')).toBeNull()
     expect(q3.textContent).not.toMatch(/\d%/)
 
@@ -245,6 +245,30 @@ describe('phone: Batches | Trades', () => {
     expect(view.querySelectorAll('[data-slot="card-ticker"]')).toHaveLength(2)
   })
 
+  it('shows a one-trade batch’s P&L exactly as that trade’s card shows it', () => {
+    // The Golf Cap case: −$14,700 read "−$14.7K" on the batch and "−$15K" on the trade.
+    const loss = makeRow({
+      decision_id: 'd-loss', asset_symbol: 'AAPL', impact_proxy: -14700,
+      move_since_decision_pct: -17.4, move_since_execution_pct: -17.4, result_direction: 'negative',
+      batches: [{ id: 'b-one', name: '1 buy · 09/14/2026', committedAt: '2026-09-14T16:48:16Z' }],
+    })
+    rowsRef.rows = [loss]
+    render(<DecisionAccountabilityPage />)
+    const batchPnl = batchCard('1 buy · 09/14/2026').querySelector('[data-slot="batch-pnl"]')!.textContent
+    expect(batchPnl).toBe('−$15K P&L')
+
+    fireEvent.click(batchCard('1 buy · 09/14/2026'))
+    const tradePnl = document.querySelector('[data-slot="batch-view"] [data-slot="card-result"]')!.textContent
+    expect(tradePnl).toContain('−$15K')
+    expect(inferDecisionIntelligence(loss).pnlLabel).toBe('−$15K')
+    expect(batchPnl).toBe(`${inferDecisionIntelligence(loss).pnlLabel} P&L`)
+  })
+
+  it('uses a search placeholder short enough for the phone field', () => {
+    render(<DecisionAccountabilityPage />)
+    expect(screen.getByRole('searchbox', { name: /Search batches/ }).getAttribute('placeholder')).toBe('Batches or tickers')
+  })
+
   it('searches by batch name in Trades, and names each trade’s batch', () => {
     render(<DecisionAccountabilityPage />)
     fireEvent.click(screen.getByRole('tab', { name: 'Trades' }))
@@ -276,7 +300,7 @@ describe('desktop: Batches | Trades', () => {
     expect(rows).toHaveLength(2)
     const q3 = Array.from(rows).find(r => r.textContent?.includes('Q3 rebalance')) as HTMLElement
     expect(q3.textContent).toContain('2 trades')
-    expect(q3.textContent).toContain('+$2.0K P&L')
+    expect(q3.textContent).toContain('+$2K P&L')
     expect(q3.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(q3)
     expect(q3.getAttribute('aria-expanded')).toBe('true')

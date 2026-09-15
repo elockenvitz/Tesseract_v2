@@ -47,7 +47,9 @@ export function DecisionsViewControls({
         <input
           type="search"
           aria-label="Search batches, tickers and companies"
-          placeholder="Batch, ticker or company"
+          // Short enough for the phone field: 143px of text at the forced 16px
+          // mobile input size. Company names match too (see the aria-label).
+          placeholder="Batches or tickers"
           value={query}
           onChange={e => onQueryChange(e.target.value)}
           className={clsx(

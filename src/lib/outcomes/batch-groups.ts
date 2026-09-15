@@ -23,7 +23,7 @@
  */
 
 import type { AccountabilityRow, RowBatch } from '../../types/decision-accountability'
-import type { DecisionIntelligence } from '../decision-intelligence'
+import { formatCompactDollars, type DecisionIntelligence } from '../decision-intelligence'
 
 export type DecisionItem = { row: AccountabilityRow; intel: DecisionIntelligence }
 
@@ -156,10 +156,8 @@ export function batchPnlText(pnl: BatchPnl): string | null {
   return null
 }
 
-/** "+$1.2K", "−$245": the same compact shape as a decision's P&L label. */
+/** "+$15K", "−$245": a decision's P&L label format (formatCompactDollars),
+ *  so a batch holding one trade shows exactly what that trade's card shows. */
 export function formatPnl(value: number): string {
-  const sign = value > 0 ? '+' : value < 0 ? '−' : ''
-  const abs = Math.abs(value)
-  const body = abs >= 1_000_000 ? `${(abs / 1_000_000).toFixed(1)}M` : abs >= 1000 ? `${(abs / 1000).toFixed(1)}K` : `${Math.round(abs)}`
-  return `${sign}$${body}`
+  return formatCompactDollars(value, value > 0 ? '+' : value < 0 ? '−' : '')
 }
