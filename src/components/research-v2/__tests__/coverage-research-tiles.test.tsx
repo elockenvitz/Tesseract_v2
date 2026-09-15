@@ -42,8 +42,20 @@ vi.mock('../../../lib/desktop-asset', async importOriginal => {
 
 import { ResearchWorkspace } from '../ResearchWorkspace'
 import {
-  withCoverageSubjects, subjectFromCoverage, stateOf, RESEARCH_FEED_CAPACITY, GENERATED_PER_STRUCTURAL_GAP,
+  withCoverageSubjects, subjectFromCoverage, stateOf, issueFor, RESEARCH_FEED_CAPACITY, RESEARCH_STRUCTURAL_CAPS,
 } from '../../../lib/desktop-research'
+
+const BOOK = 'Tech & Consumer Growth'
+const held = (weightPct: number) => ({ held: true, weightPct, portfolioId: 'p1', portfolioName: BOOK, portfolioCount: 1 })
+
+/** The Bogey Cap shape: four held names (one with an open idea) among fifty with nothing written. */
+const bogey = () => [
+  candidate('AMZN', 'no_case', { exposure: held(5.4), liveIdeas: [{ id: 'i1', action: 'add' }] }),
+  candidate('TSLA', 'no_case', { exposure: held(3.2) }),
+  candidate('SBUX', 'no_case', { exposure: held(2.3) }),
+  candidate('MELI', 'no_case', { exposure: held(2.1) }),
+  ...Array.from({ length: 46 }, (_, i) => candidate(`U${String(i).padStart(2, '0')}`)),
+]
 
 const PRIORITY: Record<ResearchFraming, number> = { new_evidence: 1, price_move: 2, no_case: 3, incomplete_case: 4, long_silence: 5 }
 
@@ -109,26 +121,30 @@ describe('a coverage gap is an ordinary Research subject', () => {
 })
 
 describe('a fresh account', () => {
-  it('shows a few normal no-thesis tiles, not fifty, and no special layout', () => {
-    env.gaps = { status: 'ready', candidates: fifty(), coveredCount: 50 }
+  it('fills the ordinary field with nine tiles, not fifty, and no special layout', () => {
+    env.gaps = { status: 'ready', candidates: bogey(), coveredCount: 50 }
     render(<ResearchWorkspace />)
-    expect(tiles()).toHaveLength(GENERATED_PER_STRUCTURAL_GAP)
+    // Four names with a position or an idea, then bare coverage up to its cap.
+    expect(tiles()).toHaveLength(4 + RESEARCH_STRUCTURAL_CAPS['no_case:unheld'])
     for (const t of tiles()) expect(t).toHaveAttribute('data-state', 'no-thesis')
-    // The ordinary gallery, with its ordinary heading and count.
     const gallery = screen.getByTestId('desktop-gallery')
     expect(within(gallery).getByRole('heading', { name: 'Research' })).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/covered names need|View all|Start with these|Your coverage/)
     expect(document.querySelector('[data-testid^="coverage-gap"]')).toBeNull()
   })
 
-  it('draws a generated no-thesis tile exactly like any no-thesis tile', () => {
-    env.gaps = { status: 'ready', candidates: [candidate('AMZN', 'no_case', { exposure: { held: true, weightPct: 5.4, portfolioId: 'p', portfolioName: 'Tech', portfolioCount: 1 } })], coveredCount: 1 }
+  it('says why each no-thesis name matters: an idea, a position, or coverage alone', () => {
+    env.gaps = { status: 'ready', candidates: bogey(), coveredCount: 50 }
     render(<ResearchWorkspace />)
-    const tile = tiles()[0]
-    expect(tile).toHaveTextContent('No thesis on file')
-    for (const part of ['Thesis', 'Where we differ', 'Risks to thesis']) expect(tile).toHaveTextContent(part)
-    expect(tile).toHaveTextContent('5.4% held')
-    expect(tile).toHaveTextContent('Nothing on file yet')
+    const [amzn, tsla, , , firstUnheld] = tiles()
+    expect(amzn).toHaveTextContent('Idea without a case')
+    expect(amzn).toHaveTextContent('AMZN is being worked without a written case: an open idea, and 5.4% of Tech & Consumer Growth.')
+    expect(amzn).toHaveTextContent('1 open idea')
+    expect(tsla).toHaveTextContent('Position without a thesis')
+    expect(tsla).toHaveTextContent('A 3.2% position in Tech & Consumer Growth with no written thesis.')
+    expect(tsla).toHaveTextContent('3.2')
+    expect(firstUnheld).toHaveTextContent('No thesis on file')
+    expect(firstUnheld).toHaveTextContent('is on your coverage with no thesis yet.')
     expect(document.body.textContent).not.toContain('What best describes this position?')
   })
 
@@ -153,20 +169,31 @@ describe('order, capacity and diversity', () => {
     expect(withCoverageSubjects(real, fifty()).some(s => s.generated)).toBe(false)
   })
 
-  it('lets events through and caps each structural gap', () => {
+  it('lets events through, caps bare coverage and each structural gap, within capacity', () => {
     const pool = [
       ...Array.from({ length: 10 }, (_, i) => candidate(`NC${i}`, 'no_case')),
       ...Array.from({ length: 3 }, (_, i) => candidate(`MV${i}`, 'price_move')),
       ...Array.from({ length: 6 }, (_, i) => candidate(`IN${i}`, 'incomplete_case')),
       ...Array.from({ length: 2 }, (_, i) => candidate(`ST${i}`, 'long_silence')),
     ]
-    const states = withCoverageSubjects([], pool).map(stateOf)
-    expect(states).toEqual([
+    const out = withCoverageSubjects([], pool)
+    expect(out).toHaveLength(RESEARCH_FEED_CAPACITY)
+    expect(out.map(stateOf)).toEqual([
       'moved-since-review', 'moved-since-review', 'moved-since-review',
-      'no-thesis', 'no-thesis', 'no-thesis', 'no-thesis',
-      'incomplete-thesis', 'incomplete-thesis', 'incomplete-thesis', 'incomplete-thesis',
-      'stale',
+      'no-thesis', 'no-thesis', 'no-thesis', 'no-thesis', 'no-thesis',
+      'incomplete-thesis', 'incomplete-thesis',
     ])
+  })
+
+  it('prefers an open idea, then a larger position, over the shared priority', () => {
+    const out = withCoverageSubjects([], [
+      candidate('MOVE', 'price_move'),
+      candidate('SMALL', 'no_case', { exposure: held(1.1) }),
+      candidate('BIG', 'incomplete_case', { exposure: held(6.0) }),
+      candidate('IDEA', 'no_case', { liveIdeas: [{ id: 'i', action: 'buy' }] }),
+    ])
+    expect(out.map(s => s.symbol)).toEqual(['IDEA', 'BIG', 'SMALL', 'MOVE'])
+    expect(out.map(issueFor)).toEqual(['Idea without a case', 'Incomplete thesis', 'Position without a thesis', 'Moved since review'])
   })
 
   it('breaks ties on an open idea, then on how much is held', () => {
@@ -203,7 +230,17 @@ describe('generated tiles navigate like every Research tile', () => {
     expect(moved).toHaveTextContent('+18.2')
     expect(incomplete).toHaveAttribute('data-state', 'incomplete-thesis')
     expect(incomplete).toHaveTextContent('Incomplete thesis')
-    expect(incomplete).toHaveTextContent('written')
+    expect(incomplete).toHaveTextContent('The NKE case is missing where we differ and risks to thesis.')
+  })
+
+  it('opens a coverage name beyond the field’s capacity as the same subject, not "nothing on record"', () => {
+    env.gaps = { status: 'ready', candidates: bogey(), coveredCount: 50 }
+    // U40 is well past the bare-coverage cap, so it has no tile here -- but
+    // Today can still send the reader to it.
+    render(<ResearchWorkspace focusObjectId="a-u40" />)
+    const detail = screen.getByTestId('research-detail')
+    expect(detail).toHaveTextContent('U40 is on your coverage with no thesis yet.')
+    expect(screen.queryByText(/Nothing on record for that name/)).not.toBeInTheDocument()
   })
 })
 

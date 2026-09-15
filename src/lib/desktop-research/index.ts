@@ -17,8 +17,8 @@ export {
 } from './model'
 
 export {
-  withCoverageSubjects, subjectFromCoverage, compareCoverageCandidates,
-  RESEARCH_FEED_CAPACITY, GENERATED_PER_STRUCTURAL_GAP,
+  withCoverageSubjects, subjectFromCoverage,
+  RESEARCH_FEED_CAPACITY, RESEARCH_STRUCTURAL_CAPS,
 } from './coverage-subjects'
 
 export { openResearch, subscribeToOpenResearch, researchTabFor, OPEN_RESEARCH_EVENT } from './navigate'

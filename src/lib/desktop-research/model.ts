@@ -126,6 +126,13 @@ export interface ResearchSubject {
     coverage: 'own' | 'assigned'
     /** Signed move since the review anchor; `price_move` only. */
     movePct: number | null
+    /** Why the gap matters on this name: an open idea, a position, or coverage alone. */
+    context: 'idea' | 'held' | 'unheld'
+    /** The label and the one-sentence reason, from `lib/research/coverage-work`. */
+    label: string
+    claim: string
+    liveIdeaCount: number
+    portfolioName: string | null
   }
 }
 
@@ -194,6 +201,9 @@ export const STATE_LABEL: Record<ResearchState, string> = {
  * known the caller passes it in; it is never assumed.
  */
 export function whyItMatters(s: ResearchSubject, movePct?: number | null): string {
+  // A generated subject says why the gap matters on THIS name -- an open idea,
+  // a position, or coverage alone -- in the words Today uses for it too.
+  if (s.generated) return s.generated.claim
   const t = s.symbol ?? 'this name'
   switch (stateOf(s)) {
     case 'evidence-since-review':
@@ -210,12 +220,11 @@ export function whyItMatters(s: ResearchSubject, movePct?: number | null): strin
       if (!held.length) return `No thesis has been written for ${t} yet.`
       return `${held.join(' and ')} on file for ${t}, but no thesis has been written.`
     }
-    case 'moved-since-review': {
-      const m = s.generated?.movePct ?? movePct
-      return m != null
-        ? `${t} has moved ${fmtPct(m)} since the thesis was last reviewed.`
+    // Only a generated subject reaches this state, and it returned above.
+    case 'moved-since-review':
+      return movePct != null
+        ? `${t} has moved ${fmtPct(movePct)} since the thesis was last reviewed.`
         : `${t} has moved materially since the thesis was last reviewed.`
-    }
     case 'incomplete-thesis': {
       const missing = CORE_SECTIONS.filter(k => !s.coreSections.includes(k)).map(k => SECTION_LABEL[k].toLowerCase())
       return `The ${t} case is missing ${missing.join(' and ')}.`
@@ -267,7 +276,7 @@ export function primaryActionFor(s: ResearchSubject): string {
 /* -------------------------------------------------------------------------- */
 
 export function issueFor(s: ResearchSubject): string {
-  return STATE_LABEL[stateOf(s)]
+  return s.generated?.label ?? STATE_LABEL[stateOf(s)]
 }
 
 export function seedPromptFor(s: ResearchSubject): string {

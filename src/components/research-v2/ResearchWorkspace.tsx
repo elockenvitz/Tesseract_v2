@@ -19,8 +19,8 @@ import {
 /** Why the reader was sent, preserved so the workspace can say it. */
 interface Arrival { issue?: string | null; origin?: string | null }
 import {
-  stateOf, whyItMatters, compareSubjects, issueFor, withCoverageSubjects,
-  subscribeToOpenResearch, STATE_LABEL, CORE_SECTIONS, SECTION_LABEL,
+  stateOf, whyItMatters, compareSubjects, issueFor, withCoverageSubjects, subjectFromCoverage,
+  subscribeToOpenResearch, CORE_SECTIONS, SECTION_LABEL,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
 import { useCoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
@@ -116,7 +116,18 @@ export function ResearchWorkspace({
    * into a research workspace while Back still says Today.
    */
   const activeId = focusObjectId ?? null
-  const requested = activeId ? ranked.find(s => s.assetId === activeId) ?? null : null
+  /*
+   * A coverage name opened from elsewhere (Today's backfill) may sit below the
+   * capacity this field shows. It is still the reader's coverage work, so it
+   * opens as the same generated subject rather than as "nothing on record".
+   */
+  const requested = activeId
+    ? ranked.find(s => s.assetId === activeId)
+      ?? (() => {
+        const c = gaps.candidates.find(x => x.assetId === activeId)
+        return c ? subjectFromCoverage(c) : null
+      })()
+    : null
   const missing = !!activeId && !requested
   // Nothing deep is fetched while browsing, or when a request missed.
   const { detail } = useResearchDetail(requested)
@@ -155,7 +166,7 @@ export function ResearchWorkspace({
   // With nothing on record yet, wait for the coverage work rather than
   // announcing an empty lens that is about to fill.
   if (isLoading || (!scanned.length && gaps.status === 'loading')) return <Loading />
-  if (!ranked.length) return <Empty />
+  if (!ranked.length && !requested) return <Empty />
 
   if (activeId) {
     if (missing || !requested) {
@@ -228,7 +239,7 @@ export function toRailCard(s: ResearchSubject): RailCard {
   if (state === 'evidence-since-review') {
     return {
       id: s.assetId, workspaceLens: 'research', objectType: 'asset',
-      symbol: s.symbol, reason: STATE_LABEL[state], tone: STATE_TONE[state],
+      symbol: s.symbol, reason: issueFor(s), tone: STATE_TONE[state],
       figure: arrivals > 1 ? String(arrivals) : null,
       figureLabel: arrivals > 1 ? 'new items' : null,
       secondary: s.weightPct != null
@@ -244,7 +255,7 @@ export function toRailCard(s: ResearchSubject): RailCard {
     const m = s.generated?.movePct
     return {
       id: s.assetId, workspaceLens: 'research', objectType: 'asset',
-      symbol: s.symbol, reason: STATE_LABEL[state], tone: STATE_TONE[state],
+      symbol: s.symbol, reason: issueFor(s), tone: STATE_TONE[state],
       figure: m != null ? `${m >= 0 ? '+' : ''}${m.toFixed(1)}%` : null,
       figureLabel: m != null ? 'since review' : null,
       secondary: s.weightPct != null
@@ -259,20 +270,21 @@ export function toRailCard(s: ResearchSubject): RailCard {
       .map(k => SECTION_LABEL[k] ?? k)
     return {
       id: s.assetId, workspaceLens: 'research', objectType: 'asset',
-      symbol: s.symbol, reason: STATE_LABEL[state], tone: STATE_TONE[state],
+      symbol: s.symbol, reason: issueFor(s), tone: STATE_TONE[state],
       figure: s.weightPct != null ? `${s.weightPct.toFixed(1)}%` : null,
       figureLabel: s.weightPct != null ? 'held' : null,
       secondary: s.evidenceCount
         ? { value: String(s.evidenceCount), label: 'on file' } : null,
-      // The missing structure, named. Never a completion score.
-      detail: missing.length ? `Missing: ${missing.join(', ')}` : whyItMatters(s),
+      // Generated work says why it matters on this name; otherwise the missing
+      // structure, named. Never a completion score.
+      detail: s.generated ? whyItMatters(s) : missing.length ? `Missing: ${missing.join(', ')}` : whyItMatters(s),
       issue: issueFor(s),
     }
   }
 
   return {
     id: s.assetId, workspaceLens: 'research', objectType: 'asset',
-    symbol: s.symbol, reason: STATE_LABEL[state], tone: STATE_TONE[state],
+    symbol: s.symbol, reason: issueFor(s), tone: STATE_TONE[state],
     figure: s.daysSinceReview != null ? `${s.daysSinceReview}d` : null,
     figureLabel: s.daysSinceReview != null ? 'since the case' : null,
     secondary: s.weightPct != null
@@ -321,7 +333,7 @@ function SubjectTile({
       size={size}
       onOpen={onOpen}
       eyebrow={<>
-        <TileState tone={tone}>{STATE_LABEL[state]}</TileState>
+        <TileState tone={tone}>{issueFor(subject)}</TileState>
         <TileFigure>
           {subject.daysSinceReview != null ? `${subject.daysSinceReview}d since review` : 'never reviewed'}
         </TileFigure>
@@ -372,12 +384,36 @@ function SubjectTile({
       ) : state === 'no-thesis' || state === 'incomplete-thesis' ? (
         /* The shape of what is missing, at whatever scale the card has. */
         <div className="flex min-w-0 flex-1 flex-col">
-          <MissingThesis present={subject.coreSections} size={size} />
+          {/*
+            Generated work leads with why it matters on this name, not with the
+            blank: the position it puts at risk, or the idea being worked without
+            a case. The missing structure follows where the card has room.
+          */}
+          {subject.generated && subject.generated.context !== 'unheld' && subject.weightPct != null && (
+            <div className="mb-2">
+              <TileLead
+                figure={subject.weightPct.toFixed(1)}
+                unit="%"
+                label={subject.generated.portfolioName ? <>of {subject.generated.portfolioName}</> : <>of the book</>}
+              />
+            </div>
+          )}
+          {subject.generated && (
+            <div data-testid="research-tile-reason" className="mb-2">
+              <TileReason>{whyItMatters(subject)}</TileReason>
+            </div>
+          )}
+          {(!subject.generated || big) && <MissingThesis present={subject.coreSections} size={size} />}
           <div className="mt-auto pt-3">
             <TileMeta>
-              {subject.weightPct != null && (
+              {subject.weightPct != null && !subject.generated && (
                 <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">
                   {subject.weightPct.toFixed(1)}% held
+                </span>
+              )}
+              {!!subject.generated?.liveIdeaCount && (
+                <span className="font-semibold text-gray-800 dark:text-gray-200">
+                  {subject.generated.liveIdeaCount} open idea{subject.generated.liveIdeaCount === 1 ? '' : 's'}
                 </span>
               )}
               <span>{subject.evidenceCount ? `${subject.evidenceCount} research on file` : 'Nothing on file yet'}</span>
