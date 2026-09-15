@@ -77,6 +77,7 @@ export function useIdeaScan() {
         .select(`
           id, asset_id, portfolio_id, action, stage, status, outcome, rationale, conviction, urgency,
           proposed_weight, decision_outcome, visibility_tier, created_by, created_at, updated_at,
+          origin_metadata,
           assets(id, symbol, company_name),
           portfolios(id, name),
           users!trade_queue_items_created_by_fkey(id, first_name, last_name, email)
@@ -109,6 +110,9 @@ export function useIdeaScan() {
           createdAt: r.created_at,
           updatedAt: r.updated_at ?? null,
           decisionOutcome: r.decision_outcome ?? null,
+          // Provenance, read and carried -- never written, never filtered away
+          // here. What an operational surface does with it is its decision.
+          isPilotSeed: (r.origin_metadata as Record<string, unknown> | null)?.pilot_seed === true,
         }))
     },
   })

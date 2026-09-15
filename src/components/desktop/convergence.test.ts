@@ -323,8 +323,10 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // Every card now carries a visual, so the honesty rule moved: the choice
     // is made from the data the idea actually has, and the fallback draws
     // lifecycle and elapsed time rather than a fabricated chart.
+    // Guarded for generated coverage prompts, which draw nothing at all; the
+    // selection rule inside the literal is what this pins.
     const pick = ideas.slice(
-      ideas.indexOf('const available = (['), ideas.indexOf('].filter(Boolean)'))
+      ideas.indexOf('const available = (g ? [] : ['), ideas.indexOf(']).filter(Boolean)'))
     expect(pick).toContain("weightPct != null && idea.proposedWeight != null ? 'sizing'")
     expect(pick).toContain("frame?.target != null && spot != null ? 'target'")
     // The fallback is an investment fact, not a workflow one: stage is nowhere

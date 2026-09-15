@@ -265,9 +265,12 @@ describe('generated tiles navigate like every Research tile', () => {
 })
 
 describe('scope', () => {
-  it('leaves Ideas unwired, and the queue UI is gone', () => {
+  it('keeps Research’s own subjects to itself, and the queue UI is gone', () => {
+    // Ideas reads the same shared candidates now, in its own shape. What it
+    // must never do is render Research's subjects: one source, two lenses,
+    // two vocabularies.
     for (const file of ['src/components/ideas-v2/IdeasWorkspace.tsx']) {
-      expect(readFileSync(path.join(process.cwd(), file), 'utf8'), file).not.toMatch(/useCoverageResearchGaps|withCoverageSubjects/)
+      expect(readFileSync(path.join(process.cwd(), file), 'utf8'), file).not.toMatch(/withCoverageSubjects|subjectFromCoverage/)
     }
     expect(existsSync(path.join(process.cwd(), 'src/components/research-v2/CoverageGapQueue.tsx'))).toBe(false)
     expect(existsSync(path.join(process.cwd(), 'src/lib/research/coverage-gap-queue.ts'))).toBe(false)

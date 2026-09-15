@@ -208,7 +208,12 @@ export interface IdeaCardProps {
 function read(
   idea: IdeaRow, frame?: ScanFrame, exposure?: ScanExposure, openPrice?: number,
 ) {
-  const weightPct = exposure?.pct
+  /*
+   * A generated coverage prompt carries its own exposure: the scan's exposure
+   * map is built from real ideas, and a suggested name is not one of them.
+   */
+  const g = idea.generated
+  const weightPct = g ? (g.weightPct ?? undefined) : exposure?.pct
   const rung = (n: string) => frame?.ladder?.find(c => c.name === n)?.price ?? null
   const bear = rung('Bear'), bull = rung('Bull'), base = rung('Base')
   const spot = frame?.spot ?? null
@@ -234,7 +239,16 @@ function read(
    * statement that there is nothing to draw, so it can be the only thing on a
    * card but never the second thing.
    */
-  const available = ([
+  /*
+   * A suggestion draws nothing.
+   *
+   * Every primitive here answers a question about an idea that exists -- where
+   * price sits against the framework it wrote, how the book's exposure compares
+   * with the intent. A prompt has none of that, and the exposure primitives
+   * need the scan's ranked exposure record, which a suggested name has no
+   * entry in. The claim is the card.
+   */
+  const available = (g ? [] : [
     range ? 'range' : null,
     /*
      * The price against the framework it is being judged by.
@@ -256,7 +270,7 @@ function read(
     // written but never priced is somebody stopping one step short of a
     // decidable idea; nothing modelled at all is a different finding.
     (frame?.casesNamed ?? 0) > 0 ? 'cases' : null,
-  ].filter(Boolean) as IdeaVisualKind[])
+  ]).filter(Boolean) as IdeaVisualKind[]
 
   return {
     range,
@@ -319,12 +333,17 @@ function read(
      * facts the client is authorised to read: the written case lives behind
      * column-level grants the scan does not hold.
      */
-    gaps: [
+    /*
+     * A suggestion names no absences. "No cases · no target · not held" is a
+     * complaint about an idea that exists; here nothing exists yet, and the
+     * tile's whole content is the reason to start one.
+     */
+    gaps: (g ? [] : [
       'No cases',
       frame?.target != null ? null : 'No target',
       spot != null ? null : 'No price',
       weightPct != null ? null : 'Not held',
-    ].filter(Boolean) as string[],
+    ].filter(Boolean)) as string[],
     /**
      * What this idea is asking someone to do.
      *
@@ -349,13 +368,19 @@ function read(
       target: frame?.target,
       weightPct,
     }, false) ?? 'Open idea',
-    whyNow: [
+    // A suggestion has no maturity to report: it says what it is and where the
+    // exposure sits.
+    whyNow: (g ? [
+      g.coverage === 'own' ? 'Your coverage' : 'Assigned to you',
+      idea.portfolioName ? `in ${idea.portfolioName}` : null,
+      weightPct != null ? `${weightPct.toFixed(1)}% held` : null,
+    ] : [
       MATURITY_LABEL[idea.maturity],
       idea.portfolioName ? `in ${idea.portfolioName}` : 'no book assigned',
       weightPct != null ? `${weightPct.toFixed(1)}% held` : null,
       idea.proposedWeight != null ? `${idea.proposedWeight.toFixed(1)}% proposed` : null,
       range && asymmetry(range).outside ? 'price outside the range' : null,
-    ].filter(Boolean).join(' · '),
+    ]).filter(Boolean).join(' · '),
     /**
      * The one metadata line, and everything that belongs on it.
      *
@@ -365,15 +390,53 @@ function read(
      * nearly every row in production, so printing it everywhere would be
      * chrome rather than signal.
      */
-    context: [
+    // Nothing is "open" on a suggestion, so its line carries the standing
+    // context and no age.
+    context: (g ? [
+      idea.portfolioName,
+      weightPct != null ? `${weightPct.toFixed(1)}% held` : 'not held',
+    ] : [
       idea.portfolioName,
       days < 45 ? `${days}d open` : `open ${Math.round(days / 30)} months`,
       idea.conviction === 'high' ? 'High conviction' : null,
       idea.urgency === 'urgent' || idea.urgency === 'high'
         ? `${idea.urgency === 'urgent' ? 'Urgent' : 'High'} urgency` : null,
       weightPct != null ? `${weightPct.toFixed(1)}% held` : null,
-    ].filter(Boolean).join(' · '),
+    ]).filter(Boolean).join(' · '),
   }
+}
+
+/**
+ * What kind of thing this tile is, in the card's own typographic grammar.
+ *
+ * A real idea states its stance and how far the thinking has got. A generated
+ * coverage prompt has neither -- nothing has been proposed and nothing is
+ * being researched -- so it says it is a suggestion and names the gap instead.
+ * Same line, same weights, same rule: the reader is never told a maturity that
+ * does not exist.
+ */
+function Stance({ idea }: { idea: IdeaRow }) {
+  if (idea.generated) {
+    return (
+      <>
+        <span
+          data-testid="idea-suggested"
+          className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-700 dark:text-blue-400"
+        >
+          Suggested
+        </span>
+        <span className="shrink-0 border-l border-gray-300 pl-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:border-white/15 dark:text-gray-400">
+          {idea.generated.label}
+        </span>
+      </>
+    )
+  }
+  return (
+    <>
+      <DirectionPill direction={idea.direction} />
+      <StagePill maturity={idea.maturity} />
+    </>
+  )
 }
 
 export function IdeaCard(props: IdeaCardProps) {
@@ -433,8 +496,7 @@ function FeaturedCard(props: IdeaCardProps) {
       pad={PAD.featured}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <DirectionPill direction={idea.direction} />
-        <StagePill maturity={idea.maturity} />
+        <Stance idea={idea} />
       </div>
 
       <div className={clsx('flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1', GAP.tight)}>
@@ -460,7 +522,11 @@ function FeaturedCard(props: IdeaCardProps) {
       {/* The setup, drawn on the card's own ground. No inner panel: a bordered
           white widget sitting on the featured tint read as a chart pasted onto
           the briefing rather than part of it. */}
-      <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="lg" />
+      {/* A suggestion has no relationship to draw: nothing exists yet, and a
+          panel listing what the idea it is not would lack is noise. */}
+      {!idea.generated && (
+        <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="lg" />
+      )}
 
       <div className="mt-auto pt-3"><Footer {...props} d={d} size="featured" /></div>
     </Shell>
@@ -484,8 +550,7 @@ function StandardCard(props: IdeaCardProps) {
   return (
     <Shell {...props} pad={PAD.standard}>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-        <DirectionPill direction={idea.direction} />
-        <StagePill maturity={idea.maturity} />
+        <Stance idea={idea} />
       </div>
 
       <div className={clsx('flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1', GAP.tight)}>
@@ -508,7 +573,9 @@ function StandardCard(props: IdeaCardProps) {
         </p>
       )}
 
-      <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="md" />
+      {!idea.generated && (
+        <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="md" />
+      )}
 
       <div className="mt-auto pt-2"><Footer {...props} d={d} size="standard" /></div>
     </Shell>
@@ -540,8 +607,7 @@ function CompactCard(props: IdeaCardProps) {
           margin, which is a lot of page for something that fits here. */}
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className={TICKER.compact}>{idea.symbol ?? '—'}</span>
-        <DirectionPill direction={idea.direction} />
-        <StagePill maturity={idea.maturity} />
+        <Stance idea={idea} />
       </div>
 
       {idea.thesis ? (
@@ -557,7 +623,9 @@ function CompactCard(props: IdeaCardProps) {
         </p>
       )}
 
-      <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="sm" />
+      {!idea.generated && (
+        <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="sm" />
+      )}
 
       <div className="mt-auto pt-1.5"><Footer {...props} d={d} size="compact" /></div>
     </Shell>
@@ -1231,10 +1299,14 @@ function Shell({
       data-testid="idea-tile"
       data-density={density}
       data-rank={rank}
-      data-maturity={idea.maturity}
+      data-maturity={idea.generated ? 'suggested' : idea.maturity}
       tabIndex={0}
       role="group"
-      aria-label={`${idea.symbol ?? 'Idea'}, ${MATURITY_LABEL[idea.maturity]}. Open idea.`}
+      /* A suggestion has no maturity to announce and nothing to open: it says
+         what it is and what the action will do. */
+      aria-label={idea.generated
+        ? `${idea.symbol ?? 'Asset'}, suggested. Start an idea.`
+        : `${idea.symbol ?? 'Idea'}, ${MATURITY_LABEL[idea.maturity]}. Open idea.`}
       onClick={portalClick}
       onKeyDown={e => {
         if (e.target !== e.currentTarget) return

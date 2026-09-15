@@ -92,6 +92,17 @@ vi.mock('../../hooks/useDesktopIdeas', () => ({
   },
 }))
 
+/*
+ * The thin-field inputs, off by default.
+ *
+ * This suite is about the reader's own ideas; coverage prompts and the pilot's
+ * seeded rows have their own suite (ideas-v2/__tests__/coverage-prompts).
+ */
+vi.mock('../../hooks/useCoverageResearchGaps', () => ({
+  useCoverageResearchGaps: () => ({ status: 'ready', candidates: [], coveredCount: 0 }),
+}))
+vi.mock('../../hooks/usePilotMode', () => ({ usePilotMode: () => ({ hasGraduated: false }) }))
+
 // The detail pane's own dependencies. Stubbed rather than exercised: this
 // suite is about which object is on screen, not what the decision widget does.
 vi.mock('../../hooks/useDesktopResearch', () => ({ useHasResearch: () => false }))
@@ -1181,8 +1192,10 @@ describe('scan, inspect, engage', () => {
     // `gap` is the statement that there is nothing to draw. It can be the only
     // thing on a card and never the second thing beside a real primitive.
     const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
-    const body = card.slice(card.indexOf('const available = (['))
-    const literal = body.slice(0, body.indexOf('].filter(Boolean)'))
+    // The list is now guarded for generated prompts, which draw nothing; the
+    // rule under test is what the literal itself may contain.
+    const body = card.slice(card.indexOf('const available = (g ? [] : ['))
+    const literal = body.slice(0, body.indexOf(']).filter(Boolean)'))
     expect(literal).toContain("'exposure'")
     expect(literal).not.toContain("'gap'")
   })

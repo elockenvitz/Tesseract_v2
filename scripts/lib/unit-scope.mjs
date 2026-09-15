@@ -155,6 +155,9 @@ export const GATED_DIRS = [
   'src/components/research-v2/__tests__',
   // Today's coverage backfill: what a thin or new account's home shows.
   'src/components/today/__tests__',
+  // Ideas' thin field: coverage prompts, and the pilot's seeded rows leaving
+  // the lens at graduation.
+  'src/components/ideas-v2/__tests__',
   /*
    * Today's domain layer: tiering, adaptation, diversity, enrichment and the
    * time labels every tile reads from.

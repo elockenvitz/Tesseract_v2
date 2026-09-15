@@ -14,6 +14,11 @@ export {
   primaryActionFor, targetFor,
 } from './model'
 
+export {
+  coverageIdeaPrompts, coverageIdeaPrompt, promptLabel, promptClaim,
+  IDEAS_FIELD_TARGET, IDEAS_PROMPT_LIMIT, IDEAS_PROMPT_CAPS,
+} from './coverage-prompts'
+
 export type { IdeaTier, IdeaScore } from './rank'
 export { IDEA_TIER_LABEL, scoreIdea, compareIdeas } from './rank'
 

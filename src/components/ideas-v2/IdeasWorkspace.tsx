@@ -26,8 +26,12 @@ import {
 } from '../../hooks/useDesktopIdeas'
 import {
   scoreIdea, compareIdeas, subscribeToOpenIdea, MATURITY_LABEL, targetFor,
+  coverageIdeaPrompts,
   type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
+import { useCoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
+import { usePilotMode } from '../../hooks/usePilotMode'
+import { openCreate } from '../../lib/today/create-actions'
 import { IdeaDetail } from './IdeaDetail'
 import { IdeaCard, densityForRank } from './IdeaCard'
 import { askAI, canDiscuss, discuss } from '../../lib/engagement'
@@ -77,7 +81,22 @@ export interface IdeasWorkspaceProps {
 export function IdeasWorkspace({
   selectedIdeaId, focus, issue, focusObjectId, intent,
 }: IdeasWorkspaceProps = {}) {
-  const { ideas, isLoading } = useIdeaScan()
+  const { ideas: scanned, isLoading } = useIdeaScan()
+  const { hasGraduated } = usePilotMode()
+
+  /**
+   * The pilot's seeded demo ideas leave the field once the pilot is over.
+   *
+   * They are real rows and stay exactly as they are -- their records,
+   * provenance and history are untouched, and every other surface still shows
+   * them. What they must not do is fill a graduated reader's Ideas lens with
+   * fixed demo tickers so that genuine work ranks below a tour. Before
+   * graduation they ARE the work, so they stay.
+   */
+  const ideas = useMemo(
+    () => (hasGraduated ? scanned.filter(i => !i.isPilotSeed) : scanned),
+    [scanned, hasGraduated],
+  )
   const exposure = useScanExposure(ideas)
   const openPrice = useScanOpenPrice(ideas)
   const [arrival, setArrival] = useState<{ focus?: IdeaFocus | null; issue?: string | null } | null>(
@@ -91,9 +110,26 @@ export function IdeasWorkspace({
     if (selectedIdeaId) setArrival({ focus, issue })
   }, [selectedIdeaId, focus, issue])
 
+  /*
+   * What the reader covers and has no idea on, as suggestions.
+   *
+   * The same shared source Today and Research read, so a name is described the
+   * same way wherever it appears, and only the reader's own or assigned
+   * coverage. It never blocks the field: real ideas render as soon as the scan
+   * answers, and prompts append when the coverage scan does.
+   */
+  const gaps = useCoverageResearchGaps()
+  const prompts = useMemo(() => {
+    // Every asset an idea already concerns, including seeded rows hidden from
+    // the field: a prompt must not suggest starting work that exists.
+    const ideaAssetIds = new Set(
+      scanned.map(i => i.assetId).filter((id): id is string => !!id))
+    return coverageIdeaPrompts(gaps.candidates, { realCount: ideas.length, ideaAssetIds })
+  }, [gaps.candidates, ideas.length, scanned])
+
   const ranked = useMemo(() => {
     const now = Date.now()
-    return ideas
+    return [...ideas, ...prompts]
       .map(idea => ({
         idea,
         id: idea.id,
@@ -101,7 +137,7 @@ export function IdeasWorkspace({
       }))
       .sort(compareIdeas)
       .map(r => r.idea)
-  }, [ideas, exposure])
+  }, [ideas, prompts, exposure])
 
   /**
    * Selection lives in the deck. The ranking is untouched -- `ranked` is the
@@ -109,7 +145,11 @@ export function IdeasWorkspace({
    * meets first. What it never does is open one on their behalf.
    */
   const activeId = focusObjectId ?? null
-  const selected = activeId ? ranked.find(i => i.id === activeId) ?? null : null
+  // A generated prompt has no detail pane: it opens capture instead, so it can
+  // never become the deck's selected object.
+  const selected = activeId
+    ? ranked.find(i => i.id === activeId && !i.generated) ?? null
+    : null
   // One read for the whole gallery, so a tile can show where spot sits in the
   // desk's own ladder without costing a query per tile.
   const framework = useScanFramework(ranked)
@@ -117,7 +157,16 @@ export function IdeasWorkspace({
   // reader stays in it.
   const { detail } = useIdeaDetail(selected)
 
-  const open = (idea: IdeaRow, focus?: IdeaFocus) => openDashboardFocus({
+  /**
+   * A prompt is not an object to open: there is nothing to open yet.
+   *
+   * It opens the product's existing capture form with the asset bound, which
+   * is where an idea is actually written. Nothing is created until the reader
+   * submits it.
+   */
+  const open = (idea: IdeaRow, focus?: IdeaFocus) => idea.generated
+    ? openCreate('trade_idea', { assetId: idea.assetId, symbol: idea.symbol })
+    : openDashboardFocus({
     target: {
       originLens: 'ideas',
       workspaceLens: 'ideas',
@@ -158,6 +207,9 @@ export function IdeasWorkspace({
   }), [ranked])
 
   if (isLoading) return <Loading />
+  // With nothing real, wait for the coverage scan rather than saying the lens
+  // is empty and then filling it a moment later.
+  if (!ranked.length && gaps.status === 'loading') return <Loading />
   if (!ranked.length) return <Empty />
 
   if (selected) {
@@ -249,7 +301,9 @@ export function IdeasWorkspace({
           was a fact the page knew and never said.
         */}
         <p className="mt-1.5 max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
-          {summarise(ranked)}
+          {/* The line describes the reader's OWN ideas; a suggestion is not
+              awaiting a decision and cannot have gone cold. */}
+          {summarise(ideas)}
         </p>
 
         {/*
@@ -307,6 +361,7 @@ export const STALE_DAYS = 120
  */
 export function summarise(ideas: IdeaRow[]): string {
   const now = Date.now()
+  if (!ideas.length) return 'Nothing open yet. These are names on your coverage worth a look.'
   const deciding = ideas.filter(
     i => i.maturity === 'deciding' || i.maturity === 'decision_ready').length
   const stale = ideas.filter(

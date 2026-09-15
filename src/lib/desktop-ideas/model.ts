@@ -81,6 +81,33 @@ export interface IdeaRow {
   createdAt: string
   updatedAt: string | null
   decisionOutcome: string | null
+  /**
+   * Whether this row is one of the pilot's seeded demo ideas
+   * (`origin_metadata.pilot_seed`). Its record and provenance are untouched;
+   * this only lets an operational surface decide whether to rank it.
+   */
+  isPilotSeed?: boolean
+  /**
+   * Present only on a prompt Tesseract generated from the reader's coverage
+   * (lib/desktop-ideas/coverage-prompts), never on a row the scan read.
+   *
+   * A generated prompt is a suggestion: no direction, no maturity to claim,
+   * and nothing written anywhere until the reader starts an idea from it.
+   */
+  generated?: {
+    source: 'coverage'
+    framing: 'new_evidence' | 'price_move' | 'no_case' | 'incomplete_case' | 'long_silence'
+    coverage: 'own' | 'assigned'
+    /** Why it matters on this name: an open idea, a position, or coverage alone. */
+    context: 'idea' | 'held' | 'unheld'
+    /** The short state, from `coverage-prompts`. */
+    label: string
+    weightPct: number | null
+    movePct: number | null
+    /** The shared source's own ordering inputs, so Ideas does not re-derive them. */
+    priority: number
+    score: number
+  }
 }
 
 /*
@@ -148,6 +175,8 @@ export function familyFor(idea: IdeaRow, e: IdeaEnrichment | undefined): IdeaFam
 
 /** The one-line situation, used as the issue title and in the pane header. */
 export function issueFor(idea: IdeaRow, e: IdeaEnrichment | undefined): string {
+  // A generated prompt states its own gap; it has no maturity to report.
+  if (idea.generated) return idea.generated.label
   if (e?.ladder && e.spot != null) {
     const bull = Math.max(...e.ladder.cases.map(c => c.price))
     if (e.spot > bull) return 'Spot is above the current bull case'
@@ -168,6 +197,9 @@ export function issueFor(idea: IdeaRow, e: IdeaEnrichment | undefined): string {
  */
 export function seedPromptFor(idea: IdeaRow, e: IdeaEnrichment | undefined): string {
   const t = idea.symbol ?? 'this idea'
+  if (idea.generated) {
+    return `We cover ${t} and have no idea open on it. ${idea.thesis ?? ''} What would an idea here have to claim, and what would make it worth acting on now?`.trim()
+  }
   if (e?.ladder && e.spot != null && e.spot > Math.max(...e.ladder.cases.map(c => c.price))) {
     return `${t} is trading above every case in our current framework. What would need to change in the framework to justify the current price?`
   }
@@ -204,6 +236,9 @@ export function primaryActionFor(
   e: IdeaEnrichment | undefined,
   canDecide?: boolean,
 ): string | null {
+  // The prompt's whole purpose: open capture on this name. Nothing is created
+  // until the reader submits the form.
+  if (idea.generated) return 'Start an idea'
   if (e?.ladder && e.spot != null && e.spot > Math.max(...e.ladder.cases.map(c => c.price))) {
     return 'Review scenarios'
   }
@@ -218,6 +253,40 @@ export function primaryActionFor(
 
 export function targetFor(idea: IdeaRow, e: IdeaEnrichment | undefined): EngagementTarget | null {
   if (!idea.id) return null
+
+  /*
+   * A generated prompt is about the ASSET, because no idea object exists yet.
+   * Binding Ask AI or a thread to `coverage-prompt:...` would point both at a
+   * row nobody can open.
+   */
+  if (idea.generated) {
+    if (!idea.assetId) return null
+    const g = idea.generated
+    const chips: { label: string; value: string }[] = []
+    if (g.weightPct != null) chips.push({ label: 'Weight', value: `${g.weightPct.toFixed(1)}%` })
+    if (idea.portfolioName) chips.push({ label: 'Portfolio', value: idea.portfolioName })
+    if (g.movePct != null) chips.push({ label: 'Move', value: `${g.movePct >= 0 ? '+' : ''}${g.movePct.toFixed(1)}%` })
+    chips.push({ label: 'Coverage', value: g.coverage === 'own' ? 'Mine' : 'Assigned' })
+    return {
+      objectType: 'asset',
+      objectId: idea.assetId,
+      label: idea.companyName ? `${idea.symbol} — ${idea.companyName}` : (idea.symbol ?? 'Asset'),
+      symbol: idea.symbol ?? undefined,
+      assetId: idea.assetId,
+      portfolioId: idea.portfolioId ?? undefined,
+      portfolioName: idea.portfolioName ?? undefined,
+      origin: { itemId: idea.id, surface: 'ideas' },
+      issue: {
+        title: g.label,
+        detail: idea.thesis ?? undefined,
+        reason: `coverage-prompt:${g.framing}`,
+        detectedAt: idea.createdAt,
+      },
+      seedPrompt: seedPromptFor(idea, e),
+      contextChips: chips,
+    }
+  }
+
   const chips: { label: string; value: string }[] = []
   if (idea.direction) chips.push({ label: 'Direction', value: idea.direction.toUpperCase() })
   chips.push({ label: 'Maturity', value: MATURITY_LABEL[idea.maturity] })

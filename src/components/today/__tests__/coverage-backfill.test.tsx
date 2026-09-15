@@ -189,8 +189,14 @@ describe('coverage tiles act like every Today tile', () => {
     expect(req.target).toMatchObject({ originLens: 'today', workspaceLens: 'research', objectId: 'a-amzn' })
   })
 
-  it('leaves Ideas untouched', () => {
+  it('shares its coverage source with the other lenses rather than forking one', () => {
+    // Ideas has since grown its own thin-state (ideas-v2/__tests__). What must
+    // stay true is that every lens reads the SAME candidates: one definition of
+    // what the reader covers and what is missing on it, never a second scan.
     const ideas = readFileSync(path.join(process.cwd(), 'src/components/ideas-v2/IdeasWorkspace.tsx'), 'utf8')
-    expect(ideas).not.toMatch(/useCoverageResearchGaps|coverageTodayItems|withCoverageSubjects/)
+    expect(ideas).toContain('useCoverageResearchGaps')
+    // And it renders them in ITS shape, never by importing Today's or
+    // Research's items.
+    expect(ideas).not.toMatch(/coverageTodayItems|withCoverageSubjects/)
   })
 })
