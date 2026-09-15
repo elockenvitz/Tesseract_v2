@@ -137,13 +137,21 @@ export function holdingsWriteSites(files: readonly string[]): WriteSite[] {
 
 const FILES = ROOTS.flatMap(r => walk(path.join(ROOT, r)))
 
+/**
+ * Each scan below reads every production file in the repository. Alone that
+ * takes about 4s; under the full parallel `guard:unit` run it went past
+ * vitest's 5s default and failed on time rather than on a finding. The limit
+ * is raised for the scans only — the fixture tests keep the default.
+ */
+const SCAN_TIMEOUT_MS = 30_000
+
 describe('no write to portfolio_holdings is unbounded', () => {
   it('finds the write sites at all', () => {
     // A walker that returned nothing would pass the real assertion forever.
     expect(FILES.length).toBeGreaterThan(400)
     const sites = holdingsWriteSites(FILES)
     expect(sites.length).toBeGreaterThan(0)
-  })
+  }, SCAN_TIMEOUT_MS)
 
   it('every INSERT and UPSERT carries a portfolio_id', () => {
     const bad = holdingsWriteSites(FILES)
@@ -157,7 +165,7 @@ describe('no write to portfolio_holdings is unbounded', () => {
           bad.map(s => `  ${s.file}:${s.line}  ${s.op}`).join('\n')
         : '',
     ).toEqual([])
-  })
+  }, SCAN_TIMEOUT_MS)
 
   it('every UPDATE and DELETE names the rows it touches', () => {
     const bad = holdingsWriteSites(FILES)
@@ -172,7 +180,7 @@ describe('no write to portfolio_holdings is unbounded', () => {
           bad.map(s => `  ${s.file}:${s.line}  ${s.op}`).join('\n')
         : '',
     ).toEqual([])
-  })
+  }, SCAN_TIMEOUT_MS)
 })
 
 describe('the check can see its own failure', () => {

@@ -174,6 +174,13 @@ export function browserKeyReads(files: readonly string[]): Finding[] {
   return findings
 }
 
+/**
+ * The src/ scan reads every source file. Under the full parallel `guard:unit`
+ * run it went past vitest's 5s default and failed on time rather than on a
+ * finding, so that one test gets a longer limit; nothing else changes.
+ */
+const SCAN_TIMEOUT_MS = 30_000
+
 describe('no provider credential is readable from the browser bundle', () => {
   it('names no secret-shaped VITE variable anywhere in src/', () => {
     const findings = browserKeyReads(sourceFiles(SRC))
@@ -192,7 +199,7 @@ describe('no provider credential is readable from the browser bundle', () => {
           `the VITE prefix — supabase/functions/market-news does this already.`
         : '',
     ).toEqual([])
-  })
+  }, SCAN_TIMEOUT_MS)
 
   it('declares no secret-shaped VITE variable in any config surface', () => {
     /*
