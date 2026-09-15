@@ -53,7 +53,8 @@ import {
 } from '../hooks/useDecisionReview'
 import type { CandidateTradeEvent, Reflection } from '../hooks/useDecisionAccountability'
 import { PositionChart } from '../components/outcomes/PositionChart'
-import { OptionPicker } from '../components/ui/OptionPicker'
+import { PositionChartMobile } from '../components/outcomes/PositionChartMobile'
+import { PLOT_HEIGHT as MOBILE_PLOT_HEIGHT, type ChartRange, type OverlayField } from '../components/outcomes/position-chart-model'
 import {
   inferDecisionIntelligence, buildProcessHealth, buildSmartChips,
   VERDICT_DISPLAY, VERDICT_EXPLANATIONS, HEALTH_DISPLAY,
@@ -1640,6 +1641,10 @@ export function DetailPanel({
   // Kept across decision changes (a marker tap should not hide the chart it
   // came from); the panel unmounting on close resets it.
   const [chartOpen, setChartOpen] = useState(false)
+  // The chart's metric and range live here, not in the chart, so hiding and
+  // re-showing the chart keeps them. null range = the data's default.
+  const [chartMetric, setChartMetric] = useState<OverlayField>('shares')
+  const [chartRange, setChartRange] = useState<ChartRange | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const dirCfg = DIRECTION_CONFIG[row.direction] || { color: 'text-gray-600 dark:text-gray-400', bgColor: 'bg-gray-100 dark:bg-gray-800' }
   const baseIntel = inferDecisionIntelligence(row)
@@ -1711,6 +1716,31 @@ export function DetailPanel({
                 {[row.asset_name, ageDays <= 0 ? 'Decided today' : `Decided ${ageDays}d ago`, row.portfolio_name].filter(Boolean).join(' · ')}
               </p>
             </div>
+            {/* Compact chart control: a 32px pill inside a 44px tap area,
+                pressed while the chart is showing. */}
+            <button
+              type="button"
+              data-slot="outcomes-chart-toggle"
+              aria-expanded={chartOpen}
+              aria-label={chartOpen ? 'Hide chart' : 'Show chart'}
+              onClick={() => {
+                const next = !chartOpen
+                setChartOpen(next)
+                // The chart opens at the top of the story, so bring it into view.
+                if (next) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+              className="h-11 shrink-0 flex items-center"
+            >
+              <span className={clsx(
+                'inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-[13px] font-medium',
+                chartOpen
+                  ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-950/40 dark:text-primary-300'
+                  : 'border-gray-200 bg-white text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200',
+              )}>
+                <LineChart className="w-4 h-4" />
+                Chart
+              </span>
+            </button>
             <button
               type="button"
               onClick={onClose}
@@ -1720,21 +1750,6 @@ export function DetailPanel({
               <X className="w-5 h-5" />
             </button>
           </div>
-          <button
-            type="button"
-            data-slot="outcomes-chart-toggle"
-            aria-expanded={chartOpen}
-            onClick={() => {
-              const next = !chartOpen
-              setChartOpen(next)
-              // The chart opens at the top of the story, so bring it into view.
-              if (next) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-            }}
-            className="mt-3 w-full min-h-[44px] inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white text-[14px] font-medium text-gray-700 active:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:active:bg-gray-700"
-          >
-            <LineChart className="w-4 h-4" />
-            {chartOpen ? 'Hide chart' : 'Show chart'}
-          </button>
         </div>
       ) : (
       <div className={`px-4 pt-3 pb-3 border-b shrink-0 ${headerTone}`}>
@@ -1822,8 +1837,16 @@ export function DetailPanel({
           <>
             {/* Phone: the chart, when asked for, leads the story. */}
             {chartOpen && (
-              <div data-slot="outcomes-phone-chart" className="mx-3 mt-3 rounded-xl border border-gray-200 overflow-hidden dark:border-gray-700">
-                <DeferredChartPanel row={row} onSelectDecision={onSelectDecision} />
+              // Full pane width: a rule above and below, no inset card.
+              <div data-slot="outcomes-phone-chart" className="border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+                <DeferredChartPanel
+                  row={row}
+                  onSelectDecision={onSelectDecision}
+                  metric={chartMetric}
+                  onMetricChange={setChartMetric}
+                  range={chartRange}
+                  onRangeChange={setChartRange}
+                />
               </div>
             )}
 
@@ -2742,10 +2765,7 @@ type PositionOverlay = 'none' | 'shares' | 'weight' | 'active_weight'
 // the brief delay so the layout doesn't reflow when the real chart
 // drops in. The chart bundle is already prefetched at page level,
 // so once mounted the panel reads warm cache.
-function DeferredChartPanel(props: {
-  row: AccountabilityRow
-  onSelectDecision?: (decisionId: string) => void
-}) {
+function DeferredChartPanel(props: ChartPanelProps) {
   const isMobileViewport = useIsMobile()
   const [ready, setReady] = useState(false)
   useEffect(() => {
@@ -2770,18 +2790,28 @@ function DeferredChartPanel(props: {
     return (
       <div
         className={clsx('shrink-0 bg-white dark:bg-gray-800', !isMobileViewport && 'border-t border-gray-200 dark:border-gray-700')}
-        style={{ height: isMobileViewport ? 268 : 260 }}
+        style={{ height: isMobileViewport ? MOBILE_PLOT_HEIGHT + 140 : 260 }}
       />
     )
   }
   return <BottomChartPanel {...props} />
 }
 
-function BottomChartPanel({ row, onSelectDecision }: {
+interface ChartPanelProps {
   row: AccountabilityRow
   onSelectDecision?: (decisionId: string) => void
-}) {
+  /** Phone only: metric and range owned by the detail panel so they survive
+   *  the chart being hidden. Uncontrolled when omitted. */
+  metric?: OverlayField
+  onMetricChange?: (metric: OverlayField) => void
+  range?: ChartRange | null
+  onRangeChange?: (range: ChartRange) => void
+}
+
+function BottomChartPanel({ row, onSelectDecision, metric, onMetricChange, range, onRangeChange }: ChartPanelProps) {
   const [overlay, setOverlay] = useState<PositionOverlay>('shares')
+  const [localMetric, setLocalMetric] = useState<OverlayField>('shares')
+  const [localRange, setLocalRange] = useState<ChartRange | null>(null)
 
   const { data: lifecycle, isLoading: lcLoading } = usePositionLifecycle({
     assetId: row.asset_id,
@@ -2833,7 +2863,7 @@ function BottomChartPanel({ row, onSelectDecision }: {
   const isLoading = phLoading && lcLoading
   const hasHoldings = holdingsHistory.length > 0
   const isMobileViewport = useIsMobile()
-  const chartHeight = isMobileViewport ? 180 : 240
+  const chartHeight = 240
   // PositionChart requires a non-null lifecycle. While the real
   // lifecycle loads, supply a minimal stub so the chart renders the
   // price line without markers; the markers fill in once the live
@@ -2850,54 +2880,51 @@ function BottomChartPanel({ row, onSelectDecision }: {
     currentShares: 0,
   } as any
 
+  const selectFromChart = (sourceId: string, sourceType: 'trade_queue_item' | 'portfolio_trade_event') => {
+    if (!onSelectDecision) return
+    // Only decisions map to rows in the accountability list —
+    // execution events aren't first-class rows yet, so clicks
+    // on fuzzy-match dots are a no-op for now.
+    if (sourceType === 'trade_queue_item') onSelectDecision(sourceId)
+  }
+
+  /*
+   * Phone: its own chart, full pane width, with scrub, range and a metric
+   * switch built in. The phone header this replaced carried the metric as an
+   * OptionPicker whose bottom sheet portals to <body> at z-60 — underneath
+   * this z-85 overlay — so tapping "Shares" opened a menu nobody could see.
+   */
+  if (isMobileViewport) {
+    return (
+      <div className="bg-white dark:bg-gray-800">
+        {isLoading ? (
+          <div className="flex items-center justify-center" style={{ height: MOBILE_PLOT_HEIGHT + 140 }}>
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600" />
+          </div>
+        ) : priceHistory.length > 0 ? (
+          <PositionChartMobile
+            lifecycle={effectiveLifecycle}
+            priceHistory={priceHistory}
+            holdingsHistory={holdingsHistory}
+            benchmarkWeightPct={benchmarkWeightPct ?? null}
+            symbol={row.asset_symbol}
+            onSelectEvent={selectFromChart}
+            metric={metric ?? localMetric}
+            onMetricChange={onMetricChange ?? setLocalMetric}
+            range={range !== undefined ? range : localRange}
+            onRangeChange={onRangeChange ?? setLocalRange}
+          />
+        ) : (
+          <div className="flex items-center justify-center px-4 py-10 text-[13px] text-gray-500 text-center dark:text-gray-400">
+            No price history available for {row.asset_symbol || 'this asset'}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
-    <div className={clsx('shrink-0 bg-white dark:bg-gray-800', !isMobileViewport && 'border-t border-gray-200 dark:border-gray-700')}>
-      {/* Symbol, prices and the overlay toggle came to well over 390px on one
-          row — "Price Only / Shares / Weight / Active Wt" alone is most of a
-          phone's width, and a fixed overlay is not clipped by the shell, so
-          the excess panned the entire screen. On a phone the identity and
-          price share the first line and the toggle becomes a picker on the
-          second. Desktop keeps the single row it always had. */}
-      {isMobileViewport ? (
-        <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex items-center justify-between gap-2 min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <TrendingUp className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-              <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300 shrink-0">
-                {row.asset_symbol || 'Price'}
-              </span>
-              {row.portfolio_name && (
-                <span className="text-[10px] text-gray-400 truncate">in {row.portfolio_name}</span>
-              )}
-            </div>
-            {lifecycle && (
-              <div className="flex items-center gap-2 text-[10px] shrink-0">
-                {lifecycle.currentPrice != null && (
-                  <span className="text-gray-500 dark:text-gray-400">Now <span className="font-medium text-gray-700 dark:text-gray-300">${lifecycle.currentPrice.toFixed(2)}</span></span>
-                )}
-                {lifecycle.totalReturnPct != null && (
-                  <span className={`font-semibold ${lifecycle.totalReturnPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {lifecycle.totalReturnPct >= 0 ? '+' : ''}{lifecycle.totalReturnPct.toFixed(1)}%
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="mt-1.5">
-            <OptionPicker
-              label="Overlay"
-              value={overlay}
-              onChange={setOverlay}
-              options={[
-                { value: 'none',          label: 'Price only' },
-                { value: 'shares',        label: 'Shares' },
-                { value: 'weight',        label: 'Weight' },
-                { value: 'active_weight', label: 'Active weight' },
-              ]}
-            />
-          </div>
-        </div>
-      ) : (
+    <div className="shrink-0 bg-white border-t border-gray-200 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -2949,9 +2976,6 @@ function BottomChartPanel({ row, onSelectDecision }: {
             </div>
           )}
         </div>
-      )}
-      {/* Shorter on a phone: the chart opens inside the detail panel's scroll
-          there, above the story, so a tall one pushes the Summary off screen. */}
       <div className="px-2 py-1">
         {isLoading ? (
           <div className="flex items-center justify-center" style={{ height: chartHeight }}>
@@ -2965,13 +2989,7 @@ function BottomChartPanel({ row, onSelectDecision }: {
             overlayField={overlay !== 'none' ? overlay : undefined}
             benchmarkWeightPct={benchmarkWeightPct ?? null}
             symbol={row.asset_symbol}
-            onSelectEvent={(sourceId, sourceType) => {
-              if (!onSelectDecision) return
-              // Only decisions map to rows in the accountability list —
-              // execution events aren't first-class rows yet, so clicks
-              // on fuzzy-match dots are a no-op for now.
-              if (sourceType === 'trade_queue_item') onSelectDecision(sourceId)
-            }}
+            onSelectEvent={selectFromChart}
             height={chartHeight}
           />
         ) : (

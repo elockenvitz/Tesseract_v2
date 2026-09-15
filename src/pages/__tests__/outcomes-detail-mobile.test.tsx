@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, within, waitFor } from '@testing-library/react'
 
 const viewport = vi.hoisted(() => ({ phone: true }))
+const chartData = vi.hoisted(() => ({ prices: [] as Array<{ date: string; close: number }> }))
 
 vi.mock('../../hooks/useMediaQuery', () => ({ useIsMobile: () => viewport.phone }))
 vi.mock('../../lib/supabase', () => ({ supabase: { from: () => ({}) } }))
@@ -24,6 +25,18 @@ vi.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) 
 vi.mock('../../contexts/OrganizationContext', () => ({ useOrganization: () => ({ currentOrgId: 'org-1' }) }))
 vi.mock('../../components/common/Toast', () => ({ useToast: () => ({ success: () => {}, error: () => {} }) }))
 vi.mock('../../components/outcomes/PositionChart', () => ({ PositionChart: () => <div data-testid="position-chart" /> }))
+// The phone chart is tested on its own; here it only has to show which metric
+// and range the panel handed it, and let the test change them.
+vi.mock('../../components/outcomes/PositionChartMobile', () => ({
+  PositionChartMobile: (p: { metric: string; range: string | null; onMetricChange: (m: string) => void; onRangeChange: (r: string) => void }) => (
+    <div data-testid="position-chart-mobile">
+      <span data-testid="chart-metric">{p.metric}</span>
+      <span data-testid="chart-range">{p.range ?? 'default'}</span>
+      <button type="button" onClick={() => p.onMetricChange('weight')}>pick weight</button>
+      <button type="button" onClick={() => p.onRangeChange('All')}>pick all</button>
+    </div>
+  ),
+}))
 vi.mock('../../components/outcomes/ScorecardViews', () => ({ AnalystScorecardsView: () => null, PMScorecardsView: () => null }))
 vi.mock('../../components/mobile/MobileDecisionLedger', () => ({ MobileDecisionLedger: () => null }))
 vi.mock('../../components/pilot/PilotOutcomesGetStarted', () => ({ PilotOutcomesGetStarted: () => null }))
@@ -53,7 +66,7 @@ vi.mock('../../hooks/useDecisionReview', () => ({
 }))
 vi.mock('../../hooks/usePositionLifecycle', () => ({
   usePositionLifecycle: () => ({ data: null, isLoading: false }),
-  usePositionPriceHistory: () => ({ data: [], isLoading: false }),
+  usePositionPriceHistory: () => ({ data: chartData.prices, isLoading: false }),
   useHoldingsTimeSeries: () => ({ data: [] }),
 }))
 
@@ -142,6 +155,48 @@ describe('Outcomes detail on a phone', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Hide chart' }))
     expect(container.querySelector('[data-slot="outcomes-phone-chart"]')).toBeNull()
+  })
+
+  it('is a compact header control, not a full-width button', () => {
+    const { container } = renderPanel()
+    const toggle = container.querySelector('[data-slot="outcomes-chart-toggle"]') as HTMLElement
+    expect(toggle.className).not.toContain('w-full')
+    expect(toggle.textContent).toBe('Chart')
+    // Beside the close button, in the identity row.
+    expect(toggle.nextElementSibling?.getAttribute('aria-label')).toBe('Close detail')
+  })
+
+  it('opens the chart at full pane width, without an inset card', async () => {
+    chartData.prices = [{ date: '2026-09-01', close: 190 }]
+    try {
+      const { container } = renderPanel()
+      fireEvent.click(screen.getByRole('button', { name: 'Show chart' }))
+      const wrap = container.querySelector('[data-slot="outcomes-phone-chart"]') as HTMLElement
+      expect(wrap.className).not.toMatch(/\bmx-|rounded-xl/)
+      await waitFor(() => expect(within(wrap).getByTestId('position-chart-mobile')).toBeTruthy())
+    } finally {
+      chartData.prices = []
+    }
+  })
+
+  it('keeps the chosen metric and range when the chart is hidden and shown again', async () => {
+    chartData.prices = [{ date: '2026-09-01', close: 190 }]
+    try {
+      renderPanel()
+      fireEvent.click(screen.getByRole('button', { name: 'Show chart' }))
+      await waitFor(() => expect(screen.getByTestId('chart-metric').textContent).toBe('shares'))
+      fireEvent.click(screen.getByText('pick weight'))
+      fireEvent.click(screen.getByText('pick all'))
+      expect(screen.getByTestId('chart-metric').textContent).toBe('weight')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Hide chart' }))
+      expect(screen.queryByTestId('position-chart-mobile')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Show chart' }))
+      await waitFor(() => expect(screen.getByTestId('chart-metric').textContent).toBe('weight'))
+      expect(screen.getByTestId('chart-range').textContent).toBe('All')
+    } finally {
+      chartData.prices = []
+    }
   })
 
   it('puts the chart toggle above the story, not below it', () => {

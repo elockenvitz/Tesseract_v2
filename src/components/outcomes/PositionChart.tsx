@@ -18,9 +18,10 @@ import {
   ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import { format, parseISO } from 'date-fns'
-import type { PositionLifecycle, PositionEvent, PricePoint, HoldingsTimePoint } from '../../hooks/usePositionLifecycle'
+import type { PositionLifecycle, PricePoint, HoldingsTimePoint } from '../../hooks/usePositionLifecycle'
+import { buildPositionChartData, getActionConfig, markerGeometry, type OverlayField } from './position-chart-model'
 
-export type OverlayField = 'shares' | 'weight' | 'active_weight'
+export type { OverlayField }
 
 /** Benchmark weight for this asset, expressed as a percentage of the
  *  portfolio. Missing / null is treated as 0 when computing active
@@ -54,21 +55,6 @@ const OVERLAY_CONFIG: Record<OverlayField, { dataKey: string; label: string; col
   active_weight: { dataKey: 'activeWt',   label: 'Active Wt %', color: '#ec4899', formatter: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` },
 }
 
-const ACTION_CONFIG: Record<string, { color: string; symbol: string; label: string }> = {
-  buy:       { color: '#22c55e', symbol: '▲', label: 'Buy' },
-  add:       { color: '#22c55e', symbol: '+', label: 'Add' },
-  sell:      { color: '#ef4444', symbol: '▼', label: 'Sell' },
-  trim:      { color: '#ef4444', symbol: '−', label: 'Trim' },
-  initiate:  { color: '#22c55e', symbol: '▲', label: 'Initiate' },
-  exit:      { color: '#ef4444', symbol: '▼', label: 'Exit' },
-  reduce:    { color: '#f59e0b', symbol: '−', label: 'Reduce' },
-  increase:  { color: '#3b82f6', symbol: '+', label: 'Increase' },
-}
-
-function getActionConfig(action: string) {
-  return ACTION_CONFIG[action] || { color: '#6b7280', symbol: '●', label: action }
-}
-
 export function PositionChart({ lifecycle, priceHistory, holdingsHistory, overlayField = 'shares', benchmarkWeightPct, onSelectEvent, symbol, height = 220, className }: PositionChartProps) {
   const hasHoldings = holdingsHistory && holdingsHistory.length > 0
   const overlayCfg = hasHoldings ? OVERLAY_CONFIG[overlayField] : null
@@ -79,119 +65,10 @@ export function PositionChart({ lifecycle, priceHistory, holdingsHistory, overla
   // (cx/cy change on resize).
   const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null)
 
-  // Merge price history with events and holdings
-  const chartData = useMemo(() => {
-    // Build event map by date
-    const eventsByDate = new Map<string, PositionEvent[]>()
-    for (const evt of lifecycle.timeline) {
-      const dateKey = evt.date.slice(0, 10)
-      const list = eventsByDate.get(dateKey) || []
-      list.push(evt)
-      eventsByDate.set(dateKey, list)
-    }
-
-    // Build holdings map by date
-    const holdingsByDate = new Map<string, HoldingsTimePoint>()
-    if (holdingsHistory) {
-      for (const h of holdingsHistory) {
-        holdingsByDate.set(h.date, h)
-      }
-    }
-
-    // Build a price map for quick lookup, then build the union of all
-    // dates we want to plot. Decisions/executions made on a day that
-    // hasn't landed in price_history_cache yet (e.g., a pilot scenario
-    // approved today) would otherwise be silently dropped — the marker
-    // pipeline anchors to dates present in this array, so the union
-    // ensures every event has a row to attach to.
-    const priceByDate = new Map<string, number>()
-    for (const p of priceHistory) priceByDate.set(p.date, p.close)
-
-    const allDates = new Set<string>()
-    for (const p of priceHistory) allDates.add(p.date)
-    for (const d of eventsByDate.keys()) allDates.add(d)
-    for (const d of holdingsByDate.keys()) allDates.add(d)
-
-    if (allDates.size === 0) return []
-
-    const sortedDates = Array.from(allDates).sort((a, b) => a.localeCompare(b))
-
-    // Forward-fill price across the merged timeline so synthetic event
-    // dates (no cached close) still get a y-coordinate. Falls back to
-    // the decision/execution snapshot price, then the asset's current
-    // price, so the marker can always render somewhere sensible.
-    let lastClose: number | null = null
-    // Track last-known shares AND weight for step interpolation. Holdings
-    // snapshots aren't taken every day, so without carry-forward the
-    // shares/weight/active-weight overlays go blank on any day without a
-    // snapshot — makes the line look broken. Forward-fill until the next
-    // known snapshot overrides it.
-    //
-    // For newly-opened positions (one snapshot ever, opened by a buy/
-    // initiate decision), seed a 0-shares baseline so the area has at
-    // least two anchor points and actually renders. Without this, a
-    // "today only" pilot trade leaves the overlay invisible because
-    // Recharts can't draw an area from a single data point.
-    const onlyOneSnapshot = (holdingsHistory?.length ?? 0) <= 1
-    const firstDecision = lifecycle.timeline.find(e => e.type === 'decision' && e.stage === 'approved')
-    const isNewPosition = !!firstDecision && (firstDecision.action === 'buy' || firstDecision.action === 'initiate')
-    let lastShares: number | null = onlyOneSnapshot && isNewPosition ? 0 : null
-    let lastWeightPct: number | null = onlyOneSnapshot && isNewPosition ? 0 : null
-    // Missing benchmark weight is treated as 0 — an asset outside the
-    // benchmark has an active weight equal to its portfolio weight.
-    const benchWt = benchmarkWeightPct != null && Number.isFinite(benchmarkWeightPct)
-      ? benchmarkWeightPct
-      : 0
-
-    return sortedDates.map(date => {
-      const cachedClose = priceByDate.get(date)
-      if (cachedClose != null) lastClose = cachedClose
-
-      const events = eventsByDate.get(date) || []
-      const decisions = events.filter(e => e.type === 'decision' && e.stage === 'approved')
-      const executions = events.filter(e => e.type === 'execution')
-
-      // Pick the best available price for this row's price line. Prefer
-      // cached market close, fall back to the day's decision/execution
-      // snapshot, then the carried-forward last close, then current
-      // price as a last resort so the marker still renders.
-      const eventPrice = decisions[0]?.price ?? executions[0]?.price ?? null
-      const price = cachedClose ?? eventPrice ?? lastClose ?? lifecycle.currentPrice ?? null
-
-      // Holdings: use exact match or carry forward last known
-      const holding = holdingsByDate.get(date)
-      if (holding) {
-        lastShares = holding.shares
-        if (holding.weightPct != null) lastWeightPct = holding.weightPct
-      }
-      const shares = holding?.shares ?? lastShares
-      const weightPct = holding?.weightPct ?? lastWeightPct
-      // Active weight = portfolio weight − benchmark weight. Null only
-      // when we have no portfolio weight yet (pre-entry).
-      const activeWt = weightPct != null ? weightPct - benchWt : null
-
-      // Source id for click-to-isolate. Prefer decisions since those
-      // are what the Decisions list keys on (trade_queue_item_id).
-      const selectableEvent = decisions[0] || executions[0] || null
-
-      return {
-        date,
-        price,
-        shares,
-        weightPct,
-        activeWt,
-        decisionAction: decisions[0]?.action || null,
-        decisionPrice: decisions[0]?.price || null,
-        decisionUser: decisions[0]?.userName || null,
-        execAction: executions[0]?.action || null,
-        execPrice: executions[0]?.price || null,
-        execShares: executions[0]?.sharesDelta || null,
-        eventSourceId: selectableEvent?.sourceId ?? null,
-        eventSourceType: selectableEvent?.sourceType ?? null,
-        events,
-      }
-    })
-  }, [priceHistory, lifecycle.timeline, lifecycle.currentPrice, holdingsHistory, benchmarkWeightPct])
+  const chartData = useMemo(
+    () => buildPositionChartData(lifecycle, priceHistory, holdingsHistory, benchmarkWeightPct),
+    [priceHistory, lifecycle, holdingsHistory, benchmarkWeightPct],
+  )
 
   if (chartData.length === 0) {
     return (
@@ -332,26 +209,19 @@ export function PositionChart({ lifecycle, priceHistory, holdingsHistory, overla
 //  easy to hover/click, and clicking fires `onSelectEvent` so the
 //  parent can isolate that trade in the decision list.
 
-function DecisionDot(props: any) {
+export function DecisionDot(props: any) {
   const { cx, cy, payload, onSelectEvent, hoveredMarkerId, onMarkerHover, symbol } = props
   if (!payload) return null
-
-  const hasDecision = payload.decisionAction
-  const hasExec = payload.execAction && !hasDecision
-
-  if (!hasDecision && !hasExec) return null
-
-  const action = hasDecision ? payload.decisionAction : payload.execAction
-  const cfg = getActionConfig(action)
-  const isBullish = action === 'buy' || action === 'add' || action === 'initiate' || action === 'increase'
 
   // Compact marker — small enough to sit clear of the price line
   // without obscuring it, generous-enough hit target so the cursor
   // doesn't have to land precisely. The visible decision dot is
   // radius 7; the invisible hit zone extends to radius 13.
-  const offset = hasDecision ? 16 : 12
-  const markerY = isBullish ? cy - offset : cy + offset
-  const markerRadius = hasDecision ? 7 : 5
+  const geom = markerGeometry(payload, cx, cy)
+  if (!geom) return null
+  const { hasDecision, hasExec, action, isBullish, markerRadius } = geom
+  const cfg = getActionConfig(action)
+  const markerY = geom.y
   const hitRadius = markerRadius + 6
 
   const eventId = payload.eventSourceId as string | null
