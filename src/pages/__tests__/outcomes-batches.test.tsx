@@ -166,7 +166,7 @@ describe('batch model', () => {
     const hook = readFileSync(path.join(process.cwd(), 'src/hooks/useDecisionAccountability.ts'), 'utf8')
     expect(hook).toContain('const batchMap = batchesByDecision(outcomesPayloadQuery.data?.acceptedTrades ?? [])')
     expect(hook).toContain('return [...withBatches, ...discretionaryRows, ...passedRows]')
-    const sql = readFileSync(path.join(process.cwd(), 'supabase/migrations/20260914180000_outcomes_payload_batches.sql'), 'utf8')
+    const sql = readFileSync(path.join(process.cwd(), 'supabase/migrations/20260915020244_outcomes_payload_batches.sql'), 'utf8')
     expect(sql).toContain('at.batch_id,')
     expect(sql).toContain('tb.name AS batch_name,')
     expect(sql).toContain('tb.created_at AS batch_created_at,')
