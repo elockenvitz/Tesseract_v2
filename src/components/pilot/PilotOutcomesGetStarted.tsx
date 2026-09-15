@@ -36,6 +36,8 @@ import { tutorialOutcomeReviewedKey } from '../../lib/pilot/mission'
 interface PilotOutcomesGetStartedProps {
   userId: string | undefined
   orgId?: string | null
+  /** `inset` on the phone list, where it sits as a card above the decisions. */
+  variant?: 'bar' | 'inset'
 }
 
 const DISMISS = 'dismissed'
@@ -115,6 +117,7 @@ function useFlag(userId: string | undefined, orgId: string | null | undefined, s
 export function PilotOutcomesGetStarted({
   userId,
   orgId,
+  variant = 'bar',
 }: PilotOutcomesGetStartedProps) {
   // Flags are read straight from localStorage on every render via
   // useSyncExternalStore — the source of truth is the disk, not React
@@ -217,11 +220,12 @@ export function PilotOutcomesGetStarted({
       label="Finish the loop"
       tone="emerald"
       icon={Trophy}
+      variant={variant}
       steps={[
         {
           n: 1,
           title: 'Inspect the result',
-          hint: 'Click your decision in the table to see how Outcomes scored the thesis.',
+          hint: 'Open your decision to see how Outcomes scored the thesis.',
           done: step1,
         },
         {

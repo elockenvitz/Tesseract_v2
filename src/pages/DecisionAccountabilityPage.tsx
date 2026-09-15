@@ -28,9 +28,13 @@ import {
   Lightbulb, MessageSquare, BookOpen, Pencil, User,
   Award, Users, Link2, Unlink, Sparkles, LineChart,
 } from 'lucide-react'
-import { format, subDays, parseISO } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { clsx } from 'clsx'
 import { useIsMobile } from '../hooks/useMediaQuery'
+import { useDismissOnBack } from '../hooks/useDismissOnBack'
+import { DATE_PRESET_BUTTONS, activePresetFor, customRange, presetRange, type DatePreset } from '../lib/outcomes/date-presets'
+import { OutcomesRangeControl } from '../components/mobile/OutcomesRangeControl'
+import { OutcomesReviewStatusCard } from '../components/mobile/OutcomesReviewStatusCard'
 import { MobileDecisionLedger } from '../components/mobile/MobileDecisionLedger'
 import {
   useDecisionAccountability,
@@ -92,14 +96,19 @@ type OutcomesSubTab = 'decisions' | 'scorecards'
 
 // Outcomes is rendered via switch-on-active-tab in DashboardPage, so
 // switching to another tab unmounts this page and resets local state.
-// Persist the user-visible "place" (selection, filters, sort, sub-tab)
-// to sessionStorage so returning to the tab restores the same view.
+// Persist the user-visible "place" (filters, sort, sub-tab) to
+// sessionStorage so returning to the tab restores the same view.
 // SessionStorage (not localStorage) — we want it to live for the
 // session, not bleed across browser restarts.
+//
+// The SELECTED DECISION is deliberately not part of it. It is transient view
+// state: on a phone it is a full-screen detail, and restoring it meant
+// returning to Outcomes from any other app reopened the last decision instead
+// of the page. Snapshots written before this change may still carry a
+// `selectedId`; it is never read.
 interface PersistedOutcomesState {
   activeTab: OutcomesSubTab
   selectedPortfolioId: string | null
-  selectedId: string | null
   activeChipKey: string
   typeFilter: string | null
   tickerSearch: string
@@ -241,6 +250,9 @@ interface DecisionAccountabilityPageProps {
    * behaves differently when it is.
    */
   focusDecisionId?: string | null
+  /** Called once the focus has been honoured, so the caller can drop it and a
+   *  later ordinary visit lands on the page rather than that decision. */
+  onFocusConsumed?: () => void
 }
 
 // ============================================================
@@ -260,70 +272,20 @@ function FilterBar({
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
 
-  type DatePreset = '7d' | '30d' | '90d' | 'QTD' | 'YTD' | '1Y' | '2Y' | 'ALL' | 'custom'
-
   const handlePreset = (preset: DatePreset) => {
-    const now = new Date()
-    let start: Date | null = null
-
-    switch (preset) {
-      case '7d': start = subDays(now, 7); break
-      case '30d': start = subDays(now, 30); break
-      case '90d': start = subDays(now, 90); break
-      case 'QTD': {
-        const qMonth = Math.floor(now.getMonth() / 3) * 3
-        start = new Date(now.getFullYear(), qMonth, 1)
-        break
-      }
-      case 'YTD': start = new Date(now.getFullYear(), 0, 1); break
-      case '1Y': start = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()); break
-      case '2Y': start = new Date(now.getFullYear() - 2, now.getMonth(), now.getDate()); break
-      case 'ALL': start = null; break
-      case 'custom': setShowCustom(true); return
-    }
-
+    if (preset === 'custom') { setShowCustom(true); return }
     setShowCustom(false)
-    onChange({
-      ...filters,
-      dateRange: {
-        start: start ? start.toISOString() : null,
-        end: now.toISOString(),
-      },
-    })
+    onChange({ ...filters, dateRange: presetRange(preset) })
   }
 
   const applyCustomRange = () => {
     if (customStart) {
-      onChange({
-        ...filters,
-        dateRange: {
-          start: new Date(customStart).toISOString(),
-          end: customEnd ? new Date(customEnd + 'T23:59:59').toISOString() : new Date().toISOString(),
-        },
-      })
+      onChange({ ...filters, dateRange: customRange(customStart, customEnd) })
       setShowCustom(false)
     }
   }
 
-  const activePreset = useMemo((): DatePreset => {
-    if (!filters.dateRange?.start) return 'ALL'
-    const startDate = new Date(filters.dateRange.start)
-    const diff = (Date.now() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-    const now = new Date()
-    // Check QTD
-    const qMonth = Math.floor(now.getMonth() / 3) * 3
-    const qtdStart = new Date(now.getFullYear(), qMonth, 1)
-    if (Math.abs(startDate.getTime() - qtdStart.getTime()) < 86400000) return 'QTD'
-    // Check YTD
-    const ytdStart = new Date(now.getFullYear(), 0, 1)
-    if (Math.abs(startDate.getTime() - ytdStart.getTime()) < 86400000) return 'YTD'
-    if (diff < 10) return '7d'
-    if (diff < 40) return '30d'
-    if (diff < 100) return '90d'
-    if (diff < 400) return '1Y'
-    if (diff < 800) return '2Y'
-    return 'custom'
-  }, [filters.dateRange?.start])
+  const activePreset = useMemo(() => activePresetFor(filters.dateRange?.start), [filters.dateRange?.start])
 
   const toggleExecStatus = (status: ExecutionMatchStatus) => {
     const current = filters.executionStatus || []
@@ -338,7 +300,7 @@ function FilterBar({
       {/* Date range */}
       <div className="relative min-w-0 max-w-full">
         <div className="flex sm:inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg dark:bg-gray-800 max-w-full overflow-x-auto no-scrollbar">
-          {(['7d', '30d', '90d', 'QTD', 'YTD', '1Y', 'ALL'] as DatePreset[]).map(p => (
+          {DATE_PRESET_BUTTONS.map(p => (
             <button
               key={p}
               onClick={() => handlePreset(p)}
@@ -3176,6 +3138,34 @@ type ScorecardSection = 'analysts' | 'pms'
 
 function ScorecardsView({ portfolioId }: { portfolioId: string | null }) {
   const [section, setSection] = useState<ScorecardSection>('analysts')
+  const isPhone = useIsMobile()
+
+  if (isPhone) {
+    // Phone: a compact Analyst / PM switch and no horizontal scroll; the cards
+    // below have their own phone layout (ScorecardViews).
+    return (
+      <div data-slot="scorecards-phone" className="flex-1 overflow-y-auto overflow-x-hidden px-3 pt-3 pb-6">
+        <div role="tablist" aria-label="Scorecard" className="inline-flex items-center p-0.5 rounded-lg bg-gray-100 mb-3 dark:bg-gray-900">
+          {(['analysts', 'pms'] as const).map(s => (
+            <button
+              key={s}
+              type="button"
+              role="tab"
+              aria-selected={section === s}
+              onClick={() => setSection(s)}
+              className={clsx(
+                'no-touch-target tap-pad h-8 min-w-[72px] px-3 rounded-md text-[13px] font-medium transition-colors',
+                section === s ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white' : 'text-gray-500 dark:text-gray-400',
+              )}
+            >
+              {s === 'analysts' ? 'Analyst' : 'PM'}
+            </button>
+          ))}
+        </div>
+        {section === 'analysts' ? <AnalystScorecardsView portfolioId={portfolioId} /> : <PMScorecardsView portfolioId={portfolioId} />}
+      </div>
+    )
+  }
 
   return (
     <div className="flex-1 overflow-auto p-3 sm:p-4">
@@ -3214,7 +3204,7 @@ function ScorecardsView({ portfolioId }: { portfolioId: string | null }) {
 // Main Page
 // ============================================================
 
-export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = null }: DecisionAccountabilityPageProps) {
+export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = null, onFocusConsumed }: DecisionAccountabilityPageProps) {
   // Hoisted above state so the lazy initializers can hydrate from the
   // sessionStorage snapshot keyed per (user, org).
   const { user: pilotBannerUser } = useAuth()
@@ -3237,7 +3227,8 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
     resultFilter: 'all',
     directionFilter: [],
   })
-  const [selectedId, setSelectedId] = useState<string | null>(() => persisted?.selectedId ?? null)
+  // Transient: never hydrated from the snapshot. See PersistedOutcomesState.
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeChipKey, setActiveChipKey] = useState<string>(() => persisted?.activeChipKey ?? 'all')
   const [colFilterOpen, setColFilterOpen] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState<string | null>(() => persisted?.typeFilter ?? null)
@@ -3272,7 +3263,6 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
     writeOutcomesState(pilotBannerUser?.id, pilotBannerOrgId, {
       activeTab,
       selectedPortfolioId,
-      selectedId,
       activeChipKey,
       typeFilter,
       tickerSearch,
@@ -3287,7 +3277,7 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
     })
   }, [
     pilotBannerUser?.id, pilotBannerOrgId,
-    activeTab, selectedPortfolioId, selectedId, activeChipKey,
+    activeTab, selectedPortfolioId, activeChipKey,
     typeFilter, tickerSearch, nameSearch, portfolioFilter,
     issueSearch, actionFilter, ownerFilter, sortBy, sortDesc, filters,
   ])
@@ -3302,13 +3292,21 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
    * exactly the right screen and find their decision filtered out of it —
    * correct page, invisible row, step stuck.
    *
-   * Once only, per focused id. Nothing is written to the persisted snapshot
+   * Once only, per arrival. Nothing is written to the persisted snapshot
    * while it holds, so the reader's own portfolio, dates and searches survive
    * untouched — see the writer above. The filters are widened, never
    * narrowed, so this can only ever reveal rows.
+   *
+   * Consumed, not remembered. The id arrives on the Outcomes tab's data, which
+   * DashboardPage keeps (and persists) for the life of the tab — so honouring
+   * it on every mount reopened the same decision each time the reader came
+   * back to Outcomes. Having opened it, the page reports `onFocusConsumed` and
+   * the shell strips the id from the tab. The effect runs when the id
+   * changes, so a later "View in Outcomes" puts one back and is honoured
+   * again, even for the same decision.
    */
   useEffect(() => {
-    if (!focusDecisionId || focusRef.current === focusDecisionId) return
+    if (!focusDecisionId) return
     focusRef.current = focusDecisionId
     setSelectedPortfolioId(null)
     setPortfolioFilter(null)
@@ -3328,6 +3326,8 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
       dateRange: undefined,
     }))
     setSelectedId(focusDecisionId)
+    onFocusConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusDecisionId])
 
   const pilotMode = usePilotMode()
@@ -3646,6 +3646,9 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
   // desktop-shaped; the phone gets a list and a full-screen detail.
   const isMobileViewport = useIsMobile()
   const MAIN_GRID = selectedPortfolioId ? GRID_WITHOUT_PORTFOLIO : GRID_WITH_PORTFOLIO
+  // Phone: the detail is a full-screen layer over the list, so Back closes it
+  // and leaves the reader on Outcomes rather than taking them out of the app.
+  useDismissOnBack(isMobileViewport && !!selectedRow, () => setSelectedId(null), { enabled: isMobileViewport })
 
   // Unique values for dropdown filters
   const uniquePortfolios = useMemo(() => [...new Set(rows.map(r => r.portfolio_name).filter(Boolean))].sort() as string[], [rows])
@@ -3655,6 +3658,52 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
     <div className="h-full flex flex-col bg-white dark:bg-gray-800">
       {/* ── HEADER ─────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-3 sm:px-5 shrink-0 dark:border-gray-700 dark:bg-gray-800">
+        {isMobileViewport ? (
+          /* Phone header: title and the Decisions / Scorecards switch on one
+             line, the portfolio as a full-width compact select, and on
+             Decisions the range control. The desktop "ATTENTION" strip
+             becomes the review-status card at the top of the list. */
+          <div data-slot="outcomes-phone-header" className="pt-2 pb-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Target className="w-4 h-4 text-teal-600 shrink-0" />
+                <h1 className="text-[17px] font-semibold text-gray-900 dark:text-white">Outcomes</h1>
+              </div>
+              <div role="tablist" aria-label="Outcomes view" className="inline-flex shrink-0 items-center p-0.5 rounded-lg bg-gray-100 dark:bg-gray-900">
+                {(['decisions', 'scorecards'] as const).map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === t}
+                    onClick={() => setActiveTab(t)}
+                    className={clsx(
+                      'no-touch-target tap-pad h-8 px-3 rounded-md text-[13px] font-medium transition-colors',
+                      activeTab === t
+                        ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+                        : 'text-gray-500 dark:text-gray-400',
+                    )}
+                  >
+                    {t === 'decisions' ? 'Decisions' : 'Scorecards'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <select
+              aria-label="Portfolio"
+              value={selectedPortfolioId || ''}
+              onChange={e => setSelectedPortfolioId(e.target.value || null)}
+              className="no-touch-target block w-full h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-[14px] text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+            >
+              <option value="">All portfolios</option>
+              {allPortfolios.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            {activeTab === 'decisions' && <OutcomesRangeControl filters={filters} onChange={setFilters} />}
+          </div>
+        ) : (
+        <>
         {/* Row 1: Title + Tabs */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-2 pb-1.5">
           <div className="flex items-center gap-2 shrink-0">
@@ -3742,6 +3791,8 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
             </div>
           )
         })()}
+        </>
+        )}
       </div>
 
       {/* Pilot Outcomes Get Started — 3-step "Finish the loop" strip.
@@ -3750,7 +3801,7 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
           the relevant section. When all 3 steps fire the strip
           auto-retires and the global PilotGraduationModal pops in
           place over Outcomes. */}
-      {showPilotOutcomesBanner && (
+      {showPilotOutcomesBanner && !isMobileViewport && (
         <PilotOutcomesGetStarted
           userId={pilotBannerUser?.id}
           orgId={pilotBannerOrgId}
@@ -3791,6 +3842,14 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
 
               {/* Rows */}
               <div className="flex-1 overflow-y-auto">
+                {/* Phone: the pilot's "Finish the loop" is an inset card at
+                    the top of the list it is about, not a full-bleed strip
+                    between the controls and the list. */}
+                {isMobileViewport && showPilotOutcomesBanner && (
+                  <div data-slot="outcomes-phone-pilot" className="pt-2 -mb-2">
+                    <PilotOutcomesGetStarted userId={pilotBannerUser?.id} orgId={pilotBannerOrgId} variant="inset" />
+                  </div>
+                )}
                 {isLoading ? (
                   <div className="flex items-center justify-center h-48">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-teal-600" />
@@ -3813,14 +3872,17 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
                 ) : isMobileViewport ? (
                   /* The desktop row is a twelve-track pixel grid over 1000px
                      wide; it does not compress, it overflows. */
-                  <MobileDecisionLedger
-                    rows={displayRows.map(d => d.row)}
-                    selectedId={selectedId}
-                    onSelect={(row) => {
-                      setSelectedId(row.decision_id === selectedId ? null : row.decision_id)
-                      try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
-                    }}
-                  />
+                  <div className="px-3 pt-2 pb-6 space-y-2">
+                    {processHealth.counts.total > 0 && <OutcomesReviewStatusCard health={processHealth} />}
+                    <MobileDecisionLedger
+                      items={displayRows}
+                      selectedId={selectedId}
+                      onSelect={(row) => {
+                        setSelectedId(row.decision_id === selectedId ? null : row.decision_id)
+                        try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
+                      }}
+                    />
+                  </div>
                 ) : (
                   displayRows.map(({ row, intel }) => (
                     <DecisionRow

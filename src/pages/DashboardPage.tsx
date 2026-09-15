@@ -1430,6 +1430,15 @@ export function DashboardPage() {
             /* Carried by the pilot mission's "Review outcome" so the decision
                being reviewed is the one on screen. Absent otherwise. */
             focusDecisionId={activeTab.data?.tradeQueueItemId ?? null}
+            /* One arrival, one opening. The id otherwise stays on the tab
+               (and in its persisted state) and reopens that decision on
+               every return to Outcomes. */
+            onFocusConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'outcomes' || !t.data?.tradeQueueItemId) return t
+              const data = { ...t.data }
+              delete data.tradeQueueItemId
+              return { ...t, data }
+            }))}
           />
         )
       case 'files':

@@ -294,7 +294,10 @@ describe('where each stage’s button goes', () => {
     const page = src('pages/DecisionAccountabilityPage.tsx')
     expect(page).toContain('setSelectedId(focusDecisionId)')
     expect(page).toContain('dateRange: undefined')
-    expect(page).toContain('if (!focusDecisionId || focusRef.current === focusDecisionId) return')
+    // Once per arrival, and handed back to the shell so it is not honoured
+    // again on the next ordinary visit.
+    expect(page).toContain('if (!focusDecisionId) return')
+    expect(page).toContain('onFocusConsumed?.()')
   })
 
   it('does not persist a focused view over the reader s own filters', () => {
