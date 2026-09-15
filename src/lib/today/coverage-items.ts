@@ -88,6 +88,9 @@ export function coverageDecisionItem(c: CoverageResearchCandidate): DecisionItem
       portfolioId: e.portfolioId ?? undefined,
       portfolioName: e.portfolioName ?? undefined,
       proposedWeight: held ? e.weightPct! : undefined,
+      // Whether the age and anchor below count from a recorded review or from
+      // the case being written; it decides the wording, never the date.
+      caseAnchor: c.facts.anchoredOn ?? undefined,
     },
     ctas: [{
       label: VERB[c.framing],
@@ -98,8 +101,9 @@ export function coverageDecisionItem(c: CoverageResearchCandidate): DecisionItem
     dismissible: true,
     decisionTier: 'coverage',
     sortScore: 0,
-    // The review anchor, where the case has one, so a price path since the
-    // thesis can be drawn honestly. A name with nothing written has no anchor.
+    // The case's anchor (its last review, or when it was written), where it has
+    // one, so a price path since then can be drawn honestly. A name with
+    // nothing written has no anchor.
     createdAt: c.facts.reviewAnchor ?? undefined,
   }
 }

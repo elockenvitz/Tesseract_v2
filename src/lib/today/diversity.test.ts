@@ -166,8 +166,8 @@ describe('enrichment honesty', () => {
   it('refuses to call it "since review" when history starts later', () => {
     const w = priceWindowSince(hist('2026-06-01', [100, 120]), '2026-01-01')!
     expect(w.reachesAnchor).toBe(false)
-    expect(windowLabel(w, 246)).not.toMatch(/since review/)
-    expect(windowLabel(w, 246)).toMatch(/of history/)
+    expect(windowLabel(w, 246, 'review')).not.toMatch(/since review/)
+    expect(windowLabel(w, 246, 'review')).toMatch(/of history/)
     // The move itself is still real -- it is the WINDOW that is not claimed.
     expect(w.changePct).toBeCloseTo(20, 5)
   })
@@ -178,7 +178,7 @@ describe('enrichment honesty', () => {
     expect(w.reachesAnchor).toBe(false)
     expect(w.anchorIndex).toBeNull()
     expect(w.changePct).toBeCloseTo(60, 5)
-    expect(windowLabel(w, 0)).not.toMatch(/since/)
+    expect(windowLabel(w, 0, 'idea')).not.toMatch(/since/)
   })
 
   it('never labels an idea\'s price move as since review', () => {
@@ -195,7 +195,7 @@ describe('enrichment honesty', () => {
 
   it('names the window as since-review only when it truly is', () => {
     const w = priceWindowSince(hist('2026-01-01', [100, 125]), '2026-01-01')!
-    expect(windowLabel(w, 246)).toBe('since review · 246d')
+    expect(windowLabel(w, 246, 'review')).toBe('since review · 246d')
   })
 
   it('returns nothing rather than a window from one point', () => {
@@ -238,7 +238,7 @@ describe('enrichment honesty', () => {
 
   /** The age the strip already states, read the way `enrich` reads it. */
   function ageFromMetricsForTest(item: ReturnType<typeof make>) {
-    const m = item.metrics.find(x => x.label === 'Since review' || x.label === 'Open')
+    const m = item.metrics.find(x => x.label === 'Since update' || x.label === 'Open')
     return m ? Number(m.value.replace(/[^\d.-]/g, '')) : null
   }
 
@@ -295,7 +295,7 @@ describe('enrichment honesty', () => {
     const captionFor = (key: string) =>
       applyEnrichment(make('x', key, { createdAt: from }), { history, spot: 129 }).visual.caption
 
-    expect(captionFor('THESIS_STALE')).toMatch(/since last review/i)
+    expect(captionFor('THESIS_STALE')).toMatch(/since the last thesis update/i)
     expect(captionFor('RATING_NO_FOLLOWUP')).toMatch(/since the rating changed/i)
     expect(captionFor('EXECUTION_NOT_CONFIRMED')).toMatch(/since the decision/i)
     expect(captionFor('PROPOSAL_AWAITING_DECISION')).toMatch(/since the proposal/i)
@@ -338,8 +338,8 @@ describe('enrichment honesty', () => {
       expect(`${v.caption} ${v.note} ${v.aging!.milestones[0].label}`).not.toMatch(/review|written/i)
     }
 
-    // A stale thesis is still unreviewed.
-    expect(applyEnrichment(make('amzn', 'THESIS_STALE'), undefined).visual.caption).toBe('Unreviewed for')
+    // A stale thesis counts from its last edit.
+    expect(applyEnrichment(make('amzn', 'THESIS_STALE'), undefined).visual.caption).toBe('Not updated for')
   })
 
   it('gives Ask AI the event-true age and price window for a proposal and an execution', () => {
@@ -355,8 +355,8 @@ describe('enrichment honesty', () => {
 
     const proposal = ctx('PROPOSAL_AWAITING_DECISION')
     const execution = ctx('EXECUTION_NOT_CONFIRMED')
-    expect(proposal.map(c => c.label)).toEqual(expect.arrayContaining(['Since proposal', 'Move since proposal']))
-    expect(execution.map(c => c.label)).toEqual(expect.arrayContaining(['Since decision', 'Move since decision']))
+    expect(proposal.map(c => c.label)).toEqual(expect.arrayContaining(['Since proposal', 'Price since proposal']))
+    expect(execution.map(c => c.label)).toEqual(expect.arrayContaining(['Since decision', 'Price since decision']))
     for (const chips of [proposal, execution]) {
       expect(chips.map(c => c.label).join(' ')).not.toMatch(/review/i)
       // The age is stated once, not once per wording.
@@ -364,7 +364,7 @@ describe('enrichment honesty', () => {
     }
 
     const thesis = ctx('THESIS_STALE').map(c => c.label)
-    expect(thesis).toEqual(expect.arrayContaining(['Since review', 'Move since review']))
+    expect(thesis).toEqual(expect.arrayContaining(['Since update', 'Price since update']))
   })
 
   it('gives an overdue deliverable no price story to tell', () => {

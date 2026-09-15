@@ -127,7 +127,8 @@ describe('adaptation', () => {
 
   it('names metrics semantically and drops any it cannot name', () => {
     const t = adaptDecisionItem(stale())
-    expect(t.metrics.map(m => m.label)).toEqual(['Since review'])
+    // A stale thesis counts from its last edit, not from a review.
+    expect(t.metrics.map(m => m.label)).toEqual(['Since update'])
     expect(t.metrics.map(m => m.label)).not.toContain('Age')
   })
 
@@ -143,8 +144,8 @@ describe('adaptation', () => {
       expect(t.metrics.map(m => m.label)).not.toContain('Since review')
       expect(t.metrics.map(m => m.label)).toContain('Portfolio')
     }
-    // A thesis's age is still a review age.
-    expect(adaptDecisionItem(stale()).metrics[0].label).toBe('Since review')
+    // Nor does a stale thesis: its age counts from the last edit.
+    expect(adaptDecisionItem(stale()).metrics[0].label).toBe('Since update')
   })
 
   it('names a proposal\'s and an execution\'s age by the event it counts from', () => {
@@ -167,8 +168,8 @@ describe('adaptation', () => {
     expect(proposal.target!.contextChips).toContainEqual({ label: 'Since proposal', value: '4d' })
     expect(execution.target!.contextChips).toContainEqual({ label: 'Since decision', value: '4d' })
 
-    // Review language stays where the age is counted from the case.
-    expect(adaptDecisionItem(stale()).target!.contextChips).toContainEqual({ label: 'Since review', value: '210d' })
+    // A stale thesis names its edit, in the AI context as on the tile.
+    expect(adaptDecisionItem(stale()).target!.contextChips).toContainEqual({ label: 'Since update', value: '210d' })
   })
 
   it('never renders an UNKNOWN metric, whatever chips arrive', () => {

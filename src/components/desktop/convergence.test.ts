@@ -1244,7 +1244,8 @@ describe('a handoff never promises what is not there', () => {
     const visual = src('components/today/TodayVisual.tsx')
       .replace(/\/\*[\s\S]*?\*\//g, '')
     expect(visual).not.toContain('<text')
-    expect(visual).toContain("{(r.anchorLabel ?? 'Last review').toLowerCase()}")
+    // The label names the window's own anchor; its fallback never assumes a review.
+    expect(visual).toContain("{(r.anchorLabel ?? 'Start').toLowerCase()}")
   })
 
   it('draws the one fact a stale card has, rather than nothing', () => {

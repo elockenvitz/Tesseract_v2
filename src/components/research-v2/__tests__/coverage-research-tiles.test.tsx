@@ -212,7 +212,8 @@ describe('order, capacity and diversity', () => {
       candidate('IDEA', 'no_case', { liveIdeas: [{ id: 'i', action: 'buy' }] }),
     ])
     expect(out.map(s => s.symbol)).toEqual(['IDEA', 'BIG', 'SMALL', 'MOVE'])
-    expect(out.map(issueFor)).toEqual(['Idea without a case', 'Incomplete thesis', 'Position without a thesis', 'Moved since review'])
+    // The fixture's case was never reviewed, so its move is since the thesis.
+    expect(out.map(issueFor)).toEqual(['Idea without a case', 'Incomplete thesis', 'Position without a thesis', 'Moved since thesis'])
   })
 
   it('breaks ties on an open idea, then on how much is held', () => {

@@ -97,7 +97,8 @@ function position(c: CoverageResearchCandidate): string | null {
 export function coverageWorkLabel(c: CoverageResearchCandidate): string {
   switch (c.framing) {
     case 'new_evidence': return 'New research'
-    case 'price_move': return 'Moved since review'
+    // Review wording only where the move is measured from a recorded review.
+    case 'price_move': return c.facts.anchoredOn === 'reviewed' ? 'Moved since review' : 'Moved since thesis'
     case 'incomplete_case': return 'Incomplete thesis'
     case 'long_silence': return 'Review due'
     case 'no_case': {
@@ -150,7 +151,14 @@ export function coverageWorkClaim(c: CoverageResearchCandidate, { weightShown = 
       const n = f.evidenceSince.length
       return `${n} new research item${n === 1 ? '' : 's'} on ${t} since the thesis was ${since}.`
     }
-    case 'long_silence':
-      return `The ${t} thesis has not been ${since === 'reviewed' ? 'reviewed' : 'revisited'} in ${f.daysSinceReview != null ? `${f.daysSinceReview} days` : 'over 90 days'}${where ? `, with ${where} behind it` : ''}.`
+    case 'long_silence': {
+      const span = f.daysSinceReview != null ? `${f.daysSinceReview} days` : 'over 90 days'
+      const behind = where ? `, with ${where} behind it` : ''
+      // A case written and never reviewed has not been "reviewed in N days":
+      // it was written N days ago.
+      return since === 'reviewed'
+        ? `The ${t} thesis has not been reviewed in ${span}${behind}.`
+        : `The ${t} thesis was written ${span} ago and has not changed since${behind}.`
+    }
   }
 }

@@ -436,7 +436,8 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
       */}
       {frame && r.reachesAnchor && (
         <span className="pointer-events-none absolute left-[6px] top-0 whitespace-nowrap text-[9px] text-gray-400">
-          {(r.anchorLabel ?? 'Last review').toLowerCase()}
+          {/* Every drawn window names its own anchor (lib/today/age-event); never assume a review. */}
+          {(r.anchorLabel ?? 'Start').toLowerCase()}
         </span>
       )}
 

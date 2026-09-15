@@ -55,7 +55,7 @@ function whyNowFor(item: DecisionItem): string {
   switch (item.titleKey) {
     case 'THESIS_STALE':
       return age && age >= 180
-        ? `The written case for ${t} has not been revisited in over six months, so the position is sized on reasoning nobody has checked against what has happened since.`
+        ? `The written case for ${t} has not been updated in over six months, so the position is sized on reasoning nobody has checked against what has happened since.`
         : `The written case for ${t} is ageing, and nothing has confirmed it since it was last updated.`
     case 'PROPOSAL_AWAITING_DECISION':
       return `A proposal is open and unanswered. The position may be small, but an unanswered proposal is an unowned decision.`
@@ -272,7 +272,7 @@ function metricsFor(item: DecisionItem): TodayMetric[] {
     const tone: TodayMetric['tone'] =
       lower === 'open' || lower === 'overdue' ? 'warn' : 'neutral'
     // An age is named by the event it counts from (lib/today/age-event).
-    out.push({ label: c.label === 'Age' ? ageEventFor(item.titleKey).label : label, value: c.value, tone })
+    out.push({ label: c.label === 'Age' ? ageEventFor(item.titleKey, item.context.caseAnchor).label : label, value: c.value, tone })
     if (out.length === 3) break
   }
   return out
@@ -316,6 +316,8 @@ const KNOWN_METRIC_LABELS = new Set<string>(['Open ideas'])
  * only the evaluator knows what it found — a generic "tell me about AMZN"
  * would be exactly the context-recreation the engagement seam exists to remove.
  */
+const caseVerb = (item: DecisionItem) => (item.context.caseAnchor === 'reviewed' ? 'reviewed' : 'written')
+
 function seedPromptFor(item: DecisionItem): string | null {
   const t = chip(item, 'Ticker') ?? 'this position'
   switch (item.titleKey) {
@@ -337,12 +339,14 @@ function seedPromptFor(item: DecisionItem): string | null {
       return `We have no written case on ${t}. What would a defensible thesis claim, where would we differ from consensus, and what would break it?`
     case 'COVERAGE_INCOMPLETE_THESIS':
       return `Our case for ${t} is only partly written. What belongs in the missing sections, and does writing them change the view?`
+    // The verb is the event the date really is: a recorded review, or the case
+    // being written.
     case 'COVERAGE_PRICE_MOVE':
-      return `${t} has moved materially since our case was last reviewed. Which of its claims does the move test, and does the case still hold?`
+      return `${t} has moved materially since our case was last ${caseVerb(item)}. Which of its claims does the move test, and does the case still hold?`
     case 'COVERAGE_NEW_EVIDENCE':
-      return `New research arrived on ${t} after our case was last written. Which of it most challenges the existing view?`
+      return `New research arrived on ${t} after our case was last ${caseVerb(item)}. Which of it most challenges the existing view?`
     case 'COVERAGE_STALE_THESIS':
-      return `Our case for ${t} has not been revisited in ${chip(item, 'Age') ?? 'months'}. Which of its claims are most likely to be stale?`
+      return `Our case for ${t} was last ${caseVerb(item)} ${chip(item, 'Age') ?? 'months'} ago. Which of its claims are most likely to be stale?`
     default:
       return null
   }
@@ -374,7 +378,7 @@ export function targetFor(item: DecisionItem): EngagementTarget | null {
     seedPrompt: seedPromptFor(item) ?? undefined,
     // The AI reads the age under the event it counts from, as the tile does.
     contextChips: (item.chips ?? []).map(c => ({
-      label: c.label === 'Age' ? ageEventFor(item.titleKey).label : c.label,
+      label: c.label === 'Age' ? ageEventFor(item.titleKey, item.context.caseAnchor).label : c.label,
       value: c.value,
     })),
   })

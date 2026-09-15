@@ -105,13 +105,12 @@ export function priceWindowSince(
 /**
  * "246d" → a window label that never overstates what was measured.
  *
- * `since` names the anchor the caller actually measured from. It defaults to
- * "review" because that was the only anchor when this was written, and three
- * of the four findings that now draw a window are not measured from a review
- * at all — an unconfirmed execution is measured from the decision.
+ * `since` names the anchor the caller actually measured from, always: it used
+ * to default to "review", which is how findings measured from a decision or a
+ * thesis edit ended up claiming one (lib/today/age-event).
  */
 export function windowLabel(
-  w: PriceWindow, ageDays: number | null, since = 'review',
+  w: PriceWindow, ageDays: number | null, since: string,
 ): string {
   if (w.reachesAnchor && ageDays != null) return `since ${since} · ${ageDays}d`
   const days = Math.round((Date.parse(w.toDate) - Date.parse(w.fromDate)) / 86_400_000)
@@ -154,8 +153,7 @@ export function applyEnrichment(item: TodayItem, e: TodayEnrichment | undefined)
   if (!e) return aged ? { ...item, visual: aged } : item
   const window = priceWindowSince(e.history, item.source.createdAt)
 
-  const key = item.source.titleKey ?? ''
-  const metrics = enrichMetrics(item, e, window, ANCHORED_KEYS[key] ?? METRIC_ANCHOR[key])
+  const metrics = enrichMetrics(item, e, window, eventOf(item).anchor)
   const enriched = enrichVisual(item, e, window, ageDays)
   const visual = enriched.archetype === 'metrics' ? (aged ?? enriched) : enriched
   const claim = enrichClaim(item, e, window, ageDays)
@@ -171,12 +169,17 @@ export function applyEnrichment(item: TodayItem, e: TodayEnrichment | undefined)
   }
 }
 
+/** The event this finding's age and price window count from. */
+function eventOf(item: TodayItem) {
+  return ageEventFor(item.source.titleKey, item.source.context?.caseAnchor)
+}
+
 /** The age as a duration, for a card that would otherwise draw nothing. */
 function ageVisual(item: TodayItem, ageDays: number | null): TodayVisual | null {
   if (item.visual.archetype !== 'metrics' || ageDays == null || ageDays <= 0) return null
   // Worded by the event the age counts from: a proposal is awaiting a
-  // decision, not unreviewed.
-  const event = ageEventFor(item.source.titleKey)
+  // decision, a thesis nobody reviewed is unchanged, not unreviewed.
+  const event = eventOf(item)
   return {
     archetype: 'aging',
     caption: event.caption,
@@ -193,7 +196,7 @@ function ageVisual(item: TodayItem, ageDays: number | null): TodayVisual | null 
 }
 
 function ageFromMetrics(item: TodayItem): number | null {
-  const ageLabel = ageEventFor(item.source.titleKey).label
+  const ageLabel = eventOf(item).label
   const m = item.metrics.find(x => x.label === ageLabel || x.label === 'Open')
   if (!m) return null
   const n = Number(m.value.replace(/[^\d.-]/g, ''))
@@ -202,7 +205,7 @@ function ageFromMetrics(item: TodayItem): number | null {
 
 function enrichMetrics(
   item: TodayItem, e: TodayEnrichment, w: PriceWindow | null,
-  anchor?: { shortSince: string },
+  anchor: { shortSince: string },
 ): TodayMetric[] {
   const out = [...item.metrics]
 
@@ -221,7 +224,7 @@ function enrichMetrics(
   if (w) {
     out.push({
       label: w.reachesAnchor
-        ? `Price since ${anchor?.shortSince ?? 'review'}`
+        ? `Price since ${anchor.shortSince}`
         : 'Price over history',
       value: pct(w.changePct),
       // Neutral either way. The sign is in the value; the colour would be a
@@ -287,8 +290,8 @@ function enrichVisual(
     }
   }
 
-  const anchor = ANCHORED_KEYS[item.source.titleKey ?? '']
-  if (w && anchor) {
+  const anchor = eventOf(item).anchor
+  if (w && DRAWS_WINDOW.has(item.source.titleKey ?? '')) {
     return {
       archetype: 'review-window',
       caption: w.reachesAnchor ? `Price since ${anchor.since}` : 'Price over available history',
@@ -309,16 +312,18 @@ function enrichVisual(
 }
 
 /**
- * Which findings anchor a price path, and what their anchor actually is.
+ * Which findings draw a price path from their anchor.
  *
  * The window is measured from `source.createdAt`, and each evaluator sets that
  * to the event its finding is about — so the anchor is already meaningful for
- * more keys than the two that were drawing it:
+ * more keys than the two that were drawing it. What each anchor is CALLED is
+ * lib/today/age-event's, per finding and, for coverage, per case:
  *
- *   THESIS_STALE                 thesis.updated_at        the last review
+ *   THESIS_STALE                 thesis.updated_at        the last thesis update
  *   RATING_NO_FOLLOWUP           change.changed_at        the rating change
  *   EXECUTION_NOT_CONFIRMED      idea.decided_at          the decision itself
  *   PROPOSAL_AWAITING_DECISION   idea.updated_at          the proposal
+ *   COVERAGE_*                   the case's anchor        review, or written
  *
  * Extending it to the last two measures nothing new: `enrichMetrics` already
  * computes this exact number and prints it in the strip for every enriched
@@ -327,51 +332,21 @@ function enrichVisual(
  * rendered a bar of its own age instead of the price it has been drifting
  * against since someone committed capital to it.
  *
- * Each key names its own anchor rather than borrowing "last review", which
- * would be false on three of the four.
- *
  * OVERDUE_DELIVERABLE is deliberately absent: it carries no asset and sets no
  * `createdAt`, so there is no price and no anchor. It draws nothing, which is
  * the honest outcome rather than a fabricated one.
  */
-const ANCHORED_KEYS: Record<
-  string, { since: string; shortSince: string; the: string; tick: string }
-> = {
-  THESIS_STALE: {
-    since: 'last review', shortSince: 'review', the: 'the review date', tick: 'LAST REVIEW',
-  },
-  RATING_NO_FOLLOWUP: {
-    since: 'the rating changed', shortSince: 'change', the: 'the change date', tick: 'RATING CHANGE',
-  },
-  EXECUTION_NOT_CONFIRMED: {
-    since: 'the decision', shortSince: 'decision', the: 'the decision date', tick: 'DECISION',
-  },
-  PROPOSAL_AWAITING_DECISION: {
-    since: 'the proposal', shortSince: 'proposal', the: 'the proposal date', tick: 'PROPOSAL',
-  },
-  // Coverage backfill sets `createdAt` to the case's review anchor, and only
-  // where the case has one (lib/today/coverage-items).
-  COVERAGE_PRICE_MOVE: {
-    since: 'last review', shortSince: 'review', the: 'the review date', tick: 'LAST REVIEW',
-  },
-  COVERAGE_STALE_THESIS: {
-    since: 'last review', shortSince: 'review', the: 'the review date', tick: 'LAST REVIEW',
-  },
-  COVERAGE_NEW_EVIDENCE: {
-    since: 'last review', shortSince: 'review', the: 'the review date', tick: 'LAST REVIEW',
-  },
-}
-
-/**
- * Anchor words for findings that name their price window in the metric strip
- * but draw no review window.
- *
- * An idea's `createdAt` is when it was opened, not a review; without this its
- * price move fell back to "Price since review".
- */
-const METRIC_ANCHOR: Record<string, { shortSince: string }> = {
-  IDEA_NOT_SIMULATED: { shortSince: 'idea' },
-}
+const DRAWS_WINDOW = new Set<string>([
+  'THESIS_STALE',
+  'RATING_NO_FOLLOWUP',
+  'EXECUTION_NOT_CONFIRMED',
+  'PROPOSAL_AWAITING_DECISION',
+  // Coverage backfill sets `createdAt` to the case's anchor, and only where the
+  // case has one (lib/today/coverage-items).
+  'COVERAGE_PRICE_MOVE',
+  'COVERAGE_STALE_THESIS',
+  'COVERAGE_NEW_EVIDENCE',
+])
 
 /**
  * Make the claim specific to the object once real numbers exist.
@@ -389,8 +364,9 @@ function enrichClaim(
   const parts: string[] = []
   parts.push(
     ageDays != null
-      ? `The thesis has not been revisited in ${ageDays} days`
-      : 'The thesis has not been revisited',
+      // Counted from the last edit to the thesis, not from any review.
+      ? `The thesis has not been updated in ${ageDays} days`
+      : 'The thesis has not been updated',
   )
   if (w) {
     parts.push(
@@ -409,16 +385,14 @@ function enrichClaim(
 function enrichChips(
   item: TodayItem, e: TodayEnrichment, w: PriceWindow | null, ageDays: number | null,
 ): { label: string; value: string }[] {
-  const key = item.source.titleKey ?? ''
-  const ageLabel = ageEventFor(key).label
+  const event = eventOf(item)
   // The target already carries the evaluator's age under this label; say it once.
   const chips = [...(item.target?.contextChips ?? [])]
-  if (ageDays != null && !chips.some(c => c.label === ageLabel)) chips.push({ label: ageLabel, value: `${ageDays}d` })
+  if (ageDays != null && !chips.some(c => c.label === event.label)) chips.push({ label: event.label, value: `${ageDays}d` })
   if (w) {
+    // The tile's own words for the same number.
     chips.push({
-      label: w.reachesAnchor
-        ? `Move since ${(ANCHORED_KEYS[key] ?? METRIC_ANCHOR[key])?.shortSince ?? 'review'}`
-        : 'Move over history',
+      label: w.reachesAnchor ? `Price since ${event.anchor.shortSince}` : 'Price over history',
       value: pct(w.changePct),
     })
   }
