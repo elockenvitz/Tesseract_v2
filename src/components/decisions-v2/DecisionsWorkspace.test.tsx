@@ -13,6 +13,8 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 import type { DecisionRecord } from '../../lib/desktop-decisions'
+import { NO_OUTCOME_FACTS, type OutcomeFacts } from '../../lib/desktop-decisions/classes'
+import type { BatchPnl } from '../../lib/outcomes/batch-groups'
 
 const DAY = 86_400_000
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
@@ -40,6 +42,9 @@ const priceSeries = (days: number, rising: boolean) =>
   }))
 
 let decisions: DecisionRecord[] = []
+/** What Outcomes knows, keyed by the decision's idea id. */
+let outcomeFacts: Record<string, OutcomeFacts> = {}
+let batchPnls: Record<string, BatchPnl> = {}
 /** Whether the pilot has ended, for the seeded-record rule. */
 const pilot = vi.hoisted(() => ({ graduated: false }))
 let detail: any = {}
@@ -51,6 +56,19 @@ vi.mock('../../hooks/useDesktopDecisions', async importOriginal => {
   return {
     ...actual,
     useDecisionScan: () => ({ decisions, isLoading: false, error: scanError }),
+    /*
+     * What Outcomes knows, supplied per test.
+     *
+     * The real hook reads the shared `outcomes_payload`; this suite is about
+     * which act is on screen and how it is classified, so the facts are given
+     * rather than fetched. Default: nothing known, which is the honest state
+     * for a decision Outcomes has no row for.
+     */
+    useDecisionOutcomeFacts: () => ({
+      factsFor: (d: DecisionRecord) => outcomeFacts[d.ideaId ?? ''] ?? NO_OUTCOME_FACTS,
+      pnlForBatch: (id: string | null | undefined) => (id ? batchPnls[id] ?? null : null),
+      isLoading: false,
+    }),
     useDecisionDetail: (d: DecisionRecord | null) => {
       if (d) detailRequestedFor.push(d.id)
       return { detail: d ? detail : undefined, isLoading: false }
@@ -95,6 +113,8 @@ const onTyped = (e: Event) => typedEvents.push(e as CustomEvent)
 
 beforeEach(() => {
   decisions = []
+  outcomeFacts = {}
+  batchPnls = {}
   pilot.graduated = false
   detail = {}
   scanError = null
@@ -469,6 +489,188 @@ describe('the index is a queue of what still wants something', () => {
     expect(tiles).toHaveLength(1)
     expect(within(tiles[0]).getByText(/we need 2%/)).toBeInTheDocument()
     expect(screen.queryByText(/i like this idea, makes sense/)).not.toBeInTheDocument()
+  })
+})
+
+/* --------------------------------------------------- what the lens holds */
+
+describe('three classes, ranked', () => {
+  const facts = (over: Partial<OutcomeFacts> = {}): OutcomeFacts => ({
+    ...NO_OUTCOME_FACTS, executed: true, ...over,
+  })
+  /** Committed, explained, executed and reviewed: the record. */
+  const committed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'recent-1', ideaId: 'tq-recent', symbol: 'MSFT', status: 'accepted',
+    decidedAt: daysAgo(2), requestedAt: daysAgo(3),
+    decisionNote: null, batch: { id: 'b-msft', name: '1 buy · 09/15/2026', description: 'test' },
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric Lockenvitz' },
+    ...over,
+  })
+
+  it('shows a committed decision instead of an empty lens', () => {
+    // Bogey Cap on graduation day: one decision, made, executed and explained
+    // by its batch. The old lens rendered "all 1 record is complete" over an
+    // empty page, which is not an answer to "what did we decide?".
+    decisions = [committed()]
+    outcomeFacts = { 'tq-recent': facts({ reviewed: true, sincePct: -0.8, pnl: -670, verdictLabel: 'Working' }) }
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles).toHaveLength(1)
+    expect(within(tiles[0]).getByText('MSFT')).toBeInTheDocument()
+    expect(within(tiles[0]).getByTestId('decision-reason')).toHaveTextContent('Committed')
+    expect(within(tiles[0]).getByText('Executed')).toBeInTheDocument()
+  })
+
+  it('ranks work above the record, whatever the record carries', () => {
+    decisions = [
+      committed(),
+      // Executed and explained, but nobody reviewed how it went: a revisit,
+      // which must still rank under anything that owes an answer or a reason.
+      committed({
+        id: 'revisit', ideaId: 'tq-revisit', symbol: 'CCC',
+        batch: null, decisionNote: 'Trimmed into strength.',
+      }),
+      decision({ id: 'owed', ideaId: 'tq-owed', symbol: 'AAA', decisionNote: null, decidedAt: daysAgo(1) }),
+      decision({
+        id: 'pending', ideaId: 'tq-pending', symbol: 'BBB', status: 'pending',
+        decidedAt: null, decidedBy: null, decidedByName: null, requestedAt: daysAgo(30),
+      }),
+    ]
+    outcomeFacts = {
+      'tq-recent': facts({ reviewed: true }),
+      'tq-revisit': facts({ reviewed: false, verdictLabel: 'Outcome not reviewed' }),
+    }
+    render(<DecisionsWorkspace />)
+    const order = screen.getAllByTestId('decision-tile').map(t => t.textContent)
+    expect(order[0]).toContain('BBB')   // awaiting a decision, waiting longest
+    expect(order[1]).toContain('AAA')   // answered, no reason recorded
+    expect(order[2]).toContain('CCC')   // done, but never looked at again
+    expect(order[3]).toContain('MSFT')  // the record, last
+  })
+
+  it('asks for a revisit when the outcome was never reviewed, or has gone against us', () => {
+    decisions = [committed(), committed({ id: 'r2', ideaId: 'tq-hurt', symbol: 'ORCL', batch: null })]
+    outcomeFacts = {
+      'tq-recent': facts({ reviewed: false, verdictLabel: 'Outcome not reviewed' }),
+      'tq-hurt': facts({ hurting: true, verdictLabel: 'Hurting' }),
+    }
+    // ORCL has no batch, so its own note must explain it.
+    decisions[1] = { ...decisions[1], decisionNote: 'Cut the position after the print.' }
+    render(<DecisionsWorkspace />)
+    const reasons = screen.getAllByTestId('decision-reason').map(e => e.textContent)
+    expect(reasons).toContain('Outcome not reviewed')
+    expect(reasons).toContain('Moving against us')
+  })
+
+  it('treats an approved decision whose execution never completed as work', () => {
+    decisions = [committed({
+      id: 'unconfirmed', ideaId: 'tq-unconfirmed', symbol: 'NKE', decidedAt: daysAgo(200),
+      execution: { id: 'at-9', status: 'pending', completedAt: null, executedByName: null },
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-reason')).toHaveTextContent('Execution unconfirmed')
+  })
+
+  it('does not resurrect an old approval nobody ever executed', () => {
+    decisions = [committed({ id: 'ancient', ideaId: 'tq-ancient', decidedAt: daysAgo(240), execution: null })]
+    render(<DecisionsWorkspace />)
+    expect(screen.queryAllByTestId('decision-tile')).toHaveLength(0)
+  })
+})
+
+describe('what happened, in Outcomes’ own numbers', () => {
+  const committed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', status: 'accepted',
+    decidedAt: daysAgo(2), decisionNote: 'Added on the cloud reacceleration.',
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric Lockenvitz' },
+    ...over,
+  })
+
+  it('states the move since the decision, the dollar proxy and where the review stands', () => {
+    decisions = [committed()]
+    outcomeFacts = {
+      'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, sincePct: -0.8, pnl: -670, verdictLabel: 'Outcome not reviewed' },
+    }
+    render(<DecisionsWorkspace />)
+    const strip = screen.getByTestId('decision-outcome')
+    expect(strip).toHaveTextContent('-0.8%')
+    expect(strip).toHaveTextContent('since decision')
+    expect(strip).toHaveTextContent('−$670 P&L')
+    // The class already says the outcome is unreviewed; the strip says which
+    // record carries a reason, so the two are not read as one contradiction.
+    expect(screen.getByTestId('decision-reason')).toHaveTextContent('Outcome not reviewed')
+    expect(strip).toHaveTextContent('Decision reason recorded')
+    expect(strip.textContent).not.toContain('Needs rationale')
+  })
+
+  it('says nothing where Outcomes knows nothing', () => {
+    decisions = [committed({ ideaId: 'tq-unknown' })]
+    render(<DecisionsWorkspace />)
+    expect(screen.queryByTestId('decision-outcome')).not.toBeInTheDocument()
+  })
+
+  it('gives a batch its own dollars and never a batch return percentage', () => {
+    const b = { id: 'b-2', name: '3 trades · 09/15/2026', description: 'Rotated into staples.' }
+    decisions = [
+      committed({ id: 'l1', ideaId: 'tq-l1', symbol: 'AAA', batch: b, decisionNote: null }),
+      committed({ id: 'l2', ideaId: 'tq-l2', symbol: 'BBB', batch: b, decisionNote: null }),
+    ]
+    outcomeFacts = {
+      'tq-l1': { ...NO_OUTCOME_FACTS, executed: true, sincePct: 4.2, pnl: 1200, verdictLabel: 'Working' },
+      'tq-l2': { ...NO_OUTCOME_FACTS, executed: true, sincePct: -1.1, pnl: -300, verdictLabel: 'Working' },
+    }
+    batchPnls = { 'b-2': { kind: 'total', value: 900 } }
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles).toHaveLength(1)
+    // The batch is the container; the legs stay underneath it.
+    expect(within(tiles[0]).getByTestId('batch-legs')).toHaveTextContent('AAA')
+    expect(within(tiles[0]).getByTestId('batch-legs')).toHaveTextContent('BBB')
+    const strip = within(tiles[0]).getByTestId('decision-outcome')
+    expect(strip).toHaveTextContent('+$900 P&L')
+    expect(strip.textContent).not.toMatch(/since decision|%/)
+  })
+})
+
+describe('the follow-up happens where it belongs', () => {
+  const tabs: Array<Record<string, unknown>> = []
+  const listen = (e: Event) => tabs.push((e as CustomEvent).detail)
+
+  beforeEach(() => {
+    tabs.length = 0
+    window.addEventListener('decision-engine-action', listen)
+    decisions = [decision({
+      id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', status: 'accepted', portfolioId: 'p1',
+      decidedAt: daysAgo(2), decisionNote: 'Added on the cloud reacceleration.',
+      batch: { id: 'b-msft', name: '1 buy', description: 'test' },
+      execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric' },
+    })]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, verdictLabel: 'Outcome not reviewed' } }
+  })
+  afterEach(() => window.removeEventListener('decision-engine-action', listen))
+
+  it('sends the review to Outcomes, on this decision', async () => {
+    const user = userEvent.setup()
+    render(<DecisionsWorkspace />)
+    await user.click(screen.getByTestId('decision-review-outcome'))
+    expect(tabs).toEqual([{ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: 'tq-c1' } }])
+  })
+
+  it('sends the committed act to Trade Book, as a batch', async () => {
+    const user = userEvent.setup()
+    render(<DecisionsWorkspace />)
+    await user.click(screen.getByTestId('decision-open-trade-book'))
+    expect(tabs).toEqual([{
+      id: 'trade-book', title: 'Trade Book', type: 'trade-book',
+      data: { portfolioId: 'p1', highlightBatchId: 'b-msft', highlightTradeIds: null },
+    }])
+  })
+
+  it('never grows a chart or a reflection of its own', () => {
+    render(<DecisionsWorkspace />)
+    const lens = screen.getByTestId('decisions-lens')
+    expect(within(lens).queryByTestId('decision-reflection')).not.toBeInTheDocument()
+    expect(lens.querySelectorAll('svg.recharts-surface')).toHaveLength(0)
   })
 })
 

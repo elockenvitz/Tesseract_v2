@@ -16,8 +16,13 @@
  * or outcome filter in the scan query.
  */
 
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useDecisionAccountability } from './useDecisionAccountability'
+import { inferDecisionIntelligence } from '../lib/decision-intelligence'
+import { phoneStatusLabel } from '../lib/outcomes/phone-status'
+import { groupByBatch, type BatchPnl } from '../lib/outcomes/batch-groups'
+import { NO_OUTCOME_FACTS, type OutcomeFacts } from '../lib/desktop-decisions/classes'
 import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
 import type { DecisionRecord, DecisionStatus } from '../lib/desktop-decisions/model'
@@ -215,6 +220,71 @@ export function usePortfoliosWithDecisions(decisions: DecisionRecord[]) {
     }
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
   }, [decisions])
+}
+
+/**
+ * What Outcomes already knows about these decisions.
+ *
+ * ── Read, never recomputed ───────────────────────────────────────────────
+ *
+ * The move since the decision, the dollar impact, whether the outcome has been
+ * reviewed and whether it has gone against the decision are all Outcomes'
+ * answers: `useDecisionAccountability` builds accountability rows from the
+ * `outcomes_payload` RPC, and `inferDecisionIntelligence` is the one place
+ * that judges them. Computing a second version here is how two surfaces end up
+ * disagreeing about the same trade.
+ *
+ * It costs one shared query: the same key Outcomes uses, so opening both pays
+ * for one RPC. Keyed on `trade_queue_item_id`, which is an accountability
+ * row's `decision_id` for anything acted on and a `DecisionRecord`'s `ideaId`.
+ */
+export function useDecisionOutcomeFacts() {
+  const { rows, isLoading } = useDecisionAccountability()
+
+  const byIdea = useMemo(() => {
+    const out = new Map<string, OutcomeFacts>()
+    for (const row of rows) {
+      if (!row.decision_id) continue
+      const intel = inferDecisionIntelligence(row)
+      out.set(row.decision_id, {
+        sincePct: row.move_since_decision_pct ?? row.move_since_execution_pct ?? null,
+        pnl: row.impact_proxy ?? null,
+        // The clearer relabelling of the same verdicts, already shared with
+        // the phone: "Outcome not reviewed" rather than "Needs Context".
+        verdictLabel: phoneStatusLabel(intel),
+        // Outcomes' own bar for reviewed: quality assessed against the
+        // execution, not a note on the request.
+        reviewed: intel.verdict === 'resolved',
+        hurting: intel.verdict === 'hurting',
+        executed: row.execution_status === 'executed',
+      })
+    }
+    return out
+  }, [rows])
+
+  /*
+   * A batch's dollars, by Outcomes' own rule.
+   *
+   * `groupByBatch` already decides when a batch may report a total at all --
+   * every trade in it needs its own P&L proxy, and none of them may belong to
+   * a second batch, or the same dollars would be counted twice. Reusing it
+   * means the Dashboard cannot say a different number from Outcomes, and it
+   * keeps the deliberate absence of a batch return percentage.
+   */
+  const batchPnl = useMemo(() => {
+    const items = rows.map(row => ({ row, intel: inferDecisionIntelligence(row) }))
+    const out = new Map<string, BatchPnl>()
+    for (const g of groupByBatch(items).groups) out.set(g.batch.id, g.pnl)
+    return out
+  }, [rows])
+
+  const factsFor = useCallback(
+    (d: { ideaId: string | null }) => (d.ideaId ? byIdea.get(d.ideaId) : undefined) ?? NO_OUTCOME_FACTS,
+    [byIdea],
+  )
+  const pnlForBatch = useCallback((id: string | null | undefined) => (id ? batchPnl.get(id) ?? null : null), [batchPnl])
+
+  return { factsFor, pnlForBatch, isLoading }
 }
 
 export interface DecisionDetail {

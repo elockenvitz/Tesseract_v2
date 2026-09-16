@@ -24,12 +24,20 @@ import { clsx } from 'clsx'
 import { ChevronDown, Landmark } from 'lucide-react'
 import {
   useDecisionScan, usePortfoliosWithDecisions, useDecisionDetail,
+  useDecisionOutcomeFacts,
 } from '../../hooks/useDesktopDecisions'
 import {
-  outcomeOf, OUTCOME_LABEL, provenanceOf, workOf, compareWork,
-  hasHumanReason, groupIntoSituations, RESOLVED, type DecisionSituation,
+  outcomeOf, OUTCOME_LABEL, provenanceOf, workOf,
+  hasHumanReason, RESOLVED,
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
+import {
+  classifySituations, selectForLens, lensSentence, REASON_LABEL,
+  type ClassedSituation, type OutcomeFacts,
+} from '../../lib/desktop-decisions/classes'
+import { openOutcomesFor, openTradeBookFor } from '../../lib/desktop-decisions/navigate'
+import { formatCompactDollars } from '../../lib/decision-intelligence'
+import { batchPnlText } from '../../lib/outcomes/batch-groups'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
 import { operationalAfterPilot } from '../../lib/pilot/seed-visibility'
 import { DecisionDetailPane } from './DecisionDetail'
@@ -56,6 +64,15 @@ export function DecisionsWorkspace({
   // The scan is unfiltered by book so the portfolio list can be built from the
   // decisions that actually exist; filtering happens in memory afterward.
   const { decisions, isLoading, error } = useDecisionScan(null)
+  /*
+   * What happened after each decision, in Outcomes' own terms.
+   *
+   * One shared query -- the same `outcomes_payload` Outcomes reads -- and the
+   * same verdicts, moves and dollar proxies it renders. This lens classifies
+   * and composes; it does not judge outcomes, because a second judgement is
+   * how two surfaces come to disagree about one trade.
+   */
+  const { factsFor, pnlForBatch } = useDecisionOutcomeFacts()
 
   const [portfolioId, setPortfolioId] = useState<string | null>(selectedPortfolioId ?? null)
   const [decisionId, setDecisionId] = useState<string | null>(selectedDecisionId ?? null)
@@ -97,20 +114,21 @@ export function DecisionsWorkspace({
     [operational, portfolioId],
   )
   /*
-   * One situation per decision ACT, not per execution leg.
+   * One situation per decision ACT, in three ranked classes.
    *
-   * Five trades committed in one batch were one thing somebody did, so they
-   * ask for one rationale. `groupIntoSituations` collapses only that case and
-   * only on a real `batch_id`; everything else stays per request. Ordering is
-   * applied to the situations, so a five-leg batch takes ONE position in the
-   * queue rather than five -- which is the composition half of the same
-   * problem.
+   * Five trades committed in one batch were one thing somebody did, so the
+   * batch is the container and the legs stay underneath it -- for what it
+   * owes and for how it is going. Classification and order are
+   * `lib/desktop-decisions/classes`: work first, longest waiting; then
+   * outcomes to revisit; then the recent record, newest first, which fills
+   * the page when little is owed.
    */
   const situations = useMemo(
-    () => groupIntoSituations(inBook.slice().sort(compareWork)),
-    [inBook],
+    () => selectForLens(classifySituations(inBook, factsFor)),
+    [inBook, factsFor],
   )
   const rows = useMemo(() => situations.map(s => s.lead), [situations])
+  /** Records this lens is not showing: decided, explained and not recent. */
   const settled = inBook.length - situations.reduce((n, s) => n + s.legs.length, 0)
 
   // Entry lands in the record, never inside one. The chronology still decides
@@ -216,16 +234,20 @@ export function DecisionsWorkspace({
         flow="chronological"
         action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
         note={<>
+          {/*
+            What the lens holds, in the order it holds it. Three classes, not
+            a queue: what needs doing, what is worth another look, and what
+            was recently committed.
+          */}
           <p className="max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
-            Decisions waiting on an answer, and decisions taken with no reason
-            recorded. Longest waiting first.
+            {lensSentence(situations)}
           </p>
           {/* What is NOT here, said once. A queue that silently drops the
               settled record looks like a lens that lost it. */}
           {settled > 0 && (
             <p className="mt-1 text-[11px] text-gray-500">
-              {settled} decided and explained {settled === 1 ? 'record is' : 'records are'}{' '}
-              not listed. Nothing needs doing to {settled === 1 ? 'it' : 'them'}.
+              {settled} older {settled === 1 ? 'record is' : 'records are'} not listed.
+              Nothing needs doing to {settled === 1 ? 'it' : 'them'}.
             </p>
           )}
           {/*
@@ -243,6 +265,8 @@ export function DecisionsWorkspace({
             key={s.subject}
             decision={s.lead}
             situation={s}
+            facts={factsFor(s.lead)}
+            batchPnl={batchPnlText(pnlForBatch(s.batch?.id) ?? { kind: 'none' })}
             alsoInBooks={booksPerIdea.get(s.lead.ideaId ?? '') ?? 0}
             // Longest-waiting first is the order; this only decides how much
             // room each record gets, never which comes first.
@@ -497,11 +521,15 @@ export function toRailCard(d: DecisionRecord): RailCard {
  * other gallery.
  */
 function DecisionTile({
-  decision, situation, alsoInBooks, bandSize, onOpen,
+  decision, situation, facts, batchPnl, alsoInBooks, bandSize, onOpen,
 }: {
   decision: DecisionRecord
   /** The decision act this card stands for. One leg, or a whole batch. */
-  situation: DecisionSituation
+  situation: ClassedSituation
+  /** What Outcomes knows about it. Never recomputed here. */
+  facts: OutcomeFacts
+  /** Outcomes' own batch total, where the act is a batch and it has one. */
+  batchPnl: ReturnType<typeof batchPnlText>
   alsoInBooks: number
   /** Where this record sits in the chronology. Never a judgement of it. */
   bandSize: TileSize
@@ -555,6 +583,20 @@ function DecisionTile({
       onOpen={onOpen}
       eyebrow={<>
         <OutcomeChip decision={d} small />
+        {/* Why this card is here, in the class's own words: awaiting an
+            answer, owed a reason, unconfirmed, unreviewed, moving against
+            us, or simply what was just committed. */}
+        <span
+          data-testid="decision-reason"
+          className={clsx(
+            'text-[10px] font-semibold uppercase tracking-[0.1em]',
+            situation.klass === 'action' ? 'text-amber-700 dark:text-amber-500'
+              : situation.klass === 'revisit' ? 'text-slate-600 dark:text-slate-300'
+              : 'text-gray-500',
+          )}
+        >
+          {REASON_LABEL[situation.reason]}
+        </span>
         {d.action && (
           <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-gray-500">
             {d.action}
@@ -771,6 +813,83 @@ function DecisionTile({
         </div>
       )}
 
+      {/*
+        Enough of what happened to answer "does this deserve another look?".
+
+        Every figure is Outcomes' own: the move since the decision, the dollar
+        proxy behind it, and where the review stands. Nothing is charted and
+        nothing is reflected on here -- that is Outcomes' work, and the
+        actions below go there rather than reproducing it.
+      */}
+      {(facts.sincePct != null || facts.pnl != null || batchPnl || facts.verdictLabel) && (
+        <div
+          data-testid="decision-outcome"
+          className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-gray-200 pt-1.5 dark:border-white/10"
+        >
+          {facts.sincePct != null && !batched && (
+            <span className="font-mono text-[12px] font-semibold tabular-nums text-gray-800 dark:text-gray-200">
+              {facts.sincePct >= 0 ? '+' : ''}{facts.sincePct.toFixed(1)}%
+              <span className="ml-1 font-sans text-[10px] font-medium uppercase tracking-[0.08em] text-gray-500">
+                since decision
+              </span>
+            </span>
+          )}
+          {/* A batch reports dollars only where Outcomes says it may: every
+              leg priced, and none of them counted into a second batch. It
+              never reports a return percentage. */}
+          {batched ? batchPnl && (
+            <span className="font-mono text-[12px] tabular-nums text-gray-600 dark:text-gray-400">{batchPnl}</span>
+          ) : facts.pnl != null && (
+            <span className="font-mono text-[12px] tabular-nums text-gray-600 dark:text-gray-400">
+              {formatCompactDollars(facts.pnl, facts.pnl > 0 ? '+' : facts.pnl < 0 ? '−' : '')} P&amp;L
+            </span>
+          )}
+          {/* Outcomes' verdict, only where the eyebrow has not already said
+              it: on a revisit the class label IS the verdict, and printing
+              both reads as two different findings about one trade. */}
+          {facts.verdictLabel && situation.klass === 'recent' && (
+            <span className="text-[11px] text-gray-500">{facts.verdictLabel}</span>
+          )}
+          {/*
+            Named for the record it belongs to.
+
+            Outcomes tracks a rationale captured against the EXECUTION; this
+            lens tracks the reason for the decision act, which a batch
+            description can carry for every leg. Both can be true at once --
+            "Needs rationale" beside a bare "Reason recorded" read as a
+            contradiction when it is two records.
+          */}
+          <span className="text-[11px] text-gray-500">
+            {hasHumanReason(d) ? 'Decision reason recorded' : 'No decision reason'}
+          </span>
+        </div>
+      )}
+
+      {/*
+        Where the follow-up actually happens.
+
+        Outcomes owns the review and Trade Book owns the committed act; this
+        lens hands off rather than growing a second copy of either.
+      */}
+      {(situation.klass !== 'action' || situation.reason === 'confirm') && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {d.ideaId && (
+            <TileAction
+              testId="decision-review-outcome"
+              label={facts.reviewed ? 'View review' : 'Review outcome'}
+              onClick={() => openOutcomesFor(d)}
+            />
+          )}
+          {(situation.batch || d.execution) && (
+            <TileAction
+              testId="decision-open-trade-book"
+              label={situation.batch ? 'Open batch in Trade Book' : 'Open in Trade Book'}
+              onClick={() => openTradeBookFor({ ...d, batch: situation.batch })}
+            />
+          )}
+        </div>
+      )}
+
       <TileMeta>
         <span className="font-medium text-gray-600 dark:text-gray-400">{d.portfolioName ?? '—'}</span>
         {d.decidedByName && <span>{d.decidedByName}</span>}
@@ -789,6 +908,28 @@ function DecisionTile({
         )}
       </TileMeta>
     </DesktopTile>
+  )
+}
+
+/**
+ * A hand-off, in the card's own grammar.
+ *
+ * Deliberately not a primary button: the card's own click still opens the
+ * record, and these say where the rest of the answer lives. `stopPropagation`
+ * because the whole tile is the entrance to the detail pane.
+ */
+function TileAction({
+  label, onClick, testId,
+}: { label: string; onClick: () => void; testId: string }) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={e => { e.stopPropagation(); onClick() }}
+      className="relative z-[2] rounded-md border border-gray-200 px-2.5 py-[3px] text-[11px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
+    >
+      {label}
+    </button>
   )
 }
 
