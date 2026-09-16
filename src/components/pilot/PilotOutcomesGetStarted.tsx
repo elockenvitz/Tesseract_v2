@@ -54,12 +54,16 @@ const STEP_TO_EVENT: Record<string, PilotEventType> = {
   [STEP2]: 'pilot_outcomes_step_thesis_reviewed',
   [STEP3]: 'pilot_outcomes_step_performance_checked',
 }
-// Pending flag the global PilotGraduationModal reads. Setting this
-// when graduation occurs lets the modal pop wherever the user lands
-// after the step-3 navigation (since Outcomes itself unmounts when
-// the user clicks "Update research" → asset tab opens).
-const PENDING_GRAD = 'pending_graduation_modal'
-const GRAD_DISMISS = 'graduation_dismissed'
+/*
+ * This banner no longer decides when to celebrate.
+ *
+ * It used to write a `pending_graduation_modal` localStorage flag the moment
+ * its three LOCAL step flags were set, and PilotGraduationModal opened on that
+ * flag alone. Three browser-local booleans are not graduation: the modal could
+ * announce the full app to a reader whose tabs were all still gated. The mark
+ * below is this banner's whole contribution — the mission decides the rest, and
+ * `hasGraduated` is what the modal opens on.
+ */
 
 function flagKey(userId: string, orgId: string | null | undefined, suffix: string) {
   return `pilot_outcomes_intro_${suffix}_${userId || 'anon'}_${orgId || 'no-org'}`
@@ -155,22 +159,14 @@ export function PilotOutcomesGetStarted({
     }
   }, [userId, orgId])
 
-  // Once all three are done, retire the 3-step strip AND set the
-  // pending-graduation flag so the global PilotGraduationModal (mounted
-  // at the Dashboard level) pops the celebration. The modal lives
-  // outside this component so it survives the navigation that step 3
-  // typically triggers (Update Research opens the asset tab and
-  // unmounts Outcomes).
-  //
-  // The trigger does NOT depend on `!dismissed` — a user who manually
-  // X'd the banner still earns graduation when they finish the loop.
-  // PENDING_GRAD is the gate that prevents double-firing within a
-  // session; GRAD_DISMISS is the gate that prevents re-celebrating
-  // someone who already saw it.
   // "Finish the loop" finished is pilot mission stage 5 — the last one. The
   // steps are browser-local, so this writes the one server-backed mark the
-  // roadmap reads; the mission then graduates the pilot. Idempotent per
-  // (stage, org), and written for a pilot who finished before this existed.
+  // roadmap reads; the mission then graduates the pilot, and graduation is what
+  // opens the celebration. Idempotent per (stage, org), and written for a pilot
+  // who finished before this existed.
+  //
+  // The mark does NOT depend on `!dismissed` — a user who manually X'd the
+  // banner still earns graduation when they finish the loop.
   const { progress, mark } = usePilotProgress()
   const stageMarked = !!progress[tutorialOutcomeReviewedKey(orgId ?? null)]
   useEffect(() => {
@@ -178,17 +174,17 @@ export function PilotOutcomesGetStarted({
     mark('tutorial_outcome_reviewed')
   }, [userId, step1, step2, step3, stageMarked, mark])
 
+  // Retire the strip once its three steps are done.
   useEffect(() => {
-    if (!userId || !step1 || !step2 || !step3) return
-    if (readFlag(userId, orgId, GRAD_DISMISS)) return
-    if (!readFlag(userId, orgId, PENDING_GRAD)) {
-      writeFlag(userId, orgId, PENDING_GRAD)
-      try { window.dispatchEvent(new CustomEvent('pilot-graduation:trigger')) } catch { /* ignore */ }
-    }
-    if (!dismissed) setFlag(userId, orgId, DISMISS)
+    if (!userId || !step1 || !step2 || !step3 || dismissed) return
+    setFlag(userId, orgId, DISMISS)
   }, [dismissed, step1, step2, step3, userId, orgId])
 
-  if (dismissed) return null
+  // `stageMarked` retires it as well as the local flag, because the local flags
+  // are per-browser: a pilot who finished the loop on their laptop opened this
+  // on a second device and was asked to finish it again. The durable mark is
+  // the one that followed them.
+  if (dismissed || stageMarked) return null
 
 
   // Step 2 click — scroll the right pane to the "Why this decision

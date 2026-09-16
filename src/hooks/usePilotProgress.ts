@@ -88,6 +88,17 @@ export type PilotStage =
    */
   | 'tradebook_basics_completed'
   | 'tutorial_outcome_reviewed'
+  /*
+   * The graduation celebration was acknowledged.
+   *
+   * Server-backed for the same reason `graduated` is. It used to be a
+   * `graduation_dismissed` localStorage flag, which meant a pilot who cleared
+   * site data got congratulated a second time and a pilot who graduated on one
+   * machine got congratulated again on the next. It marks an acknowledgement,
+   * never graduation itself — `graduated` remains the only answer to whether
+   * the pilot finished.
+   */
+  | 'graduation_celebrated'
 
 export interface PilotProgress {
   /** @deprecated user-level legacy keys, no longer read or written.
@@ -107,6 +118,7 @@ export interface PilotProgress {
 const tradeBookUnlockedKey = (orgId: string | null) => `trade_book_unlocked_at_${orgId || 'no-org'}`
 const outcomesUnlockedKey  = (orgId: string | null) => `outcomes_unlocked_at_${orgId || 'no-org'}`
 const graduatedKey         = (orgId: string | null) => `graduated_at_${orgId || 'no-org'}`
+const graduationCelebratedKey = (orgId: string | null) => `graduation_celebrated_at_${orgId || 'no-org'}`
 const pipelineBannerDismissedKey = (orgId: string | null) => `pipeline_banner_dismissed_at_${orgId || 'no-org'}`
 // The three Pipeline basics keys come from `lib/pilot/mission`, which reads them
 // to decide mission stage 2 — one spelling for the writer and the reader.
@@ -119,6 +131,7 @@ const stageToKey = (stage: PilotStage, orgId: string | null): string => {
     case 'trade_book_unlocked':        return tradeBookUnlockedKey(orgId)
     case 'outcomes_unlocked':          return outcomesUnlockedKey(orgId)
     case 'graduated':                  return graduatedKey(orgId)
+    case 'graduation_celebrated':      return graduationCelebratedKey(orgId)
     case 'pipeline_banner_dismissed':  return pipelineBannerDismissedKey(orgId)
     case 'pipeline_step_moved':        return pipelineStepMovedKey(orgId)
     case 'pipeline_step_inbox':        return pipelineStepInboxKey(orgId)
@@ -201,6 +214,7 @@ const STAGE_TO_EVENT: Record<PilotStage, string> = {
   trade_book_unlocked: 'pilot_trade_book_unlocked',
   outcomes_unlocked: 'pilot_outcomes_unlocked',
   graduated: 'pilot_graduated',
+  graduation_celebrated: 'pilot_graduation_celebrated',
   pipeline_banner_dismissed: 'pilot_pipeline_banner_dismissed',
   // Event names below preserve the pre-server-migration TradeQueuePage telemetry.
   pipeline_step_moved: 'pilot_pipeline_step_idea_dragged',
@@ -552,6 +566,9 @@ export function usePilotProgress() {
      *  CURRENT org. Each new pilot client starts as not-yet-graduated
      *  even for an analyst who's graduated in prior clients. */
     hasGraduated,
+    /** The graduation celebration has been acknowledged in this org. Durable,
+     *  so it does not re-pop on a second device or after clearing site data. */
+    hasCelebratedGraduation: !!progress[graduationCelebratedKey(currentOrgId)],
     /** Best-effort `hasGraduated` that falls back to a cached hint from
      *  the previous session while the real query is loading. Use this
      *  for UI gates that need to stay stable across a cold refresh. */
