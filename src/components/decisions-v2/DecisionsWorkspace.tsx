@@ -43,7 +43,7 @@ import { operationalAfterPilot } from '../../lib/pilot/seed-visibility'
 import { DecisionDetailPane } from './DecisionDetail'
 import {
   DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileReason, TileLead,
-  TileMeta, TileFigure, sizeByRecency, type TileSize,
+  TileMeta, TileFigure, sizeByRecency, GallerySkeleton, type TileSize,
 } from '../desktop/DesktopTile'
 import { EYEBROW } from '../desktop/DesktopModule'
 import {
@@ -1064,17 +1064,12 @@ const shortDate = (iso: string) =>
 
 /* ------------------------------------------------------------------ states */
 
+/* The canonical gallery skeleton, in this lens's own flow: chronological, and
+   sized by recency, which is exactly what the loaded field does. The old one
+   described a three-column grid of equal cards and handed over to a
+   twelve-column mosaic -- a layout change dressed as a loading state. */
 function Loading() {
-  return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
-      <div className="h-8 w-40 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
-      <div className="mt-5 grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
-        {[0, 1, 2, 3, 4, 5].map(i => (
-          <div key={i} className="h-48 animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]" />
-        ))}
-      </div>
-    </div>
-  )
+  return <GallerySkeleton title="Decisions" flow="chronological" sizeAt={sizeByRecency} />
 }
 
 function Failed({ message }: { message: string }) {

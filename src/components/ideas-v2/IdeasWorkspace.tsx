@@ -34,7 +34,8 @@ import { usePilotMode } from '../../hooks/usePilotMode'
 import { operationalAfterPilot } from '../../lib/pilot/seed-visibility'
 import { openCreate } from '../../lib/today/create-actions'
 import { IdeaDetail } from './IdeaDetail'
-import { IdeaCard, densityForRank } from './IdeaCard'
+import { IdeaCard, densityForRank, spanForRank } from './IdeaCard'
+import clsx from 'clsx'
 import { askAI, canDiscuss, discuss } from '../../lib/engagement'
 import {
   openDashboardFocus, type FocusIntent, type RailCard,
@@ -463,13 +464,33 @@ export function toRailCard(
 
 /* ----------------------------------------------------------------- states */
 
+/*
+ * Ideas draws its own twelve-column field rather than `DesktopGallery`, so its
+ * skeleton is built from `spanForRank` -- the same function the loaded field
+ * uses -- instead of the shared one. What matters is the property, not which
+ * helper provides it: the placeholders occupy the columns the real cards are
+ * about to occupy, so the handover is a fade and not a re-layout. The old
+ * skeleton was a three-column grid of equal cards in front of an 8/4 mosaic.
+ */
 function Loading() {
   return (
     <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
-      <div className="h-8 w-40 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
-      <div className="mt-5 grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
+      <div className="flex items-baseline gap-2.5">
+        <h1 className="text-[19px] font-semibold tracking-tight">Ideas</h1>
+        <span className="h-4 w-8 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
+      </div>
+      <div className="mt-5 grid grid-cols-12 gap-4">
         {[0, 1, 2, 3, 4, 5].map(i => (
-          <div key={i} className="h-56 animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]" />
+          <div
+            key={i}
+            className={clsx(
+              spanForRank(i),
+              // Per rank, like the cards: the lead is a taller object than a
+              // fifth-place scanning unit, and one global height says otherwise.
+              i === 0 ? 'h-[248px]' : i <= 1 ? 'h-[248px]' : i <= 4 ? 'h-[196px]' : 'h-[148px]',
+              'animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]',
+            )}
+          />
         ))}
       </div>
     </div>

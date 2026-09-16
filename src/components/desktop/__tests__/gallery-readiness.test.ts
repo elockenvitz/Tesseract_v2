@@ -97,6 +97,57 @@ describe('Today reserves the width its backfill will need', () => {
   })
 })
 
+/*
+ * The last jump of a cold load was the skeleton handing over.
+ *
+ * Every lens had its own placeholder describing a DIFFERENT page from the one
+ * that replaced it -- a `md:grid-cols-2 xl:grid-cols-3` grid of equal cards in
+ * front of a twelve-column mosaic of four tile sizes. So the handover moved
+ * every card on the page, at the moment the reader had just started looking.
+ */
+describe('the skeleton is the shape of the page it replaces', () => {
+  const shell = src('components/desktop/DesktopTile.tsx')
+
+  it('is built from the same span map and grid as the real gallery', () => {
+    const fn = shell.slice(shell.indexOf('export function GallerySkeleton'))
+    const body = fn.slice(0, fn.indexOf('\n}\n'))
+    expect(body).toContain('SPAN[flow][s]')
+    expect(body).toContain("gridAutoRows: 'minmax(88px, auto)'")
+    expect(body).toContain('md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12')
+  })
+
+  /* One global height is the same mistake in a different place: a hero and a
+     compact do not occupy the same room. */
+  it('reserves a height per tile size, not one for all of them', () => {
+    const map = shell.slice(shell.indexOf('const SKELETON_HEIGHT'))
+    const body = map.slice(0, map.indexOf('}'))
+    const heights = [...body.matchAll(/h-\[(\d+)px\]/g)].map(m => m[1])
+    expect(heights.length).toBe(4)
+    expect(new Set(heights).size).toBeGreaterThan(1)
+  })
+
+  it.each([
+    ['components/decisions-v2/DecisionsWorkspace.tsx', 'GallerySkeleton'],
+    ['components/research-v2/ResearchWorkspace.tsx', 'GallerySkeleton'],
+    // Ideas draws its own twelve-column field, so its skeleton uses that
+    // field's own `spanForRank` -- the property is the same one.
+    ['components/ideas-v2/IdeasWorkspace.tsx', 'spanForRank(i)'],
+  ])('%s no longer hand-rolls a mismatched grid', (file, marker) => {
+    const page = src(file)
+    const loading = page.slice(page.indexOf('function Loading()'))
+    const body = loading.slice(0, loading.indexOf('\n}'))
+    expect(body).toContain(marker)
+    expect(body).not.toContain('md:grid-cols-2 xl:grid-cols-3')
+  })
+
+  it('keeps Decisions chronological in its skeleton too', () => {
+    const page = src('components/decisions-v2/DecisionsWorkspace.tsx')
+    const loading = page.slice(page.indexOf('function Loading()'))
+    expect(loading.slice(0, 220)).toContain('flow="chronological"')
+    expect(loading.slice(0, 220)).toContain('sizeByRecency')
+  })
+})
+
 describe('a failed scan is never reported as good news', () => {
   it.each([
     ['components/today/TodayPage.tsx', 'Cleared', "You're current."],

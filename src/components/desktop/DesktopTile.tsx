@@ -182,6 +182,76 @@ export function DesktopGallery({
 }
 
 /**
+ * The gallery's own loading state.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ *
+ * Every lens had hand-rolled a skeleton, and every one of them described a
+ * DIFFERENT page from the one that replaced it: a `md:grid-cols-2
+ * xl:grid-cols-3` grid of equal `h-56` cards handing over to a twelve-column
+ * mosaic of four different tile sizes. The handover was therefore a layout
+ * change rather than a fade -- the last and largest jump of a cold load,
+ * arriving exactly when the reader had started looking.
+ *
+ * So the skeleton is built from the same `SPAN` map, the same grid and the
+ * same size functions the real gallery uses. If the mosaic changes, this
+ * changes with it, because it is reading the same source rather than
+ * imitating it.
+ *
+ * Heights are per SIZE, not one global number: a hero and a compact do not
+ * occupy the same room, and a skeleton that pretends they do is the same
+ * mistake in a different place. They are honest approximations of a typical
+ * tile at that size -- the grid's `minmax(88px, auto)` still governs, so a
+ * real tile that wants more room takes it.
+ */
+const SKELETON_HEIGHT: Record<TileSize, string> = {
+  hero: 'h-[232px]',
+  large: 'h-[232px]',
+  medium: 'h-[172px]',
+  compact: 'h-[132px]',
+}
+
+export function GallerySkeleton({
+  title, count = 6, flow = 'ranked', sizeAt,
+}: {
+  title: React.ReactNode
+  /** How many placeholders. Default six: two rows of the usual mosaic. */
+  count?: number
+  flow?: TileFlow
+  /** Which size each index takes. Defaults to the ranked rule, so a lens that
+   *  ranks gets its real shape without having to say so. */
+  sizeAt?: (index: number, total: number) => TileSize
+}) {
+  const size = sizeAt ?? sizeByRank
+  return (
+    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
+      <div className="flex items-baseline gap-2.5">
+        <h1 className="text-[21px] font-semibold tracking-tight">{title}</h1>
+        <span className="h-4 w-8 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
+      </div>
+      <div
+        className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+        style={{ gridAutoRows: 'minmax(88px, auto)', gridAutoFlow: 'row' }}
+      >
+        {Array.from({ length: count }, (_, i) => {
+          const s = size(i, count)
+          return (
+            <div
+              key={i}
+              className={clsx(
+                SPAN[flow][s],
+                SKELETON_HEIGHT[s],
+                'animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]',
+              )}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/**
  * Rank to size, for the three lenses that rank.
  *
  * The top of the list gets the room, and richness never demotes it: a sparse
