@@ -34,6 +34,7 @@ import { clsx } from 'clsx'
 import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { useRecordThesisReview } from '../../hooks/useThesisReview'
+import { useRecordObjectView } from '../../hooks/useObjectViewCursor'
 import { openAsset } from '../../lib/desktop-asset'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
 
@@ -162,6 +163,18 @@ export function ResearchDetail({
   const {
     record: recordReview, isPending: reviewPending, isDone: reviewDone,
   } = useRecordThesisReview(subject.assetId)
+
+  /*
+   * This is a genuine view: the detail pane is mounted, which only happens
+   * when a reader opened this subject or arrived on it by deep link. The
+   * gallery tile renders `ResearchWorkspace`, not this.
+   *
+   * The cursor is advanced here and the PRIOR value handed back, so "new since
+   * you last looked" has something truthful to compare against. Nothing reads
+   * it yet -- Research still measures new evidence against the thesis date --
+   * and changing that is its own pass.
+   */
+  useRecordObjectView('asset', subject.assetId)
 
   const runPrimary = () => {
     // An authoring state's next step is authoring, which happens on the Asset

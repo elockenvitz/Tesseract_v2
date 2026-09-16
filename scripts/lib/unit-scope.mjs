@@ -190,6 +190,13 @@ export const GATED_DIRS = [
    */
   'src/lib/memory/__tests__',
   /*
+   * The per-object view cursor. Its two properties -- only a real detail open
+   * counts, and the prior value is readable before it moves -- are both
+   * invisible when broken: the cursor still exists, it just stops meaning
+   * "when did you last look".
+   */
+  'src/lib/attention-state/__tests__',
+  /*
    * Today's domain layer: tiering, adaptation, diversity, enrichment and the
    * time labels every tile reads from.
    *

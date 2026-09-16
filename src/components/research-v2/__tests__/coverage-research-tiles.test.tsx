@@ -37,6 +37,12 @@ vi.mock('../../../hooks/useThesisReview', () => ({
   useThesisReviews: () => new Map(),
   useRecordThesisReview: () => ({ record: vi.fn(), isPending: false, isDone: false, error: null }),
 }))
+
+/* Same reason: the view cursor needs auth and org context this suite does not
+   stand up. Its behaviour is covered in lib/attention-state/__tests__. */
+vi.mock('../../../hooks/useObjectViewCursor', () => ({
+  useRecordObjectView: () => ({ previous: null, ready: true }),
+}))
 vi.mock('../../contributions', () => ({ ThesisContainer: () => null }))
 vi.mock('../../../lib/dashboard/focus', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../lib/dashboard/focus')>()
