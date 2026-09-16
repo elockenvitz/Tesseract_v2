@@ -97,8 +97,13 @@ begin
 end;
 $$;
 
-revoke all on function public.seed_pilot_benchmark_weights(uuid, uuid, text) from public, anon, authenticated;
-grant execute on function public.seed_pilot_benchmark_weights(uuid, uuid, text) to service_role;
+-- Executable by `authenticated`, like `seed_pilot_template_portfolio` beside
+-- it, because the caller is a platform admin using the Ops page in a browser.
+-- Authority is the `is_platform_admin()` check in the body, not the grant; an
+-- ordinary authenticated user calling this gets the exception. `anon` is
+-- revoked because nobody signed out has any business here.
+revoke all on function public.seed_pilot_benchmark_weights(uuid, uuid, text) from public, anon;
+grant execute on function public.seed_pilot_benchmark_weights(uuid, uuid, text) to authenticated, service_role;
 
 comment on function public.seed_pilot_benchmark_weights(uuid, uuid, text) is
   'Copies the newest canonical snapshot of an index, and its weights, onto a '

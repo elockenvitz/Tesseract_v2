@@ -139,6 +139,28 @@ export function OpsClientsPage() {
            * the nightly capture job now also targets portfolios by their
            * declared benchmark, so a failure here self-heals.
            */
+          /*
+           * Which template names could not be resolved to an asset.
+           *
+           * The seed joins `assets` on symbol with an INNER join, so a symbol
+           * with no asset row is dropped silently -- and it reports the full
+           * template length regardless, so nothing downstream could tell. That
+           * is why 25 of the 26 pilot books hold 34 of the template's 35 names:
+           * DUOL's asset row was created after they were seeded, and no one
+           * was told. Surfacing it here is the difference between a book that
+           * is quietly short a position and one an operator can fix.
+           */
+          const { data: unresolved } = await supabase.rpc(
+            'seed_pilot_unresolved_symbols' as never,
+            { p_positions: positions } as never,
+          )
+          const missing = (unresolved as string[] | null) ?? []
+          if (missing.length > 0) {
+            console.warn(
+              `Pilot seed: ${missing.length} template symbol(s) had no asset row and were NOT added to ${tpl.name}: ${missing.join(', ')}`,
+            )
+          }
+
           const seededPortfolioId = (seeded as { portfolio_id?: string } | null)?.portfolio_id
           // Read through a cast for the same reason: `data` types as `never`
           // here, so every property access on it is an error in this file.
