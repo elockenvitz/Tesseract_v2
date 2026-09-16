@@ -18,6 +18,8 @@ import {
   evaluateRatingNoFollowup,
   evaluateHighExpectedReturn,
   evaluateThesisStale,
+  evaluateTradeReviewOwed,
+  type OpenTradeReviewObligation,
 } from './evaluators'
 
 // ---------------------------------------------------------------------------
@@ -50,6 +52,9 @@ export interface EngineArgs {
     /** Newest `thesis.reviewed` per asset id. Moves the staleness clock only;
      *  the thesis's own written date is unchanged wherever it is shown. */
     thesisReviews?: Map<string, string>
+    /** Open `trade_review` obligations. Raised and cleared by the lifecycle
+     *  rule; this surface only reports them. */
+    tradeReviewObligations?: OpenTradeReviewObligation[]
     ratings?: any[]
     ratingChanges?: any[]
     projects?: any[]
@@ -119,6 +124,14 @@ export function runGlobalDecisionEngine(args: EngineArgs): GlobalDecisionEngineR
     thesisUpdates: args.data.thesisUpdates,
     // A thesis confirmed to still hold is not stale, even if nobody edited it.
     thesisReviews: args.data.thesisReviews,
+    now,
+  }))
+
+  // Committed trades the lifecycle rule says need review. The obligation is
+  // already a row; this only voices it on the surface that exists to say what
+  // needs doing.
+  allItems.push(...evaluateTradeReviewOwed({
+    tradeReviewObligations: args.data.tradeReviewObligations,
     now,
   }))
 

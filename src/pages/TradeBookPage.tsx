@@ -21,6 +21,7 @@ import { useAcceptedTrades, useTradeBatches } from '../hooks/useAcceptedTrades'
 import { AcceptedTradesTable } from '../components/trading/AcceptedTradesTable'
 import { buildPairInfoByAsset } from '../lib/trade-lab/pair-info'
 import { markStaleAcceptedTrades } from '../lib/services/trade-reconciliation-service'
+import { useSyncTradeReviewObligations } from '../hooks/useTradeReviewObligations'
 import { BatchListView } from '../components/trading/BatchListView'
 import { TabStateManager } from '../lib/tabStateManager'
 import type { ExecutionStatus, ActionContext, TradeAction } from '../types/trading'
@@ -314,6 +315,18 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
       console.warn('[TradeBook] Staleness sweep failed', e),
     )
   }, [portfolioId])
+
+  /*
+   * Turn the lifecycle rule's "needs review" into a durable obligation.
+   *
+   * Beside the staleness sweep above, which is the existing sync point and
+   * already writes the very field the predicate reads. No new rule and no new
+   * schedule: it raises what `tradeLifecyclePhase` already says is owed, and
+   * clears what it no longer does. Page-local, like the sweep it rides on --
+   * a portfolio nobody opens is not evaluated, which a background sweep would
+   * fix and which is deliberately not invented here.
+   */
+  useSyncTradeReviewObligations(trades)
 
   // Full pair context for the Trade Book. Even if only one leg of a pair
   // has been committed to accepted_trades, we want its row to show the full
