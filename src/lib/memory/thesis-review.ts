@@ -49,14 +49,50 @@ export function thesisAgeDays(
   return Math.floor((now.getTime() - new Date(at).getTime()) / 86_400_000)
 }
 
-/** Newest `thesis.reviewed` per asset, from rows already fetched. The caller
- *  owns the query; this owns the rule that newest wins. */
+/**
+ * Which conclusions stop the staleness clock.
+ *
+ * Only `holds`. That is the EXISTING rule, not a new one: the clock exists to
+ * ask "does anyone still stand behind this?", and `holds` is the only outcome
+ * that answers yes.
+ *
+ * It has to be stated explicitly now because it used to be true by accident.
+ * The reviews query never read the payload, and `holds` was the only outcome
+ * the interface could produce -- so an outcome-blind clock and a holds-only
+ * clock were the same clock. Offering `changed` and `needs_work` separates
+ * them, and without this a reader marking a thesis BROKEN would clear the very
+ * flag telling everyone to look at it.
+ *
+ * Extending this set is a product decision about what "current" means, and is
+ * deliberately not made here.
+ */
+const CLOCK_RESETTING_OUTCOMES: ReadonlySet<string> = new Set(['holds'])
+
+/** Does this conclusion mean the case is still current? */
+export function resetsStaleClock(outcome: string | null | undefined): boolean {
+  // Absent outcome counts. Every review written before outcomes were offered
+  // was a "still holds" -- it was the only thing the button could say -- and
+  // reclassifying those rows would rewrite history the reader did not make.
+  if (!outcome) return true
+  return CLOCK_RESETTING_OUTCOMES.has(outcome)
+}
+
+/**
+ * Newest CLOCK-RESETTING `thesis.reviewed` per asset, from rows already
+ * fetched. The caller owns the query; this owns both rules -- newest wins, and
+ * only a conclusion that the case still holds counts.
+ *
+ * A `changed` or `needs_work` review is still a durable, recorded fact; it just
+ * is not evidence that the thesis is current, so it does not move this clock.
+ */
 export function latestReviewByAsset(
-  rows: ReadonlyArray<{ subject_id: string; occurred_at: string }>,
+  rows: ReadonlyArray<{ subject_id: string; occurred_at: string; payload?: unknown }>,
 ): Map<string, string> {
   const out = new Map<string, string>()
   for (const r of rows) {
     if (!r.subject_id || !r.occurred_at) continue
+    const outcome = (r.payload as { outcome?: string } | null | undefined)?.outcome
+    if (!resetsStaleClock(outcome)) continue
     const seen = out.get(r.subject_id)
     if (!seen || r.occurred_at > seen) out.set(r.subject_id, r.occurred_at)
   }

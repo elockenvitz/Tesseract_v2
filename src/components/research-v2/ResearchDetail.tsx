@@ -33,10 +33,24 @@ import {
 import { clsx } from 'clsx'
 import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
-import { useRecordThesisReview } from '../../hooks/useThesisReview'
+import { useRecordThesisReview, type ThesisReviewOutcome } from '../../hooks/useThesisReview'
 import { useRecordObjectView } from '../../hooks/useObjectViewCursor'
 import { openAsset } from '../../lib/desktop-asset'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
+
+/**
+ * The three conclusions, in the order a reader reaches them.
+ *
+ * Wording matters here: each is a statement about the CASE, not an instruction
+ * to the reader. "Needs work" says the document cannot be judged as written --
+ * which is a different fact from the case having broken, and the two were
+ * previously both unsayable.
+ */
+const REVIEW_CHOICES: ReadonlyArray<{ outcome: ThesisReviewOutcome; label: string }> = [
+  { outcome: 'holds', label: 'Still holds' },
+  { outcome: 'changed', label: 'Changed' },
+  { outcome: 'needs_work', label: 'Needs work' },
+]
 
 /**
  * Research → Ideas.
@@ -233,23 +247,42 @@ export function ResearchDetail({
               : <ArrowDown className="h-3.5 w-3.5 opacity-70" />}
           </button>
           {/*
-            The verb this surface never had.
-            Reading a case and concluding it still holds was unrecordable: the
-            only way to clear a stale flag was to edit a thesis that did not
-            need editing. Secondary styling on purpose -- it is the quiet
-            answer, not the headline action, and it writes one event rather
-            than touching the thesis.
+            The verb this surface never had, now with all three answers.
+
+            Reading a case and reaching a conclusion about it was unrecordable:
+            the only durable trace was an edit, so "it still holds" and "this is
+            broken" both had to be expressed by rewriting a document -- one that
+            did not need editing, and one nobody had time to rewrite yet.
+
+            Secondary styling on purpose, and deliberately AFTER the primary
+            action. Concluding something about the thesis is not a substitute
+            for fixing it; it is what you can honestly record when you have read
+            it and are not going to rewrite it right now. Each writes one event
+            and touches no thesis text.
           */}
           {subject.thesisUpdatedAt && (
-            <button
-              type="button"
-              data-slot="research-reviewed-no-change"
-              onClick={() => recordReview('holds')}
-              disabled={reviewPending || reviewDone}
-              className="rounded-md px-3 py-2 text-[12px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-60 dark:text-gray-300 dark:hover:bg-gray-800"
-            >
-              {reviewDone ? 'Review recorded' : reviewPending ? 'Recording…' : 'Reviewed — no change'}
-            </button>
+            <span className="inline-flex items-center gap-0.5" data-slot="research-thesis-review">
+              <span className="pl-1 pr-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                Reviewed
+              </span>
+              {REVIEW_CHOICES.map(choice => (
+                <button
+                  key={choice.outcome}
+                  type="button"
+                  data-slot={`research-review-${choice.outcome}`}
+                  onClick={() => recordReview(choice.outcome)}
+                  disabled={reviewPending || reviewDone}
+                  className="rounded-md px-2.5 py-2 text-[12px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-60 dark:text-gray-300 dark:hover:bg-gray-800"
+                >
+                  {choice.label}
+                </button>
+              ))}
+              {(reviewPending || reviewDone) && (
+                <span className="pl-1 text-[12px] text-gray-500">
+                  {reviewDone ? 'Recorded' : 'Recording…'}
+                </span>
+              )}
+            </span>
           )}
           {target && (
             <button

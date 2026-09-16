@@ -17,9 +17,23 @@ import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { latestReviewByAsset } from '../lib/memory/thesis-review'
 
-/** What the reader concluded. Only the outcome is stored -- the semantic
- *  snapshot, not prose. `holds` is the one this pass produces. */
+/**
+ * What the reader concluded. Only the outcome is stored -- the semantic
+ * snapshot, not prose.
+ *
+ *   holds       the case still stands as written
+ *   changed     the case is no longer what this document says
+ *   needs_work  the document is not good enough to judge either way
+ *
+ * `changed` and `needs_work` are conclusions ABOUT the document, not edits to
+ * it. Saying one records a fact and leaves the thesis exactly as it was; only
+ * a person rewriting it changes what it says.
+ */
 export type ThesisReviewOutcome = 'holds' | 'changed' | 'needs_work'
+
+/** The three, in the order the interface offers them. */
+export const THESIS_REVIEW_OUTCOMES: readonly ThesisReviewOutcome[] =
+  ['holds', 'changed', 'needs_work'] as const
 
 export const THESIS_REVIEWS_KEY = ['memory', 'thesis-reviews'] as const
 
@@ -40,13 +54,19 @@ export function useThesisReviews() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('memory_events')
-        .select('subject_id, occurred_at')
+        // `payload` is read now because the outcome decides whether a review
+        // counts as the case still being current. Every row is fetched, not
+        // just the holds -- filtering at the database would make a future
+        // consumer of `changed` re-query for rows this already has.
+        .select('subject_id, occurred_at, payload')
         .eq('organization_id', currentOrgId!)
         .eq('event_type', 'thesis.reviewed')
         .eq('subject_type', 'asset')
         .order('occurred_at', { ascending: false })
       if (error) throw new Error(error.message)
-      return latestReviewByAsset((data ?? []) as { subject_id: string; occurred_at: string }[])
+      return latestReviewByAsset(
+        (data ?? []) as { subject_id: string; occurred_at: string; payload?: unknown }[],
+      )
     },
   })
 

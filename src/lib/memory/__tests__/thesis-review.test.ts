@@ -57,6 +57,103 @@ describe('newest review per asset', () => {
   })
 })
 
+/**
+ * The clock asks "does anyone still stand behind this?". Only one of the three
+ * conclusions answers yes.
+ *
+ * This used to be true by accident: the query never read the payload, and
+ * `holds` was the only outcome the interface could produce, so an
+ * outcome-blind clock and a holds-only clock were the same clock. Offering the
+ * other two separates them -- and without the rule below, a reader marking a
+ * thesis BROKEN would clear the very flag telling everyone to look at it.
+ */
+describe('only "still holds" stops the staleness clock', () => {
+  it('counts a holds review', () => {
+    const m = latestReviewByAsset([
+      { subject_id: 'a', occurred_at: daysAgo(1), payload: { outcome: 'holds' } },
+    ])
+    expect(m.get('a')).toBe(daysAgo(1))
+  })
+
+  it.each(['changed', 'needs_work'])('does not let %s clear the flag', (outcome) => {
+    const m = latestReviewByAsset([
+      { subject_id: 'a', occurred_at: daysAgo(1), payload: { outcome } },
+    ])
+    expect(m.has('a')).toBe(false)
+  })
+
+  /* A newer "changed" does not overwrite an older "holds" with silence, and it
+     does not resurrect it either -- the clock simply keeps the last date
+     anybody actually stood behind the case. */
+  it('keeps the last holds when a later review says otherwise', () => {
+    const m = latestReviewByAsset([
+      { subject_id: 'a', occurred_at: daysAgo(10), payload: { outcome: 'holds' } },
+      { subject_id: 'a', occurred_at: daysAgo(1), payload: { outcome: 'changed' } },
+    ])
+    expect(m.get('a')).toBe(daysAgo(10))
+  })
+
+  /* Every review written before outcomes were offered was a "still holds" --
+     it was the only thing the button could say. Reclassifying those rows would
+     rewrite a conclusion the reader never reached. */
+  it('treats a review with no recorded outcome as holds', () => {
+    const m = latestReviewByAsset([
+      { subject_id: 'a', occurred_at: daysAgo(1) },
+      { subject_id: 'b', occurred_at: daysAgo(1), payload: {} },
+      { subject_id: 'c', occurred_at: daysAgo(1), payload: null },
+    ])
+    expect([...m.keys()].sort()).toEqual(['a', 'b', 'c'])
+  })
+
+  it('reads the outcome the query actually fetches', () => {
+    // A rule that reads `payload` from rows the query never selected would be
+    // a rule that always sees undefined, i.e. always "holds".
+    expect(src('hooks/useThesisReview.ts')).toContain("select('subject_id, occurred_at, payload')")
+  })
+})
+
+describe('all three conclusions are reachable and write the same way', () => {
+  const detail = src('components/research-v2/ResearchDetail.tsx')
+
+  it('offers exactly the three outcomes, in order', () => {
+    expect(detail).toContain("{ outcome: 'holds', label: 'Still holds' }")
+    expect(detail).toContain("{ outcome: 'changed', label: 'Changed' }")
+    expect(detail).toContain("{ outcome: 'needs_work', label: 'Needs work' }")
+  })
+
+  /* One control per outcome, each addressable. The slot is derived from the
+     outcome so a fourth conclusion cannot be added without a handle on it. */
+  it('gives each outcome its own addressable control', () => {
+    expect(detail).toContain('data-slot={`research-review-${choice.outcome}`}')
+    expect(detail).toContain('REVIEW_CHOICES.map(choice =>')
+  })
+
+  /* One handler, one payload shape. Three write paths would be three places
+     for the event to drift. */
+  it('routes every outcome through the one recorder', () => {
+    expect(detail).toContain('onClick={() => recordReview(choice.outcome)}')
+    expect(detail.match(/recordReview\(/g)).toHaveLength(1)
+  })
+
+  /* The conclusion is about the document; it is not an edit to it. */
+  it('records a conclusion without touching the thesis', () => {
+    const hook = src('hooks/useThesisReview.ts')
+    expect(hook).toContain('payload: { outcome }')
+    expect(hook).not.toContain('asset_contributions')
+    expect(hook).not.toContain('.update(')
+    expect(detail).not.toMatch(/recordReview\([^)]*\).*(update|upsert)/)
+  })
+
+  /* Secondary to actually fixing it: the primary action still comes first in
+     the row, and these stay quiet. */
+  it('stays secondary to editing the thesis', () => {
+    expect(detail.indexOf('onClick={runPrimary}')).toBeLessThan(
+      detail.indexOf('research-thesis-review'),
+    )
+    expect(detail).not.toMatch(/research-review-holds[\s\S]{0,400}bg-blue-700/)
+  })
+})
+
 /** A scan subject old enough to be stale on the written date alone. */
 const subject = (over: Partial<Record<string, unknown>> = {}) => ({
   assetId: 'asset-1', symbol: 'AAPL', companyName: 'Apple',
@@ -130,6 +227,20 @@ describe('a review is recorded, not disguised as an edit', () => {
     expect(hook).toContain('dedupe_key: `thesis.reviewed:${requestId}`')
     expect(hook).toContain('crypto.randomUUID()')
     expect(hook).not.toMatch(/dedupe_key.*toISOString\(\)\.slice/)
+    // The id is held across retries, so resubmitting the SAME intent collides
+    // server-side and lands once...
+    expect(hook).toMatch(/duplicate key\|unique constraint/)
+    // ...and a NEW submit gets a new id, so two genuine reviews on the same
+    // afternoon are two events rather than one swallowed by a calendar key.
+    expect(hook).toContain('setRequestId(crypto.randomUUID())')
+  })
+
+  /* The outcome does not vary the write path: one insert, one shape, whichever
+     of the three the reader chose. */
+  it('writes every outcome through the same insert', () => {
+    const hook = src('hooks/useThesisReview.ts')
+    expect(hook.match(/\.insert\(/g)).toHaveLength(1)
+    expect(hook).toContain('mutationFn: async (outcome: ThesisReviewOutcome)')
   })
 
   it('refuses a second submit while one is in flight', () => {
