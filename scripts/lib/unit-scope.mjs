@@ -182,6 +182,14 @@ export const GATED_DIRS = [
    */
   'src/engine/decisionEngine/__tests__',
   /*
+   * The Memory Spine's read rules. `thesis.reviewed` is the first fact the
+   * product stores about a conclusion rather than an edit, and the rule it
+   * feeds -- the attention clock runs from the later of written and confirmed,
+   * while every displayed date stays the written one -- is exactly the kind
+   * that decays silently if nothing watches it.
+   */
+  'src/lib/memory/__tests__',
+  /*
    * Today's domain layer: tiering, adaptation, diversity, enrichment and the
    * time labels every tile reads from.
    *

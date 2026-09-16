@@ -47,6 +47,9 @@ export interface EngineArgs {
     executions?: any[]
     assets?: any[]
     thesisUpdates?: any[]
+    /** Newest `thesis.reviewed` per asset id. Moves the staleness clock only;
+     *  the thesis's own written date is unchanged wherever it is shown. */
+    thesisReviews?: Map<string, string>
     ratings?: any[]
     ratingChanges?: any[]
     projects?: any[]
@@ -114,6 +117,8 @@ export function runGlobalDecisionEngine(args: EngineArgs): GlobalDecisionEngineR
   // Thesis stale (always action)
   allItems.push(...evaluateThesisStale({
     thesisUpdates: args.data.thesisUpdates,
+    // A thesis confirmed to still hold is not stale, even if nobody edited it.
+    thesisReviews: args.data.thesisReviews,
     now,
   }))
 

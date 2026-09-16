@@ -21,6 +21,7 @@ import { supabase } from '../lib/supabase'
 import { CORE_SECTIONS, type EvidenceItem, type ResearchSubject, type ThesisSection } from '../lib/desktop-research'
 import { largestWeightByAsset, type HoldingRow } from '../lib/portfolio/holdings'
 import { useHoldingsForAssets } from './useHoldingsForAssets'
+import { useThesisReviews } from './useThesisReview'
 import { useOrganization } from '../contexts/OrganizationContext'
 
 const DAY = 86_400_000
@@ -127,7 +128,21 @@ export function useResearchScan() {
     },
   })
 
-  return { subjects: data ?? [], isLoading, error }
+  /*
+   * Reviews are joined here rather than inside the scan query.
+   *
+   * They live in `memory_events` and change on their own schedule -- recording
+   * a review must refresh the field without refetching every thesis section
+   * and note in the organisation. Separate query, separate cache entry, joined
+   * in memory on the way out.
+   */
+  const reviews = useThesisReviews()
+  const subjects = useMemo(
+    () => (data ?? []).map(s => ({ ...s, lastReviewedAt: reviews.get(s.assetId) ?? null })),
+    [data, reviews],
+  )
+
+  return { subjects, isLoading, error }
 }
 
 /**

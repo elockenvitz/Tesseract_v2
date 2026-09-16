@@ -10,6 +10,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useThesisReviews } from './useThesisReview'
 import {
   runGlobalDecisionEngine,
   type GlobalDecisionEngineResult,
@@ -229,6 +230,11 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
     staleTime: 120_000,
   })
 
+  // Newest `thesis.reviewed` per asset. Its own query and cache entry, so
+  // recording a review refreshes the finding without refetching the engine's
+  // seven-query slice.
+  const thesisReviews = useThesisReviews()
+
   // ---- 5. Fetch thesis staleness ----
   const { data: thesisUpdates, isLoading: thesisLoading } = useQuery({
     queryKey: ['decision-engine-thesis', userId, coverage?.assetIds],
@@ -327,11 +333,15 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
         proposals: proposals ?? [],
         ratingChanges: ratingChanges ?? [],
         thesisUpdates: thesisUpdates ?? [],
+        // "Reviewed and unchanged" is a fact about the thesis that no edit
+        // records. Without it the stale finding returns every morning until
+        // somebody edits a document that did not need editing.
+        thesisReviews,
         projects: projects ?? [],
         // Skip: catalysts, prompts, recurrentWorkflows (not in data model)
       },
     })
-  }, [userId, coverage, tradeIdeas, proposals, ratingChanges, thesisUpdates, projects, coverageLoading])
+  }, [userId, coverage, tradeIdeas, proposals, ratingChanges, thesisUpdates, thesisReviews, projects, coverageLoading])
 
   const isLoading = coverageLoading || ideasLoading || proposalsLoading ||
     ratingsLoading || thesisLoading || projectsLoading

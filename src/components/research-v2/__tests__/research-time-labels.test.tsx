@@ -32,6 +32,13 @@ vi.mock('../../../hooks/useDesktopResearch', () => ({
   useResearchExposure: () => ({ exposure: {}, settled: true }),
   useResearchDetail: () => ({ detail: env.detail, isLoading: false }),
 }))
+
+/* The review recorder needs auth and org context this suite does not stand up.
+   What it writes is covered in lib/memory/__tests__/thesis-review. */
+vi.mock('../../../hooks/useThesisReview', () => ({
+  useThesisReviews: () => new Map(),
+  useRecordThesisReview: () => ({ record: vi.fn(), isPending: false, isDone: false, error: null }),
+}))
 vi.mock('../../contributions', () => ({ ThesisContainer: () => null }))
 vi.mock('../../../lib/dashboard/focus', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../lib/dashboard/focus')>()

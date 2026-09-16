@@ -33,6 +33,7 @@ import {
 import { clsx } from 'clsx'
 import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
+import { useRecordThesisReview } from '../../hooks/useThesisReview'
 import { openAsset } from '../../lib/desktop-asset'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
 
@@ -158,6 +159,10 @@ export function ResearchDetail({
       : intent === 'book' && detail?.portfolioName ? 'book'
       : 'case'
 
+  const {
+    record: recordReview, isPending: reviewPending, isDone: reviewDone,
+  } = useRecordThesisReview(subject.assetId)
+
   const runPrimary = () => {
     // An authoring state's next step is authoring, which happens on the Asset
     // page. Everything else is understood here, so the verb scrolls.
@@ -214,6 +219,25 @@ export function ResearchDetail({
               ? <PencilLine className="h-3.5 w-3.5 opacity-70" />
               : <ArrowDown className="h-3.5 w-3.5 opacity-70" />}
           </button>
+          {/*
+            The verb this surface never had.
+            Reading a case and concluding it still holds was unrecordable: the
+            only way to clear a stale flag was to edit a thesis that did not
+            need editing. Secondary styling on purpose -- it is the quiet
+            answer, not the headline action, and it writes one event rather
+            than touching the thesis.
+          */}
+          {subject.thesisUpdatedAt && (
+            <button
+              type="button"
+              data-slot="research-reviewed-no-change"
+              onClick={() => recordReview('holds')}
+              disabled={reviewPending || reviewDone}
+              className="rounded-md px-3 py-2 text-[12px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-60 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              {reviewDone ? 'Review recorded' : reviewPending ? 'Recording…' : 'Reviewed — no change'}
+            </button>
+          )}
           {target && (
             <button
               type="button"

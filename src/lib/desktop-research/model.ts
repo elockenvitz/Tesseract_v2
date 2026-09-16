@@ -32,6 +32,7 @@
  * What each date may be called is `anchor-words`' decision.
  */
 import { ageKindOf, dateWords } from './anchor-words'
+import { thesisAgeDays } from '../memory/thesis-review'
 
 import type { EngagementTarget } from '../engagement'
 
@@ -82,6 +83,15 @@ export interface ResearchSubject {
   /** Newest updated_at across the CORE sections. Null when no case is written. */
   thesisUpdatedAt: string | null
   daysSinceReview: number | null
+  /**
+   * Newest `thesis.reviewed` event for this asset, where one exists.
+   *
+   * Deliberately separate from `thesisUpdatedAt` and `daysSinceReview`, which
+   * stay the real written/edited date and drive every line of copy. A review
+   * is not an edit and must not be displayed as one. This moves the ATTENTION
+   * clock only: see `stateOf`.
+   */
+  lastReviewedAt?: string | null
   sectionCount: number
   /**
    * Sections among CORE only.
@@ -178,7 +188,16 @@ export function stateOf(s: ResearchSubject): ResearchState {
   if (s.generated) return GENERATED_STATE[s.generated.framing]
   if (!s.thesisUpdatedAt) return s.evidenceCount > 0 ? 'no-thesis' : 'thin'
   if (s.newSinceReview > 0) return 'evidence-since-review'
-  if ((s.daysSinceReview ?? 0) >= STALE_DAYS) return 'stale'
+  /*
+   * Stale means nobody has looked, not merely that nobody has typed.
+   *
+   * The age here is the later of when the case was written and when somebody
+   * last confirmed it still holds, so "reviewed today, unchanged" clears the
+   * flag without anyone editing a thesis that did not need editing. Every
+   * other use of `daysSinceReview` -- the chips, the sentences, the AI prompt
+   * -- still reads the real written date.
+   */
+  if ((thesisAgeDays(s.thesisUpdatedAt, s.lastReviewedAt, new Date()) ?? 0) >= STALE_DAYS) return 'stale'
   if (s.evidenceCount === 0) return 'thin'
   return 'current'
 }
