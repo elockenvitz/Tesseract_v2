@@ -124,6 +124,16 @@ export interface ResearchSubject {
   newestEvidenceTitle?: string | null
   /** Evidence created after `thesisUpdatedAt`. */
   newSinceReview: number
+  /**
+   * When each piece of evidence arrived. Dates only -- the scan already reads
+   * them to compute `newSinceReview`, so keeping them costs one array per name
+   * and nothing extra at the database.
+   *
+   * Present so a caller can count arrivals against ITS OWN cutoff rather than
+   * the thesis date. "Since you last looked" and "since the case was last
+   * written" are different questions, and `newSinceReview` only answers one.
+   */
+  evidenceDates?: string[]
   weightPct?: number
   /**
    * Present only on a subject Tesseract generated from the reader's coverage

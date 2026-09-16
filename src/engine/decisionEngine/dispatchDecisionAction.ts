@@ -6,6 +6,8 @@
  * listens for and routes via handleSearchResult.
  */
 
+import { researchTabFor } from '../../lib/desktop-research/navigate'
+
 export function dispatchDecisionAction(
   actionKey: string,
   payload: Record<string, any> = {},
@@ -167,6 +169,32 @@ export function dispatchDecisionAction(
             detail: { assetId: payload.assetIds[0] },
           }))
         }, 500)
+      }
+      break
+
+    case 'OPEN_RESEARCH_SUBJECT':
+      /*
+       * The typed Research handoff, used as `lib/desktop-research/navigate`
+       * always intended -- not the asset-tab-plus-setTimeout(500) race that
+       * OPEN_ASSET_UPDATE_THESIS still runs.
+       *
+       * `issue` and `origin` travel with it so the workspace can say why the
+       * reader was sent. A handoff that drops them is a teleport.
+       *
+       * Opening the detail is also what advances the view cursor, which is
+       * what makes this finding stop being true. Routing anywhere other than
+       * the asset's own detail would leave it saying the same thing tomorrow.
+       */
+      if (payload.assetId) {
+        const tab = researchTabFor({
+          assetId: payload.assetId,
+          focus: payload.focus,
+          issue: payload.issue,
+          origin: payload.origin,
+        })
+        window.dispatchEvent(new CustomEvent('decision-engine-action', {
+          detail: { ...tab, title: tab.title },
+        }))
       }
       break
 

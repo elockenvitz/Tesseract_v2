@@ -13,9 +13,14 @@
 import type { DecisionItem, DecisionSeverity } from '../../engine/decisionEngine/types'
 import type { FeedCandidate } from './candidate'
 
-/** The engine has no 'info'; it is the quietest thing it can say. */
+/**
+ * The engine's vocabulary has no 'info'. `blue` is its quietest colour that is
+ * still shown -- 'gray' is used for items on their way out. A candidate that
+ * says "this is information" must not arrive wearing the same yellow as work
+ * that is owed.
+ */
 function toEngineSeverity(s: FeedCandidate['severity']): DecisionSeverity {
-  return s === 'info' ? 'yellow' : s
+  return s === 'info' ? 'blue' : s
 }
 
 /**
@@ -50,6 +55,11 @@ export function candidateToDecisionItem(
     description: candidate.reason,
     chips: (presentation.chips ?? []).filter(c => c.value),
     context: {
+      // Load-bearing, not decoration: post-processing dedupes and resolves
+      // conflicts BY asset. A candidate about an asset that arrived without
+      // one would collide with every other candidate of its kind under the
+      // empty key, and all but one would silently disappear.
+      assetId: candidate.subjectType === 'asset' ? candidate.subjectId : undefined,
       assetTicker: (candidate.facts?.assetSymbol as string) || undefined,
       portfolioName: (candidate.facts?.portfolioName as string) || undefined,
     },

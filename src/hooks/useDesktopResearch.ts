@@ -118,6 +118,10 @@ export function useResearchScan() {
 
       for (const s of byAsset.values()) {
         s.daysSinceReview = daysSince(s.thesisUpdatedAt)
+        // Kept, not recomputed: a consumer with a different cutoff -- "since
+        // you last looked" rather than "since the case was written" -- needs
+        // the dates themselves, and these were already read.
+        s.evidenceDates = noteDates.get(s.assetId) ?? []
         if (s.thesisUpdatedAt) {
           s.newSinceReview = (noteDates.get(s.assetId) ?? [])
             .filter(d => d > s.thesisUpdatedAt!).length

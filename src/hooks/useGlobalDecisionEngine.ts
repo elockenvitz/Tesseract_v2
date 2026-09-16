@@ -11,6 +11,9 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useThesisReviews } from './useThesisReview'
+import { useResearchScan } from './useDesktopResearch'
+import { useAssetViewCursors } from './useObjectViewCursor'
+import { useOrganization } from '../contexts/OrganizationContext'
 import {
   runGlobalDecisionEngine,
   type GlobalDecisionEngineResult,
@@ -33,6 +36,7 @@ interface UseGlobalDecisionEngineResult {
 export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
   const { user } = useAuth()
   const userId = user?.id
+  const { currentOrgId } = useOrganization()
 
   // ---- 1. Fetch user's portfolio coverage ----
   const { data: coverage, isLoading: coverageLoading } = useQuery({
@@ -235,6 +239,13 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
   // seven-query slice.
   const thesisReviews = useThesisReviews()
 
+  // What Research would show, and when this reader last opened each name.
+  // Both are cached queries of their own: the scan is the same query key the
+  // Research workspace uses, so this costs nothing once Research has been
+  // opened, and the cursors refresh on their own when a visit is recorded.
+  const { subjects: researchSubjects } = useResearchScan()
+  const assetViewCursors = useAssetViewCursors()
+
   // ---- 5. Fetch thesis staleness ----
   const { data: thesisUpdates, isLoading: thesisLoading } = useQuery({
     queryKey: ['decision-engine-thesis', userId, coverage?.assetIds],
@@ -337,11 +348,17 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
         // records. Without it the stale finding returns every morning until
         // somebody edits a document that did not need editing.
         thesisReviews,
+        // The two halves of "since you last looked". A subject with no cursor
+        // produces nothing -- never opened is not the same as neglected.
+        researchSubjects,
+        assetViewCursors,
+        organizationId: currentOrgId,
         projects: projects ?? [],
         // Skip: catalysts, prompts, recurrentWorkflows (not in data model)
       },
     })
-  }, [userId, coverage, tradeIdeas, proposals, ratingChanges, thesisUpdates, thesisReviews, projects, coverageLoading])
+  }, [userId, coverage, tradeIdeas, proposals, ratingChanges, thesisUpdates, thesisReviews,
+      researchSubjects, assetViewCursors, currentOrgId, projects, coverageLoading])
 
   const isLoading = coverageLoading || ideasLoading || proposalsLoading ||
     ratingsLoading || thesisLoading || projectsLoading

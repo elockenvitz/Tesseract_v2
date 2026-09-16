@@ -31,11 +31,11 @@
  * table and no widened policy.
  */
 import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
-import { objectViewKey, type ViewSubjectType } from '../lib/attention-state/keys'
+import { objectViewKey, VIEW_NAMESPACE, type ViewSubjectType } from '../lib/attention-state/keys'
 
 export const VIEW_CURSOR_KEY = ['attention-state', 'view-cursor'] as const
 
@@ -52,6 +52,58 @@ export async function fetchViewCursor(
     .maybeSingle()
   if (error) return null
   return (data as { last_viewed_at?: string | null } | null)?.last_viewed_at ?? null
+}
+
+/** One frozen instance, so a consumer's memo does not see a new map on every
+ *  render and re-run the engine over nothing. Declared before its use: a
+ *  module-level const read from a hook is a TDZ error waiting to happen. */
+const EMPTY_CURSORS = new Map<string, string>()
+
+/**
+ * Every asset this person has opened, and when they last opened it.
+ *
+ * The other read answers "when did I last look at THIS one", on a detail that
+ * is already open. A feed has the opposite shape: it asks the question of
+ * every name at once, before any of them is on screen.
+ *
+ * Keyed by asset id, not by the storage key, because that is what a producer
+ * joins against. Names never opened are simply absent -- an empty map and a
+ * missing entry mean the same thing, "no prior visit", and neither is a
+ * licence to guess at one.
+ *
+ * RLS posture: unchanged. `attention_user_state` is per-user and already
+ * policy-gated on `user_id`; this is the same table under the same policy,
+ * read by prefix instead of by exact key.
+ */
+export function useAssetViewCursors(): Map<string, string> {
+  const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
+
+  const prefix = currentOrgId ? `${VIEW_NAMESPACE}${currentOrgId}:asset:` : null
+
+  const { data } = useQuery({
+    queryKey: [...VIEW_CURSOR_KEY, 'assets', currentOrgId, user?.id],
+    enabled: !!prefix && !!user?.id,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attention_user_state')
+        .select('attention_id, last_viewed_at')
+        .eq('user_id', user!.id)
+        .like('attention_id', `${prefix}%`)
+        .not('last_viewed_at', 'is', null)
+      if (error) throw new Error(error.message)
+
+      const out = new Map<string, string>()
+      for (const row of (data ?? []) as { attention_id: string; last_viewed_at: string }[]) {
+        const assetId = row.attention_id.slice(prefix!.length)
+        if (assetId) out.set(assetId, row.last_viewed_at)
+      }
+      return out
+    },
+  })
+
+  return data ?? EMPTY_CURSORS
 }
 
 export interface ObjectViewCursor {

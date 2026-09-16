@@ -19,7 +19,9 @@ import {
   evaluateHighExpectedReturn,
   evaluateThesisStale,
   evaluateTradeReviewOwed,
+  evaluateResearchChangedSinceView,
   type OpenTradeReviewObligation,
+  type ViewedResearchSubject,
 } from './evaluators'
 
 // ---------------------------------------------------------------------------
@@ -55,6 +57,11 @@ export interface EngineArgs {
     /** Open `trade_review` obligations. Raised and cleared by the lifecycle
      *  rule; this surface only reports them. */
     tradeReviewObligations?: OpenTradeReviewObligation[]
+    /** Research subjects and when this reader last opened each one. Together
+     *  they answer "what changed since I looked"; neither answers it alone. */
+    researchSubjects?: readonly ViewedResearchSubject[]
+    assetViewCursors?: Map<string, string>
+    organizationId?: string | null
     ratings?: any[]
     ratingChanges?: any[]
     projects?: any[]
@@ -133,6 +140,15 @@ export function runGlobalDecisionEngine(args: EngineArgs): GlobalDecisionEngineR
   allItems.push(...evaluateTradeReviewOwed({
     tradeReviewObligations: args.data.tradeReviewObligations,
     now,
+  }))
+
+  // Intel: research that arrived while this reader was not looking. Lands on
+  // the intel surface because it is information, not work owed -- so it is
+  // scored and sorted apart from the action queue and cannot displace it.
+  allItems.push(...evaluateResearchChangedSinceView({
+    subjects: args.data.researchSubjects,
+    viewCursors: args.data.assetViewCursors,
+    organizationId: args.data.organizationId,
   }))
 
   // I2 (Catalysts) and I4 (Prompts) — skip gracefully if no data
