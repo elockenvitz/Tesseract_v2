@@ -10,7 +10,7 @@
  * system, no comment table is defined here.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, BookOpen } from 'lucide-react'
 import {
   useResearchScan, useResearchExposure, useResearchDetail,
@@ -88,8 +88,23 @@ export function ResearchWorkspace({
     selectedAssetId ? { issue, origin } : null,
   )
 
+  /*
+   * One arrival, one opening -- the rule the Outcomes focus and the Trade Book
+   * highlight both follow. The id stays on the tab for the life of that tab,
+   * so honouring it on every render would re-open the same subject on every
+   * later visit. Reset when a DIFFERENT asset arrives, so a second hand-off
+   * into an already-open tab is still honoured.
+   */
+  const [arrivalConsumed, setArrivalConsumed] = useState(false)
+  const lastArrivalRef = useRef<string | null>(selectedAssetId ?? null)
+
   useEffect(() => {
-    if (selectedAssetId) setArrival({ issue, origin })
+    if (!selectedAssetId) return
+    setArrival({ issue, origin })
+    if (lastArrivalRef.current !== selectedAssetId) {
+      lastArrivalRef.current = selectedAssetId
+      setArrivalConsumed(false)
+    }
   }, [selectedAssetId, issue, origin])
 
   const scanned = useMemo(() => subjects
@@ -116,7 +131,18 @@ export function ResearchWorkspace({
    * Back goes. That separation is what lets a card opened from Today expand
    * into a research workspace while Back still says Today.
    */
-  const activeId = focusObjectId ?? null
+  /*
+   * The deck first, then the arrival.
+   *
+   * `focusObjectId` is a card opened inside this lens and must always win.
+   * `selectedAssetId` is the tab payload -- Today's "update this thesis",
+   * Portfolio's "open the research", the asset strip. This read
+   * `focusObjectId ?? null`, so every one of those producers landed on the
+   * gallery with nothing open, and the `issue` string that travelled four
+   * layers to say WHY the reader was sent was never shown either: `arrival`
+   * feeds `arrivedFor`, which only renders inside the detail pane.
+   */
+  const activeId = focusObjectId ?? (arrivalConsumed ? null : selectedAssetId ?? null)
   /*
    * A coverage name opened from elsewhere (Today's backfill) may sit below the
    * capacity this field shows. It is still the reader's coverage work, so it
@@ -130,6 +156,18 @@ export function ResearchWorkspace({
       })()
     : null
   const missing = !!activeId && !requested
+
+  /*
+   * Spent only once it actually opened something. Marking it on arrival would
+   * lose the hand-off whenever the scan had not answered yet -- the id would
+   * clear a render before the subject it names exists. A payload naming an
+   * asset this lens genuinely has nothing on stays unconsumed and falls to
+   * `NothingOnRecord`, which is the honest answer rather than a silent no-op.
+   */
+  useEffect(() => {
+    if (!arrivalConsumed && !focusObjectId && requested) setArrivalConsumed(true)
+  }, [arrivalConsumed, focusObjectId, requested])
+
   // Nothing deep is fetched while browsing, or when a request missed.
   const { detail } = useResearchDetail(requested)
   const maxWeight = ranked.reduce((m, r) => Math.max(m, r.weightPct ?? 0), 0)

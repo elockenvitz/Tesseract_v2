@@ -18,7 +18,7 @@
  * message component, no comment system is defined here.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import {
   useIdeaScan, useScanExposure, useScanFramework, useScanOpenPrice, useIdeaDetail,
@@ -119,11 +119,29 @@ export function IdeasWorkspace({
     selectedIdeaId ? { focus, issue } : null,
   )
 
+  /*
+   * One arrival, one opening.
+   *
+   * The id stays on the tab (and in its persisted state) for the life of that
+   * tab, so honouring it on every render would re-open the same idea every
+   * time the reader came back to Ideas. It is marked consumed once the idea it
+   * names has actually been found and opened, and reset when a DIFFERENT id
+   * arrives -- so a second hand-off into an already-open tab is honoured, which
+   * is what the tab-reuse behaviour depends on.
+   */
+  const [arrivalConsumed, setArrivalConsumed] = useState(false)
+  const lastArrivalRef = useRef<string | null>(selectedIdeaId ?? null)
+
   // A later hand-off into an already-open tab. The tab id is fixed, so
   // arriving from Today twice reuses this workspace and re-selects inside it
   // rather than stacking duplicate tabs.
   useEffect(() => {
-    if (selectedIdeaId) setArrival({ focus, issue })
+    if (!selectedIdeaId) return
+    setArrival({ focus, issue })
+    if (lastArrivalRef.current !== selectedIdeaId) {
+      lastArrivalRef.current = selectedIdeaId
+      setArrivalConsumed(false)
+    }
   }, [selectedIdeaId, focus, issue])
 
   /*
@@ -160,12 +178,40 @@ export function IdeasWorkspace({
    * same list in the same order -- and it still decides which idea the reader
    * meets first. What it never does is open one on their behalf.
    */
-  const activeId = focusObjectId ?? null
+  /*
+   * The deck first, then the arrival.
+   *
+   * `focusObjectId` is the deck -- a card the reader opened inside this lens,
+   * and it must always win. `selectedIdeaId` is the tab payload: Today's
+   * "Review this proposal", Research's "open the idea", the asset strip. Every
+   * one of those producers has always sent an id, and this line read
+   * `focusObjectId ?? null`, so every one of them landed on an unsorted
+   * gallery with nothing open. The reader was handed a specific idea and shown
+   * all of them.
+   *
+   * The arrival is consumed once it has actually been applied -- see the effect
+   * below -- so a later ordinary visit to this tab is ordinary.
+   */
+  const activeId = focusObjectId ?? (arrivalConsumed ? null : selectedIdeaId ?? null)
   // A generated prompt has no detail pane: it opens capture instead, so it can
   // never become the deck's selected object.
   const selected = activeId
     ? ranked.find(i => i.id === activeId && !i.generated) ?? null
     : null
+
+  /*
+   * Spent only once it actually opened something.
+   *
+   * Marking it consumed on arrival would lose the hand-off whenever the scan
+   * had not answered yet -- the id would be cleared a render before the idea
+   * it names exists in `ranked`. Waiting for `selected` means a payload naming
+   * an idea this lens cannot show (deleted, or filtered out as a seeded row)
+   * stays unconsumed and simply does nothing, which is the honest outcome.
+   */
+  useEffect(() => {
+    if (!arrivalConsumed && !focusObjectId && selected) setArrivalConsumed(true)
+  }, [arrivalConsumed, focusObjectId, selected])
+
   // One read for the whole gallery, so a tile can show where spot sits in the
   // desk's own ladder without costing a query per tile.
   const framework = useScanFramework(ranked)
