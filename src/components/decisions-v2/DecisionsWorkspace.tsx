@@ -42,8 +42,7 @@ import { usePilotProgress } from '../../hooks/usePilotProgress'
 import { operationalAfterPilot } from '../../lib/pilot/seed-visibility'
 import { DecisionDetailPane } from './DecisionDetail'
 import {
-  DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileMeta, TileFigure,
-  sizeByRecency, type TileSize,
+  DesktopTile, TileIdentity, TileQuote, TileMeta, TileFigure, type TileSize,
 } from '../desktop/DesktopTile'
 import { EYEBROW } from '../desktop/DesktopModule'
 import {
@@ -226,14 +225,78 @@ export function DecisionsWorkspace({
     )
   }
 
+  /*
+   * Two groups, where both exist: what wants something, then the record.
+   *
+   * Headings rather than a second surface -- the classes already rank, and
+   * this only says out loud where the boundary is, so "recent" cannot read as
+   * more work.
+   */
+  const attention = situations.filter(s => s.klass !== 'recent')
+  const recent = situations.filter(s => s.klass === 'recent')
+  const grouped: Array<{ key: string; label: string | null; rows: ClassedSituation[] }> =
+    attention.length && recent.length
+      ? [
+          { key: 'attention', label: 'Needs attention', rows: attention },
+          { key: 'recent', label: 'Recent decisions', rows: recent },
+        ]
+      : [{ key: 'all', label: null, rows: situations }]
+
+  const cards = (rows: ClassedSituation[]) => (
+    /*
+     * A working width, and one decision per card.
+     *
+     * A record card is a thing you read, not a banner: at full desktop width a
+     * single decision was 930px of card carrying four short lines, most of it
+     * blank. Two columns inside a bounded measure put a card at ~560-690px --
+     * wide enough for the decision beside what happened to it, narrow enough
+     * that nothing has to be stretched to fill it. Height follows content.
+     */
+    <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {rows.map(s => (
+        /*
+         * The grid item is this wrapper, so the tile's own rank-span classes
+         * (written for the twelve-column gallery) do not apply here. One card,
+         * one column, whatever it carries.
+         */
+        /*
+         * `[&>button]:w-full` is not decoration: the tile is a <button>, which
+         * is shrink-to-fit, so without the gallery's column-span classes it
+         * sized to its longest line and left a third of its cell empty.
+         */
+        <div key={s.subject} className="min-w-0 [&>button]:w-full">
+          <DecisionTile
+            decision={s.lead}
+            situation={s}
+            facts={factsFor(s.lead)}
+            batchPnl={batchPnlText(pnlForBatch(s.batch?.id) ?? { kind: 'none' })}
+            alsoInBooks={booksPerIdea.get(s.lead.ideaId ?? '') ?? 0}
+            onOpen={() => open(s.lead)}
+          />
+        </div>
+      ))}
+    </div>
+  )
+
   return (
     <div className="h-full overflow-y-auto" data-testid="decisions-lens">
-      <DesktopGallery
-        title="Decisions"
-        count={rows.length}
-        flow="chronological"
-        action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
-        note={<>
+      <div className="mx-auto w-full max-w-[1440px] px-6 pb-10 pt-5">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">Decisions</h1>
+          <span className="font-mono text-[11px] text-gray-500">{rows.length}</span>
+          {/*
+            The book selector is a CONTROL, and only where there is a choice.
+            With one book it rendered the book's name in the corner of the
+            page: passive text that looked like a filter, said what every card
+            already says, and belonged to no decision in particular.
+          */}
+          {books.length > 1 && (
+            <div className="ml-auto">
+              <BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />
+            </div>
+          )}
+        </div>
+        <div className="mt-1.5">
           {/*
             What the lens holds, in the order it holds it. Three classes, not
             a queue: what needs doing, what is worth another look, and what
@@ -258,23 +321,20 @@ export function DecisionsWorkspace({
             worse the header would read.
           */}
           <Metrics rows={inBook} />
-        </>}
-      >
-        {situations.map((s, i) => (
-          <DecisionTile
-            key={s.subject}
-            decision={s.lead}
-            situation={s}
-            facts={factsFor(s.lead)}
-            batchPnl={batchPnlText(pnlForBatch(s.batch?.id) ?? { kind: 'none' })}
-            alsoInBooks={booksPerIdea.get(s.lead.ideaId ?? '') ?? 0}
-            // Longest-waiting first is the order; this only decides how much
-            // room each record gets, never which comes first.
-            bandSize={sizeByRecency(i)}
-            onOpen={() => open(s.lead)}
-          />
+        </div>
+
+        {grouped.map(g => (
+          <section key={g.key} data-testid={`decision-group-${g.key}`} className="mt-5">
+            {g.label && (
+              <h2 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">
+                {g.label}
+                <span className="ml-1.5 font-mono tracking-normal text-gray-400">{g.rows.length}</span>
+              </h2>
+            )}
+            {cards(g.rows)}
+          </section>
         ))}
-      </DesktopGallery>
+      </div>
     </div>
   )
 }
@@ -362,18 +422,20 @@ function BookFilter({
     return () => document.removeEventListener('mousedown', away)
   }, [open])
 
-  // One book that has decisions is not a choice worth a control.
-  if (books.length <= 1) {
-    const only = books[0]?.name
-    return only
-      ? <span className={clsx('truncate text-gray-500', compact ? 'text-[12px] font-semibold' : 'text-[12px]')}>{only}</span>
-      : null
-  }
+  /*
+   * One book is not a choice, and it is not a page label either.
+   *
+   * This used to fall back to printing the book's NAME in the corner of the
+   * page: passive text dressed as a filter, saying what every card on the
+   * page already says about itself. The book belongs to the decision, so the
+   * card names it and this renders nothing.
+   */
+  if (books.length <= 1) return null
 
   const current = books.find(b => b.id === portfolioId)
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} data-testid="book-filter" className="relative">
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
@@ -521,7 +583,7 @@ export function toRailCard(d: DecisionRecord): RailCard {
  * other gallery.
  */
 function DecisionTile({
-  decision, situation, facts, batchPnl, alsoInBooks, bandSize, onOpen,
+  decision, situation, facts, batchPnl, alsoInBooks, onOpen,
 }: {
   decision: DecisionRecord
   /** The decision act this card stands for. One leg, or a whole batch. */
@@ -531,8 +593,6 @@ function DecisionTile({
   /** Outcomes' own batch total, where the act is a batch and it has one. */
   batchPnl: ReturnType<typeof batchPnlText>
   alsoInBooks: number
-  /** Where this record sits in the chronology. Never a judgement of it. */
-  bandSize: TileSize
   onOpen: () => void
 }) {
   const d = decision
@@ -544,21 +604,28 @@ function DecisionTile({
   const when = d.decidedAt ?? d.requestedAt
   const humanReason = provenanceOf(d.decisionNote) === 'human' ? d.decisionNote : null
   const proposedReason = !humanReason && provenanceOf(d.contextNote) === 'human' ? d.contextNote : null
+  /**
+   * The sentence this card may quote as the decision's reason.
+   *
+   * The trade's own note, or -- where the act was committed as a batch of one
+   * -- the batch's sentence, which is that trade's reason and nothing else's.
+   */
+  const reason = humanReason
+    ?? (!batched && situation.batch?.description
+      && provenanceOf(situation.batch.description) === 'human'
+      ? situation.batch.description
+      : null)
 
   /**
-   * Size is recency, and content is memory richness.
+   * One size, because every decision is one decision.
    *
-   * The newest record leads and history gets denser behind it -- what a
-   * newspaper does with today's front page and last week's briefs. Because the
-   * order is fixed and the largest card is always first, a two-row block
-   * leaves no hole and nothing has to be reordered to make the page work.
-   *
-   * Size is never a judgement: accepted is not success, withdrawn is not
-   * failure, and a bigger card must never read as a better decision. What
-   * varies WITHIN a size is how much the record actually remembers -- a
-   * written reason where one exists, the shape of the trade where it does not.
+   * Size used to follow recency -- the newest record twice the width of the
+   * one behind it. On a lens whose cards carry the same five facts that bought
+   * the first card 930px of blank and made the page read as a banner over a
+   * list. Order still says what is most pressing; it no longer buys room that
+   * cannot be filled. The card sizes to its own contents inside one column.
    */
-  const size = bandSize
+  const size: TileSize = 'medium'
 
   return (
     <DesktopTile
@@ -646,24 +713,111 @@ function DecisionTile({
         that made and the cash it moved. Where nothing was executed, what was
         ASKED for is the only quantity there is, and it says so.
       */}
-      {(() => {
-        const e = d.execution
-        const parts = [
-          e?.targetWeight != null ? `${e.targetWeight.toFixed(1)}% target` : null,
-          e?.deltaWeight != null ? `${e.deltaWeight >= 0 ? '+' : ''}${e.deltaWeight.toFixed(2)}% change` : null,
-          e?.notional != null ? formatCompactDollars(Math.abs(e.notional)) : null,
-        ].filter(Boolean)
-        if (!parts.length && d.sizingWeight != null) {
-          parts.push(`${d.sizingWeight.toFixed(1)}% asked for`)
-          if (d.baselineWeight != null) parts.push(`from ${d.baselineWeight.toFixed(1)}%`)
-        }
-        if (!parts.length) return null
-        return (
-          <p data-testid="decision-committed" className="font-mono text-[12px] tabular-nums text-gray-800 dark:text-gray-200">
-            {parts.join(' · ')}
-          </p>
-        )
-      })()}
+      {/*
+        Two sections, side by side: what we did, and what has happened since.
+
+        These are the card's two questions and they are read together -- a
+        weight means one thing against +4% and another against -20%. Stacked
+        as prose they were four metadata lines nobody's eye stopped on; as two
+        labelled metric groups they are the content of the card.
+      */}
+      <div className="mt-0.5 grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2">
+        <section data-testid="decision-what" className="min-w-0">
+          <div className={EYEBROW}>Decision</div>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1.5">
+            {(() => {
+              const e = d.execution
+              const committed = [
+                e?.targetWeight != null ? { label: 'Target', value: `${e.targetWeight.toFixed(1)}%` } : null,
+                e?.deltaWeight != null
+                  ? { label: 'Change', value: `${e.deltaWeight >= 0 ? '+' : ''}${e.deltaWeight.toFixed(2)}%` } : null,
+                e?.notional != null ? { label: 'Notional', value: formatCompactDollars(Math.abs(e.notional)) } : null,
+              ].filter(Boolean) as Array<{ label: string; value: string }>
+              /*
+                Nothing was executed, so the ask is the only quantity there is
+                -- and it is labelled as the ask, never as a position.
+              */
+              if (!committed.length) {
+                if (d.sizingWeight != null) committed.push({ label: 'Asked for', value: `${d.sizingWeight.toFixed(1)}%` })
+                if (d.baselineWeight != null) committed.push({ label: 'Held then', value: `${d.baselineWeight.toFixed(1)}%` })
+                if (!committed.length && d.sizingShares != null) {
+                  committed.push({ label: 'Asked for', value: `${d.sizingShares.toLocaleString()} sh` })
+                }
+              }
+              return committed.length
+                ? committed.map(m => <CardMetric key={m.label} label={m.label} value={m.value} />)
+                : <p className="text-[12px] italic text-gray-500">No sizing was recorded.</p>
+            })()}
+          </div>
+
+          {/*
+            The reasoning, under the decision it explains.
+
+            A card that says "reason recorded" makes a reader open it to find
+            out what the reason WAS, which is the whole content of a decision.
+            A lone trade quotes its own note; where the act was committed as a
+            batch of one, the batch's sentence is that trade's reason and is
+            quoted the same way. A multi-leg batch keeps its description above
+            its legs, because there it explains several names at once.
+          */}
+          {!batched && (
+            <div className="mt-2">
+              {reason ? (
+                <TileQuote size={size}>{reason}</TileQuote>
+              ) : proposedReason ? (
+                <>
+                  <div className={EYEBROW}>Why it was proposed</div>
+                  <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-gray-700 dark:text-gray-300">
+                    {proposedReason}
+                  </p>
+                </>
+              ) : null}
+            </div>
+          )}
+        </section>
+
+        <section data-testid="decision-since" className="min-w-0">
+          <div className={EYEBROW}>Since decision</div>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1.5">
+            {/*
+              Outcomes' own figures, never recomputed here: the move measured
+              from the decision, the dollar proxy behind it, and how long the
+              record has been standing.
+            */}
+            {!batched && facts.sincePct != null && (
+              <CardMetric
+                label="Return"
+                value={`${facts.sincePct >= 0 ? '+' : ''}${facts.sincePct.toFixed(1)}%`}
+                tone={facts.sincePct < 0 ? 'down' : 'up'}
+              />
+            )}
+            {/* A batch reports dollars only where Outcomes says it may: every
+                leg priced, none counted into a second batch. Never a return. */}
+            {batched ? batchPnl && <CardMetric label="Batch" value={batchPnl.replace(' P&L', '')} />
+              : facts.pnl != null && (
+                <CardMetric
+                  label="P&amp;L"
+                  value={formatCompactDollars(facts.pnl, facts.pnl > 0 ? '+' : facts.pnl < 0 ? '−' : '')}
+                  tone={facts.pnl < 0 ? 'down' : 'up'}
+                />
+              )}
+            {when && daysSince(when) != null && (
+              <CardMetric label="Elapsed" value={`${daysSince(when)}d`} />
+            )}
+            {facts.sincePct == null && facts.pnl == null && !batchPnl && (
+              <p className="text-[12px] italic text-gray-500">No priced outcome yet.</p>
+            )}
+          </div>
+          {/* Where the review stands, said once -- and only where the card's
+              own status line has not already said it. */}
+          {facts.verdictLabel && situation.klass === 'recent' && (
+            <p className="mt-1 text-[11px] text-gray-500">{facts.verdictLabel}</p>
+          )}
+          {!hasHumanReason(d) && (
+            <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-500">No decision reason</p>
+          )}
+        </section>
+      </div>
 
       {/*
         The legs, named. The act asks its question once, and the reader can
@@ -779,24 +933,6 @@ function DecisionTile({
         same way. A multi-leg batch keeps its description above the legs,
         because there it explains several names at once.
       */}
-      {!batched && !humanReason && situation.batch?.description
-        && provenanceOf(situation.batch.description) === 'human' ? (
-        <TileQuote size={size}>{situation.batch.description}</TileQuote>
-      ) : batched ? null : humanReason ? (
-        <TileQuote size={size}>{humanReason}</TileQuote>
-      ) : proposedReason ? (
-        <div>
-          <div className={EYEBROW}>Why it was proposed</div>
-          <p className="mt-0.5 line-clamp-3 text-[12px] leading-snug text-gray-700 dark:text-gray-300">
-            {proposedReason}
-          </p>
-        </div>
-      ) : (
-        /* Nothing was written either way. The shape of the trade is the whole
-           of what this record remembers, so it is stated once, plainly, rather
-           than narrated back as a sentence. */
-        <TileShape decision={d} />
-      )}
 
       {/*
         What the decision changed, and how long it took.
@@ -838,7 +974,7 @@ function DecisionTile({
             explained={provenanceOf(d.decisionNote) === 'human'}
             // Only outcomes that call for a trade have an execution to miss.
             executed={outcome === 'accepted' ? d.execution?.completedAt != null : null}
-            compact={size === 'compact'}
+            compact
           />
         </div>
       ) : outcome === 'open' && d.sizingWeight != null && d.baselineWeight != null ? (
@@ -858,7 +994,7 @@ function DecisionTile({
             requestedAt={d.requestedAt}
             decidedAt={d.decidedAt}
             open
-            compact={size === 'compact'}
+            compact
           />
         </div>
       ) : null}
@@ -871,70 +1007,24 @@ function DecisionTile({
         nothing is reflected on here -- that is Outcomes' work, and the
         actions below go there rather than reproducing it.
       */}
-      {(facts.sincePct != null || facts.pnl != null || batchPnl || facts.verdictLabel) && (
-        <div
-          data-testid="decision-outcome"
-          className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-gray-200 pt-1.5 dark:border-white/10"
-        >
-          {facts.sincePct != null && !batched && (
-            <span className="font-mono text-[12px] font-semibold tabular-nums text-gray-800 dark:text-gray-200">
-              {facts.sincePct >= 0 ? '+' : ''}{facts.sincePct.toFixed(1)}%
-              <span className="ml-1 font-sans text-[10px] font-medium uppercase tracking-[0.08em] text-gray-500">
-                since decision
-              </span>
-            </span>
-          )}
-          {/* A batch reports dollars only where Outcomes says it may: every
-              leg priced, and none of them counted into a second batch. It
-              never reports a return percentage. */}
-          {batched ? batchPnl && (
-            <span className="font-mono text-[12px] tabular-nums text-gray-600 dark:text-gray-400">{batchPnl}</span>
-          ) : facts.pnl != null && (
-            <span className="font-mono text-[12px] tabular-nums text-gray-600 dark:text-gray-400">
-              {formatCompactDollars(facts.pnl, facts.pnl > 0 ? '+' : facts.pnl < 0 ? '−' : '')} P&amp;L
-            </span>
-          )}
-          {/* Outcomes' verdict, only where the eyebrow has not already said
-              it: on a revisit the class label IS the verdict, and printing
-              both reads as two different findings about one trade. */}
-          {facts.verdictLabel && situation.klass === 'recent' && (
-            <span className="text-[11px] text-gray-500">{facts.verdictLabel}</span>
-          )}
-          {/*
-            Named for the record it belongs to.
-
-            Outcomes tracks a rationale captured against the EXECUTION; this
-            lens tracks the reason for the decision act, which a batch
-            description can carry for every leg. Both can be true at once --
-            "Needs rationale" beside a bare "Reason recorded" read as a
-            contradiction when it is two records.
-          */}
-          {/* The reasoning is quoted above where it exists, so this only
-              speaks up when there is none. */}
-          {!hasHumanReason(d) && (
-            <span className="text-[11px] text-amber-700 dark:text-amber-500">No decision reason</span>
-          )}
-          {/* How long it has been standing, which is half of "does this
-              deserve another look?". */}
-          {when && daysSince(when) != null && (
-            <span className="text-[11px] text-gray-500">{daysSince(when)}d ago</span>
-          )}
-        </div>
-      )}
-
       {/*
-        Where the follow-up actually happens.
+        Where the follow-up actually happens, on the card's own bottom rail.
 
         Outcomes owns the review and Trade Book owns the committed act; this
-        lens hands off rather than growing a second copy of either.
+        lens hands off rather than growing a second copy of either. The people
+        sit beside them as metadata, not as a separate line of their own.
       */}
       {(situation.klass !== 'action' || situation.reason === 'confirm') && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
+        <div
+          data-testid="decision-actions"
+          className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-gray-200 pt-2 dark:border-white/10"
+        >
           {d.ideaId && (
             <TileAction
               testId="decision-review-outcome"
               label={facts.reviewed ? 'View review' : 'Review outcome'}
               onClick={() => openOutcomesFor(d)}
+              primary
             />
           )}
           {(situation.batch || d.execution) && (
@@ -976,14 +1066,20 @@ function DecisionTile({
  * because the whole tile is the entrance to the detail pane.
  */
 function TileAction({
-  label, onClick, testId,
-}: { label: string; onClick: () => void; testId: string }) {
+  label, onClick, testId, primary,
+}: { label: string; onClick: () => void; testId: string; primary?: boolean }) {
   return (
     <button
       type="button"
       data-testid={testId}
       onClick={e => { e.stopPropagation(); onClick() }}
-      className="relative z-[2] rounded-md border border-gray-200 px-2.5 py-[3px] text-[11px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
+      className={clsx(
+        'relative z-[2] rounded-md px-2.5 py-[3px] text-[11px] font-semibold transition-colors',
+        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600',
+        primary
+          ? 'bg-blue-600 text-white hover:bg-blue-700'
+          : 'border border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5',
+      )}
     >
       {label}
     </button>
@@ -991,34 +1087,26 @@ function TileAction({
 }
 
 /**
- * What was actually asked for, against what the book already held.
+ * One figure and what it is.
  *
- * The one durable quantity on a decision with no written reason. Both halves
- * are shown only where both were recorded -- a sizing with no baseline is a
- * number with nothing to read it against, and inventing the baseline from
- * today's book would date the wrong fact to the wrong day.
+ * The card's two sections are read by scanning these, so the number carries
+ * the weight and the label sits under it quietly. Colour marks direction on
+ * an outcome only -- a decision's own size is never good or bad.
  */
-function TileShape({ decision: d }: { decision: DecisionRecord }) {
-  const size = d.sizingWeight != null ? `${d.sizingWeight.toFixed(1)}%`
-    : d.sizingShares != null ? `${d.sizingShares.toLocaleString()} sh`
-    : null
-
-  if (!size) {
-    return (
-      <p className="text-[12px] italic leading-snug text-gray-500">
-        No reason and no sizing were recorded with this decision.
-      </p>
-    )
-  }
-
+function CardMetric({
+  label, value, tone,
+}: { label: string; value: string; tone?: 'up' | 'down' }) {
   return (
-    <div className="flex items-baseline gap-2">
-      <span className="font-mono text-[19px] font-semibold leading-none tabular-nums">{size}</span>
-      <span className="text-[11px] leading-tight text-gray-600 dark:text-gray-400">
-        {d.baselineWeight != null
-          ? <>asked for, against {d.baselineWeight.toFixed(1)}% then held</>
-          : <>asked for</>}
-      </span>
+    <div className="min-w-0">
+      <div className={clsx(
+        'font-mono text-[15px] font-semibold leading-none tabular-nums',
+        tone === 'down' ? 'text-rose-700 dark:text-rose-400'
+          : tone === 'up' ? 'text-emerald-700 dark:text-emerald-400'
+          : 'text-gray-900 dark:text-gray-100',
+      )}>
+        {value}
+      </div>
+      <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-gray-500">{label}</div>
     </div>
   )
 }

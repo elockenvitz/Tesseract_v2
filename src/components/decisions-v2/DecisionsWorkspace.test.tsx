@@ -592,14 +592,16 @@ describe('what happened, in Outcomes’ own numbers', () => {
       'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, sincePct: -0.8, pnl: -670, verdictLabel: 'Outcome not reviewed' },
     }
     render(<DecisionsWorkspace />)
-    const strip = screen.getByTestId('decision-outcome')
+    const strip = screen.getByTestId('decision-since')
     expect(strip).toHaveTextContent('-0.8%')
-    expect(strip).toHaveTextContent('since decision')
-    expect(strip).toHaveTextContent('−$670 P&L')
+    expect(strip).toHaveTextContent('Return')
+    expect(strip).toHaveTextContent('−$670')
+    expect(strip).toHaveTextContent('P&L')
     // The class already says the outcome is unreviewed; the strip says which
     // record carries a reason, so the two are not read as one contradiction.
     expect(screen.getByTestId('decision-reason')).toHaveTextContent('Outcome not reviewed')
-    expect(strip).toHaveTextContent('2d ago')
+    expect(strip).toHaveTextContent('2d')
+    expect(strip).toHaveTextContent('Elapsed')
     expect(strip.textContent).not.toContain('Needs rationale')
     // The reasoning itself, not a note that some exists.
     expect(screen.getByTestId('decision-tile')).toHaveTextContent('Added on the cloud reacceleration.')
@@ -609,7 +611,11 @@ describe('what happened, in Outcomes’ own numbers', () => {
   it('says nothing where Outcomes knows nothing', () => {
     decisions = [committed({ ideaId: 'tq-unknown' })]
     render(<DecisionsWorkspace />)
-    expect(screen.queryByTestId('decision-outcome')).not.toBeInTheDocument()
+    // The section stays -- it is half the card's question -- and says it has
+    // no priced outcome rather than showing a number it does not have.
+    const since = screen.getByTestId('decision-since')
+    expect(since).toHaveTextContent('No priced outcome yet.')
+    expect(since.textContent).not.toMatch(/%|\$/)
   })
 
   it('gives a batch its own dollars and never a batch return percentage', () => {
@@ -629,9 +635,10 @@ describe('what happened, in Outcomes’ own numbers', () => {
     // The batch is the container; the legs stay underneath it.
     expect(within(tiles[0]).getByTestId('batch-legs')).toHaveTextContent('AAA')
     expect(within(tiles[0]).getByTestId('batch-legs')).toHaveTextContent('BBB')
-    const strip = within(tiles[0]).getByTestId('decision-outcome')
-    expect(strip).toHaveTextContent('+$900 P&L')
-    expect(strip.textContent).not.toMatch(/since decision|%/)
+    const strip = within(tiles[0]).getByTestId('decision-since')
+    expect(strip).toHaveTextContent('+$900')
+    // No batch return percentage, ever: a batch mixes names and sizes.
+    expect(strip.textContent).not.toMatch(/%|Return/)
   })
 })
 
@@ -662,8 +669,13 @@ describe('the card answers what we decided and what happened', () => {
     expect(context).toContain('committed in 1 buy · 09/15/2026')
     expect(tile.textContent!.match(/Tech & Consumer Growth/g)).toHaveLength(1)
     // What was actually committed, in the trade's own recorded figures.
-    expect(within(tile).getByTestId('decision-committed'))
-      .toHaveTextContent('6.4% target · +0.25% change · $84K')
+    const what = within(tile).getByTestId('decision-what')
+    expect(what).toHaveTextContent('6.4%')
+    expect(what).toHaveTextContent('Target')
+    expect(what).toHaveTextContent('+0.25%')
+    expect(what).toHaveTextContent('Change')
+    expect(what).toHaveTextContent('$84K')
+    expect(what).toHaveTextContent('Notional')
     expect(tile).toHaveTextContent('Added on the cloud reacceleration.')
   })
 
@@ -708,6 +720,68 @@ describe('the card answers what we decided and what happened', () => {
     expect(within(tile).getByTestId('batch-legs')).toHaveTextContent('AAA')
     expect(within(tile).getByTestId('batch-legs')).toHaveTextContent('BBB')
     expect(within(tile).getByTestId('batch-description')).toHaveTextContent('Rotated into staples.')
+  })
+})
+
+describe('the lens is a field of cards, not a banner', () => {
+  const committed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', status: 'accepted',
+    portfolioName: 'Tech & Consumer Growth', decidedAt: daysAgo(2),
+    decisionNote: 'Added on the cloud reacceleration.',
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric' },
+    ...over,
+  })
+
+  it('names the book inside the card, never as a page-level label', () => {
+    decisions = [committed()]
+    render(<DecisionsWorkspace />)
+    const lens = screen.getByTestId('decisions-lens')
+    const tile = screen.getByTestId('decision-tile')
+    // Said once, and inside the record it belongs to.
+    expect(lens.textContent!.match(/Tech & Consumer Growth/g)).toHaveLength(1)
+    expect(within(tile).getByTestId('decision-context')).toHaveTextContent('Tech & Consumer Growth')
+  })
+
+  it('offers the book as a control only where there is a choice', () => {
+    decisions = [committed()]
+    const one = render(<DecisionsWorkspace />)
+    expect(one.queryByTestId('book-filter')).not.toBeInTheDocument()
+    one.unmount()
+
+    decisions = [committed(), committed({ id: 'c2', ideaId: 'tq-c2', portfolioId: 'p2', portfolioName: 'Global Equity' })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('book-filter')).toBeInTheDocument()
+  })
+
+  it('gives every decision one card of the same width, in one grid', () => {
+    decisions = [
+      committed(),
+      committed({ id: 'c2', ideaId: 'tq-c2', symbol: 'ORCL' }),
+      committed({ id: 'c3', ideaId: 'tq-c3', symbol: 'NKE' }),
+    ]
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles).toHaveLength(3)
+    // No rank-bought width: the first record is not twice the size of the
+    // third, and nothing spans the page.
+    expect(new Set(tiles.map(t => t.getAttribute('data-size')))).toEqual(new Set(['medium']))
+  })
+
+  it('groups attention above the record when both exist, and not otherwise', () => {
+    decisions = [
+      committed(),
+      decision({ id: 'owed', ideaId: 'tq-owed', symbol: 'AAA', decisionNote: null, decidedAt: daysAgo(1) }),
+    ]
+    const both = render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-group-attention')).toHaveTextContent('Needs attention')
+    expect(screen.getByTestId('decision-group-recent')).toHaveTextContent('Recent decisions')
+    both.unmount()
+
+    // One class only: no headings, because there is no boundary to name.
+    decisions = [committed()]
+    const alone = render(<DecisionsWorkspace />)
+    expect(alone.queryByTestId('decision-group-attention')).not.toBeInTheDocument()
+    expect(alone.getByTestId('decision-group-all')).toBeInTheDocument()
   })
 })
 
