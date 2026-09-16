@@ -59,7 +59,9 @@ export function candidateToDecisionItem(
       // conflicts BY asset. A candidate about an asset that arrived without
       // one would collide with every other candidate of its kind under the
       // empty key, and all but one would silently disappear.
-      assetId: candidate.subjectType === 'asset' ? candidate.subjectId : undefined,
+      assetId: candidate.subjectType === 'asset'
+        ? candidate.subjectId
+        : (candidate.facts?.assetId as string) || undefined,
       assetTicker: (candidate.facts?.assetSymbol as string) || undefined,
       portfolioName: (candidate.facts?.portfolioName as string) || undefined,
     },

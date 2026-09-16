@@ -20,8 +20,11 @@ import {
   evaluateThesisStale,
   evaluateTradeReviewOwed,
   evaluateResearchChangedSinceView,
+  evaluateThesisChangedAfterCommit,
   type OpenTradeReviewObligation,
   type ViewedResearchSubject,
+  type ThesisConcernReview,
+  type CommittedTrade,
 } from './evaluators'
 
 // ---------------------------------------------------------------------------
@@ -61,6 +64,11 @@ export interface EngineArgs {
      *  they answer "what changed since I looked"; neither answers it alone. */
     researchSubjects?: readonly ViewedResearchSubject[]
     assetViewCursors?: Map<string, string>
+    /** Active committed trades, and the reviews that concluded a case no
+     *  longer stands. Together they say capital is out on a thesis somebody
+     *  has since questioned. */
+    committedTrades?: readonly CommittedTrade[]
+    thesisConcernReviews?: readonly ThesisConcernReview[]
     organizationId?: string | null
     ratings?: any[]
     ratingChanges?: any[]
@@ -140,6 +148,15 @@ export function runGlobalDecisionEngine(args: EngineArgs): GlobalDecisionEngineR
   allItems.push(...evaluateTradeReviewOwed({
     tradeReviewObligations: args.data.tradeReviewObligations,
     now,
+  }))
+
+  // A person concluded the written case no longer stands, and the capital is
+  // already committed. Asset-level language, because the linkage is
+  // asset-level -- see the producer.
+  allItems.push(...evaluateThesisChangedAfterCommit({
+    committedTrades: args.data.committedTrades,
+    thesisConcernReviews: args.data.thesisConcernReviews,
+    organizationId: args.data.organizationId,
   }))
 
   // Intel: research that arrived while this reader was not looking. Lands on

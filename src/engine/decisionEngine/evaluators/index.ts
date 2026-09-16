@@ -6,6 +6,13 @@ export { evaluateRatingNoFollowup } from './ratingNoFollowup'
 export { evaluateHighExpectedReturn } from './highExpectedReturn'
 export { evaluateThesisStale } from './thesisStale'
 export {
+  evaluateThesisChangedAfterCommit,
+  thesisChangedAfterCommitCandidates,
+  THESIS_CHANGED_AFTER_COMMIT_KIND,
+  type ThesisConcernReview,
+  type CommittedTrade,
+} from './thesisChangedAfterCommit'
+export {
   evaluateResearchChangedSinceView,
   researchChangedSinceViewCandidates,
   RESEARCH_CHANGED_SINCE_VIEW_KIND,

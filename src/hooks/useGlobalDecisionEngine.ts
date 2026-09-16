@@ -10,7 +10,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
-import { useThesisReviews } from './useThesisReview'
+import { useThesisReviews, useThesisConcernReviews } from './useThesisReview'
 import { useResearchScan } from './useDesktopResearch'
 import { useAssetViewCursors } from './useObjectViewCursor'
 import { useOrganization } from '../contexts/OrganizationContext'
@@ -246,6 +246,39 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
   const { subjects: researchSubjects } = useResearchScan()
   const assetViewCursors = useAssetViewCursors()
 
+  // Conclusions that a written case no longer stands. Its own cache entry, so
+  // recording one refreshes the finding without refetching the engine's slice.
+  const thesisConcernReviews = useThesisConcernReviews()
+
+  // Active committed trades in the reader's coverage. Scoped by portfolio
+  // because `accepted_trades` carries no organization_id -- the portfolio is
+  // the only tenancy boundary this table has.
+  const { data: committedTrades } = useQuery({
+    queryKey: ['decision-engine-committed-trades', userId, coverage?.portfolioIds],
+    enabled: !!coverage?.portfolioIds?.length,
+    staleTime: 120_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('accepted_trades')
+        .select('id, asset_id, created_at, portfolio_id, assets:asset_id (symbol), portfolios:portfolio_id (name)')
+        .in('portfolio_id', coverage!.portfolioIds)
+        .eq('is_active', true)
+      if (error) throw error
+      type Row = {
+        id: string; asset_id: string | null; created_at: string
+        assets?: { symbol?: string | null } | null
+        portfolios?: { name?: string | null } | null
+      }
+      return (data as unknown as Row[] ?? []).map(t => ({
+        id: t.id,
+        asset_id: t.asset_id,
+        created_at: t.created_at,
+        asset_symbol: t.assets?.symbol ?? null,
+        portfolio_name: t.portfolios?.name ?? null,
+      }))
+    },
+  })
+
   // ---- 5. Fetch thesis staleness ----
   const { data: thesisUpdates, isLoading: thesisLoading } = useQuery({
     queryKey: ['decision-engine-thesis', userId, coverage?.assetIds],
@@ -352,13 +385,17 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
         // produces nothing -- never opened is not the same as neglected.
         researchSubjects,
         assetViewCursors,
+        // Capital already out, on a case somebody has since questioned.
+        committedTrades: committedTrades ?? [],
+        thesisConcernReviews,
         organizationId: currentOrgId,
         projects: projects ?? [],
         // Skip: catalysts, prompts, recurrentWorkflows (not in data model)
       },
     })
   }, [userId, coverage, tradeIdeas, proposals, ratingChanges, thesisUpdates, thesisReviews,
-      researchSubjects, assetViewCursors, currentOrgId, projects, coverageLoading])
+      researchSubjects, assetViewCursors, committedTrades, thesisConcernReviews,
+      currentOrgId, projects, coverageLoading])
 
   const isLoading = coverageLoading || ideasLoading || proposalsLoading ||
     ratingsLoading || thesisLoading || projectsLoading

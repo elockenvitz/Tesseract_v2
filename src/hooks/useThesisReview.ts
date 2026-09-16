@@ -73,6 +73,69 @@ export function useThesisReviews() {
   return data ?? new Map<string, string>()
 }
 
+/** One instance, so a consumer's memo does not see a new array each render.
+ *  Declared before its use: a module const read from a hook is a TDZ error
+ *  waiting to happen. */
+const EMPTY_CONCERNS: ReadonlyArray<{
+  id: string; subject_id: string; occurred_at: string
+  outcome: string; organization_id: string | null
+}> = []
+
+/**
+ * Reviews that concluded the written case no longer stands as-is.
+ *
+ * The sibling read above answers "is this case current", and deliberately
+ * ignores everything but `holds`. This answers the opposite question, and
+ * carries the event id -- a consumer that wants to point at the conclusion
+ * needs the row it is pointing at, not just its date.
+ *
+ * Every row is returned, not the newest per asset: a second person concluding
+ * the same thing a week later is a second durable act, and which of them a
+ * surface cares about is the surface's business.
+ *
+ * RLS posture: unchanged. `memory_events` SELECT is already policy-gated on
+ * org membership; this is the same table and the same policy, filtered to one
+ * event type.
+ */
+export function useThesisConcernReviews() {
+  const { currentOrgId } = useOrganization()
+
+  const { data } = useQuery({
+    queryKey: [...THESIS_REVIEWS_KEY, 'concerns', currentOrgId],
+    enabled: !!currentOrgId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('memory_events')
+        .select('id, subject_id, occurred_at, payload, organization_id')
+        .eq('organization_id', currentOrgId!)
+        .eq('event_type', 'thesis.reviewed')
+        .eq('subject_type', 'asset')
+        .order('occurred_at', { ascending: false })
+      if (error) throw new Error(error.message)
+
+      const rows = (data ?? []) as {
+        id: string; subject_id: string; occurred_at: string
+        payload?: { outcome?: string } | null; organization_id?: string | null
+      }[]
+
+      // Filtering here rather than in the query: the outcome lives inside a
+      // jsonb payload, and the producer owns which conclusions count.
+      return rows
+        .filter(r => r.payload?.outcome && r.payload.outcome !== 'holds')
+        .map(r => ({
+          id: r.id,
+          subject_id: r.subject_id,
+          occurred_at: r.occurred_at,
+          outcome: r.payload!.outcome!,
+          organization_id: r.organization_id ?? null,
+        }))
+    },
+  })
+
+  return data ?? EMPTY_CONCERNS
+}
+
 /**
  * Record a review.
  *
