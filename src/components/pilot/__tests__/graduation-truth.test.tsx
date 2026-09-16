@@ -106,6 +106,23 @@ describe('once graduation is durable', () => {
 describe('the Outcomes banner retires on the durable mark', () => {
   const src = (p: string) => readFileSync(path.join(process.cwd(), 'src', p), 'utf8')
 
+  /*
+   * `isPilot` is only "this org is flagged as a pilot", which stays true after
+   * graduation because the flag is kept for audit. `effectiveIsPilot` is that
+   * minus graduation, and it is what every other pilot surface reads. Gating
+   * on the raw flag meant graduation did not retire "Finish the loop" — it
+   * survived only because the banner writes its own local dismissal, so a
+   * graduated pilot with cleared storage, or on a second machine, was invited
+   * to finish a loop they had already finished.
+   */
+  it('is gated on effectiveIsPilot, so graduation retires it', () => {
+    const page = src('pages/DecisionAccountabilityPage.tsx')
+    expect(page).toContain('const showPilotOutcomesBanner = pilotMode.effectiveIsPilot && !pilotMode.isLoading')
+    expect(page).not.toContain('const showPilotOutcomesBanner = pilotMode.isPilot')
+    // Both renders of it — desktop and phone — read that one value.
+    expect(page.match(/showPilotOutcomesBanner/g)).toHaveLength(3)
+  })
+
   /* The three step flags are per-browser. A pilot who finished the loop on
      their laptop opened Outcomes on a second device and was asked to finish it
      again, because only the local flags retired the strip. */

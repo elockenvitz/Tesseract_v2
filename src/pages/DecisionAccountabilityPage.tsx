@@ -3347,7 +3347,23 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
   }, [focusDecisionId])
 
   const pilotMode = usePilotMode()
-  const showPilotOutcomesBanner = pilotMode.isPilot && !pilotMode.isLoading
+  /*
+   * `effectiveIsPilot`, not `isPilot`.
+   *
+   * `isPilot` is only "this org is flagged as a pilot", which stays true after
+   * graduation — the flag is kept for audit. `effectiveIsPilot` is the same
+   * value minus graduation, and it is what every other pilot surface reads to
+   * decide whether the reader is still being taught. Reading the raw flag here
+   * meant graduation did not retire the "Finish the loop" banner; it survived
+   * only because the banner sets its own local dismissal on the way out, so a
+   * graduated pilot whose browser storage was cleared, or who opened Outcomes
+   * on another machine, was invited to finish a loop they had already
+   * finished. The durable stage mark added in 7fa357f also retires it, so this
+   * is the second of two guards rather than the only one — but a surface that
+   * asks the wrong question is worth fixing even when something downstream
+   * happens to catch it.
+   */
+  const showPilotOutcomesBanner = pilotMode.effectiveIsPilot && !pilotMode.isLoading
   /*
    * Arriving here is not graduating.
    *
