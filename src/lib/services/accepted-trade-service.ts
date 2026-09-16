@@ -584,7 +584,28 @@ export async function acceptFromInboxToAcceptedTrade(
     trade_queue_item_id: decisionRequest.trade_queue_item_id,
     proposal_id: decisionRequest.proposal_id ?? null,
     accepted_by: context.actorId,
-    acceptance_note: decisionNote || null,
+    /*
+     * The same precedence the Trade Lab execute path uses, for the same
+     * reason: a committed trade should not be the one record with no stated
+     * reason when a reason was sitting in the caller's own argument.
+     *
+     * This was `decisionNote || null`. The PM's note is optional in the single
+     * accept and is passed as `undefined` outright by the pair-leg accept, so
+     * the common case wrote NULL -- 15 of 52 committed trades in production
+     * have no note at all. Meanwhile `decisionRequest.context_note` (the
+     * analyst's "why now" on the request) and the idea's own rationale were
+     * both already in hand, in this very object, and discarded.
+     *
+     * Falls back, never overwrites: an explicit PM note still wins. The text
+     * is the analyst's existing words placed in the existing canonical field
+     * -- no new column, and nothing invented when all three are empty.
+     */
+    acceptance_note:
+      (decisionNote && decisionNote.trim())
+      || (decisionRequest.context_note && decisionRequest.context_note.trim())
+      || (decisionRequest.trade_queue_item?.thesis_text?.trim())
+      || (decisionRequest.trade_queue_item?.rationale?.trim())
+      || null,
   })
 
   // Update decision request status + link to the accepted trade

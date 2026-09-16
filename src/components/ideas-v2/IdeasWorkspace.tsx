@@ -78,10 +78,13 @@ export interface IdeasWorkspaceProps {
   focusObjectId?: string | null
   /** Which part of the idea the reader reached for, in the shell's terms. */
   intent?: FocusIntent
+  /** Reported once the arriving idea has actually been opened, so the shell
+   *  can drop it from the tab. See `DashboardShellProps.onFocusConsumed`. */
+  onFocusConsumed?: () => void
 }
 
 export function IdeasWorkspace({
-  selectedIdeaId, focus, issue, focusObjectId, intent,
+  selectedIdeaId, focus, issue, focusObjectId, intent, onFocusConsumed,
 }: IdeasWorkspaceProps = {}) {
   const { ideas: scanned, isLoading } = useIdeaScan()
   /*
@@ -209,7 +212,13 @@ export function IdeasWorkspace({
    * stays unconsumed and simply does nothing, which is the honest outcome.
    */
   useEffect(() => {
-    if (!arrivalConsumed && !focusObjectId && selected) setArrivalConsumed(true)
+    if (arrivalConsumed || focusObjectId || !selected) return
+    setArrivalConsumed(true)
+    // Tell the shell too, so the id leaves the tab. Local state alone would
+    // stop the re-open but leave `tab.data.selectedIdeaId` for the AI subject
+    // chip to keep reading long after the reader moved on.
+    onFocusConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrivalConsumed, focusObjectId, selected])
 
   // One read for the whole gallery, so a tile can show where spot sits in the

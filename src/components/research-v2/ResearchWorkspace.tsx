@@ -77,10 +77,13 @@ export interface ResearchWorkspaceProps {
    * surface knows which of its panels can answer it.
    */
   intent?: FocusIntent
+  /** Reported once the arriving subject has actually been opened, so the shell
+   *  can drop it from the tab. See `DashboardShellProps.onFocusConsumed`. */
+  onFocusConsumed?: () => void
 }
 
 export function ResearchWorkspace({
-  selectedAssetId, issue, origin, focusObjectId, intent,
+  selectedAssetId, issue, origin, focusObjectId, intent, onFocusConsumed,
 }: ResearchWorkspaceProps = {}) {
   const { subjects, isLoading } = useResearchScan()
   const { exposure, settled: exposureSettled } = useResearchExposure(subjects)
@@ -165,7 +168,12 @@ export function ResearchWorkspace({
    * `NothingOnRecord`, which is the honest answer rather than a silent no-op.
    */
   useEffect(() => {
-    if (!arrivalConsumed && !focusObjectId && requested) setArrivalConsumed(true)
+    if (arrivalConsumed || focusObjectId || !requested) return
+    setArrivalConsumed(true)
+    // And tell the shell, so the id leaves the tab rather than lingering for
+    // `lib/ai/context-selection` to bind the subject chip from.
+    onFocusConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrivalConsumed, focusObjectId, requested])
 
   // Nothing deep is fetched while browsing, or when a request missed.

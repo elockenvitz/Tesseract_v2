@@ -1175,6 +1175,16 @@ export function DashboardPage() {
               delete data.selectedTradeId
               return { ...t, data }
             }))}
+            /* Read as a payload rather than raced as an event — the dispatch
+               happens on the click that opens this tab, so a listener inside
+               it registers too late. */
+            openDecisionDrawer={!!activeTab.data?.openDecisionDrawer}
+            onDrawerConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'trade-queue' || !t.data?.openDecisionDrawer) return t
+              const data = { ...t.data }
+              delete data.openDecisionDrawer
+              return { ...t, data }
+            }))}
           />
         )
       case 'trade-lab':
@@ -1434,6 +1444,16 @@ export function DashboardPage() {
             selectedIdeaId={activeTab.data?.selectedIdeaId ?? null}
             focus={activeTab.data?.focus ?? null}
             issue={activeTab.data?.issue ?? null}
+            /* One arrival, one opening — and the id leaves the tab, so the AI
+               subject chip cannot stay bound to it weeks later. */
+            onFocusConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'ideas-v2' || !t.data?.selectedIdeaId) return t
+              const data = { ...t.data }
+              delete data.selectedIdeaId
+              delete data.focus
+              delete data.issue
+              return { ...t, data }
+            }))}
           />
         )
       case 'research-v2':
@@ -1443,6 +1463,14 @@ export function DashboardPage() {
             selectedAssetId={activeTab.data?.selectedAssetId ?? null}
             issue={activeTab.data?.issue ?? null}
             origin={activeTab.data?.origin ?? null}
+            onFocusConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'research-v2' || !t.data?.selectedAssetId) return t
+              const data = { ...t.data }
+              delete data.selectedAssetId
+              delete data.issue
+              delete data.origin
+              return { ...t, data }
+            }))}
           />
         )
       case 'portfolio-v2':

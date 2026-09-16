@@ -80,6 +80,16 @@ export interface DashboardShellProps {
   focus?: string | null
   issue?: string | null
   origin?: string | null
+  /** Called once a lens has actually opened the object it was handed, so the
+   *  shell can drop it from the tab.
+   *
+   *  Without this the id stays on `tab.data` for the life of the tab and in
+   *  its persisted state -- which `lib/ai/context-selection` reads to bind the
+   *  AI's subject chip. Weeks later the reader is looking at an unselected
+   *  gallery while the assistant still believes the subject is whatever Today
+   *  last handed over. The lens knows when it applied the arrival; nothing
+   *  else does. */
+  onFocusConsumed?: () => void
 }
 
 
@@ -115,7 +125,7 @@ const LENS_ORDER_SET: Record<string, true> = {
 export function DashboardShell({
   initialLens = 'today',
   selectedIdeaId, selectedAssetId, selectedPortfolioId, selectedDecisionId,
-  focus, issue, origin,
+  focus, issue, origin, onFocusConsumed,
 }: DashboardShellProps = {}) {
   const [lens, setLens] = useState<DashboardLens>(() => restoreLens(initialLens))
 
@@ -245,6 +255,7 @@ export function DashboardShell({
         issue={deck?.active.issue ?? issue ?? null}
         focusObjectId={focusObjectId}
         intent={deck?.target.source?.intent}
+        onFocusConsumed={onFocusConsumed}
       />
     )
     if (l === 'research') return (
@@ -254,6 +265,7 @@ export function DashboardShell({
         origin={deck?.active.origin ?? origin ?? null}
         focusObjectId={focusObjectId}
         intent={deck?.target.source?.intent}
+        onFocusConsumed={onFocusConsumed}
       />
     )
     if (l === 'portfolio') return (

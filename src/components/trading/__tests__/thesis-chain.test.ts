@@ -80,6 +80,42 @@ describe('single execute records why', () => {
   })
 })
 
+/*
+ * The Decision Inbox accept had the analyst's words in its own argument and
+ * threw them away: `acceptance_note: decisionNote || null`. The PM note is
+ * optional on the single accept and passed as `undefined` outright by the
+ * pair-leg accept, so the common case wrote NULL -- 15 of 52 committed trades
+ * in production carry no note at all.
+ */
+describe('an inbox accept keeps the reason it was given', () => {
+  const svc = src('lib/services/accepted-trade-service.ts')
+  const fn = svc.slice(svc.indexOf('export async function acceptFromInboxToAcceptedTrade'))
+  const body = fn.slice(0, fn.indexOf('// Update decision request status'))
+
+  it('falls back through the context it already holds', () => {
+    expect(body).toContain('decisionRequest.context_note')
+    expect(body).toContain('decisionRequest.trade_queue_item?.thesis_text')
+    expect(body).toContain('decisionRequest.trade_queue_item?.rationale')
+  })
+
+  /* Falls back, never overwrites — an explicit PM note is the best answer. */
+  it('still prefers the PM note when there is one', () => {
+    const note = body.slice(body.indexOf('acceptance_note:'))
+    expect(note.indexOf('decisionNote')).toBeLessThan(note.indexOf('context_note'))
+  })
+
+  /* Nothing invented when all of them are empty. */
+  it('writes null when there is genuinely nothing', () => {
+    expect(body.slice(body.indexOf('acceptance_note:'), body.indexOf('acceptance_note:') + 400))
+      .toContain('|| null')
+  })
+
+  it('uses the existing canonical field and no other', () => {
+    expect(body).not.toContain('rationale:')
+    expect(body).not.toContain('thesis_text:')
+  })
+})
+
 describe('the rationale log shows it, in order', () => {
   const log = src('components/trading/AcceptedTradesTable.tsx')
   const fn = log.slice(log.indexOf('export function TradeRationaleLog'))

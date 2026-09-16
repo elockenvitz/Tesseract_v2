@@ -164,9 +164,26 @@ export interface TradeQueuePageProps {
    *  can drop the id from the tab. Otherwise it persists and every later visit
    *  re-scrolls to the same card. */
   onFocusConsumed?: () => void
+  /** Expand the decision drawer on arrival.
+   *
+   *  A prop rather than the `openTradeQueue` event this used to listen for.
+   *  That event is dispatched by the same click that opens this tab, so the
+   *  listener below is only registered AFTER it has already fired -- the
+   *  drawer opened only when the Pipeline tab happened to be mounted already.
+   *  A race, not a contract, and the kind that looks intermittent rather than
+   *  broken. The payload is on the tab either way; reading it is deterministic
+   *  and needs no delay. */
+  openDecisionDrawer?: boolean
+  /** Called once the drawer has been opened, so the caller can drop the flag.
+   *  Separate from `onFocusConsumed` because the two arrive together but are
+   *  applied at different moments -- the card focus waits for the board to
+   *  render the card, the drawer does not. */
+  onDrawerConsumed?: () => void
 }
 
-export function TradeQueuePage({ focusIdeaId, onFocusConsumed }: TradeQueuePageProps = {}) {
+export function TradeQueuePage({
+  focusIdeaId, onFocusConsumed, openDecisionDrawer, onDrawerConsumed,
+}: TradeQueuePageProps = {}) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const pilotMode = usePilotMode()
@@ -297,13 +314,27 @@ export function TradeQueuePage({ focusIdeaId, onFocusConsumed }: TradeQueuePageP
   }, [])
   const [decisionPanelCollapsed, setDecisionPanelCollapsed] = useState(true)
 
-  // Listen for openDecisionDrawer event from Quick Ideas pane
+  /*
+   * Open the drawer because the arrival asked for it.
+   *
+   * The event listener that used to do this is kept below for the case it
+   * actually serves -- a request dispatched while this page is already
+   * mounted, which is the only case it ever worked for. The prop handles the
+   * arrival itself, which is the case it silently did not.
+   */
+  const drawerConsumedRef = useRef(false)
+  useEffect(() => {
+    if (!openDecisionDrawer || drawerConsumedRef.current) return
+    drawerConsumedRef.current = true
+    setDecisionPanelCollapsed(false)
+    onDrawerConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDecisionDrawer])
+
+  // Still listen, for a request made while this page is already open.
   useEffect(() => {
     const handleOpenDecisionDrawer = (event: CustomEvent) => {
-      const { openDecisionDrawer } = event.detail || {}
-      if (openDecisionDrawer) {
-        setDecisionPanelCollapsed(false)
-      }
+      if (event.detail?.openDecisionDrawer) setDecisionPanelCollapsed(false)
     }
     window.addEventListener('openTradeQueue', handleOpenDecisionDrawer as EventListener)
     return () => window.removeEventListener('openTradeQueue', handleOpenDecisionDrawer as EventListener)

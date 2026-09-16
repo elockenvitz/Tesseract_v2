@@ -43,7 +43,16 @@ describe.each([
   /* Consuming on arrival would clear the id a render before the scan answers
      and the object exists. It is spent only once something actually opened. */
   it('is spent only after the object resolves, not on arrival', () => {
-    expect(page).toContain(`if (!arrivalConsumed && !focusObjectId && ${resolved}) setArrivalConsumed(true)`)
+    expect(page).toContain(`if (arrivalConsumed || focusObjectId || !${resolved}) return`)
+    expect(page).toContain('setArrivalConsumed(true)')
+  })
+
+  /* Local state alone would stop the re-open but leave the id on `tab.data`,
+     which `lib/ai/context-selection` reads to bind the AI's subject chip --
+     so the assistant would still claim the subject weeks later. */
+  it('reports the arrival spent to the shell, not only to itself', () => {
+    const effect = page.slice(page.indexOf('setArrivalConsumed(true)'))
+    expect(effect.slice(0, 400)).toContain('onFocusConsumed?.()')
   })
 
   /* Otherwise a second hand-off into an already-open tab would be ignored --
@@ -118,6 +127,64 @@ describe('the phone board brings the card into view', () => {
     const effect = page.slice(page.indexOf('const focusAppliedRef'))
     const body = effect.slice(0, effect.indexOf('}, [focusIdeaId, rows])'))
     expect(body.indexOf('onFocusConsumed?.()')).toBeGreaterThan(body.indexOf('decision-recorded-flash'))
+  })
+})
+
+/*
+ * The AI subject chip binds from `tab.data.selectedAssetId` /
+ * `selectedIdeaId`. Before this, nothing ever removed them.
+ */
+describe('the shell drops the id once a lens has used it', () => {
+  const dash = src('pages/DashboardPage.tsx')
+
+  it.each([
+    ['ideas-v2', 'selectedIdeaId'],
+    ['research-v2', 'selectedAssetId'],
+  ])('%s clears its arrival payload', (tabType, key) => {
+    const arm = dash.slice(dash.indexOf(`if (t.type !== '${tabType}'`))
+    expect(arm.slice(0, 400)).toContain(`delete data.${key}`)
+    // The reason travels with the object; it must not outlive it either.
+    expect(arm.slice(0, 400)).toContain('delete data.issue')
+  })
+
+  it('passes the callback through the shell to the lenses', () => {
+    const shell = src('components/dashboard/DashboardShell.tsx')
+    expect(shell).toContain('onFocusConsumed?: () => void')
+    expect(shell.match(/onFocusConsumed=\{onFocusConsumed\}/g)).toHaveLength(2)
+  })
+})
+
+/*
+ * `openDecisionDrawer` was dispatched as an `openTradeQueue` event by the same
+ * click that opens the Pipeline tab, so the listener inside the page was
+ * registered only after it had already fired. It worked when the tab happened
+ * to be open already -- a race, not a contract.
+ */
+describe('the decision drawer opens on arrival', () => {
+  const page = src('pages/TradeQueuePage.tsx')
+
+  it('reads the request as a payload', () => {
+    expect(page).toContain('openDecisionDrawer?: boolean')
+    expect(src('pages/DashboardPage.tsx'))
+      .toContain('openDecisionDrawer={!!activeTab.data?.openDecisionDrawer}')
+  })
+
+  it('consumes it separately from the card focus', () => {
+    // They arrive together but apply at different moments: the card focus
+    // waits for the board to draw the card, the drawer does not.
+    expect(page).toContain('onDrawerConsumed?: () => void')
+    expect(src('pages/DashboardPage.tsx')).toContain('delete data.openDecisionDrawer')
+  })
+
+  /* Still useful for a request made while the page is already open, which is
+     the only case the event ever served. */
+  it('keeps the listener for an already-open page', () => {
+    expect(page).toContain("window.addEventListener('openTradeQueue'")
+  })
+
+  it('adds no delay', () => {
+    const effect = page.slice(page.indexOf('const drawerConsumedRef'))
+    expect(effect.slice(0, 500)).not.toContain('setTimeout')
   })
 })
 
