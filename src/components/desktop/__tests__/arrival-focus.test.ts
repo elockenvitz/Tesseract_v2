@@ -54,6 +54,73 @@ describe.each([
   })
 })
 
+/*
+ * `selectedTradeId` has ~11 producers -- the dashboard attention items, the
+ * asset strips, the prioritiser, the decision engine, the promote modal -- and
+ * the Pipeline read none of them. It means exactly what `focusIdeaId` means, so
+ * it is coalesced onto the existing mechanism rather than given a second one.
+ */
+describe('Pipeline consumes the payload its producers already send', () => {
+  const dash = src('pages/DashboardPage.tsx')
+
+  it('coalesces both payload names onto one focus prop', () => {
+    expect(dash.match(/focusIdeaId=\{activeTab\.data\?\.focusIdeaId \?\? activeTab\.data\?\.selectedTradeId \?\? null\}/g))
+      // Desktop board and phone board.
+      .toHaveLength(2)
+  })
+
+  /* Clearing only one spelling would leave the other to win on the next visit
+     and re-scroll to the same card forever. */
+  it('clears both spellings when spent', () => {
+    const consumed = dash.slice(dash.indexOf("if (t.type !== 'trade-queue') return t"))
+    const body = consumed.slice(0, consumed.indexOf('}))'))
+    expect(body).toContain('delete data.focusIdeaId')
+    expect(body).toContain('delete data.selectedTradeId')
+  })
+
+  it('renders the phone board with the payload rather than no props', () => {
+    expect(dash).not.toContain('<MobilePipeline />')
+    expect(dash).toContain('<MobilePipeline')
+  })
+})
+
+describe('the phone board brings the card into view', () => {
+  const page = src('components/mobile/MobilePipeline.tsx')
+
+  it('accepts the same payload the desktop board takes', () => {
+    expect(page).toContain('focusIdeaId?: string | null')
+    expect(page).toContain('onFocusConsumed?: () => void')
+  })
+
+  /* One stage at a time, so "into view" also means switching to the stage the
+     card is in -- otherwise the scroll looks for a card not being drawn. */
+  it('switches to the stage the card is actually in', () => {
+    const effect = page.slice(page.indexOf('const focusAppliedRef'))
+    const body = effect.slice(0, effect.indexOf('}, [focusIdeaId, rows])'))
+    expect(body).toContain('setStage(match.stage as ResearchStage)')
+    expect(body).toContain("setView('committed')")
+    expect(body).toContain("setView('archived')")
+  })
+
+  /* Searching would hide every other card. That is a filter, not a focus. */
+  it('does not filter the board to find it', () => {
+    const effect = page.slice(page.indexOf('const focusAppliedRef'))
+    const body = effect.slice(0, effect.indexOf('}, [focusIdeaId, rows])'))
+    expect(body).not.toContain('setSearch')
+  })
+
+  it('finds a pair row by either leg', () => {
+    expect(page).toContain('r.legs.some((l: { id?: string } | null) => l?.id === focusIdeaId)')
+  })
+
+  it('is spent after the flash, and the card carries an anchor', () => {
+    expect(page).toContain('data-pipeline-row-id={row.id}')
+    const effect = page.slice(page.indexOf('const focusAppliedRef'))
+    const body = effect.slice(0, effect.indexOf('}, [focusIdeaId, rows])'))
+    expect(body.indexOf('onFocusConsumed?.()')).toBeGreaterThan(body.indexOf('decision-recorded-flash'))
+  })
+})
+
 describe('Research keeps the reason it was opened for', () => {
   const page = src('components/research-v2/ResearchWorkspace.tsx')
 

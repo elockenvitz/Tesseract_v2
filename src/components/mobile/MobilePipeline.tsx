@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { isPipelineBasicsCtaEvent, requestOpenTradeLab } from '../../lib/trade-lab/open-trade-lab'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
@@ -66,7 +66,15 @@ const VIEWS: { key: View; label: string }[] = [
  * the service enforces, so the reader is told what is missing before tapping
  * rather than after.
  */
-export function MobilePipeline() {
+export interface MobilePipelineProps {
+  /** The idea to bring into view on arrival — the same payload the desktop
+   *  board takes, so a hand-off means the same thing on both. */
+  focusIdeaId?: string | null
+  /** Called once it has actually been applied, so the shell can drop it. */
+  onFocusConsumed?: () => void
+}
+
+export function MobilePipeline({ focusIdeaId, onFocusConsumed }: MobilePipelineProps = {}) {
   const { user } = useAuth()
   const { data: items = [], isLoading } = usePipelineItems()
   const pilotBanner = usePilotPipelineBanner()
@@ -150,6 +158,48 @@ export function MobilePipeline() {
     }
     return map
   }, [visible])
+
+  /*
+   * Bring the arriving idea into view.
+   *
+   * The shell rendered `<MobilePipeline />` with no props at all, so every
+   * hand-off carrying an idea -- about eleven producers -- was discarded
+   * outright on a phone. Desktop scrolls and flashes; here the board shows one
+   * stage at a time, so "into view" also means switching to the stage the card
+   * is actually in. Without that the scroll would look for a card the board is
+   * not currently drawing.
+   *
+   * Searching would hide everything else, which is a filter, not a focus. The
+   * stage switch is the smallest thing that makes the card reachable.
+   */
+  const focusAppliedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!focusIdeaId || focusAppliedRef.current === focusIdeaId) return
+    const match = rows.find(r =>
+      r.kind === 'pair'
+        ? r.legs.some((l: { id?: string } | null) => l?.id === focusIdeaId)
+        : r.item?.id === focusIdeaId)
+    if (!match) return
+    focusAppliedRef.current = focusIdeaId
+
+    if (COMMITTED_PIPELINE_STATUSES.includes(match.status)) setView('committed')
+    else if (ARCHIVED_PIPELINE_STATUSES.includes(match.status)) setView('archived')
+    else { setView('pipeline'); setStage(match.stage as ResearchStage) }
+
+    const timeout = setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(`[data-pipeline-row-id="${match.id}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el.classList.add('decision-recorded-flash')
+        setTimeout(() => el.classList.remove('decision-recorded-flash'), 2600)
+      }
+      // Spent after the flash is on, for the reason the desktop board's is:
+      // dropping the id re-runs this effect and the cleanup would cancel it.
+      onFocusConsumed?.()
+    }, 80)
+    return () => clearTimeout(timeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusIdeaId, rows])
 
   const committedRows = useMemo(
     () => visible.filter(r => COMMITTED_PIPELINE_STATUSES.includes(r.status)),
@@ -429,6 +479,9 @@ export function PipelineCard({ row, onOpen }: { row: PipelineRow; onOpen: () => 
    */
   return (
     <div
+      /* So an arrival carrying a specific idea can find its card, the same way
+         the desktop board's cards carry `data-queue-item-id`. */
+      data-pipeline-row-id={row.id}
       role="button"
       tabIndex={0}
       onClick={onOpen}

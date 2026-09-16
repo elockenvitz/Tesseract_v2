@@ -71,7 +71,10 @@ describe('Pipeline brings the arriving idea into view', () => {
 
   it('consumes the id the mission has always sent', () => {
     expect(page).toContain('focusIdeaId')
-    expect(src('pages/DashboardPage.tsx')).toContain('focusIdeaId={activeTab.data?.focusIdeaId ?? null}')
+    // Coalesced with `selectedTradeId`, which ~11 other producers send for the
+    // same purpose. Both spellings reach the same focus mechanism.
+    expect(src('pages/DashboardPage.tsx'))
+      .toContain('focusIdeaId={activeTab.data?.focusIdeaId ?? activeTab.data?.selectedTradeId ?? null}')
   })
 
   it('finds the card by an anchor the card actually carries', () => {

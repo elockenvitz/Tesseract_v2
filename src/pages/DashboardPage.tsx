@@ -1141,18 +1141,38 @@ export function DashboardPage() {
         // The desktop board moves cards with native HTML5 drag, which never
         // fires on touch — the kanban is inert on a phone, not just cramped.
         // MobilePipeline shows one stage at a time and makes moving explicit.
-        return isMobile ? <MobilePipeline /> : (
+        return isMobile ? (
+          <MobilePipeline
+            focusIdeaId={activeTab.data?.focusIdeaId ?? activeTab.data?.selectedTradeId ?? null}
+            onFocusConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'trade-queue') return t
+              if (!t.data?.focusIdeaId && !t.data?.selectedTradeId) return t
+              const data = { ...t.data }
+              delete data.focusIdeaId
+              delete data.selectedTradeId
+              return { ...t, data }
+            }))}
+          />
+        ) : (
           <TradeQueuePage
-            /* Carried by the pilot mission's "Open Pipeline" so the reader can
-               see which card is theirs. Produced since the mission existed and
-               consumed by nobody until now. */
-            focusIdeaId={activeTab.data?.focusIdeaId ?? null}
+            /* Two payload names, one meaning: bring this card into view.
+               `focusIdeaId` is the pilot mission's; `selectedTradeId` is what
+               the dashboard attention items, the asset strips, the prioritiser
+               and the decision engine have always sent -- about eleven
+               producers, none of which this page read. They are coalesced here
+               rather than given a second mechanism, because the scroll, the
+               flash and the one-shot consume are already correct. */
+            focusIdeaId={activeTab.data?.focusIdeaId ?? activeTab.data?.selectedTradeId ?? null}
             /* One arrival, one scroll — the rule the Outcomes focus and the
                Trade Book highlight both follow. */
             onFocusConsumed={() => setTabs(prev => prev.map(t => {
-              if (t.type !== 'trade-queue' || !t.data?.focusIdeaId) return t
+              if (t.type !== 'trade-queue') return t
+              if (!t.data?.focusIdeaId && !t.data?.selectedTradeId) return t
+              // Both spellings, or the one that was not cleared would win on
+              // the next visit and re-scroll to the same card forever.
               const data = { ...t.data }
               delete data.focusIdeaId
+              delete data.selectedTradeId
               return { ...t, data }
             }))}
           />
