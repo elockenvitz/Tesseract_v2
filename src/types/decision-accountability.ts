@@ -175,6 +175,15 @@ export interface AccountabilityRow {
   // ── Result / Impact fields ──────────────────────────────────
 
   current_price: number | null
+  /**
+   * The date the current price is as of -- the cached close's own date.
+   *
+   * Null where the only price available was `assets.current_price`, which
+   * carries no date anywhere in the schema (lib/outcomes/current-price). A
+   * surface showing a move may say how current the comparison is; one that
+   * cannot date it should not imply it is live.
+   */
+  current_price_as_of: string | null
   execution_price: number | null
   move_since_decision_pct: number | null
   move_since_execution_pct: number | null

@@ -158,6 +158,9 @@ export const GATED_DIRS = [
   // Ideas' thin field: coverage prompts, and the pilot's seeded rows leaving
   // the lens at graduation.
   'src/components/ideas-v2/__tests__',
+  // Which price a decision is measured against today: the rule Outcomes and
+  // the Dashboard both read performance through.
+  'src/lib/outcomes/__tests__',
   /*
    * Today's domain layer: tiering, adaptation, diversity, enrichment and the
    * time labels every tile reads from.

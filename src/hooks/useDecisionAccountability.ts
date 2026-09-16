@@ -27,6 +27,7 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { currentPriceFor, type CachedClose, type CurrentPrice } from '../lib/outcomes/current-price'
 import { subDays, differenceInDays, parseISO } from 'date-fns'
 import { batchesByDecision } from '../lib/outcomes/batch-groups'
 import type {
@@ -53,6 +54,18 @@ const UNMATCHED_THRESHOLD_DAYS = 30
 
 /** Minimum absolute move % to count as positive/negative (avoids noise) */
 const RESULT_THRESHOLD_PCT = 0.1
+
+/**
+ * How far back to look for a name's newest cached close.
+ *
+ * Wide enough that a holiday week, a suspended name or a backfill that skipped
+ * a run still yields a dated price -- `currentPriceFor` decides whether what
+ * comes back is current, and flags it when it is not.
+ */
+const CLOSE_LOOKBACK_DAYS = 30
+
+/** One row of `price_history_cache`, as this hook reads it. */
+interface ClosesRow { symbol: string; date: string; close: number | string }
 
 // ============================================================
 // Direction compatibility for fuzzy matching
@@ -344,13 +357,73 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
   }, [outcomesPayloadQuery.data?.rationales])
   const rationalesQuery = { data: rationalesData }
 
+  /**
+   * The names this payload measures, so their closes can be read.
+   *
+   * Built from the payload already in hand -- decisions, events and the trade
+   * ideas behind them -- rather than from a second read of `assets`.
+   */
+  const pricedAssets = useMemo(() => {
+    const map = new Map<string, string>()
+    const add = (id: unknown, symbol: unknown) => {
+      if (typeof id === 'string' && typeof symbol === 'string' && symbol) map.set(id, symbol)
+    }
+    for (const d of outcomesPayloadQuery.data?.decisions ?? []) add(d.asset_id, d.assets?.symbol)
+    for (const e of outcomesPayloadQuery.data?.events ?? []) add(e.asset_id, e.assets?.symbol)
+    return map
+  }, [outcomesPayloadQuery.data?.decisions, outcomesPayloadQuery.data?.events])
+
+  /**
+   * The newest cached close per name.
+   *
+   * `price_history_cache` is the product's canonical stored market price and
+   * the only one that carries a date. A short window is read rather than the
+   * whole series: this needs the last close, not a chart, and the table is
+   * capped at 1,000 rows per request whatever the limit says.
+   */
+  const symbols = useMemo(
+    () => [...new Set(pricedAssets.values())].sort(),
+    [pricedAssets],
+  )
+  const closesQuery = useQuery({
+    queryKey: ['outcomes-closes', symbols],
+    enabled: symbols.length > 0,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const floor = new Date(Date.now() - CLOSE_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10)
+      const { data, error } = await supabase
+        .from('price_history_cache')
+        .select('symbol, date, close')
+        .in('symbol', symbols)
+        .gte('date', floor)
+        .order('date', { ascending: false })
+      if (error) throw error
+      const newest = new Map<string, CachedClose>()
+      for (const r of (data ?? []) as ClosesRow[]) {
+        if (!newest.has(r.symbol)) newest.set(r.symbol, { close: r.close, date: r.date })
+      }
+      return newest
+    },
+  })
+
+  /**
+   * What each decision is measured against today, and as of when.
+   *
+   * `assets.current_price` is the undated fallback and nothing more -- it is
+   * written by whatever last touched the asset row, and on this project it sat
+   * a month behind the closes beside it, which is what reported an MSFT trade
+   * executed at 501.11 against a 497.12 close as -23.1%.
+   */
   const pricesData = useMemo(() => {
-    const map = new Map<string, number>()
+    const map = new Map<string, CurrentPrice>()
+    const closes = closesQuery.data
     for (const a of outcomesPayloadQuery.data?.prices ?? []) {
-      if (a.current_price != null) map.set(a.id, Number(a.current_price))
+      const symbol = pricedAssets.get(a.id)
+      const picked = currentPriceFor(symbol ? closes?.get(symbol) : null, a.current_price)
+      if (picked) map.set(a.id, picked)
     }
     return map
-  }, [outcomesPayloadQuery.data?.prices])
+  }, [outcomesPayloadQuery.data?.prices, closesQuery.data, pricedAssets])
   const pricesQuery = { data: pricesData }
 
   const snapshotsData = useMemo(() => {
@@ -437,7 +510,10 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
   const rows: AccountabilityRow[] = useMemo(() => {
     const events = eventData
     const rationaleMap = rationalesQuery.data || new Map<string, RationaleInfo>()
-    const priceMap = pricesQuery.data || new Map<string, number>()
+    const prices = pricesQuery.data || new Map<string, CurrentPrice>()
+    /** The number every move is measured to, or null where none can be dated. */
+    const priceMap = { get: (id: string) => prices.get(id)?.price ?? null }
+    const priceAsOf = (id: string | null | undefined) => (id ? prices.get(id)?.asOf ?? null : null)
     const snapshotMap = snapshotsQuery.data || new Map<string, { price: number; at: string }>()
     const acceptedByDecision = acceptedTradesQuery.data?.byDecisionId
       || new Map<string, { id: string; acceptance_note: string | null; latest_note: string | null; note_count: number }>()
@@ -562,6 +638,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           decision_price_at: decisionPriceAt,
           has_decision_price: hasDecisionPrice,
           current_price: currentPrice,
+          current_price_as_of: priceAsOf(item.asset_id),
           execution_price: null,
           move_since_decision_pct: moveSinceDecision,
           move_since_execution_pct: null,
@@ -715,6 +792,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         decision_price_at: decisionPriceAt,
         has_decision_price: hasDecisionPrice,
         current_price: currentPrice,
+        current_price_as_of: priceAsOf(item.asset_id),
         execution_price: executionPrice,
         move_since_decision_pct: moveSinceDecision,
         move_since_execution_pct: moveSinceExecution,
@@ -802,6 +880,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           decision_price_at: null,
           has_decision_price: false,
           current_price: currentPrice,
+          current_price_as_of: priceAsOf(evt.asset_id),
           execution_price: execPrice,
           move_since_decision_pct: null,
           move_since_execution_pct: moveSinceExec,
@@ -856,6 +935,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         decision_price_at: snapshotForIdea?.at ?? null,
         has_decision_price: decisionPrice != null,
         current_price: currentPrice,
+        current_price_as_of: priceAsOf(assetId),
         execution_price: null,
         move_since_decision_pct: moveSinceDecision,
         move_since_execution_pct: null,
