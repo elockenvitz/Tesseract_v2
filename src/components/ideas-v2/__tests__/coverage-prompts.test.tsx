@@ -24,7 +24,7 @@ const env = vi.hoisted(() => ({
 
 vi.mock('../../../hooks/useDesktopIdeas', () => ({
   useIdeaScan: () => ({ ideas: env.scan, isLoading: false, error: null }),
-  useScanExposure: () => ({}),
+  useScanExposure: () => ({ exposure: {}, settled: true }),
   useScanFramework: () => ({}),
   useScanOpenPrice: () => ({}),
   useIdeaDetail: () => ({ detail: undefined, isLoading: false }),

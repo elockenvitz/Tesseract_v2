@@ -139,10 +139,20 @@ export function useScanExposure(ideas: IdeaRow[]) {
     [ideas],
   )
 
-  const { data } = useQuery<Record<string, ScanExposure>>({
+  const { data, isFetching } = useQuery<Record<string, ScanExposure>>({
     queryKey: ['desktop-ideas', 'exposure', ids.join('|')],
     enabled: ids.length > 0,
     staleTime: 5 * 60_000,
+    /*
+     * Keep the previous answer while a new id list is being fetched.
+     *
+     * Without this, every change to the scan's ids drops `data` to undefined,
+     * and since `weightPct` is a SORT input the gallery re-ranks to a
+     * weightless order and then back again. Exposure for a name does not
+     * change because a different name joined the list, so the old map is a
+     * correct partial answer for the names it covers.
+     */
+    placeholderData: prev => prev,
     queryFn: async () => {
       // There is no weight column on `portfolio_holdings`; weight is derived
       // against the book's own market value, in lib/portfolio/holdings. Two
@@ -210,7 +220,13 @@ export function useScanExposure(ideas: IdeaRow[]) {
     },
   })
 
-  return data ?? {}
+  /** `settled` is false until the first real answer for the CURRENT id list has
+   *  landed. The lens uses it to hold final geometry, because this map feeds
+   *  `scoreIdea` and therefore the rank that decides every tile's span. */
+  return {
+    exposure: data ?? {},
+    settled: ids.length === 0 || (data !== undefined && !isFetching),
+  }
 }
 
 /**
@@ -248,6 +264,22 @@ export function useScanFramework(ideas: IdeaRow[]) {
     queryKey: ['desktop-ideas', 'framework', ids.join('|'), currentOrgId],
     enabled: ids.length > 0 && !!currentOrgId,
     staleTime: 5 * 60_000,
+    /*
+     * The single worst visual event on this lens, and the reason for it.
+     *
+     * This key contains the joined ids of the RANKED list, and that list grows
+     * when coverage prompts append. A new key has no data, so `data` went
+     * `undefined` and the hook returned `{}` -- for EVERY tile at once. Each
+     * one lost its `frame`, so each one lost its visual kind, so every chart in
+     * the gallery unmounted, every tile collapsed to text, and the whole field
+     * sprang back a moment later when the refetch answered.
+     *
+     * A frame is per-asset and does not change because another asset joined the
+     * list. Keeping the previous map is therefore not stale data: it is the
+     * same answer for every name it covers, and names it does not cover simply
+     * have no frame yet -- which is exactly the state a new tile starts in.
+     */
+    placeholderData: prev => prev,
     queryFn: async () => {
       // The price floor is no longer "the last few sessions". A card wants to
       // say what the market has done SINCE THE IDEA WAS WRITTEN, so the window
@@ -380,6 +412,9 @@ export function useScanOpenPrice(ideas: IdeaRow[]) {
     queryKey: ['desktop-ideas', 'open-price', ids.join('|')],
     enabled: ids.length > 0,
     staleTime: 5 * 60_000,
+    // Same per-asset argument as exposure and framework above: a re-keyed list
+    // must not blank the prices every tile is already drawing.
+    placeholderData: prev => prev,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('decision_price_snapshots')

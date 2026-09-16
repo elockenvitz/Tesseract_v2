@@ -173,10 +173,14 @@ export function useResearchExposure(subjects: ResearchSubject[]) {
     () => [...new Set(subjects.map(s => s.assetId))].sort(),
     [subjects],
   )
-  const { data } = useQuery<Record<string, number>>({
+  const { data, isFetching } = useQuery<Record<string, number>>({
     queryKey: ['desktop-research', 'exposure', ids.join('|')],
     enabled: ids.length > 0,
     staleTime: 5 * 60_000,
+    // A weight is per-asset and does not change because another subject joined
+    // the scan, so the previous map stays correct for the names it covers.
+    // Dropping it re-sorted the gallery to a weightless order and back.
+    placeholderData: prev => prev,
     queryFn: async () => {
       // Every row of every book that holds one of these assets: a weight
       // cannot be computed from one position alone, because the denominator is
@@ -198,7 +202,13 @@ export function useResearchExposure(subjects: ResearchSubject[]) {
       return out
     },
   })
-  return data ?? {}
+  /** `settled` is false until the first real answer for the CURRENT id list has
+   *  landed. `weightPct` is a term in `scoreOf`, so it decides `compareSubjects`
+   *  order, and the order decides `sizeByRank(i, total)` for every tile. */
+  return {
+    exposure: data ?? {},
+    settled: ids.length === 0 || (data !== undefined && !isFetching),
+  }
 }
 
 export interface ResearchDetail {

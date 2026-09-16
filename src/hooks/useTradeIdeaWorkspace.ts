@@ -46,7 +46,7 @@ import type { ScoredFeedItem } from './ideas/types'
 export interface TradeIdeaWorkspace {
   idea: IdeaRow | null
   detail: ReturnType<typeof useIdeaDetail>['detail']
-  exposure: ReturnType<typeof useScanExposure>[string] | undefined
+  exposure: ReturnType<typeof useScanExposure>['exposure'][string] | undefined
 }
 
 export function useTradeIdeaWorkspace(item: ScoredFeedItem | null): TradeIdeaWorkspace {
@@ -58,7 +58,7 @@ export function useTradeIdeaWorkspace(item: ScoredFeedItem | null): TradeIdeaWor
    * re-key on every render.
    */
   const ideas = useMemo(() => (idea ? [idea] : []), [idea])
-  const exposureByAsset = useScanExposure(ideas)
+  const { exposure: exposureByAsset } = useScanExposure(ideas)
   const { detail } = useIdeaDetail(idea)
 
   return {

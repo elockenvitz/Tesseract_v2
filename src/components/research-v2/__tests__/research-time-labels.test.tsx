@@ -29,7 +29,7 @@ const env = vi.hoisted(() => ({
 vi.mock('../../../hooks/useCoverageResearchGaps', () => ({ useCoverageResearchGaps: () => env.gaps }))
 vi.mock('../../../hooks/useDesktopResearch', () => ({
   useResearchScan: () => ({ subjects: env.scan, isLoading: false }),
-  useResearchExposure: () => ({}),
+  useResearchExposure: () => ({ exposure: {}, settled: true }),
   useResearchDetail: () => ({ detail: env.detail, isLoading: false }),
 }))
 vi.mock('../../contributions', () => ({ ThesisContainer: () => null }))

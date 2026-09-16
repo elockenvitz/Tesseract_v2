@@ -79,7 +79,7 @@ const detailFor: string[] = []
 
 vi.mock('../../hooks/useDesktopIdeas', () => ({
   useIdeaScan: () => ({ ideas: scan, isLoading: false, error: null }),
-  useScanExposure: () => exposure,
+  useScanExposure: () => ({ exposure, settled: true }),
   useScanFramework: () => framework,
   useScanOpenPrice: () => openPrice,
   useIdeaDetail: (i: IdeaRow | null) => {

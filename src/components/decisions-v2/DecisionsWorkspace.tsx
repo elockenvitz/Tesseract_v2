@@ -72,7 +72,23 @@ export function DecisionsWorkspace({
    * and composes; it does not judge outcomes, because a second judgement is
    * how two surfaces come to disagree about one trade.
    */
-  const { factsFor, pnlForBatch } = useDecisionOutcomeFacts()
+  /*
+   * `factsLoading` is not optional information.
+   *
+   * These facts decide the CLASS of every decision -- executed, hurting,
+   * reviewed -- and the class is the first sort key, so it decides order, and
+   * the order decides `sizeByRecency(i)`, so it decides every tile's size
+   * band. It also decides membership: `selectForLens` truncates the `recent`
+   * class to its limit.
+   *
+   * Painting on the scan alone meant every record arrived as
+   * `NO_OUTCOME_FACTS`, and when the payload landed the whole gallery
+   * re-classified, re-sorted, dropped rows past the limit and resized every
+   * tile at once -- hero to compact, `2xl:col-span-6` to `2xl:col-span-3`.
+   * That is the single largest layout event on the Dashboard, and it happened
+   * on every cold load.
+   */
+  const { factsFor, pnlForBatch, isLoading: factsLoading } = useDecisionOutcomeFacts()
 
   const [portfolioId, setPortfolioId] = useState<string | null>(selectedPortfolioId ?? null)
   const [decisionId, setDecisionId] = useState<string | null>(selectedDecisionId ?? null)
@@ -197,7 +213,21 @@ export function DecisionsWorkspace({
     rail: rows.map(toRailCard),
   })
 
-  if (isLoading) return <Loading />
+  /*
+   * Hold for the facts as well as the scan.
+   *
+   * Everything below this line -- the count, the lens sentence, the "N older
+   * records" line, and every tile's class, order, membership and size -- is
+   * derived from `situations`, and `situations` is derived from `factsFor`.
+   * Painting before the payload lands is painting a gallery that is about to
+   * become a different gallery.
+   *
+   * This also removes a false empty state: `rows` comes from `situations`, so
+   * `!rows.length` was reachable with the payload still in flight, and the
+   * reader was told nothing was owed while the thing that decides what is owed
+   * had not answered.
+   */
+  if (isLoading || factsLoading) return <Loading />
 
   /*
    * A selected record renders before the empty check, always.

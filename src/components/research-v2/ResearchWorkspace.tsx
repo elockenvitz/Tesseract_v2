@@ -83,7 +83,7 @@ export function ResearchWorkspace({
   selectedAssetId, issue, origin, focusObjectId, intent,
 }: ResearchWorkspaceProps = {}) {
   const { subjects, isLoading } = useResearchScan()
-  const exposure = useResearchExposure(subjects)
+  const { exposure, settled: exposureSettled } = useResearchExposure(subjects)
   const [arrival, setArrival] = useState<Arrival | null>(
     selectedAssetId ? { issue, origin } : null,
   )
@@ -164,9 +164,27 @@ export function ResearchWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [ranked])
 
-  // With nothing on record yet, wait for the coverage work rather than
-  // announcing an empty lens that is about to fill.
-  if (isLoading || (!scanned.length && gaps.status === 'loading')) return <Loading />
+  /*
+   * Hold until everything that can change the ORDER has answered.
+   *
+   * `ranked` decides each tile's index and `ranked.length` its total, and
+   * `sizeByRank(i, total)` reads both -- so a late input does not merely
+   * reorder the gallery, it resizes every tile in it. Two inputs qualify:
+   * `exposure`, a term in `scoreOf` and therefore in `compareSubjects`, and
+   * the generated coverage subjects that `withCoverageSubjects` appends.
+   *
+   * The coverage gate is no longer conditional on `!scanned.length`. Waiting
+   * only when there was nothing on record meant a desk WITH research painted
+   * its real subjects, then re-sorted and re-sized all of them when the
+   * generated ones appended -- the more established the desk, the worse the
+   * jump.
+   */
+  if (isLoading) return <Loading />
+  if (!exposureSettled || gaps.status === 'loading') return <Loading />
+  /* A failed or org-less coverage scan is not an empty record. */
+  if (!ranked.length && !requested && (gaps.status === 'error' || gaps.status === 'no_org')) {
+    return <ScanUnavailable />
+  }
   if (!ranked.length && !requested) return <Empty />
 
   if (activeId) {
@@ -594,6 +612,27 @@ function NothingOnRecord({
 /** Sender names, shared with the arrival banner's vocabulary. */
 const ARRIVAL_ORIGIN: Record<string, string> = {
   today: 'Dashboard', portfolio: 'Portfolio', ideas: 'Ideas', decisions: 'Decisions',
+}
+
+/**
+ * The scan could not be read.
+ *
+ * "No recorded evidence yet" says the desk has written nothing down. A failed
+ * or org-less coverage scan says we could not find out, which is the opposite
+ * kind of news and must not be delivered as the reassuring one.
+ */
+function ScanUnavailable() {
+  return (
+    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
+      <h1 className="text-[21px] font-semibold tracking-tight">Research</h1>
+      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 px-6 py-16 text-center dark:border-amber-900/40 dark:bg-amber-950/20">
+        <h2 className="text-[17px] font-semibold">Research could not be loaded</h2>
+        <p className="mx-auto mt-1.5 max-w-[46ch] text-[12px] text-gray-600 dark:text-gray-400">
+          This is a failed read, not an empty record. Reload to try again.
+        </p>
+      </div>
+    </div>
+  )
 }
 
 function Empty() {

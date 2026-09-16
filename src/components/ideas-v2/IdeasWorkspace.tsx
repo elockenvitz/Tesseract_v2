@@ -83,7 +83,19 @@ export function IdeasWorkspace({
   selectedIdeaId, focus, issue, focusObjectId, intent,
 }: IdeasWorkspaceProps = {}) {
   const { ideas: scanned, isLoading } = useIdeaScan()
-  const { hasGraduated } = usePilotMode()
+  /*
+   * The cached hint, for the reason Decisions and the coverage source already
+   * use it.
+   *
+   * `hasGraduated` resolves `false` first while `pilot_progress` is in flight,
+   * so a graduated reader's seeded rows were KEPT on the first paint and
+   * removed on the second. That is a visible disappearance on its own, but the
+   * expensive part is downstream: the id list changes, and every query keyed on
+   * it -- exposure, open price, framework -- is re-keyed and re-fetched. It is
+   * what made the whole field blank on a cold load.
+   */
+  const { hasGraduated, cachedHasGraduated } = usePilotMode()
+  const graduated = hasGraduated || cachedHasGraduated
 
   /**
    * The pilot's seeded demo ideas leave the field once the pilot is over.
@@ -97,10 +109,10 @@ export function IdeasWorkspace({
    */
   const ideas = useMemo(
     () => operationalAfterPilot(
-      scanned.map(i => ({ ...i, pilotSeed: i.isPilotSeed })), { hasGraduated }),
-    [scanned, hasGraduated],
+      scanned.map(i => ({ ...i, pilotSeed: i.isPilotSeed })), { hasGraduated: graduated }),
+    [scanned, graduated],
   )
-  const exposure = useScanExposure(ideas)
+  const { exposure, settled: exposureSettled } = useScanExposure(ideas)
   const openPrice = useScanOpenPrice(ideas)
   const [arrival, setArrival] = useState<{ focus?: IdeaFocus | null; issue?: string | null } | null>(
     selectedIdeaId ? { focus, issue } : null,
@@ -209,10 +221,29 @@ export function IdeasWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [ranked])
 
+  /*
+   * Hold until everything that can change the ORDER has answered.
+   *
+   * `ranked` decides each tile's index, and `spanForRank(index)` turns that
+   * index into a column span -- so anything that reorders the list resizes the
+   * whole gallery. Two things can: `exposure`, which feeds `scoreIdea`'s
+   * materiality term, and the coverage `prompts` that append to the list.
+   * Painting before either settles means painting a gallery that is about to
+   * rearrange itself.
+   *
+   * Note what is NOT in this gate: framework, open price and the detail read.
+   * Those fill a tile's contents without touching its position or size, so
+   * they are free to land late -- which is the distinction between
+   * progressive filling and re-layout.
+   */
   if (isLoading) return <Loading />
-  // With nothing real, wait for the coverage scan rather than saying the lens
-  // is empty and then filling it a moment later.
-  if (!ranked.length && gaps.status === 'loading') return <Loading />
+  if (!exposureSettled || gaps.status === 'loading') return <Loading />
+  /* A failed or org-less coverage scan is not an empty lens. `status` is
+     'error' or 'no_org' here, and falling through to `Empty` told the reader
+     there were no open ideas when the truth is that we could not find out. */
+  if (!ranked.length && (gaps.status === 'error' || gaps.status === 'no_org')) {
+    return <ScanUnavailable />
+  }
   if (!ranked.length) return <Empty />
 
   if (selected) {
@@ -440,6 +471,28 @@ function Loading() {
         {[0, 1, 2, 3, 4, 5].map(i => (
           <div key={i} className="h-56 animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]" />
         ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The scan could not be read.
+ *
+ * Distinct from `Empty` on purpose. "No open ideas" is a claim about the
+ * desk -- that nobody has anything running -- and it is the best possible
+ * state. A failed or org-less coverage scan is the opposite, and rendering the
+ * good news over the failure is how a broken read goes unnoticed for weeks.
+ */
+function ScanUnavailable() {
+  return (
+    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
+      <h1 className="text-[19px] font-semibold tracking-tight">Ideas</h1>
+      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 px-6 py-16 text-center dark:border-amber-900/40 dark:bg-amber-950/20">
+        <h2 className="text-[17px] font-semibold">Ideas could not be loaded</h2>
+        <p className="mx-auto mt-1.5 max-w-[46ch] text-[12px] text-gray-600 dark:text-gray-400">
+          This is a failed read, not an empty desk. Reload to try again.
+        </p>
       </div>
     </div>
   )

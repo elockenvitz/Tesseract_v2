@@ -60,6 +60,9 @@ export interface PilotModeState {
    *  included (written only by usePilotMission — reaching Outcomes is not
    *  enough). The user then gets the full app experience. */
   hasGraduated: boolean
+  /** `hasGraduated`, falling back to the previous session's cached hint while
+   *  `pilot_progress` is still loading. For gates that must not flip. */
+  cachedHasGraduated: boolean
   /** Resolved per-feature access config. Defaults when not in pilot. */
   access: PilotAccessConfig
   /** Shortcut: is a given feature 'full' | 'preview' | 'hidden'? */
@@ -317,6 +320,12 @@ export function usePilotMode(): PilotModeState {
      *  switches to the full experience (full dashboard, all tabs,
      *  no banners). The org may still be pilot-flagged for audit. */
     hasGraduated,
+    /** `hasGraduated`, falling back to the previous session's hint while
+     *  `pilot_progress` is still in flight. Surfaces that filter pilot seed
+     *  rows need this rather than the raw value: `hasGraduated` resolves
+     *  `false` first, so seeded rows render and then vanish, and every query
+     *  keyed on the resulting id list is re-keyed and re-fetched. */
+    cachedHasGraduated,
     access,
     accessFor,
     canSee,

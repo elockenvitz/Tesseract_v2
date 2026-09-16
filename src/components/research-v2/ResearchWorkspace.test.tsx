@@ -34,7 +34,7 @@ const detailFor: string[] = []
 
 vi.mock('../../hooks/useDesktopResearch', () => ({
   useResearchScan: () => ({ subjects: scan, isLoading: false }),
-  useResearchExposure: () => exposure,
+  useResearchExposure: () => ({ exposure, settled: true }),
   useResearchDetail: (s: ResearchSubject | null) => {
     if (s) detailFor.push(s.assetId)
     return { detail: s ? detail : undefined, isLoading: false }

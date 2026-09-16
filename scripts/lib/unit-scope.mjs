@@ -162,6 +162,16 @@ export const GATED_DIRS = [
   // the Dashboard both read performance through.
   'src/lib/outcomes/__tests__',
   /*
+   * When each Dashboard lens is allowed to assign its final geometry.
+   *
+   * Every lens turns a ranked list into tile SIZES by index, so a late input
+   * that reorders the list resizes the whole gallery. These pin which inputs
+   * each lens holds for, and that a failed scan is never reported as an empty
+   * one. The lens directories themselves stay deferred; this is the rule they
+   * share, and it is cheap and fast.
+   */
+  'src/components/desktop/__tests__',
+  /*
    * Today's domain layer: tiering, adaptation, diversity, enrichment and the
    * time labels every tile reads from.
    *
