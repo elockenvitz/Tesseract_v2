@@ -46,6 +46,40 @@ describe('the canonical trade select', () => {
   })
 })
 
+/*
+ * `lab_variants` are hard-deleted immediately after a commit, so whatever
+ * reason was not copied onto the `accepted_trade` at that moment is gone for
+ * good. The bulk path collects a per-variant reason and a batch description
+ * from the Execute modal; the single-trade path sent neither, so the
+ * precedence in `buildAcceptedTradeInput` fell through to `v.notes || null`.
+ */
+describe('single execute records why', () => {
+  const page = src('pages/SimulationPage.tsx')
+  const single = page.slice(
+    page.indexOf('const executeTradeM = useMutation({'),
+    page.indexOf('// ── PM Action: Bulk'),
+  )
+
+  it('carries the idea case into the commit', () => {
+    expect(single).toContain('reasonsByVariantId: ideaCase ? { [variant.id]: ideaCase } : undefined')
+    expect(single).toContain("idea.thesis_text || idea.rationale")
+  })
+
+  /* The existing canonical field, by the existing precedence. A second store
+     for the same sentence is how two surfaces come to disagree. */
+  it('writes nowhere new', () => {
+    expect(single).not.toContain('acceptance_note:')
+    expect(single).not.toContain('.insert(')
+  })
+
+  it('leaves the precedence itself alone', () => {
+    const svc = src('lib/services/execute-sim-variants-service.ts')
+    const build = svc.slice(svc.indexOf('acceptance_note:'))
+    expect(build.slice(0, 200)).toContain('(reason && reason.trim())')
+    expect(build.slice(0, 200)).toContain('|| v.notes')
+  })
+})
+
 describe('the rationale log shows it, in order', () => {
   const log = src('components/trading/AcceptedTradesTable.tsx')
   const fn = log.slice(log.indexOf('export function TradeRationaleLog'))

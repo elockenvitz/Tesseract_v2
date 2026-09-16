@@ -48,7 +48,27 @@ export function evaluateProposalAwaiting(data: {
      * for rows where the two disagree -- NFLX currently has outcome NULL and
      * status 'cancelled'.
      */
-    const legacyTerminal = ['executed', 'rejected', 'cancelled', 'archived', 'deleted']
+    /*
+     * `approved` is terminal too, and was the one omission.
+     *
+     * `updatePortfolioTrackDecision` -- the writer behind the Ideas lens's
+     * Decide control -- sets `trade_queue_items.status` to
+     * 'approved' | 'cancelled' | 'rejected' once every portfolio track has
+     * landed, and deliberately leaves `stage` on 'deciding'. Of those three,
+     * only 'approved' was missing from this list, so an approved idea stayed
+     * on Today as "Awaiting your decision" for a decision that had been made.
+     *
+     * It has not bitten yet only by accident: every approved idea in
+     * production also carries `outcome = 'executed'`, written later by the
+     * Trade Lab execute path, and the `outcome != null` test above catches it.
+     * Approve an idea in Ideas and never take it to Trade Lab -- a perfectly
+     * ordinary thing to do -- and nothing clears it.
+     *
+     * Naming it here rather than rewriting Today: this list is already the
+     * place that says which states are finished, and the fix is that it was
+     * one short.
+     */
+    const legacyTerminal = ['approved', 'executed', 'rejected', 'cancelled', 'archived', 'deleted']
     if (
       idea.stage !== 'deciding'
       || idea.decision_outcome != null

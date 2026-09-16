@@ -172,6 +172,16 @@ export const GATED_DIRS = [
    */
   'src/components/desktop/__tests__',
   /*
+   * The decision engine's own rules: which states Today treats as finished,
+   * and the post-process rollups.
+   *
+   * Promoted from deferred because a terminal-state omission here is silent
+   * and durable -- an approved idea kept asking to be decided, and the only
+   * reason it never surfaced in production is that a different column happened
+   * to catch it. Three files, 42 tests, ~2s.
+   */
+  'src/engine/decisionEngine/__tests__',
+  /*
    * Today's domain layer: tiering, adaptation, diversity, enrichment and the
    * time labels every tile reads from.
    *
@@ -211,7 +221,7 @@ export const DEFERRED_DIRS = [
   'src/components/thoughts',
   'src/components/today',
   'src/engine/decisionEngine',
-  'src/engine/decisionEngine/__tests__',
+  // `src/engine/decisionEngine/__tests__` moved UP to the gated list.
   'src/features/assets/actionLoop',
   'src/hooks',
   'src/hooks/workflow',

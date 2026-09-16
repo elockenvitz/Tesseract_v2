@@ -1380,10 +1380,29 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       // three variant-source buckets (linked-DR / queue-item-no-DR / ad-hoc),
       // creates the trade_batch, and delegates holdings_source finalization
       // (paper auto-applies, live_feed stays pending) to createAcceptedTrade.
+      /*
+       * Carry the idea's own case into the commit.
+       *
+       * The bulk path collects a per-variant reason and a batch description
+       * from the Execute modal; the single-trade path sent neither, so
+       * `buildAcceptedTradeInput`'s precedence fell all the way through to
+       * `v.notes || null`. And `lab_variants` are hard-deleted moments later,
+       * so when the variant had no notes the reason for the trade was gone
+       * permanently -- Trade Book's own "Add rationale to explain this
+       * decision" nudge exists because of this hole.
+       *
+       * Nothing new is invented and nowhere new is written: this is the
+       * analyst's existing text, placed in the existing canonical field by the
+       * existing precedence. The thesis is preferred over the rationale for
+       * the same reason Trade Book prefers it -- the durable argument over the
+       * note about timing.
+       */
+      const ideaCase = (idea.thesis_text || idea.rationale || '').trim()
       const result = await executeSimVariants({
         variants: [variant],
         portfolioId: selectedPortfolioId,
         batchName: null,
+        reasonsByVariantId: ideaCase ? { [variant.id]: ideaCase } : undefined,
         context: {
           actorId: user.id,
           actorName: (user as any)?.first_name || user.email || 'PM',
