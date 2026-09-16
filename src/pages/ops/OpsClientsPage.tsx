@@ -109,7 +109,7 @@ export function OpsClientsPage() {
             sector: p.sector,
           }))
 
-          const { error: seedErr } = await supabase.rpc('seed_pilot_template_portfolio', {
+          const { data: seeded, error: seedErr } = await supabase.rpc('seed_pilot_template_portfolio', {
             p_org_id: data.organization_id,
             p_name: tpl.name,
             p_benchmark: tpl.benchmark,
@@ -120,6 +120,48 @@ export function OpsClientsPage() {
             // Non-fatal — the org still exists and can be managed. Surface the
             // error so the operator knows to re-run the seed if needed.
             console.warn('Template seed failed for new org:', seedErr)
+          }
+
+          /*
+           * The benchmark FILE, not just the label.
+           *
+           * `seed_pilot_template_portfolio` sets `portfolios.benchmark` and
+           * stops there, so every pilot book has carried a label pointing at
+           * nothing and zero rows in `portfolio_benchmark_weights`. Portfolio's
+           * benchmark comparison, Active Weight and the Trade Lab and Outcomes
+           * benchmark views all resolve through those rows, so all four had
+           * nothing to read.
+           *
+           * The RPC copies the newest canonical snapshot of the named index
+           * onto this portfolio; it invents no numbers, and writes nothing at
+           * all if no file for that index exists yet. Idempotent, so re-seeding
+           * an org is safe. Non-fatal for the same reason as the seed above —
+           * the nightly capture job now also targets portfolios by their
+           * declared benchmark, so a failure here self-heals.
+           */
+          const seededPortfolioId = (seeded as { portfolio_id?: string } | null)?.portfolio_id
+          // Read through a cast for the same reason: `data` types as `never`
+          // here, so every property access on it is an error in this file.
+          const seededOrgId = (data as { organization_id?: string } | null)?.organization_id
+          if (seededPortfolioId) {
+            // `as never` on both arguments for the same reason the seed call
+            // above needs it: these RPCs are not in the generated Supabase
+            // types, so the client types the name as a known-function union and
+            // the args as `undefined`. Casting here rather than regenerating
+            // keeps the repo type count flat.
+            const { data: benchRows, error: benchErr } = await supabase.rpc(
+              'seed_pilot_benchmark_weights' as never,
+              {
+                p_portfolio_id: seededPortfolioId,
+                p_org_id: seededOrgId,
+                p_index_name: tpl.benchmark,
+              } as never,
+            )
+            if (benchErr) {
+              console.warn('Benchmark seed failed for new org:', benchErr)
+            } else if (!benchRows) {
+              console.warn(`No ${tpl.benchmark} file to seed; nightly capture will fill it.`)
+            }
           }
         }
       }

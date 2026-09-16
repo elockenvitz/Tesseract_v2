@@ -206,7 +206,22 @@ const TECH_CONSUMER_GROWTH: TemplatePortfolio = {
   id: 'tpl-tech-consumer-growth',
   name: 'Tech & Consumer Growth',
   description: 'Growth portfolio focused on technology platforms, software, and consumer brands',
-  benchmark: 'NASDAQ 100',
+  /*
+   * The product's canonical index, and the only one it actually has.
+   *
+   * This said 'NASDAQ 100', which reads as a reasonable choice for a growth
+   * book and was not one: there is no NASDAQ 100 weights file anywhere in the
+   * system, so the benchmark could never resolve. Every pilot portfolio ever
+   * created from this template carries a label pointing at nothing, which is
+   * why all of them have zero rows in `portfolio_benchmark_weights`.
+   *
+   * `'S&P 500'` is the index the product models -- `index_name = 'S&P 500'`,
+   * `source = 'SPY'`, `source_type = 'etf_proxy'` -- with real constituent and
+   * weight history behind it. The SPY holdings file IS how this product
+   * represents the S&P 500 (see the provenance note in CLAUDE.md); it is not a
+   * proxy being substituted here.
+   */
+  benchmark: 'S&P 500',
   total_value: 60_000_000,
   positions: [
     // Mega-cap tech platforms ~25%
