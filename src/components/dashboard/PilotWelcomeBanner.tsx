@@ -110,13 +110,28 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
         return
       case 'simulation_completed':
         // The idea travels with the request, so the reader is never asked to
-        // remember which one they were working on.
+        // remember which one they were working on. The portfolio is resolved
+        // by Trade Lab itself — from the staged pilot scenario, and failing
+        // that from the pilot's own single portfolio — rather than guessed
+        // here, where a second definition of "the pilot's portfolio" would be
+        // the thing that eventually disagrees.
         onNavigate({ id: 'trade-lab', title: 'Trade Lab', type: 'trade-lab', data: { tradeQueueItemId: ideaId } })
         return
       case 'decision_submitted':
         // Stage 4 is Trade Book. (This opened the Idea Pipeline, from when the
         // decision was made there.)
-        onNavigate({ id: 'trade-book', title: 'Trade Book', type: 'trade-book', data: null })
+        //
+        // An explicit null highlight, not an absent one: `handleSearchResult`
+        // only merges a truthy `data`, so sending nothing left the tab holding
+        // whatever batch the Decision Recorded modal had put there and the page
+        // re-opened on that stale commit. Revisiting Trade Book should land
+        // where Trade Book normally lands.
+        onNavigate({
+          id: 'trade-book',
+          title: 'Trade Book',
+          type: 'trade-book',
+          data: { highlightTradeIds: null, highlightBatchId: null },
+        })
         return
       case 'outcome_reviewed':
         /*

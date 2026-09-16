@@ -77,7 +77,17 @@ export function PilotMissionStrip({ onNavigate }: { onNavigate?: (result: any) =
       case 'decision_submitted':
         // Stage 4 is Trade Book. (This opened the Idea Pipeline, from when the
         // decision was made there.)
-        onNavigate?.({ id: 'trade-book', title: 'Trade Book', type: 'trade-book', data: null })
+        //
+        // An explicit null highlight, not an absent one: the tab merge only
+        // applies a truthy `data`, so sending nothing left the tab holding the
+        // batch the Decision Recorded modal had put there, and revisiting
+        // re-opened that stale commit instead of landing normally.
+        onNavigate?.({
+          id: 'trade-book',
+          title: 'Trade Book',
+          type: 'trade-book',
+          data: { highlightTradeIds: null, highlightBatchId: null },
+        })
         return
       case 'outcome_reviewed':
         /* Navigate only. Pressing a button is not reviewing an outcome, and

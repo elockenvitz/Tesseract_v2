@@ -1145,7 +1145,25 @@ export function DashboardPage() {
       case 'trade-lab':
         return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} initialPortfolioId={activeTab.data?.portfolioId} shareId={activeTab.data?.shareId} />
       case 'trade-book':
-        return <TradeBookPage initialPortfolioId={activeTab.data?.portfolioId} highlightTradeIds={activeTab.data?.highlightTradeIds} highlightBatchId={activeTab.data?.highlightBatchId} />
+        return (
+          <TradeBookPage
+            initialPortfolioId={activeTab.data?.portfolioId}
+            highlightTradeIds={activeTab.data?.highlightTradeIds}
+            highlightBatchId={activeTab.data?.highlightBatchId}
+            /* One arrival, one highlight — the same rule Outcomes' focus id
+               follows. The ids otherwise stay on the tab and in its persisted
+               state, so every later visit re-opened whichever batch the
+               Decision Recorded modal last handed over. */
+            onHighlightConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'trade-book') return t
+              if (!t.data?.highlightTradeIds && !t.data?.highlightBatchId) return t
+              const data = { ...t.data }
+              delete data.highlightTradeIds
+              delete data.highlightBatchId
+              return { ...t, data }
+            }))}
+          />
+        )
       case 'asset-allocation':
         return <AssetAllocationPage />
       case 'tdf-list':

@@ -691,6 +691,26 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     }
   }, [pilotMode.isLoading, pilotMode.isPilot, portfolios, selectedPortfolioId, initialPortfolioId])
 
+  /*
+   * The pilot's own portfolio, when the scenario did not name one.
+   *
+   * The skip above is right about "a random portfolio", but it left a dead
+   * end: a pilot org with no staged scenario resolved no portfolio at all, so
+   * the mission said "add an idea, size it, and execute it" over an empty
+   * workbench with nothing selected and no way to proceed. "Exactly one
+   * visible portfolio" is not a guess — there is nothing else it could be —
+   * and the scenario effect above still wins whenever it has an answer.
+   */
+  useEffect(() => {
+    if (pilotMode.isLoading) return
+    if (!pilotMode.isPilot) return
+    if (selectedPortfolioId || initialPortfolioId) return
+    if (pilotScenario?.portfolio_id) return
+    if (portfolios?.length !== 1) return
+    const only = portfolios[0] as { id?: string } | undefined
+    if (only?.id) setSelectedPortfolioId(only.id)
+  }, [pilotMode.isLoading, pilotMode.isPilot, selectedPortfolioId, initialPortfolioId, pilotScenario?.portfolio_id, portfolios])
+
   // Update selectedPortfolioId when initialPortfolioId changes (e.g., when navigating from Trade Labs section)
   useEffect(() => {
     if (initialPortfolioId && initialPortfolioId !== selectedPortfolioId) {

@@ -63,9 +63,14 @@ interface TradeBookPageProps {
    *  arrives via the Decision Recorded modal we know exactly which batch
    *  they just committed; pre-selecting it skips a hunt-and-click. */
   highlightBatchId?: string
+  /** Called once the highlight has actually been applied, so the caller can
+   *  drop it from the tab. Without this the ids live on in the tab's persisted
+   *  state and every later visit to Trade Book re-opens the same old commit
+   *  instead of landing where Trade Book normally lands. */
+  onHighlightConsumed?: () => void
 }
 
-export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlightBatchId }: TradeBookPageProps = {}) {
+export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlightBatchId, onHighlightConsumed }: TradeBookPageProps = {}) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
 
@@ -116,6 +121,11 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
     lastHandledBatchHighlightRef.current = highlightBatchId
     setSelectedBatchId(highlightBatchId)
     setView('batches')
+    // Spent as soon as it has been applied. The selection is state from here
+    // on, so dropping the id from the tab changes nothing on screen — it only
+    // stops the next visit from re-opening this batch.
+    if (!highlightTradeIds || highlightTradeIds.length === 0) onHighlightConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightBatchId])
   // Transient "pre-fill the Trades view search with this string"
   // signal. Set ONLY by handleViewBatchTrades (explicit "Open in
@@ -279,9 +289,15 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
         el.classList.add('decision-recorded-flash')
         setTimeout(() => el.classList.remove('decision-recorded-flash'), 2600)
       }
+      // Spent. Told here rather than a moment earlier because dropping the ids
+      // re-runs this effect, and a cleanup firing before the 80ms tick would
+      // cancel the very scroll-and-flash this exists to do. The ring removals
+      // above are their own timers and outlive it.
+      onHighlightConsumed?.()
     }, 80)
 
     return () => clearTimeout(timeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightTradeIds, trades])
 
   // Staleness sweep: flag pending accepted_trades whose activity clock has
@@ -449,6 +465,16 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
   // unlocked) and has trades here. The banner and, on a phone, the batch's Next
   // steps card and Open Outcomes button all follow this.
   const showPilotBasics = pilotMode.effectiveIsPilot && hasUnlockedTradeBook && !!trades && trades.length > 0
+
+  /*
+   * Deliberately the Outcomes page, not a decision on it.
+   *
+   * `focusDecisionId` exists and would open the batch's decision directly, but
+   * the reader's own click on their row is what ticks step 1 of "Finish the
+   * loop" — `selectTrade` dispatches `pilot-outcomes:result-inspected`, and
+   * the focus path does not. Deep-linking here would open the decision under a
+   * banner still asking them to open it. See the note in the handoff test.
+   */
   const navigateToOutcomes = () => {
     window.dispatchEvent(
       new CustomEvent('decision-engine-action', {
