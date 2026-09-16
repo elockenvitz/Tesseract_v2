@@ -66,7 +66,8 @@ export function useDecisionScan(portfolioId: string | null) {
           requester:users!decision_requests_requested_by_fkey(first_name, last_name, email),
           trade_queue_items(id, asset_id, origin_metadata, assets(id, symbol, company_name)),
           accepted_trades!decision_requests_accepted_trade_id_fkey(
-            id, execution_status, execution_completed_at, executed_by, batch_id)
+            id, execution_status, execution_completed_at, executed_by, batch_id,
+            target_weight, delta_weight, notional_value)
         `)
         .eq('portfolios.organization_id', currentOrgId!)
         .order('reviewed_at', { ascending: false, nullsFirst: false })
@@ -92,7 +93,7 @@ export function useDecisionScan(portfolioId: string | null) {
       const unlinked = rows.filter(r => !r.accepted_trades && needsExecutionFallback(r))
       if (unlinked.length) {
         const { data: trades } = await supabase.from('accepted_trades')
-          .select('id, decision_request_id, portfolio_id, is_active, corrects_accepted_trade_id, execution_status, execution_completed_at, executed_by, batch_id')
+          .select('id, decision_request_id, portfolio_id, is_active, corrects_accepted_trade_id, execution_status, execution_completed_at, executed_by, batch_id, target_weight, delta_weight, notional_value')
           .in('decision_request_id', unlinked.map(r => r.id))
           .in('portfolio_id', [...new Set(unlinked.map(r => r.portfolio_id))])
         for (const r of unlinked) {
@@ -189,6 +190,10 @@ export function useDecisionScan(portfolioId: string | null) {
                 status: exec.execution_status ?? null,
                 completedAt: exec.execution_completed_at ?? null,
                 executedByName: exec.executed_by ? (executorNames.get(exec.executed_by) ?? null) : null,
+                // The committed trade's own figures, as recorded.
+                targetWeight: num(exec.target_weight),
+                deltaWeight: num(exec.delta_weight),
+                notional: num(exec.notional_value),
               }
             : null,
 

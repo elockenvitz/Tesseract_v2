@@ -27,7 +27,7 @@ import {
   useDecisionOutcomeFacts,
 } from '../../hooks/useDesktopDecisions'
 import {
-  outcomeOf, OUTCOME_LABEL, provenanceOf, workOf,
+  outcomeOf, OUTCOME_LABEL, provenanceOf, workOf, daysSince,
   hasHumanReason, RESOLVED,
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
@@ -49,7 +49,7 @@ import { EYEBROW } from '../desktop/DesktopModule'
 import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
-import { OUTCOME_INK, DecisionSize, DecisionPath, RecordGaps } from './DecisionVisual'
+import { OUTCOME_INK, DecisionSize, RecordGaps } from './DecisionVisual'
 
 export interface DecisionsWorkspaceProps {
   selectedPortfolioId?: string | null
@@ -623,6 +623,49 @@ function DecisionTile({
       )}
 
       {/*
+        Where and when, on one line under the name.
+
+        A single-trade batch says its batch name HERE rather than as the card's
+        identity: the trade is the thing, and titling the card "1 buy ·
+        09/15/2026" buried the ticker under a filename. A multi-leg batch is
+        the thing, and its legs carry the tickers below.
+      */}
+      {/* The date is in the eyebrow and the people are in the footer; this
+          line carries what neither does. */}
+      <p data-testid="decision-context" className="text-[11px] text-gray-500">
+        {[
+          d.portfolioName,
+          !batched && situation.batch?.name ? `committed in ${situation.batch.name}` : null,
+        ].filter(Boolean).join(' · ')}
+      </p>
+
+      {/*
+        What was actually committed, in the trade's own recorded figures.
+
+        `accepted_trades` stores the weight the book was taken to, the change
+        that made and the cash it moved. Where nothing was executed, what was
+        ASKED for is the only quantity there is, and it says so.
+      */}
+      {(() => {
+        const e = d.execution
+        const parts = [
+          e?.targetWeight != null ? `${e.targetWeight.toFixed(1)}% target` : null,
+          e?.deltaWeight != null ? `${e.deltaWeight >= 0 ? '+' : ''}${e.deltaWeight.toFixed(2)}% change` : null,
+          e?.notional != null ? formatCompactDollars(Math.abs(e.notional)) : null,
+        ].filter(Boolean)
+        if (!parts.length && d.sizingWeight != null) {
+          parts.push(`${d.sizingWeight.toFixed(1)}% asked for`)
+          if (d.baselineWeight != null) parts.push(`from ${d.baselineWeight.toFixed(1)}%`)
+        }
+        if (!parts.length) return null
+        return (
+          <p data-testid="decision-committed" className="font-mono text-[12px] tabular-nums text-gray-800 dark:text-gray-200">
+            {parts.join(' · ')}
+          </p>
+        )
+      })()}
+
+      {/*
         The legs, named. The act asks its question once, and the reader can
         still see exactly which trades it covers -- number, names, and their
         direction. Nothing is summarised away.
@@ -726,7 +769,20 @@ function DecisionTile({
         in the other field. The legs list already names them; a reader who
         wants one leg's ask opens that leg.
       */}
-      {batched ? null : humanReason ? (
+      {/*
+        The reasoning itself, not a note that some exists.
+
+        A card that says "reason recorded" makes a reader open it to find out
+        what the reason WAS -- which is the whole content of the decision. A
+        lone trade quotes its own note; where the act was committed as a batch
+        of one, the batch's sentence is that trade's reason and is quoted the
+        same way. A multi-leg batch keeps its description above the legs,
+        because there it explains several names at once.
+      */}
+      {!batched && !humanReason && situation.batch?.description
+        && provenanceOf(situation.batch.description) === 'human' ? (
+        <TileQuote size={size}>{situation.batch.description}</TileQuote>
+      ) : batched ? null : humanReason ? (
         <TileQuote size={size}>{humanReason}</TileQuote>
       ) : proposedReason ? (
         <div>
@@ -785,33 +841,27 @@ function DecisionTile({
             compact={size === 'compact'}
           />
         </div>
-      ) : d.sizingWeight != null ? (
+      ) : outcome === 'open' && d.sizingWeight != null && d.baselineWeight != null ? (
+        /*
+          The rail earns its space only where it draws a real change.
+
+          `from → to` on an undecided request is the question itself: what the
+          book holds against what is being asked for. Everywhere else it was a
+          wide band restating one number the line above already carries -- and
+          on a committed decision the figures are what was actually executed,
+          which the rail cannot draw. Those cards are denser for its absence.
+        */
         <div className="mt-1">
           <DecisionSize
             from={d.baselineWeight}
             to={d.sizingWeight}
             requestedAt={d.requestedAt}
             decidedAt={d.decidedAt}
-            open={outcome === 'open'}
+            open
             compact={size === 'compact'}
           />
         </div>
-      ) : (
-        /*
-          No size was asked for, so there is no quantity to draw -- but the
-          wait is a fact and it is the whole complaint on a card nobody has
-          answered. The lifecycle draws it, and draws the execution legs too
-          where the record has them.
-        */
-        <div className="mt-1">
-          <DecisionPath
-            requestedAt={d.requestedAt}
-            decidedAt={d.decidedAt}
-            executedAt={d.execution?.completedAt ?? null}
-            resolved={outcome !== 'open'}
-          />
-        </div>
-      )}
+      ) : null}
 
       {/*
         Enough of what happened to answer "does this deserve another look?".
@@ -859,9 +909,16 @@ function DecisionTile({
             "Needs rationale" beside a bare "Reason recorded" read as a
             contradiction when it is two records.
           */}
-          <span className="text-[11px] text-gray-500">
-            {hasHumanReason(d) ? 'Decision reason recorded' : 'No decision reason'}
-          </span>
+          {/* The reasoning is quoted above where it exists, so this only
+              speaks up when there is none. */}
+          {!hasHumanReason(d) && (
+            <span className="text-[11px] text-amber-700 dark:text-amber-500">No decision reason</span>
+          )}
+          {/* How long it has been standing, which is half of "does this
+              deserve another look?". */}
+          {when && daysSince(when) != null && (
+            <span className="text-[11px] text-gray-500">{daysSince(when)}d ago</span>
+          )}
         </div>
       )}
 
@@ -891,7 +948,7 @@ function DecisionTile({
       )}
 
       <TileMeta>
-        <span className="font-medium text-gray-600 dark:text-gray-400">{d.portfolioName ?? '—'}</span>
+        {/* The book is named once, on the context line above. */}
         {d.decidedByName && <span>{d.decidedByName}</span>}
         {/* One idea decided in several books is a fact about the desk, not
             about this row -- and it is the reason two near-identical tiles are

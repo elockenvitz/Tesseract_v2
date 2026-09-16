@@ -599,8 +599,11 @@ describe('what happened, in Outcomes’ own numbers', () => {
     // The class already says the outcome is unreviewed; the strip says which
     // record carries a reason, so the two are not read as one contradiction.
     expect(screen.getByTestId('decision-reason')).toHaveTextContent('Outcome not reviewed')
-    expect(strip).toHaveTextContent('Decision reason recorded')
+    expect(strip).toHaveTextContent('2d ago')
     expect(strip.textContent).not.toContain('Needs rationale')
+    // The reasoning itself, not a note that some exists.
+    expect(screen.getByTestId('decision-tile')).toHaveTextContent('Added on the cloud reacceleration.')
+    expect(strip.textContent).not.toContain('No decision reason')
   })
 
   it('says nothing where Outcomes knows nothing', () => {
@@ -629,6 +632,82 @@ describe('what happened, in Outcomes’ own numbers', () => {
     const strip = within(tiles[0]).getByTestId('decision-outcome')
     expect(strip).toHaveTextContent('+$900 P&L')
     expect(strip.textContent).not.toMatch(/since decision|%/)
+  })
+})
+
+describe('the card answers what we decided and what happened', () => {
+  const executed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', companyName: 'Microsoft', status: 'accepted',
+    portfolioName: 'Tech & Consumer Growth', decidedAt: daysAgo(2),
+    sizingWeight: 6.4, baselineWeight: 6.1, decisionNote: 'Added on the cloud reacceleration.',
+    batch: { id: 'b-1', name: '1 buy · 09/15/2026', description: null },
+    execution: {
+      id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric',
+      targetWeight: 6.39, deltaWeight: 0.25, notional: 84186.48,
+    },
+    ...over,
+  })
+
+  it('leads with the trade, then what was committed, then the reasoning', () => {
+    decisions = [executed()]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, sincePct: -0.8, pnl: -670 } }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // The ticker is the identity; a one-trade batch's name is context, not a title.
+    expect(within(tile).getByText('MSFT')).toBeInTheDocument()
+    // The book and the act it was committed in, each said once: the date is
+    // in the eyebrow and the people are in the footer.
+    const context = within(tile).getByTestId('decision-context').textContent ?? ''
+    expect(context).toContain('Tech & Consumer Growth')
+    expect(context).toContain('committed in 1 buy · 09/15/2026')
+    expect(tile.textContent!.match(/Tech & Consumer Growth/g)).toHaveLength(1)
+    // What was actually committed, in the trade's own recorded figures.
+    expect(within(tile).getByTestId('decision-committed'))
+      .toHaveTextContent('6.4% target · +0.25% change · $84K')
+    expect(tile).toHaveTextContent('Added on the cloud reacceleration.')
+  })
+
+  it('quotes a one-trade batch’s own sentence as that trade’s reason', () => {
+    decisions = [executed({
+      decisionNote: null,
+      batch: { id: 'b-1', name: '1 buy', description: 'Rotated into quality on the print.' },
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-tile')).toHaveTextContent('Rotated into quality on the print.')
+  })
+
+  it('drops the sizing rail where it would only restate a number', () => {
+    decisions = [executed()]
+    render(<DecisionsWorkspace />)
+    // The committed figures are on the line above; the rail drew the ASK,
+    // which on a committed decision is neither current nor target.
+    expect(screen.queryByTestId('decision-size')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('decision-path')).not.toBeInTheDocument()
+  })
+
+  it('keeps the rail where it draws a real change: an undecided request', () => {
+    decisions = [executed({
+      id: 'open', ideaId: 'tq-open', status: 'pending', decidedAt: null, decidedBy: null,
+      decidedByName: null, requestedAt: daysAgo(4), execution: null, batch: null,
+    })]
+    render(<DecisionsWorkspace />)
+    // 6.1% held against 6.4% asked for: the question itself, and the one
+    // place the rail says something the lines above cannot.
+    expect(screen.getByTestId('decision-size')).toBeInTheDocument()
+  })
+
+  it('keeps the batch as the container when several trades were committed together', () => {
+    const b = { id: 'b-2', name: '3 trades · 09/15/2026', description: 'Rotated into staples.' }
+    decisions = [
+      executed({ id: 'l1', ideaId: 'tq-l1', symbol: 'AAA', batch: b, decisionNote: null }),
+      executed({ id: 'l2', ideaId: 'tq-l2', symbol: 'BBB', batch: b, decisionNote: null }),
+    ]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    expect(within(tile).getByText('3 trades · 09/15/2026')).toBeInTheDocument()
+    expect(within(tile).getByTestId('batch-legs')).toHaveTextContent('AAA')
+    expect(within(tile).getByTestId('batch-legs')).toHaveTextContent('BBB')
+    expect(within(tile).getByTestId('batch-description')).toHaveTextContent('Rotated into staples.')
   })
 })
 

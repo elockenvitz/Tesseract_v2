@@ -116,6 +116,16 @@ export interface DecisionRecord {
     status: string | null
     completedAt: string | null
     executedByName: string | null
+    /**
+     * What was actually committed, as `accepted_trades` recorded it: the
+     * weight the book was taken to, the change that made, and the cash it
+     * moved. Durable at commit time and read, never derived -- this is the
+     * decision as executed, which is what "what did we decide" means once
+     * something has been.
+     */
+    targetWeight?: number | null
+    deltaWeight?: number | null
+    notional?: number | null
   } | null
 
   /**
