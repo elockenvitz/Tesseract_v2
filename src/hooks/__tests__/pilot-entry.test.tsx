@@ -255,13 +255,17 @@ describe('adopting a just-captured idea', () => {
 describe('recording the tutorial idea does not wait on the server', () => {
   const progress = src('hooks/usePilotProgress.ts')
 
-  /** The module reads this id to decide step one. */
+  /** The module reads this id to decide step one. The behaviour this pins —
+   *  the id is readable before the row is written, and a failed write takes it
+   *  back — is exercised end to end in pilot-progress-concurrent-marks. */
   it('writes the cache before the round trip, and rolls back on failure', () => {
     const fn = progress.slice(progress.indexOf('const setTutorialIdea'))
-    const optimistic = fn.indexOf("queryClient.setQueryData(['pilot-progress', user.id], nextProgress)")
-    const update = fn.indexOf('.update({ pilot_progress: nextProgress }')
+    const optimistic = fn.indexOf("queryClient.setQueryData<PilotProgress>(['pilot-progress', user.id]")
+    const write = fn.indexOf('enqueueProgressWrite(')
     expect(optimistic).toBeGreaterThan(-1)
-    expect(optimistic).toBeLessThan(update)
-    expect(fn).toContain('if (previous !== undefined) queryClient.setQueryData')
+    expect(optimistic).toBeLessThan(write)
+    // Rollback drops this one key rather than restoring a whole snapshot,
+    // which would undo any sibling key written while this was in flight.
+    expect(fn).toContain('delete rest[key]')
   })
 })

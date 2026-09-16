@@ -30,7 +30,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import * as Sentry from '@sentry/react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
@@ -142,6 +142,61 @@ const stageToKey = (stage: PilotStage, orgId: string | null): string => {
 const cachedGraduatedKey = (userId: string, orgId: string | null) =>
   `pilot_graduated_${userId}_${orgId || 'no-org'}`
 
+/*
+ * `pilot_progress` is one JSONB column, and every writer here writes the WHOLE
+ * column. That is only safe if two writers can never be in flight at once with
+ * two different pictures of what the column contains — and until now they
+ * could, because each of the five components holding this hook had its own
+ * in-flight ref and its own render-time snapshot.
+ *
+ * The concrete loss: "Open Outcomes" marks `tradebook_basics_completed` and,
+ * in the same tick, a dispatched event marks `outcomes_unlocked`, from two
+ * different hook instances. Each built the full object from its own snapshot
+ * containing only its own new key. Whichever round trip landed second erased
+ * the other key — mission stage 4 reverting, or Outcomes re-locking under a
+ * reader who was already standing on it. The same shape wiped `graduated_at`
+ * when `tutorial_outcome_reviewed` resolved after the graduation write.
+ *
+ * So both pieces of state below hang off the QueryClient rather than off the
+ * hook, which is the lifetime that actually matches: one per app, shared by
+ * every component, gone when the app is.
+ *
+ *   inFlight — dedupe a burst across components, not just within one.
+ *   chain    — one write at a time, in order. Each write reads the freshest
+ *              progress when it RUNS rather than when it was queued, so a write
+ *              queued behind another carries that one's key forward instead of
+ *              writing it back out of existence.
+ *
+ * This closes the races inside a tab. Two tabs, or two devices, still race —
+ * that needs a `pilot_progress || jsonb_build_object(...)` merge server-side,
+ * which is a schema change and deliberately out of scope here.
+ */
+interface ProgressWriteState {
+  inFlight: Set<string>
+  chain: Promise<unknown>
+}
+const progressWrites = new WeakMap<QueryClient, ProgressWriteState>()
+
+function writeStateFor(client: QueryClient): ProgressWriteState {
+  let state = progressWrites.get(client)
+  if (!state) {
+    state = { inFlight: new Set(), chain: Promise.resolve() }
+    progressWrites.set(client, state)
+  }
+  return state
+}
+
+function enqueueProgressWrite<T>(client: QueryClient, run: () => Promise<T>): Promise<T> {
+  const state = writeStateFor(client)
+  // Chain on settle, not on success — one failed write must not stall the rest.
+  const next = state.chain.then(run, run)
+  state.chain = next.then(
+    () => undefined,
+    () => undefined,
+  )
+  return next
+}
+
 const STAGE_TO_EVENT: Record<PilotStage, string> = {
   trade_book_unlocked: 'pilot_trade_book_unlocked',
   outcomes_unlocked: 'pilot_outcomes_unlocked',
@@ -203,56 +258,84 @@ export function usePilotProgress() {
     ...(query.data ?? {}),
   }
 
-  // Per-stage write tracker. Once we've kicked off a DB write for a
-  // (stage, org) pair in this session, every subsequent mutate() for
-  // the same key bails before issuing another network request — this
-  // is what dedupes a burst of useEffect re-fires (the original cause
-  // of the 10K-row pileup in pilot_telemetry_events). The set is
-  // checked synchronously, so even concurrent in-flight calls in the
-  // same microtask coordinate correctly.
-  //
-  // We can't dedupe by reading the cache anymore, because `onMutate`
-  // below sets the cache optimistically BEFORE this mutationFn runs.
-  // The previous version checked `queryClient.getQueryData(...)` here
-  // and so always bailed — onMutate flipped the cache, mutationFn saw
-  // the key, returned without writing, and the DB never got the
-  // unlock timestamp. That manifested downstream as per-org pilot
-  // flags vanishing on the next hard refresh (graduated_at_<orgId>,
-  // trade_book_unlocked_at_<orgId>, etc.).
-  const writeInFlightRef = useRef<Set<string>>(new Set())
+  /**
+   * The freshest picture of the column, read at WRITE time rather than render
+   * time: the live cache (which already carries every optimistic flip made in
+   * this tick, including ones from other components) over the auth snapshot.
+   */
+  const readLatestProgress = useCallback((): PilotProgress => {
+    const cached = user?.id
+      ? queryClient.getQueryData<PilotProgress>(['pilot-progress', user.id])
+      : undefined
+    return { ...(userPilotProgress ?? {}), ...(cached ?? {}) }
+  }, [user?.id, queryClient, userPilotProgress])
+
+  /** Write the whole column, then reconcile the cache by MERGING rather than
+   *  replacing — a sibling write that landed while this one was in flight keeps
+   *  its key instead of being clobbered by this writer's older picture. */
+  const userId = user?.id
+  const commitProgress = useCallback(
+    async (nextProgress: PilotProgress) => {
+      if (!userId) return
+      const { error } = await supabase
+        .from('users')
+        .update({ pilot_progress: nextProgress } as never)
+        .eq('id', userId)
+      if (error) throw error
+      queryClient.setQueryData<PilotProgress>(['pilot-progress', userId], (old) => ({
+        ...(old ?? {}),
+        ...nextProgress,
+      }))
+    },
+    [userId, queryClient],
+  )
 
   const markStage = useMutation({
     mutationFn: async (stage: PilotStage) => {
       if (!user?.id) return
       // All three stages are per-org (see file header).
       const key = stageToKey(stage, currentOrgId)
-      // Burst dedup — see writeInFlightRef comment above.
-      if (writeInFlightRef.current.has(key)) return
+      // Burst dedup, now across components — see the module comment above.
+      // Once we've kicked off a DB write for a (user, stage, org) triple in
+      // this session, every subsequent mutate() for it bails before issuing
+      // another request. This is what stops a burst of useEffect re-fires (the
+      // original cause of the 10K-row pileup in pilot_telemetry_events).
+      const guard = `${user.id}:${key}`
+      const { inFlight } = writeStateFor(queryClient)
+      if (inFlight.has(guard)) return
       // Closure-captured `progress` is the snapshot at this render,
       // BEFORE onMutate ran. If the key was already set then, this
-      // call is a re-fire of an already-completed mark — skip.
+      // call is a re-fire of an already-completed mark — skip. We can't
+      // ask the cache instead: onMutate has already flipped the key there.
       if (progress[key]) return
-      writeInFlightRef.current.add(key)
+      inFlight.add(guard)
 
-      const nextProgress: PilotProgress = { ...progress, [key]: new Date().toISOString() }
-      try {
-        const { error } = await supabase
-          .from('users')
-          .update({ pilot_progress: nextProgress })
-          .eq('id', user.id)
-        if (error) throw error
-      } catch (err) {
-        // Allow retry on failure — keeping the ref locked here would
-        // leave the user stuck if the first attempt errored.
-        writeInFlightRef.current.delete(key)
-        throw err
-      }
-      // Return the writer's stage so onSuccess can log telemetry exactly
-      // once per real first-time unlock. (mutationFn used to call
-      // logPilotEvent directly, which fired for every duplicate burst
-      // call because the idempotency guard above was bypassed by stale
-      // closures — see the dup-burst comment.)
-      return { nextProgress, stage }
+      return enqueueProgressWrite(queryClient, async () => {
+        // Built here, inside the queue, from whatever the column looks like
+        // NOW — so a mark that was queued behind a sibling carries the
+        // sibling's key forward instead of writing it back out of existence.
+        // Reuse the optimistic timestamp when onMutate already set one, so the
+        // cache and the row agree to the millisecond.
+        const base = readLatestProgress()
+        const nextProgress: PilotProgress = {
+          ...base,
+          [key]: base[key] ?? new Date().toISOString(),
+        }
+        try {
+          await commitProgress(nextProgress)
+        } catch (err) {
+          // Allow retry on failure — keeping the guard locked here would
+          // leave the user stuck if the first attempt errored.
+          inFlight.delete(guard)
+          throw err
+        }
+        // Return the writer's stage so onSuccess can log telemetry exactly
+        // once per real first-time unlock. (mutationFn used to call
+        // logPilotEvent directly, which fired for every duplicate burst
+        // call because the idempotency guard above was bypassed by stale
+        // closures — see the dup-burst comment.)
+        return { stage }
+      })
     },
     // Optimistic update: flip the unlock flag in cache immediately so
     // dependent gates (pilot access map → Outcomes 'preview' vs 'full',
@@ -274,15 +357,24 @@ export function usePilotProgress() {
       if (!user?.id) return
       const key = stageToKey(stage, currentOrgId)
       if (progress[key]) return  // No-op — already marked
-      const previous = queryClient.getQueryData<PilotProgress>(['pilot-progress', user.id])
-      const optimistic: PilotProgress = { ...(previous ?? progress), [key]: new Date().toISOString() }
-      queryClient.setQueryData(['pilot-progress', user.id], optimistic)
-      return { previous }
+      queryClient.setQueryData<PilotProgress>(['pilot-progress', user.id], (old) => ({
+        ...(old ?? progress),
+        [key]: new Date().toISOString(),
+      }))
+      // Hand the key, not a snapshot of the whole object, to onError: rolling
+      // back by restoring a `previous` blob would undo any sibling key written
+      // between the flip and the failure.
+      return { rollbackKey: key }
     },
     onError: (error, stage, context) => {
-      // Roll back the optimistic flip if the DB write fails.
-      if (context?.previous !== undefined && user?.id) {
-        queryClient.setQueryData(['pilot-progress', user.id], context.previous)
+      // Roll back the optimistic flip if the DB write fails — this key only.
+      if (context?.rollbackKey && user?.id) {
+        queryClient.setQueryData<PilotProgress>(['pilot-progress', user.id], (old) => {
+          if (!old) return old
+          const rest = { ...old }
+          delete rest[context.rollbackKey]
+          return rest
+        })
       }
       // Surface the failure to Sentry — Daniel hit a case where his
       // accepted_trade landed but trade_book_unlocked never marked,
@@ -298,9 +390,11 @@ export function usePilotProgress() {
       })
     },
     onSuccess: (result) => {
-      if (result?.nextProgress) {
-        queryClient.setQueryData(['pilot-progress', user?.id], result.nextProgress)
-      }
+      // The cache reconcile now happens inside commitProgress, as a merge,
+      // the moment the row is written. Replacing the whole object here was
+      // the second half of the clobber: a writer whose picture predated a
+      // sibling's key wrote that picture back over the cache even when the
+      // row itself was fine.
       if (result?.stage) {
         // Telemetry is logged here (not in mutationFn) so it only fires
         // when mutationFn actually wrote to the DB — duplicate-burst
@@ -326,10 +420,21 @@ export function usePilotProgress() {
     },
   })
 
-  /** Stable callback — safe to pass into useEffect deps. */
+  /**
+   * Stable callback — safe to pass into useEffect deps, and now actually true.
+   *
+   * It used to close over `markStage`, which useMutation recreates every
+   * render, so every effect listing `mark` in its deps re-ran on every render —
+   * four self-heal effects across usePilotMode, PilotOutcomesPreview,
+   * PilotTradeBookPreview and PilotOutcomesGetStarted. They are all ref-bounded
+   * so nothing fired twice, but they were re-evaluating continuously. Reading
+   * `mutate` through a ref keeps the identity fixed for the life of the hook.
+   */
+  const mutateRef = useRef(markStage.mutate)
+  mutateRef.current = markStage.mutate
   const mark = useCallback((stage: PilotStage) => {
-    markStage.mutate(stage)
-  }, [markStage])
+    mutateRef.current(stage)
+  }, [])
 
   /**
    * The one pilot key that stores a VALUE rather than a timestamp.
@@ -349,11 +454,10 @@ export function usePilotProgress() {
     if (!user?.id || !ideaId) return
     const key = tutorialIdeaKey(currentOrgId)
     if (progress[key]) return
-    if (writeInFlightRef.current.has(key)) return
-    writeInFlightRef.current.add(key)
-
-    const previous = queryClient.getQueryData<PilotProgress>(['pilot-progress', user.id])
-    const nextProgress: PilotProgress = { ...progress, [key]: ideaId }
+    const guard = `${user.id}:${key}`
+    const { inFlight } = writeStateFor(queryClient)
+    if (inFlight.has(guard)) return
+    inFlight.add(guard)
 
     /*
      * Optimistic, for exactly the reason `markStage` above is.
@@ -362,25 +466,34 @@ export function usePilotProgress() {
      * which idea the remaining four are about. Writing the cache only AFTER
      * the round trip meant a pilot who had just captured their first idea
      * watched the module still say nothing had happened, for as long as the
-     * update took. The reconcile below is authoritative and the catch rolls
-     * back, so nothing is claimed that does not end up true.
+     * update took. The commit below is authoritative and the catch rolls back
+     * this key, so nothing is claimed that does not end up true.
      */
-    queryClient.setQueryData(['pilot-progress', user.id], nextProgress)
+    queryClient.setQueryData<PilotProgress>(['pilot-progress', user.id], (old) => ({
+      ...(old ?? progress),
+      [key]: ideaId,
+    }))
 
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({ pilot_progress: nextProgress } as never)
-        .eq('id', user.id)
-      if (error) throw error
-      queryClient.setQueryData(['pilot-progress', user.id], nextProgress)
+      // Through the same queue as the stage marks, for the same reason: this
+      // writes the whole column too, and a capture can land in the same tick
+      // as a mark.
+      await enqueueProgressWrite(queryClient, async () => {
+        const base = readLatestProgress()
+        await commitProgress({ ...base, [key]: ideaId })
+      })
       logPilotEvent({ eventType: 'pilot_mission_idea_created', organizationId: currentOrgId })
     } catch (err) {
-      writeInFlightRef.current.delete(key)
-      if (previous !== undefined) queryClient.setQueryData(['pilot-progress', user.id], previous)
+      inFlight.delete(guard)
+      queryClient.setQueryData<PilotProgress>(['pilot-progress', user.id], (old) => {
+        if (!old) return old
+        const rest = { ...old }
+        delete rest[key]
+        return rest
+      })
       Sentry.captureException(err)
     }
-  }, [user?.id, currentOrgId, progress, queryClient])
+  }, [user?.id, currentOrgId, progress, queryClient, readLatestProgress, commitProgress])
 
   const hasGraduated = !!progress[graduatedKey(currentOrgId)]
 
