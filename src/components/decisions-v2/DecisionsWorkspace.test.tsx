@@ -40,6 +40,8 @@ const priceSeries = (days: number, rising: boolean) =>
   }))
 
 let decisions: DecisionRecord[] = []
+/** Whether the pilot has ended, for the seeded-record rule. */
+const pilot = vi.hoisted(() => ({ graduated: false }))
 let detail: any = {}
 let scanError: Error | null = null
 const detailRequestedFor: string[] = []
@@ -57,6 +59,17 @@ vi.mock('../../hooks/useDesktopDecisions', async importOriginal => {
 })
 
 const openEngagement = vi.fn()
+/*
+ * Graduation, off by default.
+ *
+ * The lens asks the pilot whether it has ended, to decide whether a seeded
+ * request is still work (lib/pilot/seed-visibility). That rule has its own
+ * cases below; everywhere else this suite is about genuine records.
+ */
+vi.mock('../../hooks/usePilotProgress', () => ({
+  usePilotProgress: () => ({ hasGraduated: pilot.graduated, cachedHasGraduated: false }),
+}))
+
 vi.mock('../../lib/engagement', async importOriginal => {
   const actual = await importOriginal<typeof import('../../lib/engagement')>()
   return {
@@ -82,6 +95,7 @@ const onTyped = (e: Event) => typedEvents.push(e as CustomEvent)
 
 beforeEach(() => {
   decisions = []
+  pilot.graduated = false
   detail = {}
   scanError = null
   detailRequestedFor.length = 0
@@ -455,6 +469,61 @@ describe('the index is a queue of what still wants something', () => {
     expect(tiles).toHaveLength(1)
     expect(within(tiles[0]).getByText(/we need 2%/)).toBeInTheDocument()
     expect(screen.queryByText(/i like this idea, makes sense/)).not.toBeInTheDocument()
+  })
+})
+
+/* ------------------------------------------------------ the pilot's seeds */
+
+describe('the pilot’s seeded request, after graduation', () => {
+  /** The seeder's AAPL request: pending, and nobody ever answered it. */
+  const seeded = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'seed-aapl', ideaId: 'tq-seed', symbol: 'AAPL', companyName: 'Apple',
+    status: 'pending', decidedBy: null, decidedByName: null, decidedAt: null,
+    requestedAt: daysAgo(3), isPilotSeed: true, ...over,
+  })
+  const mine = () => decision({
+    id: 'mine', ideaId: 'tq-mine', symbol: 'ORCL', status: 'pending',
+    decidedBy: null, decidedByName: null, decidedAt: null, requestedAt: daysAgo(2),
+  })
+
+  it('stops being work awaiting a decision, and stops being counted', () => {
+    decisions = [seeded(), mine()]
+    pilot.graduated = true
+    render(<DecisionsWorkspace />)
+    const rows = screen.getAllByTestId('decision-tile')
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('ORCL')).toBeInTheDocument()
+    expect(screen.queryByText('AAPL')).not.toBeInTheDocument()
+    // The lens's own count says one, not two.
+    expect(within(screen.getByTestId('decisions-lens')).getByText('1')).toBeInTheDocument()
+  })
+
+  it('is still the work while the pilot is running', () => {
+    decisions = [seeded(), mine()]
+    render(<DecisionsWorkspace />)
+    expect(screen.getAllByTestId('decision-tile')).toHaveLength(2)
+  })
+
+  it('keeps a seeded request the reader actually decided', () => {
+    // Bogey Cap's pilot ends on a seeded idea the reader decided and
+    // executed. That is their decision, and it stays in the record.
+    decisions = [seeded({
+      id: 'seed-msft', symbol: 'MSFT', status: 'accepted',
+      decidedBy: 'u1', decidedByName: 'Eric Lockenvitz', decidedAt: daysAgo(1),
+      decisionNote: null,
+    })]
+    pilot.graduated = true
+    render(<DecisionsWorkspace />)
+    const rows = screen.getAllByTestId('decision-tile')
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('MSFT')).toBeInTheDocument()
+  })
+
+  it('is never deleted: the record still opens by id', () => {
+    decisions = [seeded(), mine()]
+    pilot.graduated = true
+    render(<DecisionsWorkspace focusObjectId="seed-aapl" />)
+    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
   })
 })
 

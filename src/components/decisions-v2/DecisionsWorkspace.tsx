@@ -27,9 +27,11 @@ import {
 } from '../../hooks/useDesktopDecisions'
 import {
   outcomeOf, OUTCOME_LABEL, provenanceOf, workOf, compareWork,
-  hasHumanReason, groupIntoSituations, type DecisionSituation,
+  hasHumanReason, groupIntoSituations, RESOLVED, type DecisionSituation,
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { operationalAfterPilot } from '../../lib/pilot/seed-visibility'
 import { DecisionDetailPane } from './DecisionDetail'
 import {
   DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileMeta, TileFigure,
@@ -54,7 +56,6 @@ export function DecisionsWorkspace({
   // The scan is unfiltered by book so the portfolio list can be built from the
   // decisions that actually exist; filtering happens in memory afterward.
   const { decisions, isLoading, error } = useDecisionScan(null)
-  const books = usePortfoliosWithDecisions(decisions)
 
   const [portfolioId, setPortfolioId] = useState<string | null>(selectedPortfolioId ?? null)
   const [decisionId, setDecisionId] = useState<string | null>(selectedDecisionId ?? null)
@@ -71,9 +72,29 @@ export function DecisionsWorkspace({
    * is what needs doing. Nothing is deleted -- the detail pane still opens
    * any record, and the rail still carries the neighbours.
    */
+  /*
+   * The pilot's seeded request stops being work once the pilot is over.
+   *
+   * One Dashboard rule (lib/pilot/seed-visibility): a seeded row nobody
+   * answered is history and must not be counted, queued or ranked as a
+   * decision awaiting one; a seeded row the reader DID answer is their
+   * decision and stays, execution and rationale intact. The records are
+   * untouched -- the detail pane still opens any of them by id, and every
+   * archival surface still lists them.
+   */
+  const { hasGraduated, cachedHasGraduated } = usePilotProgress()
+  const operational = useMemo(
+    () => operationalAfterPilot(
+      decisions.map(d => ({ ...d, pilotSeed: d.isPilotSeed, actedOn: RESOLVED.has(d.status) })),
+      { hasGraduated: hasGraduated || cachedHasGraduated },
+    ),
+    [decisions, hasGraduated, cachedHasGraduated],
+  )
+  // The book filter counts what the lens would actually show.
+  const books = usePortfoliosWithDecisions(operational)
   const inBook = useMemo(
-    () => decisions.filter(d => !portfolioId || d.portfolioId === portfolioId),
-    [decisions, portfolioId],
+    () => operational.filter(d => !portfolioId || d.portfolioId === portfolioId),
+    [operational, portfolioId],
   )
   /*
    * One situation per decision ACT, not per execution leg.
@@ -106,7 +127,13 @@ export function DecisionsWorkspace({
    * queue no longer lists. Failing to find it would show a not-found state
    * for a record that exists and is fine.
    */
-  const selected = activeId ? inBook.find(d => d.id === activeId) ?? null : null
+  /*
+   * Looked up across every record the scan read, including the pilot's
+   * seeded ones. They are suppressed from the QUEUE, not from the product:
+   * a link, a rail card or a deck request naming one must still open it,
+   * exactly as it opens a settled decision the queue no longer lists.
+   */
+  const selected = activeId ? decisions.find(d => d.id === activeId) ?? null : null
 
   // Nothing deep is fetched while browsing.
   const { detail } = useDecisionDetail(selected)
@@ -118,14 +145,14 @@ export function DecisionsWorkspace({
   // multi-book decision look like a single-book one.
   const booksPerIdea = useMemo(() => {
     const byIdea = new Map<string, Set<string>>()
-    for (const d of decisions) {
+    for (const d of operational) {
       if (!d.ideaId) continue
       const set = byIdea.get(d.ideaId) ?? new Set<string>()
       set.add(d.portfolioId)
       byIdea.set(d.ideaId, set)
     }
     return new Map([...byIdea].map(([id, set]) => [id, set.size - 1]))
-  }, [decisions])
+  }, [operational])
 
   // Narrowing the book returns the reader to the record for that book rather
   // than stranding them on one from a book they just filtered out.

@@ -22,6 +22,7 @@ import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
 import type { DecisionRecord, DecisionStatus } from '../lib/desktop-decisions/model'
 import { fallbackExecutionFor, needsExecutionFallback } from '../lib/desktop-decisions/execution-link'
+import { isPilotSeedRow } from '../lib/pilot/seed-visibility'
 
 const DAY = 86_400_000
 
@@ -58,7 +59,7 @@ export function useDecisionScan(portfolioId: string | null) {
           portfolios!inner(id, name, organization_id),
           reviewer:users!decision_requests_reviewed_by_fkey(first_name, last_name, email),
           requester:users!decision_requests_requested_by_fkey(first_name, last_name, email),
-          trade_queue_items(id, asset_id, assets(id, symbol, company_name)),
+          trade_queue_items(id, asset_id, origin_metadata, assets(id, symbol, company_name)),
           accepted_trades!decision_requests_accepted_trade_id_fkey(
             id, execution_status, execution_completed_at, executed_by, batch_id)
         `)
@@ -172,6 +173,10 @@ export function useDecisionScan(portfolioId: string | null) {
           baselineWeight: num(snap.baseline_weight),
 
           deferredUntil: r.deferred_until ?? null,
+
+          // The marker sits on the request's snapshot or on the idea it came
+          // from, depending on which the seeder wrote. Read only.
+          isPilotSeed: isPilotSeedRow(r) || isPilotSeedRow(idea),
 
           execution: exec
             ? {

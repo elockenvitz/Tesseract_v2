@@ -102,6 +102,14 @@ export interface DecisionRecord {
 
   deferredUntil: string | null
 
+  /**
+   * Planted by the pilot seeder -- on the request itself, or on the idea it
+   * was raised from. Provenance, carried rather than acted on here: the lens
+   * decides what it means once the pilot is over
+   * (lib/pilot/seed-visibility), and the record is never rewritten.
+   */
+  isPilotSeed?: boolean
+
   /** Execution is a separate fact, joined not assumed. */
   execution: {
     id: string
