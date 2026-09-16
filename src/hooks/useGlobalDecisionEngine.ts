@@ -10,7 +10,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
-import { useThesisReviews, useThesisConcernReviews } from './useThesisReview'
+import { useThesisReviews, useThesisReviewConclusions } from './useThesisReview'
 import { useResearchScan } from './useDesktopResearch'
 import { useAssetViewCursors } from './useObjectViewCursor'
 import { useOrganization } from '../contexts/OrganizationContext'
@@ -246,9 +246,11 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
   const { subjects: researchSubjects } = useResearchScan()
   const assetViewCursors = useAssetViewCursors()
 
-  // Conclusions that a written case no longer stands. Its own cache entry, so
-  // recording one refreshes the finding without refetching the engine's slice.
-  const thesisConcernReviews = useThesisConcernReviews()
+  // Every recorded conclusion about a thesis, `holds` included: the producer
+  // needs the latest word, and a later `holds` is what retires an earlier
+  // concern. Its own cache entry, so recording a review refreshes the finding
+  // without refetching the engine's slice.
+  const thesisConcernReviews = useThesisReviewConclusions()
 
   // Active committed trades in the reader's coverage. Scoped by portfolio
   // because `accepted_trades` carries no organization_id -- the portfolio is

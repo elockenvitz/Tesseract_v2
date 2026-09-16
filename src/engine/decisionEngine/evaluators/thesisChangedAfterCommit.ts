@@ -41,7 +41,7 @@ export const THESIS_CHANGED_AFTER_COMMIT_KIND = 'THESIS_CHANGED_AFTER_COMMIT'
  *  `holds` is absent on purpose and its absence is asserted by a test. */
 const QUALIFYING_OUTCOMES = new Set(['changed', 'needs_work'])
 
-/** A `thesis.reviewed` event that concluded something other than `holds`. */
+/** One recorded `thesis.reviewed` conclusion, whatever it concluded. */
 export interface ThesisConcernReview {
   /** The `memory_events` row id. The candidate's identity comes from this. */
   id: string
@@ -110,12 +110,34 @@ export function thesisChangedAfterCommitCandidates(
     list.sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
   }
 
+  // The current review state of each asset: the LATEST conclusion anybody
+  // recorded, whatever it said.
+  //
+  // This is the whole rule. A review is a person changing their mind in
+  // public, and only the most recent one is their position. Reading every
+  // qualifying event instead produced one candidate per concern and left Today
+  // to pick between them BY SEVERITY -- so a reader who marked a thesis
+  // `changed` on Monday and `needs_work` on Friday saw Monday's louder card,
+  // and one who marked it `changed` and then `holds` saw the alarm stand
+  // forever. Severity is not a clock.
+  //
+  // Resolved here rather than in Today's post-processing because it is not a
+  // display collision: two conclusions by the same person about the same
+  // document are not two findings to choose between, and only the data layer
+  // knows which came last.
+  const latestByAsset = new Map<string, ThesisConcernReview>()
+  for (const r of data.thesisConcernReviews) {
+    if (!r.subject_id || !r.occurred_at || !r.id || !r.outcome) continue
+    const seen = latestByAsset.get(r.subject_id)
+    if (!seen || r.occurred_at > seen.occurred_at) latestByAsset.set(r.subject_id, r)
+  }
+
   const out: FeedCandidate[] = []
 
-  for (const review of data.thesisConcernReviews) {
-    // `holds` is not a concern. The set is the guard.
+  for (const review of latestByAsset.values()) {
+    // `holds` is not a concern, and as the LATEST word it also retires every
+    // older one: nothing else on this asset is allowed to speak.
     if (!QUALIFYING_OUTCOMES.has(review.outcome)) continue
-    if (!review.subject_id || !review.occurred_at || !review.id) continue
 
     const onAsset = tradesByAsset.get(review.subject_id)
     if (!onAsset?.length) continue
@@ -131,10 +153,9 @@ export function thesisChangedAfterCommitCandidates(
     const phrase = OUTCOME_PHRASE[review.outcome] ?? 'was marked changed'
 
     out.push({
-      // The review event. A LATER qualifying review is a genuinely new
-      // conclusion by a person, so it earns its own candidate rather than
-      // silently replacing the first -- and re-running the producer over the
-      // same event reproduces the same id, so a dismissal still holds.
+      // The latest review event. A new conclusion is a new id, so it replaces
+      // rather than accumulates -- and re-running the producer over the same
+      // event reproduces the same id, so a dismissal still holds.
       id: `thesis-changed-${review.id}`,
       kind: THESIS_CHANGED_AFTER_COMMIT_KIND,
       // The trade is the subject: the capital is what is now in question.

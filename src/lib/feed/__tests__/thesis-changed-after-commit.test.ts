@@ -87,6 +87,10 @@ describe('only a conclusion that the case broke qualifies', () => {
     expect(run({ thesisConcernReviews: [review({ outcome: 'whatever' })] })).toEqual([])
   })
 
+  it('ignores a row with no recorded outcome', () => {
+    expect(run({ thesisConcernReviews: [review({ outcome: '' })] })).toEqual([])
+  })
+
   /* A conclusion recorded before the commit was available to the person
      committing. It is not news about that trade. */
   it('says nothing when the review predates the commit', () => {
@@ -105,6 +109,93 @@ describe('only a conclusion that the case broke qualifies', () => {
     expect(thesisChangedAfterCommitCandidates({})).toEqual([])
     expect(run({ committedTrades: [] })).toEqual([])
     expect(run({ thesisConcernReviews: [] })).toEqual([])
+  })
+})
+
+/**
+ * A review is a person changing their mind in public, and only the most recent
+ * one is their position.
+ *
+ * The producer used to emit a candidate per qualifying event and leave Today's
+ * post-processing to pick between them BY SEVERITY. Severity is not a clock:
+ * a thesis marked `changed` on Monday and `needs_work` on Friday showed
+ * Monday's louder card, and one marked `changed` and then `holds` kept the
+ * alarm forever. Every case below is a chronology that the old rule got wrong.
+ */
+describe('the latest conclusion is the only one that speaks', () => {
+  const MID = '2026-09-12T12:00:00.000Z'
+  const chain = (...steps: Array<[string, string, string]>) =>
+    run({ thesisConcernReviews: steps.map(([id, outcome, at]) => review({ id, outcome, occurred_at: at })) })
+
+  it('changed, then needs_work, reports needs_work', () => {
+    const c = chain(['ev-1', 'changed', REVIEW], ['ev-2', 'needs_work', LATER_REVIEW])
+    expect(c).toHaveLength(1)
+    expect(c[0].id).toBe('thesis-changed-ev-2')
+    expect(c[0].facts?.reviewOutcome).toBe('needs_work')
+  })
+
+  /* The one the old rule could never get right: `changed` is louder than
+     `needs_work`, so severity picked the stale conclusion. */
+  it('needs_work, then changed, reports changed', () => {
+    const c = chain(['ev-1', 'needs_work', REVIEW], ['ev-2', 'changed', LATER_REVIEW])
+    expect(c).toHaveLength(1)
+    expect(c[0].id).toBe('thesis-changed-ev-2')
+    expect(c[0].facts?.reviewOutcome).toBe('changed')
+  })
+
+  /* Somebody looked again and concluded the case still stands. The concern is
+     retired, not outvoted. */
+  it('changed, then holds, reports nothing', () => {
+    expect(chain(['ev-1', 'changed', REVIEW], ['ev-2', 'holds', LATER_REVIEW])).toEqual([])
+  })
+
+  it('needs_work, then holds, reports nothing', () => {
+    expect(chain(['ev-1', 'needs_work', REVIEW], ['ev-2', 'holds', LATER_REVIEW])).toEqual([])
+  })
+
+  it('holds, then changed, reports changed', () => {
+    const c = chain(['ev-1', 'holds', REVIEW], ['ev-2', 'changed', LATER_REVIEW])
+    expect(c).toHaveLength(1)
+    expect(c[0].id).toBe('thesis-changed-ev-2')
+  })
+
+  it('takes the last of three regardless of the order they arrive in', () => {
+    const c = chain(
+      ['ev-3', 'changed', LATER_REVIEW],
+      ['ev-1', 'needs_work', REVIEW],
+      ['ev-2', 'holds', MID],
+    )
+    expect(c).toHaveLength(1)
+    expect(c[0].id).toBe('thesis-changed-ev-3')
+  })
+
+  it('retires the concern when the last of three is holds', () => {
+    expect(chain(
+      ['ev-1', 'changed', REVIEW],
+      ['ev-3', 'holds', LATER_REVIEW],
+      ['ev-2', 'needs_work', MID],
+    )).toEqual([])
+  })
+
+  /* The latest word must be after a commit to be news about it, whatever it
+     concluded. */
+  it('says nothing when the latest review predates every commit', () => {
+    expect(chain(['ev-1', 'changed', OLDER_COMMIT])).toEqual([])
+  })
+
+  it('resolves each asset on its own timeline', () => {
+    const c = run({
+      committedTrades: [trade(), trade({ id: 't2', asset_id: 'asset-2', asset_symbol: 'MSFT' })],
+      thesisConcernReviews: [
+        review({ id: 'a1-old', outcome: 'changed', occurred_at: REVIEW }),
+        review({ id: 'a1-new', outcome: 'holds', occurred_at: LATER_REVIEW }),
+        review({ id: 'a2-old', subject_id: 'asset-2', outcome: 'holds', occurred_at: REVIEW }),
+        review({ id: 'a2-new', subject_id: 'asset-2', outcome: 'changed', occurred_at: LATER_REVIEW }),
+      ],
+    })
+    expect(c).toHaveLength(1)
+    expect(c[0].id).toBe('thesis-changed-a2-new')
+    expect(c[0].subjectId).toBe('t2')
   })
 })
 
@@ -159,15 +250,15 @@ describe('identity comes from the conclusion, not the trade', () => {
     expect(run()).toEqual(run())
   })
 
-  /* A second person concluding the same thing a week later is a second
-     durable act, so it earns its own candidate rather than silently
-     replacing the first. */
-  it('gives a later qualifying review its own candidate', () => {
+  /* A later conclusion replaces the earlier one rather than joining it: the
+     id moves to the newest event, so the finding is about what the reader
+     currently thinks. */
+  it('moves to the latest qualifying review', () => {
     const c = run({
       thesisConcernReviews: [review(), review({ id: 'ev-2', occurred_at: LATER_REVIEW })],
     })
-    expect(c).toHaveLength(2)
-    expect(c.map(x => x.id).sort()).toEqual(['thesis-changed-ev-1', 'thesis-changed-ev-2'])
+    expect(c).toHaveLength(1)
+    expect(c[0].id).toBe('thesis-changed-ev-2')
   })
 
   it('dates the claim from the conclusion', () => {
@@ -253,6 +344,19 @@ describe('clicking it opens the thesis that was questioned', () => {
   })
 })
 
+describe('the data layer hands over every conclusion', () => {
+  /* Guarding the guard. "Latest wins" is only true if the query returns the
+     latest -- filtering `holds` out at the database would make a reader's
+     change of mind invisible and leave the old alarm standing forever, and
+     every chronology test above would still pass. */
+  it('does not drop holds before the producer can see it', () => {
+    const hook = src('hooks/useThesisReview.ts')
+    const fn = hook.slice(hook.indexOf('export function useThesisReviewConclusions'))
+    expect(fn).toContain('filter(r => !!r.payload?.outcome)')
+    expect(fn).not.toContain("!== 'holds'")
+  })
+})
+
 describe('Today renders it without a new ranking system', () => {
   const engineArgs = {
     userId: 'u1',
@@ -328,6 +432,50 @@ describe('Today renders it without a new ranking system', () => {
     expect(with_.actionItems[0].id).toBe('trade-review-o1')
     expect(without.actionItems[0].id).toBe('trade-review-o1')
     expect(with_.intelItems).toEqual(without.intelItems)
+  })
+
+  /**
+   * Today is never asked to choose between two conclusions about one thesis,
+   * because only one ever reaches it.
+   *
+   * This is the regression that matters. Post-processing dedupes by asset and
+   * keeps the HIGHER SEVERITY, so when the producer emitted every qualifying
+   * event, a stale `changed` (orange) beat a current `needs_work` (yellow) and
+   * Today showed the wrong one. Asserted through the real engine, and the
+   * post-processing rule itself is untouched.
+   */
+  it('never leaves Today to pick the current conclusion by severity', () => {
+    const result = runGlobalDecisionEngine({
+      ...engineArgs,
+      data: {
+        committedTrades: [trade()],
+        thesisConcernReviews: [
+          review({ id: 'ev-loud', outcome: 'changed', occurred_at: REVIEW }),
+          review({ id: 'ev-current', outcome: 'needs_work', occurred_at: LATER_REVIEW }),
+        ],
+        organizationId: 'org-1',
+      },
+    })
+    expect(result.actionItems).toHaveLength(1)
+    // The newer, quieter conclusion -- which severity-based dedupe would have
+    // discarded in favour of the older orange one.
+    expect(result.actionItems[0].id).toBe('thesis-changed-ev-current')
+    expect(result.actionItems[0].severity).toBe('yellow')
+  })
+
+  it('shows nothing once a later review says the case holds', () => {
+    const result = runGlobalDecisionEngine({
+      ...engineArgs,
+      data: {
+        committedTrades: [trade()],
+        thesisConcernReviews: [
+          review({ id: 'ev-1', outcome: 'changed', occurred_at: REVIEW }),
+          review({ id: 'ev-2', outcome: 'holds', occurred_at: LATER_REVIEW }),
+        ],
+        organizationId: 'org-1',
+      },
+    })
+    expect(result.actionItems).toEqual([])
   })
 
   it('adds nothing when no conclusion has been recorded', () => {

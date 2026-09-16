@@ -82,26 +82,33 @@ const EMPTY_CONCERNS: ReadonlyArray<{
 }> = []
 
 /**
- * Reviews that concluded the written case no longer stands as-is.
+ * Every recorded conclusion about a thesis, newest first, with its event id.
  *
- * The sibling read above answers "is this case current", and deliberately
- * ignores everything but `holds`. This answers the opposite question, and
- * carries the event id -- a consumer that wants to point at the conclusion
- * needs the row it is pointing at, not just its date.
+ * ── Why `holds` is included ──────────────────────────────────────────────
  *
- * Every row is returned, not the newest per asset: a second person concluding
- * the same thing a week later is a second durable act, and which of them a
- * surface cares about is the surface's business.
+ * It used to be filtered out here, which was wrong in a way that only shows
+ * up over time: a reader who marks a thesis `changed` on Monday and `holds`
+ * on Friday has changed their mind, and a consumer that never sees the Friday
+ * row cannot know that. Filtering at the query made the later, better
+ * conclusion invisible and left the earlier alarm standing forever.
+ *
+ * So this returns all of them and the CONSUMER decides which one speaks. The
+ * sibling `useThesisReviews` still answers the narrower question -- "is this
+ * case current" -- and deliberately counts only `holds`.
+ *
+ * Every row is returned rather than the newest per asset: the "latest wins"
+ * rule belongs to the producer that needs it, and a future surface showing a
+ * review history needs the rest.
  *
  * RLS posture: unchanged. `memory_events` SELECT is already policy-gated on
  * org membership; this is the same table and the same policy, filtered to one
  * event type.
  */
-export function useThesisConcernReviews() {
+export function useThesisReviewConclusions() {
   const { currentOrgId } = useOrganization()
 
   const { data } = useQuery({
-    queryKey: [...THESIS_REVIEWS_KEY, 'concerns', currentOrgId],
+    queryKey: [...THESIS_REVIEWS_KEY, 'conclusions', currentOrgId],
     enabled: !!currentOrgId,
     staleTime: 60_000,
     queryFn: async () => {
@@ -119,10 +126,11 @@ export function useThesisConcernReviews() {
         payload?: { outcome?: string } | null; organization_id?: string | null
       }[]
 
-      // Filtering here rather than in the query: the outcome lives inside a
-      // jsonb payload, and the producer owns which conclusions count.
+      // Only rows that actually recorded a conclusion. Which conclusions
+      // COUNT is the producer's business, not this query's -- dropping
+      // `holds` here would hide a reader changing their mind back.
       return rows
-        .filter(r => r.payload?.outcome && r.payload.outcome !== 'holds')
+        .filter(r => !!r.payload?.outcome)
         .map(r => ({
           id: r.id,
           subject_id: r.subject_id,
