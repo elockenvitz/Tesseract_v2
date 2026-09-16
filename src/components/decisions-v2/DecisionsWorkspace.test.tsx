@@ -592,30 +592,29 @@ describe('what happened, in Outcomes’ own numbers', () => {
       'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, sincePct: -0.8, pnl: -670, verdictLabel: 'Outcome not reviewed' },
     }
     render(<DecisionsWorkspace />)
-    const strip = screen.getByTestId('decision-since')
-    expect(strip).toHaveTextContent('-0.8%')
-    expect(strip).toHaveTextContent('Return')
-    expect(strip).toHaveTextContent('−$670')
-    expect(strip).toHaveTextContent('P&L')
+    const tile = screen.getByTestId('decision-tile')
+    // The lead figure is the move; the strip carries the dollars.
+    expect(tile).toHaveTextContent('-0.8')
+    expect(tile).toHaveTextContent('since the decision')
+    expect(within(tile).getByTestId('decision-figures')).toHaveTextContent('−$670 P&L')
     // The class already says the outcome is unreviewed; the strip says which
     // record carries a reason, so the two are not read as one contradiction.
     expect(screen.getByTestId('decision-reason')).toHaveTextContent('Outcome not reviewed')
-    expect(strip).toHaveTextContent('2d')
-    expect(strip).toHaveTextContent('Elapsed')
-    expect(strip.textContent).not.toContain('Needs rationale')
+    expect(within(tile).getByTestId('decision-figures')).toHaveTextContent('2d ago')
+    expect(tile.textContent).not.toContain('Needs rationale')
     // The reasoning itself, not a note that some exists.
-    expect(screen.getByTestId('decision-tile')).toHaveTextContent('Added on the cloud reacceleration.')
-    expect(strip.textContent).not.toContain('No decision reason')
+    expect(tile).toHaveTextContent('Added on the cloud reacceleration.')
+    expect(tile.textContent).not.toContain('No decision reason')
   })
 
   it('says nothing where Outcomes knows nothing', () => {
     decisions = [committed({ ideaId: 'tq-unknown' })]
     render(<DecisionsWorkspace />)
-    // The section stays -- it is half the card's question -- and says it has
-    // no priced outcome rather than showing a number it does not have.
-    const since = screen.getByTestId('decision-since')
-    expect(since).toHaveTextContent('No priced outcome yet.')
-    expect(since.textContent).not.toMatch(/%|\$/)
+    // Nothing is invented: no move, no dollars, and no lead figure claiming
+    // an outcome Outcomes has no row for.
+    const figures = screen.getByTestId('decision-figures')
+    expect(figures.textContent).not.toMatch(/since|P&L/)
+    expect(screen.getByTestId('decision-tile').textContent).not.toContain('since the decision')
   })
 
   it('gives a batch its own dollars and never a batch return percentage', () => {
@@ -635,10 +634,11 @@ describe('what happened, in Outcomes’ own numbers', () => {
     // The batch is the container; the legs stay underneath it.
     expect(within(tiles[0]).getByTestId('batch-legs')).toHaveTextContent('AAA')
     expect(within(tiles[0]).getByTestId('batch-legs')).toHaveTextContent('BBB')
-    const strip = within(tiles[0]).getByTestId('decision-since')
+    const strip = within(tiles[0]).getByTestId('decision-figures')
     expect(strip).toHaveTextContent('+$900')
     // No batch return percentage, ever: a batch mixes names and sizes.
-    expect(strip.textContent).not.toMatch(/%|Return/)
+    expect(strip.textContent).not.toMatch(/% since/)
+    expect(tiles[0].textContent).not.toContain('since the decision')
   })
 })
 
@@ -668,14 +668,12 @@ describe('the card answers what we decided and what happened', () => {
     expect(context).toContain('Tech & Consumer Growth')
     expect(context).toContain('committed in 1 buy · 09/15/2026')
     expect(tile.textContent!.match(/Tech & Consumer Growth/g)).toHaveLength(1)
-    // What was actually committed, in the trade's own recorded figures.
-    const what = within(tile).getByTestId('decision-what')
-    expect(what).toHaveTextContent('6.4%')
-    expect(what).toHaveTextContent('Target')
-    expect(what).toHaveTextContent('+0.25%')
-    expect(what).toHaveTextContent('Change')
-    expect(what).toHaveTextContent('$84K')
-    expect(what).toHaveTextContent('Notional')
+    // What was actually committed, in the trade's own recorded figures, in
+    // the same metric strip the other lenses use.
+    const figures = within(tile).getByTestId('decision-figures')
+    expect(figures).toHaveTextContent('6.4% target')
+    expect(figures).toHaveTextContent('+0.25% change')
+    expect(figures).toHaveTextContent('$84K committed')
     expect(tile).toHaveTextContent('Added on the cloud reacceleration.')
   })
 
@@ -753,35 +751,31 @@ describe('the lens is a field of cards, not a banner', () => {
     expect(screen.getByTestId('book-filter')).toBeInTheDocument()
   })
 
-  it('gives every decision one card of the same width, in one grid', () => {
+  it('uses the shared gallery and its rank sizes, not a grid of its own', () => {
     decisions = [
       committed(),
       committed({ id: 'c2', ideaId: 'tq-c2', symbol: 'ORCL' }),
       committed({ id: 'c3', ideaId: 'tq-c3', symbol: 'NKE' }),
+      committed({ id: 'c4', ideaId: 'tq-c4', symbol: 'CRM' }),
     ]
     render(<DecisionsWorkspace />)
-    const tiles = screen.getAllByTestId('decision-tile')
-    expect(tiles).toHaveLength(3)
-    // No rank-bought width: the first record is not twice the size of the
-    // third, and nothing spans the page.
-    expect(new Set(tiles.map(t => t.getAttribute('data-size')))).toEqual(new Set(['medium']))
+    // The same gallery every other lens renders into...
+    expect(screen.getByTestId('desktop-gallery')).toBeInTheDocument()
+    // ...and the shared mosaic's own sizes, in order.
+    expect(screen.getAllByTestId('decision-tile').map(t => t.getAttribute('data-size')))
+      .toEqual(['hero', 'large', 'medium', 'medium'])
   })
 
-  it('groups attention above the record when both exist, and not otherwise', () => {
+  it('keeps work ahead of the record inside that one mosaic', () => {
     decisions = [
       committed(),
       decision({ id: 'owed', ideaId: 'tq-owed', symbol: 'AAA', decisionNote: null, decidedAt: daysAgo(1) }),
     ]
-    const both = render(<DecisionsWorkspace />)
-    expect(screen.getByTestId('decision-group-attention')).toHaveTextContent('Needs attention')
-    expect(screen.getByTestId('decision-group-recent')).toHaveTextContent('Recent decisions')
-    both.unmount()
-
-    // One class only: no headings, because there is no boundary to name.
-    decisions = [committed()]
-    const alone = render(<DecisionsWorkspace />)
-    expect(alone.queryByTestId('decision-group-attention')).not.toBeInTheDocument()
-    expect(alone.getByTestId('decision-group-all')).toBeInTheDocument()
+    render(<DecisionsWorkspace />)
+    const order = screen.getAllByTestId('decision-tile')
+    expect(order[0].textContent).toContain('AAA')
+    expect(order[0].getAttribute('data-size')).toBe('hero')
+    expect(order[1].textContent).toContain('MSFT')
   })
 })
 

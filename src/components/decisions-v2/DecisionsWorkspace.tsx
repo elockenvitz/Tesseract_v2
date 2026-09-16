@@ -27,7 +27,7 @@ import {
   useDecisionOutcomeFacts,
 } from '../../hooks/useDesktopDecisions'
 import {
-  outcomeOf, OUTCOME_LABEL, provenanceOf, workOf, daysSince,
+  outcomeOf, OUTCOME_LABEL, provenanceOf, workOf, daysSince, summaryOf,
   hasHumanReason, RESOLVED,
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
@@ -42,7 +42,8 @@ import { usePilotProgress } from '../../hooks/usePilotProgress'
 import { operationalAfterPilot } from '../../lib/pilot/seed-visibility'
 import { DecisionDetailPane } from './DecisionDetail'
 import {
-  DesktopTile, TileIdentity, TileQuote, TileMeta, TileFigure, type TileSize,
+  DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileReason, TileLead,
+  TileMeta, TileFigure, sizeByRecency, type TileSize,
 } from '../desktop/DesktopTile'
 import { EYEBROW } from '../desktop/DesktopModule'
 import {
@@ -225,78 +226,22 @@ export function DecisionsWorkspace({
     )
   }
 
-  /*
-   * Two groups, where both exist: what wants something, then the record.
-   *
-   * Headings rather than a second surface -- the classes already rank, and
-   * this only says out loud where the boundary is, so "recent" cannot read as
-   * more work.
-   */
-  const attention = situations.filter(s => s.klass !== 'recent')
-  const recent = situations.filter(s => s.klass === 'recent')
-  const grouped: Array<{ key: string; label: string | null; rows: ClassedSituation[] }> =
-    attention.length && recent.length
-      ? [
-          { key: 'attention', label: 'Needs attention', rows: attention },
-          { key: 'recent', label: 'Recent decisions', rows: recent },
-        ]
-      : [{ key: 'all', label: null, rows: situations }]
-
-  const cards = (rows: ClassedSituation[]) => (
-    /*
-     * A working width, and one decision per card.
-     *
-     * A record card is a thing you read, not a banner: at full desktop width a
-     * single decision was 930px of card carrying four short lines, most of it
-     * blank. Two columns inside a bounded measure put a card at ~560-690px --
-     * wide enough for the decision beside what happened to it, narrow enough
-     * that nothing has to be stretched to fill it. Height follows content.
-     */
-    <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
-      {rows.map(s => (
-        /*
-         * The grid item is this wrapper, so the tile's own rank-span classes
-         * (written for the twelve-column gallery) do not apply here. One card,
-         * one column, whatever it carries.
-         */
-        /*
-         * `[&>button]:w-full` is not decoration: the tile is a <button>, which
-         * is shrink-to-fit, so without the gallery's column-span classes it
-         * sized to its longest line and left a third of its cell empty.
-         */
-        <div key={s.subject} className="min-w-0 [&>button]:w-full">
-          <DecisionTile
-            decision={s.lead}
-            situation={s}
-            facts={factsFor(s.lead)}
-            batchPnl={batchPnlText(pnlForBatch(s.batch?.id) ?? { kind: 'none' })}
-            alsoInBooks={booksPerIdea.get(s.lead.ideaId ?? '') ?? 0}
-            onOpen={() => open(s.lead)}
-          />
-        </div>
-      ))}
-    </div>
-  )
-
   return (
     <div className="h-full overflow-y-auto" data-testid="decisions-lens">
-      <div className="mx-auto w-full max-w-[1440px] px-6 pb-10 pt-5">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">Decisions</h1>
-          <span className="font-mono text-[11px] text-gray-500">{rows.length}</span>
-          {/*
-            The book selector is a CONTROL, and only where there is a choice.
-            With one book it rendered the book's name in the corner of the
-            page: passive text that looked like a filter, said what every card
-            already says, and belonged to no decision in particular.
-          */}
-          {books.length > 1 && (
-            <div className="ml-auto">
-              <BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />
-            </div>
-          )}
-        </div>
-        <div className="mt-1.5">
+      <DesktopGallery
+        title="Decisions"
+        count={rows.length}
+        flow="chronological"
+        /*
+          The book selector is a CONTROL, and only where there is a choice.
+          With one book it used to render the book's NAME in the corner of the
+          page: passive text dressed as a filter, saying what every tile
+          already says about itself. The book belongs to the decision.
+        */
+        action={books.length > 1
+          ? <BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />
+          : undefined}
+        note={<>
           {/*
             What the lens holds, in the order it holds it. Three classes, not
             a queue: what needs doing, what is worth another look, and what
@@ -321,20 +266,30 @@ export function DecisionsWorkspace({
             worse the header would read.
           */}
           <Metrics rows={inBook} />
-        </div>
+        </>}
+      >
+        {/*
+          One mosaic, the same one every lens uses.
 
-        {grouped.map(g => (
-          <section key={g.key} data-testid={`decision-group-${g.key}`} className="mt-5">
-            {g.label && (
-              <h2 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">
-                {g.label}
-                <span className="ml-1.5 font-mono tracking-normal text-gray-400">{g.rows.length}</span>
-              </h2>
-            )}
-            {cards(g.rows)}
-          </section>
+          The order is the classes' -- work, then what to revisit, then the
+          record -- and `sizeByRecency` turns that order into room: the first
+          decision leads, the rest get denser behind it. Decisions must not
+          have a grid of its own; a reader moving between tabs should see one
+          product, not five.
+        */}
+        {situations.map((s, i) => (
+          <DecisionTile
+            key={s.subject}
+            decision={s.lead}
+            situation={s}
+            facts={factsFor(s.lead)}
+            batchPnl={batchPnlText(pnlForBatch(s.batch?.id) ?? { kind: 'none' })}
+            alsoInBooks={booksPerIdea.get(s.lead.ideaId ?? '') ?? 0}
+            bandSize={sizeByRecency(i)}
+            onOpen={() => open(s.lead)}
+          />
         ))}
-      </div>
+      </DesktopGallery>
     </div>
   )
 }
@@ -583,7 +538,7 @@ export function toRailCard(d: DecisionRecord): RailCard {
  * other gallery.
  */
 function DecisionTile({
-  decision, situation, facts, batchPnl, alsoInBooks, onOpen,
+  decision, situation, facts, batchPnl, alsoInBooks, bandSize, onOpen,
 }: {
   decision: DecisionRecord
   /** The decision act this card stands for. One leg, or a whole batch. */
@@ -593,6 +548,8 @@ function DecisionTile({
   /** Outcomes' own batch total, where the act is a batch and it has one. */
   batchPnl: ReturnType<typeof batchPnlText>
   alsoInBooks: number
+  /** The room this record earned in the gallery, from the shared rule. */
+  bandSize: TileSize
   onOpen: () => void
 }) {
   const d = decision
@@ -617,15 +574,15 @@ function DecisionTile({
       : null)
 
   /**
-   * One size, because every decision is one decision.
+   * The room this record earned, from the gallery's own rule.
    *
-   * Size used to follow recency -- the newest record twice the width of the
-   * one behind it. On a lens whose cards carry the same five facts that bought
-   * the first card 930px of blank and made the page read as a banner over a
-   * list. Order still says what is most pressing; it no longer buys room that
-   * cannot be filled. The card sizes to its own contents inside one column.
+   * Never a judgement: accepted is not success and withdrawn is not failure.
+   * What varies with size is how much of the record the tile says -- the
+   * shared density behaviour every other lens uses, rather than a second
+   * layout system living on this tab.
    */
-  const size: TileSize = 'medium'
+  const size = bandSize
+  const big = size === 'hero' || size === 'large'
 
   return (
     <DesktopTile
@@ -714,110 +671,96 @@ function DecisionTile({
         ASKED for is the only quantity there is, and it says so.
       */}
       {/*
-        Two sections, side by side: what we did, and what has happened since.
+        The claim: what a person wrote, or why this needs attention.
 
-        These are the card's two questions and they are read together -- a
-        weight means one thing against +4% and another against -20%. Stacked
-        as prose they were four metadata lines nobody's eye stopped on; as two
-        labelled metric groups they are the content of the card.
+        The same slot, and the same primitives, every other lens uses --
+        `TileQuote` for words somebody actually wrote, `TileReason` for the
+        system's own sentence. A card that said "reason recorded" made a
+        reader open it to find out what the reason WAS, which is the content
+        of a decision. A multi-leg batch keeps its description above its legs,
+        because there it explains several names at once.
       */}
-      <div className="mt-0.5 grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2">
-        <section data-testid="decision-what" className="min-w-0">
-          <div className={EYEBROW}>Decision</div>
-          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1.5">
-            {(() => {
-              const e = d.execution
-              const committed = [
-                e?.targetWeight != null ? { label: 'Target', value: `${e.targetWeight.toFixed(1)}%` } : null,
-                e?.deltaWeight != null
-                  ? { label: 'Change', value: `${e.deltaWeight >= 0 ? '+' : ''}${e.deltaWeight.toFixed(2)}%` } : null,
-                e?.notional != null ? { label: 'Notional', value: formatCompactDollars(Math.abs(e.notional)) } : null,
-              ].filter(Boolean) as Array<{ label: string; value: string }>
-              /*
-                Nothing was executed, so the ask is the only quantity there is
-                -- and it is labelled as the ask, never as a position.
-              */
-              if (!committed.length) {
-                if (d.sizingWeight != null) committed.push({ label: 'Asked for', value: `${d.sizingWeight.toFixed(1)}%` })
-                if (d.baselineWeight != null) committed.push({ label: 'Held then', value: `${d.baselineWeight.toFixed(1)}%` })
-                if (!committed.length && d.sizingShares != null) {
-                  committed.push({ label: 'Asked for', value: `${d.sizingShares.toLocaleString()} sh` })
-                }
-              }
-              return committed.length
-                ? committed.map(m => <CardMetric key={m.label} label={m.label} value={m.value} />)
-                : <p className="text-[12px] italic text-gray-500">No sizing was recorded.</p>
-            })()}
-          </div>
-
-          {/*
-            The reasoning, under the decision it explains.
-
-            A card that says "reason recorded" makes a reader open it to find
-            out what the reason WAS, which is the whole content of a decision.
-            A lone trade quotes its own note; where the act was committed as a
-            batch of one, the batch's sentence is that trade's reason and is
-            quoted the same way. A multi-leg batch keeps its description above
-            its legs, because there it explains several names at once.
-          */}
-          {!batched && (
-            <div className="mt-2">
-              {reason ? (
-                <TileQuote size={size}>{reason}</TileQuote>
-              ) : proposedReason ? (
-                <>
-                  <div className={EYEBROW}>Why it was proposed</div>
-                  <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-gray-700 dark:text-gray-300">
-                    {proposedReason}
-                  </p>
-                </>
-              ) : null}
+      {!batched && (
+        reason ? <TileQuote size={size}>{reason}</TileQuote>
+          : proposedReason ? (
+            <div>
+              <div className={EYEBROW}>Why it was proposed</div>
+              <TileReason>{proposedReason}</TileReason>
             </div>
-          )}
-        </section>
+          ) : <TileReason>{summaryOf(d)}</TileReason>
+      )}
 
-        <section data-testid="decision-since" className="min-w-0">
-          <div className={EYEBROW}>Since decision</div>
-          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1.5">
-            {/*
-              Outcomes' own figures, never recomputed here: the move measured
-              from the decision, the dollar proxy behind it, and how long the
-              record has been standing.
-            */}
-            {!batched && facts.sincePct != null && (
-              <CardMetric
-                label="Return"
-                value={`${facts.sincePct >= 0 ? '+' : ''}${facts.sincePct.toFixed(1)}%`}
-                tone={facts.sincePct < 0 ? 'down' : 'up'}
-              />
-            )}
-            {/* A batch reports dollars only where Outcomes says it may: every
-                leg priced, none counted into a second batch. Never a return. */}
-            {batched ? batchPnl && <CardMetric label="Batch" value={batchPnl.replace(' P&L', '')} />
-              : facts.pnl != null && (
-                <CardMetric
-                  label="P&amp;L"
-                  value={formatCompactDollars(facts.pnl, facts.pnl > 0 ? '+' : facts.pnl < 0 ? '−' : '')}
-                  tone={facts.pnl < 0 ? 'down' : 'up'}
-                />
-              )}
-            {when && daysSince(when) != null && (
-              <CardMetric label="Elapsed" value={`${daysSince(when)}d`} />
-            )}
-            {facts.sincePct == null && facts.pnl == null && !batchPnl && (
-              <p className="text-[12px] italic text-gray-500">No priced outcome yet.</p>
-            )}
-          </div>
-          {/* Where the review stands, said once -- and only where the card's
-              own status line has not already said it. */}
+      {/*
+        The move since the decision, where the tile has room to lead with it.
+
+        `TileLead` is what Research gives a price move and Ideas gives a
+        proposed weight: the one figure that IS the finding. Here it answers
+        "does this deserve another look?". Outcomes' number, never recomputed.
+      */}
+      {big && !batched && facts.sincePct != null && (
+        <TileLead
+          figure={`${facts.sincePct >= 0 ? '+' : ''}${facts.sincePct.toFixed(1)}`}
+          unit="%"
+          label={<>since the decision</>}
+        />
+      )}
+
+      {/*
+        The numbers, in the strip every lens carries them in.
+
+        `accepted_trades` records the weight the book was taken to, the change
+        that made and the cash it moved. A smaller tile carries fewer of them:
+        the shared density behaviour, not a second layout.
+      */}
+      <div data-testid="decision-figures">
+        <TileMeta>
+          {(() => {
+            const e = d.execution
+            const out: React.ReactNode[] = []
+            const strong = 'font-mono font-semibold text-gray-700 dark:text-gray-300'
+            if (e?.targetWeight != null) out.push(<span key="t"><b className={strong}>{e.targetWeight.toFixed(1)}%</b> target</span>)
+            if (big && e?.deltaWeight != null) {
+              out.push(<span key="d"><b className={strong}>{e.deltaWeight >= 0 ? '+' : ''}{e.deltaWeight.toFixed(2)}%</b> change</span>)
+            }
+            if (e?.notional != null) out.push(<span key="n"><b className={strong}>{formatCompactDollars(Math.abs(e.notional))}</b> committed</span>)
+            /*
+              Nothing was executed, so the ask is the only quantity there is --
+              and it is labelled as the ask, never as a position.
+            */
+            if (!out.length) {
+              if (d.sizingWeight != null) out.push(<span key="a"><b className={strong}>{d.sizingWeight.toFixed(1)}%</b> asked for</span>)
+              else if (d.sizingShares != null) out.push(<span key="a"><b className={strong}>{d.sizingShares.toLocaleString()} sh</b> asked for</span>)
+              if (big && d.baselineWeight != null) out.push(<span key="b">{d.baselineWeight.toFixed(1)}% held then</span>)
+            }
+            // The outcome, wherever the lead has not already carried it.
+            if ((!big || batched) && !batched && facts.sincePct != null) {
+              out.push(<span key="s"><b className={strong}>{facts.sincePct >= 0 ? '+' : ''}{facts.sincePct.toFixed(1)}%</b> since</span>)
+            }
+            // A batch reports dollars only where Outcomes says it may: every
+            // leg priced, none counted into a second batch. Never a return.
+            if (batched ? batchPnl : facts.pnl != null) {
+              out.push(<span key="p">{batched ? batchPnl : `${formatCompactDollars(facts.pnl!, facts.pnl! > 0 ? '+' : facts.pnl! < 0 ? '−' : '')} P&L`}</span>)
+            }
+            if (when && daysSince(when) != null) out.push(<span key="e">{daysSince(when)}d ago</span>)
+            return out
+          })()}
+        </TileMeta>
+      </div>
+
+      {/* Where the review stands, and whether anybody wrote why -- said once,
+          and only where the status line above has not already said it. */}
+      {(facts.verdictLabel && situation.klass === 'recent') || !hasHumanReason(d) ? (
+        <p data-testid="decision-state" className="text-[11px]">
           {facts.verdictLabel && situation.klass === 'recent' && (
-            <p className="mt-1 text-[11px] text-gray-500">{facts.verdictLabel}</p>
+            <span className="text-gray-500">{facts.verdictLabel}</span>
           )}
           {!hasHumanReason(d) && (
-            <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-500">No decision reason</p>
+            <span className="text-amber-700 dark:text-amber-500">
+              {facts.verdictLabel && situation.klass === 'recent' ? ' · ' : ''}No decision reason
+            </span>
           )}
-        </section>
-      </div>
+        </p>
+      ) : null}
 
       {/*
         The legs, named. The act asks its question once, and the reader can
@@ -1083,31 +1026,6 @@ function TileAction({
     >
       {label}
     </button>
-  )
-}
-
-/**
- * One figure and what it is.
- *
- * The card's two sections are read by scanning these, so the number carries
- * the weight and the label sits under it quietly. Colour marks direction on
- * an outcome only -- a decision's own size is never good or bad.
- */
-function CardMetric({
-  label, value, tone,
-}: { label: string; value: string; tone?: 'up' | 'down' }) {
-  return (
-    <div className="min-w-0">
-      <div className={clsx(
-        'font-mono text-[15px] font-semibold leading-none tabular-nums',
-        tone === 'down' ? 'text-rose-700 dark:text-rose-400'
-          : tone === 'up' ? 'text-emerald-700 dark:text-emerald-400'
-          : 'text-gray-900 dark:text-gray-100',
-      )}>
-        {value}
-      </div>
-      <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-gray-500">{label}</div>
-    </div>
   )
 }
 
