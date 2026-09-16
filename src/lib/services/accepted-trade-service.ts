@@ -38,10 +38,21 @@ import type {
 // trade_queue_item join exposes pair_id/pair_trade_id/pair_leg_type so the
 // Trade Book can render pair legs adjacent with a "↔ pair" badge. Without
 // this join there's no path from an accepted_trade to its pair grouping.
+// `rationale` and `thesis_text` come from the SAME join that was already here.
+//
+// The chain from a committed trade back to why anybody wanted it was never
+// broken in the schema -- `accepted_trades.trade_queue_item_id` is populated on
+// every row -- it was broken in this SELECT. Trade Book could therefore only
+// ever show `acceptance_note` (often null on an inbox accept) and the batch
+// description, and the analyst's original case was unreachable from the one
+// surface that records what the desk actually did.
+//
+// Two columns on an existing embed. No new query, no copy of the text, and no
+// second place for it to drift from.
 const TRADE_SELECT = `
   *,
   asset:assets(id, symbol, company_name, sector),
-  trade_queue_item:trade_queue_items!accepted_trades_trade_queue_item_id_fkey(id, pair_id, pair_trade_id, pair_leg_type, action)
+  trade_queue_item:trade_queue_items!accepted_trades_trade_queue_item_id_fkey(id, pair_id, pair_trade_id, pair_leg_type, action, rationale, thesis_text)
 `
 
 // Select comment rows; user display info is fetched separately so the

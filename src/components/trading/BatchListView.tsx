@@ -679,6 +679,9 @@ function MobileTradeCard({
             tradeId={trade.id}
             acceptanceNote={trade.acceptance_note}
             batchDescription={batchDescription}
+            // Thesis first, then the analyst's rationale: the thesis is the
+            // durable case, the rationale the reason it was raised now.
+            originalCase={trade.trade_queue_item?.thesis_text || trade.trade_queue_item?.rationale}
             onAddComment={onAddComment}
           />
         </div>
@@ -941,6 +944,9 @@ function TradeRow({
             tradeId={trade.id}
             acceptanceNote={trade.acceptance_note}
             batchDescription={batchDescription}
+            // Thesis first, then the analyst's rationale: the thesis is the
+            // durable case, the rationale the reason it was raised now.
+            originalCase={trade.trade_queue_item?.thesis_text || trade.trade_queue_item?.rationale}
             onAddComment={onAddComment}
           />
         </td>

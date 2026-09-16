@@ -1220,6 +1220,12 @@ export interface AcceptedTradeWithJoins extends AcceptedTrade {
     pair_trade_id: string | null
     pair_leg_type: PairLegType | null
     action: TradeAction
+    /** The analyst's original case, read through the FK this row already
+     *  carries. Not a copy: the text lives on `trade_queue_items` and is
+     *  joined, so it cannot drift from the idea it belongs to. Null for a
+     *  trade that did not originate from an idea. */
+    rationale?: string | null
+    thesis_text?: string | null
   } | null
   accepted_by_user?: {
     id: string

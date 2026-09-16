@@ -254,11 +254,17 @@ export function TradeRationaleLog({
   tradeId,
   acceptanceNote,
   batchDescription,
+  originalCase,
   onAddComment,
 }: {
   tradeId: string
   acceptanceNote: string | null | undefined
   batchDescription?: string | null
+  /** The analyst's case on the originating idea, read through the FK the
+   *  committed trade already carries. Shown BEFORE the commit note because it
+   *  came first: it is why anybody wanted the trade, where `acceptance_note`
+   *  is why the PM took it. Absent for a trade with no originating idea. */
+  originalCase?: string | null
   onAddComment?: (tradeId: string, content: string) => void
 }) {
   const { data: additions = [] } = useAcceptedTradeComments(tradeId)
@@ -268,6 +274,10 @@ export function TradeRationaleLog({
   const initial = (acceptanceNote || '').trim()
   const batchDesc = (batchDescription || '').trim()
   const isInherited = initial.length > 0 && initial === batchDesc
+  /* Not shown when the PM's note simply repeats it -- one paragraph twice
+     under two labels reads as two findings. */
+  const original = (originalCase || '').trim()
+  const showOriginal = original.length > 0 && original !== initial && original !== batchDesc
 
   const handleSubmit = () => {
     if (!draft.trim() || !onAddComment) return
@@ -304,6 +314,17 @@ export function TradeRationaleLog({
           <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Trade-specific notes</h4>
           <span className="text-[11px] text-gray-500 dark:text-gray-400">Optional · only for this trade</span>
         </div>
+
+        {/* Why anybody wanted the trade, before why the PM took it. Read
+            through the idea this trade already points at. */}
+        {showOriginal && (
+          <div data-slot="trade-rationale-original" className="rounded-lg border-l-2 border-indigo-300 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-950/20 px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
+              The case for the idea
+            </div>
+            <p className="mt-0.5 text-[13px] leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{original}</p>
+          </div>
+        )}
 
         <div data-slot="trade-rationale-initial" className="rounded-lg border-l-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -369,6 +390,20 @@ export function TradeRationaleLog({
       </div>
 
       <div className="px-3 py-2 space-y-2.5">
+        {/* The analyst's case, first, because it came first. Joined from the
+            originating idea rather than copied, so it stays whatever the idea
+            says. */}
+        {showOriginal && (
+          <div data-slot="trade-rationale-original" className="flex gap-2.5">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-indigo-500 dark:text-indigo-400 whitespace-nowrap pt-0.5 w-16 flex-shrink-0">
+              The case
+            </span>
+            <p className="text-xs text-gray-700 dark:text-gray-200 whitespace-pre-wrap leading-relaxed flex-1">
+              {original}
+            </p>
+          </div>
+        )}
+
         {/* Initial rationale — the reason captured at commit time. */}
         {initial ? (
           <div className="flex gap-2.5">
@@ -1240,6 +1275,7 @@ function TradeDetailPane({
           tradeId={trade.id}
           acceptanceNote={trade.acceptance_note}
           batchDescription={batchDescription ?? null}
+          originalCase={trade.trade_queue_item?.thesis_text || trade.trade_queue_item?.rationale}
           onAddComment={onAddComment}
         />
       </div>
