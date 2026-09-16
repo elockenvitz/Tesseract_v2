@@ -197,6 +197,13 @@ export const GATED_DIRS = [
    */
   'src/lib/attention-state/__tests__',
   /*
+   * The feed candidate contract and its first producer. What it guards is
+   * mostly absence -- no ranking, no layout, and an id the adapter passes
+   * through untouched because it IS the dismissal key. All three fail
+   * silently: the feed still works, it just stops remembering.
+   */
+  'src/lib/feed/__tests__',
+  /*
    * Today's domain layer: tiering, adaptation, diversity, enrichment and the
    * time labels every tile reads from.
    *
