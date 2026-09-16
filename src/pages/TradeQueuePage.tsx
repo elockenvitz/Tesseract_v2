@@ -154,7 +154,19 @@ const CONVICTION_CONFIG: Record<string, { label: string; color: string; bg: stri
   high: { label: 'High Conviction', color: 'text-green-700 dark:text-green-300', bg: 'bg-green-50 dark:bg-green-900/30', dot: 'bg-green-500' },
 }
 
-export function TradeQueuePage() {
+export interface TradeQueuePageProps {
+  /** An idea to bring into view on arrival. The pilot mission's "Open
+   *  Pipeline" sends the tutorial idea, so the reader is not dropped on a full
+   *  board with no indication which card is theirs. Not a filter — the board
+   *  is unchanged, the card is just scrolled to and flashed. */
+  focusIdeaId?: string | null
+  /** Called once the card has actually been brought into view, so the caller
+   *  can drop the id from the tab. Otherwise it persists and every later visit
+   *  re-scrolls to the same card. */
+  onFocusConsumed?: () => void
+}
+
+export function TradeQueuePage({ focusIdeaId, onFocusConsumed }: TradeQueuePageProps = {}) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const pilotMode = usePilotMode()
@@ -370,6 +382,43 @@ export function TradeQueuePage() {
   // Shared with the phone's pipeline via usePipelineItems, which owns the query
   // and its key so both surfaces read one cache entry.
   const { data: tradeItems, isLoading, error } = usePipelineItems()
+
+  /*
+   * Bring the arriving idea into view.
+   *
+   * The mission's "Open Pipeline" has always sent `focusIdeaId` and nothing
+   * ever read it — the page was rendered with no props at all — so a pilot on
+   * step 2 landed on a full board with no indication which card was theirs.
+   *
+   * This is deliberately the smallest thing that fixes that: no filter, no
+   * selection, no new state. The board renders exactly as it always does and
+   * the one card is scrolled to and flashed, the same treatment Trade Book
+   * gives a just-committed row. Waits for the card to exist rather than
+   * guessing at a delay, and reports itself spent once applied so a later
+   * ordinary visit is ordinary.
+   */
+  const focusAppliedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!focusIdeaId) return
+    if (focusAppliedRef.current === focusIdeaId) return
+    if (!tradeItems || tradeItems.length === 0) return
+    if (!tradeItems.some(i => i.id === focusIdeaId)) return
+    focusAppliedRef.current = focusIdeaId
+
+    const timeout = setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(`[data-queue-item-id="${focusIdeaId}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+        el.classList.add('decision-recorded-flash')
+        setTimeout(() => el.classList.remove('decision-recorded-flash'), 2600)
+      }
+      // Spent — after the flash is on, for the reason Trade Book's is: dropping
+      // the id re-runs this effect and the cleanup would cancel the timer.
+      onFocusConsumed?.()
+    }, 80)
+    return () => clearTimeout(timeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusIdeaId, tradeItems])
 
   // Fetch pair trades with their legs
   const { data: pairTrades } = useQuery({
@@ -4113,6 +4162,9 @@ function TradeQueueCard({
 
   return (
     <div
+      /* So an arrival carrying a specific idea can find its card. Trade Book's
+         highlighted rows carry `data-trade-id` for the same reason. */
+      data-queue-item-id={item.id}
       draggable={!isArchived}
       onDragStart={(e) => {
         dragOccurredRef.current = true

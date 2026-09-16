@@ -277,9 +277,11 @@ describe('the local tutorial', () => {
    * happened to refetch it.
    */
   it('refreshes the mission when a trade is committed', () => {
-    const invalidations = [...page.matchAll(/invalidateQueries\(\{ queryKey: \['pilot-mission'\] \}\)/g)]
-    // Both execute paths: single and bulk.
-    expect(invalidations.length).toBe(2)
+    // Both execute paths: single and bulk. They share one invalidation list
+    // now — each used to write its own out by hand, and the single-trade one
+    // had drifted five keys behind. See lib/services/execute-invalidations.
+    expect([...page.matchAll(/invalidateAfterExecute\(queryClient,/g)]).toHaveLength(2)
+    expect(src('lib/services/execute-invalidations.ts')).toContain("'pilot-mission'")
   })
 
   /**

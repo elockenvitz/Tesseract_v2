@@ -146,7 +146,21 @@ export function usePilotTradeBookSteps(userId: string | undefined, orgId: string
   return {
     done,
     completedCount: Number(done.reviewed) + Number(done.rationale) + Number(done.outcomes),
-    dismissed,
+    /*
+     * Retired by the durable mark as well as the local flag.
+     *
+     * The three steps are per-browser, and only their roll-up
+     * (`tradebook_basics_completed`) is server-backed. Mission stage 4 and the
+     * Outcomes unlock are therefore safe on a second device — both read the
+     * roll-up — but the BANNER read only the local flags, so a pilot who
+     * finished Trade Book basics on their laptop opened Trade Book on a phone
+     * and was asked to do all three again. Nothing about their progress was
+     * actually lost; the instructions had simply forgotten.
+     *
+     * The steps themselves stay local. They are teaching state, they are
+     * cheap, and the thing that has to survive already does.
+     */
+    dismissed: dismissed || stageMarked,
     openOutcomes,
   }
 }

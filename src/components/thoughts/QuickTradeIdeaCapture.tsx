@@ -975,6 +975,18 @@ export function QuickTradeIdeaCapture({
   })
 
   const handleSubmit = () => {
+    /*
+     * The in-flight guard lives here, not on the button.
+     *
+     * The submit button was disabled while pending; the ⌘/Ctrl-Enter path
+     * called straight through to `mutate()` with no such check. Two quick
+     * presses created two trade ideas — and for a pilot, the second one is a
+     * second candidate for the tutorial idea their whole mission is about.
+     * Both paths come through here, so the guard belongs here and the button's
+     * `disabled` becomes the visual half of one rule rather than the only
+     * enforcement of it.
+     */
+    if (createTradeIdea.isPending) return
     if (tradeType === 'single' && !selectedAsset) return
     if (tradeType === 'pair' && (longAssets.length === 0 || shortAssets.length === 0)) return
     // Block exact-pair duplicates — user must remove a leg or open the

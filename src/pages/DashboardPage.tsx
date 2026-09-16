@@ -1141,7 +1141,22 @@ export function DashboardPage() {
         // The desktop board moves cards with native HTML5 drag, which never
         // fires on touch — the kanban is inert on a phone, not just cramped.
         // MobilePipeline shows one stage at a time and makes moving explicit.
-        return isMobile ? <MobilePipeline /> : <TradeQueuePage />
+        return isMobile ? <MobilePipeline /> : (
+          <TradeQueuePage
+            /* Carried by the pilot mission's "Open Pipeline" so the reader can
+               see which card is theirs. Produced since the mission existed and
+               consumed by nobody until now. */
+            focusIdeaId={activeTab.data?.focusIdeaId ?? null}
+            /* One arrival, one scroll — the rule the Outcomes focus and the
+               Trade Book highlight both follow. */
+            onFocusConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'trade-queue' || !t.data?.focusIdeaId) return t
+              const data = { ...t.data }
+              delete data.focusIdeaId
+              return { ...t, data }
+            }))}
+          />
+        )
       case 'trade-lab':
         return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} initialPortfolioId={activeTab.data?.portfolioId} shareId={activeTab.data?.shareId} />
       case 'trade-book':

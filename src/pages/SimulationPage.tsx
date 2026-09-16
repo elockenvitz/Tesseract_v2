@@ -123,6 +123,7 @@ import type { SizingValidationError, AssetPrice, IntentVariant } from '../types/
 import { OrgBadge } from '../components/common/OrgBadge'
 import { DebateIndicatorBadge } from '../components/trading/DebateIndicatorBadge'
 import { latestSnapshotRows } from '../lib/holdings/latest-snapshot'
+import { invalidateAfterExecute } from '../lib/services/execute-invalidations'
 
 interface SimulationPageProps {
   simulationId?: string
@@ -1412,16 +1413,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       }))
       // Tick step 3 of the pilot Trade Lab Get Started banner.
       try { window.dispatchEvent(new CustomEvent('pilot-tradelab:executed')) } catch { /* ignore */ }
-      queryClient.invalidateQueries({ queryKey: ['simulation'] })
-      queryClient.invalidateQueries({ queryKey: ['intent-variants'] })
-      queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-batches'] })
-      // Same reason as the bulk path: an accepted_trade just appeared, and
-      // that is the fact the mission's decision step is derived from.
-      queryClient.invalidateQueries({ queryKey: ['pilot-mission'] })
+      // One list, shared with the bulk path below. This one used to be its own
+      // and had drifted five keys behind — so a pilot who executed a single
+      // trade, which is exactly what the mission asks for, opened Outcomes to
+      // pre-commit state. The identity lets it also tell the pilot gate what
+      // this callback already knows, so Trade Book is not locked on arrival.
+      invalidateAfterExecute(queryClient, { orgId: currentOrgId, userId: user?.id })
     },
     onError: (err: any) => {
       toast.error('Execute failed', err.message)
+    },
+    // Closed when the commit settles, not when the button is pressed — that is
+    // what lets the confirm modal show a pending state at all. On failure the
+    // reader returns to the workbench with the toast, exactly as before.
+    onSettled: () => {
+      setConfirmExecuteIdea(null)
     },
   })
 
@@ -1761,20 +1767,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       // Refresh downstream queries. The variants cache was already
       // patched above — invalidating it triggers a background refetch
       // that reconciles with the server's authoritative state.
-      queryClient.invalidateQueries({ queryKey: ['simulation'] })
-      queryClient.invalidateQueries({ queryKey: ['intent-variants'] })
-      queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-batches'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
-      queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
-      // Outcomes (DecisionAccountabilityPage) keys its data under
-      // 'decision-accountability'. Without this invalidate, switching
-      // to Outcomes right after Execute shows the prior cached state
-      // and the just-committed trade only appears after a hard
-      // refresh.
-      queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })
+      //
+      // The list itself lives in `execute-invalidations`, shared with the
+      // single-trade path, because two hand-written lists that have to agree
+      // is what let them stop agreeing. Each key is justified there against
+      // the table the pipeline actually writes.
+      invalidateAfterExecute(queryClient, { orgId: currentOrgId, userId: user?.id })
     },
     onError: (err: any) => {
       // Nothing to roll back — we never removed variants optimistically.
@@ -7384,16 +7382,30 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     )}
                   </div>
 
+                  {/*
+                    The modal stays up until the commit settles.
+                    It used to close on the click, which meant the `disabled`
+                    below never guarded anything and there was no indication at
+                    all that the most consequential action in the product was in
+                    flight — the workbench simply sat there until the Decision
+                    Recorded modal appeared. Closing is now driven by the
+                    mutation settling, and the button says what is happening.
+                    Both stay `flex-1`, so the longer label does not move them.
+                  */}
                   <div className="flex gap-3">
-                    <button onClick={() => setConfirmExecuteIdea(null)} className="flex-1 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    <button
+                      onClick={() => setConfirmExecuteIdea(null)}
+                      disabled={executeTradeM.isPending}
+                      className="flex-1 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                    >
                       Cancel
                     </button>
                     <button
-                      onClick={() => { executeTradeM.mutate(confirmExecuteIdea); setConfirmExecuteIdea(null) }}
+                      onClick={() => executeTradeM.mutate(confirmExecuteIdea)}
                       disabled={executeTradeM.isPending}
                       className="flex-1 px-4 py-2 text-sm font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-colors disabled:opacity-50"
                     >
-                      Execute Trade
+                      {executeTradeM.isPending ? 'Executing…' : 'Execute Trade'}
                     </button>
                   </div>
                 </div>

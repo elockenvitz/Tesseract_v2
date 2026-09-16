@@ -229,14 +229,23 @@ describe('in the same session, without a reload', () => {
     expect(result.current.mode.hasGraduated).toBe(false)
   })
 
+  /*
+   * Both handlers now call one shared list rather than keeping their own. The
+   * single-trade list had drifted five keys behind the bulk one, which is the
+   * failure two hand-written lists eventually produce — so what is pinned here
+   * is that neither path has a list of its own to drift.
+   */
   it('both execute handlers fire those invalidations', () => {
     const page = src('pages/SimulationPage.tsx')
     const single = page.slice(page.indexOf("setDecisionRecord(buildDecisionRecord({\n        trades: data.trades"), page.indexOf("toast.error('Execute failed', err.message)"))
-    const bulk = page.slice(page.lastIndexOf('if (committed > 0) {'), page.indexOf("queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })"))
+    const bulk = page.slice(page.lastIndexOf('if (committed > 0) {'), page.lastIndexOf('invalidateAfterExecute(queryClient,') + 80)
     for (const handler of [single, bulk]) {
-      expect(handler).toContain("queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })")
-      expect(handler).toContain("queryClient.invalidateQueries({ queryKey: ['pilot-mission'] })")
+      expect(handler).toContain('invalidateAfterExecute(queryClient,')
     }
+    // ...and the shared list still carries what this suite is about.
+    const keys = src('lib/services/execute-invalidations.ts')
+    expect(keys).toContain("'accepted-trades'")
+    expect(keys).toContain("'pilot-mission'")
   })
 })
 
