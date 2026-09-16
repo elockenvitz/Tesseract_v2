@@ -24,6 +24,7 @@ import {
 } from '../lib/portfolio/holdings'
 import { maturityOf, type IdeaEnrichment, type IdeaRow } from '../lib/desktop-ideas'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { useHoldingsForAssets } from './useHoldingsForAssets'
 
 /**
  * What "finished" actually means on a trade idea.
@@ -139,43 +140,19 @@ export function useScanExposure(ideas: IdeaRow[]) {
     [ideas],
   )
 
-  const { data, isFetching } = useQuery<Record<string, ScanExposure>>({
-    queryKey: ['desktop-ideas', 'exposure', ids.join('|')],
-    enabled: ids.length > 0,
-    staleTime: 5 * 60_000,
-    /*
-     * Keep the previous answer while a new id list is being fetched.
-     *
-     * Without this, every change to the scan's ids drops `data` to undefined,
-     * and since `weightPct` is a SORT input the gallery re-ranks to a
-     * weightless order and then back again. Exposure for a name does not
-     * change because a different name joined the list, so the old map is a
-     * correct partial answer for the names it covers.
-     */
-    placeholderData: prev => prev,
-    queryFn: async () => {
-      // There is no weight column on `portfolio_holdings`; weight is derived
-      // against the book's own market value, in lib/portfolio/holdings. Two
-      // queries because the denominator is the whole book: which books hold
-      // these names, then every line in those books.
-      const { data: mine, error } = await supabase
-        .from('portfolio_holdings')
-        .select('portfolio_id')
-        .in('asset_id', ids)
-      if (error) throw new Error(error.message)
+  /*
+   * The rows come from the canonical holdings read, shared with Research,
+   * which asked the identical two-step question under a lens-namespaced key.
+   * What stays here is the derivation: Ideas wants the stake, its rank in the
+   * book, and the book's own distribution.
+   */
+  const { rows, settled } = useHoldingsForAssets(ids)
 
-      const books = [...new Set(((mine ?? []) as any[]).map(r => r.portfolio_id))]
-      if (!books.length) return {}
-
-      const { data, error: e2 } = await supabase
-        .from('portfolio_holdings')
-        .select('portfolio_id, asset_id, shares, price, cost, date')
-        .in('portfolio_id', books)
-      if (e2) throw new Error(e2.message)
-
+  const exposure = useMemo<Record<string, ScanExposure>>(() => {
+    if (!rows.length) return {}
+    {
       // The largest single-book stake, not a sum: an idea's exposure question
       // is "how much does this matter in the book it matters most in".
-      const rows = (data ?? []) as unknown as HoldingRow[]
       const byAsset = weightsByAsset(rows)
 
       // Rank needs the book the stake sits in, so each book is built once and
@@ -217,16 +194,13 @@ export function useScanExposure(ideas: IdeaRow[]) {
         }
       }
       return out
-    },
-  })
+    }
+  }, [rows, ids])
 
   /** `settled` is false until the first real answer for the CURRENT id list has
    *  landed. The lens uses it to hold final geometry, because this map feeds
    *  `scoreIdea` and therefore the rank that decides every tile's span. */
-  return {
-    exposure: data ?? {},
-    settled: ids.length === 0 || (data !== undefined && !isFetching),
-  }
+  return { exposure, settled }
 }
 
 /**

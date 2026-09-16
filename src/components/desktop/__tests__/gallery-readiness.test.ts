@@ -148,6 +148,49 @@ describe('the skeleton is the shape of the page it replaces', () => {
   })
 })
 
+/*
+ * Ideas and Research each need a weight for the names on screen, and a weight
+ * needs the whole book as its denominator -- so both read `portfolio_holdings`
+ * twice. They had written that same pair of reads out by hand under two
+ * lens-namespaced keys, so they could not share a cache entry even when asking
+ * the identical question, and the two copies could drift.
+ */
+describe('the holdings read is asked once', () => {
+  const shared = src('hooks/useHoldingsForAssets.ts')
+
+  it('is keyed by the question, not by the lens', () => {
+    expect(shared).toContain("queryKey: ['portfolio-holdings', 'for-assets', ids.join('|')]")
+    expect(shared).not.toContain('desktop-ideas')
+    expect(shared).not.toContain('desktop-research')
+  })
+
+  /* Sorted and de-duplicated, or two lenses asking about the same names in a
+     different order would still miss each other. */
+  it('normalises the ids so equivalent questions share an entry', () => {
+    const fn = shared.slice(shared.indexOf('export function assetIdKey'))
+    const body = fn.slice(0, fn.indexOf('\n}'))
+    expect(body).toContain('new Set')
+    expect(body).toContain('.sort()')
+  })
+
+  it.each([
+    ['hooks/useDesktopIdeas.ts'],
+    ['hooks/useDesktopResearch.ts'],
+  ])('%s derives from the shared rows rather than reading again', (file) => {
+    const page = src(file)
+    expect(page).toContain('useHoldingsForAssets(ids)')
+    // The hand-rolled two-step read is gone from both.
+    expect(page).not.toContain(".select('portfolio_id')\n        .in('asset_id', ids)")
+    expect(page).not.toContain(".select('portfolio_id').in('asset_id', ids)")
+  })
+
+  it('leaves each lens its own derivation', () => {
+    // Ideas wants rank and the book's distribution; Research wants one number.
+    expect(src('hooks/useDesktopIdeas.ts')).toContain('weightsByAsset(rows)')
+    expect(src('hooks/useDesktopResearch.ts')).toContain('largestWeightByAsset(rows)')
+  })
+})
+
 describe('a failed scan is never reported as good news', () => {
   it.each([
     ['components/today/TodayPage.tsx', 'Cleared', "You're current."],
