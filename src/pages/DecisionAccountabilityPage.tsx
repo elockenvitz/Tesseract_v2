@@ -1197,6 +1197,9 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
   const needsReflection =
     !hasReflected && (intel.verdict === 'evaluate' || intel.verdict === 'needs_review' || intel.verdict === 'hurting')
 
+  // Scopes the memory event to the org, which its RLS policy requires.
+  const { currentOrgId } = useOrganization()
+
   const persist = (patch: { thesis_played_out?: ThesisOutcome | null; process_note?: string | null }) => {
     if (!user?.id) return
     upsert.mutate(
@@ -1209,6 +1212,18 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
           thesis_played_out: patch.thesis_played_out !== undefined ? patch.thesis_played_out : (review?.thesis_played_out ?? null),
           process_note: patch.process_note !== undefined ? patch.process_note : (review?.process_note ?? null),
         },
+        /*
+         * Which table `decision_id` points at.
+         *
+         * It is polymorphic, and (source, category) is what disambiguates it:
+         * a discretionary row's id is a `portfolio_trade_events` id, an acted
+         * row's is a `trade_queue_items` id, and a passed row's is a
+         * `decision_requests` id. The row knows; the writer must not guess.
+         */
+        subjectType: row.source === 'discretionary' ? 'trade'
+          : row.category === 'passed' ? 'decision'
+          : 'idea',
+        organizationId: currentOrgId,
       },
     )
   }

@@ -30,6 +30,7 @@ import { supabase } from '../lib/supabase'
 import { currentPriceFor, type CachedClose, type CurrentPrice } from '../lib/outcomes/current-price'
 import { subDays, differenceInDays, parseISO } from 'date-fns'
 import { batchesByDecision } from '../lib/outcomes/batch-groups'
+import { useDecisionReviewsByIds } from './useDecisionReview'
 import type {
   AccountabilityRow,
   AccountabilityFilters,
@@ -958,9 +959,37 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     return [...withBatches, ...discretionaryRows, ...passedRows]
   }, [decisionData, eventData, passedData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data, acceptedTradesQuery.data, outcomesPayloadQuery.data?.acceptedTrades])
 
+  /*
+   * Has this decision actually been reviewed?
+   *
+   * `decision_reviews` is the authoritative answer and nothing here was
+   * reading it. The Review Queue and the verdict engine both keyed off
+   * `matched_executions[].rationale_status`, which comes from
+   * `trade_event_rationales` -- a table with zero rows in production, and
+   * whose only writer is Trade Book. So saving a reflection in Outcomes never
+   * decremented the queue it was answering, and `getReviewState` could never
+   * return 'reviewed' at all.
+   *
+   * Fetched here rather than at the page, because the counts the strip renders
+   * are computed in this hook and must come from the same fact the rows do.
+   */
+  const reviewIds = useMemo(() => rows.map(r => r.decision_id).filter(Boolean), [rows])
+  const { data: reviewsByDecision } = useDecisionReviewsByIds(reviewIds)
+
+  const rowsWithReview = useMemo(
+    () => rows.map(r => ({
+      ...r,
+      // Presence of the row IS the review. `decision_quality` is never written
+      // by the current UI -- it exposes only `thesis_played_out` and a note --
+      // so requiring it would mean no review ever counted.
+      has_decision_review: !!reviewsByDecision?.get(r.decision_id),
+    })),
+    [rows, reviewsByDecision],
+  )
+
   // ── Step 7: Apply client-side filters ─────────────────────────
   const filteredRows = useMemo(() => {
-    let result = rows
+    let result = rowsWithReview
 
     // Asset search
     if (filters?.assetSearch) {
@@ -1002,7 +1031,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     }
 
     return result
-  }, [rows, filters?.assetSearch, filters?.executionStatus, filters?.resultFilter, filters?.directionFilter, filters?.reviewFilter])
+  }, [rowsWithReview, filters?.assetSearch, filters?.executionStatus, filters?.resultFilter, filters?.directionFilter, filters?.reviewFilter])
 
   // ── Step 8: Compute unmatched executions ──────────────────────
   const unmatchedExecutions: UnmatchedExecution[] = useMemo(() => {
@@ -1131,12 +1160,19 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       topPositiveSymbol,
       topNegativeSymbol,
       // Review workflow counts (rationale_status-aware)
-      needsReviewCount: executed.filter(r => !r.matched_executions.some(e => e.has_rationale)).length,
+      // A real review takes a decision out of the queue. Previously these read
+      // `trade_event_rationales` only -- zero rows in production -- so the
+      // queue never moved no matter how many reviews were saved.
+      needsReviewCount: executed.filter(r =>
+        !r.has_decision_review && !r.matched_executions.some(e => e.has_rationale)
+      ).length,
       reviewInProgressCount: executed.filter(r =>
+        !r.has_decision_review &&
         r.matched_executions.some(e => e.has_rationale) &&
         !r.matched_executions.some(e => e.rationale_status === 'complete' || e.rationale_status === 'reviewed')
       ).length,
       reviewCapturedCount: executed.filter(r =>
+        r.has_decision_review ||
         r.matched_executions.some(e => e.rationale_status === 'complete' || e.rationale_status === 'reviewed')
       ).length,
     }

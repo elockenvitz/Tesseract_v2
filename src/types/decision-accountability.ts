@@ -160,6 +160,15 @@ export interface AccountabilityRow {
   /** Execution matching */
   execution_status: ExecutionMatchStatus
   matched_executions: MatchedExecution[]
+  /**
+   * A `decision_reviews` row exists for this decision.
+   *
+   * The authoritative answer to "has this been reviewed", attached by
+   * `useDecisionAccountability`. Distinct from `rationale_status`, which is
+   * about whether a REASON was captured in Trade Book -- capturing why a trade
+   * was taken and reviewing how it turned out are different acts.
+   */
+  has_decision_review?: boolean
   /** First execution's lag in days (for summary metrics) */
   execution_lag_days: number | null
 
