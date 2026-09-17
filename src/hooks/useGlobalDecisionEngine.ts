@@ -14,6 +14,8 @@ import { useThesisReviews, useThesisReviewConclusions } from './useThesisReview'
 import { useResearchScan } from './useDesktopResearch'
 import { useAssetViewCursors } from './useObjectViewCursor'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { usePilotProgress } from './usePilotProgress'
+import { operationalAfterPilot, judgeIdeaRow } from '../lib/pilot/seed-visibility'
 import {
   runGlobalDecisionEngine,
   type GlobalDecisionEngineResult,
@@ -37,6 +39,11 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
   const { user } = useAuth()
   const userId = user?.id
   const { currentOrgId } = useOrganization()
+  // The pilot's own flag. `cachedHasGraduated` covers the window where the
+  // live read has not resolved yet, so a graduated reader never sees the tour
+  // flash back into their feed on a refresh.
+  const { hasGraduated: liveGraduated, cachedHasGraduated } = usePilotProgress()
+  const hasGraduated = liveGraduated || cachedHasGraduated
 
   // ---- 1. Fetch user's portfolio coverage ----
   const { data: coverage, isLoading: coverageLoading } = useQuery({
@@ -80,7 +87,10 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
 
   // ---- 2. Fetch trade ideas (scoped to user's portfolios) ----
   const { data: tradeIdeas, isLoading: ideasLoading } = useQuery({
-    queryKey: ['decision-engine-ideas', userId, coverage?.portfolioIds],
+    // `hasGraduated` is part of the key, not just the body: graduating must
+    // refetch this list, or the tour stays in the feed until something else
+    // happens to invalidate it.
+    queryKey: ['decision-engine-ideas', userId, coverage?.portfolioIds, hasGraduated],
     queryFn: async () => {
       if (!coverage?.portfolioIds?.length) return []
 
@@ -88,7 +98,7 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
         .from('trade_queue_items')
         .select(`
           id, asset_id, portfolio_id, action, stage, rationale,
-          decision_outcome, decided_at, outcome, outcome_at,
+          decision_outcome, decided_at, outcome, outcome_at, origin_metadata,
           visibility_tier, created_by, created_at, updated_at,
           pair_id, pair_trade_id, pair_leg_type,
           proposed_weight, urgency,
@@ -101,11 +111,27 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
         .limit(100)
 
       if (error) throw error
-      const rows = (data || []).map((d: any) => ({
-        ...d,
-        asset_symbol: d.assets?.symbol,
-        portfolio_name: d.portfolios?.name,
-      }))
+      /*
+       * After graduation an untouched pilot seed is not live work.
+       *
+       * `origin_metadata` was not even selected here, so the rule could not be
+       * applied at all: Today counted, ranked and described the tour's five
+       * seeded ideas as the reader's own book. The ones they acted on stay --
+       * that is the whole distinction, and it is judged by the shared helper
+       * rather than re-decided here.
+       *
+       * Filtered before pair grouping, so a suppressed leg cannot leave a
+       * half-formed synthetic pair behind it.
+       */
+      const rows = operationalAfterPilot(
+        (data || []).map((d: any) => ({
+          ...d,
+          asset_symbol: d.assets?.symbol,
+          portfolio_name: d.portfolios?.name,
+          ...judgeIdeaRow(d),
+        })),
+        { hasGraduated },
+      )
 
       // Group pair trade legs into synthetic combined rows.
       // Support both pair_id (new) and pair_trade_id (legacy).

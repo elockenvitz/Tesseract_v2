@@ -547,11 +547,28 @@ describe('executing from a phone', () => {
     expect(list).toContain('onExecute(chosen.map(r => r.variant!.id)')
   })
 
-  it('names the act in the tutorial', () => {
+  /*
+   * The phone's commit control is a bar UNDER the table; the desktop's is an
+   * Execute Trade button on the idea's action row ABOVE it, disabled until
+   * that idea is selected and sized. One sentence cannot describe both, and
+   * the shared one described only the phone -- so desktop pilots were sent to
+   * the bottom of a table with no button there.
+   *
+   * Asserted per shell, because a single string passing this test is exactly
+   * the bug.
+   */
+  it('names the act in the tutorial, per shell', () => {
     const titles = [...banner.matchAll(/title: '([^']*)'/g)].map(m => m[1])
     expect(titles[2]).toBe('Execute the simulated trade')
-    const hints = [...banner.matchAll(/hint: '([^']*)'/g)].map(m => m[1])
-    expect(hints[1]).toContain('Execute at the bottom of the table')
+
+    const step3 = banner.slice(banner.indexOf("title: 'Execute the simulated trade'"))
+    // The phone keeps the wording written for its own control.
+    expect(step3).toContain('Tap Execute at the bottom of the table')
+    // The desktop names its button, its location, and the selection the
+    // phone does not require.
+    expect(step3).toMatch(/Select the trade you sized[\s\S]*Execute Trade above the table/)
+    // Chosen by shell, not by guesswork.
+    expect(step3).toContain('isMobile')
   })
 })
 

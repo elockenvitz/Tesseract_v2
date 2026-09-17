@@ -68,6 +68,32 @@ export function isOperationalAfterPilot(
   return !!row.actedOn
 }
 
+/**
+ * A `trade_queue_items` row, judged.
+ *
+ * Lives here rather than at each call site so "acted on" has ONE definition.
+ * The surfaces that already apply the rule judge their own shapes -- Decisions
+ * by resolved status, Coverage by whether an idea is still open -- and an
+ * engine that invented a sixth answer is how the lenses start disagreeing
+ * about what the reader's book contains.
+ *
+ * For an idea the act is a decision or an outcome: somebody decided it, or it
+ * reached a terminal state. Stage movement alone is deliberately NOT enough --
+ * the seeder plants ideas at five different stages, so treating stage as
+ * evidence of work would make every seed look acted-on the moment it existed.
+ */
+export function judgeIdeaRow(row: {
+  origin_metadata?: unknown
+  decided_at?: string | null
+  decision_outcome?: string | null
+  outcome?: string | null
+}): SeedJudgeable {
+  return {
+    pilotSeed: isPilotSeedRow(row),
+    actedOn: !!row.decided_at || !!row.decision_outcome || !!row.outcome,
+  }
+}
+
 /** The operational subset, in order, leaving the rest exactly where they are. */
 export function operationalAfterPilot<T extends SeedJudgeable>(
   rows: readonly T[], opts: { hasGraduated: boolean },

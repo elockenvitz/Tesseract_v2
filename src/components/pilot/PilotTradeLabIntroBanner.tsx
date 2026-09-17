@@ -29,6 +29,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { PilotStepsBanner } from './PilotStepsBanner'
 import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
 import { TRADE_LAB_STEP1_EVENT, tradeLabStep1Hint } from '../../lib/pilot/trade-lab-basics'
@@ -78,6 +79,19 @@ function writeFlag(userId: string, orgId: string | null | undefined, suffix: str
 }
 
 export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange, tutorialSymbol }: PilotTradeLabIntroBannerProps) {
+  /*
+   * The two shells commit a trade through genuinely different controls, so
+   * one sentence cannot describe both without lying to one of them.
+   *
+   * The phone has a bar under the table that says how many trades it will
+   * commit. The desktop has an Execute Trade button on the idea's own action
+   * row, above the table, and it stays disabled until that idea is the
+   * selected one AND has sizing entered. The hint had been rewritten for the
+   * phone -- correctly -- and desktop pilots were then sent to the bottom of
+   * a table that has no button there, with no mention that the trade has to
+   * be picked first.
+   */
+  const isMobile = useIsMobile()
   const [dismissed, setDismissed] = useState<boolean>(() => readFlag(userId, orgId, DISMISS))
   const [step1, setStep1] = useState<boolean>(() => readFlag(userId, orgId, STEP1))
   const [step2, setStep2] = useState<boolean>(() => readFlag(userId, orgId, STEP2))
@@ -200,7 +214,9 @@ export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange, t
           /* "Click Execute Trade" named a desktop button. The phone's control
              is a bar under the table and says how many trades it will
              commit, so the hint names the act and where it lives. */
-          hint: 'Tap Execute at the bottom of the table to commit it to the Trade Book.',
+          hint: isMobile
+            ? 'Tap Execute at the bottom of the table to commit it to the Trade Book.'
+            : 'Select the trade you sized, then click Execute Trade above the table to commit it to the Trade Book.',
           done: step3,
         },
       ]}
