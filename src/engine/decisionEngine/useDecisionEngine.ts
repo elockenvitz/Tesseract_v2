@@ -130,10 +130,38 @@ export function useDecisionEngine(): UseDecisionEngineResult {
     staleTime: 300_000,
   })
 
+  /*
+   * Declared HERE, above its first use, and not beside the other pilot reads
+   * further down.
+   *
+   * It was declared at the bottom of this hook and referenced in the idea
+   * query's key ~200 lines above, which is a temporal dead zone: evaluating
+   * the key on first render threw "Cannot access 'hasGraduated' before
+   * initialization" and the app never left the loading screen. `const` in a
+   * function body is not hoisted, and a React hook body runs top to bottom
+   * like any other function -- the same defect class CLAUDE.md records from
+   * the banner code that once broke the feed on every render.
+   *
+   * `cached` covers the window before the live read resolves, so the tour does
+   * not flash back into Today on a refresh.
+   */
+  const { hasGraduated: liveGraduated, cachedHasGraduated } = usePilotProgress()
+  const hasGraduated = liveGraduated || cachedHasGraduated
+
   // ---- 2. Fetch trade ideas ----
   const { data: tradeIdeas, isLoading: ideasLoading } = useQuery({
-    // Graduation changes what this list contains, so it belongs in the key.
-    queryKey: ['decision-engine-ideas', userId, coverage?.portfolioIds, hasGraduated],
+    /*
+     * `today-engine` distinguishes this cache entry from
+     * `hooks/useGlobalDecisionEngine`, which reads the same table under the
+     * same prefix with a DIFFERENT select. Two query functions sharing one key
+     * is a cache-contract violation whichever of them mounts first: they
+     * overwrite each other's rows and every consumer re-renders on the
+     * difference. The prefix stays shared so existing
+     * `invalidateQueries(['decision-engine-ideas'])` still reaches both.
+     *
+     * Graduation is in the key because it changes what the list contains.
+     */
+    queryKey: ['decision-engine-ideas', 'today-engine', userId, coverage?.portfolioIds, hasGraduated],
     queryFn: async () => {
       if (!coverage?.portfolioIds?.length) return []
 
@@ -349,11 +377,6 @@ export function useDecisionEngine(): UseDecisionEngineResult {
    * exists to end, surviving on the surfaces people actually look at.
    */
   const thesisReviews = useThesisReviews()
-
-  // `cached` covers the window before the live read resolves, so the tour does
-  // not flash back into Today on a refresh.
-  const { hasGraduated: liveGraduated, cachedHasGraduated } = usePilotProgress()
-  const hasGraduated = liveGraduated || cachedHasGraduated
 
   // ---- 5. Fetch thesis staleness ----
   const { data: thesisUpdates, isLoading: thesisLoading } = useQuery({

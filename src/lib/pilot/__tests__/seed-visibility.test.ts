@@ -155,7 +155,7 @@ describe('the engine reads the marker it filters on', () => {
   /* Graduating must refetch the list, or the tour stays in the feed until
      something unrelated invalidates it. */
   it('keys the query on graduation', () => {
-    expect(hook).toContain("'decision-engine-ideas', userId, coverage?.portfolioIds, hasGraduated")
+    expect(hook).toContain("'decision-engine-ideas', 'dashboard-engine', userId, coverage?.portfolioIds, hasGraduated")
   })
 })
 
@@ -178,13 +178,15 @@ describe('Pipeline, Inbox and Trade Lab apply the rule', () => {
     // fixing one is the trap this codebase has now fallen into twice --
     // first for thesis reviews, then for seed visibility, which is how the
     // graduated sandbox kept showing its AAPL recommendation on Today.
+    // Distinct segments: the two hooks read the same table with different
+    // selects, so they must not share one cache entry.
     {
       file: 'hooks/useGlobalDecisionEngine.ts',
-      key: "'decision-engine-ideas', userId, coverage?.portfolioIds, hasGraduated",
+      key: "'decision-engine-ideas', 'dashboard-engine', userId, coverage?.portfolioIds, hasGraduated",
     },
     {
       file: 'engine/decisionEngine/useDecisionEngine.ts',
-      key: "'decision-engine-ideas', userId, coverage?.portfolioIds, hasGraduated",
+      key: "'decision-engine-ideas', 'today-engine', userId, coverage?.portfolioIds, hasGraduated",
     },
   ]
 

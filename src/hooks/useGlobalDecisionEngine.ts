@@ -87,10 +87,24 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
 
   // ---- 2. Fetch trade ideas (scoped to user's portfolios) ----
   const { data: tradeIdeas, isLoading: ideasLoading } = useQuery({
-    // `hasGraduated` is part of the key, not just the body: graduating must
-    // refetch this list, or the tour stays in the feed until something else
-    // happens to invalidate it.
-    queryKey: ['decision-engine-ideas', userId, coverage?.portfolioIds, hasGraduated],
+    /*
+     * `dashboard-engine` distinguishes this cache entry from
+     * `engine/decisionEngine/useDecisionEngine`, which reads the same table
+     * under the same prefix with a DIFFERENT select. Two query functions
+     * sharing one key is a cache-contract violation: whichever mounts first
+     * wins, they overwrite each other's rows, and every consumer re-renders on
+     * the difference. Latent for as long as both selects happened to be close
+     * enough to tolerate; named explicitly now rather than differentiated by
+     * whatever state each hook happens to append.
+     *
+     * The prefix stays shared so existing
+     * `invalidateQueries(['decision-engine-ideas'])` still reaches both.
+     *
+     * `hasGraduated` is part of the key, not just the body: graduating must
+     * refetch this list, or the tour stays in the feed until something else
+     * happens to invalidate it.
+     */
+    queryKey: ['decision-engine-ideas', 'dashboard-engine', userId, coverage?.portfolioIds, hasGraduated],
     queryFn: async () => {
       if (!coverage?.portfolioIds?.length) return []
 

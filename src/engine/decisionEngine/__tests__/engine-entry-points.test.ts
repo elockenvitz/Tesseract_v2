@@ -114,3 +114,56 @@ describe('the entry-point list is not allowed to go stale', () => {
     expect(found).toEqual([...ENTRY_POINTS].sort())
   })
 })
+
+/**
+ * Two defects this file now guards, both found the hard way.
+ *
+ * 1. TEMPORAL DEAD ZONE. `hasGraduated` was declared at the bottom of
+ *    `useDecisionEngine` and referenced in a query key ~200 lines above it.
+ *    `const` in a function body is not hoisted and a hook body runs top to
+ *    bottom, so the first render threw "Cannot access 'hasGraduated' before
+ *    initialization" and the app never left the loading screen. CLAUDE.md
+ *    records this exact class from banner code that once broke the feed on
+ *    every render.
+ *
+ * 2. SHARED QUERY KEY, DIFFERENT SELECT. Both engine hooks read
+ *    `trade_queue_items` under the `decision-engine-ideas` prefix with
+ *    different column lists. Two query functions on one key overwrite each
+ *    other's rows and re-render every consumer on the difference.
+ */
+describe('the engine hooks declare before they use, and own their cache keys', () => {
+  const HOOKS = [
+    { file: 'hooks/useGlobalDecisionEngine.ts', segment: "'dashboard-engine'" },
+    { file: 'engine/decisionEngine/useDecisionEngine.ts', segment: "'today-engine'" },
+  ] as const
+
+  it.each(HOOKS)('$file declares hasGraduated before its first use', ({ file }) => {
+    const body = read(file)
+    const declaredAt = body.indexOf('const hasGraduated =')
+    const firstUse = body.indexOf('hasGraduated]')
+    expect(declaredAt).toBeGreaterThan(-1)
+    expect(firstUse).toBeGreaterThan(-1)
+    // The whole bug: declaration must come first in source order.
+    expect(declaredAt).toBeLessThan(firstUse)
+  })
+
+  it.each(HOOKS)('$file declares hasGraduated exactly once', ({ file }) => {
+    const matches = read(file).match(/const hasGraduated =/g) ?? []
+    expect(matches).toHaveLength(1)
+  })
+
+  /* Distinct, semantic, and not merely differentiated by appended state. */
+  it.each(HOOKS)('$file names its own idea cache entry', ({ file, segment }) => {
+    const body = read(file)
+    expect(body).toContain(`['decision-engine-ideas', ${segment},`)
+  })
+
+  it('gives the two hooks different segments under a shared prefix', () => {
+    const segments = HOOKS.map(h => h.segment)
+    expect(new Set(segments).size).toBe(segments.length)
+    // Shared prefix, so invalidateQueries(['decision-engine-ideas']) hits both.
+    for (const { file } of HOOKS) {
+      expect(read(file)).toContain("'decision-engine-ideas'")
+    }
+  })
+})
