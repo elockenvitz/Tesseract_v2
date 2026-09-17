@@ -49,3 +49,11 @@
 
 *.ts    text eol=lf
 *.tsx   text eol=lf
+
+# `.sql` for the same reason, found the moment the checkout above was
+# rematerialized: `holdings-apply-rpc.test.ts` reads a migration and anchors on
+# `IF NOT EXISTS (\n    SELECT 1 FROM ...`. Those files had been LF only by
+# accident -- nothing had made Git rewrite them -- so the suite was resting on
+# the same luck the TypeScript anchors were.
+
+*.sql   text eol=lf
