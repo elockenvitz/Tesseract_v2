@@ -8,6 +8,8 @@
  * that every route out reuses a seam another stage already owns.
  */
 
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -589,7 +591,13 @@ describe('what happened, in Outcomes’ own numbers', () => {
   it('states the move since the decision, the dollar proxy and where the review stands', () => {
     decisions = [committed()]
     outcomeFacts = {
-      'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, sincePct: -0.8, pnl: -670, verdictLabel: 'Outcome not reviewed' },
+      // `sinceDated`: the move was measured to a price carrying a date. The
+      // lens leads with the figure only then -- see the suppression case below.
+      'tq-c1': {
+        ...NO_OUTCOME_FACTS, executed: true,
+        sincePct: -0.8, sinceBasis: 'decision', sinceDated: true,
+        pnl: -670, verdictLabel: 'Outcome not reviewed',
+      },
     }
     render(<DecisionsWorkspace />)
     const tile = screen.getByTestId('decision-tile')
@@ -605,6 +613,51 @@ describe('what happened, in Outcomes’ own numbers', () => {
     // The reasoning itself, not a note that some exists.
     expect(tile).toHaveTextContent('Added on the cloud reacceleration.')
     expect(tile.textContent).not.toContain('No decision reason')
+  })
+
+  /*
+   * ── The move has to be trustworthy to be the biggest thing on the card ───
+   *
+   * `lib/outcomes/current-price` falls back to `assets.current_price`, which
+   * carries no timestamp anywhere in the schema and on this project was last
+   * written a month before the closes beside it. A percentage measured to it
+   * is unfalsifiable, and it is how MSFT's real +0.8% was once reported as
+   * -23.1%. So an undated move does not get to lead.
+   */
+  it('refuses to lead with a move measured to an undated price', () => {
+    decisions = [committed()]
+    outcomeFacts = {
+      'tq-c1': {
+        ...NO_OUTCOME_FACTS, executed: true,
+        sincePct: -23.1, sinceBasis: 'decision', sinceDated: false,
+        pnl: -670, verdictLabel: 'Outcome not reviewed',
+      },
+    }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // No giant figure, and no claim about what it measures.
+    expect(tile.textContent).not.toContain('since the decision')
+    expect(tile.textContent).not.toContain('-23.1')
+    // The rest of the record still reads: suppressing one figure is not
+    // blanking the card.
+    expect(within(tile).getByTestId('decision-figures')).toHaveTextContent('−$670 P&L')
+  })
+
+  /* A move with no captured decision price is the move since the FILL. That
+     is a real fact against a later date, so it is labelled, not hidden. */
+  it('labels a move measured from the fill as such', () => {
+    decisions = [committed()]
+    outcomeFacts = {
+      'tq-c1': {
+        ...NO_OUTCOME_FACTS, executed: true,
+        sincePct: 1.4, sinceBasis: 'execution', sinceDated: true,
+        pnl: 120, verdictLabel: 'Outcome not reviewed',
+      },
+    }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    expect(tile).toHaveTextContent('since it filled')
+    expect(tile.textContent).not.toContain('since the decision')
   })
 
   it('says nothing where Outcomes knows nothing', () => {
@@ -1259,5 +1312,129 @@ describe('outcome chips are categories, not grades', () => {
     decisions = [decision({ status: 'pending', decidedAt: null, decidedByName: null })]
     render(<DecisionsWorkspace />)
     expect(screen.getAllByText('Awaiting decision')[0].className).toMatch(/blue/)
+  })
+})
+
+/**
+ * Hero is earned, and the track has to have something to draw.
+ *
+ * Recency hands the newest record the hero slot; recency does not know whether
+ * that record has anything to put in it. A one-day decision with no captured
+ * price and a complete record was 64px of reserved visual over a claim and two
+ * figures -- the oversized, whitespace-heavy card this pass is about.
+ */
+describe('the hero slot is earned by having something to fill it', () => {
+  beforeEach(() => { decisions = []; outcomeFacts = {} })
+
+  const committed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', status: 'accepted',
+    decidedAt: daysAgo(2), decisionNote: 'Added on the cloud reacceleration.',
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric Lockenvitz' },
+    ...over,
+  })
+
+  /* Requested, decided and filled on the same day is three marks on top of
+     each other and "0d" twice. The lengths ARE the finding; with no lengths
+     there is no finding. */
+  it('does not draw the track when every interval is zero', () => {
+    const sameDay = '2026-09-15T10:00:00Z'
+    decisions = [committed({
+      requestedAt: sameDay, decidedAt: sameDay,
+      execution: { id: 'e', status: 'completed', completedAt: sameDay, executedByName: 'PM' },
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.queryByTestId('decision-path')).not.toBeInTheDocument()
+  })
+
+  it('draws the track once one interval is real', () => {
+    decisions = [committed({
+      requestedAt: '2026-09-10T10:00:00Z',
+      decidedAt: '2026-09-14T10:00:00Z',
+      execution: { id: 'e', status: 'completed', completedAt: '2026-09-14T10:00:00Z', executedByName: 'PM' },
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-path')).toBeInTheDocument()
+  })
+
+  /* The band is a ceiling, not an allocation: a record with no object takes
+     `large`, which is the same width and less height. Order is untouched. */
+  it('demotes the newest record out of hero when it has no object to draw', () => {
+    const sameDay = '2026-09-15T10:00:00Z'
+    decisions = [committed({
+      requestedAt: sameDay, decidedAt: sameDay,
+      sizingWeight: null, baselineWeight: null,
+      execution: { id: 'e', status: 'completed', completedAt: sameDay, executedByName: 'PM' },
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-tile')).toHaveAttribute('data-size', 'large')
+  })
+
+  it('keeps hero where the record does have one', () => {
+    decisions = [committed({
+      requestedAt: '2026-09-10T10:00:00Z', decidedAt: '2026-09-14T10:00:00Z',
+      execution: { id: 'e', status: 'completed', completedAt: '2026-09-15T10:00:00Z', executedByName: 'PM' },
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-tile')).toHaveAttribute('data-size', 'hero')
+  })
+
+  /* Demotion must not reorder: the newest record is still the first tile. */
+  it('changes how much room the newest record gets, never which record is newest', () => {
+    const sameDay = '2026-09-15T10:00:00Z'
+    decisions = [
+      committed({ id: 'new', ideaId: 'tq-new', requestedAt: sameDay, decidedAt: sameDay,
+        sizingWeight: null, baselineWeight: null,
+        execution: { id: 'e1', status: 'completed', completedAt: sameDay, executedByName: 'PM' } }),
+      committed({ id: 'old', ideaId: 'tq-old', decidedAt: '2026-08-01T10:00:00Z' }),
+    ]
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles[0]).toHaveAttribute('data-size', 'large')
+    expect(tiles[0].textContent).toContain('MSFT')
+  })
+})
+
+/** Contrast carries condition and direction, and only those. */
+describe('the tile inks what matters', () => {
+  beforeEach(() => { decisions = []; outcomeFacts = {} })
+
+  const committed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', status: 'accepted',
+    decidedAt: daysAgo(2), decisionNote: 'Added on the cloud reacceleration.',
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric Lockenvitz' },
+    ...over,
+  })
+
+  /*
+   * Asserted at the source, deliberately.
+   *
+   * The verdict line it lives on is gated on `situation.klass === 'recent'` --
+   * a pre-existing gate this pass did not touch and does not want to widen, so
+   * most fixtures never render it and a DOM test would be testing the gate
+   * rather than the ink. What matters here is the branch: an unreviewed
+   * outcome is the one condition on a committed record that asks the reader
+   * for something, so it is enclosed and tinted; every other verdict stays
+   * grey, because a gallery where each label is coloured says nothing.
+   */
+  it('tints an unreviewed outcome and leaves a reviewed one quiet', () => {
+    const ws = readFileSync(
+      path.join(process.cwd(), 'src/components/decisions-v2/DecisionsWorkspace.tsx'), 'utf8')
+    const line = ws.slice(ws.indexOf('data-testid="decision-state"'))
+    const branch = line.slice(0, line.indexOf('</p>'))
+    expect(branch).toContain('facts.reviewed ? (')
+    expect(branch).toContain('text-gray-500')
+    expect(branch).toContain('decision-verdict-chip')
+    expect(branch).toContain('bg-amber-50')
+  })
+
+  it('inks the stance by direction, not by severity', () => {
+    decisions = [committed({ action: 'buy' })]
+    const { unmount } = render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-stance').className).toContain('emerald')
+    unmount()
+
+    decisions = [committed({ action: 'sell' })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-stance').className).toContain('rose')
   })
 })

@@ -76,6 +76,28 @@ export const RECENT_LIMIT = 6
 export interface OutcomeFacts {
   /** `move_since_decision_pct`, falling back to `move_since_execution_pct`. */
   sincePct: number | null
+  /**
+   * WHICH of those two `sincePct` actually is.
+   *
+   * The lens was labelling both "since the decision". A decision with no
+   * captured snapshot price has no move since the decision, and the fallback
+   * measures from the FILL -- a different, usually smaller number against a
+   * later date. Saying "since the decision" over it is not a rounding
+   * difference, it is the wrong claim, and it is the kind that costs trust
+   * fastest because the reader can check it.
+   */
+  sinceBasis: 'decision' | 'execution' | null
+  /**
+   * Whether the price `sincePct` was measured TO carries a date.
+   *
+   * `lib/outcomes/current-price` prefers the newest dated close and falls back
+   * to `assets.current_price`, which has no timestamp anywhere in the schema
+   * and on this project was last written a month before the closes beside it.
+   * That fallback is returned undated on purpose. A percentage measured to an
+   * undated price is not a small error -- it is how MSFT's +0.8% was once
+   * reported as -23.1% -- so the lens declines to lead with it.
+   */
+  sinceDated: boolean
   /** `impact_proxy`: the dollar P&L proxy, where the row carries one. */
   pnl: number | null
   /**
@@ -93,7 +115,8 @@ export interface OutcomeFacts {
 }
 
 export const NO_OUTCOME_FACTS: OutcomeFacts = {
-  sincePct: null, pnl: null, verdictLabel: null,
+  sincePct: null, sinceBasis: null, sinceDated: false,
+  pnl: null, verdictLabel: null,
   reviewed: false, hurting: false, executed: false,
 }
 

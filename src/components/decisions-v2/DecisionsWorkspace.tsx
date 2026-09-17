@@ -612,12 +612,74 @@ function DecisionTile({
    * shared density behaviour every other lens uses, rather than a second
    * layout system living on this tab.
    */
-  const size = bandSize
+  /*
+   * ── The move, only where it is trustworthy ───────────────────────────────
+   *
+   * Two ways the old giant figure lied, both visible to the reader:
+   *
+   *   1. undated. `current-price` falls back to `assets.current_price`, which
+   *      has no timestamp. A percentage measured to it is unfalsifiable and
+   *      has been wrong by 24 points.
+   *   2. mislabelled. With no captured decision price the number is the move
+   *      since the FILL, and the tile called it "since the decision".
+   *
+   * (2) is now labelled honestly rather than suppressed -- it is a real fact
+   * about a real date. (1) is suppressed: a number nobody can date does not
+   * get to be the largest thing on the card. It still appears in the quiet
+   * strip below, where its size does not claim confidence.
+   */
+  const leadMove = facts.sinceDated ? facts.sincePct : null
+
+  /*
+   * ── When the track earns the slot ────────────────────────────────────────
+   *
+   * `DecisionPath` draws requested -> decided -> executed, and the LENGTHS
+   * between those marks are the finding: a decision that sat unanswered for
+   * three weeks then filled immediately is a different failure from one taken
+   * in a day and filled three weeks later.
+   *
+   * On a simple decision there are no lengths. Requested, decided and filled
+   * on the same day is three marks on top of each other and "0d" twice --
+   * 64px of reserved height spent saying nothing happened slowly. That is the
+   * dead air this pass is removing.
+   *
+   * So the track has to have at least one real interval to draw. One day is
+   * enough: "answered in 1d, filled in 4d" is a shape. Zero everywhere is not.
+   */
+  const dayGap = (a: string | null, b: string | null | undefined) =>
+    a && b ? Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000) : null
+  const waitDays = dayGap(d.requestedAt, d.decidedAt)
+  const fillDays = dayGap(d.decidedAt, d.execution?.completedAt)
+  const pathHasIntervals = (waitDays != null && waitDays > 0) || (fillDays != null && fillDays > 0)
+
+  /*
+   * ── Hero is earned by having something to put in it ──────────────────────
+   *
+   * Recency hands the newest record the hero slot. Recency does not know
+   * whether that record has anything to draw, so the first tile could be a
+   * one-day decision with no captured price and no gaps in its record: 64px of
+   * reserved visual over a claim and two figures. That is the oversized,
+   * whitespace-heavy card this pass is about.
+   *
+   * So the band is a CEILING, not an allocation. A record that cannot fill a
+   * hero takes `large` instead, which is the same width and less height, and
+   * the order is untouched -- this changes how much room the newest record
+   * gets, never which record is newest. No ranking logic is involved.
+   */
+  const objectCandidates = {
+    path: d.decidedAt != null && pathHasIntervals,
+    gaps: work === 'explain',
+    sizes: outcome === 'open' && d.sizingWeight != null && d.baselineWeight != null,
+    move: leadMove != null,
+  }
+  const earnsHero = Object.values(objectCandidates).some(Boolean)
+  const size: TileSize = bandSize === 'hero' && !earnsHero ? 'large' : bandSize
+
   const big = size === 'hero' || size === 'large'
-  /* Whether the track is this tile's one visual. Named once, because both the
-     visual slot and the figures strip below have to agree about it: what the
-     track draws, the words stop saying. */
-  const drawsPath = big && d.decidedAt != null
+  /* Whether the track is this tile's one visual. Named once, because the
+     visual slot and the figures strip have to agree: what the track draws,
+     the words stop saying. */
+  const drawsPath = big && objectCandidates.path
 
   return (
     <DesktopTile
@@ -656,8 +718,25 @@ function DecisionTile({
         >
           {REASON_LABEL[situation.reason]}
         </span>
+        {/*
+          The stance, inked.
+
+          Buy and sell were the same grey as the date, so the one word that
+          says which way the desk went carried no more weight than the filing
+          metadata. Ideas inks its stance; this is the same language, on the
+          same axis, and it is direction rather than severity -- so it does not
+          compete with the tone the state chip carries.
+        */}
         {d.action && (
-          <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-gray-500">
+          <span
+            data-testid="decision-stance"
+            className={clsx(
+              'font-mono text-[10px] font-bold uppercase tracking-wider',
+              /^(buy|add)$/i.test(d.action) ? 'text-emerald-700 dark:text-emerald-400'
+                : /^(sell|trim)$/i.test(d.action) ? 'text-rose-700 dark:text-rose-400'
+                : 'text-gray-500',
+            )}
+          >
             {d.action}
           </span>
         )}
@@ -761,11 +840,15 @@ function DecisionTile({
         proposed weight: the one figure that IS the finding. Here it answers
         "does this deserve another look?". Outcomes' number, never recomputed.
       */}
-      {big && !batched && facts.sincePct != null && (
+      {big && !batched && leadMove != null && (
         <TileLead
-          figure={`${facts.sincePct >= 0 ? '+' : ''}${facts.sincePct.toFixed(1)}`}
+          figure={`${leadMove >= 0 ? '+' : ''}${leadMove.toFixed(1)}`}
           unit="%"
-          label={<>since the decision</>}
+          /* Labelled by what it actually measures. The fallback measures from
+             the FILL, which is a different number against a later date. */
+          label={facts.sinceBasis === 'execution'
+            ? <>since it filled</>
+            : <>since the decision</>}
         />
       )}
 
@@ -815,8 +898,27 @@ function DecisionTile({
           and only where the status line above has not already said it. */}
       {(facts.verdictLabel && situation.klass === 'recent') || !hasHumanReason(d) ? (
         <p data-testid="decision-state" className="text-[11px]">
+          {/*
+            A tinted chip, not grey prose.
+
+            "Outcome not reviewed" is the one piece of standing state on a
+            committed record that asks the reader for something, and it was
+            set in the same grey as the people's names beside it. Tinted and
+            enclosed it reads as a condition; grey and inline it reads as
+            filing. The other verdicts stay quiet -- a gallery where every
+            label is coloured says nothing.
+          */}
           {facts.verdictLabel && situation.klass === 'recent' && (
-            <span className="text-gray-500">{facts.verdictLabel}</span>
+            facts.reviewed ? (
+              <span className="text-gray-500">{facts.verdictLabel}</span>
+            ) : (
+              <span
+                data-testid="decision-verdict-chip"
+                className="rounded-[3px] bg-amber-50 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-950/40 dark:text-amber-400"
+              >
+                {facts.verdictLabel}
+              </span>
+            )
           )}
           {!hasHumanReason(d) && (
             <span className="text-amber-700 dark:text-amber-500">

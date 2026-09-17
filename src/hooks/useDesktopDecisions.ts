@@ -253,6 +253,15 @@ export function useDecisionOutcomeFacts() {
       const intel = inferDecisionIntelligence(row)
       out.set(row.decision_id, {
         sincePct: row.move_since_decision_pct ?? row.move_since_execution_pct ?? null,
+        // Which number it is, so the surface can label it correctly instead of
+        // calling a move-since-fill "since the decision".
+        sinceBasis: row.move_since_decision_pct != null ? 'decision'
+          : row.move_since_execution_pct != null ? 'execution'
+          : null,
+        // Undated means `current-price` fell back to `assets.current_price`,
+        // which carries no timestamp. Dated old beats undated: the surface can
+        // show the age of the first and can only guess at the second.
+        sinceDated: row.current_price_as_of != null,
         pnl: row.impact_proxy ?? null,
         // The clearer relabelling of the same verdicts, already shared with
         // the phone: "Outcome not reviewed" rather than "Needs Context".
