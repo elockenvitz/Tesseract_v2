@@ -10,6 +10,7 @@ import { useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useThesisReviews } from '../../hooks/useThesisReview'
 import {
   runGlobalDecisionEngine,
   type GlobalDecisionEngineResult,
@@ -315,6 +316,21 @@ export function useDecisionEngine(): UseDecisionEngineResult {
     staleTime: 120_000,
   })
 
+  /*
+   * Newest `thesis.reviewed` per asset.
+   *
+   * The canonical read, shared with `useGlobalDecisionEngine` -- same hook,
+   * same query key, same cache entry, so there is no second source of truth
+   * about what counts as a review and no extra round trip.
+   *
+   * This hook feeds Today, the dashboard feed, the attention feed and the
+   * asset/portfolio views. Without it every one of them measured staleness
+   * from the written date alone, so a recorded review cleared nothing and the
+   * finding came back every morning -- the exact defect the review verb
+   * exists to end, surviving on the surfaces people actually look at.
+   */
+  const thesisReviews = useThesisReviews()
+
   // ---- 5. Fetch thesis staleness ----
   const { data: thesisUpdates, isLoading: thesisLoading } = useQuery({
     queryKey: ['decision-engine-thesis', userId, coverage?.assetIds],
@@ -505,11 +521,14 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         proposals: proposals ?? [],
         ratingChanges: ratingChanges ?? [],
         thesisUpdates: thesisUpdates ?? [],
+        // A thesis confirmed to still hold is not stale, even if nobody
+        // edited it. Omitting this is what made every review invisible here.
+        thesisReviews,
         projects: projects ?? [],
         roleByPortfolioId: coverage?.roleByPortfolioId ?? {},
       },
     })
-  }, [userId, coverage, expandedTradeIdeas, proposals, ratingChanges, thesisUpdates, projects, coverageLoading])
+  }, [userId, coverage, expandedTradeIdeas, proposals, ratingChanges, thesisUpdates, thesisReviews, projects, coverageLoading])
 
   // ---- 8. Selectors ----
   // Rollup items have children — asset/portfolio selectors unwrap them
