@@ -44,12 +44,13 @@ import { DecisionDetailPane } from './DecisionDetail'
 import {
   DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileReason, TileLead,
   TileMeta, TileFigure, sizeByRecency, GallerySkeleton, type TileSize,
+  TileVisualSlot, TileAction as ShelfAction,
 } from '../desktop/DesktopTile'
 import { EYEBROW } from '../desktop/DesktopModule'
 import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
-import { OUTCOME_INK, DecisionSize, RecordGaps } from './DecisionVisual'
+import { OUTCOME_INK, DecisionSize, RecordGaps, DecisionPath } from './DecisionVisual'
 
 export interface DecisionsWorkspaceProps {
   selectedPortfolioId?: string | null
@@ -613,6 +614,10 @@ function DecisionTile({
    */
   const size = bandSize
   const big = size === 'hero' || size === 'large'
+  /* Whether the track is this tile's one visual. Named once, because both the
+     visual slot and the figures strip below have to agree about it: what the
+     track draws, the words stop saying. */
+  const drawsPath = big && d.decidedAt != null
 
   return (
     <DesktopTile
@@ -658,6 +663,35 @@ function DecisionTile({
         )}
         <TileFigure>{when ? shortDate(when) : '—'}</TileFigure>
       </>}
+      /*
+        At rest: where the rest of the answer lives. On reach: the verbs.
+        Both in the shell's reserved rail, so the reveal costs no pixels.
+      */
+      context={
+        <span data-testid="decision-next">
+          {facts.reviewed ? 'Reviewed in Outcomes'
+            : d.ideaId ? 'Review in Outcomes'
+            : situation.batch ? 'Committed in a batch'
+            : 'Open the record'}
+        </span>
+      }
+      actions={(situation.klass !== 'action' || situation.reason === 'confirm') ? <>
+        {d.ideaId && (
+          <ShelfAction
+            testId="decision-review-outcome"
+            label={facts.reviewed ? 'View review' : 'Review outcome'}
+            onClick={() => openOutcomesFor(d)}
+            primary
+          />
+        )}
+        {(situation.batch || d.execution) && (
+          <ShelfAction
+            testId="decision-open-trade-book"
+            label={situation.batch ? 'Open batch in Trade Book' : 'Open in Trade Book'}
+            onClick={() => openTradeBookFor({ ...d, batch: situation.batch })}
+          />
+        )}
+      </> : undefined}
     >
       {/*
         A batch names itself as the act it is; a lone trade names its asset.
@@ -938,7 +972,35 @@ function DecisionTile({
         Which visual still follows the job: an absence for a decision that
         owes a reason, a quantity for one that owes an answer.
       */}
-      {work === 'explain' ? (
+      {/*
+        ── The dominant visual, at hero and large ───────────────────────────
+
+        `DecisionPath` was written for this lens and never imported by it: the
+        requested -> decided -> executed track, with days-to-answer and
+        days-to-fill on its own two legs. It takes only three timestamps the
+        record already carries, so it needs no price plumbing and no new
+        geometry.
+
+        Gated on `decidedAt`, not merely on being big. An unanswered request
+        has no second leg to draw, and the question it actually poses is the
+        SIZE -- what the book holds against what is being asked for -- which
+        `DecisionSize` below already draws. So the path takes hero and large
+        only once there is a decision for it to be about, and the sizing rail
+        keeps the open requests it was written for.
+
+        One visual per tile: this replaces the rail on those cards, never
+        joins it.
+      */}
+      {drawsPath ? (
+        <TileVisualSlot size={size}>
+          <DecisionPath
+            requestedAt={d.requestedAt}
+            decidedAt={d.decidedAt}
+            executedAt={d.execution?.completedAt ?? null}
+            resolved={outcome !== 'open'}
+          />
+        </TileVisualSlot>
+      ) : work === 'explain' ? (
         <div className="mt-1">
           <RecordGaps
             requested={d.requestedAt != null}
@@ -987,29 +1049,17 @@ function DecisionTile({
         lens hands off rather than growing a second copy of either. The people
         sit beside them as metadata, not as a separate line of their own.
       */}
-      {(situation.klass !== 'action' || situation.reason === 'confirm') && (
-        <div
-          data-testid="decision-actions"
-          className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-gray-200 pt-2 dark:border-white/10"
-        >
-          {d.ideaId && (
-            <TileAction
-              testId="decision-review-outcome"
-              label={facts.reviewed ? 'View review' : 'Review outcome'}
-              onClick={() => openOutcomesFor(d)}
-              primary
-            />
-          )}
-          {(situation.batch || d.execution) && (
-            <TileAction
-              testId="decision-open-trade-book"
-              label={situation.batch ? 'Open batch in Trade Book' : 'Open in Trade Book'}
-              onClick={() => openTradeBookFor({ ...d, batch: situation.batch })}
-            />
-          )}
-        </div>
-      )}
+      {/*
+        The verbs moved to the shell's shelf, and that fixes a real bug as
+        well as a visual one.
 
+        These were `<button>`s rendered inside `DesktopTile`'s own `<button>`
+        -- invalid HTML, and unreachable by keyboard, so the only way to review
+        an outcome from this lens was with a mouse. They now go through
+        `DesktopTile`'s `actions` prop, which renders them into the canonical
+        shelf: hidden at rest, revealed on hover AND on keyboard focus, in
+        height the tile already reserved.
+      */}
       <TileMeta>
         {/* The book is named once, on the context line above. */}
         {d.decidedByName && <span>{d.decidedByName}</span>}
@@ -1019,7 +1069,14 @@ function DecisionTile({
         {alsoInBooks > 0 && (
           <span>also decided in {alsoInBooks} other book{alsoInBooks === 1 ? '' : 's'}</span>
         )}
-        {outcome === 'accepted' && (
+        {/*
+          Said once. Where `DecisionPath` is drawing the track, its third stop
+          IS the fill -- labelled, dated and measured in days -- so repeating
+          "Executed" in words underneath it was the tile telling the reader the
+          same fact twice. The words survive wherever the track does not draw:
+          smaller tiles, and the two absences the track has no stop for.
+        */}
+        {outcome === 'accepted' && !(drawsPath && d.execution?.completedAt) && (
           <span className={d.execution?.completedAt
             ? 'font-semibold text-gray-700 dark:text-gray-300'
             : 'text-gray-500'}>
@@ -1031,33 +1088,10 @@ function DecisionTile({
   )
 }
 
-/**
- * A hand-off, in the card's own grammar.
- *
- * Deliberately not a primary button: the card's own click still opens the
- * record, and these say where the rest of the answer lives. `stopPropagation`
- * because the whole tile is the entrance to the detail pane.
- */
-function TileAction({
-  label, onClick, testId, primary,
-}: { label: string; onClick: () => void; testId: string; primary?: boolean }) {
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      onClick={e => { e.stopPropagation(); onClick() }}
-      className={clsx(
-        'relative z-[2] rounded-md px-2.5 py-[3px] text-[11px] font-semibold transition-colors',
-        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600',
-        primary
-          ? 'bg-blue-600 text-white hover:bg-blue-700'
-          : 'border border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5',
-      )}
-    >
-      {label}
-    </button>
-  )
-}
+/* The local `TileAction` lived here. It is now `TileAction` in
+   `desktop/DesktopTile`, imported as `ShelfAction`, so the shelf that renders
+   it and the button it renders share one definition -- and so the nested
+   `<button>` inside the tile's own `<button>` is gone for good. */
 
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' })

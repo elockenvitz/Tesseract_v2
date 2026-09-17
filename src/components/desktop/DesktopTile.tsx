@@ -19,12 +19,22 @@
  * what would I do. Not the detail workspace compressed into a card: the reader
  * is choosing what to open, not reading it here.
  *
- * ── No call to action on a tile ──────────────────────────────────────────
+ * ── No call to action AT REST ────────────────────────────────────────────
  *
  * The original three-column landing pages each carried their own verb, so
- * every tile competed with the workspace for the same decision. Opening IS the
- * action; the detail workspace owns the verbs. The shell offers no footer slot,
- * so a surface cannot add one back.
+ * every tile competed with the workspace for the same decision. Opening is
+ * still the action, and the detail workspace still owns the verbs.
+ *
+ * This file used to enforce that by offering no footer slot at all. That did
+ * not hold: Decisions added one anyway, with `<button>`s nested inside this
+ * shell's own `<button>` -- invalid HTML, and unreachable by keyboard. A rule
+ * a surface can break by accident is not a rule, it is a trap.
+ *
+ * So the constraint is now expressed where it belongs, in the resting state.
+ * `TileShelf` shows the object's standing context at rest and reveals the
+ * verbs only on hover or keyboard focus, in reserved height, so a gallery
+ * still reads as a field of objects rather than a wall of buttons -- and the
+ * verbs are real, accessible buttons when the reader reaches for them.
  */
 
 import { useRef, useState } from 'react'
@@ -299,10 +309,20 @@ export function sizeByRecency(index: number): TileSize {
  */
 export function DesktopTile({
   onOpen, eyebrow, tone = 'neutral', size = 'compact', flow = 'ranked',
-  testId, dataAttrs, children,
+  testId, dataAttrs, context, actions, children,
 }: {
   onOpen: () => void
   eyebrow: React.ReactNode
+  /**
+   * The object's standing context, shown at rest on the shelf. Omit to get no
+   * shelf at all -- a tile with no actions keeps the original anatomy exactly.
+   */
+  context?: React.ReactNode
+  /**
+   * The verbs, revealed on hover and on keyboard focus. Rendered into a rail
+   * of RESERVED height, so revealing them moves nothing.
+   */
+  actions?: React.ReactNode
   /** How much room this object earned. Importance, never severity. */
   size?: TileSize
   flow?: TileFlow
@@ -319,13 +339,42 @@ export function DesktopTile({
   dataAttrs?: Record<string, string | undefined>
   children: React.ReactNode
 }) {
+  /*
+   * A group, not a button -- and that reverses this file's original decision.
+   *
+   * The shell was a real `<button>`, which is why the header below says there
+   * is no footer slot: a tile that IS a button cannot contain one, because a
+   * nested `<button>` is invalid HTML and unreachable by keyboard. Decisions
+   * had already broken that rule in practice (its `TileAction` buttons sit
+   * inside this element today), so the constraint was being violated rather
+   * than honoured.
+   *
+   * Today and Ideas each independently arrived at the same answer: a
+   * `role="group"` with a portal click that ignores anything interactive
+   * underneath it. This adopts that contract rather than inventing a third.
+   * `tabIndex={0}` plus an Enter/Space handler keeps the whole tile reachable
+   * and openable from the keyboard, which is what the button gave us free.
+   */
+  const portalClick = (e: React.MouseEvent<HTMLElement>) => {
+    const t = e.target as HTMLElement
+    if (t.closest('button,a,input,select,textarea,[role="button"],[data-no-portal]')) return
+    // A drag that selected text is a read, not a decision to leave.
+    if (window.getSelection()?.toString()) return
+    onOpen()
+  }
+
   return (
-    <button
-      type="button"
+    <div
+      role="group"
+      tabIndex={0}
       data-testid={testId ?? 'desktop-tile'}
       data-tone={tone}
       data-size={size}
-      onClick={onOpen}
+      onClick={portalClick}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
+      }}
       {...Object.fromEntries(Object.entries(dataAttrs ?? {}).filter(([, v]) => v != null))}
       /*
         The Ideas card, everywhere.
@@ -344,7 +393,8 @@ export function DesktopTile({
       */
       className={clsx(
         SPAN[flow][size],
-        'flex h-full min-w-0 flex-col overflow-hidden rounded-[3px] border bg-white text-left',
+        // `group` is what the shelf's cross-fade hangs off.
+        'group flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-[3px] border bg-white text-left',
         'transition-colors duration-100',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
         'dark:bg-[#141a25]',
@@ -375,7 +425,141 @@ export function DesktopTile({
           {eyebrow}
         </div>
         {children}
+        {(context || actions) && (
+          <TileShelf size={size} context={context} actions={actions} />
+        )}
       </div>
+    </div>
+  )
+}
+
+/** Reserved height for the one visual a tile is allowed, by size.
+ *  `compact` gets none: an axis with no room for a label is decoration. */
+const VISUAL_H: Record<TileSize, string | null> = {
+  hero: 'h-16',      // 64px
+  large: 'h-12',     // 48px
+  medium: 'h-9',     // 36px
+  compact: null,
+}
+
+/**
+ * The one visual region, at a height the tile has already paid for.
+ *
+ * `TileVisual` (above) pins its child to the bottom but lets it be any height,
+ * so a gallery's rows settled to whatever each object happened to draw and the
+ * field had no baseline. This reserves the height instead: the slot is the
+ * same on every tile of a size, whether the object inside draws or not, so
+ * revealing the shelf or swapping the object moves nothing.
+ *
+ * Returns null at `compact` and for a missing child, so callers can hand it
+ * whatever they have without branching on size themselves.
+ */
+export function TileVisualSlot({ size, children }: { size: TileSize; children: React.ReactNode }) {
+  const h = VISUAL_H[size]
+  if (!h || !children) return null
+  return (
+    <div
+      data-testid="tile-visual-slot"
+      data-size={size}
+      // `data-no-portal`: a scrub across the object is a read, not a decision
+      // to leave the gallery.
+      data-no-portal
+      className={clsx('mt-auto flex shrink-0 flex-col justify-end overflow-hidden pt-1', h)}
+    >
+      {children}
+    </div>
+  )
+}
+
+/** Reserved height for the shelf, by size. Tall enough for a real button and
+ *  its focus ring, and no taller. */
+const SHELF_H: Record<TileSize, string> = {
+  hero: 'h-[34px]',
+  large: 'h-[34px]',
+  medium: 'h-[30px]',
+  compact: 'h-[26px]',
+}
+
+/**
+ * The canonical desktop action shelf, generalised from Ideas' card footer.
+ *
+ * Two layers in one rail of fixed height, cross-fading on hover and on
+ * keyboard focus anywhere inside the tile. At rest the reader sees the
+ * object's standing context; reaching for it reveals the verbs. Because the
+ * height is reserved and both layers are absolutely positioned, nothing
+ * reflows either way -- which is the whole point, and the reason Ideas' rail
+ * works where the older `group-hover:opacity` reveals on the legacy dashboard
+ * widgets pushed their cards around.
+ *
+ * `group-focus-within` is not a nicety: without it the actions are reachable
+ * by Tab but invisible while focused.
+ */
+function TileShelf({
+  size, context, actions,
+}: { size: TileSize; context?: React.ReactNode; actions?: React.ReactNode }) {
+  return (
+    <div
+      data-testid="tile-shelf"
+      className={clsx(
+        'relative mt-auto shrink-0 border-t border-gray-200 pt-1.5 dark:border-white/10',
+        SHELF_H[size],
+      )}
+    >
+      {context && (
+        <div
+          data-testid="tile-shelf-context"
+          className={clsx(
+            'pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 truncate',
+            'text-[10px] text-gray-500 dark:text-gray-400',
+            'opacity-100 transition-opacity duration-150',
+            actions && 'group-hover:opacity-0 group-focus-within:opacity-0',
+          )}
+        >
+          {context}
+        </div>
+      )}
+      {actions && (
+        <div
+          data-testid="tile-shelf-actions"
+          className={clsx(
+            'pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-1.5',
+            'opacity-0 transition-opacity duration-150',
+            'group-hover:pointer-events-auto group-hover:opacity-100',
+            'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+          )}
+        >
+          {actions}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * A verb on the shelf.
+ *
+ * `stopPropagation` so pressing it is not also read as opening the tile, and
+ * `relative` so it sits above the resting layer it fades in over. Lives here
+ * rather than in each workspace so four lenses stop hand-rolling it -- which
+ * is how Decisions ended up with nested buttons inside a button.
+ */
+export function TileAction({
+  label, onClick, primary, testId,
+}: { label: string; onClick: () => void; primary?: boolean; testId?: string }) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      className={clsx(
+        'relative rounded-md px-2 py-[3px] text-[11px] font-semibold transition-colors',
+        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
+        primary
+          ? 'bg-blue-700 text-white hover:bg-blue-800'
+          : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10',
+      )}
+    >
+      {label}
     </button>
   )
 }

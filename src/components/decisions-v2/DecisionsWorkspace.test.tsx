@@ -692,7 +692,13 @@ describe('the card answers what we decided and what happened', () => {
     // The committed figures are on the line above; the rail drew the ASK,
     // which on a committed decision is neither current nor target.
     expect(screen.queryByTestId('decision-size')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('decision-path')).not.toBeInTheDocument()
+    /*
+     * The path takes its place. It was dead code until Phase 2A -- written for
+     * this lens, never imported by it -- and a decided record is exactly what
+     * it is about: requested -> decided -> executed, with days to answer and
+     * days to fill on its own legs. One visual per tile, so the rail goes.
+     */
+    expect(screen.getByTestId('decision-path')).toBeInTheDocument()
   })
 
   it('keeps the rail where it draws a real change: an undecided request', () => {
