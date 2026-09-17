@@ -11,6 +11,8 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useThesisReviews } from '../../hooks/useThesisReview'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { operationalAfterPilot, judgeIdeaRow } from '../../lib/pilot/seed-visibility'
 import {
   runGlobalDecisionEngine,
   type GlobalDecisionEngineResult,
@@ -130,7 +132,8 @@ export function useDecisionEngine(): UseDecisionEngineResult {
 
   // ---- 2. Fetch trade ideas ----
   const { data: tradeIdeas, isLoading: ideasLoading } = useQuery({
-    queryKey: ['decision-engine-ideas', userId, coverage?.portfolioIds],
+    // Graduation changes what this list contains, so it belongs in the key.
+    queryKey: ['decision-engine-ideas', userId, coverage?.portfolioIds, hasGraduated],
     queryFn: async () => {
       if (!coverage?.portfolioIds?.length) return []
 
@@ -138,7 +141,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         .from('trade_queue_items')
         .select(`
           id, asset_id, portfolio_id, action, stage, status, rationale,
-          decision_outcome, decided_at, outcome, outcome_at,
+          decision_outcome, decided_at, outcome, outcome_at, origin_metadata,
           visibility_tier, created_by, created_at, updated_at,
           pair_id, pair_trade_id, pair_leg_type,
           proposed_weight, urgency,
@@ -151,11 +154,27 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         .limit(100)
 
       if (error) throw error
-      const rows = (data || []).map((d: any) => ({
-        ...d,
-        asset_symbol: d.assets?.symbol,
-        portfolio_name: d.portfolios?.name,
-      }))
+      /*
+       * After graduation an untouched pilot seed is not live work.
+       *
+       * This is the hook behind TodayPage, useDashboardFeed and
+       * useAttentionFeed. Its twin `hooks/useGlobalDecisionEngine` got this
+       * rule first and this one was missed -- the same two-engine trap that
+       * hid the thesis-review defect -- so a graduated reader's Today still
+       * carried the tour's seeded recommendation.
+       *
+       * Filtered before pair grouping, so a suppressed leg cannot leave a
+       * half-formed synthetic pair behind it.
+       */
+      const rows = operationalAfterPilot(
+        (data || []).map((d: any) => ({
+          ...d,
+          asset_symbol: d.assets?.symbol,
+          portfolio_name: d.portfolios?.name,
+          ...judgeIdeaRow(d),
+        })),
+        { hasGraduated },
+      )
 
       // Group pair trade legs into synthetic combined rows.
       // Support both pair_id (new) and pair_trade_id (legacy).
@@ -330,6 +349,11 @@ export function useDecisionEngine(): UseDecisionEngineResult {
    * exists to end, surviving on the surfaces people actually look at.
    */
   const thesisReviews = useThesisReviews()
+
+  // `cached` covers the window before the live read resolves, so the tour does
+  // not flash back into Today on a refresh.
+  const { hasGraduated: liveGraduated, cachedHasGraduated } = usePilotProgress()
+  const hasGraduated = liveGraduated || cachedHasGraduated
 
   // ---- 5. Fetch thesis staleness ----
   const { data: thesisUpdates, isLoading: thesisLoading } = useQuery({

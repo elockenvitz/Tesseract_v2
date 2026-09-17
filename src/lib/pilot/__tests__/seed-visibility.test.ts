@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import { execSync } from 'node:child_process'
 import {
   isPilotSeedRow, isOperationalAfterPilot, operationalAfterPilot,
   judgeIdeaRow, judgeDecisionRequestRow,
@@ -173,6 +174,18 @@ describe('Pipeline, Inbox and Trade Lab apply the rule', () => {
     { file: 'hooks/usePipelineItems.ts', key: "'trade-queue-items', currentOrgId, hasGraduated" },
     { file: 'pages/SimulationPage.tsx', key: "'trade-queue-ideas', selectedPortfolioId, hasGraduatedForSeeds" },
     { file: 'hooks/useDecisionRequests.ts', key: "'decision-requests', 'all', portfolioId || 'all', hasGraduated" },
+    // BOTH engine hooks. There are two, they feed different surfaces, and
+    // fixing one is the trap this codebase has now fallen into twice --
+    // first for thesis reviews, then for seed visibility, which is how the
+    // graduated sandbox kept showing its AAPL recommendation on Today.
+    {
+      file: 'hooks/useGlobalDecisionEngine.ts',
+      key: "'decision-engine-ideas', userId, coverage?.portfolioIds, hasGraduated",
+    },
+    {
+      file: 'engine/decisionEngine/useDecisionEngine.ts',
+      key: "'decision-engine-ideas', userId, coverage?.portfolioIds, hasGraduated",
+    },
   ]
 
   it.each(boundaries)('$file filters through the shared helper', ({ file }) => {
@@ -221,5 +234,49 @@ describe('judging a decision request row', () => {
     ]
     expect(operationalAfterPilot(rows, { hasGraduated: true }).map(r => r.id)).toEqual(['real-req'])
     expect(operationalAfterPilot(rows, { hasGraduated: false })).toHaveLength(2)
+  })
+})
+
+/**
+ * Every engine entry point, not just the one someone remembered.
+ *
+ * Two hooks run the engine. Thesis reviews were wired into one and missed in
+ * the other; seed visibility then repeated it exactly. This enumerates the
+ * callers from the repo rather than from memory, so a third hook cannot
+ * appear without failing here.
+ */
+describe('both engine hooks filter seeds', () => {
+  const ENGINE_HOOKS = [
+    'hooks/useGlobalDecisionEngine.ts',
+    'engine/decisionEngine/useDecisionEngine.ts',
+  ] as const
+
+  it.each(ENGINE_HOOKS)('%s selects origin_metadata', (file) => {
+    // Without the column the rule cannot be applied at all -- the marker is
+    // simply not on the rows.
+    expect(src(file)).toContain('origin_metadata,')
+  })
+
+  it.each(ENGINE_HOOKS)('%s filters before pair grouping', (file) => {
+    const body = src(file)
+    const filterAt = body.indexOf('operationalAfterPilot(')
+    const pairAt = body.indexOf('Group pair trade legs')
+    expect(filterAt).toBeGreaterThan(-1)
+    // A suppressed leg must not leave a half-formed synthetic pair behind it.
+    expect(filterAt).toBeLessThan(pairAt)
+  })
+
+  it('knows about every hook that runs the engine', () => {
+    const out = execSync(
+      'git grep -l "runGlobalDecisionEngine({" -- "src/**/*.ts" "src/**/*.tsx"',
+      { cwd: process.cwd(), encoding: 'utf8' },
+    )
+    const found = out.split('\n')
+      .map(l => l.trim().replace(/^src\//, ''))
+      .filter(Boolean)
+      .filter(f => !f.includes('__tests__') && !f.includes('.test.'))
+      .filter(f => !f.endsWith('globalDecisionEngine.ts'))
+      .sort()
+    expect(found).toEqual([...ENGINE_HOOKS].sort())
   })
 })
