@@ -9,7 +9,8 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import {
-  isPilotSeedRow, isOperationalAfterPilot, operationalAfterPilot, judgeIdeaRow,
+  isPilotSeedRow, isOperationalAfterPilot, operationalAfterPilot,
+  judgeIdeaRow, judgeDecisionRequestRow,
 } from '../seed-visibility'
 
 const src = (p: string) => readFileSync(path.join(process.cwd(), 'src', p), 'utf8')
@@ -154,5 +155,71 @@ describe('the engine reads the marker it filters on', () => {
      something unrelated invalidates it. */
   it('keys the query on graduation', () => {
     expect(hook).toContain("'decision-engine-ideas', userId, coverage?.portfolioIds, hasGraduated")
+  })
+})
+
+/**
+ * The three remaining operational boundaries.
+ *
+ * Root cause differs from the decision engine's: these queries already select
+ * everything the rule needs (`select('*')` for the two idea reads,
+ * `submission_snapshot` in DECISION_REQUEST_SELECT for the requests read).
+ * The marker was there all along and was simply never consulted -- so the
+ * guard watches that the judgment is applied, and that graduation reaches the
+ * cache key.
+ */
+describe('Pipeline, Inbox and Trade Lab apply the rule', () => {
+  const boundaries = [
+    { file: 'hooks/usePipelineItems.ts', key: "'trade-queue-items', currentOrgId, hasGraduated" },
+    { file: 'pages/SimulationPage.tsx', key: "'trade-queue-ideas', selectedPortfolioId, hasGraduatedForSeeds" },
+    { file: 'hooks/useDecisionRequests.ts', key: "'decision-requests', 'all', portfolioId || 'all', hasGraduated" },
+  ]
+
+  it.each(boundaries)('$file filters through the shared helper', ({ file }) => {
+    expect(src(file)).toContain('operationalAfterPilot(')
+  })
+
+  /* Graduating must refetch, or the surface serves its pre-graduation cache
+     entry and the tour stays put. */
+  it.each(boundaries)('$file keys the query on graduation', ({ file, key }) => {
+    expect(src(file)).toContain(key)
+  })
+
+  /* One definition of "acted on". A boundary re-deciding it locally is how
+     the surfaces start disagreeing. */
+  it('none of them redefine acted-on locally', () => {
+    for (const { file } of boundaries) {
+      const body = src(file)
+      expect(body).toMatch(/judgeIdeaRow|judgeDecisionRequestRow/)
+      expect(body).not.toMatch(/actedOn:\s*(!!|true|false)/)
+    }
+  })
+})
+
+describe('judging a decision request row', () => {
+  const RESOLVED = ['approved', 'rejected', 'withdrawn'] as const
+  const seeded = { submission_snapshot: { pilot_seed: true } }
+
+  it('reads the marker off submission_snapshot', () => {
+    expect(judgeDecisionRequestRow(seeded, RESOLVED).pilotSeed).toBe(true)
+    expect(judgeDecisionRequestRow({ submission_snapshot: {} }, RESOLVED).pilotSeed).toBe(false)
+  })
+
+  it('counts a resolved request as acted on', () => {
+    expect(judgeDecisionRequestRow({ ...seeded, status: 'approved' }, RESOLVED).actedOn).toBe(true)
+  })
+
+  it('leaves an unanswered seeded request untouched', () => {
+    expect(judgeDecisionRequestRow({ ...seeded, status: 'pending' }, RESOLVED).actedOn).toBe(false)
+  })
+
+  /* The sandbox's seeded request, unanswered: gone after graduation. */
+  it('suppresses the sandbox request after graduation, keeps it during the pilot', () => {
+    const rows = [
+      { id: 'seed-req', ...judgeDecisionRequestRow({ ...seeded, status: 'pending' }, RESOLVED) },
+      { id: 'real-req', ...judgeDecisionRequestRow({ submission_snapshot: {}, status: 'pending' }, RESOLVED) },
+    ]
+    expect(operationalAfterPilot(rows, { hasGraduated: true }).map(r => r.id)).toEqual(['real-req'])
+    expect(operationalAfterPilot(rows, { hasGraduated: false })).toHaveLength(2)
   })
 })

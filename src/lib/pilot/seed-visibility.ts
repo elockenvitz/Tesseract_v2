@@ -94,6 +94,24 @@ export function judgeIdeaRow(row: {
   }
 }
 
+/**
+ * A `decision_requests` row, judged.
+ *
+ * The marker lives in `submission_snapshot` for this shape. "Acted on" is a
+ * resolved status, and the set of resolved statuses is the service's own
+ * (`RESOLVED_DECISION_REQUEST_STATUSES`) -- passed in rather than restated
+ * here, so this file cannot drift from the service that owns the vocabulary.
+ */
+export function judgeDecisionRequestRow(
+  row: { submission_snapshot?: unknown; status?: string | null },
+  resolvedStatuses: readonly string[],
+): SeedJudgeable {
+  return {
+    pilotSeed: isPilotSeedRow(row),
+    actedOn: !!row.status && resolvedStatuses.includes(row.status),
+  }
+}
+
 /** The operational subset, in order, leaving the rest exactly where they are. */
 export function operationalAfterPilot<T extends SeedJudgeable>(
   rows: readonly T[], opts: { hasGraduated: boolean },

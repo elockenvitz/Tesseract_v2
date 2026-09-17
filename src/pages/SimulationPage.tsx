@@ -64,6 +64,7 @@ import { TradeIdeaDetailModal } from '../components/trading/TradeIdeaDetailModal
 import { DecisionConfirmationModal, type DecisionRecord } from '../components/trading/DecisionConfirmationModal'
 import { buildDecisionRecord } from '../lib/trade-lab/decision-record'
 import { usePilotProgress } from '../hooks/usePilotProgress'
+import { operationalAfterPilot, judgeIdeaRow } from '../lib/pilot/seed-visibility'
 import type {
   SimulationWithDetails,
   SimulationTradeWithDetails,
@@ -377,7 +378,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const { isMorphing } = useMorphSession()
   const pilotMode = usePilotMode()
   const { scenario: pilotScenario } = usePilotScenario()
-  const { tutorialIdeaId } = usePilotProgress()
+  const {
+    tutorialIdeaId,
+    hasGraduated: liveGraduatedForSeeds,
+    cachedHasGraduated: cachedGraduatedForSeeds,
+  } = usePilotProgress()
+  // `cached` covers the window before the live read resolves, so the tour does
+  // not flash back into the Lab's queue on a refresh.
+  const hasGraduatedForSeeds = liveGraduatedForSeeds || cachedGraduatedForSeeds
   /*
    * One object, end to end. The mission follows the captured tutorial idea
    * through simulation → accepted trade → outcome, so Trade Lab basics step 1
@@ -996,7 +1004,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // Fetch trade ideas from queue for the selected portfolio
   // Include ideas with direct portfolio_id match OR linked via trade_lab_idea_links
   const { data: tradeIdeas, isLoading: tradeIdeasLoading, isFetching: tradeIdeasFetching, refetch: refetchTradeIdeas } = useQuery({
-    queryKey: ['trade-queue-ideas', selectedPortfolioId],
+    // Graduation changes which ideas are available to simulate, so it belongs
+    // in the key rather than only in the body.
+    queryKey: ['trade-queue-ideas', selectedPortfolioId, hasGraduatedForSeeds],
     queryFn: async () => {
       // First, get idea IDs linked to this portfolio via trade_lab_idea_links
       const { data: linkedIds } = await supabase
@@ -1032,7 +1042,17 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
       if (error) throw error
 
-      return data as TradeQueueItemWithDetails[]
+      /*
+       * After graduation the tour's untouched ideas are not candidates to
+       * simulate. `select('*')` already carried `origin_metadata` and the
+       * acted-on fields, so this boundary had everything it needed and simply
+       * never asked. Judged before the Lab groups pair legs or builds its
+       * queue, so a suppressed seed never reaches a basket.
+       */
+      return operationalAfterPilot(
+        ((data || []) as Array<Record<string, unknown>>).map(d => ({ ...d, ...judgeIdeaRow(d) })),
+        { hasGraduated: hasGraduatedForSeeds },
+      ) as TradeQueueItemWithDetails[]
     },
     enabled: !!selectedPortfolioId,
     staleTime: 30000, // Consider data stale after 30 seconds

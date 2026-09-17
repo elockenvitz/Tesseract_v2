@@ -11,13 +11,39 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { usePilotProgress } from './usePilotProgress'
+import { operationalAfterPilot, judgeIdeaRow } from '../lib/pilot/seed-visibility'
 import type { TradeQueueItemWithDetails } from '../types/trading'
+
+/** The shape the seed rule needs, over rows PostgREST types loosely. */
+type SeedJudgedRow = Record<string, unknown> & {
+  origin_metadata?: unknown
+  decided_at?: string | null
+  decision_outcome?: string | null
+  outcome?: string | null
+}
 
 export function usePipelineItems() {
   const { currentOrgId } = useOrganization()
+  /*
+   * After graduation the tour's untouched ideas stop being pipeline work.
+   *
+   * Unlike the decision engine, this query already selected everything it
+   * needed -- `select('*')` carries `origin_metadata` and all three acted-on
+   * fields. The columns were there; the rule was simply never applied, so a
+   * graduated reader's board still showed five seeded ideas spread across its
+   * stages as though someone were working them.
+   *
+   * `cachedHasGraduated` covers the window before the live read resolves, so
+   * the tour does not flash back onto the board on a refresh.
+   */
+  const { hasGraduated: liveGraduated, cachedHasGraduated } = usePilotProgress()
+  const hasGraduated = liveGraduated || cachedHasGraduated
 
   return useQuery({
-    queryKey: ['trade-queue-items', currentOrgId],
+    // Graduation is part of the key: it changes what this list contains, so
+    // it has to refetch rather than serve the pre-graduation cache entry.
+    queryKey: ['trade-queue-items', currentOrgId, hasGraduated],
     queryFn: async () => {
       if (!currentOrgId) return [] as TradeQueueItemWithDetails[]
       const { data, error } = await supabase
@@ -38,8 +64,15 @@ export function usePipelineItems() {
 
       if (error) throw error
 
+      // Judged before vote summaries and before any caller groups by stage,
+      // so a suppressed seed never reaches a column count.
+      const visible = operationalAfterPilot(
+        ((data || []) as SeedJudgedRow[]).map(item => ({ ...item, ...judgeIdeaRow(item) })),
+        { hasGraduated },
+      )
+
       // Calculate vote summaries
-      return (data || []).map((item: any) => ({
+      return visible.map((item: any) => ({
         ...item,
         vote_summary: {
           approve: item.trade_queue_votes?.filter((v: any) => v.vote === 'approve').length || 0,

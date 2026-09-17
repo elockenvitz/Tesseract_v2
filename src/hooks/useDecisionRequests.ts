@@ -10,7 +10,10 @@ import {
   getDecisionRequestsForIdea,
   updateDecisionRequest,
   deleteDecisionRequest,
+  RESOLVED_DECISION_REQUEST_STATUSES,
 } from '../lib/services/decision-request-service'
+import { usePilotProgress } from './usePilotProgress'
+import { operationalAfterPilot, judgeDecisionRequestRow } from '../lib/pilot/seed-visibility'
 import {
   acceptFromInbox,
   rejectFromInbox,
@@ -24,11 +27,34 @@ import type { DecisionRequest } from '../types/trading'
 /**
  * Fetch ALL decision requests, optionally filtered by portfolio.
  * Used by Decision Inbox to bucket by status.
+ *
+ * After graduation an untouched seeded request is not a decision awaiting an
+ * answer. The seeder plants one alongside its recommendation, and a graduated
+ * reader's Inbox was still showing it as work. A request the reader actually
+ * answered is theirs and stays -- judged by the service's own resolved-status
+ * vocabulary, not a second copy of it.
+ *
+ * `submission_snapshot` is already in `DECISION_REQUEST_SELECT`, so unlike the
+ * decision engine this boundary had the marker all along and simply never
+ * consulted it.
  */
 export function useAllDecisionRequests(portfolioId?: string) {
+  const { hasGraduated: liveGraduated, cachedHasGraduated } = usePilotProgress()
+  const hasGraduated = liveGraduated || cachedHasGraduated
+
   return useQuery<DecisionRequest[]>({
-    queryKey: ['decision-requests', 'all', portfolioId || 'all'],
-    queryFn: () => getAllDecisionRequests(portfolioId || undefined),
+    // Graduation changes what this list contains, so it belongs in the key.
+    queryKey: ['decision-requests', 'all', portfolioId || 'all', hasGraduated],
+    queryFn: async () => {
+      const rows = await getAllDecisionRequests(portfolioId || undefined)
+      return operationalAfterPilot(
+        rows.map(r => ({
+          ...r,
+          ...judgeDecisionRequestRow(r as never, RESOLVED_DECISION_REQUEST_STATUSES),
+        })),
+        { hasGraduated },
+      ) as DecisionRequest[]
+    },
     staleTime: 30_000,
   })
 }
