@@ -264,6 +264,69 @@ describe('it opens as a queue of work, never auto-opening one', () => {
   })
 })
 
+/*
+ * ── Why there is no move, said in the reader's terms ─────────────────────
+ *
+ * The chart used to explain itself with "Stored closes do not cover the
+ * Filled, so this is not a since-Filled move" -- unreadable, and in the
+ * COMMON case untrue. Two opposite situations land on that branch:
+ *
+ *   - the trade filled today, so there are not yet two closes after it. The
+ *     closes cover the fill perfectly well.
+ *   - the cached history genuinely begins after the fill.
+ *
+ * Telling a PM we lack prices covering a trade that filled this morning is
+ * wrong in a way they can check, which is the fastest way to lose them.
+ */
+describe('the chart explains a missing move without jargon', () => {
+  const filled = (at: string) => decision({
+    id: 'p1', ideaId: 'tq-p1', symbol: 'LLY', status: 'accepted',
+    decidedAt: at, decisionNote: 'Sized into the obesity franchise.',
+    execution: { id: 'at-1', status: 'complete', completedAt: at, executedByName: 'Eric' },
+  })
+
+  it('says a fresh fill has no move yet, rather than blaming the data', () => {
+    // The live LLY shape: a year of closes, and the fill is the last one.
+    tileCloses = [
+      { date: new Date(Date.now() - 2 * DAY), value: 1140 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1150 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    decisions = [filled(new Date().toISOString())]
+    render(<DecisionsWorkspace />)
+    const why = screen.getByTestId('price-absence-reason')
+    expect(why).toHaveTextContent(/no price move to show yet/i)
+    // The sentence that was both unreadable and false.
+    expect(why.textContent).not.toMatch(/since-/)
+    expect(why.textContent).not.toMatch(/stored closes/i)
+    expect(why.textContent).not.toMatch(/do not cover/i)
+  })
+
+  it('says so plainly when the history really does start after the trade', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 2 * DAY), value: 1140 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1150 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    // Filled a month back; the earliest close we hold is two days old.
+    decisions = [filled(daysAgo(30))]
+    render(<DecisionsWorkspace />)
+    const why = screen.getByTestId('price-absence-reason')
+    expect(why).toHaveTextContent(/only go back to/i)
+    expect(why.textContent).not.toMatch(/since-/)
+  })
+
+  it('never phrases the anchor as a verb in the caption', () => {
+    decisions = [filled(daysAgo(30))]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    expect(tile).toHaveTextContent(/since the fill/i)
+    // "Price since Filled" / "since-Filled" -- the old phrasings.
+    expect(tile.textContent).not.toMatch(/since Filled/)
+    expect(tile.textContent).not.toMatch(/since-Filled/)
+  })
+})
+
 /* ---------------------------------------------------------------- metrics */
 
 describe('the header counts say what they mean', () => {

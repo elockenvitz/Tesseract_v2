@@ -836,7 +836,10 @@ function DecisionTile({
      is the next-best real date; where neither exists there is no anchor and no
      chart. Batches are several names and have no one series. */
   const priceAnchor = batched ? null : (d.execution?.completedAt ?? d.decidedAt ?? null)
-  const priceAnchorLabel = d.execution?.completedAt ? 'Filled' : 'Decided'
+  /* A bare noun, because the chart builds sentences out of it: "Price since
+     the fill", "after this fill". Passing "Filled" produced "Price since
+     Filled" and the unreadable "this is not a since-Filled move". */
+  const priceAnchorLabel = d.execution?.completedAt ? 'fill' : 'decision'
   const drawsPrice = big && priceAnchor != null && !!d.symbol
   /* Whether the track is this tile's one visual. Named once, because the
      visual slot and the figures strip have to agree: what the track draws,
@@ -1797,14 +1800,21 @@ function PriceColumn({
               className="flex flex-col justify-center gap-1 rounded border border-dashed border-gray-200 px-3 text-[10px] text-gray-400 dark:border-white/10"
             >
               <span className="font-semibold uppercase tracking-[0.09em]">
-                {error ? 'Price read failed' : 'No stored closes'}
+                {error ? 'Prices unavailable' : 'No price history'}
               </span>
-              {/* The reason, named. "No data" with no cause is what sent this
-                  column round three diagnosis passes. */}
+              {/*
+                The reason, in the reader's terms. "No data" with no cause is
+                what sent this column round three diagnosis passes -- but the
+                fix for that was developer shorthand ("272 closes, first
+                2025-08-18 — after this filled"), which is no more use to a
+                PM looking at a tile. This says what is missing and what it
+                means for the card.
+              */}
               <span className="break-words">
-                {error ? (error as Error).message
-                  : points.length === 0 ? `Nothing cached for ${symbol}`
-                  : `${points.length} closes, first ${points[0].date.toISOString().slice(0, 10)} — after this ${anchorLabel.toLowerCase()} (${anchorISO.slice(0, 10)})`}
+                {error ? `Couldn't load prices for ${symbol}.`
+                  : points.length === 0
+                    ? `We don't hold any price history for ${symbol} yet, so there is no chart to draw.`
+                    : `The prices we hold for ${symbol} start after this ${anchorLabel}, so there is nothing to measure from it.`}
               </span>
             </div>
           }

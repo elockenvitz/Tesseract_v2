@@ -687,7 +687,12 @@ export function PriceSinceFill({
   points: { date: Date; value: number }[]
   /** The fill, or the decision where nothing filled. */
   anchorISO: string | null
-  /** Named in the caption: "since the fill", "FILLED" on the tick. */
+  /**
+   * A bare noun -- "fill" or "decision" -- because the component builds
+   * sentences out of it: "Price since the fill", "2d since the fill", "after
+   * this fill". It used to be given "Filled", which produced "Price since
+   * Filled" and, worse, "this is not a since-Filled move".
+   */
   anchorLabel?: string
   height?: number
   /** Rendered when there is no drawable series at all. */
@@ -703,6 +708,31 @@ export function PriceSinceFill({
     // the history there is and say that is what it is.
     ?? anchoredWindow(history, null)
   if (!w) return <>{empty}</>
+
+  /*
+   * ── WHY there is no since-the-fill move, in the reader's terms ───────────
+   *
+   * The old sentence was "Stored closes do not cover the Filled, so this is
+   * not a since-Filled move", which is unreadable and, in the common case,
+   * untrue. Two different situations land here and they are opposites:
+   *
+   *   tooRecent    -- the closes DO cover the fill, but fewer than two of
+   *                   them come after it. A trade that filled today has no
+   *                   move yet. This is the usual case.
+   *   startsAfter  -- the cache genuinely begins after the fill, so the
+   *                   earliest price we hold post-dates the trade.
+   *
+   * Saying "we don't have prices covering the fill" about a trade that filled
+   * this morning is wrong, and it is the kind of wrong a reader can check.
+   */
+  const anchorMs = anchorISO ? Date.parse(anchorISO) : NaN
+  const hasAnchor = Number.isFinite(anchorMs)
+  const closesAfterAnchor = hasAnchor
+    ? history.filter(p => Date.parse(p.date) >= anchorMs).length
+    : 0
+  const startsAfter = hasAnchor && history.length > 0
+    && Date.parse(history[0].date) > anchorMs
+  const tooRecent = hasAnchor && !startsAfter && closesAfterAnchor < 2
 
   const W = 340
   const H = height
@@ -771,10 +801,10 @@ export function PriceSinceFill({
     <div data-testid="price-since-fill" data-reaches={w.reachesAnchor ? 'true' : 'false'}>
       <div className="mb-1 flex items-baseline gap-2">
         <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
-          {w.reachesAnchor ? `Price since ${anchorLabel}` : 'Price over available history'}
+          {w.reachesAnchor ? `Price since the ${anchorLabel}` : 'Price over available history'}
         </span>
         <span className="ml-auto font-mono text-[10px] text-gray-500">
-          {w.reachesAnchor ? `${w.days}d since ${anchorLabel}` : `${w.days}d of history`}
+          {w.reachesAnchor ? `${w.days}d since the ${anchorLabel}` : `${w.days}d of history`}
         </span>
       </div>
 
@@ -884,8 +914,22 @@ export function PriceSinceFill({
         )}
       </div>
       {!w.reachesAnchor && (
-        <p className="mt-1 text-[10px] text-gray-500">
-          Stored closes do not cover the {anchorLabel}, so this is not a since-{anchorLabel} move.
+        <p data-testid="price-absence-reason" className="mt-1 text-[10px] leading-snug text-gray-500">
+          {tooRecent ? (
+            <>
+              This {anchorLabel === 'fill' ? 'filled' : 'was decided'} on{' '}
+              {axisDate(anchorISO!)}, so there is no price move to show yet.
+              The line is the last {w.days} days.
+            </>
+          ) : startsAfter ? (
+            <>
+              Our prices for this name only go back to {axisDate(w.from)},
+              which is after the {anchorLabel} on {axisDate(anchorISO!)}. The
+              line is that later stretch, not the move since the {anchorLabel}.
+            </>
+          ) : (
+            <>The line is the price history we hold, not a move since the {anchorLabel}.</>
+          )}
         </p>
       )}
     </div>

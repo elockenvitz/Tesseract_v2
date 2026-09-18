@@ -44,6 +44,38 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { latestBenchmarkRows } from '../lib/holdings/latest-benchmark'
+/* The stored closes, so a failed live quote falls back to a real observed
+   price rather than to the literal 100 this page used to invent. */
+import { fetchLatestCloses, LATEST_CLOSE_WINDOW_DAYS } from '../lib/market-data/latest-closes'
+
+/**
+ * What this page uses when it does not know a price.
+ *
+ * ── Why it is zero and not a plausible number ────────────────────────────
+ *
+ * Every price expression on this page used to end in `|| 100`. That reads as
+ * a harmless display default, and it is not one: `normalize-sizing` divides
+ * the portfolio value by this price to get a share count, so a wrong price
+ * produces a wrong share count, a wrong weight delta and a wrong notional --
+ * and `apply_trade_to_holdings` then writes all three into
+ * `portfolio_holdings` and the portfolio's CASH balance. `accepted_trades`
+ * carries the evidence: META, V, PLTR and LLY were all booked at 100 against
+ * real closes of 682.31, 369.93, 176.24 and 1152.44.
+ *
+ * 100 is dangerous precisely because it is plausible. It sizes a trade, it
+ * books, it renders, and nothing downstream can tell it from a real quote.
+ *
+ * Zero cannot do any of that. `normalize-sizing` already rejects a price of
+ * zero with "Invalid price (must be > 0)", and the `apply_trade_to_holdings`
+ * RPC refuses a null or non-positive price loudly. So an unknown price now
+ * BLOCKS the trade and says so, which is the correct outcome: a desk that
+ * cannot price a name cannot size a position in it either.
+ *
+ * With the stored-close ladder above, this fires only for names the product
+ * holds no market data for at all -- COIN, CLOV, CROX, GH, LRCX, PARA and TGT
+ * have zero rows in `price_history_cache` today.
+ */
+const NO_PRICE = 0
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useMorphSession } from '../hooks/useMorphSession'
@@ -1236,7 +1268,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     // Build a mock price for the update
     const price: AssetPrice = {
       asset_id: variant.asset_id,
-      price: priceMap?.[variant.asset_id] || 100,
+      price: priceMap?.[variant.asset_id] || NO_PRICE,
       timestamp: new Date().toISOString(),
       source: 'realtime',
     }
@@ -1560,7 +1592,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         let computed = cacheV.computed
         if (!computed) {
           const baseline = baselineByAsset.get(cacheV.asset_id)
-          const price = priceMap?.[cacheV.asset_id] || baseline?.price || 100
+          const price = priceMap?.[cacheV.asset_id] || baseline?.price || NO_PRICE
           const normResult = normalizeSizing({
             action: cacheV.action,
             sizing_input: cacheV.sizing_input!,
@@ -1959,6 +1991,28 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       const quotesDisabled = typeof window !== 'undefined'
         && window.sessionStorage?.getItem('tesseract_live_quotes_disabled') === '1'
 
+      /*
+       * ── The stored closes, so a failed quote never means a made-up price ──
+       *
+       * This used to end in `baseline?.price || 100`. For a NEW position
+       * there is no baseline holding, so the price became the literal 100 --
+       * and the circuit breaker below then keeps the provider chain off for
+       * the rest of the session, so every trade booked afterwards took 100
+       * too. It is in production data now: META, V, PLTR and LLY all carry
+       * `price_at_acceptance = 100` against real closes of 682.31, 369.93,
+       * 176.24 and 1152.44.
+       *
+       * It is not a display bug. `normalize-sizing` divides by this price to
+       * get shares, so the share count, the weight delta and the notional are
+       * all wrong by the same factor, and `apply_trade_to_holdings` then
+       * writes them into `portfolio_holdings` and the portfolio's CASH.
+       *
+       * One batched read of `price_history_cache` -- the same dated closes
+       * every other surface measures against -- gives a real answer for
+       * nearly every name the provider could not reach.
+       */
+      const latestCloses = await fetchLatestCloses(Array.from(symbolsToFetch.values()))
+
       let anyQuoteSucceeded = false
       const fetchPromises = Array.from(symbolsToFetch.entries()).map(async ([assetId, symbol]) => {
         if (!quotesDisabled) {
@@ -1969,17 +2023,49 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               return { assetId, price: quote.price }
             }
           } catch {
-            // Fallback to baseline price
+            // Fall through to the stored close.
           }
         }
+        /*
+         * The ladder, every rung a real observed price:
+         *   1. the newest stored close for the name, with its date;
+         *   2. the book's own last price for a position already held;
+         *   3. nothing.
+         *
+         * Three is a real answer. A trade whose price we do not know must not
+         * be sized, and the RPC already refuses a null or non-positive price
+         * loudly -- so the trade is blocked instead of silently booked at a
+         * number nobody paid. That is the behaviour this ladder restores.
+         */
+        const close = latestCloses.get(symbol)
+        if (close != null) {
+          const value = Number(close.close)
+          if (Number.isFinite(value) && value > 0) return { assetId, price: value }
+        }
         const baseline = baselineHoldings.find(h => h.asset_id === assetId)
-        return { assetId, price: baseline?.price || 100 }
+        if (baseline?.price != null && baseline.price > 0) {
+          return { assetId, price: baseline.price }
+        }
+        return { assetId, price: null }
       })
 
       const results = await Promise.all(fetchPromises)
       results.forEach(r => {
-        prices[r.assetId] = r.price
+        // An unknown price is an ABSENT key, never a placeholder value.
+        // Callers read `priceMap[id]` and must handle undefined; writing a
+        // number here is what made "we don't know" indistinguishable from
+        // "it costs 100".
+        if (r.price != null) prices[r.assetId] = r.price
       })
+
+      const unpriced = results.filter(r => r.price == null).length
+      if (unpriced > 0) {
+        console.warn(
+          `[SimulationPage] ${unpriced} of ${results.length} assets have no real price ` +
+          `(no live quote, no close within ${LATEST_CLOSE_WINDOW_DAYS} days, no baseline). ` +
+          'They cannot be sized or executed until a price is available.',
+        )
+      }
 
       // If this pass tried the live providers and not a single quote came
       // back, disable live quotes for the rest of the session.
@@ -2294,7 +2380,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       currentPosition,
       price: {
         asset_id: assetId,
-        price: priceMap?.[assetId] || holding?.price || 100,
+        price: priceMap?.[assetId] || holding?.price || NO_PRICE,
         timestamp: new Date().toISOString(),
         source: 'realtime' as const,
       },
@@ -2373,7 +2459,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     } : null
     const assetPrice = {
       asset_id: assetId,
-      price: priceMap?.[assetId] || holding?.price || 100,
+      price: priceMap?.[assetId] || holding?.price || NO_PRICE,
       timestamp: new Date().toISOString(),
       source: 'realtime' as const,
     }
@@ -2424,7 +2510,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             simulation_id: simulation.id,
             asset_id: assetId,
             action: updates.action || variant?.action || 'add',
-            price: priceMap?.[assetId] || holding?.price || 100,
+            price: priceMap?.[assetId] || holding?.price || NO_PRICE,
             sort_order: simulation.simulation_trades.length,
           }, { onConflict: 'simulation_id,asset_id' })
           .select()
@@ -2589,7 +2675,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         cost_basis: null,
         active_weight: null,
       }
-      const price = priceMap?.[h.asset_id] || h.price || 100
+      const price = priceMap?.[h.asset_id] || h.price || NO_PRICE
       const assetPrice = {
         asset_id: h.asset_id,
         price,
@@ -2680,7 +2766,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           currentPosition,
           price: {
             asset_id: assetId,
-            price: priceMap?.[assetId] || holding?.price || 100,
+            price: priceMap?.[assetId] || holding?.price || NO_PRICE,
             timestamp: new Date().toISOString(),
             source: 'realtime' as const,
           },
@@ -2804,7 +2890,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               active_weight: null,
             } : null
 
-            const tradePrice = priceMap[trade.asset_id] || trade.price || 100
+            const tradePrice = priceMap[trade.asset_id] || trade.price || NO_PRICE
             const sizingInput = trade.weight != null
               ? String(trade.weight)
               : trade.shares != null
@@ -2920,7 +3006,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       // ~2.3×. Using the baseline price keeps normalization consistent.
       const baselineHoldingsForPrice = simulation.baseline_holdings as BaselineHolding[]
       const baselineForPrice = baselineHoldingsForPrice?.find(h => h.asset_id === tradeIdea.asset_id)
-      const price = priceMap?.[tradeIdea.asset_id] || baselineForPrice?.price || tradeIdea.target_price || 100
+      const price = priceMap?.[tradeIdea.asset_id] || baselineForPrice?.price || tradeIdea.target_price || NO_PRICE
 
       // Upsert: if the trade already exists (from a rapid toggle race), just return it
       const { data, error } = await supabase
@@ -2976,7 +3062,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           try {
             const baselineHoldingsForSync = simulation.baseline_holdings as BaselineHolding[]
             const baselineForSync = baselineHoldingsForSync?.find(h => h.asset_id === tradeIdea.asset_id)
-            const price = priceMap?.[tradeIdea.asset_id] || baselineForSync?.price || tradeIdea.target_price || 100
+            const price = priceMap?.[tradeIdea.asset_id] || baselineForSync?.price || tradeIdea.target_price || NO_PRICE
             const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
             const currentHolding = baselineHoldings.find(h => h.asset_id === tradeIdea.asset_id)
             const currentPosition = currentHolding ? {
@@ -3133,7 +3219,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         action: leg.action,
         shares: leg.proposed_shares,
         weight: leg.proposed_weight,
-        price: priceMap?.[leg.asset_id] || leg.target_price || 100,
+        price: priceMap?.[leg.asset_id] || leg.target_price || NO_PRICE,
         sort_order: (simulation.simulation_trades?.length || 0) + index,
       }))
 
@@ -3165,7 +3251,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 active_weight: null,
               } : null
 
-              const legPrice = priceMap?.[leg.asset_id] || leg.target_price || 100
+              const legPrice = priceMap?.[leg.asset_id] || leg.target_price || NO_PRICE
               const sizingInput = leg.proposed_weight != null
                 ? String(leg.proposed_weight)
                 : leg.proposed_shares != null
@@ -3506,7 +3592,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     if (selectedSimulationId && (priceMap?.[assetId] == null)) {
       const baselineHoldingsForHint = simulation?.baseline_holdings as BaselineHolding[] | undefined
       const baselineForHint = baselineHoldingsForHint?.find(h => h.asset_id === assetId)
-      const priceHint = baselineForHint?.price || (idea as any).target_price || 100
+      const priceHint = baselineForHint?.price || (idea as any).target_price || NO_PRICE
       queryClient.setQueryData<Record<string, number>>(
         ['simulation-prices', selectedSimulationId],
         (old) => ({ ...(old || {}), [assetId]: priceHint }),
@@ -3541,7 +3627,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             priceMap?.[assetId] ||
             baseline?.price ||
             (idea as any).target_price ||
-            100
+            NO_PRICE
           try {
             const normResult = normalizeSizing({
               action: (idea.action || 'buy') as any,
@@ -4283,7 +4369,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         if (tempSizingForLeg && simulation) {
           const baselineHoldings = (simulation.baseline_holdings as BaselineHolding[]) || []
           const baseline = baselineHoldings.find(h => h.asset_id === a.assetId)
-          const price = priceMap?.[a.assetId] || baseline?.price || 100
+          const price = priceMap?.[a.assetId] || baseline?.price || NO_PRICE
           try {
             const normResult = normalizeSizing({
               action: a.action as any,
@@ -4394,7 +4480,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
     traded.forEach(row => {
       const action = row.derivedAction
-      const price = priceMap?.[row.asset_id] || row.baseline?.price || 100
+      const price = priceMap?.[row.asset_id] || row.baseline?.price || NO_PRICE
       const tradeShares = Math.abs(row.deltaShares)
       const tradeWeight = Math.abs(row.deltaWeight)
       const tradeValue = Math.abs(row.notional)
@@ -4641,7 +4727,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       baseline,
       currentHolding,
       simulation.baseline_total_value || 0,
-      priceMap?.[trade.asset_id] || trade.price || 100
+      priceMap?.[trade.asset_id] || trade.price || NO_PRICE
     )
 
     workbenchQueueChange(trade.id, {
@@ -4706,7 +4792,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       baseline,
       currentHolding,
       simulation.baseline_total_value || 0,
-      priceMap?.[trade.asset_id] || trade.price || 100
+      priceMap?.[trade.asset_id] || trade.price || NO_PRICE
     )
 
     // Force immediate save of any pending changes
@@ -8132,7 +8218,7 @@ function calculateSimulationMetrics(
     const trade = trades.find(t => t.asset_id === assetId)
     const variant = variantByAsset.get(assetId)
     const existing = holdingsMap.get(assetId)
-    const price = priceMap[assetId] || trade?.price || 100
+    const price = priceMap[assetId] || trade?.price || NO_PRICE
 
     // Determine the action: prefer variant's derived action, then trade's action
     const action = trade?.action || variant?.action || 'add'

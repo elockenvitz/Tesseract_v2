@@ -236,7 +236,10 @@ export function RecommendationEditorModal({
 
     // Estimate portfolio value (fallback to 1M if unknown)
     const portfolioValue = 1_000_000 // TODO: Pass actual portfolio value
-    const price = baseline?.price ?? currentHolding?.price ?? 100
+    /* Zero, never 100, where no price is known: this is sized against, and a
+       plausible placeholder sizes and books a real trade at a price nobody
+       paid. The sizing guard rejects zero and says so. */
+    const price = baseline?.price ?? currentHolding?.price ?? 0
 
     // Check if portfolio has benchmark configured
     const hasBenchmark = false // TODO: Check portfolio.benchmark
