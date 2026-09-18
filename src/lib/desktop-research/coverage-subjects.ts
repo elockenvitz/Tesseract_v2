@@ -69,6 +69,8 @@ export function subjectFromCoverage(c: CoverageResearchCandidate): ResearchSubje
       claim: coverageWorkClaim(c, { weightShown: true }),
       liveIdeaCount: c.liveIdeas.length,
       portfolioName: c.exposure.portfolioName,
+      portfolioId: c.exposure.portfolioId,
+      portfolioCount: c.exposure.portfolioCount,
     },
   }
 }

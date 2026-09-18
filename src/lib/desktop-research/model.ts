@@ -162,6 +162,17 @@ export interface ResearchSubject {
     claim: string
     liveIdeaCount: number
     portfolioName: string | null
+    /**
+     * The book the weight is in, so a surface can load its position detail
+     * rather than showing a weight with nothing behind it.
+     */
+    portfolioId: string | null
+    /**
+     * How many books hold the name. A weight belongs to ONE book, so a tile
+     * that names a single book when three hold the position is stating the
+     * wrong thing -- above one, the corner says "in N portfolios" instead.
+     */
+    portfolioCount: number
   }
 }
 

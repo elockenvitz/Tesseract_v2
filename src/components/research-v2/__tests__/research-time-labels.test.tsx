@@ -26,6 +26,20 @@ const env = vi.hoisted(() => ({
   detail: { sections: [], evidence: [] } as Record<string, unknown>,
 }))
 
+/* The tile sparkline's closes. Empty, so this suite's compositions are
+   unchanged: with no stored closes the trailing visual falls past the price
+   rung to the one it used to pick. The real hook needs a QueryClient this
+   suite does not stand up. */
+vi.mock('../../../hooks/useTileCloses', () => ({
+  useTileCloses: () => ({ data: [], isLoading: false }),
+}))
+
+/* The position behind the corner weight: reads the book through `useBook`,
+   which needs a QueryClient this suite does not stand up. */
+vi.mock('../../../hooks/useSubjectWeightDetail', () => ({
+  useSubjectWeightDetail: () => null,
+}))
+
 vi.mock('../../../hooks/useCoverageResearchGaps', () => ({ useCoverageResearchGaps: () => env.gaps }))
 vi.mock('../../../hooks/useDesktopResearch', () => ({
   useResearchScan: () => ({ subjects: env.scan, isLoading: false }),

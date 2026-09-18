@@ -632,15 +632,34 @@ export function TileIdentity({
  * This is what earns a hero its space when there is no honest chart to draw.
  */
 export function TileHeroNumber({
-  figure, unit, label, tone = 'neutral',
+  figure, unit, label, tone = 'neutral', scale = 'hero',
 }: {
   figure: React.ReactNode
   unit?: string
   label: React.ReactNode
   tone?: SemanticTone
+  /**
+   * How much room the figure has.
+   *
+   * Added because Portfolio was saying the same fact four different ways: this
+   * primitive on hero and large, a hand-rolled span on medium, and a
+   * `TileMeta` row on compact -- three type scales and two label wordings, so
+   * one fact read as three across a scanned gallery. Below `large` the label
+   * sits inline, because a stacked caption under a 15px figure costs more
+   * height than the card has.
+   */
+  scale?: TileSize
 }) {
+  const stacked = scale === 'hero' || scale === 'large'
+  const figureSize = scale === 'hero' ? 'text-[30px]'
+    : scale === 'large' ? 'text-[25px]'
+    : scale === 'medium' ? 'text-[19px]'
+    : 'text-[15px]'
+  const unitSize = stacked ? 'text-[15px]' : 'text-[11px]'
+  const labelSize = stacked ? 'text-[12px]' : 'text-[10px]'
+
   return (
-    <div>
+    <div className={stacked ? undefined : 'flex min-w-0 flex-wrap items-baseline gap-x-1.5'}>
       {/*
         Subordinate to the ticker, and inked.
 
@@ -657,16 +676,23 @@ export function TileHeroNumber({
       */}
       <div className="flex items-baseline gap-1">
         <span className={clsx(
-          'font-mono text-[30px] font-semibold leading-[0.95] tabular-nums tracking-[-0.03em]',
+          'font-mono font-semibold leading-[0.95] tabular-nums tracking-[-0.03em]',
+          figureSize,
           tone === 'critical'
             ? 'text-rose-700 dark:text-rose-400'
             : 'text-gray-900 dark:text-gray-100',
         )}>
           {figure}
         </span>
-        {unit && <span className="text-[15px] font-semibold text-gray-500">{unit}</span>}
+        {unit && <span className={clsx('font-semibold text-gray-500', unitSize)}>{unit}</span>}
       </div>
-      <div className="mt-1 text-[12px] leading-snug text-gray-600 dark:text-gray-400">{label}</div>
+      <div className={clsx(
+        'leading-snug text-gray-600 dark:text-gray-400',
+        labelSize,
+        stacked && 'mt-1',
+      )}>
+        {label}
+      </div>
     </div>
   )
 }

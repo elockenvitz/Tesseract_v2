@@ -228,24 +228,19 @@ const MARKER_SNAP_DAYS = 5
  *
  * Additive: this component's own use is unchanged.
  */
-export const PRICE_RANGES: { key: RangeKey; days: number | null }[] = [
-  { key: '5D', days: 5 },
-  { key: '1M', days: 30 },
-  { key: '3M', days: 91 },
-  { key: '6M', days: 182 },
-  /**
-   * No YTD.
-   *
-   * It is the least distinct chip on the ladder — for most of the year it
-   * selects a window somewhere between 1M and 1Y that one of those already
-   * covers — and it was costing the row enough width that `ALL` clipped at the
-   * right edge. A control that cannot be read is worth less than one that is
-   * merely redundant, so the redundant one goes.
-   */
-  { key: '1Y', days: 365 },
-  { key: '5Y', days: 1825 },
-  { key: 'ALL', days: null },
-]
+/*
+ * The list moved to `lib/market-data/price-ranges`, unchanged, and is
+ * re-exported here so this file's callers are untouched.
+ *
+ * It moved because the desktop tile charts needed it and taking this comment
+ * at its word from there would have meant `components/decisions-v2` importing
+ * from `components/signals` -- lens reaching into lens, which has already
+ * produced one duplicated-window bug in this area. A chip labelled 3M must
+ * select the same 91 days on a phone and on a decision tile, and the only way
+ * to guarantee that is for there to be one list.
+ */
+export { PRICE_RANGES } from '../../lib/market-data/price-ranges'
+import { PRICE_RANGES } from '../../lib/market-data/price-ranges'
 
 /** Internal alias, so the rest of this file reads as it did. */
 const RANGES = PRICE_RANGES

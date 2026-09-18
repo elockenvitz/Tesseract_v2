@@ -342,6 +342,101 @@ describe('the smaller tiles draw a price, not another paragraph', () => {
 })
 
 /*
+ * ── The reader picks the horizon ─────────────────────────────────────────
+ *
+ * The chart had exactly one window -- since the fill, or the whole stored
+ * history captioned "Price over available history". That caption was the only
+ * thing the reader could do about it, and it reads as an apology for a missing
+ * control rather than as a choice, because it was one.
+ *
+ * The ladder is shared with the mobile price chart through
+ * `lib/market-data/price-ranges`, so a chip labelled 3M selects the same 91
+ * days in both places.
+ */
+describe('the price chart offers horizons', () => {
+  const filled = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'h1', ideaId: 'tq-h1', symbol: 'LLY', status: 'accepted',
+    decidedAt: daysAgo(40), decisionNote: 'Sized into the franchise.',
+    execution: {
+      id: 'at-1', status: 'complete', completedAt: daysAgo(40), executedByName: 'Eric',
+      targetWeight: 6.0, deltaWeight: 0.5, notional: 100000,
+    },
+    ...over,
+  })
+
+  it('defaults to the window since the fill, and offers the ladder', () => {
+    decisions = [filled()]
+    render(<DecisionsWorkspace />)
+    const ranges = screen.getByTestId('price-ranges')
+    expect(ranges).toHaveAttribute('data-range', 'since')
+    expect(within(ranges).getByRole('button', { name: 'Since fill' })).toBeInTheDocument()
+    // The shared ladder, not a second list declared here. The fixture holds
+    // 300 closes -- a 299-day span -- so 1Y is correctly absent: see the
+    // case below about never offering a window the history cannot fill.
+    for (const key of ['5D', '1M', '3M', '6M', 'ALL']) {
+      expect(within(ranges).getByRole('button', { name: key })).toBeInTheDocument()
+    }
+    expect(within(ranges).queryByRole('button', { name: '1Y' })).toBeNull()
+  })
+
+  it('changes the window and the caption when a horizon is picked', async () => {
+    const user = userEvent.setup()
+    decisions = [filled()]
+    render(<DecisionsWorkspace />)
+    await user.click(within(screen.getByTestId('price-ranges')).getByRole('button', { name: '3M' }))
+    expect(screen.getByTestId('price-ranges')).toHaveAttribute('data-range', '3M')
+    expect(screen.getByTestId('price-since-fill')).toHaveTextContent(/Price, last 3M/i)
+  })
+
+  it('does not open the record when a horizon is pressed', async () => {
+    const user = userEvent.setup()
+    decisions = [filled()]
+    render(<DecisionsWorkspace />)
+    await user.click(within(screen.getByTestId('price-ranges')).getByRole('button', { name: '6M' }))
+    // The shell treats an unhandled click as "open this", so a control inside
+    // it has to declare itself one.
+    expect(detailRequestedFor).toHaveLength(0)
+  })
+
+  it('never offers a window the stored history cannot fill', () => {
+    // Ninety days held: 1Y, 5Y and ALL would draw three identical lines, which
+    // reads as a broken control rather than as a short history.
+    tileCloses = Array.from({ length: 90 }, (_, i) => ({
+      date: new Date(Date.now() - (89 - i) * DAY),
+      value: 400 + i,
+    }))
+    decisions = [filled()]
+    render(<DecisionsWorkspace />)
+    const ranges = screen.getByTestId('price-ranges')
+    expect(within(ranges).queryByRole('button', { name: '1Y' })).toBeNull()
+    expect(within(ranges).queryByRole('button', { name: '5Y' })).toBeNull()
+    // Everything held is always a meaningful choice, whatever its length.
+    expect(within(ranges).getByRole('button', { name: 'ALL' })).toBeInTheDocument()
+  })
+
+  /* No `Since fill` chip where the closes cannot span the fill: a control
+     that selects a window the data does not have is worse than its absence. */
+  it('offers no since-the-fill chip where there is no such window', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 1 * DAY), value: 1150 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    decisions = [filled({
+      decidedAt: new Date().toISOString(),
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: new Date().toISOString(),
+        executedByName: 'Eric', targetWeight: 6.0, deltaWeight: 0.5, notional: 100000,
+      },
+    })]
+    render(<DecisionsWorkspace />)
+    const ranges = screen.getByTestId('price-ranges')
+    expect(within(ranges).queryByRole('button', { name: 'Since fill' })).toBeNull()
+    // It falls back to everything held, and says so in the caption.
+    expect(ranges).toHaveAttribute('data-range', 'ALL')
+  })
+})
+
+/*
  * ── Why there is no move, said in the reader's terms ─────────────────────
  *
  * The chart used to explain itself with "Stored closes do not cover the
@@ -362,8 +457,22 @@ describe('the chart explains a missing move without jargon', () => {
     execution: { id: 'at-1', status: 'complete', completedAt: at, executedByName: 'Eric' },
   })
 
-  it('says a fresh fill has no move yet, rather than blaming the data', () => {
-    // The live LLY shape: a year of closes, and the fill is the last one.
+  /*
+   * The chart no longer explains its window in prose at all.
+   *
+   * The paragraph said, most often, "this filled on Sep 16, so there is no
+   * price move to show yet. The line is the last 395 days." -- a recent fill
+   * and a year-long line named in the same breath, which is the opposite of
+   * clarifying. The day count beside the caption said "395d" about the same
+   * fill and invited the same wrong conclusion.
+   *
+   * Both went, because the tile now ANSWERS the question instead of
+   * apologising for it: the headline measures from the close on the fill day
+   * where no window exists, and the chip row lets the reader pick any other
+   * horizon. What the window is, the chips say; where it starts and ends, the
+   * date axis says.
+   */
+  it('explains the window with controls and an axis, not a paragraph', () => {
     tileCloses = [
       { date: new Date(Date.now() - 2 * DAY), value: 1140 },
       { date: new Date(Date.now() - 1 * DAY), value: 1150 },
@@ -371,26 +480,66 @@ describe('the chart explains a missing move without jargon', () => {
     ]
     decisions = [filled(new Date().toISOString())]
     render(<DecisionsWorkspace />)
-    const why = screen.getByTestId('price-absence-reason')
-    expect(why).toHaveTextContent(/no price move to show yet/i)
-    // The sentence that was both unreadable and false.
-    expect(why.textContent).not.toMatch(/since-/)
-    expect(why.textContent).not.toMatch(/stored closes/i)
-    expect(why.textContent).not.toMatch(/do not cover/i)
+    const tile = screen.getByTestId('decision-tile')
+
+    expect(screen.queryByTestId('price-absence-reason')).toBeNull()
+    expect(tile.textContent).not.toMatch(/no price move to show yet/i)
+    // The day count that said "395d" about a fill from two days ago.
+    expect(tile.textContent).not.toMatch(/\d+d of history/i)
+    expect(tile.textContent).not.toMatch(/\d+d since the/i)
+
+    // The controls and the axis carry it instead.
+    expect(screen.getByTestId('price-ranges')).toBeInTheDocument()
+    expect(screen.getByTestId('price-axes')).toBeInTheDocument()
   })
 
-  it('says so plainly when the history really does start after the trade', () => {
+  /*
+   * ── A fill on the newest close still has a percentage ────────────────────
+   *
+   * A trade filled ON the latest close has one close at or after its fill, so
+   * there is no window -- and the tile used to show nothing, which reads as
+   * broken rather than as new. But a percentage needs two PRICES, not two
+   * chart points, and there are two: the close the day it filled, and the
+   * newest close. Where they are the same row the answer is 0.00%, which is
+   * the truth and worth saying. "Nothing here" is not the same statement as
+   * "it has not moved".
+   */
+  it('says it has not moved, rather than saying nothing', () => {
+    /*
+     * The live LLY shape: filled ON the newest close we hold, so exactly one
+     * close sits at or after the fill and there is no window. The fill-day
+     * close and the newest close are then the SAME row, so the honest answer
+     * is 0.00% -- and saying it is not the same as leaving the slot empty.
+     */
     tileCloses = [
-      { date: new Date(Date.now() - 2 * DAY), value: 1140 },
       { date: new Date(Date.now() - 1 * DAY), value: 1150 },
       { date: new Date(Date.now()), value: 1152.44 },
     ]
-    // Filled a month back; the earliest close we hold is two days old.
-    decisions = [filled(daysAgo(30))]
+    decisions = [filled(new Date().toISOString())]
     render(<DecisionsWorkspace />)
-    const why = screen.getByTestId('price-absence-reason')
-    expect(why).toHaveTextContent(/only go back to/i)
-    expect(why.textContent).not.toMatch(/since-/)
+    const tile = screen.getByTestId('decision-tile')
+    expect(within(tile).getByTestId('decision-lead-move')).toHaveTextContent('0.00%')
+    // And it says which price it measured from, because a 0.00% measured
+    // from somewhere the reader did not expect is worse than a caption.
+    expect(within(tile).getByTestId('decision-move-proxy'))
+      .toHaveTextContent(/close on the fill day/i)
+  })
+
+  it('prefers the closes window, with no proxy caption, where one exists', () => {
+    // Two closes after the fill: a real window, which is what the chart
+    // beside it draws, so the headline must use the same rows.
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: 1000 },
+      { date: new Date(Date.now() - 2 * DAY), value: 1100 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1120 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    decisions = [filled(daysAgo(2))]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // 1100 -> 1152.44 is +4.77%, measured from the fill itself.
+    expect(within(tile).getByTestId('decision-lead-move')).toHaveTextContent('+4.77%')
+    expect(within(tile).queryByTestId('decision-move-proxy')).toBeNull()
   })
 
   it('never phrases the anchor as a verb in the caption', () => {
@@ -1049,6 +1198,131 @@ describe('the card answers what we decided and what happened', () => {
     withCommit(100, 99.4)
     render(<DecisionsWorkspace />)
     expect(basisVerdict()).toBe('ok')
+  })
+
+  /*
+   * ── The percentage and the dollars are one finding ───────────────────────
+   *
+   * The tile showed a P&L with no percentage beside it, because the
+   * percentage came only from the closes WINDOW -- which does not exist for a
+   * trade filled today, since there are not yet two closes after it. So the
+   * half that invites checking was missing and the half that reads as
+   * authoritative was not.
+   *
+   * Both are computed from the execution price. Where that price is
+   * fabricated they are both fiction, and neither may appear: the LLY tile
+   * was reporting +$3.54M, because 3,363 shares were booked at a notional of
+   * 336,300 -- $100 a share against a real close of 1,152.44.
+   */
+  it('names the missing P&L rather than leaving a blank beside the move', () => {
+    // The live LLY shape: filled 17 Sep, and 17 Sep is the newest close.
+    tileCloses = [
+      { date: new Date(Date.now() - 2 * DAY), value: 1140 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1150 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: new Date().toISOString(),
+        executedByName: 'Eric', targetWeight: 6.39, deltaWeight: 0.25,
+        notional: 336300, priceAtAcceptance: 100, deltaShares: 3363,
+      },
+    })]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, pnl: 3540000 } }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // The fabricated figure is gone...
+    expect(tile.textContent).not.toContain('3.5M')
+    // ...and the gap is NAMED, because a blank beside a percentage reads as a
+    // bug and the reader cannot tell it from a figure we failed to draw.
+    expect(within(tile).getByTestId('decision-pnl-unavailable'))
+      .toHaveTextContent(/fill price on this trade was not recorded/i)
+  })
+
+  it('shows the percentage beside the P&L on a fill from today', () => {
+    // One close after the fill, so there is no window -- the case that left
+    // the dollars standing alone.
+    tileCloses = [
+      { date: new Date(Date.now() - 1 * DAY), value: 400 },
+      { date: new Date(Date.now()), value: 440 },
+    ]
+    decisions = [executed({
+      decidedAt: new Date().toISOString(),
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: new Date().toISOString(),
+        executedByName: 'Eric', targetWeight: 6.39, deltaWeight: 0.25,
+        notional: 84186.48, priceAtAcceptance: 400, deltaShares: 200,
+      },
+    })]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, pnl: 8000 } }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // Paid 400, now 440: the comparison the desk actually makes.
+    expect(within(tile).getByTestId('decision-lead-move')).toHaveTextContent('+10.00%')
+    expect(within(tile).getByTestId('decision-lead-pnl')).toBeInTheDocument()
+  })
+
+  it('withholds the P&L as well as the percentage when the price is fabricated', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 2 * DAY), value: 1150 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1152.44 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: daysAgo(1), executedByName: 'Eric',
+        targetWeight: 6.39, deltaWeight: 0.25, notional: 336300,
+        priceAtAcceptance: 100, deltaShares: 3363,
+      },
+    })]
+    // The number the tile was actually printing.
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, pnl: 3540000 } }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    expect(within(tile).queryByTestId('decision-lead-pnl')).toBeNull()
+    expect(tile.textContent).not.toContain('3.5M')
+  })
+
+  /*
+   * A fabricated execution price must not take a true number down with it.
+   *
+   * The percentage from the closes window is closes-to-closes arithmetic and
+   * never touches the execution price, so it stands even where the P&L cannot.
+   * A first pass suppressed both, which threw away a true number because a
+   * different one was false.
+   */
+  it('keeps the closes-derived percentage when only the P&L is fabricated', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: 1000 },
+      { date: new Date(Date.now() - 2 * DAY), value: 1100 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1150 },
+      { date: new Date(Date.now()), value: 1200 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric',
+        targetWeight: 6.39, deltaWeight: 0.25, notional: 336300,
+        priceAtAcceptance: 100, deltaShares: 3363,
+      },
+    })]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, pnl: 3540000 } }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // 1100 -> 1200 across the window that starts at the fill: true, and the
+    // reader can check it against the line beside it.
+    expect(within(tile).getByTestId('decision-lead-move')).toHaveTextContent('+9.09%')
+    // The dollars still go: they are computed from the fabricated price.
+    expect(within(tile).queryByTestId('decision-lead-pnl')).toBeNull()
+  })
+
+  it('names which price the P&L runs from', () => {
+    decisions = [executed()]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, pnl: -670 } }
+    render(<DecisionsWorkspace />)
+    // "P&L" alone left the reader to guess whether it ran from the decision
+    // or the fill, and those are different numbers.
+    expect(within(screen.getByTestId('decision-tile')).getByTestId('decision-lead-pnl'))
+      .toHaveTextContent(/P&L since fill/i)
   })
 
   it('shows a commit price the closes agree with', () => {

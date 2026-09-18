@@ -51,6 +51,28 @@ const thesisContainerFor: string[] = []
  * Coverage-generated subjects have their own suite (research-v2/__tests__).
  * Here the reader has no coverage gaps, so these cases stay about the scan.
  */
+/*
+ * The tile sparkline's closes. The real hook reaches for a QueryClient this
+ * suite does not stand up, so without this every test fails on infrastructure
+ * rather than on what it is testing.
+ *
+ * Empty by default, which is the state that leaves this lens's existing
+ * compositions exactly as they were: with no stored closes the trailing
+ * visual falls through the `spark` rung to the one it used to pick. Cases
+ * about the price set `researchCloses`.
+ */
+let researchCloses: { date: Date; value: number }[] = []
+
+/* The position behind the corner weight: reads the book through `useBook`,
+   which needs a QueryClient this suite does not stand up. */
+vi.mock('../../hooks/useSubjectWeightDetail', () => ({
+  useSubjectWeightDetail: () => null,
+}))
+
+vi.mock('../../hooks/useTileCloses', () => ({
+  useTileCloses: () => ({ data: researchCloses, isLoading: false }),
+}))
+
 vi.mock('../../hooks/useCoverageResearchGaps', () => ({
   useCoverageResearchGaps: () => ({ status: 'ready', candidates: [], coveredCount: 0 }),
 }))

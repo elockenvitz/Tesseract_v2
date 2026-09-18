@@ -31,6 +31,15 @@ import {
   TileFigure, TileVisual, TileBar, TileLead,
   sizeByRank, GallerySkeleton, type TileSize,
 } from '../desktop/DesktopTile'
+/* The shared price chart, anchored on the date the case was last written. */
+import { TilePriceChart } from '../desktop/TilePriceChart'
+/* The corner weight control, shared with Portfolio. */
+import { TileWeightChip } from '../desktop/TileWeightChip'
+/* The position behind that weight, so the panel answers what Portfolio's does. */
+import { useSubjectWeightDetail } from '../../hooks/useSubjectWeightDetail'
+/* Keyed by symbol with a five-minute staleTime, so a gallery on one name
+   makes one request -- which is what makes a price affordable in this lens. */
+import { useTileCloses } from '../../hooks/useTileCloses'
 import type { FocusIntent } from '../../lib/dashboard/focus'
 import { ResearchDetail } from './ResearchDetail'
 import { openAsset } from '../../lib/desktop-asset'
@@ -389,6 +398,144 @@ function SubjectTile({
   const tone = STATE_TONE[state]
   const arrivedDays = subject.newestEvidenceAt ? daysSince(subject.newestEvidenceAt) : null
   const big = size === 'hero' || size === 'large'
+
+  /*
+   * ── The price, now that it costs one request per name ────────────────────
+   *
+   * This lens deliberately drew no chart: "fetching one per card to decorate
+   * a gallery is exactly the cost this must not add." That was true when each
+   * card would have fetched its own series. `useTileCloses` is keyed by symbol
+   * alone with a five-minute staleTime, so a gallery of tiles on one name
+   * makes ONE request, and Decisions and Portfolio have usually already made
+   * it -- the reader arriving at Research is looking at names they just saw.
+   *
+   * The constraint that survives is the real one: the price never displaces
+   * this lens's own answer. See `trailing` below.
+   */
+  const { data: closesData } = useTileCloses(subject.symbol)
+  const closes = closesData ?? []
+
+  /*
+   * ── One object per tile, chosen by what this lens is asking ──────────────
+   *
+   * The price is the LAST rung, never a displacement. This lens's own answers
+   * come first:
+   *
+   *   timeline  how long the case has stood and what landed since. This is
+   *             the question Research asks, and it covers both "new evidence
+   *             since I looked" and "this review is going stale".
+   *   weight    the share of the queue, which is why an unreviewed thesis
+   *             matters at all.
+   *   spark     the price -- only where NEITHER of those drew anything.
+   *
+   * Both existing objects keep their original conditions untouched, so no
+   * tile that already had a visual changes. What changes is the tile that had
+   * none: the no-thesis card, which this lens excludes from both, and the
+   * medium card, which was never given either.
+   *
+   * Nothing is invented where there are no rows. A name with no stored closes
+   * draws no chart rather than a flat line through a made-up series, which is
+   * most of the reason this lens avoided price in the first place.
+   */
+  /**
+   * Whether the claim sentence is the eyebrow chip in longer words.
+   *
+   * `coverageWorkLabel` and `coverageWorkClaim` describe the same finding at
+   * two lengths. For a HELD name with no case they converge completely: the
+   * chip reads "Position without a thesis", the sentence reads "A live
+   * position with no written thesis behind it", and the missing-parts block
+   * added a third "No written case" on top of both.
+   *
+   * Decided from the context rather than by comparing the two strings. A first
+   * attempt did compare them -- every word of the chip present in the sentence
+   * -- and it failed on "without" against "with no", which is exactly how a
+   * clever textual rule earns its keep right up until it silently stops. The
+   * condition is a fact about the subject, so it is read as one.
+   *
+   * The other two contexts keep their sentences, because they say something
+   * the chip does not: `idea` names the open ideas being worked without a
+   * case, `unheld` names the coverage relationship.
+   */
+  const absenceIsRestated =
+    subject.generated?.context === 'held' && state === 'no-thesis'
+
+  /** Two columns only where there is width AND a price to put in the second. */
+  /* `bigTwoCol` is gone with the two-column layout it named: the card stacks
+     now, and whether a chart draws is `drawsChart` alone. */
+
+  /*
+   * ── The chart is not in competition with anything ────────────────────────
+   *
+   * It used to be the last rung of a ladder: the standing-window timeline won
+   * the slot if there was a review date, the share-of-queue bar won it if
+   * there was a weight, and only a subject with NEITHER got a price. Which
+   * meant the names with the most recorded about them showed no chart at all,
+   * and the rule was invisible from the outside -- it looked like the chart
+   * came and went by name.
+   *
+   * A price is not an alternative to a review date or a weight. It answers a
+   * different question and it is drawn for every subject that has closes.
+   */
+  /*
+   * Compact included.
+   *
+   * The cut was at medium, so the whole second row of the gallery drew no
+   * price at all -- and those are the cards with the least else on them, where
+   * a line is the only thing that distinguishes one from the next. A compact
+   * tile has room for a short chart; it does not have room for nothing.
+   */
+  const drawsChart = closes.length >= 2
+
+  /**
+   * What the weight is OF, for the corner.
+   *
+   * A weight belongs to ONE book. Naming a single book when three hold the
+   * name states the wrong thing, so above one the corner counts them instead
+   * and the panel carries the rest.
+   */
+  /*
+   * The position behind the weight -- market value, shares, price, active
+   * weight -- so the corner opens the same panel it does in Portfolio.
+   *
+   * Only asked where a single book holds the name: a weight belongs to one
+   * book, and with several there is no one position to describe. Shares
+   * `useBook`'s cache key with the Portfolio lens, so a reader who has opened
+   * both pays for one read.
+   */
+  const weightDetail = useSubjectWeightDetail(
+    (subject.generated?.portfolioCount ?? 0) === 1 ? subject.generated?.portfolioId : null,
+    subject.assetId,
+  )
+
+  /*
+   * A COUNT, never the book's name.
+   *
+   * Research can be looking across any number of books, so "weight" alone is
+   * not enough here the way it is on Portfolio -- 5.4% of what. But a name in
+   * the corner is a variable-length string in a fixed-width slot, and
+   * "Tech & Consumer Growth" or longer simply truncates, which is worse than
+   * not naming it: a half-name reads as a different book.
+   *
+   * So the corner counts the books and the panel names them. The count never
+   * outgrows its space and is honest at any number.
+   */
+  const books = subject.generated?.portfolioCount ?? 0
+  const weightCaption = books === 1
+    ? 'in 1 portfolio'
+    : books > 1
+      ? `in ${books} portfolios`
+      : 'weight'
+
+  const drawsTimeline = big && !!subject.thesisUpdatedAt && state !== 'no-thesis'
+  const drawsWeight = big && subject.weightPct != null && state !== 'no-thesis'
+  /*
+   * The no-thesis branch draws the chart inside its own body, so the trailing
+   * one is skipped there -- that is the only remaining condition, and it is
+   * about not drawing the SAME chart twice on one card, not about whether the
+   * subject has earned one.
+   */
+  const composesOwnChart = drawsChart && (state === 'no-thesis' || state === 'incomplete-thesis')
+  const drawsSpark = drawsChart && !composesOwnChart
   // The age, new-note count and move count from this date: a recorded review
   // only on a generated subject anchored on one (lib/desktop-research/anchor-words).
   const age = dateWords(ageKindOf(subject))
@@ -402,9 +549,45 @@ function SubjectTile({
       onOpen={onOpen}
       eyebrow={<>
         <TileState tone={tone}>{issueFor(subject)}</TileState>
-        <TileFigure>
-          {subject.daysSinceReview != null ? `${subject.daysSinceReview}d ${age.since}` : 'no thesis written'}
-        </TileFigure>
+        {/* The age, where there is one. Where there is not, the chip beside
+            this already says so -- "no thesis written" next to "No thesis on
+            file" was the same sentence twice in one row. */}
+        {subject.daysSinceReview != null && (
+          <TileFigure>{`${subject.daysSinceReview}d ${age.since}`}</TileFigure>
+        )}
+        {/*
+          The same corner control Portfolio uses, so a weight is a weight
+          wherever the reader meets one.
+
+          What it can open is less here, and deliberately so: Research's
+          coverage rows carry the weight and the book, not the market value,
+          the share count or the benchmark comparison. Those are Portfolio's
+          own read of the book, and this lens does not load one -- inventing
+          them, or showing a zero, would give the reader a number to act on
+          that nothing stands behind.
+        */}
+        {subject.weightPct != null && (
+          <TileWeightChip
+            pct={subject.weightPct}
+            testId="subject-weight"
+            caption={weightCaption}
+            details={[
+              /* The book's name lives here, not in the corner: the panel can
+                 wrap it, the corner would truncate it. */
+              ...(subject.generated?.portfolioName
+                ? [{ label: 'Book', value: subject.generated.portfolioName }]
+                : []),
+              ...(weightDetail?.details ?? []),
+              ...(subject.generated?.liveIdeaCount
+                ? [{ label: 'Open ideas', value: String(subject.generated.liveIdeaCount) }]
+                : []),
+              { label: 'Research on file', value: String(subject.evidenceCount) },
+              ...(subject.daysSinceReview != null
+                ? [{ label: `Last ${age.verb}`, value: `${subject.daysSinceReview}d ago` }]
+                : []),
+            ]}
+          />
+        )}
       </>}
     >
       <TileIdentity symbol={subject.symbol} name={subject.companyName} size={size} />
@@ -450,43 +633,89 @@ function SubjectTile({
           </div>
         )
       ) : state === 'no-thesis' || state === 'incomplete-thesis' ? (
-        /* The shape of what is missing, at whatever scale the card has. */
-        <div className="flex min-w-0 flex-1 flex-col">
+        /*
+          ── One statement of the absence, and the width used ────────────────
+
+          A held name with no case said it three times: the eyebrow chip
+          ("Position without a thesis"), the claim sentence ("A live position
+          with no written thesis behind it") and the missing-parts block ("No
+          written case"). Three sentences, one fact, and the card still had to
+          fit a chart underneath them.
+
+          Now: the chip states the condition, the left column names WHICH parts
+          are missing -- the only part of that trio that adds anything -- and
+          the right column takes the price at a size worth reading. Where the
+          claim genuinely says something the chip does not (an idea being
+          worked, a position the gap puts at risk) it survives; where it is the
+          chip restated it does not. See `absenceIsRestated`.
+        */
+        /*
+          ── Text across the top, chart across the bottom ────────────────────
+
+          Not a left/right split. Splitting the card put the chart in half the
+          width and left the text in a narrow column that wrapped more, which
+          is worse for both: a price line wants width, and a short run of facts
+          does not want a column.
+
+          So the card stacks. The facts run ACROSS the full width in one
+          wrapping row -- what is missing, what it weighs, what is on file --
+          rather than stacking into four short lines, and the chart takes the
+          whole width beneath them and all the height that is left.
+        */
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
           {/*
-            Generated work leads with why it matters on this name, not with the
-            blank: the position it puts at risk, or the idea being worked without
-            a case. The missing structure follows where the card has room.
+            Generated work leads with why it matters on this name -- the
+            position the gap puts at risk, or the idea being worked without a
+            case. Suppressed where that sentence is the eyebrow again.
           */}
-          {subject.generated && subject.generated.context !== 'unheld' && subject.weightPct != null && (
-            <div className="mb-2">
-              <TileLead
-                figure={subject.weightPct.toFixed(1)}
-                unit="%"
-                label={subject.generated.portfolioName ? <>of {subject.generated.portfolioName}</> : <>of the book</>}
-              />
-            </div>
-          )}
-          {subject.generated && (
-            <div data-testid="research-tile-reason" className="mb-2">
+          {subject.generated && !absenceIsRestated && (
+            <div data-testid="research-tile-reason">
               <TileReason>{whyItMatters(subject)}</TileReason>
             </div>
           )}
-          {(!subject.generated || big) && <MissingThesis present={subject.coreSections} size={size} />}
-          <div className="mt-auto pt-3">
-            <TileMeta>
-              {subject.weightPct != null && !subject.generated && (
-                <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">
-                  {subject.weightPct.toFixed(1)}% held
-                </span>
-              )}
-              {!!subject.generated?.liveIdeaCount && (
-                <span className="font-semibold text-gray-800 dark:text-gray-200">
-                  {subject.generated.liveIdeaCount} open idea{subject.generated.liveIdeaCount === 1 ? '' : 's'}
-                </span>
-              )}
-              <span>{subject.evidenceCount ? `${subject.evidenceCount} research on file` : 'Nothing on file yet'}</span>
-            </TileMeta>
+
+          {/*
+            One row, wrapping, instead of a stack.
+
+            Which parts are missing is the finding and leads; the weight, the
+            book, the open ideas and what is on file are context and follow it
+            on the same line. At hero width they fit comfortably on one row --
+            which is the horizontal space the stacked version was leaving
+            empty to the right of every short line.
+          */}
+          <div
+            data-testid="research-tile-facts"
+            className="flex min-w-0 flex-wrap items-baseline gap-x-5 gap-y-1 text-[11px] text-gray-500"
+          >
+            {(!subject.generated || big) && (
+              <MissingThesis present={subject.coreSections} size={size} />
+            )}
+            {/* No weight line here: the corner states it, names the book it
+                is in, and opens the rest. Saying it twice on one card is what
+                this pass removed. */}
+            {!!subject.generated?.liveIdeaCount && (
+              <span className="font-semibold text-gray-800 dark:text-gray-200">
+                {subject.generated.liveIdeaCount} open idea{subject.generated.liveIdeaCount === 1 ? '' : 's'}
+              </span>
+            )}
+            <span>{subject.evidenceCount ? `${subject.evidenceCount} research on file` : 'Nothing on file yet'}</span>
           </div>
+
+          {/* Full width, and all the height the facts above did not use. At
+              every size: this branch is where the smallest cards land, and
+              gating it on `big` is what left the gallery's second row with no
+              price at all. */}
+          {drawsChart && (
+            <div className="min-h-0 flex-1">
+              <TilePriceChart
+                points={closes}
+                anchorISO={subject.thesisUpdatedAt ?? null}
+                anchorLabel="review"
+                fill
+                height={size === 'hero' ? 190 : size === 'large' ? 160 : size === 'medium' ? 84 : 64}
+              />
+            </div>
+          )}
         </div>
       ) : state === 'moved-since-review' ? (
         /* The move is the finding: the figure leads, the case's age beneath. */
@@ -532,10 +761,10 @@ function SubjectTile({
         how much has landed since -- and it was three sentences of prose above
         three hundred pixels of nothing.
       */}
-      {big && subject.thesisUpdatedAt && state !== 'no-thesis' && (
+      {drawsTimeline && (
         <div className="mt-3">
           <TileTimeline
-            writtenAt={subject.thesisUpdatedAt}
+            writtenAt={subject.thesisUpdatedAt!}
             newestAt={subject.newestEvidenceAt}
             count={subject.newSinceReview}
             startLabel={dateWords(thesisDateKindOf(subject)).start}
@@ -543,12 +772,33 @@ function SubjectTile({
         </div>
       )}
 
+      {/*
+        The price, where this lens has no standing window to draw instead.
+
+        Measured from the date the case was last written where there is one,
+        so the line answers "what has the market done since we argued this"
+        rather than being an undated decoration. Where no review date exists
+        -- the no-thesis card -- it shows the history it has and says so,
+        which the shared component handles by refusing the since-claim.
+      */}
+      {drawsSpark && (
+        <div className={clsx('min-h-0 flex-1', big ? 'mt-3' : 'mt-2')}>
+          <TilePriceChart
+            points={closes}
+            anchorISO={subject.thesisUpdatedAt ?? null}
+            anchorLabel="review"
+            fill
+            height={big ? 110 : size === 'medium' ? 84 : 64}
+          />
+        </div>
+      )}
+
       {/* Exposure is why an unreviewed thesis matters -- but only where the
           card has not already led with it. */}
-      {subject.weightPct != null && big && state !== 'no-thesis' && (
+      {drawsWeight && (
         <TileVisual>
           <TileBar
-            pct={subject.weightPct}
+            pct={subject.weightPct!}
             max={maxWeight}
             population={weights}
             label="Held, against the rest of the queue"
@@ -589,18 +839,23 @@ function MissingThesis({ present, size }: { present: string[]; size: TileSize })
    * replacement object.
    */
   if (present.length === 0) {
+    /*
+      No "No written case" heading.
+
+      It was the third statement of one fact: the eyebrow chip says it, the
+      claim sentence said it, and this said it again -- and the chip is
+      already the heading, sitting directly above this on the same card.
+
+      What survives is the only part of that trio that adds anything: WHICH
+      parts are missing, named. The labels keep their own capitalisation;
+      lowercasing them to make the line read as prose stopped the card naming
+      them, which is the half a reader needs -- not "something is missing" but
+      which three things.
+    */
     return (
-      <div className="flex flex-col gap-1">
-        <span className={clsx(
-          'font-semibold text-amber-700 dark:text-amber-500',
-          big ? 'text-[15px]' : 'text-[12px]',
-        )}>
-          No written case
-        </span>
-        <span className={clsx('text-gray-500', big ? 'text-[12px]' : 'text-[11px]')}>
-          None of {CORE_SECTIONS.map(k => (SECTION_LABEL[k] ?? k).toLowerCase()).join(', ')} recorded
-        </span>
-      </div>
+      <span className={clsx('text-gray-500', big ? 'text-[12px]' : 'text-[11px]')}>
+        No {CORE_SECTIONS.map(k => SECTION_LABEL[k] ?? k).join(' · no ')}
+      </span>
     )
   }
 

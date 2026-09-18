@@ -34,7 +34,11 @@
 
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { anchoredWindow } from '../research-v2/ResearchVisual'
+/* The shared tile chart. Decisions positions it on the fill; Portfolio and
+   Research mount the same component with their own anchors. `anchoredWindow`
+   is no longer imported here: the chart that used it moved, and this file's
+   own `windowSinceDecision` is self-contained. */
+import { TilePriceChart } from '../desktop/TilePriceChart'
 
 export interface DecisionWindow {
   series: number[]
@@ -681,257 +685,39 @@ export function RecordGaps({
  * file: a buy that fell is not thereby a mistake, and a coloured line says it
  * is louder than any caption can deny.
  */
-export function PriceSinceFill({
-  points, anchorISO, anchorLabel = 'fill', height = 132, empty = null,
-}: {
+/**
+ * The decision tile's price chart is the SHARED tile chart, anchored on the
+ * fill.
+ *
+ * ── Why the drawing left this file ───────────────────────────────────────
+ *
+ * It was built here, and then Portfolio needed a price on its cards. What
+ * Portfolio could reach was a 20-30px micro sparkline -- no axes, no horizon
+ * control, no scrub -- because the good chart was a lens-private component.
+ * Unreadable on its own terms, and it made the product read as two products
+ * one tab apart.
+ *
+ * So the drawing moved to `components/desktop/TilePriceChart`, the shared
+ * shell every lens can mount, and this is the Decisions-shaped call: the
+ * anchor is the fill, or the decision where nothing filled. Nothing about how
+ * it renders is decided here any more, which is the point -- one price object,
+ * three lenses positioning it.
+ */
+export function PriceSinceFill(props: {
   points: { date: Date; value: number }[]
   /** The fill, or the decision where nothing filled. */
   anchorISO: string | null
-  /**
-   * A bare noun -- "fill" or "decision" -- because the component builds
-   * sentences out of it: "Price since the fill", "2d since the fill", "after
-   * this fill". It used to be given "Filled", which produced "Price since
-   * Filled" and, worse, "this is not a since-Filled move".
-   */
+  /** A bare noun -- "fill", "decision" -- the chart builds sentences from it. */
   anchorLabel?: string
   height?: number
   /** Rendered when there is no drawable series at all. */
   empty?: React.ReactNode
 }) {
-  const [at, setAt] = useState<number | null>(null)
-
-  /* Research's own slicer, on Research's own row shape. Measuring the window
-     in one shared place is what stops a caption and a line disagreeing. */
-  const history = points.map(p => ({ date: p.date.toISOString(), close: p.value }))
-  const w = anchoredWindow(history, anchorISO)
-    // No window from the anchor -- a fill with nothing after it yet -- so show
-    // the history there is and say that is what it is.
-    ?? anchoredWindow(history, null)
-  if (!w) return <>{empty}</>
-
-  /*
-   * ── WHY there is no since-the-fill move, in the reader's terms ───────────
-   *
-   * The old sentence was "Stored closes do not cover the Filled, so this is
-   * not a since-Filled move", which is unreadable and, in the common case,
-   * untrue. Two different situations land here and they are opposites:
-   *
-   *   tooRecent    -- the closes DO cover the fill, but fewer than two of
-   *                   them come after it. A trade that filled today has no
-   *                   move yet. This is the usual case.
-   *   startsAfter  -- the cache genuinely begins after the fill, so the
-   *                   earliest price we hold post-dates the trade.
-   *
-   * Saying "we don't have prices covering the fill" about a trade that filled
-   * this morning is wrong, and it is the kind of wrong a reader can check.
-   */
-  const anchorMs = anchorISO ? Date.parse(anchorISO) : NaN
-  const hasAnchor = Number.isFinite(anchorMs)
-  const closesAfterAnchor = hasAnchor
-    ? history.filter(p => Date.parse(p.date) >= anchorMs).length
-    : 0
-  const startsAfter = hasAnchor && history.length > 0
-    && Date.parse(history[0].date) > anchorMs
-  const tooRecent = hasAnchor && !startsAfter && closesAfterAnchor < 2
-
-  const W = 340
-  const H = height
-  const min = Math.min(...w.series)
-  const max = Math.max(...w.series)
-  const span = (max - min) || 1
-  const x = (i: number) => (i * W) / Math.max(1, w.series.length - 1)
-  const y = (v: number) => 4 + (H - 14) * (1 - (v - min) / span)
-  const d = w.series.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' L')
-
-  /*
-   * Coloured by direction, at the product owner's call.
-   *
-   * The header of this file argues for one neutral ink -- a red line reads as
-   * "bad decision" when post-decision drift is evidence, not a verdict. That
-   * argument still holds for the DECISION. It does not hold for the price:
-   * up and down are facts about the line, a desk reads them instantly, and a
-   * grey chart was being read as "no signal" rather than as neutrality.
-   *
-   * The percentage keeps its sign, the caption keeps saying this is not a
-   * verdict, and the hue now says only which way the price went.
-   */
-  const up = w.changePct >= 0
-  const stroke = up ? 'stroke-emerald-600 dark:stroke-emerald-400' : 'stroke-rose-600 dark:stroke-rose-400'
-  const fill = up ? 'fill-emerald-500' : 'fill-rose-500'
-  /* The end marker is a `bg-` class, not `fill-`: it is an HTML element now,
-     so it stays a circle under the SVG's non-uniform scaling. */
-  const dot = up ? 'bg-emerald-600 dark:bg-emerald-400' : 'bg-rose-600 dark:bg-rose-400'
-  const pctInk = up ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
-
-  const cursor = at == null ? null : Math.max(0, Math.min(w.series.length - 1, at))
-  const readoutPct = cursor == null
-    ? w.changePct
-    : ((w.series[cursor] - w.series[0]) / w.series[0]) * 100
-
-  /*
-   * ── Why the axes are HTML and the plot is SVG ────────────────────────────
-   *
-   * `preserveAspectRatio="none"` is what lets a 340-unit viewBox fill
-   * whatever width the tile gives it, and it is the right choice for the line
-   * -- but it scales x and y by different factors, so anything inside the
-   * SVG that is supposed to be round or upright is not. The end-of-series dot
-   * was drawn as `<circle r={3.5}>` and rendered as a flattened ellipse; the
-   * anchor's `<text>` was stretched with it.
-   *
-   * So the SVG now draws only what tolerates non-uniform scaling -- the area,
-   * the line, straight gridlines -- and every label, the dot and the readout
-   * are HTML positioned over it in percentages. They stay round, upright and
-   * legible at any tile width.
-   */
-  const pctFromTop = (v: number) => (y(v) / H) * 100
-  const last = w.series[w.series.length - 1]
-  const mid = (min + max) / 2
-  /* Enough figures to tell two closes apart without spending width: a
-     four-digit price does not need cents on an axis, a penny stock does. */
-  const axisPrice = (v: number) =>
-    v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(2) : v.toFixed(3)
-  const axisDate = (iso: string) => {
-    const t = new Date(iso)
-    return Number.isNaN(t.getTime())
-      ? ''
-      : t.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-  }
-
-  return (
-    <div data-testid="price-since-fill" data-reaches={w.reachesAnchor ? 'true' : 'false'}>
-      <div className="mb-1 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
-          {w.reachesAnchor ? `Price since the ${anchorLabel}` : 'Price over available history'}
-        </span>
-        <span className="ml-auto font-mono text-[10px] text-gray-500">
-          {w.reachesAnchor ? `${w.days}d since the ${anchorLabel}` : `${w.days}d of history`}
-        </span>
-      </div>
-
-      <div data-testid="price-axes" className="flex gap-1.5">
-        {/* ── Price axis ── high, midpoint, low: the three values that make
-            the line's amplitude readable. Without them the shape was there
-            but the magnitude was unknowable. */}
-        <div
-          className="flex shrink-0 flex-col justify-between text-right font-mono text-[8px] leading-none text-gray-400 dark:text-gray-500"
-          style={{ height: H }}
-          aria-hidden
-        >
-          <span>{axisPrice(max)}</span>
-          <span>{axisPrice(mid)}</span>
-          <span>{axisPrice(min)}</span>
-        </div>
-
-        <div className="relative min-w-0 flex-1">
-          <svg
-            viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
-            className="w-full cursor-crosshair" style={{ height: H }}
-            role="img"
-            aria-label={`Price ${axisPrice(w.series[0])} to ${axisPrice(last)}, ${w.changePct.toFixed(1)} percent, ${axisDate(w.from)} to ${axisDate(w.to)}`}
-            onPointerMove={(e) => {
-              const r = e.currentTarget.getBoundingClientRect()
-              if (r.width <= 0) return
-              setAt(Math.round(((e.clientX - r.left) / r.width) * (w.series.length - 1)))
-            }}
-            onPointerLeave={() => setAt(null)}
-          >
-            {/* Gridlines at the three labelled prices, so a label points at
-                something rather than floating beside the plot. */}
-            {[max, mid, min].map((v, i) => (
-              <line
-                key={i}
-                x1={0} y1={y(v)} x2={W} y2={y(v)}
-                strokeWidth={1}
-                className="stroke-gray-200 dark:stroke-white/10"
-                {...(i === 1 ? { strokeDasharray: '3 4' } : {})}
-              />
-            ))}
-            <path d={`M${d} L${W},${H} L0,${H} Z`} className={clsx(fill, 'opacity-[0.13]')} />
-            <path d={`M${d}`} fill="none" strokeWidth={1.8} strokeLinejoin="round"
-                  className={stroke} />
-            {w.reachesAnchor && (
-              <line x1={0.5} y1={0} x2={0.5} y2={H} strokeWidth={1} strokeDasharray="2 3"
-                    className="stroke-gray-400 dark:stroke-gray-600" />
-            )}
-            {cursor != null && (
-              <line x1={x(cursor)} y1={0} x2={x(cursor)} y2={H} strokeWidth={1}
-                    className="stroke-gray-400 opacity-60 dark:stroke-gray-500" />
-            )}
-          </svg>
-
-          {/* The anchor's name, upright. */}
-          {w.reachesAnchor && (
-            <span className="pointer-events-none absolute left-[3px] top-0 font-mono text-[8px] uppercase tracking-[.05em] text-gray-500">
-              {anchorLabel}
-            </span>
-          )}
-
-          {/* Round, because it is HTML. */}
-          <span
-            className={clsx(
-              'pointer-events-none absolute h-[7px] w-[7px] rounded-full ring-2 ring-white dark:ring-gray-900',
-              dot,
-            )}
-            style={{ top: `${pctFromTop(last)}%`, right: 0, transform: 'translate(50%, -50%)' }}
-            aria-hidden
-          />
-
-          {/* Cursor value, following the scrub. */}
-          {cursor != null && (
-            <span
-              data-testid="price-cursor-readout"
-              className="pointer-events-none absolute -translate-y-1/2 rounded bg-gray-900/90 px-1 py-px font-mono text-[9px] text-white dark:bg-white/90 dark:text-gray-900"
-              style={{
-                top: `${pctFromTop(w.series[cursor])}%`,
-                left: `${(x(cursor) / W) * 100}%`,
-                transform: `translate(${cursor > w.series.length / 2 ? '-110%' : '10%'}, -50%)`,
-              }}
-            >
-              {axisPrice(w.series[cursor])}
-            </span>
-          )}
-
-          {/* ── Date axis ── the window's real bounds, under the plot they
-              describe. "364d of history" told the reader how long; it never
-              told them when. */}
-          <div
-            className="mt-0.5 flex justify-between font-mono text-[8px] leading-none text-gray-400 dark:text-gray-500"
-            aria-hidden
-          >
-            <span>{axisDate(w.from)}</span>
-            <span>{axisDate(w.to)}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* The sign is a fact and stays; the colour is a judgment and does not. */}
-      <div className={clsx('mt-1 font-mono text-[18px] font-semibold tabular-nums', pctInk)}>
-        {readoutPct >= 0 ? '+' : ''}{readoutPct.toFixed(1)}%
-        {cursor != null && (
-          <span className="ml-1.5 text-[10px] font-normal text-gray-500">
-            {w.series[cursor].toFixed(2)}
-          </span>
-        )}
-      </div>
-      {!w.reachesAnchor && (
-        <p data-testid="price-absence-reason" className="mt-1 text-[10px] leading-snug text-gray-500">
-          {tooRecent ? (
-            <>
-              This {anchorLabel === 'fill' ? 'filled' : 'was decided'} on{' '}
-              {axisDate(anchorISO!)}, so there is no price move to show yet.
-              The line is the last {w.days} days.
-            </>
-          ) : startsAfter ? (
-            <>
-              Our prices for this name only go back to {axisDate(w.from)},
-              which is after the {anchorLabel} on {axisDate(anchorISO!)}. The
-              line is that later stretch, not the move since the {anchorLabel}.
-            </>
-          ) : (
-            <>The line is the price history we hold, not a move since the {anchorLabel}.</>
-          )}
-        </p>
-      )}
-    </div>
-  )
+  return <TilePriceChart {...props} />
 }
+
+/* The drawing that used to live here is now
+   `components/desktop/TilePriceChart`. What follows is deliberately gone: the
+   geometry, the axes, the horizon chips, the scrub readout and the
+   window-explaining paragraph all moved there intact, so Portfolio and
+   Research mount the same object Decisions does rather than a lesser copy. */

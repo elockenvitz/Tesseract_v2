@@ -24,6 +24,24 @@ const env = vi.hoisted(() => ({
   assetOpened: [] as Array<Record<string, unknown>>,
 }))
 
+/* The tile sparkline's closes. Empty by default, so this suite's existing
+   compositions are unchanged: with no stored closes the price rung is skipped
+   and each tile keeps the visual it already picked. The real hook needs a
+   QueryClient this suite does not stand up. */
+let researchCloses: { date: Date; value: number }[] = []
+
+vi.mock('../../../hooks/useTileCloses', () => ({
+  useTileCloses: () => ({ data: researchCloses, isLoading: false }),
+}))
+
+/* The position behind the corner weight. It reads the book through `useBook`,
+   which needs a QueryClient this suite does not stand up. Null is the honest
+   default here: these fixtures describe coverage rows, not a loaded book, so
+   the panel shows what Research itself holds. */
+vi.mock('../../../hooks/useSubjectWeightDetail', () => ({
+  useSubjectWeightDetail: () => null,
+}))
+
 vi.mock('../../../hooks/useCoverageResearchGaps', () => ({ useCoverageResearchGaps: () => env.gaps }))
 vi.mock('../../../hooks/useDesktopResearch', () => ({
   useResearchScan: () => ({ subjects: env.scan, isLoading: false }),
@@ -114,6 +132,82 @@ beforeEach(() => {
   env.scan = []
   env.opened.length = 0
   env.assetOpened.length = 0
+  researchCloses = []
+})
+
+/*
+ * ── The price is the last rung, never a displacement ─────────────────────
+ *
+ * This lens deliberately drew no chart, on the grounds that fetching a series
+ * per card to decorate a gallery is a cost it must not add. The shared hook
+ * is keyed by symbol with a five-minute staleTime, so that cost is now one
+ * request per name and usually already paid by another lens -- but the reason
+ * behind the rule stands: Research's own answers come first, and a price may
+ * only fill a slot that would otherwise be empty.
+ */
+describe('the price fills an empty slot and never takes an occupied one', () => {
+  const closes = (n = 300) => Array.from({ length: n }, (_, i) => ({
+    date: new Date(Date.now() - (n - 1 - i) * DAY),
+    value: 100 + i * 0.08,
+  }))
+
+  /*
+   * The chart is no longer in competition with the lens's own objects.
+   *
+   * It used to be the last rung of a ladder: the standing-window timeline won
+   * the slot if there was a review date, the share-of-queue bar won it if
+   * there was a weight, and only a subject with NEITHER got a price. So the
+   * names with the most recorded about them showed no chart at all, and from
+   * the outside the rule was invisible -- the chart looked like it came and
+   * went by name.
+   *
+   * A price is not an alternative to a review date. It answers a different
+   * question, and every subject with closes gets one.
+   */
+  it('draws the price alongside the standing window, not instead of it', () => {
+    researchCloses = closes()
+    env.scan = [scanned('AAA')]
+    render(<ResearchWorkspace />)
+    const tile = tiles()[0]
+    expect(within(tile).getByTestId('price-since-fill')).toBeInTheDocument()
+  })
+
+  it('draws the price where the card has no case to draw at all', () => {
+    researchCloses = closes()
+    // No thesis: excluded from both the timeline and the weight bar, so this
+    // is the card that was showing the least and needs most to earn a click.
+    env.scan = [scanned('BBB', {
+      thesisUpdatedAt: null, daysSinceReview: undefined,
+      sectionCount: 0, coreSectionCount: 0, coreSections: [],
+      newestEvidenceAt: null, newSinceReview: 0, weightPct: undefined,
+    })]
+    render(<ResearchWorkspace />)
+    const tile = tiles()[0]
+    const spark = within(tile).getByTestId('price-since-fill')
+    /*
+     * No review date, so no since-claim is made about the line -- and the
+     * caption is the object's NAME rather than a description of its window.
+     * "Price over available history" spent the widest caption restating what
+     * the ALL chip beside it already says.
+     */
+    expect(spark).toHaveAttribute('data-reaches', 'false')
+    expect(spark).toHaveTextContent(/price chart/i)
+    expect(spark.textContent).not.toMatch(/over available history/i)
+    // And no since-the-review chip, because there is no such window.
+    expect(within(spark).queryByRole('button', { name: /since review/i })).toBeNull()
+  })
+
+  it('invents nothing for a name with no stored closes', () => {
+    // COIN, CLOV, CROX, GH, LRCX, PARA and TGT hold zero rows today.
+    researchCloses = []
+    env.scan = [scanned('CCC', {
+      thesisUpdatedAt: null, daysSinceReview: undefined,
+      sectionCount: 0, coreSectionCount: 0, coreSections: [],
+      newestEvidenceAt: null, newSinceReview: 0, weightPct: undefined,
+    })]
+    render(<ResearchWorkspace />)
+    expect(screen.queryAllByTestId('price-since-fill')).toHaveLength(0)
+  })
 })
 
 describe('a coverage gap is an ordinary Research subject', () => {
@@ -153,10 +247,28 @@ describe('a fresh account', () => {
     expect(amzn).toHaveTextContent('Idea without a case')
     expect(amzn).toHaveTextContent('AMZN is being worked without a written case: an open idea, on a live position.')
     expect(amzn).toHaveTextContent('1 open idea')
+    /*
+     * The chip says it once. The claim sentence for a held name with no case
+     * is that chip in longer words -- "Position without a thesis" against "A
+     * live position with no written thesis behind it" -- and the missing-parts
+     * block added a third "No written case" beneath them. One fact, three
+     * sentences, on a card that still had to fit a chart.
+     *
+     * AMZN above keeps its sentence because it names an open idea, which the
+     * chip does not. TSLA's does not survive, because it says nothing more.
+     */
     expect(tsla).toHaveTextContent('Position without a thesis')
-    expect(tsla).toHaveTextContent('A live position with no written thesis behind it.')
-    expect(tsla).toHaveTextContent('3.2')
-    expect(tsla).toHaveTextContent('of Tech & Consumer Growth')
+    expect(tsla.textContent).not.toContain('A live position with no written thesis behind it.')
+    /*
+     * The weight moved to the corner, as the control Portfolio uses. It is
+     * captioned with a COUNT of books rather than a name: Research can look
+     * across any number of them, and a name in a fixed-width corner truncates
+     * -- a half-name reads as a different book. The name is in the panel.
+     */
+    expect(within(tsla).getByTestId('subject-weight')).toHaveTextContent('3.2')
+    expect(within(tsla).getByTestId('subject-weight')).toHaveTextContent(/in 1 portfolio/i)
+    // And not as a line in the card body, where it used to be said again.
+    expect(tsla.textContent).not.toMatch(/of Tech & Consumer Growth/)
     expect(firstUnheld).toHaveTextContent('No thesis on file')
     expect(firstUnheld).toHaveTextContent('is on your coverage with no thesis yet.')
     expect(document.body.textContent).not.toContain('What best describes this position?')
@@ -172,12 +284,19 @@ describe('a fresh account', () => {
     }
     render(<ResearchWorkspace />)
     const reasons = screen.getAllByTestId('research-tile-reason')
-    expect(reasons).toHaveLength(3)
+    /*
+     * Two, not three: the middle candidate is a HELD name with no case, whose
+     * sentence is the eyebrow chip in longer words ("Position without a
+     * thesis" / "A live position with no written thesis behind it") and is
+     * suppressed. The other two say something the chip does not -- an open
+     * idea being worked, and which section the case is missing.
+     */
+    expect(reasons).toHaveLength(2)
     for (const r of reasons) {
       expect(r.textContent).not.toMatch(/\d\.\d%/)
       expect(r.textContent).not.toContain('Tech & Consumer Growth')
     }
-    expect(reasons[2]).toHaveTextContent('The NKE case is missing risks to thesis, on a live position.')
+    expect(reasons[1]).toHaveTextContent('The NKE case is missing risks to thesis, on a live position.')
   })
 
   it('waits for coverage work instead of announcing an empty lens', () => {
@@ -287,5 +406,88 @@ describe('scope', () => {
     }
     expect(existsSync(path.join(process.cwd(), 'src/components/research-v2/CoverageGapQueue.tsx'))).toBe(false)
     expect(existsSync(path.join(process.cwd(), 'src/lib/research/coverage-gap-queue.ts'))).toBe(false)
+  })
+})
+
+/*
+ * ── A weight is a weight wherever the reader meets one ────────────────────
+ *
+ * Portfolio's tiles put the weight in the corner as a control that opens the
+ * size behind it. Research showed the same figure as plain text, so the same
+ * fact behaved differently one tab apart.
+ */
+describe('the weight is the same control it is in Portfolio', () => {
+  it('opens what this lens actually holds, and no more', () => {
+    env.gaps = { status: 'ready', candidates: bogey(), coveredCount: 50 }
+    render(<ResearchWorkspace />)
+
+    const chip = screen.getAllByTestId('subject-weight')[0]
+    /*
+     * Captioned with the number of books, not the word "weight" and not the
+     * book's name. Research can span any number of books, so a bare percentage
+     * is ambiguous -- and a name in a fixed-width corner truncates, which is
+     * worse than not naming it. The name is one click away.
+     */
+    expect(chip).toHaveTextContent(/in 1 portfolio/i)
+
+    fireEvent.click(chip)
+    const panel = screen.getAllByTestId('subject-weight-detail')[0]
+    expect(panel).toHaveTextContent(/book/i)
+    expect(panel).toHaveTextContent(/research on file/i)
+
+    /*
+     * And NOT the figures this lens cannot answer. Research's coverage rows
+     * carry the weight and the book; the market value, the share count and
+     * the benchmark comparison are Portfolio's read of the book, which this
+     * lens does not load. A zero for any of them would be a number the reader
+     * could act on with nothing standing behind it.
+     */
+    expect(panel.textContent).not.toMatch(/market value/i)
+    expect(panel.textContent).not.toMatch(/active weight/i)
+    expect(panel.textContent).not.toMatch(/shares/i)
+  })
+})
+
+/*
+ * ── Every size draws a price, including the smallest ──────────────────────
+ *
+ * The cut was at `medium`, so the gallery's whole second row drew no chart --
+ * and those are the cards with the least else on them, where a line is the
+ * only thing distinguishing one from the next. The rule was also invisible
+ * from the outside: it looked as though the chart came and went by name.
+ */
+describe('the price is drawn at every tile size', () => {
+  const closes = (n = 300) => Array.from({ length: n }, (_, i) => ({
+    date: new Date(Date.now() - (n - 1 - i) * DAY),
+    value: 100 + i * 0.08,
+  }))
+
+  it('draws one on every tile the gallery renders, not just the top rows', () => {
+    researchCloses = closes()
+    // Enough candidates that the gallery spans hero, large, medium and compact.
+    env.gaps = { status: 'ready', candidates: bogey(), coveredCount: 50 }
+    render(<ResearchWorkspace />)
+
+    const all = tiles()
+    expect(all.length).toBeGreaterThan(4)
+
+    const sizes = new Set(all.map(t => t.getAttribute('data-size')))
+    // The gallery really is mixed, or this case proves nothing.
+    expect(sizes.size).toBeGreaterThan(1)
+    expect(sizes.has('compact')).toBe(true)
+
+    for (const t of all) {
+      expect(
+        within(t).queryByTestId('price-since-fill'),
+        `no chart on the ${t.getAttribute('data-size')} tile`,
+      ).not.toBeNull()
+    }
+  })
+
+  it('still draws none where the name has no stored closes', () => {
+    researchCloses = []
+    env.gaps = { status: 'ready', candidates: bogey(), coveredCount: 50 }
+    render(<ResearchWorkspace />)
+    expect(screen.queryAllByTestId('price-since-fill')).toHaveLength(0)
   })
 })

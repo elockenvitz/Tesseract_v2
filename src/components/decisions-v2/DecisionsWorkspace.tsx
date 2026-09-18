@@ -716,7 +716,179 @@ function DecisionTile({
    * has nothing to do with this decision is not a smaller truth, it is a
    * different one.
    */
-  const leadMove = priceWindow?.reachesAnchor ? priceWindow.changePct : null
+  /*
+   * ── Is the execution price one anybody paid? ─────────────────────────────
+   *
+   * Declared HERE, above the figures that depend on it, not 120 lines below
+   * where it used to sit. A const read before its declaration is a temporal
+   * dead zone error, and one in this lens's tile code took the whole app to a
+   * blank loading screen once already.
+   *
+   * ── Why the test is the literal, not the magnitude ───────────────────────
+   *
+   * A ratio band alone does not separate these two populations. Checked
+   * against the close on each trade's own fill date, production says:
+   *
+   *   PLTR x5   100 vs 132.37   ratio 0.76  <- fabricated, inside any sane band
+   *   ABT       100 vs  90.62   ratio 1.10  <- fabricated, looks perfect
+   *   META      100 vs 675.03   ratio 0.15  <- fabricated
+   *   AVB    177.81 vs  60.71   ratio 2.93  <- REAL price, the close is wrong
+   *   MNST    77.56 vs  39.12   ratio 1.98  <- REAL price, the close is wrong
+   *
+   * A half-to-double band would have passed six fabricated rows and rejected
+   * three genuine ones. The magnitude is not the signal.
+   *
+   * The signal is the literal itself. `baseline?.price || 100` writes exactly
+   * 100, so a commit price of precisely 100 against a close that is not
+   * approximately 100 is the fabrication, whatever the ratio works out to. A
+   * genuine fill at 100.00 does happen -- and when it does, the close that day
+   * is near 100 too, so it passes.
+   *
+   * The wide band stays as a second net for corruption of other shapes, but
+   * loose enough not to catch a real price sitting beside a bad close: a
+   * stored close can be stale or split-unadjusted, and that is the close's
+   * problem, not the trade's.
+   */
+  const anchorClose = (() => {
+    if (!anchorISO || closes.length === 0) return null
+    const at = Date.parse(anchorISO)
+    if (!Number.isFinite(at)) return null
+    // The close on the fill day, or the nearest one before it.
+    let found: number | null = null
+    for (const p of closes) {
+      if (p.date.getTime() <= at) found = p.value
+      else break
+    }
+    return found ?? closes[0].value
+  })()
+  const commitPrice = d.execution?.priceAtAcceptance ?? null
+  /**
+   * Three states, because "we cannot check" is not "it is wrong".
+   *
+   *   ok      -- the commit price sits near the close on the day it filled.
+   *   bad     -- it does not, so it is a price nobody paid, and everything
+   *              computed from it is fiction.
+   *   unknown -- there is nothing to check against: no commit price recorded,
+   *              or no close on that date.
+   *
+   * The distinction matters for the dollar basis. A row with NO commit price
+   * was not written by the failing path -- the same computed object supplies
+   * the price and the notional together, so a corrupted row always carries
+   * the price too, set to 100. Absence is the ordinary historical case, so
+   * the notional still shows. It is only withheld where the price it came
+   * from is demonstrably fabricated.
+   */
+  const basis: 'ok' | 'bad' | 'unknown' = (() => {
+    if (commitPrice == null || commitPrice <= 0) return 'unknown'
+    /* The literal the failing path writes. With no close to check it against
+       -- PARA has no stored history at all -- an exact 100 is still the
+       signature, and the live quote plainly did not answer for a name we hold
+       no prices for. */
+    const isLiteral = commitPrice === PLACEHOLDER_PRICE
+    if (anchorClose == null || anchorClose <= 0) return isLiteral ? 'bad' : 'unknown'
+    const ratio = commitPrice / anchorClose
+    if (isLiteral) return Math.abs(ratio - 1) > 0.1 ? 'bad' : 'ok'
+    return ratio >= 0.25 && ratio <= 4 ? 'ok' : 'bad'
+  })()
+
+  /*
+   * ── The price it executed at, against the price now ─────────────────────
+   *
+   * The percentage used to come only from the closes window, which spans the
+   * anchor to the newest close. That window does not exist for a trade filled
+   * TODAY -- there are not yet two closes after it -- so the tile showed a
+   * P&L with no percentage beside it. Two halves of one finding, and only one
+   * of them on screen.
+   *
+   * This is the comparison a desk actually makes: what we paid, against what
+   * it is worth now. It needs no window, only the execution price and the
+   * latest close, so it answers on the day of the fill.
+   *
+   * The window still wins where it exists, because the chart draws that window
+   * and the headline must not contradict the line beside it. This is the
+   * fallback, not a second opinion.
+   */
+  const latestClose = closes.length > 0 ? closes[closes.length - 1].value : null
+  const execMove = basis === 'ok' && commitPrice != null && latestClose != null
+    ? ((latestClose - commitPrice) / commitPrice) * 100
+    : null
+
+  /*
+   * Both figures, or neither.
+   *
+   * `facts.pnl` is `impact_proxy`: the trade's notional multiplied by the move
+   * since it executed. Both it and the percentage are computed FROM the
+   * execution price, so where that price is fabricated they are both fiction
+   * and neither may appear -- the LLY tile was showing +$3.54M because 3,363
+   * shares were booked at a notional of 336,300, which is $100 a share against
+   * a real close of 1,152.44.
+   *
+   * Suppressing one and not the other would be worse than suppressing
+   * neither: a lone dollar figure reads as authoritative precisely because
+   * nothing beside it invites the reader to check it.
+   */
+  /*
+   * ── Only the figures that DEPEND on the execution price are withheld ─────
+   *
+   * A first pass suppressed the percentage too whenever the execution price
+   * was fabricated, and that was over-correction. The percentage measured
+   * from the closes window is closes-to-closes arithmetic: it never touches
+   * the execution price, so a fabricated one cannot make it wrong. Hiding it
+   * threw away a true number because a different number was false.
+   *
+   * The P&L is different. `impact_proxy` is the trade's notional multiplied by
+   * the move since it executed, and BOTH of those come from the execution
+   * price -- the LLY tile reported +$3.54M because 3,363 shares were booked at
+   * a notional of 336,300, which is $100 a share against a real close of
+   * 1,152.44. That one stays withheld.
+   *
+   * `execMove` is the exception on the percentage side: where there is no
+   * window it measures from the execution price itself, so it is already
+   * gated on the basis being sound.
+   */
+  /*
+   * ── The move since the fill, from the best real price available ──────────
+   *
+   * Three ways to measure it, each from dated closes the reader can check,
+   * and the tile takes the first that answers:
+   *
+   *   1. the closes window from the fill to the newest close. Preferred,
+   *      because it is exactly what the chart beside it draws.
+   *   2. the recorded execution price against the newest close -- the desk's
+   *      own comparison, used where the window is too short to exist but the
+   *      recorded price is sound.
+   *   3. the CLOSE ON THE DAY IT FILLED against the newest close.
+   *
+   * Three is the rung that was missing, and it is why the tile showed nothing
+   * for a trade filled on the newest close date. A percentage needs two
+   * prices, and there are two: the close the day it filled, and the latest
+   * close. Where those are the same row -- a fill on the most recent close --
+   * the answer is 0.00%, which is the truth and is worth saying. "Nothing
+   * here" is not the same statement as "it has not moved".
+   *
+   * It is a proxy for the fill price, not the fill price, so it is only used
+   * where no sound execution price exists. It is dated and traceable, which
+   * is the standard everything else on this tile is held to.
+   */
+  const fillDayMove = latestClose != null && anchorClose != null && anchorClose > 0
+    ? ((latestClose - anchorClose) / anchorClose) * 100
+    : null
+
+  const leadMove = priceWindow?.reachesAnchor
+    ? priceWindow.changePct
+    : execMove ?? fillDayMove
+
+  /*
+   * Which of the three it was, so the caption can say what it measured from
+   * rather than implying a precision it does not have.
+   */
+  const moveBasis: 'window' | 'execution' | 'fill-day-close' | null =
+    priceWindow?.reachesAnchor ? 'window'
+      : execMove != null ? 'execution'
+        : fillDayMove != null ? 'fill-day-close'
+          : null
+
+  const leadPnl = basis === 'bad' ? null : facts.pnl
 
   /*
    * ── When the track earns the slot ────────────────────────────────────────
@@ -811,48 +983,6 @@ function DecisionTile({
    * stored close can be stale or split-unadjusted, and that is the close's
    * problem, not the trade's.
    */
-  const anchorClose = (() => {
-    if (!anchorISO || closes.length === 0) return null
-    const at = Date.parse(anchorISO)
-    if (!Number.isFinite(at)) return null
-    // The close on the fill day, or the nearest one before it.
-    let found: number | null = null
-    for (const p of closes) {
-      if (p.date.getTime() <= at) found = p.value
-      else break
-    }
-    return found ?? closes[0].value
-  })()
-  const commitPrice = d.execution?.priceAtAcceptance ?? null
-  /**
-   * Three states, because "we cannot check" is not "it is wrong".
-   *
-   *   ok      -- the commit price sits near the close on the day it filled.
-   *   bad     -- it does not, so it is a price nobody paid, and everything
-   *              computed from it is fiction.
-   *   unknown -- there is nothing to check against: no commit price recorded,
-   *              or no close on that date.
-   *
-   * The distinction matters for the dollar basis. A row with NO commit price
-   * was not written by the failing path -- the same computed object supplies
-   * the price and the notional together, so a corrupted row always carries
-   * the price too, set to 100. Absence is the ordinary historical case, so
-   * the notional still shows. It is only withheld where the price it came
-   * from is demonstrably fabricated.
-   */
-  const basis: 'ok' | 'bad' | 'unknown' = (() => {
-    if (commitPrice == null || commitPrice <= 0) return 'unknown'
-    /* The literal the failing path writes. With no close to check it against
-       -- PARA has no stored history at all -- an exact 100 is still the
-       signature, and the live quote plainly did not answer for a name we hold
-       no prices for. */
-    const isLiteral = commitPrice === PLACEHOLDER_PRICE
-    if (anchorClose == null || anchorClose <= 0) return isLiteral ? 'bad' : 'unknown'
-    const ratio = commitPrice / anchorClose
-    if (isLiteral) return Math.abs(ratio - 1) > 0.1 ? 'bad' : 'ok'
-    return ratio >= 0.25 && ratio <= 4 ? 'ok' : 'bad'
-  })()
-
   /* The fill is what the chart is "since". Where nothing filled, the decision
      is the next-best real date; where neither exists there is no anchor and no
      chart. Batches are several names and have no one series. */
@@ -946,7 +1076,12 @@ function DecisionTile({
     }
     if (basis === 'ok' && commitPrice != null) {
       metrics.push({
-        cap: 'Paid at commit',
+        /* "Paid at commit" was this codebase's own coinage and meant nothing
+           to a reader: "commit" is an internal word for the moment a trade
+           is written to the Trade Book. The thing itself is the price per
+           share the trade went off at, which every desk calls the fill
+           price. */
+        cap: 'Fill price',
         val: <>${commitPrice.toFixed(2)}{e?.deltaShares ? <span className="text-gray-500"> · {Math.abs(e.deltaShares).toLocaleString()} sh</span> : null}</>,
       })
     } else if (basis === 'bad') {
@@ -954,7 +1089,7 @@ function DecisionTile({
          as an incomplete record; one that silently drops a price it DOES hold
          because that price is wrong reads as a bug. This says which. */
       metrics.push({
-        cap: 'Paid at commit',
+        cap: 'Fill price',
         val: (
           <span data-testid="decision-basis-untrusted" className="text-[11px] font-medium text-amber-700 dark:text-amber-500">
             not recorded
@@ -1055,7 +1190,7 @@ function DecisionTile({
               actually measures -- the fill, or the decision -- and absent
               entirely when the price behind it carries no date.
             */}
-            {(leadMove != null || facts.pnl != null) && (
+            {(leadMove != null || leadPnl != null) && (
               <div data-testid="decision-lead-move" className="flex flex-wrap items-end gap-x-9 gap-y-2">
                 {leadMove != null && (
                   <div>
@@ -1072,6 +1207,18 @@ function DecisionTile({
                     <div className={cap}>
                       {d.execution?.completedAt ? 'Since it filled' : 'Since the decision'}
                     </div>
+                    {/* Measured from the close on the fill day rather than a
+                        recorded fill price, so say so once, quietly. A 0.00%
+                        that turns out to have been measured from a price the
+                        reader did not expect is worse than a caption. */}
+                    {moveBasis === 'fill-day-close' && (
+                      <div
+                        data-testid="decision-move-proxy"
+                        className="mt-0.5 text-[9px] leading-snug text-gray-400"
+                      >
+                        from the close on the fill day
+                      </div>
+                    )}
                   </div>
                 )}
                 {/*
@@ -1082,17 +1229,43 @@ function DecisionTile({
                   of metadata while the other was 26px and coloured. On a desk
                   the dollars are usually the half that gets said out loud.
                 */}
-                {facts.pnl != null && (
+                {leadPnl != null && (
                   <div data-testid="decision-lead-pnl">
                     <span className={clsx(
                       'font-mono text-[26px] font-bold leading-none tabular-nums',
-                      facts.pnl > 0 ? 'text-emerald-700 dark:text-emerald-400'
-                        : facts.pnl < 0 ? 'text-rose-700 dark:text-rose-400'
+                      leadPnl > 0 ? 'text-emerald-700 dark:text-emerald-400'
+                        : leadPnl < 0 ? 'text-rose-700 dark:text-rose-400'
                         : 'text-gray-700 dark:text-gray-300',
                     )}>
-                      {formatCompactDollars(facts.pnl, facts.pnl > 0 ? '+' : facts.pnl < 0 ? '−' : '')}
+                      {formatCompactDollars(leadPnl, leadPnl > 0 ? '+' : leadPnl < 0 ? '−' : '')}
                     </span>
-                    <div className={cap}>P&amp;L</div>
+                    {/* Named by what it measures. "P&L" alone left the reader
+                        to guess whether it ran from the decision or the fill,
+                        and those are different numbers -- the gap between
+                        them is the delay cost, reported separately. */}
+                    <div className={cap}>
+                      P&amp;L {d.execution?.completedAt ? 'since fill' : 'to date'}
+                    </div>
+                  </div>
+                )}
+                {/*
+                  ── Say why it is missing, where it is missing ──────────────
+
+                  A blank beside a percentage reads as a bug, and the reader
+                  cannot tell a figure we do not have from one we failed to
+                  draw. P&L needs a fill price and a share count, and on a row
+                  written during a quote outage both are the same fabricated
+                  number -- so the tile names the gap instead of leaving it.
+                */}
+                {leadPnl == null && facts.pnl != null && (
+                  <div data-testid="decision-pnl-unavailable" className="max-w-[190px]">
+                    <span className="text-[13px] font-semibold text-amber-700 dark:text-amber-500">
+                      No P&amp;L
+                    </span>
+                    <div className="mt-0.5 text-[9px] leading-snug text-gray-500">
+                      the fill price on this trade was not recorded, so the
+                      dollars cannot be worked out
+                    </div>
                   </div>
                 )}
               </div>

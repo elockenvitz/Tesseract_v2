@@ -33,12 +33,24 @@ import {
 } from '../../lib/desktop-portfolio/model'
 import type { SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
+/* Book minus index, for the panel behind the weight in the tile's corner. */
+import type { ActiveWeight } from '../../lib/desktop-portfolio/benchmark'
+/* The corner weight control, shared with Research. */
+import { TileWeightChip } from '../desktop/TileWeightChip'
 import {
-  DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
+  /* `TileFigure` went with the market value it carried: the corner states the
+     weight now, and the dollars are one click behind it. */
+  DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason,
   TileTimeline,
-  TileBar, TileScale, TileMeta, TileHeroNumber, TileSparkline,
+  /* `TileMeta` and `TileHeroNumber` are both gone from this lens. They were
+     two of the four ways it used to state what a position weighs; `WeightChip`
+     in the tile's corner is the one way now. */
+  TileBar, TileScale,
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
+/* The shared price chart -- the same object Decisions draws, not a sparkline
+   reduction of it. */
+import { TilePriceChart } from '../desktop/TilePriceChart'
 /* The shared dated closes, so a position with no written case still has an
    object worth looking at. Keyed by symbol with a five-minute staleTime, so a
    gallery on the same name makes one request. */
@@ -224,6 +236,14 @@ export function PortfolioWorkspace({
             frame={r.frame}
             maxWeight={maxWeight}
             weights={weights}
+            /* Only where the file actually loaded: `state` distinguishes a
+               book with no benchmark from one whose read failed, and neither
+               may be shown as a zero index weight. */
+            activeWeight={
+              benchmark.state === 'ready'
+                ? benchmark.rows.find(a => a.assetId === r.position.assetId) ?? null
+                : null
+            }
             // `comparePositions` already ranks the book by how much the
             // framework has come apart, weighted by size. Room follows it.
             size={sizeByRank(i, rows.length)}
@@ -584,13 +604,16 @@ function PortfolioSelector({
  * which is the honest answer to why the tile is there.
  */
 function PositionTile({
-  position, frame, maxWeight, weights, size, onOpen,
+  position, frame, maxWeight, weights, size, activeWeight, onOpen,
 }: {
   position: Position
   frame: PositionFrame
   maxWeight: number
   weights: number[]
   size: TileSize
+  /** Book minus index for this name, where a benchmark file is loaded. */
+  activeWeight: ActiveWeight | null
+  /** The book being viewed, named beside the weight in the corner. */
   onOpen: () => void
 }) {
   const gap = gapOf(position, frame)
@@ -604,6 +627,13 @@ function PositionTile({
   const showScale = !!frame.ladder?.valid && bear != null && bull != null && position.price > 0
   const outside = gap === 'above-bull' || gap === 'below-bear'
 
+  /*
+   * `leftHasContent` is gone with the two-column layout it governed. It
+   * existed to decide whether the card should hold a second column open, and
+   * a stacked card never has to ask: every block renders only when it has
+   * something to show, and the chart takes whatever height is left.
+   */
+
   return (
     <DesktopTile
       testId="position-tile"
@@ -613,104 +643,236 @@ function PositionTile({
       tone={tone}
       size={size}
       onOpen={onOpen}
+      /*
+        The corner states the WEIGHT, not the market value.
+
+        The dollars were there because they are concrete, but the question this
+        lens asks is about size relative to the book -- "where this book and
+        the written framework disagree" is a weighting argument. The dollars
+        are one click away, with the shares, the price and the active weight,
+        which is where they belong: useful when asked for, noise when not.
+      */
       eyebrow={<>
         <TileState tone={tone}>{GAP_LABEL[gap]}</TileState>
-        <TileFigure strong={tone === 'critical'}>{bigMoney(position.marketValue)}</TileFigure>
+        <WeightChip position={position} active={activeWeight} />
       </>}
     >
       <TileIdentity symbol={position.symbol} name={position.companyName} size={size} />
 
       {size === 'hero' || size === 'large' ? (
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TileHeroNumber
-            figure={position.weightPct.toFixed(1)}
-            unit="%"
-            label={<>of this book</>}
-            tone={tone}
-          />
-          <p className="mt-2 text-[13px] text-gray-600 dark:text-gray-400">
-            {whyItMatters(position, frame)}
-          </p>
+        /*
+          ── Two columns, so the chart gets the width ────────────────────────
+
+          This was one stacked column: the weight figure, a sentence, the
+          standing-window timeline, and at the bottom a weight BAR -- which
+          restated the figure at the top of the same card. The price chart, when
+          it appeared at all, was squeezed under all of it.
+
+          The record reads down the left. The right column carries the two
+          things a reader compares across positions: what it weighs, at the
+          top, and what the price has done, filling the rest. The weight bar
+          is gone rather than moved -- the figure above it said the same thing,
+          and its removal is most of the room the chart now has.
+        */
+        /*
+          ── A grid, not flex, so the halves are actually halves ─────────────
+
+          As flex this was `basis-[50%] shrink-0` on the left and `flex-1` on
+          the right. `shrink-0` means the left column will not go below its
+          content's minimum width -- so on a name whose left side happens to be
+          wide (a scale with four-digit prices, a long company name, a date
+          range that will not wrap) the left column held its ground and the
+          right column absorbed the whole difference. The chart went narrow on
+          those tiles and only those, which is why it looked arbitrary.
+
+          `minmax(0, 1fr)` twice is the fix: each column is exactly half and
+          the `0` minimum means content must shrink to fit rather than pushing
+          its neighbour. Rows stretch by default, which is what lets the chart
+          fill the height.
+        */
+        /*
+          ── One column where there is nothing to put in the second ──────────
+
+          Two columns is right when the left has a case to describe. On a
+          position with no written thesis it has almost nothing: the sentence
+          is suppressed (it only restated the ticker and the weight), there is
+          no review date to draw a standing window from, and no ladder. What
+          was left was a single line -- "Nothing written" -- at the top of a
+          half-width column, and then nothing for the rest of the card's
+          height, beside a full-height chart. That is the empty space, and it
+          appeared on exactly the positions with least written about them.
+
+          So the split is conditional on there being something to split. With
+          nothing on the left the card runs full width: the absence on one
+          line, the chart under it, using the whole tile.
+        */
+        /*
+          ── Text across the top, chart across the bottom ────────────────────
+
+          Not a left/right split. Splitting the card gave the chart half the
+          width and left the record in a narrow column that wrapped more --
+          worse for both, since a price line wants width and a short run of
+          facts does not want a column. It also produced the dead space that
+          took three passes to chase: whichever column was shorter left a void
+          beside the other.
+
+          Stacked, neither can happen. The record runs ACROSS the full width,
+          the objects that describe the case sit on one wrapping row, and the
+          chart takes the whole width beneath with all the height that is left.
+        */
+        <div className="mt-3 flex min-w-0 flex-1 flex-col gap-3">
+          {tileReasonFor(position, frame) && (
+            <p className="text-[13px] leading-snug text-gray-600 dark:text-gray-400">
+              {tileReasonFor(position, frame)}
+            </p>
+          )}
+
           {/*
-            The hero shows what the issue actually is: a broken framework gets
-            the ladder, a missing one gets the shape of what is missing. It used
-            to get a weight bar in both cases, which said nothing new after the
-            number directly above it.
-          */}
-          {/*
-            How long this position's case has been standing.
+            The case's own objects, side by side on one row rather than stacked
+            into a column: the standing window, and either the written ladder
+            or the fact that nothing is written.
 
             "Where this book and the written framework disagree" is what this
-            lens says it is for, and the disagreement has a duration: the date
-            the case was last written, and what has landed since. Both are
-            already in the frame and both went undrawn, which is why the
-            widest tile on the page carried eighty pixels of nothing under a
-            single sentence. The same primitive Research uses, because it is
-            the same question asked in different words.
+            lens says it is for, and the disagreement has a duration -- which
+            is what the timeline draws. Both already existed in the frame and
+            both went undrawn before this.
           */}
-          {frame.thesisUpdatedAt && (
-            <div className="mt-3">
-              <TileTimeline
-                writtenAt={frame.thesisUpdatedAt}
-                newestAt={null}
-                count={frame.newEvidence}
-              />
+          {(frame.thesisUpdatedAt || showScale || gap === 'no-framework') && (
+            <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2">
+              {frame.thesisUpdatedAt && (
+                <div className="min-w-[180px] flex-1">
+                  <TileTimeline
+                    writtenAt={frame.thesisUpdatedAt}
+                    newestAt={null}
+                    count={frame.newEvidence}
+                  />
+                </div>
+              )}
+              {showScale ? (
+                <div className="min-w-[200px] flex-1">
+                  <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
+                </div>
+              ) : gap === 'no-framework' ? (
+                <ThesisSkeleton />
+              ) : null}
             </div>
           )}
 
-          <div className={size === 'hero' ? 'mt-auto pt-5' : 'mt-auto pt-3'}>
-            {showScale ? (
-              <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
-            ) : gap === 'no-framework' ? (
-              <ThesisSkeleton points={closes} />
-            ) : (
-              <TileBar
-                pct={position.weightPct} max={maxWeight} population={weights}
-                label="Weight, against the whole book"
-              />
-            )}
-          </div>
+          {/*
+            The chart: full width, and whatever height the record above did
+            not use, so it ends flush with the bottom of the tile. `min-h-0`
+            is required or the flex child refuses to shrink below its content.
+          */}
+          {closes && closes.length >= 2 && (
+            <div className="min-h-0 min-w-0 flex-1">
+              <TilePriceChart points={closes} fill height={size === 'hero' ? 176 : 148} />
+            </div>
+          )}
         </div>
       ) : size === 'medium' ? (
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TileReason>{whyItMatters(position, frame)}</TileReason>
-          <div className="mt-auto pt-3">
-            {showScale
-              ? <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
-              : <TileBar
-                  pct={position.weightPct}
-                  max={maxWeight}
-                  population={weights}
-                  label="Weight in book"
-                  tone={tone === 'critical' ? 'critical' : tone === 'review' ? 'attention' : 'neutral'}
-                />}
+        /*
+          Medium has no room for two columns, so the same ORDER runs down the
+          card: what it weighs, why it matters, what the price did.
+
+          The first pass put the weight on the same line as the reason,
+          baseline-aligned. The reason wraps to two or three lines at this
+          width, so the number ended up aligned to the first of them and
+          floating beside a block of text -- which is why it read as unclear
+          rather than as a heading. It gets its own line now.
+        */
+        <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+          {/* No weight figure in the body: the corner states it at every size,
+              and saying it twice on one card is what this pass removed. */}
+
+          {tileReasonFor(position, frame) && (
+            <TileReason>{tileReasonFor(position, frame)}</TileReason>
+          )}
+
+          {/*
+            ── The ladder AND the price, not one or the other ────────────────
+
+            This was `showScale ? scale : chart : bar` -- a chain, so a medium
+            tile with a written case showed its ladder and NO chart. That is
+            why some names had a price and their neighbours did not: it was
+            never the name, it was whether a ladder existed to win the slot.
+
+            They answer different questions -- where spot sits inside the case
+            we wrote, and what the price has actually done -- so a card with
+            both shows both, the ladder compact above and the chart taking the
+            rest. The weight bar stays the last resort, for a name we hold no
+            prices for at all.
+          */}
+          {showScale && (
+            <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
+          )}
+
+          <div className="flex min-h-0 flex-1 flex-col justify-end">
+            {closes && closes.length >= 2 ? (
+              <div className="min-h-0 flex-1">
+                <TilePriceChart points={closes} fill height={100} />
+              </div>
+            ) : !showScale ? (
+              <TileBar
+                pct={position.weightPct}
+                max={maxWeight}
+                population={weights}
+                label="Weight in book"
+                tone={tone === 'critical' ? 'critical' : tone === 'review' ? 'attention' : 'neutral'}
+              />
+            ) : null}
           </div>
         </div>
       ) : (
         /*
-          Compact: the weight, how far outside its own case price has gone,
+          Compact: what it weighs, how far outside its own case price has gone,
           and the price itself.
 
           The weight line alone is what made a run of these read as one tile
-          repeated. Every lens on this dashboard draws a share-of-book figure
-          -- several draw two -- so on the smallest card it is the least
-          differentiating thing available, and it was the only thing here.
-          The sparkline is what differs per name.
+          repeated. Every lens here draws a share-of-book figure -- several draw
+          two -- so on the smallest card it is the least differentiating thing
+          available, and it was the only thing on it. The chart is what differs
+          per name.
         */
-        <div className="flex flex-col gap-1.5">
-          <TileMeta>
-            <span className="font-mono text-[15px] font-semibold text-gray-900 dark:text-gray-100">
-              {position.weightPct.toFixed(1)}%
-            </span>
-            <span>of book</span>
-            {outsideBy(position, frame) && (
-              <span className="font-semibold text-rose-700 dark:text-rose-400">
-                {outsideBy(position, frame)!.value} {outsideBy(position, frame)!.label}
-              </span>
-            )}
-          </TileMeta>
+        /*
+          ── `flex-1`, because a compact tile is often taller than its content ─
+
+          Tiles sit in a CSS grid and stretch to their ROW, so a compact card
+          beside a medium one is as tall as the medium one -- 295px against the
+          251px its own content needs. This wrapper was `flex: 0 1 auto`, so
+          the content sat at the top and the difference showed as white space
+          at the bottom. It appeared on some compact tiles and not others,
+          which is exactly what made it look arbitrary: it is not the name, it
+          is which row the tile landed in.
+
+          Measured on a stretched META tile: content ended at y=239 inside a
+          293px body.
+        */
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+          {/*
+            The weight is in the corner, so this line carries what is left:
+            how far outside its own case the price has gone, or -- where it is
+            inside one -- what state the case is in.
+
+            Something, always. With the weight gone from the body this was the
+            card's only text, and on a position that is neither outside its
+            case nor missing one it rendered nothing: a ticker and a chart,
+            which reads as a card that failed rather than one with nothing to
+            report.
+          */}
+          <span className={clsx(
+            'min-w-0 truncate text-[10px]',
+            outside
+              ? 'font-semibold text-rose-700 dark:text-rose-400'
+              : 'text-gray-500',
+          )}>
+            {outside
+              ? `${outsideBy(position, frame)?.value} ${outsideBy(position, frame)?.label}`
+              : GAP_LABEL[gap]}
+          </span>
           {closes && closes.length >= 2 && (
-            <TileSparkline points={closes} label="Price" height={20} compact />
+            <div className="min-h-0 flex-1">
+              <TilePriceChart points={closes} fill height={76} />
+            </div>
           )}
         </div>
       )}
@@ -819,18 +981,156 @@ const THESIS_PARTS = ['Thesis', 'Where we differ', 'Risks'] as const
  * goes to the price -- the object that actually helps decide whether this is
  * worth investigating today.
  */
-function ThesisSkeleton({ points }: { points?: { date: Date; value: number }[] }) {
+/**
+ * The tile's sentence, or nothing where the sentence says nothing new.
+ *
+ * ── Why the tile differs from the rail and the detail pane ───────────────
+ *
+ * `whyItMatters` is written to stand alone. In a rail card or a detail header
+ * it is the only thing describing the position, so naming the weight and the
+ * ticker inside it is right.
+ *
+ * On a tile it is not alone. The ticker is the headline, the weight is the
+ * figure in the right column, and "Nothing written" already states the absent
+ * case -- so for those gaps the sentence is three facts the reader has already
+ * read, set as prose, which is how a card ends up looking full of content and
+ * saying nothing:
+ *
+ *   no-framework  "5.6% of the book in GOOGL, with no thesis behind it."
+ *   aligned       "5.6% of the book, nothing outstanding."   (no thesis)
+ *   large-cash    "5.6% of the book is in cash."
+ *
+ * Those get no sentence. Every other gap says something the tile does not
+ * otherwise carry -- how far spot is outside the case, how many notes have
+ * landed, how long since a review -- and keeps it.
+ */
+function tileReasonFor(p: Position, f: PositionFrame): string | null {
+  const gap = gapOf(p, f)
+
+  /*
+   * ── Shortened, not removed ───────────────────────────────────────────────
+   *
+   * These three sentences led with the weight and the ticker, which the card
+   * already carries -- so they were suppressed entirely. That was right while
+   * the weight was a figure in the body; once it moved to the corner it left
+   * some cards with NO words at all, just a ticker and a chart, which reads as
+   * a card that failed to load rather than one with nothing to report.
+   *
+   * So the restatement goes and the meaning stays. Each keeps the half the
+   * card does not already show:
+   *
+   *   aligned, no review  "5.6% of the book, nothing outstanding."
+   *   large-cash          "5.6% of the book is in cash."
+   *
+   * `no-framework` is the exception and still returns null, because the
+   * missing-parts line says it better and says it right there.
+   */
+  if (gap === 'no-framework') return null
+  if (gap === 'large-cash') return 'Held in cash.'
+  if (gap === 'aligned' && !f.thesisUpdatedAt) return 'Nothing outstanding.'
+  return whyItMatters(p, f)
+}
+
+/**
+ * What the position weighs, said the same way at every size.
+ *
+ * ── Why this is one component ────────────────────────────────────────────
+ *
+ * The four sizes each rendered this figure their own way: a shared
+ * `TileHeroNumber` on hero and large, a hand-rolled span on medium, and a
+ * `TileMeta` row on compact -- three type scales, two label wordings ("of this
+ * book" / "of book") and the tone ink applied in two of the three. Scanning a
+ * gallery that mixes them, the same fact looked like three different facts.
+ *
+ * One component, one wording, one ink rule, three sizes of the same thing.
+ */
+/**
+ * The weight, in the tile's top-right corner, and what is behind it on a click.
+ *
+ * ── Why a control and not a figure ───────────────────────────────────────
+ *
+ * "6.4%" answers one question and raises three: how many dollars is that,
+ * how does it compare to the index, and how many shares. Putting all four on
+ * the card would bury the one that matters; putting none of them there sends
+ * the reader to the detail pane for a number they wanted in passing.
+ *
+ * So the corner states the weight and opens the rest in place. Nothing here
+ * is computed: the dollars and the shares are the position's own, and the
+ * active weight is the benchmark comparison the book header already draws.
+ *
+ * `data-no-portal` on the control and the panel, because the tile shell treats
+ * an unhandled click as "open this record" -- reading a number is not a
+ * decision to leave the gallery.
+ */
+function WeightChip({ position, active }: {
+  position: Position
+  /** The book-minus-index row for this name, where a benchmark is loaded. */
+  active: ActiveWeight | null
+}) {
+  /*
+   * The drawing is `desktop/TileWeightChip`, shared with Research. This is the
+   * Portfolio-shaped call: the book holds the whole position, so it can answer
+   * every question the weight raises.
+   *
+   * Active weight only where a benchmark file actually loaded. An index weight
+   * of zero for a name the file does not hold is NOT the same as a name the
+   * index holds at zero, and this lens is careful about that elsewhere -- so
+   * where there is no comparison it says so rather than printing the book's
+   * own weight as though it were active.
+   */
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-baseline gap-2 text-[12px]">
-        <span className="font-semibold text-amber-700 dark:text-amber-500">Nothing written</span>
-        <span className="min-w-0 truncate text-gray-500">
-          no {THESIS_PARTS.map(p => p.toLowerCase()).join(', no ')}
-        </span>
-      </div>
-      {points && points.length >= 2 && (
-        <TileSparkline points={points} label="Price, 12 months" height={30} />
-      )}
+    <TileWeightChip
+      pct={position.weightPct}
+      testId="position-weight"
+      /* Just "weight". This page is scoped to one book -- the selector names
+         it at the top -- so repeating that name on every tile says nothing
+         and is the longest thing in the corner. */
+      caption="weight"
+      details={[
+        { label: 'Market value', value: bigMoney(position.marketValue) },
+        {
+          label: 'Shares',
+          value: position.shares.toLocaleString(undefined, { maximumFractionDigits: 0 }),
+        },
+        { label: 'Price', value: `$${position.price.toFixed(2)}` },
+        active == null
+          ? { label: 'Active weight', value: 'no benchmark' }
+          : {
+              label: 'Active weight',
+              value: `${active.activePct >= 0 ? '+' : ''}${active.activePct.toFixed(2)} pp`,
+              sign: active.activePct,
+            },
+        ...(active != null
+          ? [{ label: 'Index weight', value: `${active.benchPct.toFixed(2)}%` }]
+          : []),
+      ]}
+    />
+  )
+}
+
+/*
+ * `WeightFigure` is gone: the weight is stated once, in the tile's corner, by
+ * `WeightChip`. It briefly existed to say the same thing at four sizes in the
+ * card body, which is a problem that disappears when the fact has one home.
+ *
+ * Its one hard-won rule moved into that chip: only a genuine break inks this
+ * number. A thesis due for review is a fact about the CALENDAR, and colouring
+ * a position's weight amber for it claims the position is wrong when nobody
+ * has said so. Size is importance, colour is condition.
+ */
+
+/**
+ * Text only. The chart that briefly lived in here is now the right column's,
+ * where every hero and large tile gets one rather than only the ones with no
+ * written case -- and where it has the width to be read.
+ */
+function ThesisSkeleton() {
+  return (
+    <div className="flex items-baseline gap-2 text-[12px]">
+      <span className="font-semibold text-amber-700 dark:text-amber-500">Nothing written</span>
+      <span className="min-w-0 truncate text-gray-500">
+        no {THESIS_PARTS.map(p => p.toLowerCase()).join(', no ')}
+      </span>
     </div>
   )
 }

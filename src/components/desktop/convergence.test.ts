@@ -127,9 +127,12 @@ describe('a decision is never graded, though its price may be', () => {
     // The tile chart and the small-tile sparkline both grade, and both derive
     // it from the same `up` the percentage's sign comes from -- so the hue
     // and the number can never disagree about which way the price went.
-    const dv = src('components/decisions-v2/DecisionVisual.tsx')
+    /* The tile chart moved out of the Decisions lens into the shared shell,
+       so Portfolio and Research mount the same object rather than a sparkline
+       reduction of it. The grading rule follows the drawing. */
+    const chart = src('components/desktop/TilePriceChart.tsx')
     const spark = src('components/desktop/DesktopTile.tsx')
-    for (const body of [dv, spark]) {
+    for (const body of [chart, spark]) {
       expect(body).toMatch(/const up = [^\n]*>= 0/)
       expect(body).toMatch(/up \? 'stroke-emerald/)
     }
@@ -817,9 +820,27 @@ describe('size is importance, colour is condition', () => {
   it('lets a hero earn its space with a number when it has no chart', () => {
     const shell = src('components/desktop/DesktopTile.tsx')
     expect(shell).toContain('export function TileHeroNumber')
-    // Portfolio's hero leads with weight. Research leads with the note that
-    // arrived, or with the age -- the object, never a numeral for its own sake.
-    expect(src('components/portfolio-v2/PortfolioWorkspace.tsx')).toContain('<TileHeroNumber')
+
+    /*
+     * Portfolio no longer LEADS with the weight.
+     *
+     * It did, because the tile had no other object worth the space. Now every
+     * position tile draws its price, so the hero earns its space with the
+     * chart and the weight moved to the corner -- stated once, as a control
+     * that opens the dollars, the shares and the active weight behind it.
+     *
+     * The rule underneath is unchanged and is what these assert: the weight
+     * is said ONCE on a card, and it is not a numeral competing with the
+     * ticker for the top of the tile.
+     */
+    const pw = src('components/portfolio-v2/PortfolioWorkspace.tsx')
+    expect(pw).toContain('<WeightChip')
+    expect(pw).not.toContain('<TileHeroNumber')
+    // One statement of it per card: no second figure in the body.
+    expect(pw).not.toContain('<WeightFigure')
+
+    // Research still leads with the object -- the note that arrived, or the
+    // age -- never a numeral for its own sake.
     expect(src('components/research-v2/ResearchWorkspace.tsx')).toContain('newestEvidenceTitle')
   })
 })
@@ -1115,9 +1136,21 @@ describe('a handoff never promises what is not there', () => {
      * about the calendar, and painting its weight amber claims the position
      * is wrong when nobody has said so.
      */
+    /*
+     * The size is a `scale` prop now rather than a literal in one class
+     * string: Portfolio was saying the same fact four different ways below
+     * `large`, so the primitive grew the sizes instead of each lens
+     * hand-rolling its own. The RULES are what matter and they are unchanged.
+     */
     const hero = src('components/desktop/DesktopTile.tsx')
-    expect(hero).toContain("'font-mono text-[30px] font-semibold leading-[0.95]")
-    expect(hero).not.toContain("tone === 'review' ? 'text-amber-700 dark:text-amber-400'")
+    // Hero is 30px, and 44px -- louder than the ticker -- never comes back.
+    expect(hero).toMatch(/scale === 'hero' \? 'text-\[30px\]'/)
+    expect(hero).not.toMatch(/text-\[44px\]/)
+    expect(hero).toContain("font-mono font-semibold leading-[0.95]")
+    // Only a genuine break inks it. A due review is a calendar fact.
+    expect(hero).not.toMatch(/tone === 'review' \? 'text-amber/)
+    expect(src('components/portfolio-v2/PortfolioWorkspace.tsx'))
+      .not.toMatch(/tone === 'review' \? 'text-amber-700 dark:text-amber-500'\s*\n?\s*:\s*'text-gray-900/)
   })
 
   it('never draws a meter where it can draw the population', () => {
