@@ -132,6 +132,20 @@ export function eyebrowLabels(
   return out
 }
 
+/**
+ * The price Trade Lab used to write when it did not know one.
+ *
+ * `baseline?.price || 100` in SimulationPage: the fallback when the live
+ * quote chain failed, which for a NEW position had no baseline holding to
+ * fall back to. Fixed at the writer, but rows carrying it are durable --
+ * META, V, PLTR, LLY, CAT and ABT all hold it today -- so surfaces that
+ * display a stored commit price still have to recognise it.
+ *
+ * Exact equality is the test. This was written as a literal, not computed,
+ * so it is exactly 100 and never 100.01.
+ */
+export const PLACEHOLDER_PRICE = 100
+
 /** How recent a committed decision has to be to fill the lens. */
 export const RECENT_DAYS = 60
 

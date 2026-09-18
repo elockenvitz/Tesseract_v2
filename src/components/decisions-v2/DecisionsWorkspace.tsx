@@ -33,6 +33,7 @@ import {
 } from '../../lib/desktop-decisions/model'
 import {
   classifySituations, selectForLens, lensSentence, eyebrowLabels,
+  PLACEHOLDER_PRICE,
   type ClassedSituation, type OutcomeFacts,
 } from '../../lib/desktop-decisions/classes'
 import { openOutcomesFor, openTradeBookFor } from '../../lib/desktop-decisions/navigate'
@@ -785,16 +786,30 @@ function DecisionTile({
    * and its notional with it. There is no separate honest figure among them
    * to rescue.
    *
-   * The closes settle it. A fill price should sit near the close on the day
-   * it filled; a fill booked at 100 against a 1152 close is not a stale
-   * quote or a rounding difference, it is a price nobody paid. So the tile
-   * asks that question before showing any figure that depends on the answer,
-   * and where the answer is no it shows none of them and says why.
+   * ── Why the test is the literal, not the magnitude ───────────────────────
    *
-   * The band is deliberately wide. The point is not to police a spread, it is
-   * to catch a fabricated number -- and a real intraday fill can legitimately
-   * sit well off the close on a gap day. Half to double the close passes;
-   * one-eleventh of it does not.
+   * A ratio band alone does not separate these two populations. Checked
+   * against the close on each trade's own fill date, production says:
+   *
+   *   PLTR x5   100 vs 132.37   ratio 0.76  <- fabricated, inside any sane band
+   *   ABT       100 vs  90.62   ratio 1.10  <- fabricated, looks perfect
+   *   META      100 vs 675.03   ratio 0.15  <- fabricated
+   *   AVB    177.81 vs  60.71   ratio 2.93  <- REAL price, the close is wrong
+   *   MNST    77.56 vs  39.12   ratio 1.98  <- REAL price, the close is wrong
+   *
+   * A half-to-double band would have passed six fabricated rows and rejected
+   * three genuine ones. The magnitude is not the signal.
+   *
+   * The signal is the literal itself. `baseline?.price || 100` writes exactly
+   * 100, so a commit price of precisely 100 against a close that is not
+   * approximately 100 is the fabrication, whatever the ratio works out to. A
+   * genuine fill at 100.00 does happen -- and when it does, the close that day
+   * is near 100 too, so it passes.
+   *
+   * The wide band stays as a second net for corruption of other shapes, but
+   * loose enough not to catch a real price sitting beside a bad close: a
+   * stored close can be stale or split-unadjusted, and that is the close's
+   * problem, not the trade's.
    */
   const anchorClose = (() => {
     if (!anchorISO || closes.length === 0) return null
@@ -825,12 +840,18 @@ function DecisionTile({
    * the notional still shows. It is only withheld where the price it came
    * from is demonstrably fabricated.
    */
-  const basis: 'ok' | 'bad' | 'unknown' =
-    commitPrice == null || commitPrice <= 0 || anchorClose == null || anchorClose <= 0
-      ? 'unknown'
-      : commitPrice / anchorClose >= 0.5 && commitPrice / anchorClose <= 2
-        ? 'ok'
-        : 'bad'
+  const basis: 'ok' | 'bad' | 'unknown' = (() => {
+    if (commitPrice == null || commitPrice <= 0) return 'unknown'
+    /* The literal the failing path writes. With no close to check it against
+       -- PARA has no stored history at all -- an exact 100 is still the
+       signature, and the live quote plainly did not answer for a name we hold
+       no prices for. */
+    const isLiteral = commitPrice === PLACEHOLDER_PRICE
+    if (anchorClose == null || anchorClose <= 0) return isLiteral ? 'bad' : 'unknown'
+    const ratio = commitPrice / anchorClose
+    if (isLiteral) return Math.abs(ratio - 1) > 0.1 ? 'bad' : 'ok'
+    return ratio >= 0.25 && ratio <= 4 ? 'ok' : 'bad'
+  })()
 
   /* The fill is what the chart is "since". Where nothing filled, the decision
      is the next-best real date; where neither exists there is no anchor and no

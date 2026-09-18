@@ -904,6 +904,76 @@ describe('the card answers what we decided and what happened', () => {
     expect(figures.textContent).not.toContain('$84K')
   })
 
+  /*
+   * ── The real populations, from production ────────────────────────────────
+   *
+   * Checked against the close on each trade's own fill date, `accepted_trades`
+   * holds both of these, and a ratio band cannot tell them apart:
+   *
+   *   fabricated, but inside any sane band:
+   *     PLTR x5   100 vs 132.37   ratio 0.76
+   *     ABT       100 vs  90.62   ratio 1.10
+   *   genuine, but far outside one:
+   *     AVB    177.81 vs  60.71   ratio 2.93
+   *     MNST    77.56 vs  39.12   ratio 1.98
+   *
+   * A half-to-double band passes six fabricated rows and rejects three real
+   * ones. These cases exist so that band can never come back.
+   */
+  const withCommit = (price: number, closeAtFill: number) => {
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: closeAtFill },
+      { date: new Date(Date.now() - 2 * DAY), value: closeAtFill },
+      { date: new Date(Date.now() - 1 * DAY), value: closeAtFill * 1.01 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric',
+        targetWeight: 6.39, deltaWeight: 0.25, notional: 84186.48,
+        priceAtAcceptance: price, deltaShares: 200,
+      },
+    })]
+  }
+  const basisVerdict = () => {
+    const figures = within(screen.getByTestId('decision-tile')).getByTestId('decision-figures')
+    return within(figures).queryByTestId('decision-basis-untrusted') ? 'bad' : 'ok'
+  }
+
+  it('catches the placeholder even where the ratio looks harmless', () => {
+    // PLTR: the literal 100 against a 132.37 close. Ratio 0.76.
+    withCommit(100, 132.37)
+    render(<DecisionsWorkspace />)
+    expect(basisVerdict()).toBe('bad')
+  })
+
+  it('catches the placeholder even where the ratio looks perfect', () => {
+    // ABT: the literal 100 against a 90.62 close. Ratio 1.10.
+    withCommit(100, 90.62)
+    render(<DecisionsWorkspace />)
+    expect(basisVerdict()).toBe('bad')
+  })
+
+  it('keeps a real price sitting beside a bad close', () => {
+    // AVB: a genuine 177.81 fill; the stored close of 60.71 is the wrong
+    // number here, and that is the close's problem, not the trade's.
+    withCommit(177.81, 60.71)
+    render(<DecisionsWorkspace />)
+    expect(basisVerdict()).toBe('ok')
+  })
+
+  it('keeps a real price at twice the stored close', () => {
+    withCommit(77.56, 39.12) // MNST
+    render(<DecisionsWorkspace />)
+    expect(basisVerdict()).toBe('ok')
+  })
+
+  it('accepts a genuine fill that really did land on 100', () => {
+    // 100.00 happens. When it does, the close that day is near 100 too.
+    withCommit(100, 99.4)
+    render(<DecisionsWorkspace />)
+    expect(basisVerdict()).toBe('ok')
+  })
+
   it('shows a commit price the closes agree with', () => {
     tileCloses = [
       { date: new Date(Date.now() - 3 * DAY), value: 418 },
