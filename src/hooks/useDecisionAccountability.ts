@@ -756,10 +756,42 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         : { notional: null as number | null, basis: null as SizeBasis }
       const weightImpact = firstExec?.weight_delta ?? null
 
-      // Impact proxy = trade_notional × best available directionalized move / 100
-      const bestMove = moveSinceDecision ?? moveSinceExecution
-      const impactProxy = tradeNotional != null && bestMove != null
-        ? (tradeNotional * bestMove) / 100
+      /*
+       * ── Impact is measured from the EXECUTION price, not the decision ─────
+       *
+       * This was `moveSinceDecision ?? moveSinceExecution`, and the fallback
+       * order is a units error rather than a preference.
+       *
+       * `tradeNotional` is the size of the trade AT EXECUTION -- either the
+       * market-value delta the execution produced, or |quantity x execution
+       * price|. Multiplying that by a return measured from the DECISION price
+       * mixes two bases: it asks what the position is worth now against what
+       * the desk was looking at before it traded, and charges the difference
+       * to a position size that did not exist yet.
+       *
+       * With the execution basis the arithmetic collapses correctly:
+       *
+       *   notional x moveSinceExec / 100
+       *     = qty x execPrice x (now - execPrice) / execPrice
+       *     = qty x (now - execPrice)
+       *
+       * which is the P&L on the shares this trade actually moved. Checked
+       * against a clean row -- MSFT, 168 shares added at 501.11, last close
+       * 497.75 -- the execution basis gives -$564, and 168 x (497.75 - 501.11)
+       * is -$564. The decision basis gave a different number for the same
+       * trade, off by the drift between the decision and the fill.
+       *
+       * The decision-to-execution drift is not lost: it is `delay_cost_pct`,
+       * which is what that comparison is actually for, and it is reported
+       * separately because it answers a different question -- what the wait
+       * cost -- rather than what the position has made.
+       *
+       * The decision move is still the fallback where nothing recorded an
+       * execution price, since then there is no execution basis to prefer.
+       */
+      const impactMove = moveSinceExecution ?? moveSinceDecision
+      const impactProxy = tradeNotional != null && impactMove != null
+        ? (tradeNotional * impactMove) / 100
         : null
 
       // Weighted delay cost = trade_notional × delay_cost_pct / 100
