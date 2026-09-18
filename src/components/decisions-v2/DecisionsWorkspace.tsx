@@ -27,7 +27,7 @@ import {
   useDecisionOutcomeFacts,
 } from '../../hooks/useDesktopDecisions'
 import {
-  outcomeOf, OUTCOME_LABEL, provenanceOf, workOf, daysSince, summaryOf,
+  outcomeOf, OUTCOME_LABEL, provenanceOf, workOf, daysSince,
   hasHumanReason, RESOLVED,
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
@@ -45,7 +45,7 @@ import { DecisionDetailPane } from './DecisionDetail'
 import {
   DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileReason, TileLead,
   TileMeta, TileFigure, sizeByRecency, GallerySkeleton, type TileSize,
-  TileVisualSlot, TileAction as ShelfAction,
+  TileVisualSlot, TileAction as ShelfAction, TileSparkline,
 } from '../desktop/DesktopTile'
 import { EYEBROW } from '../desktop/DesktopModule'
 import {
@@ -866,6 +866,9 @@ function DecisionTile({
      visual slot and the figures strip have to agree: what the track draws,
      the words stop saying. */
   const drawsPath = big && objectCandidates.path
+  /* The small-tile fallback: a name with stored closes always has a line
+     worth drawing, and below `large` this lens used to draw nothing at all. */
+  const drawsSpark = !batched && !!d.symbol && closes.length >= 2
 
   /*
    * ── A composed tile at hero and large, not the stack with a chart under it ─
@@ -1313,6 +1316,25 @@ function DecisionTile({
         of a decision. A multi-leg batch keeps its description above its legs,
         because there it explains several names at once.
       */}
+      {/*
+        ── And nothing where nobody wrote anything ────────────────────────
+
+        The third branch used to be `summaryOf(d)`, which assembles a sentence
+        out of the fields this tile is already showing: "Eric accepted a trim
+        in MNST at 2.0%" sits directly beneath the eyebrow carrying ACCEPTED,
+        the ticker carrying MNST, the stance carrying TRIM and the figures
+        carrying 2.0%. Four facts, printed twice, and the second printing
+        looks like content -- so a reader scans it before discovering it says
+        nothing new.
+
+        It is also most of why a run of these tiles read as identical: the
+        generated sentence has the same shape on every card, so the paragraph
+        that should differentiate them was the part that differed least.
+
+        Where a human wrote a reason it is quoted, because that is the rarest
+        thing this history holds. Where nobody did, the tile says so by
+        staying quiet and spends the room on the price instead.
+      */}
       {!batched && (
         reason ? <TileQuote size={size}>{reason}</TileQuote>
           : proposedReason ? (
@@ -1320,7 +1342,7 @@ function DecisionTile({
               <div className={EYEBROW}>Why it was proposed</div>
               <TileReason>{proposedReason}</TileReason>
             </div>
-          ) : <TileReason>{summaryOf(d)}</TileReason>
+          ) : null
       )}
 
       {/*
@@ -1655,7 +1677,8 @@ function DecisionTile({
             compact
           />
         </div>
-      ) : outcome === 'open' && d.sizingWeight != null && d.baselineWeight != null ? (
+      ) : outcome === 'open' && size !== 'compact'
+          && d.sizingWeight != null && d.baselineWeight != null ? (
         /*
           The rail earns its space only where it draws a real change.
 
@@ -1664,6 +1687,12 @@ function DecisionTile({
           wide band restating one number the line above already carries -- and
           on a committed decision the figures are what was actually executed,
           which the rail cannot draw. Those cards are denser for its absence.
+
+          Not at compact. A share-of-book bar is the object this product draws
+          most -- every lens has one, several have two -- so on the smallest
+          tile, where there is room for exactly one visual, it is the least
+          informative thing that could occupy it. The price goes there instead:
+          it is the object that actually differs from the tile above.
         */
         <div className="mt-1">
           <DecisionSize
@@ -1673,6 +1702,30 @@ function DecisionTile({
             decidedAt={d.decidedAt}
             open
             compact
+          />
+        </div>
+      ) : drawsSpark ? (
+        /*
+          ── The fallback that used to be nothing ──────────────────────────
+
+          Below `large` this ladder ended in `null`, so a decision with no
+          gaps in its record, no intervals to draw and no sizing question --
+          which is most committed decisions -- rendered as text over text. A
+          run of them is what reads as "no variety among the smaller cards",
+          and the repetition is real: the tiles genuinely were identical in
+          structure and differed only in the words.
+
+          A price path is the one object that differs per name, and this lens
+          already holds the series -- `DecisionTile` reads it once for the
+          headline and the big chart, so a small tile costs no extra request.
+        */
+        <div className="mt-1.5">
+          <TileSparkline
+            points={closes}
+            anchorISO={priceAnchor}
+            label={`Since the ${priceAnchorLabel}`}
+            height={size === 'compact' ? 22 : 28}
+            compact={size === 'compact'}
           />
         </div>
       ) : null}

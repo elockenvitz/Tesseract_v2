@@ -570,6 +570,40 @@ function SubjectTile({
  */
 function MissingThesis({ present, size }: { present: string[]; size: TileSize }) {
   const big = size === 'hero' || size === 'large'
+
+  /*
+   * ── Nothing written is one finding, not three ────────────────────────────
+   *
+   * This checklist earns its space when SOME sections are written: "Thesis
+   * written / Where we differ — / Risks —" tells a reader exactly what is
+   * left, and that is the shape of the remaining work.
+   *
+   * When none are, every row is a dash. Three labelled rows of nothing look
+   * like content, so a reader scans all three before finding that out, and
+   * they occupy the whole card while doing it. The finding -- that this
+   * subject has no written case at all -- is one fact and gets one line.
+   *
+   * No chart is put in the freed space, deliberately. Research's scan holds
+   * no price series and fetching one per card to decorate a gallery is the
+   * cost this lens is built to avoid. The gain here is the room, not a
+   * replacement object.
+   */
+  if (present.length === 0) {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className={clsx(
+          'font-semibold text-amber-700 dark:text-amber-500',
+          big ? 'text-[15px]' : 'text-[12px]',
+        )}>
+          No written case
+        </span>
+        <span className={clsx('text-gray-500', big ? 'text-[12px]' : 'text-[11px]')}>
+          None of {CORE_SECTIONS.map(k => (SECTION_LABEL[k] ?? k).toLowerCase()).join(', ')} recorded
+        </span>
+      </div>
+    )
+  }
+
   return (
     <ul className="flex flex-col gap-1.5">
       {CORE_SECTIONS.map(k => {

@@ -63,15 +63,75 @@ const DETAILS = [
   'components/decisions-v2/DecisionDetail.tsx',
 ]
 
-describe('a price path is never graded', () => {
-  it('draws one ink regardless of direction, on every surface', () => {
+/*
+ * ── The rule this describe used to state, and why it narrowed ────────────
+ *
+ * It said no price path may be graded by direction, anywhere. The reasoning
+ * was sound for what it was protecting: a red line under a decision reads as
+ * "bad decision", and post-decision drift is evidence, not a verdict.
+ *
+ * That argument is about the DECISION. It is not about the price. Up and down
+ * are facts about a line, a desk reads them instantly, and in review the
+ * uniformly grey chart was read as "no signal" rather than as neutrality --
+ * so the product owner called it, and the price line is now graded.
+ *
+ * The protection survives where it was actually needed. The objects that
+ * render a JUDGEMENT on a decision -- the lifecycle path, and the detail
+ * pane's since-the-decision chart -- stay on one neutral ink, and these
+ * cases hold them there.
+ */
+describe('a decision is never graded, though its price may be', () => {
+  /** The objects that depict the decision itself, not the market. */
+  const NEVER_GRADED = [
+    ['components/decisions-v2/DecisionVisual.tsx', 'export function PriceSinceDecision'],
+    ['components/decisions-v2/DecisionVisual.tsx', 'export function DecisionPath'],
+  ] as const
+
+  it('keeps the decision objects on one ink regardless of direction', () => {
+    for (const [file, marker] of NEVER_GRADED) {
+      const body = src(file)
+      const start = body.indexOf(marker)
+      expect(start, `${marker} not found in ${file}`).toBeGreaterThan(-1)
+      // To the next top-level export, so one component's ink is examined.
+      const rest = body.slice(start + marker.length)
+      const end = rest.indexOf('\nexport function ')
+      const fn = end === -1 ? rest : rest.slice(0, end)
+
+      // The pattern that grades: a ternary on direction picking a hue.
+      expect(fn).not.toMatch(/up \? 'stroke-emerald/)
+      expect(fn).not.toMatch(/up \? 'fill-emerald/)
+      expect(fn).not.toMatch(/up \? 'text-emerald/)
+      expect(fn).not.toMatch(/up \? 'bg-emerald/)
+    }
+  })
+
+  it('never grades with the severity palette, on any visual surface', () => {
+    /*
+     * Direction and condition are different axes and must stay different.
+     * A price line may say which way it went; it may never borrow the ink
+     * that means "this framework is broken", because a fall is not a break.
+     * Rose and amber stay reserved for condition on every visual module.
+     */
     for (const f of VISUALS) {
       const body = src(f)
-      // The pattern that graded returns: a ternary on direction picking a hue.
-      expect(body).not.toMatch(/up \? 'stroke-emerald/)
-      expect(body).not.toMatch(/up \? 'fill-emerald/)
-      expect(body).not.toMatch(/up \? 'text-emerald/)
-      expect(body).not.toMatch(/up \? 'bg-emerald/)
+      expect(body).not.toMatch(/up \? 'stroke-amber/)
+      expect(body).not.toMatch(/up \? 'text-amber/)
+      // Down may be rose, but only paired with emerald as a direction pair --
+      // never rose alone standing in for "bad".
+      const roseAlone = /(?<!emerald[^\n]*)\bdown \? 'stroke-rose/
+      expect(body).not.toMatch(roseAlone)
+    }
+  })
+
+  it('grades the price line by direction, and says so in one place', () => {
+    // The tile chart and the small-tile sparkline both grade, and both derive
+    // it from the same `up` the percentage's sign comes from -- so the hue
+    // and the number can never disagree about which way the price went.
+    const dv = src('components/decisions-v2/DecisionVisual.tsx')
+    const spark = src('components/desktop/DesktopTile.tsx')
+    for (const body of [dv, spark]) {
+      expect(body).toMatch(/const up = [^\n]*>= 0/)
+      expect(body).toMatch(/up \? 'stroke-emerald/)
     }
   })
 
@@ -235,10 +295,31 @@ describe('browse, then engage: one mode at a time', () => {
       expect(body).not.toContain('Full scan')
       expect(body).not.toContain('Full book')
     }
-    // The shell offers no footer slot, so a surface cannot add one back, and
-    // no selected ring, because nothing remains for a tile to stay tied to.
+    /*
+     * ── No call to action AT REST ───────────────────────────────────────
+     *
+     * This used to assert the shell offered no footer slot at all, so a
+     * surface could not add one back. That did not hold: Decisions added one
+     * anyway, with `<button>`s nested inside the shell's own `<button>` --
+     * invalid HTML, and unreachable by keyboard. A rule a surface can break
+     * by accident is not a rule, it is a trap.
+     *
+     * So the shell now owns an `actions` slot, and the constraint moved to
+     * where it belongs: the resting state. `TileShelf` renders the object's
+     * standing context at rest and reveals the verbs only on hover or
+     * keyboard focus, in height reserved either way -- so a gallery still
+     * reads as a field of objects rather than a wall of buttons, and the
+     * verbs are real accessible buttons when reached for.
+     */
     const shell = code('components/desktop/DesktopTile.tsx')
-    expect(shell).not.toMatch(/footer\s*[?:]|actions\s*\?:/)
+    expect(shell).toMatch(/function TileShelf/)
+    // Reveal is opacity only, inside reserved height: no layout shift, and
+    // nothing appears that was not already occupying its space.
+    expect(shell).toMatch(/group-hover:/)
+    expect(shell).toMatch(/group-focus-within:/)
+    // The shell is not itself a button any more, which is what made nesting
+    // one inside it invalid in the first place.
+    expect(shell).toMatch(/role="group"/)
     expect(shell).not.toMatch(/selected\s*\?:/)
   })
 })
@@ -283,10 +364,34 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // The tile used to print ACCEPTED, TRIM, MNST, then "Eric accepted a trim
     // in MNST at 2.0%", then the book, then Eric again -- six lines carrying
     // three facts, with the largest of them adding nothing.
+    /*
+     * Code, not prose. The tile carries a comment explaining why the generated
+     * summary was removed, and a rule that cannot tell an explanation of a
+     * defect from the defect forces the next person to delete the reasoning in
+     * order to make the suite pass.
+     */
     const body = src('components/decisions-v2/DecisionsWorkspace.tsx')
-    const tile = body.slice(body.indexOf('function DecisionTile'), body.indexOf('function TileShape'))
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+    const start = body.indexOf('function DecisionTile')
+    /*
+     * `function TileShape` was the old end anchor and has not existed in this
+     * file for some time. `indexOf` returned -1, `slice(start, -1)` ran to the
+     * end of the file, and the assertion was quietly examining every component
+     * below the tile as well -- so it failed on code it was never about.
+     *
+     * A missing anchor must fail loudly, not silently widen the subject.
+     */
+    const endMarker = 'function Loading('
+    const end = body.indexOf(endMarker)
+    expect(start, 'DecisionTile not found').toBeGreaterThan(-1)
+    expect(end, `${endMarker} not found — fix this anchor`).toBeGreaterThan(start)
+
+    const tile = body.slice(start, end)
     expect(tile).not.toContain('summaryOf')
-    expect(tile).not.toContain('OUTCOME_LABEL')
+    // The outcome word reaches the tile only through the deduplicating
+    // eyebrow, never printed a second time beside it.
+    expect(tile).not.toContain('OUTCOME_LABEL[')
   })
 
   it('differentiates the three research states structurally, not by wording', () => {
@@ -692,7 +797,16 @@ describe('size is importance, colour is condition', () => {
      */
     expect(body).toContain('sizeByRecency(i)')
     expect(body).toContain('flow="chronological"')
-    expect(body).toContain('compareWork')
+    /*
+     * The ordering moved into the classifier. `compareWork` was the workspace's
+     * own comparator; it is now `compareSituations`, applied by `selectForLens`
+     * over `classifySituations` -- one place that decides both which records
+     * make the lens and what order they come in, rather than a sort here and a
+     * membership rule there. The invariant is unchanged: the lens lists what
+     * still wants something, longest-waiting first.
+     */
+    expect(body).toContain('selectForLens(classifySituations(')
+    expect(src('lib/desktop-decisions/classes.ts')).toContain('export function compareSituations')
     expect(body).not.toMatch(/sizeByRank/)
     const fn = src('components/desktop/DesktopTile.tsx')
     const band = fn.slice(fn.indexOf('export function sizeByRecency'))
@@ -1058,7 +1172,14 @@ describe('a handoff never promises what is not there', () => {
      * telling them apart is the point of this lens.
      */
     expect(src('components/decisions-v2/DecisionVisual.tsx')).toContain('export const OUTCOME_INK')
-    expect(src('components/decisions-v2/DecisionsWorkspace.tsx')).toContain('OUTCOME_INK[kind]')
+    /*
+     * Indexed by the outcome directly now. `OutcomeChip` held a local `kind`
+     * and was deleted when the eyebrow started deduplicating its labels -- the
+     * outcome word is dropped entirely when the reason already says it, which
+     * a component that always rendered could not do. The ink is unchanged.
+     */
+    expect(src('components/decisions-v2/DecisionsWorkspace.tsx'))
+      .toContain('OUTCOME_INK[outcomeOf(d.status)]')
   })
 
   it('states the book against its index without inventing a return', () => {
@@ -1196,8 +1317,19 @@ describe('a handoff never promises what is not there', () => {
      * size has no quantity to draw, but the wait is a fact and it is the
      * whole complaint on a card nobody has answered.
      */
-    expect(src('components/decisions-v2/DecisionsWorkspace.tsx'))
-      .toContain('No size was asked for, so there is no quantity to draw')
+    /*
+     * The caption this asserted no longer exists anywhere in the lens, and had
+     * not for several passes -- the assertion was stale, not protective.
+     *
+     * What it was defending is real and still holds: an unanswered request
+     * whose size is unknown must still show the WAIT, because the wait is the
+     * whole complaint on a card nobody has answered. That now lives in the
+     * lifecycle fallback rather than in a sentence, so it is asserted
+     * structurally.
+     */
+    const dws = src('components/decisions-v2/DecisionsWorkspace.tsx')
+    expect(dws).toContain('drawsPath')
+    expect(dws).toContain('pathHasIntervals')
 
     // A real axis with the book's own scale on it: a weight bar with no ticks
     // is a proportion of something the reader has to guess.
@@ -1319,9 +1451,22 @@ describe('a handoff never promises what is not there', () => {
      * it is showing. A compact tile still has room for an axis, it just
      * cannot carry ticks and both end labels.
      */
-    expect(ws).toContain("{work === 'explain' ? (")
-    expect(ws).toContain(') : d.sizingWeight != null ? (')
-    expect(ws).not.toContain("size !== 'compact' && (")
+    /*
+     * Still a ladder, and still ungated on baseline or density -- it simply
+     * has a rung above it now (the price column at hero and large), so the
+     * explain branch is a continuation rather than the opening `{`.
+     */
+    expect(ws).toContain("work === 'explain' ? (")
+    /*
+     * One deliberate density gate, which is the opposite of the two this case
+     * removed. Those suppressed a visual that had something to draw. This one
+     * chooses BETWEEN visuals on the smallest tile, where there is room for
+     * exactly one: the share-of-book bar is the object this product draws most
+     * -- every lens has one -- so at compact the price takes the slot, being
+     * the one object that differs from the tile above.
+     */
+    expect(ws).toContain("outcome === 'open' && size !== 'compact'")
+    expect(ws).toContain('drawsSpark')
     const visual = src('components/decisions-v2/DecisionVisual.tsx')
     expect(visual).toContain('const known = from != null')
     expect(visual).toContain('compact?: boolean')

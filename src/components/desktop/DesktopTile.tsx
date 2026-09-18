@@ -40,6 +40,10 @@
 import { useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import type { SemanticTone } from '../../lib/semantic-tone'
+/* One definition of "which rows am I drawing", shared with the lens charts:
+   every bug this window has had was two pieces of code disagreeing about
+   where it starts. */
+import { windowOverCloses } from '../../lib/market-data/anchored-window'
 
 /**
  * The editorial gallery.
@@ -1041,32 +1045,155 @@ export function TileGap({ spot, target, label }: { spot: number; target: number;
   )
 }
 
-/** A price path, one ink, at tile scale. Never graded by direction. */
-export function TileSpark({ series, label }: { series: number[]; label: string }) {
-  if (series.length < 2) return null
-  const W = 200, H = 22
-  const min = Math.min(...series), max = Math.max(...series)
+/**
+ * A price path at small-tile scale, scrubbable, graded by direction.
+ *
+ * ── Why the small sizes get one at all ───────────────────────────────────
+ *
+ * Only Ideas drew a price below `large`. Research, Portfolio and Decisions
+ * put a visual on hero and large and nothing underneath, and Today has no
+ * price anywhere -- so a gallery scrolled into a run of tiles that were text
+ * over text over text, each one repeating the same share-of-book percentage
+ * the one above it had. "No variety among smaller cards" is the accurate
+ * description of that, and the fix is not more captions: it is the one object
+ * that differs per name.
+ *
+ * ── Why it is graded, when `TileSpark` was not ───────────────────────────
+ *
+ * The component this replaces drew a single slate ink on purpose, so a price
+ * path could not be read as a verdict on a decision. That argument holds for
+ * the DECISION and not for the PRICE: up and down are facts about the line, a
+ * desk reads them instantly, and the ungraded version was read as "no signal"
+ * rather than as neutrality. The percentage keeps its sign and the caption
+ * keeps saying what it measures; the hue says only which way the price went.
+ *
+ * ── Axes at this size ────────────────────────────────────────────────────
+ *
+ * A 26px band cannot carry gridlines, so the axis is the high and low of the
+ * window, printed once at the right where they cost no vertical room, and the
+ * scrubbed value replaces them while a pointer is down the line. That is what
+ * makes the amplitude readable -- the thing a bare sparkline withholds.
+ */
+export function TileSparkline({
+  points, anchorISO = null, label, height = 26, compact = false,
+}: {
+  /** Dated closes, oldest first. Fewer than two and nothing renders. */
+  points: { date: Date; value: number }[]
+  /** Where the window starts, when the tile has a date worth measuring from. */
+  anchorISO?: string | null
+  /** What the line is of -- "Since the fill", "90 days". */
+  label: string
+  height?: number
+  /** Drops the axis figures, for the smallest tiles. */
+  compact?: boolean
+}) {
+  const [at, setAt] = useState<number | null>(null)
+
+  /*
+   * The shared slicer, not a local one.
+   *
+   * This computed its own window at first -- `findIndex(p => p >= anchor)`,
+   * fall back to the whole series -- and reproduced the exact bug
+   * `anchoredWindow` had just been fixed for. When every close POST-dates the
+   * anchor, `findIndex` returns 0, so a two-day line read as "since the fill"
+   * about a fill from ten days back. The series has to START at or before the
+   * anchor to cover it, and that rule now has one home.
+   */
+  const w = windowOverCloses(points, anchorISO) ?? windowOverCloses(points, null)
+  if (!w) return null
+  const reaches = w.reachesAnchor
+  const values = w.series
+  /* The dates behind the window, for the axis. `from`/`to` come back with it
+     rather than being re-derived here, for the same reason. */
+  const series = points.slice(points.length - values.length)
+  const W = 200
+  const H = height
+  const min = Math.min(...values)
+  const max = Math.max(...values)
   const span = (max - min) || 1
-  const d = series
-    .map((v, i) => `${((i * W) / (series.length - 1)).toFixed(1)},${(H - 2 - (H - 4) * ((v - min) / span)).toFixed(1)}`)
-    .join(' L')
-  const change = ((series[series.length - 1] - series[0]) / series[0]) * 100
+  const x = (i: number) => (i * W) / (values.length - 1)
+  const y = (v: number) => 2 + (H - 4) * (1 - (v - min) / span)
+  const d = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' L')
+
+  const change = ((values[values.length - 1] - values[0]) / values[0]) * 100
+  const up = change >= 0
+  const stroke = up ? 'stroke-emerald-600 dark:stroke-emerald-400' : 'stroke-rose-600 dark:stroke-rose-400'
+  const fill = up ? 'fill-emerald-500' : 'fill-rose-500'
+  const ink = up ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
+
+  const cursor = at == null ? null : Math.max(0, Math.min(values.length - 1, at))
+  const shown = cursor == null ? change : ((values[cursor] - values[0]) / values[0]) * 100
+  const money = (v: number) => v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(2) : v.toFixed(3)
+
   return (
-    <div>
+    <div data-testid="tile-sparkline" data-reaches={reaches ? 'true' : 'false'} data-no-portal>
       <div className="flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">{label}</span>
-        <span className="ml-auto font-mono text-[11px] font-semibold tabular-nums">
-          {change >= 0 ? '+' : ''}{change.toFixed(1)}%
+        <span className="truncate text-[9px] font-semibold uppercase tracking-widest text-gray-500">
+          {reaches ? label : 'Price history'}
+        </span>
+        <span className={clsx('ml-auto shrink-0 font-mono text-[11px] font-semibold tabular-nums', ink)}>
+          {shown >= 0 ? '+' : ''}{shown.toFixed(1)}%
         </span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="mt-0.5 w-full" style={{ height: H }}
-           role="img" aria-label={`${label}, ${change.toFixed(1)} percent`}>
-        <path d={`M${d} L${W},${H} L0,${H} Z`} className="fill-slate-500 opacity-[0.09]" />
-        <path d={`M${d}`} fill="none" strokeWidth={1.4} strokeLinejoin="round"
-              className="stroke-slate-500 dark:stroke-slate-400" />
-      </svg>
+
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+          className="mt-0.5 w-full cursor-crosshair" style={{ height: H }}
+          role="img"
+          aria-label={`${label}, ${money(values[0])} to ${money(values[values.length - 1])}, ${change.toFixed(1)} percent`}
+          onPointerMove={(e) => {
+            const r = e.currentTarget.getBoundingClientRect()
+            if (r.width <= 0) return
+            setAt(Math.round(((e.clientX - r.left) / r.width) * (values.length - 1)))
+          }}
+          onPointerLeave={() => setAt(null)}
+        >
+          <path d={`M${d} L${W},${H} L0,${H} Z`} className={clsx(fill, 'opacity-[0.10]')} />
+          <path d={`M${d}`} fill="none" strokeWidth={1.4} strokeLinejoin="round" className={stroke} />
+          {cursor != null && (
+            <line x1={x(cursor)} y1={0} x2={x(cursor)} y2={H} strokeWidth={1}
+                  className="stroke-gray-400 opacity-60 dark:stroke-gray-500" />
+          )}
+        </svg>
+        {/* The end of the line, round because it is HTML: the SVG above is
+            stretched on one axis, which turns a circle into an ellipse. */}
+        <span
+          className={clsx(
+            'pointer-events-none absolute right-0 h-[5px] w-[5px] -translate-y-1/2 translate-x-1/2 rounded-full',
+            up ? 'bg-emerald-600 dark:bg-emerald-400' : 'bg-rose-600 dark:bg-rose-400',
+          )}
+          style={{ top: `${(y(values[values.length - 1]) / H) * 100}%` }}
+          aria-hidden
+        />
+      </div>
+
+      {/* The amplitude, which a bare sparkline withholds. Replaced by the
+          scrubbed price while a pointer is on the line. */}
+      {!compact && (
+        <div className="mt-0.5 flex justify-between font-mono text-[8px] leading-none text-gray-400 dark:text-gray-500">
+          {cursor == null ? (
+            <>
+              <span>{shortDay(series[0].date)}</span>
+              <span>{money(min)} – {money(max)}</span>
+            </>
+          ) : (
+            <>
+              <span>{shortDay(series[cursor].date)}</span>
+              <span className="text-gray-600 dark:text-gray-300">{money(values[cursor])}</span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
+}
+
+/** Month and day, the only precision an axis this size can carry. */
+function shortDay(d: Date) {
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 /**

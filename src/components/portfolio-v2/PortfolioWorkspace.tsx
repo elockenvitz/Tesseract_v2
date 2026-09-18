@@ -36,9 +36,13 @@ import type { Position } from '../../lib/portfolio/holdings'
 import {
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
   TileTimeline,
-  TileBar, TileScale, TileMeta, TileHeroNumber,
+  TileBar, TileScale, TileMeta, TileHeroNumber, TileSparkline,
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
+/* The shared dated closes, so a position with no written case still has an
+   object worth looking at. Keyed by symbol with a five-minute staleTime, so a
+   gallery on the same name makes one request. */
+import { useTileCloses } from '../../hooks/useTileCloses'
 import { PositionDetailPane } from './PositionDetail'
 import {
   openDashboardFocus, type RailCard,
@@ -591,6 +595,10 @@ function PositionTile({
 }) {
   const gap = gapOf(position, frame)
   const tone = toneForGap(gap)
+  /* Read for every tile, used where the card would otherwise show dashes or a
+     weight bar the reader has already seen five times. Unconditional because
+     it is a hook; cached by symbol, so the cost is one request per name. */
+  const { data: closes } = useTileCloses(position.symbol)
   const rung = (name: string) => frame.ladder?.cases.find(c => c.name === name)?.price ?? null
   const bear = rung('Bear'), bull = rung('Bull')
   const showScale = !!frame.ladder?.valid && bear != null && bull != null && position.price > 0
@@ -654,7 +662,7 @@ function PositionTile({
             {showScale ? (
               <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
             ) : gap === 'no-framework' ? (
-              <ThesisSkeleton />
+              <ThesisSkeleton points={closes} />
             ) : (
               <TileBar
                 pct={position.weightPct} max={maxWeight} population={weights}
@@ -679,19 +687,32 @@ function PositionTile({
           </div>
         </div>
       ) : (
-        /* Compact: the weight, and -- where the case is broken -- how far
-           outside it price has gone. A four-pixel scale says nothing. */
-        <TileMeta>
-          <span className="font-mono text-[15px] font-semibold text-gray-900 dark:text-gray-100">
-            {position.weightPct.toFixed(1)}%
-          </span>
-          <span>of book</span>
-          {outsideBy(position, frame) && (
-            <span className="font-semibold text-rose-700 dark:text-rose-400">
-              {outsideBy(position, frame)!.value} {outsideBy(position, frame)!.label}
+        /*
+          Compact: the weight, how far outside its own case price has gone,
+          and the price itself.
+
+          The weight line alone is what made a run of these read as one tile
+          repeated. Every lens on this dashboard draws a share-of-book figure
+          -- several draw two -- so on the smallest card it is the least
+          differentiating thing available, and it was the only thing here.
+          The sparkline is what differs per name.
+        */
+        <div className="flex flex-col gap-1.5">
+          <TileMeta>
+            <span className="font-mono text-[15px] font-semibold text-gray-900 dark:text-gray-100">
+              {position.weightPct.toFixed(1)}%
             </span>
+            <span>of book</span>
+            {outsideBy(position, frame) && (
+              <span className="font-semibold text-rose-700 dark:text-rose-400">
+                {outsideBy(position, frame)!.value} {outsideBy(position, frame)!.label}
+              </span>
+            )}
+          </TileMeta>
+          {closes && closes.length >= 2 && (
+            <TileSparkline points={closes} label="Price" height={20} compact />
           )}
-        </TileMeta>
+        </div>
       )}
     </DesktopTile>
   )
@@ -782,16 +803,34 @@ function Empty({ message }: { message: string }) {
  */
 const THESIS_PARTS = ['Thesis', 'Where we differ', 'Risks'] as const
 
-function ThesisSkeleton() {
+/**
+ * ── Three rows of dashes said it three times ─────────────────────────────
+ *
+ * This drew a labelled row per missing section, each ending in an em dash.
+ * The finding is real -- a large position with nothing written behind it is
+ * the strongest thing this lens produces -- but stating it three times is not
+ * three findings, and the rows LOOK like content: a reader scans them before
+ * discovering every one is empty.
+ *
+ * Worse, it occupied the tile's only visual slot. So the card that most needs
+ * to make someone curious enough to open it was the card showing the least.
+ *
+ * The absence now gets one line that names all three parts, and the space
+ * goes to the price -- the object that actually helps decide whether this is
+ * worth investigating today.
+ */
+function ThesisSkeleton({ points }: { points?: { date: Date; value: number }[] }) {
   return (
-    <ul className="flex flex-col gap-1.5">
-      {THESIS_PARTS.map(label => (
-        <li key={label} className="flex items-baseline gap-3 text-[13px]">
-          <span className="text-gray-400">{label}</span>
-          <span aria-hidden className="mb-1 flex-1 border-b border-dashed border-gray-200 dark:border-white/10" />
-          <span className="font-mono text-[12px] text-gray-300 dark:text-gray-600">—</span>
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-baseline gap-2 text-[12px]">
+        <span className="font-semibold text-amber-700 dark:text-amber-500">Nothing written</span>
+        <span className="min-w-0 truncate text-gray-500">
+          no {THESIS_PARTS.map(p => p.toLowerCase()).join(', no ')}
+        </span>
+      </div>
+      {points && points.length >= 2 && (
+        <TileSparkline points={points} label="Price, 12 months" height={30} />
+      )}
+    </div>
   )
 }

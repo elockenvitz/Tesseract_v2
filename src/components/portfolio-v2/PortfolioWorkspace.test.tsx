@@ -56,6 +56,23 @@ vi.mock('../../hooks/useDayPerformance', () => ({
   useDayPerformance: () => null,
 }))
 
+/*
+ * The tile sparkline's closes, for the same reason as `useDayPerformance`
+ * above: the real hook reaches for a QueryClient this suite does not stand up.
+ *
+ * A rising year of dated closes, so the position tiles that now draw a price
+ * -- the compact card, and the hero of a position with no written case --
+ * render a real line rather than nothing.
+ */
+const tileCloses: { date: Date; value: number }[] = Array.from({ length: 300 }, (_, i) => ({
+  date: new Date(Date.now() - (299 - i) * 86_400_000),
+  value: 100 + i * 0.08,
+}))
+
+vi.mock('../../hooks/useTileCloses', () => ({
+  useTileCloses: () => ({ data: tileCloses, isLoading: false }),
+}))
+
 vi.mock('../../hooks/useDesktopPortfolio', () => ({
   usePortfolioList: () => ({ portfolios, isLoading: false }),
   useBook: (id: string | null) => {

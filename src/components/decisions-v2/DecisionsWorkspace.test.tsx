@@ -265,6 +265,83 @@ describe('it opens as a queue of work, never auto-opening one', () => {
 })
 
 /*
+ * ── Small tiles get an object of their own ───────────────────────────────
+ *
+ * Below `large` this lens's visual ladder ended in `null`, so a committed
+ * decision with no gaps in its record, no intervals to draw and no sizing
+ * question -- which is most of them -- rendered as text over text. A run of
+ * those is what reads as "no variety among the smaller cards", and the
+ * repetition was real: the tiles differed only in their words, and the
+ * generated summary sentence that filled the space had the same shape on
+ * every card.
+ */
+describe('the smaller tiles draw a price, not another paragraph', () => {
+  const small = (over: Partial<DecisionRecord> = {}) => decision({
+    symbol: 'MSFT', status: 'accepted', decidedAt: daysAgo(20),
+    decisionNote: 'Added on the cloud reacceleration.',
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(20), executedByName: 'Eric' },
+    ...over,
+  })
+
+  /** Four records, so the newest takes hero/large and the rest fall below. */
+  const gallery = () => {
+    decisions = [0, 1, 2, 3, 4].map(i => small({
+      id: `d${i}`, ideaId: `tq-${i}`, symbol: ['MSFT', 'AAPL', 'NVDA', 'AMZN', 'META'][i],
+      decidedAt: daysAgo(10 + i * 5),
+      execution: { id: `at-${i}`, status: 'complete', completedAt: daysAgo(10 + i * 5), executedByName: 'Eric' },
+    }))
+  }
+
+  it('gives every tile below the lead a visual', () => {
+    gallery()
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    const smallOnes = tiles.filter(t => {
+      const s = t.getAttribute('data-size')
+      return s === 'medium' || s === 'compact'
+    })
+    expect(smallOnes.length).toBeGreaterThan(0)
+    for (const t of smallOnes) {
+      expect(within(t).getByTestId('tile-sparkline')).toBeInTheDocument()
+    }
+  })
+
+  it('stops printing a sentence that restates the tile', () => {
+    // `summaryOf` produced "Eric accepted a trim in MSFT at 2.0%" directly
+    // under the eyebrow, ticker, stance and figures already carrying all four.
+    decisions = [small({ decisionNote: null, contextNote: null })]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    expect(tile.textContent).not.toMatch(/accepted a .* in MSFT/i)
+  })
+
+  it('draws nothing where the name has no stored closes', () => {
+    // COIN, CLOV, CROX, GH, LRCX, PARA and TGT hold zero rows today. An
+    // invented line would be worse than an absent one.
+    tileCloses = []
+    gallery()
+    render(<DecisionsWorkspace />)
+    expect(screen.queryAllByTestId('tile-sparkline')).toHaveLength(0)
+  })
+
+  it('does not claim a since-the-fill window it does not have', () => {
+    // Closes that start well after the fill: there is a line worth drawing,
+    // but it is not a move since the fill, and the caption must not say so.
+    tileCloses = [
+      { date: new Date(Date.now() - 2 * DAY), value: 100 },
+      { date: new Date(Date.now() - 1 * DAY), value: 110 },
+    ]
+    gallery()
+    render(<DecisionsWorkspace />)
+    for (const s of screen.getAllByTestId('tile-sparkline')) {
+      expect(s).toHaveAttribute('data-reaches', 'false')
+      expect(s).toHaveTextContent(/price history/i)
+      expect(s.textContent).not.toMatch(/since the fill/i)
+    }
+  })
+})
+
+/*
  * ── Why there is no move, said in the reader's terms ─────────────────────
  *
  * The chart used to explain itself with "Stored closes do not cover the
