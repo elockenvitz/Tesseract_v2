@@ -30,7 +30,7 @@
 
 import type { DecisionRecord } from './model'
 import {
-  RESOLVED, outcomeOf, subjectOf, workOf, hasHumanReason,
+  RESOLVED, outcomeOf, subjectOf, workOf, hasHumanReason, OUTCOME_LABEL,
   type DecisionWork,
 } from './model'
 
@@ -58,6 +58,78 @@ export const REASON_LABEL: Record<DecisionReason, string> = {
   review_outcome: 'Outcome not reviewed',
   outcome_moved: 'Moving against us',
   committed: 'Committed',
+}
+
+/**
+ * The eyebrow's labels, each said at most once.
+ *
+ * ── Why this is a function and not three JSX spans ───────────────────────
+ *
+ * Three independent vocabularies land in the same eyebrow, and they overlap
+ * on their most common values:
+ *
+ *   - `OUTCOME_LABEL[outcomeOf(status)]` -- where the request stands
+ *   - `REASON_LABEL[situation.reason]`   -- why this card is in the lens
+ *   - `facts.verdictLabel`               -- Outcomes' own words
+ *
+ * `OUTCOME_LABEL.open` and `REASON_LABEL.decide` are both the literal string
+ * "Awaiting decision", so an undecided request printed it TWICE, side by
+ * side. The same collision had already shipped once for an executed,
+ * unreviewed decision, where the reason and the verdict are both "Outcome not
+ * reviewed" -- it was patched inline on one of the two render paths, so the
+ * other path kept the bug and the next collision was free to appear.
+ *
+ * Two labels being equal is not a coincidence to patch per pair: these maps
+ * describe the same decision from three angles, so they AGREE whenever the
+ * decision is unambiguous. Agreement is the normal case, and the eyebrow's job
+ * is to say each distinct thing once, in priority order. Deduplicating at the
+ * source means every render path gets it, and a fourth vocabulary cannot
+ * reintroduce it.
+ *
+ * Case- and whitespace-insensitive, because these strings are styled uppercase
+ * and the reader sees no difference between "Awaiting decision" and
+ * "AWAITING DECISION".
+ */
+export type EyebrowRole = 'outcome' | 'reason' | 'verdict'
+
+export interface EyebrowLabel {
+  role: EyebrowRole
+  text: string
+  /**
+   * Whether this label is the unreviewed state -- the one condition on a
+   * committed record that asks the reader for something, and so the only one
+   * the eyebrow tints. Survives dedupe: when the reason and the verdict are
+   * the same words, the surviving label still carries the tint the verdict
+   * would have had.
+   */
+  asksForReview: boolean
+}
+
+export function eyebrowLabels(
+  d: DecisionRecord,
+  situation: Pick<ClassedSituation, 'reason'>,
+  facts: OutcomeFacts,
+): EyebrowLabel[] {
+  const verdict = facts.verdictLabel && !facts.reviewed ? facts.verdictLabel : null
+  const candidates: { role: EyebrowRole; text: string | null }[] = [
+    { role: 'outcome', text: OUTCOME_LABEL[outcomeOf(d.status)] },
+    { role: 'reason', text: REASON_LABEL[situation.reason] },
+    { role: 'verdict', text: verdict },
+  ]
+
+  const norm = (s: string) => s.trim().toLowerCase()
+  const verdictKey = verdict ? norm(verdict) : null
+
+  const out: EyebrowLabel[] = []
+  const seen = new Set<string>()
+  for (const c of candidates) {
+    if (!c.text) continue
+    const key = norm(c.text)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ role: c.role, text: c.text, asksForReview: key === verdictKey })
+  }
+  return out
 }
 
 /** How recent a committed decision has to be to fill the lens. */

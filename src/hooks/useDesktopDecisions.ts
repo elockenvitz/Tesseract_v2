@@ -67,7 +67,7 @@ export function useDecisionScan(portfolioId: string | null) {
           trade_queue_items(id, asset_id, origin_metadata, assets(id, symbol, company_name)),
           accepted_trades!decision_requests_accepted_trade_id_fkey(
             id, execution_status, execution_completed_at, executed_by, batch_id,
-            target_weight, delta_weight, notional_value)
+            target_weight, delta_weight, notional_value, price_at_acceptance, delta_shares)
         `)
         .eq('portfolios.organization_id', currentOrgId!)
         .order('reviewed_at', { ascending: false, nullsFirst: false })
@@ -93,7 +93,7 @@ export function useDecisionScan(portfolioId: string | null) {
       const unlinked = rows.filter(r => !r.accepted_trades && needsExecutionFallback(r))
       if (unlinked.length) {
         const { data: trades } = await supabase.from('accepted_trades')
-          .select('id, decision_request_id, portfolio_id, is_active, corrects_accepted_trade_id, execution_status, execution_completed_at, executed_by, batch_id, target_weight, delta_weight, notional_value')
+          .select('id, decision_request_id, portfolio_id, is_active, corrects_accepted_trade_id, execution_status, execution_completed_at, executed_by, batch_id, target_weight, delta_weight, notional_value, price_at_acceptance, delta_shares')
           .in('decision_request_id', unlinked.map(r => r.id))
           .in('portfolio_id', [...new Set(unlinked.map(r => r.portfolio_id))])
         for (const r of unlinked) {
@@ -194,6 +194,8 @@ export function useDecisionScan(portfolioId: string | null) {
                 targetWeight: num(exec.target_weight),
                 deltaWeight: num(exec.delta_weight),
                 notional: num(exec.notional_value),
+                priceAtAcceptance: num(exec.price_at_acceptance),
+                deltaShares: num(exec.delta_shares),
               }
             : null,
 

@@ -86,6 +86,30 @@ const openEngagement = vi.fn()
  * request is still work (lib/pilot/seed-visibility). That rule has its own
  * cases below; everywhere else this suite is about genuine records.
  */
+/*
+ * The tile's price column reads `price_history_cache` through a real
+ * `useQuery`, and this suite renders without a `QueryClientProvider` on
+ * purpose -- it mocks its data hooks instead. Left unmocked, every test in
+ * this file dies on "No QueryClient set" inside `PriceColumn`.
+ *
+ * Per test, because the closes are no longer only the chart's business: the
+ * tile's headline percentage is measured from them too, and whether a record
+ * earns the hero slot depends on whether there is a move to draw. A test
+ * about sizing has to be able to say "this name has no stored closes".
+ *
+ * `A_YEAR_RISING` is the default -- dated closes reaching back a year, so the
+ * reaches-the-anchor guard is satisfied and a real series renders.
+ */
+const A_YEAR_RISING = Array.from({ length: 300 }, (_, i) => ({
+  date: new Date(Date.now() - (299 - i) * 86_400_000),
+  value: 100 + i * 0.08,
+}))
+let tileCloses: { date: Date; value: number }[] = A_YEAR_RISING
+
+vi.mock('../../hooks/useDecisionTileCloses', () => ({
+  useDecisionTileCloses: () => ({ data: tileCloses, isLoading: false }),
+}))
+
 vi.mock('../../hooks/usePilotProgress', () => ({
   usePilotProgress: () => ({ hasGraduated: pilot.graduated, cachedHasGraduated: false }),
 }))
@@ -117,6 +141,7 @@ beforeEach(() => {
   decisions = []
   outcomeFacts = {}
   batchPnls = {}
+  tileCloses = A_YEAR_RISING
   pilot.graduated = false
   detail = {}
   scanError = null
@@ -520,7 +545,19 @@ describe('three classes, ranked', () => {
     expect(tiles).toHaveLength(1)
     expect(within(tiles[0]).getByText('MSFT')).toBeInTheDocument()
     expect(within(tiles[0]).getByTestId('decision-reason')).toHaveTextContent('Committed')
-    expect(within(tiles[0]).getByText('Executed')).toBeInTheDocument()
+    /*
+     * What the record actually knows, on the one strip that now carries it.
+     *
+     * This previously asserted the word "Executed", which this fixture never
+     * earned: it carries no `execution` object at all, so the old assertion
+     * was matching that word somewhere else on the card. The strip states the
+     * ask, the dollar proxy and the age -- which is the point of the test:
+     * a committed decision renders as a record instead of an empty lens.
+     */
+    const figures = within(tiles[0]).getByTestId('decision-figures')
+    expect(figures).toHaveTextContent(/asked for/i)
+    // P&L is a LEAD figure now, at the same weight as the percentage.
+    expect(within(tiles[0]).getByTestId('decision-lead-pnl')).toHaveTextContent('P&L')
   })
 
   it('ranks work above the record, whatever the record carries', () => {
@@ -588,23 +625,45 @@ describe('what happened, in Outcomes’ own numbers', () => {
     ...over,
   })
 
-  it('states the move since the decision, the dollar proxy and where the review stands', () => {
+  /*
+   * ── The headline is measured from the closes, not from the snapshot ──────
+   *
+   * `facts.sincePct` is `move_since_decision_pct`, computed upstream against
+   * `submission_snapshot.price` -- which inherits the sizing price, and that
+   * price is `baseline?.price || 100` whenever the quote provider fails. So
+   * on a real trade it reported roughly +1050%: LLY filled at 1152.44 and the
+   * arithmetic was done against 100.
+   *
+   * The tile now measures the same dated closes the chart beside it draws.
+   * That is the invariant these cases assert: the number and the line are the
+   * same arithmetic on the same rows, so the reader can check one against the
+   * other.
+   */
+  it('measures the headline from the closes, not from the snapshot price', () => {
     decisions = [committed()]
+    // A fill two days back, and closes that rose 10% over those two days.
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: 50 },
+      { date: new Date(Date.now() - 2 * DAY), value: 100 },
+      { date: new Date(Date.now() - 1 * DAY), value: 105 },
+      { date: new Date(Date.now()), value: 110 },
+    ]
     outcomeFacts = {
-      // `sinceDated`: the move was measured to a price carrying a date. The
-      // lens leads with the figure only then -- see the suppression case below.
       'tq-c1': {
         ...NO_OUTCOME_FACTS, executed: true,
-        sincePct: -0.8, sinceBasis: 'decision', sinceDated: true,
+        // The corrupt figure. It must not reach the screen.
+        sincePct: 1052.4, sinceBasis: 'decision', sinceDated: true,
         pnl: -670, verdictLabel: 'Outcome not reviewed',
       },
     }
     render(<DecisionsWorkspace />)
     const tile = screen.getByTestId('decision-tile')
-    // The lead figure is the move; the strip carries the dollars.
-    expect(tile).toHaveTextContent('-0.8')
-    expect(tile).toHaveTextContent('since the decision')
-    expect(within(tile).getByTestId('decision-figures')).toHaveTextContent('−$670 P&L')
+    // 100 -> 110 across the window that starts at the fill.
+    expect(within(tile).getByTestId('decision-lead-move')).toHaveTextContent('+10.00%')
+    expect(tile.textContent).not.toContain('1052')
+    // Named by the date the window starts from, which is the fill.
+    expect(tile).toHaveTextContent(/since it filled/i)
+    expect(within(tile).getByTestId('decision-lead-pnl')).toHaveTextContent('−$670')
     // The class already says the outcome is unreviewed; the strip says which
     // record carries a reason, so the two are not read as one contradiction.
     expect(screen.getByTestId('decision-reason')).toHaveTextContent('Outcome not reviewed')
@@ -640,7 +699,7 @@ describe('what happened, in Outcomes’ own numbers', () => {
     expect(tile.textContent).not.toContain('-23.1')
     // The rest of the record still reads: suppressing one figure is not
     // blanking the card.
-    expect(within(tile).getByTestId('decision-figures')).toHaveTextContent('−$670 P&L')
+    expect(within(tile).getByTestId('decision-lead-pnl')).toHaveTextContent('−$670')
   })
 
   /* A move with no captured decision price is the move since the FILL. That
@@ -656,8 +715,9 @@ describe('what happened, in Outcomes’ own numbers', () => {
     }
     render(<DecisionsWorkspace />)
     const tile = screen.getByTestId('decision-tile')
-    expect(tile).toHaveTextContent('since it filled')
-    expect(tile.textContent).not.toContain('since the decision')
+    // Sentence-cased as a caption under the figure now.
+    expect(tile).toHaveTextContent(/since it filled/i)
+    expect(tile.textContent).not.toMatch(/since the decision/i)
   })
 
   it('says nothing where Outcomes knows nothing', () => {
@@ -719,15 +779,97 @@ describe('the card answers what we decided and what happened', () => {
     // in the eyebrow and the people are in the footer.
     const context = within(tile).getByTestId('decision-context').textContent ?? ''
     expect(context).toContain('Tech & Consumer Growth')
-    expect(context).toContain('committed in 1 buy · 09/15/2026')
+    /* The batch's own auto-generated name is not context for the trade: on a
+       batch called "testing" this line read "committed in testing". The batch
+       is named in its own block below; this line carries the book. */
+    expect(context).not.toContain('committed in')
     expect(tile.textContent!.match(/Tech & Consumer Growth/g)).toHaveLength(1)
     // What was actually committed, in the trade's own recorded figures, in
     // the same metric strip the other lenses use.
+    /*
+     * Captioned, two decimals, and each unit named.
+     *
+     * "6.4% target" and "+0.25% change" put a WEIGHT and a DIFFERENCE of
+     * weights in the same unit: the change is percentage points, not a
+     * percent of anything. And one decimal on a portfolio weight hides the
+     * distinction between 6.35 and 6.44.
+     */
     const figures = within(tile).getByTestId('decision-figures')
-    expect(figures).toHaveTextContent('6.4% target')
-    expect(figures).toHaveTextContent('+0.25% change')
-    expect(figures).toHaveTextContent('$84K committed')
+    expect(figures).toHaveTextContent('Target weight')
+    expect(figures).toHaveTextContent('6.39%')
+    expect(figures).toHaveTextContent('Trade')
+    expect(figures).toHaveTextContent('+0.25 pp')
+    expect(figures).toHaveTextContent('Dollar basis')
+    expect(figures).toHaveTextContent('$84K')
     expect(tile).toHaveTextContent('Added on the cloud reacceleration.')
+  })
+
+  /*
+   * ── A price nobody paid does not get shown ───────────────────────────────
+   *
+   * `accepted_trades.price_at_acceptance` comes from the sizing computation,
+   * whose price is `baseline?.price || 100` in SimulationPage when the quote
+   * provider fails -- and a circuit breaker then keeps the provider off for
+   * the rest of the session, so it is 100 for every trade after the first
+   * failure. Live rows: META 100 against a real close of 682.31, V 100
+   * against 369.93, PLTR 100 against 176.24, LLY 100 against 1152.44.
+   *
+   * The closes are the check. A fill booked at 100 on a day the name closed
+   * at 1152 is not a stale quote, and `notional_value` is
+   * `(weight/100) * total / price` on that same number, so neither figure
+   * describes the trade.
+   */
+  it('withholds a commit price the closes contradict, and says so', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: 1150 },
+      { date: new Date(Date.now() - 2 * DAY), value: 1152.44 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1160 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric',
+        targetWeight: 6.39, deltaWeight: 0.25, notional: 84186.48,
+        priceAtAcceptance: 100, deltaShares: 841,
+      },
+    })]
+    render(<DecisionsWorkspace />)
+    const figures = within(screen.getByTestId('decision-tile')).getByTestId('decision-figures')
+    expect(within(figures).getByTestId('decision-basis-untrusted')).toBeInTheDocument()
+    expect(figures.textContent).not.toContain('$100.00')
+    // The share count and the notional are the same arithmetic on that price.
+    expect(figures.textContent).not.toContain('841')
+    expect(figures.textContent).not.toContain('$84K')
+  })
+
+  it('shows a commit price the closes agree with', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: 418 },
+      { date: new Date(Date.now() - 2 * DAY), value: 420.5 },
+      { date: new Date(Date.now() - 1 * DAY), value: 425 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric',
+        targetWeight: 6.39, deltaWeight: 0.25, notional: 84186.48,
+        priceAtAcceptance: 419.75, deltaShares: 200,
+      },
+    })]
+    render(<DecisionsWorkspace />)
+    const figures = within(screen.getByTestId('decision-tile')).getByTestId('decision-figures')
+    expect(figures).toHaveTextContent('$419.75')
+    expect(figures).toHaveTextContent('200 sh')
+    expect(figures).toHaveTextContent('$84K')
+    expect(within(figures).queryByTestId('decision-basis-untrusted')).toBeNull()
+  })
+
+  /* Unproven is not disproven: a row that never recorded a price was not
+     written by the failing path, so its dollar basis still stands. */
+  it('keeps the dollar basis where no commit price was recorded at all', () => {
+    decisions = [executed()]
+    render(<DecisionsWorkspace />)
+    const figures = within(screen.getByTestId('decision-tile')).getByTestId('decision-figures')
+    expect(figures).toHaveTextContent('$84K')
+    expect(within(figures).queryByTestId('decision-basis-untrusted')).toBeNull()
   })
 
   it('quotes a one-trade batch’s own sentence as that trade’s reason', () => {
@@ -746,12 +888,12 @@ describe('the card answers what we decided and what happened', () => {
     // which on a committed decision is neither current nor target.
     expect(screen.queryByTestId('decision-size')).not.toBeInTheDocument()
     /*
-     * The path takes its place. It was dead code until Phase 2A -- written for
-     * this lens, never imported by it -- and a decided record is exactly what
-     * it is about: requested -> decided -> executed, with days to answer and
-     * days to fill on its own legs. One visual per tile, so the rail goes.
+     * A real object takes its place. The price column wins the slot wherever a
+     * dated series reaches the fill -- "what has it done since" is the question
+     * this lens is asked -- and the requested/decided/executed track is the
+     * fallback for records with no series.
      */
-    expect(screen.getByTestId('decision-path')).toBeInTheDocument()
+    expect(screen.getByTestId('decision-price-column')).toBeInTheDocument()
   })
 
   it('keeps the rail where it draws a real change: an undecided request', () => {
@@ -1351,6 +1493,9 @@ describe('the hero slot is earned by having something to fill it', () => {
       requestedAt: '2026-09-10T10:00:00Z',
       decidedAt: '2026-09-14T10:00:00Z',
       execution: { id: 'e', status: 'completed', completedAt: '2026-09-14T10:00:00Z', executedByName: 'PM' },
+      // No symbol, so no price series and no price column. The track is the
+      // FALLBACK object, and this is what still exercises it.
+      symbol: null,
     })]
     render(<DecisionsWorkspace />)
     expect(screen.getByTestId('decision-path')).toBeInTheDocument()
@@ -1360,6 +1505,10 @@ describe('the hero slot is earned by having something to fill it', () => {
      `large`, which is the same width and less height. Order is untouched. */
   it('demotes the newest record out of hero when it has no object to draw', () => {
     const sameDay = '2026-09-15T10:00:00Z'
+    // Nothing cached for the name, so there is no move and no chart either --
+    // which is the real case this covers: COIN, CLOV, CROX, GH, LRCX, PARA
+    // and TGT all have zero rows in `price_history_cache`.
+    tileCloses = []
     decisions = [committed({
       requestedAt: sameDay, decidedAt: sameDay,
       sizingWeight: null, baselineWeight: null,
@@ -1381,6 +1530,7 @@ describe('the hero slot is earned by having something to fill it', () => {
   /* Demotion must not reorder: the newest record is still the first tile. */
   it('changes how much room the newest record gets, never which record is newest', () => {
     const sameDay = '2026-09-15T10:00:00Z'
+    tileCloses = []
     decisions = [
       committed({ id: 'new', ideaId: 'tq-new', requestedAt: sameDay, decidedAt: sameDay,
         sizingWeight: null, baselineWeight: null,

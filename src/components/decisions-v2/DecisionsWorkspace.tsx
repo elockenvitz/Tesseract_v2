@@ -32,7 +32,7 @@ import {
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
 import {
-  classifySituations, selectForLens, lensSentence, REASON_LABEL,
+  classifySituations, selectForLens, lensSentence, eyebrowLabels,
   type ClassedSituation, type OutcomeFacts,
 } from '../../lib/desktop-decisions/classes'
 import { openOutcomesFor, openTradeBookFor } from '../../lib/desktop-decisions/navigate'
@@ -50,7 +50,12 @@ import { EYEBROW } from '../desktop/DesktopModule'
 import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
-import { OUTCOME_INK, DecisionSize, RecordGaps, DecisionPath } from './DecisionVisual'
+import { OUTCOME_INK, DecisionSize, RecordGaps, DecisionPath, PriceSinceFill } from './DecisionVisual'
+import { useDecisionTileCloses } from '../../hooks/useDecisionTileCloses'
+/* The shared slicer. Decisions measures its headline with the same function
+   Research measures its stale-thesis chart with, so "since the fill" cannot
+   mean one window here and another there. */
+import { anchoredWindow } from '../research-v2/ResearchVisual'
 
 export interface DecisionsWorkspaceProps {
   selectedPortfolioId?: string | null
@@ -463,31 +468,58 @@ function BookFilter({
 
 /* ------------------------------------------------------------------- index */
 
-/**
- * The outcome, as ink on the card's own ground.
- *
- * It was a rounded, filled, bordered badge on every tile -- the treatment
- * Ideas removed and Today lost with it, because a gallery of filled pills
- * reads as a queue of tagged records rather than a set of decisions somebody
- * made. Two of the five variants carried a background AND a border AND a
- * dashed border to say what the word already said.
- *
- * The distinctions survive in `OUTCOME_INK`, because telling them apart is
- * the point of this lens.
+/*
+ * The outcome is ink on the card's own ground, never a filled badge -- the
+ * treatment Ideas removed, because a gallery of filled pills reads as a queue
+ * of tagged records rather than a set of decisions somebody made. The
+ * distinctions survive in `OUTCOME_INK`, because telling them apart is the
+ * point of this lens. It renders inside `DecisionEyebrow` now, so it can be
+ * dropped when the reason already says the same word.
  */
-function OutcomeChip({ decision, small }: { decision: DecisionRecord; small?: boolean }) {
-  const kind = outcomeOf(decision.status)
-  return (
-    <span className={clsx(
-      'font-medium uppercase tracking-[0.08em]',
-      small ? 'text-[9px]' : 'text-[10px]',
-      OUTCOME_INK[kind],
-    )}>
-      {OUTCOME_LABEL[kind]}
-    </span>
-  )
-}
 
+/**
+ * The eyebrow: where the decision stands, said once.
+ *
+ * Both render paths -- the two-column composition at hero/large and the
+ * stacked body at medium/compact -- mount THIS, so a label collision cannot
+ * be fixed on one and left on the other. That is how "Outcome not reviewed"
+ * shipped twice: patched inline in the composed path while the stacked path
+ * kept printing it, and "Awaiting decision" then collided the same way on
+ * both.
+ *
+ * The ordering and the deduplication live in `eyebrowLabels`; this decides
+ * only how each surviving label is inked. The outcome is the quietest (it is
+ * the filing state), the reason carries the class's tone, and whichever label
+ * turns out to be the unreviewed verdict gets the one tinted chip -- because
+ * that is the only state here that asks the reader to do something.
+ */
+function DecisionEyebrow({ d, situation, facts }: {
+  d: DecisionRecord
+  situation: ClassedSituation
+  facts: OutcomeFacts
+}) {
+  const chip = 'rounded-[3px] bg-amber-50 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-950/40 dark:text-amber-400'
+  return <>
+    {eyebrowLabels(d, situation, facts).map(l => (
+      <span
+        key={l.role}
+        data-testid={l.role === 'reason' ? 'decision-reason' : `decision-${l.role}`}
+        className={clsx(
+          l.asksForReview ? chip
+            : l.role === 'outcome'
+              ? clsx('font-medium uppercase tracking-[0.08em] text-[9px]', OUTCOME_INK[outcomeOf(d.status)])
+              : clsx('text-[10px] font-semibold uppercase tracking-[0.1em]',
+                  situation.klass === 'action' ? 'text-amber-700 dark:text-amber-500'
+                  : situation.klass === 'revisit' ? 'text-slate-600 dark:text-slate-300'
+                  : 'text-gray-500'),
+        )}
+        {...(l.asksForReview ? { 'data-verdict': 'unreviewed' } : {})}
+      >
+        {l.text}
+      </span>
+    ))}
+  </>
+}
 
 /**
  * One line of the index.
@@ -585,6 +617,30 @@ function DecisionTile({
 }) {
   const d = decision
   const outcome = outcomeOf(d.status)
+  /*
+   * ── One dated series, read once, for everything that makes a claim ───────
+   *
+   * The chart used to fetch these itself, inside `PriceColumn`. That left the
+   * tile with TWO price stories that could disagree: the chart measured from
+   * the stored closes, while the headline percentage came from
+   * `move_since_decision_pct`, computed upstream against
+   * `submission_snapshot.price`. On a decision whose stored commit price is
+   * the 100 placeholder, the snapshot route produced roughly +1050% while the
+   * closes said the name had not moved at all since the fill.
+   *
+   * So the closes are read HERE, and the headline, the chart and the basis
+   * check all read that one window. Agreement stops being something to keep
+   * in sync and becomes structural.
+   *
+   * Unconditional, above every early return, because it is a hook. Medium and
+   * compact tiles pay one cached query for a symbol the gallery is very likely
+   * already asking about -- the hook's key is the symbol alone and its
+   * staleTime is five minutes, so a gallery of tiles on the same name shares
+   * a single request.
+   */
+  const { data: closesData, isLoading: closesLoading, error: closesError } =
+    useDecisionTileCloses(d.symbol)
+  const closes = closesData ?? []
   /** Which of the two jobs this card is here for. */
   const work = workOf(d)
   /** More than one execution leg under one committed act. */
@@ -627,8 +683,39 @@ function DecisionTile({
    * about a real date. (1) is suppressed: a number nobody can date does not
    * get to be the largest thing on the card. It still appears in the quiet
    * strip below, where its size does not claim confidence.
+   *
+   *   3. computed from a price nobody paid. `move_since_decision_pct` is
+   *      measured against `submission_snapshot.price`, which inherits the
+   *      sizing price -- and that price is `baseline?.price || 100` when the
+   *      quote provider fails, so it is the literal 100 on every new position
+   *      booked during an outage. LLY filled at a real 1152.44 and the tile
+   *      reported roughly +1050%: not a stale number, a number about a trade
+   *      that never happened.
+   *
+   * (3) is why the headline now measures from the CLOSES -- the same dated
+   * series the chart beside it draws. `priceWindow` is that measurement: it
+   * starts at the first close on or after the anchor and ends at the newest
+   * one, so both halves of the tile are the same arithmetic on the same rows
+   * and neither can be right while the other is wrong.
+   *
+   * `facts.sincePct` is not consulted for the headline any more. It stays the
+   * source for Outcomes, which owns the judgement; the tile's job is to show
+   * a move the reader can check against the line next to it.
    */
-  const leadMove = facts.sinceDated ? facts.sincePct : null
+  const anchorISO = d.execution?.completedAt ?? d.decidedAt ?? null
+  const priceWindow = anchoredWindow(
+    closes.map(p => ({ date: p.date.toISOString(), close: p.value })),
+    anchorISO,
+  )
+  /*
+   * Only a window that actually REACHES the anchor may make a since-claim.
+   * Where the cache starts after the fill there is a line worth drawing but no
+   * "since the fill" to say about it, and the chart captions itself "price
+   * over available history" instead. A percentage over a window whose start
+   * has nothing to do with this decision is not a smaller truth, it is a
+   * different one.
+   */
+  const leadMove = priceWindow?.reachesAnchor ? priceWindow.changePct : null
 
   /*
    * ── When the track earns the slot ────────────────────────────────────────
@@ -676,10 +763,387 @@ function DecisionTile({
   const size: TileSize = bandSize === 'hero' && !earnsHero ? 'large' : bandSize
 
   const big = size === 'hero' || size === 'large'
+  /* The giant figure is a HERO device. At `large` it was a 40px block plus two
+     gaps for one number the strip already had room for, which is most of the
+     dead space this tile was carrying. Large routes it into the strip. */
+  const leadsMove = size === 'hero' && !batched && leadMove != null
+
+  /*
+   * ── Does the stored commit price describe this trade at all? ──────────────
+   *
+   * `accepted_trades.price_at_acceptance` comes from the sizing computation,
+   * whose price is `baseline?.price || 100` (SimulationPage) when the quote
+   * provider fails. A new position booked during a provider outage therefore
+   * stores 100, and a circuit breaker keeps the provider off for the rest of
+   * the session, so it is 100 for every trade after the first failure. Live
+   * rows confirm it: META 100 against a real close of 682.31, V 100 against
+   * 369.93, PLTR 100 against 176.24, LLY 100 against 1152.44.
+   *
+   * Everything computed from that price inherits it -- `delta_shares`,
+   * `target_shares`, `delta_weight` and `notional_value` are all
+   * `(weight/100) * total / price`, so META's share count is inflated 6.82x
+   * and its notional with it. There is no separate honest figure among them
+   * to rescue.
+   *
+   * The closes settle it. A fill price should sit near the close on the day
+   * it filled; a fill booked at 100 against a 1152 close is not a stale
+   * quote or a rounding difference, it is a price nobody paid. So the tile
+   * asks that question before showing any figure that depends on the answer,
+   * and where the answer is no it shows none of them and says why.
+   *
+   * The band is deliberately wide. The point is not to police a spread, it is
+   * to catch a fabricated number -- and a real intraday fill can legitimately
+   * sit well off the close on a gap day. Half to double the close passes;
+   * one-eleventh of it does not.
+   */
+  const anchorClose = (() => {
+    if (!anchorISO || closes.length === 0) return null
+    const at = Date.parse(anchorISO)
+    if (!Number.isFinite(at)) return null
+    // The close on the fill day, or the nearest one before it.
+    let found: number | null = null
+    for (const p of closes) {
+      if (p.date.getTime() <= at) found = p.value
+      else break
+    }
+    return found ?? closes[0].value
+  })()
+  const commitPrice = d.execution?.priceAtAcceptance ?? null
+  /**
+   * Three states, because "we cannot check" is not "it is wrong".
+   *
+   *   ok      -- the commit price sits near the close on the day it filled.
+   *   bad     -- it does not, so it is a price nobody paid, and everything
+   *              computed from it is fiction.
+   *   unknown -- there is nothing to check against: no commit price recorded,
+   *              or no close on that date.
+   *
+   * The distinction matters for the dollar basis. A row with NO commit price
+   * was not written by the failing path -- the same computed object supplies
+   * the price and the notional together, so a corrupted row always carries
+   * the price too, set to 100. Absence is the ordinary historical case, so
+   * the notional still shows. It is only withheld where the price it came
+   * from is demonstrably fabricated.
+   */
+  const basis: 'ok' | 'bad' | 'unknown' =
+    commitPrice == null || commitPrice <= 0 || anchorClose == null || anchorClose <= 0
+      ? 'unknown'
+      : commitPrice / anchorClose >= 0.5 && commitPrice / anchorClose <= 2
+        ? 'ok'
+        : 'bad'
+
+  /* The fill is what the chart is "since". Where nothing filled, the decision
+     is the next-best real date; where neither exists there is no anchor and no
+     chart. Batches are several names and have no one series. */
+  const priceAnchor = batched ? null : (d.execution?.completedAt ?? d.decidedAt ?? null)
+  const priceAnchorLabel = d.execution?.completedAt ? 'Filled' : 'Decided'
+  const drawsPrice = big && priceAnchor != null && !!d.symbol
   /* Whether the track is this tile's one visual. Named once, because the
      visual slot and the figures strip have to agree: what the track draws,
      the words stop saying. */
   const drawsPath = big && objectCandidates.path
+
+  /*
+   * ── A composed tile at hero and large, not the stack with a chart under it ─
+   *
+   * The stacked body below answers this lens's question in eleven rows read
+   * top to bottom, which is right at medium and compact where there is one
+   * column and little room. At hero and large it left the card tall, thin down
+   * the middle and padded at the bottom -- and putting the price chart in the
+   * bottom slot made it taller rather than denser.
+   *
+   * So the big sizes get their own composition: the record on the left, the
+   * price on the right, side by side at one height. Same data, same shelf,
+   * same tone -- a different arrangement of it, and only where the width
+   * exists to justify one. Medium and compact fall through to the stack
+   * untouched.
+   */
+  /*
+   * Single trades only, deliberately.
+   *
+   * A batch is several names, so it has no one price series to put in the
+   * right column and its legs, description and explained-count are the
+   * content -- which is exactly what the stacked body is good at. Composing
+   * it side by side would spend the width on an empty panel.
+   */
+  if (big && !batched) {
+    const e = d.execution
+    const fig = 'font-mono tabular-nums text-[13px] font-semibold text-gray-900 dark:text-gray-100'
+    const cap = 'text-[9px] font-semibold uppercase tracking-[0.09em] text-gray-400'
+
+    /* Two decimals, and a label that says which quantity it is. "1.0%
+       target" and "+1.00% change" were a weight and a DIFFERENCE of weights
+       wearing the same unit -- the change is percentage POINTS. */
+    const metrics: { cap: string; val: React.ReactNode }[] = []
+    if (e?.targetWeight != null) {
+      metrics.push({ cap: 'Target weight', val: <>{e.targetWeight.toFixed(2)}%</> })
+    }
+    if (e?.deltaWeight != null) {
+      metrics.push({
+        cap: 'Trade',
+        val: <>{e.deltaWeight >= 0 ? '+' : ''}{e.deltaWeight.toFixed(2)} pp</>,
+      })
+    } else if (d.sizingWeight != null) {
+      metrics.push({ cap: 'Asked for', val: <>{d.sizingWeight.toFixed(2)}%</> })
+    }
+    /*
+      ── Dollar basis only, and why there is no per-share basis here ─────────
+
+      `notional_value` is the cash this trade moved. Real, stored at commit,
+      and it is the dollar basis.
+
+      Average cost basis -- the per-share price paid across every share of
+      the name the book holds -- is a POSITION fact, not a trade fact, and
+      this record cannot supply it. `portfolio_holdings.cost` is per-share by
+      design and would be the right source, but it is seeded with the current
+      price: across a random sample of non-cash holdings (META, ADBE, AAPL,
+      SBUX, ALLE, NOW, ZS, AMZN) `cost / price` is exactly 1.000 in every
+      row. Rendering it would put "Average basis $228.50" beside a $228.50
+      price and call it a computed figure.
+
+      `price_at_acceptance` is not it either: that is what ONE commit paid,
+      which is only the average where the position has exactly one trade.
+
+      So the tile shows the basis it has and stays silent about the one it
+      does not -- the same rule that took the undated return off the hero.
+    */
+    /*
+      Both of these are `(weight/100) * total / price` on the sizing price, so
+      they stand or fall together with `basisTrusted`. Where it fails the tile
+      shows neither and names the reason -- a wrong dollar figure on a trade
+      record is worse than a missing one, because the reader has no way to
+      tell it is wrong.
+    */
+    if (basis !== 'bad' && e?.notional != null) {
+      metrics.push({ cap: 'Dollar basis', val: <>{formatCompactDollars(Math.abs(e.notional))}</> })
+    }
+    if (basis === 'ok' && commitPrice != null) {
+      metrics.push({
+        cap: 'Paid at commit',
+        val: <>${commitPrice.toFixed(2)}{e?.deltaShares ? <span className="text-gray-500"> · {Math.abs(e.deltaShares).toLocaleString()} sh</span> : null}</>,
+      })
+    } else if (basis === 'bad') {
+      /* Named, not silently dropped. A trade record missing its price reads
+         as an incomplete record; one that silently drops a price it DOES hold
+         because that price is wrong reads as a bug. This says which. */
+      metrics.push({
+        cap: 'Paid at commit',
+        val: (
+          <span data-testid="decision-basis-untrusted" className="text-[11px] font-medium text-amber-700 dark:text-amber-500">
+            not recorded
+          </span>
+        ),
+      })
+    }
+    if (when) {
+      metrics.push({
+        cap: e?.completedAt ? 'Filled' : 'Decided',
+        val: <>{shortDate(e?.completedAt ?? when)}{daysSince(when) != null ? ` · ${daysSince(when)}d ago` : ''}</>,
+      })
+    }
+
+    return (
+      <DesktopTile
+        testId="decision-tile"
+        dataAttrs={{
+          'data-outcome': outcome,
+          'data-memory': humanReason ? 'reasoned' : proposedReason ? 'proposed' : 'recorded',
+          'data-subject': situation.subject,
+          'data-legs': String(situation.legs.length),
+          'data-composed': 'two-column',
+        }}
+        tone={outcome === 'open' ? 'review' : 'neutral'}
+        size={size}
+        flow="chronological"
+        onOpen={onOpen}
+        eyebrow={<DecisionEyebrow d={d} situation={situation} facts={facts} />}
+        context={
+          <span data-testid="decision-next">
+            {facts.reviewed ? 'Reviewed in Outcomes' : 'Review outcome →'}
+          </span>
+        }
+        actions={<>
+          {d.ideaId && (
+            <ShelfAction
+              testId="decision-review-outcome"
+              label={facts.reviewed ? 'View review' : 'Review outcome'}
+              onClick={() => openOutcomesFor(d)}
+              primary
+            />
+          )}
+          {(situation.batch || d.execution) && (
+            <ShelfAction
+              testId="decision-open-trade-book"
+              label={situation.batch ? 'Open batch in Trade Book' : 'Open in Trade Book'}
+              onClick={() => openTradeBookFor({ ...d, batch: situation.batch })}
+            />
+          )}
+        </>}
+      >
+        <div data-testid="decision-composed" className="flex min-w-0 gap-4">
+          {/* ── The record ───────────────────────────────────────────────── */}
+          <div className="flex min-w-0 shrink-0 basis-[55%] flex-col gap-2">
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-[22px] font-black leading-none tracking-[-0.03em]">
+                  {d.symbol ?? situation.batch?.name ?? '—'}
+                </span>
+                {/*
+                  The stance sits at the ticker's own weight, not a footnote
+                  beside it. At 10px against a 22px ticker it read as
+                  metadata; BUY and SELL are the single most important word
+                  on a decision card, so they are sized to be read at the
+                  same glance as the name they apply to.
+                */}
+                {d.action && (
+                  <span
+                    data-testid="decision-stance"
+                    className={clsx(
+                      'shrink-0 rounded px-2 py-0.5 font-mono text-[15px] font-black uppercase leading-none tracking-wide',
+                      /^(buy|add)$/i.test(d.action)
+                        ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
+                        : /^(sell|trim)$/i.test(d.action)
+                          ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400'
+                          : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300',
+                    )}
+                  >
+                    {d.action}
+                  </span>
+                )}
+              </div>
+              {d.companyName && (
+                <div className="truncate text-[12px] text-gray-500">{d.companyName}</div>
+              )}
+              {/* The book. Never the batch's own auto-generated name. */}
+              <div data-testid="decision-context" className="truncate text-[11px] text-gray-500">
+                {d.portfolioName}
+              </div>
+            </div>
+
+            {/*
+              The move, where it is trustworthy, as the left column's figure.
+
+              Coloured, because a return has a direction and this is the one
+              number on the card that carries one. Labelled by what it
+              actually measures -- the fill, or the decision -- and absent
+              entirely when the price behind it carries no date.
+            */}
+            {(leadMove != null || facts.pnl != null) && (
+              <div data-testid="decision-lead-move" className="flex flex-wrap items-end gap-x-9 gap-y-2">
+                {leadMove != null && (
+                  <div>
+                    <span className={clsx(
+                      'font-mono text-[26px] font-bold leading-none tabular-nums',
+                      leadMove >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400',
+                    )}>
+                      {leadMove >= 0 ? '+' : ''}{leadMove.toFixed(2)}%
+                    </span>
+                    {/* Named by the date the WINDOW starts from, which is the
+                        anchor the chart beside it also uses -- not
+                        `facts.sinceBasis`, which describes a different
+                        measurement the headline no longer makes. */}
+                    <div className={cap}>
+                      {d.execution?.completedAt ? 'Since it filled' : 'Since the decision'}
+                    </div>
+                  </div>
+                )}
+                {/*
+                  The dollars, at the same weight as the percentage.
+
+                  A return and the money it made or lost are the same finding
+                  measured two ways, and one of them was 10px grey in a strip
+                  of metadata while the other was 26px and coloured. On a desk
+                  the dollars are usually the half that gets said out loud.
+                */}
+                {facts.pnl != null && (
+                  <div data-testid="decision-lead-pnl">
+                    <span className={clsx(
+                      'font-mono text-[26px] font-bold leading-none tabular-nums',
+                      facts.pnl > 0 ? 'text-emerald-700 dark:text-emerald-400'
+                        : facts.pnl < 0 ? 'text-rose-700 dark:text-rose-400'
+                        : 'text-gray-700 dark:text-gray-300',
+                    )}>
+                      {formatCompactDollars(facts.pnl, facts.pnl > 0 ? '+' : facts.pnl < 0 ? '−' : '')}
+                    </span>
+                    <div className={cap}>P&amp;L</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Two lines, and the reader opens the record for the rest. */}
+            {(reason || proposedReason) && (
+              <p
+                data-testid="decision-rationale"
+                className="line-clamp-2 text-[12px] leading-snug text-gray-700 dark:text-gray-300"
+              >
+                {reason ?? proposedReason}
+              </p>
+            )}
+            {!reason && !proposedReason && (
+              <p className="text-[12px] text-amber-700 dark:text-amber-500">No decision reason</p>
+            )}
+
+            {/* Readable figures, captioned, in a grid rather than a run-on
+                strip of microtext joined by middots. */}
+            {metrics.length > 0 && (
+              <div data-testid="decision-figures" className="mt-auto grid grid-cols-2 gap-x-4 gap-y-1.5">
+                {metrics.map(m => (
+                  <div key={m.cap} className="min-w-0">
+                    <div className={cap}>{m.cap}</div>
+                    <div className={clsx(fig, 'truncate')}>{m.val}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── The price ────────────────────────────────────────────────── */}
+          <div className="flex min-w-0 flex-1 flex-col justify-center">
+            {drawsPrice ? (
+              /* Taller than the left column needs, deliberately: the record
+                 stops after four short rows and the remaining height was
+                 empty ground. The chart is the one element here that gets
+                 better with vertical room -- it is where the price detail
+                 lives -- so it takes the slack instead of the padding. */
+              <PriceColumn
+                symbol={d.symbol!}
+                anchorISO={priceAnchor!}
+                anchorLabel={priceAnchorLabel}
+                height={size === 'hero' ? 200 : 168}
+                points={closes}
+                isLoading={closesLoading}
+                error={closesError}
+              />
+            ) : outcome === 'open' && d.sizingWeight != null && d.baselineWeight != null ? (
+              /* An unanswered request is about the SIZE being asked for, not
+                 about a price since a fill that has not happened. */
+              <DecisionSize
+                from={d.baselineWeight}
+                to={d.sizingWeight}
+                requestedAt={d.requestedAt}
+                decidedAt={d.decidedAt}
+                open
+              />
+            ) : drawsPath ? (
+              <DecisionPath
+                requestedAt={d.requestedAt}
+                decidedAt={d.decidedAt}
+                executedAt={d.execution?.completedAt ?? null}
+                resolved={outcome !== 'open'}
+              />
+            ) : (
+              /* No dated series and no intervals: say so rather than draw a
+                 shape. An empty panel here is information. */
+              <div className="text-[10px] text-gray-400">
+                {d.symbol ? 'No dated prices since this decision' : 'No single price series for a batch'}
+              </div>
+            )}
+          </div>
+        </div>
+      </DesktopTile>
+    )
+  }
 
   return (
     <DesktopTile
@@ -703,21 +1167,11 @@ function DecisionTile({
       flow="chronological"
       onOpen={onOpen}
       eyebrow={<>
-        <OutcomeChip decision={d} small />
-        {/* Why this card is here, in the class's own words: awaiting an
-            answer, owed a reason, unconfirmed, unreviewed, moving against
-            us, or simply what was just committed. */}
-        <span
-          data-testid="decision-reason"
-          className={clsx(
-            'text-[10px] font-semibold uppercase tracking-[0.1em]',
-            situation.klass === 'action' ? 'text-amber-700 dark:text-amber-500'
-              : situation.klass === 'revisit' ? 'text-slate-600 dark:text-slate-300'
-              : 'text-gray-500',
-          )}
-        >
-          {REASON_LABEL[situation.reason]}
-        </span>
+        {/* Where the record stands and why it is in the lens -- each said
+            once. See `DecisionEyebrow`: the outcome and the reason agree far
+            more often than they differ ("Awaiting decision" is both), so the
+            dedupe is structural rather than a check per colliding pair. */}
+        <DecisionEyebrow d={d} situation={situation} facts={facts} />
         {/*
           The stance, inked.
 
@@ -727,19 +1181,8 @@ function DecisionTile({
           same axis, and it is direction rather than severity -- so it does not
           compete with the tone the state chip carries.
         */}
-        {d.action && (
-          <span
-            data-testid="decision-stance"
-            className={clsx(
-              'font-mono text-[10px] font-bold uppercase tracking-wider',
-              /^(buy|add)$/i.test(d.action) ? 'text-emerald-700 dark:text-emerald-400'
-                : /^(sell|trim)$/i.test(d.action) ? 'text-rose-700 dark:text-rose-400'
-                : 'text-gray-500',
-            )}
-          >
-            {d.action}
-          </span>
-        )}
+        {/* The stance moved beside the ticker: it is a fact about the OBJECT,
+            not about where the record stands, and the eyebrow is for state. */}
         <TileFigure>{when ? shortDate(when) : '—'}</TileFigure>
       </>}
       /*
@@ -786,7 +1229,24 @@ function DecisionTile({
           size={size}
         />
       ) : (
-        <TileIdentity symbol={d.symbol} name={d.companyName} size={size} />
+        <div className="flex min-w-0 items-center gap-2">
+          <TileIdentity symbol={d.symbol} name={d.companyName} size={size} />
+          {d.action && (
+            <span
+              data-testid="decision-stance"
+              className={clsx(
+                'shrink-0 rounded-[3px] px-1.5 py-px font-mono text-[10px] font-bold uppercase tracking-wider',
+                /^(buy|add)$/i.test(d.action)
+                  ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
+                  : /^(sell|trim)$/i.test(d.action)
+                    ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400'
+                    : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300',
+              )}
+            >
+              {d.action}
+            </span>
+          )}
+        </div>
       )}
 
       {/*
@@ -799,11 +1259,17 @@ function DecisionTile({
       */}
       {/* The date is in the eyebrow and the people are in the footer; this
           line carries what neither does. */}
+      {/*
+        The book, and nothing else.
+
+        This line used to append "committed in <batch name>", which on a batch
+        called "testing" rendered as "committed in testing" -- an internal
+        label reading as a statement about the trade. The batch is named in the
+        batch block below where it belongs; here the portfolio is the context
+        the reader needs.
+      */}
       <p data-testid="decision-context" className="text-[11px] text-gray-500">
-        {[
-          d.portfolioName,
-          !batched && situation.batch?.name ? `committed in ${situation.batch.name}` : null,
-        ].filter(Boolean).join(' · ')}
+        {d.portfolioName}
       </p>
 
       {/*
@@ -840,7 +1306,7 @@ function DecisionTile({
         proposed weight: the one figure that IS the finding. Here it answers
         "does this deserve another look?". Outcomes' number, never recomputed.
       */}
-      {big && !batched && leadMove != null && (
+      {leadsMove && (
         <TileLead
           figure={`${leadMove >= 0 ? '+' : ''}${leadMove.toFixed(1)}`}
           unit="%"
@@ -864,7 +1330,11 @@ function DecisionTile({
           {(() => {
             const e = d.execution
             const out: React.ReactNode[] = []
-            const strong = 'font-mono font-semibold text-gray-700 dark:text-gray-300'
+            /* The figures are the readable part of this strip and were the
+               same weight and near enough the same grey as the words joining
+               them. Darker and a step up in size, so the numbers carry and the
+               connective text stays quiet around them. */
+            const strong = 'font-mono text-[11px] font-semibold text-gray-900 dark:text-gray-100'
             if (e?.targetWeight != null) out.push(<span key="t"><b className={strong}>{e.targetWeight.toFixed(1)}%</b> target</span>)
             if (big && e?.deltaWeight != null) {
               out.push(<span key="d"><b className={strong}>{e.deltaWeight >= 0 ? '+' : ''}{e.deltaWeight.toFixed(2)}%</b> change</span>)
@@ -880,8 +1350,8 @@ function DecisionTile({
               if (big && d.baselineWeight != null) out.push(<span key="b">{d.baselineWeight.toFixed(1)}% held then</span>)
             }
             // The outcome, wherever the lead has not already carried it.
-            if ((!big || batched) && !batched && facts.sincePct != null) {
-              out.push(<span key="s"><b className={strong}>{facts.sincePct >= 0 ? '+' : ''}{facts.sincePct.toFixed(1)}%</b> since</span>)
+            if (!leadsMove && !batched && leadMove != null) {
+              out.push(<span key="s"><b className={strong}>{leadMove >= 0 ? '+' : ''}{leadMove.toFixed(1)}%</b> {facts.sinceBasis === 'execution' ? 'since fill' : 'since'}</span>)
             }
             // A batch reports dollars only where Outcomes says it may: every
             // leg priced, none counted into a second batch. Never a return.
@@ -889,15 +1359,34 @@ function DecisionTile({
               out.push(<span key="p">{batched ? batchPnl : `${formatCompactDollars(facts.pnl!, facts.pnl! > 0 ? '+' : facts.pnl! < 0 ? '−' : '')} P&L`}</span>)
             }
             if (when && daysSince(when) != null) out.push(<span key="e">{daysSince(when)}d ago</span>)
+            /*
+              The people, on the strip rather than on a row of their own.
+              A second `TileMeta` under the batch block was one more line box
+              and one more gap to carry a name and an execution word that sit
+              perfectly well beside the figures.
+            */
+            if (d.decidedByName) out.push(<span key="w">{d.decidedByName}</span>)
+            if (alsoInBooks > 0) {
+              out.push(<span key="k">also in {alsoInBooks} other book{alsoInBooks === 1 ? '' : 's'}</span>)
+            }
+            if (outcome === 'accepted' && !(drawsPath && d.execution?.completedAt)) {
+              out.push(
+                <span key="x" className={d.execution?.completedAt ? strong : undefined}>
+                  {d.execution?.completedAt ? 'Executed' : d.execution ? 'Execution open' : 'Never executed'}
+                </span>,
+              )
+            }
             return out
           })()}
         </TileMeta>
-      </div>
 
       {/* Where the review stands, and whether anybody wrote why -- said once,
-          and only where the status line above has not already said it. */}
+          and only where the status line above has not already said it.
+
+          Inside the figures block on purpose: as its own child of the tile it
+          collected another `gap-3` above it for one short line. */}
       {(facts.verdictLabel && situation.klass === 'recent') || !hasHumanReason(d) ? (
-        <p data-testid="decision-state" className="text-[11px]">
+        <p data-testid="decision-state" className="mt-1 text-[11px]">
           {/*
             A tinted chip, not grey prose.
 
@@ -927,6 +1416,7 @@ function DecisionTile({
           )}
         </p>
       ) : null}
+      </div>
 
       {/*
         The legs, named. The act asks its question once, and the reader can
@@ -982,7 +1472,16 @@ function DecisionTile({
               </span>
             </div>
 
-            <ul data-testid="batch-legs" className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+            {/* Every leg named is a hero courtesy. At `large` the count above
+                already says how many, and the list was the tallest block on a
+                batch tile -- three legs wrapped to three rows. */}
+            <ul
+              data-testid="batch-legs"
+              className={clsx(
+                'mt-1.5 flex flex-wrap gap-x-4 gap-y-1',
+                size !== 'hero' && 'hidden',
+              )}
+            >
               {situation.legs.map(l => {
                 const explained = !situation.owed.includes(l)
                 return (
@@ -1093,7 +1592,25 @@ function DecisionTile({
         One visual per tile: this replaces the rail on those cards, never
         joins it.
       */}
-      {drawsPath ? (
+      {/*
+        The price column, where a real dated series reaches the fill.
+
+        This is the whitespace the tile was carrying. `usePriceHistory` reads
+        `price_history_cache` -- the canonical dated closes -- and the chart
+        draws nothing unless the window actually reaches the anchor, so an
+        empty right column means "we cannot date this", never a line starting
+        wherever the cache happens to begin.
+      */}
+      {drawsPrice ? (
+        <PriceColumn
+          symbol={d.symbol!}
+          anchorISO={priceAnchor!}
+          anchorLabel={priceAnchorLabel}
+          points={closes}
+          isLoading={closesLoading}
+          error={closesError}
+        />
+      ) : drawsPath ? (
         <TileVisualSlot size={size}>
           <DecisionPath
             requestedAt={d.requestedAt}
@@ -1162,30 +1679,17 @@ function DecisionTile({
         shelf: hidden at rest, revealed on hover AND on keyboard focus, in
         height the tile already reserved.
       */}
-      <TileMeta>
-        {/* The book is named once, on the context line above. */}
-        {d.decidedByName && <span>{d.decidedByName}</span>}
-        {/* One idea decided in several books is a fact about the desk, not
-            about this row -- and it is the reason two near-identical tiles are
-            not a duplicate. */}
-        {alsoInBooks > 0 && (
-          <span>also decided in {alsoInBooks} other book{alsoInBooks === 1 ? '' : 's'}</span>
-        )}
-        {/*
-          Said once. Where `DecisionPath` is drawing the track, its third stop
-          IS the fill -- labelled, dated and measured in days -- so repeating
-          "Executed" in words underneath it was the tile telling the reader the
-          same fact twice. The words survive wherever the track does not draw:
-          smaller tiles, and the two absences the track has no stop for.
-        */}
-        {outcome === 'accepted' && !(drawsPath && d.execution?.completedAt) && (
-          <span className={d.execution?.completedAt
-            ? 'font-semibold text-gray-700 dark:text-gray-300'
-            : 'text-gray-500'}>
-            {d.execution?.completedAt ? 'Executed' : d.execution ? 'Execution open' : 'Never executed'}
-          </span>
-        )}
-      </TileMeta>
+      {/*
+        The closing strip is gone: the decider, the other books and the
+        execution word moved onto the figures strip above, which had room for
+        them. Two `TileMeta` rows separated by the batch block was two line
+        boxes and two gaps for one line of metadata -- the largest single
+        piece of dead space on this tile.
+
+        "Executed" is still suppressed where `DecisionPath` draws the fill,
+        for the same reason as before: its third stop IS that fact, labelled
+        and dated.
+      */}
     </DesktopTile>
   )
 }
@@ -1231,6 +1735,81 @@ function Empty() {
         A decision appears here once someone accepts, declines or defers a
         request against a portfolio.
       </p>
+    </div>
+  )
+}
+
+/**
+ * The tile's price column.
+ *
+ * Its own component so the fetch is a hook in a child rather than a
+ * conditional hook in `DecisionTile`, and so a tile with no anchor pays
+ * nothing: React only mounts this where `drawsPrice` is true.
+ *
+ * `1Y` because a decision is usually months old and the window is trimmed to
+ * the anchor inside the chart; asking for less would leave a long-held
+ * position with a line that does not reach its own fill.
+ */
+function PriceColumn({
+  symbol, anchorISO, anchorLabel, height = 92, points, isLoading, error,
+}: {
+  symbol: string
+  anchorISO: string
+  anchorLabel: string
+  height?: number
+  /*
+   * ── The series is handed in, not fetched here ────────────────────────────
+   *
+   * It used to call `useDecisionTileCloses` itself. That made the chart's
+   * arithmetic private to the chart, so the headline percentage in the left
+   * column could disagree with the line in the right one -- and it did, by
+   * three orders of magnitude, because the headline was measuring against a
+   * sizing price of 100. `DecisionTile` now reads the closes once and both
+   * halves measure the same rows.
+   *
+   * (These are `price_history_cache` closes, not `usePriceHistory`: that hook
+   * calls the `yahoo-chart-proxy` edge function, a live fetch that is
+   * unreachable in local development -- "network refused" in the console --
+   * which is why this column rendered blank for three diagnosis passes.)
+   */
+  points: { date: Date; value: number }[]
+  isLoading: boolean
+  error: unknown
+}) {
+  // Reserved height either way, so the row does not resize when the series
+  // lands -- the same reason `TileVisualSlot` reserves its own. And the space
+  // is never simply blank: where there is nothing to draw it says so, because
+  // an empty half-tile reads as a broken card rather than as missing data.
+  return (
+    <div data-testid="decision-price-column" data-no-portal className="min-w-0">
+      {isLoading ? (
+        <div style={{ height }} className="animate-pulse rounded bg-gray-100 dark:bg-white/5" />
+      ) : (
+        <PriceSinceFill
+          points={points}
+          anchorISO={anchorISO}
+          anchorLabel={anchorLabel}
+          height={height}
+          empty={
+            <div
+              data-testid="decision-price-empty"
+              style={{ height }}
+              className="flex flex-col justify-center gap-1 rounded border border-dashed border-gray-200 px-3 text-[10px] text-gray-400 dark:border-white/10"
+            >
+              <span className="font-semibold uppercase tracking-[0.09em]">
+                {error ? 'Price read failed' : 'No stored closes'}
+              </span>
+              {/* The reason, named. "No data" with no cause is what sent this
+                  column round three diagnosis passes. */}
+              <span className="break-words">
+                {error ? (error as Error).message
+                  : points.length === 0 ? `Nothing cached for ${symbol}`
+                  : `${points.length} closes, first ${points[0].date.toISOString().slice(0, 10)} — after this ${anchorLabel.toLowerCase()} (${anchorISO.slice(0, 10)})`}
+              </span>
+            </div>
+          }
+        />
+      )}
     </div>
   )
 }

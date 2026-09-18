@@ -36,6 +36,10 @@ export interface AnchoredWindow {
   changePct: number
   reachesAnchor: boolean
   days: number
+  /** ISO date of the window's first close -- its x-axis origin. */
+  from: string
+  /** ISO date of the window's last close -- its x-axis end. */
+  to: string
 }
 
 /**
@@ -56,9 +60,25 @@ export function anchoredWindow(
   const first = Date.parse(history[0].date)
   const reachesAnchor = hasAnchor && Number.isFinite(first) && first <= anchor
 
-  const startIndex = reachesAnchor
-    ? Math.max(0, history.findIndex(p => Date.parse(p.date) >= anchor))
-    : 0
+  /*
+   * ── `findIndex` returning -1 is not "start at zero" ──────────────────────
+   *
+   * `Math.max(0, -1)` is 0, so when NO close sits at or after the anchor the
+   * slice silently became the whole history while `reachesAnchor` stayed
+   * true. The caller then captioned a year-long line "364d since filled"
+   * about a fill from yesterday -- a full-history window wearing a
+   * since-anchor claim, which is exactly what this function exists to
+   * prevent.
+   *
+   * A thesis reviewed today hits the same path, so this was wrong for
+   * Research too, not only for the decision tile that surfaced it.
+   */
+  const anchorIdx = reachesAnchor
+    ? history.findIndex(p => Date.parse(p.date) >= anchor)
+    : -1
+  /** There IS a window measured from the anchor. */
+  const anchored = anchorIdx >= 0
+  const startIndex = anchored ? anchorIdx : 0
 
   const slice = history.slice(startIndex)
   if (slice.length < 2 || !(slice[0].close > 0)) return null
@@ -66,10 +86,20 @@ export function anchoredWindow(
   return {
     series: slice.map(p => p.close),
     changePct: ((slice[slice.length - 1].close - slice[0].close) / slice[0].close) * 100,
-    reachesAnchor,
+    reachesAnchor: anchored,
     days: Math.round(
       (Date.parse(slice[slice.length - 1].date) - Date.parse(slice[0].date)) / 86_400_000,
     ),
+    /*
+     * The dates the window actually spans, so a chart can label its own axis
+     * without re-deriving the slice. A caller that recomputed "which rows am
+     * I drawing" to find its first and last date would be a second copy of
+     * the anchoring rule above -- and the bug this function carried for
+     * months was exactly two pieces of code disagreeing about where the
+     * window starts.
+     */
+    from: slice[0].date,
+    to: slice[slice.length - 1].date,
   }
 }
 

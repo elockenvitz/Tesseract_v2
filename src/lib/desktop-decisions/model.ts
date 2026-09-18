@@ -126,6 +126,17 @@ export interface DecisionRecord {
     targetWeight?: number | null
     deltaWeight?: number | null
     notional?: number | null
+    /**
+     * The basis, as `accepted_trades` recorded it at commit.
+     *
+     * `price_at_acceptance` is the price the desk was looking at when it
+     * committed, and `delta_shares` is what actually moved -- so the average
+     * basis is a stored fact rather than a figure this lens computes from a
+     * weight. Where either is absent the tile says nothing instead of
+     * dividing by a number nobody captured.
+     */
+    priceAtAcceptance?: number | null
+    deltaShares?: number | null
   } | null
 
   /**
