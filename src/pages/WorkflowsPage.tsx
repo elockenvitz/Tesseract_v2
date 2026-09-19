@@ -185,6 +185,49 @@ function processDynamicSuffix(suffix: string): string {
     .replace(/{DAY}/g, currentDay.toString())
 }
 
+/*
+  Geometry of the workflow context menu, so the clamp below can reason about a
+  box that has not been measured yet.
+
+  Width is exact: the panel is `min-w-[160px]` and its widest command
+  ("Duplicate", `px-4` either side, a 16px icon and an 8px gap) computes to
+  roughly 121px, so the minimum is what actually applies. Height is per item
+  (`px-4 py-2` on 20px line-height) plus the panel's own `py-1`.
+*/
+const CONTEXT_MENU_WIDTH = 160
+const CONTEXT_MENU_ITEM_HEIGHT = 36
+const CONTEXT_MENU_PADDING_Y = 8
+const CONTEXT_MENU_MARGIN = 8
+
+/**
+ * Keep a pointer-positioned menu fully inside the viewport.
+ *
+ * The workflow context menu was placed at the raw `clientX`/`clientY`, so
+ * opening it near the right or bottom edge pushed part of it — whole commands,
+ * not just padding — off screen with no way to scroll them back. On a phone
+ * almost every tap is near an edge, so this was the common case rather than
+ * the corner case.
+ *
+ * Clamped rather than flipped: the menu stays adjacent to the row that opened
+ * it, which matters more than which corner it grows from. Clamping the low end
+ * last means a viewport narrower than the menu pins it to the left edge
+ * instead of pushing it off the right.
+ */
+export function clampMenuToViewport(
+  x: number,
+  y: number,
+  menuWidth: number,
+  menuHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  margin: number = CONTEXT_MENU_MARGIN,
+): { left: number; top: number } {
+  return {
+    left: Math.max(margin, Math.min(x, viewportWidth - menuWidth - margin)),
+    top: Math.max(margin, Math.min(y, viewportHeight - menuHeight - margin)),
+  }
+}
+
 export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate, initialWorkflowId, initialBranchId }: WorkflowsPageProps) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
@@ -200,6 +243,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   // On a phone the process list is an overlay rather than a column.
   const isMobileViewport = useIsMobile()
   const [processListOpen, setProcessListOpen] = useState(false)
+  // The Configure tab menu.
+  //
+  // It was a `group-hover` reveal with no click handler on the trigger. Hover
+  // has no touch equivalent, so on a phone the five views behind it — Scope,
+  // Stages, Scheduling, Files, Access — could not be opened at all. Holding it
+  // in state makes the trigger a real control on both pointer types.
+  const [configMenuOpen, setConfigMenuOpen] = useState(false)
+  const configMenuRef = useRef<HTMLDivElement>(null)
   const [filterBy, setFilterBy] = useState<'all' | 'my' | 'public' | 'shared' | 'favorites'>(initialWorkflowId ? 'all' : (initialState.filterBy || 'all'))
   const [sortBy, setSortBy] = useState<'name' | 'usage' | 'created' | 'updated'>(initialState.sortBy || 'usage')
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
@@ -1582,6 +1633,40 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
     }
   }, [showChangesList])
 
+  // Click outside or Escape closes the Configure menu, matching the changes
+  // dropdown above. A click-opened menu has to be click-dismissible: without
+  // this the only way to put it away would be to pick an item.
+  useEffect(() => {
+    if (!configMenuOpen) return
+    const handleClickOutside = (event: MouseEvent) => {
+      if (configMenuRef.current && !configMenuRef.current.contains(event.target as Node)) {
+        setConfigMenuOpen(false)
+      }
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setConfigMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [configMenuOpen])
+
+  // Escape closes the process list overlay. There is deliberately no backdrop
+  // click here: on a phone the list is genuinely full-screen, so there is no
+  // region outside it to tap. The close button in its header is the touch
+  // route; this is the keyboard one.
+  useEffect(() => {
+    if (!processListOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setProcessListOpen(false)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [processListOpen])
+
   // Manual save function for universe rules
   const saveUniverseRules = () => {
     if (selectedWorkflow?.id) {
@@ -2216,6 +2301,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
   const handleSelectWorkflow = (workflow: WorkflowWithStats) => {
     setSelectedWorkflow(workflow)
+    // Picking a process is the point of the overlay, so it is also the end of
+    // it. Without this the phone user lands on the process they chose with the
+    // list still covering it.
+    setProcessListOpen(false)
     skipBranchAutoOpenRef.current = false // Reset so auto-open works for new workflow
     // Don't clear selectedBranch here — the auto-open effect will replace it
     // once new branches load, avoiding a flicker through RunHistoryTable.
@@ -5392,7 +5481,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
           390px. On a phone it is the whole screen when open and out of the
           layout when closed, with a button in the process header to bring it
           back. */}
-      {(!isMobileViewport || processListOpen) && <div className={clsx(
+      {(!isMobileViewport || processListOpen) && <div
+        role={isMobileViewport ? 'dialog' : undefined}
+        aria-modal={isMobileViewport ? true : undefined}
+        aria-label={isMobileViewport ? 'Processes' : undefined}
+        className={clsx(
         'bg-white border-r border-gray-200 flex flex-col h-full dark:border-gray-700 dark:bg-gray-800',
         isMobileViewport ? 'fixed inset-0 z-[80] w-full border-r-0 pt-safe pb-safe' : 'w-80'
       )}>
@@ -5417,6 +5510,20 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               <Button onClick={handleCreateWorkflow} size="sm">
                 <Plus className="w-4 h-4" />
               </Button>
+              {/* The overlay is full-screen, so this is the only way out of it.
+                  Sized explicitly rather than leaning on the global 44px
+                  coarse-pointer rule in index.css, which does not apply to a
+                  narrow window on a mouse machine. */}
+              {isMobileViewport && (
+                <button
+                  type="button"
+                  onClick={() => setProcessListOpen(false)}
+                  aria-label="Close process list"
+                  className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 dark:border-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -5547,6 +5654,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                           onClick={() => {
                             // Archived workflows already have full data loaded
                             setSelectedWorkflow(workflow)
+                            setProcessListOpen(false)
                           }}
                           onContextMenu={(e) => handleWorkflowContextMenu(e, workflow, true)}
                           className={`w-full text-left p-3 hover:bg-gray-50 transition-colors ${
@@ -5739,17 +5847,27 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
           <div key={selectedWorkflow.id} className="flex-1 flex flex-col h-full overflow-hidden">
             {/* Process Header — color accent bar + breadcrumb to distinguish from home */}
             <div className="border-b border-gray-200 dark:border-gray-700" style={{ borderTopWidth: 3, borderTopStyle: 'solid', borderTopColor: selectedWorkflow.color }}>
-              <div className="bg-white dark:bg-gray-800 px-6 py-4">
-              <div className="flex items-center space-x-4">
+              <div className="bg-white dark:bg-gray-800 px-3 py-3 sm:px-6 sm:py-4">
+              <div className="flex items-center gap-3 sm:gap-4">
                 <div
                   className="w-8 h-8 rounded-full flex-shrink-0"
                   style={{ backgroundColor: getScopeColor(selectedWorkflow.scope_type) }}
                 />
-                <div className="flex-1 flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div>
-                      {/* Name + status pill row */}
-                      <div className="flex items-center space-x-2.5">
+                {/* Identity stacked above the actions on a phone, side by side
+                    from `sm` up.
+
+                    This row was `flex items-center justify-between` with no
+                    wrap and no `min-w-0`, so the process name's intrinsic width
+                    won the space fight and pushed Start Run / End Run /
+                    Archive / Delete past the right edge — with the page clipped
+                    rather than scrolled, there was no way to reach them. */}
+                <div className="min-w-0 flex-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 flex items-center space-x-3">
+                    <div className="min-w-0">
+                      {/* Name + status pill row. Wraps so a long process name
+                          drops the pill to its own line instead of widening
+                          the header. */}
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                         {/* Inline editable workflow name */}
                         {isEditingWorkflowName && selectedWorkflow.user_permission === 'admin' ? (
                           <input
@@ -5773,13 +5891,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                                 setInlineWorkflowName(selectedWorkflow.name)
                               }
                             }}
-                            className="text-xl font-bold text-gray-900 bg-white border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600 dark:text-white dark:bg-gray-800"
-                            style={{ width: '400px' }}
+                            /* Was a hardcoded 400px, wider than the whole
+                               phone viewport. Full width of the identity
+                               column below `sm`, the original 400px above. */
+                            className="w-full min-w-0 sm:w-[400px] text-xl font-bold text-gray-900 bg-white border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600 dark:text-white dark:bg-gray-800"
                             autoFocus
                           />
                         ) : (
                           <h1
-                            className={`text-xl font-bold text-gray-900 ${selectedWorkflow.user_permission === 'admin' ? 'cursor-pointer hover:text-gray-700 group' : ''}`}
+                            className={`min-w-0 break-words text-xl font-bold text-gray-900 ${selectedWorkflow.user_permission === 'admin' ? 'cursor-pointer hover:text-gray-700 group' : ''}`}
                             onClick={() => {
                               if (selectedWorkflow.user_permission === 'admin') {
                                 setInlineWorkflowName(selectedWorkflow.name)
@@ -5828,14 +5948,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                               setInlineWorkflowDescription(selectedWorkflow.description)
                             }
                           }}
-                          className="text-sm text-gray-600 bg-white border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent mt-1 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800"
-                          style={{ width: '400px' }}
+                          /* Same hardcoded 400px as the name field above. */
+                          className="w-full min-w-0 sm:w-[400px] text-sm text-gray-600 bg-white border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent mt-1 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800"
                           placeholder="Add a description..."
                           autoFocus
                         />
                       ) : (
                         <p
-                          className={`text-gray-600 text-sm ${selectedWorkflow.user_permission === 'admin' ? 'cursor-pointer hover:text-gray-500 group' : ''}`}
+                          className={`break-words text-gray-600 text-sm ${selectedWorkflow.user_permission === 'admin' ? 'cursor-pointer hover:text-gray-500 group' : ''}`}
                           onClick={() => {
                             if (selectedWorkflow.user_permission === 'admin') {
                               setInlineWorkflowDescription(selectedWorkflow.description || '')
@@ -5852,8 +5972,13 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                       )}
                     </div>
                   </div>
-                  {/* Right side: actions */}
-                  <div className="flex items-center space-x-2">
+                  {/* Right side: actions.
+
+                      Wraps onto a second line rather than shrinking, so the
+                      buttons keep a real tap target instead of becoming a row
+                      of slivers. `shrink-0` from `sm` up preserves the
+                      original single-row desktop header. */}
+                  <div data-slot="process-header-actions" className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:shrink-0">
                     {isTemplateEditMode && (
                       <div className="flex items-center space-x-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
                         <Pencil className="w-3.5 h-3.5" />
@@ -5870,7 +5995,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                           size="sm"
                           variant="outline"
                           onClick={() => setBranchToEnd({ id: activeRun.id, name: activeRun.branch_suffix || activeRun.name })}
-                          className="transition-all text-red-600 border-red-300 hover:bg-red-50"
+                          className="transition-all max-sm:min-h-[44px] text-red-600 border-red-300 hover:bg-red-50"
                         >
                           <Square className="w-3 h-3 mr-1.5 fill-current" />
                           End Run
@@ -5883,7 +6008,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                           disabled={createRunAction.isDisabled}
                           title={createRunAction.disabledReason || undefined}
                           aria-label={createRunAction.disabledReason || 'Start Run'}
-                          className="transition-all"
+                          className="transition-all max-sm:min-h-[44px]"
                         >
                           <Play className="w-3.5 h-3.5 mr-1.5 fill-current" />
                           Start Run
@@ -5898,6 +6023,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                               size="sm"
                               variant="outline"
                               onClick={() => setWorkflowToUnarchive(selectedWorkflow.id)}
+                              className="max-sm:min-h-[44px]"
                             >
                               <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
                               Restore
@@ -5909,7 +6035,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                                 setWorkflowToPermanentlyDelete(selectedWorkflow.id)
                                 setShowPermanentDeleteModal(true)
                               }}
-                              className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                              className="max-sm:min-h-[44px] text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
                             >
                               <Trash2 className="w-3.5 h-3.5 mr-1.5" />
                               Delete
@@ -5923,6 +6049,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                               setWorkflowToDelete(selectedWorkflow.id)
                               setShowDeleteConfirmModal(true)
                             }}
+                            className="max-sm:min-h-[44px]"
                           >
                             <Archive className="w-3.5 h-3.5 mr-1.5" />
                             Archive
@@ -6039,8 +6166,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                   const activeConfigTab = configTabs.find(t => t.id === activeView)
                   const isConfigActive = !!activeConfigTab
                   return (
-                    <div className="relative group">
+                    <div className="relative" ref={configMenuRef}>
                       <button
+                        type="button"
+                        aria-haspopup="menu"
+                        aria-expanded={configMenuOpen}
+                        onClick={() => setConfigMenuOpen(open => !open)}
                         className={`flex items-center space-x-1.5 py-4 px-1 border-b-2 text-sm font-medium transition-colors ${
                           isConfigActive
                             ? 'border-primary-500 text-primary-600'
@@ -6051,13 +6182,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                         <span>{isConfigActive ? activeConfigTab!.label : 'Configure'}</span>
                         <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
                       </button>
-                      <div className="absolute right-0 top-full mt-0 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-30 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-150 dark:border-gray-700 dark:bg-gray-800">
+                      {configMenuOpen && (
+                      <div role="menu" className="absolute right-0 top-full mt-0 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-30 dark:border-gray-700 dark:bg-gray-800">
                         {configTabs.map(tab => {
                           const Icon = tab.icon
                           return (
                             <button
                               key={tab.id}
-                              onClick={() => handleTabChange(tab.id as any)}
+                              type="button"
+                              role="menuitem"
+                              onClick={() => { handleTabChange(tab.id as any); setConfigMenuOpen(false) }}
                               className={`w-full flex items-center space-x-2.5 px-3 py-2 text-sm transition-colors ${
                                 activeView === tab.id
                                   ? 'bg-primary-50 text-primary-700 font-medium'
@@ -6070,6 +6204,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                           )
                         })}
                       </div>
+                      )}
                     </div>
                   )
                 })()}
@@ -7551,11 +7686,21 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       {contextMenu.isOpen && (
         <div
           ref={contextMenuRef}
+          data-slot="workflow-context-menu"
           className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[160px] dark:border-gray-700 dark:bg-gray-800"
-          style={{
-            left: contextMenu.x,
-            top: contextMenu.y
-          }}
+          style={clampMenuToViewport(
+            contextMenu.x,
+            contextMenu.y,
+            CONTEXT_MENU_WIDTH,
+            // Duplicate is always present; Archive/Restore only for those who
+            // can archive. Counting the rendered commands rather than assuming
+            // the taller menu keeps the clamp tight for the common one-item
+            // case.
+            CONTEXT_MENU_PADDING_Y +
+              CONTEXT_MENU_ITEM_HEIGHT * (contextMenu.workflow?.can_archive ? 2 : 1),
+            window.innerWidth,
+            window.innerHeight,
+          )}
         >
           {/* Archive/Restore - only show if user can archive (owner or admin collaborator) */}
           {contextMenu.workflow?.can_archive && (
