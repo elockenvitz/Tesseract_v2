@@ -311,7 +311,23 @@ export function exploreVisualFor(
       kind: 'timeline',
       statedAt: v.statedAt,
       dueAt: v.dueAt,
-      overdueLabel: item.metric?.label,
+      /*
+       * No `overdueLabel` here, and that is the fix rather than an omission.
+       *
+       * This read `item.metric?.label`, which is a category error: a metric
+       * label describes the metric's VALUE -- "stated target" beside "$420" --
+       * and `overdueLabel` names the elapsed time. Fed the one to the other,
+       * an expired MSFT target rendered "+8mo stated target", which says
+       * nothing, and the word a reader needs to see ("overdue") disappeared
+       * because the label had replaced it.
+       *
+       * The field still exists and is still honoured. Its producer is
+       * `tile-engine/adopt/mobile`, where `timelineLabelFor(situation)`
+       * returns an actual overdue phrase -- "since your last contribution" for
+       * coverage neglect, where "overdue" would assert a deadline nobody set.
+       * A producer that has no such phrase should say nothing and let the
+       * component's default stand, which is what leaving this off does.
+       */
     }
   }
 

@@ -115,6 +115,27 @@ describe('the visual explains why the item matters', () => {
     expect(v.kind).toBe('timeline')
   })
 
+  it('never labels the elapsed time with the metric’s own label', () => {
+    /*
+     * `overdueLabel` names the ELAPSED TIME; `metric.label` describes the
+     * metric's value. Feeding one to the other rendered an expired MSFT
+     * target as "+8mo stated target" -- which says nothing, and which
+     * displaced the one word the reader needed to see, because the component
+     * only falls back to "overdue" when no label is supplied.
+     *
+     * Asserted as absent rather than as equal to 'overdue': the default lives
+     * in the component, and a resolver that started supplying the right word
+     * here would be a second place to change it.
+     */
+    const v = exploreVisualFor(item({
+      signalType: 'target_expired', symbol: 'MSFT',
+      metric: { value: '$420', label: 'stated target', direction: 'neutral' },
+      visual: { statedAt: '2025-06-01T00:00:00.000Z', dueAt: '2025-12-01T00:00:00.000Z' },
+    }))
+    expect(v.kind).toBe('timeline')
+    expect((v as Extract<typeof v, { kind: 'timeline' }>).overdueLabel).toBeUndefined()
+  })
+
   it('gives a trade idea a stage rail and a direction, not a chart', () => {
     const v = exploreVisualFor(item({
       signalType: 'trade_idea', subtype: 'idea', category: 'ideas', symbol: 'CROX',

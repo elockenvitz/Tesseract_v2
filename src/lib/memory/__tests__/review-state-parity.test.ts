@@ -26,14 +26,50 @@
  * parity only holds if both read the same canonical map, and that is the part
  * a future edit could silently break.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { stateOf, type ResearchSubject } from '../../desktop-research'
 import { latestReviewByAsset } from '../thesis-review'
 
 const DAY = 86_400_000
-const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
+
+/**
+ * The clock is frozen for this suite.
+ *
+ * ── Why, and why not a looser assertion ───────────────────────────────────
+ *
+ * `daysAgo` reads `Date.now()` on every call, and two cases build a timestamp
+ * and then assert against the same expression a moment later -- "the newest
+ * hold is the one at `daysAgo(400)`". On a fast machine those two reads land
+ * in the same millisecond and the suite passes; on CI they straddle a tick and
+ * the ISO strings differ by 1ms (`...609Z` vs `...610Z`).
+ *
+ * That is a flaky FIXTURE, not a loose contract: `latestReviewByAsset` really
+ * does return the exact string it was given, and the assertion asking for
+ * exact equality is the right one. So the fix is to make `Date.now()` stand
+ * still rather than to compare timestamps approximately -- an assertion that
+ * tolerated a millisecond of drift would also tolerate the producer returning
+ * a timestamp it invented.
+ *
+ * Freezing also settles `stateOf`, which reads `new Date()` internally for the
+ * age comparison. Nothing here is time-dependent in any other way.
+ */
+const FROZEN = new Date('2026-09-19T12:00:00.000Z')
+beforeAll(() => { vi.useFakeTimers(); vi.setSystemTime(FROZEN) })
+afterAll(() => { vi.useRealTimers() })
+
+/*
+ * Measured from the frozen instant, not from `Date.now()`.
+ *
+ * Module-level fixtures (`WRITTEN`, the evidence date) are evaluated at import
+ * time -- before `beforeAll` runs -- so a `Date.now()`-based helper would give
+ * them the real clock while the cases got the frozen one, and the two would
+ * disagree by however far apart the two instants happen to be. Anchoring the
+ * helper itself removes the question: every timestamp in this file, whenever
+ * it is built, is relative to the same moment.
+ */
+const daysAgo = (n: number) => new Date(FROZEN.getTime() - n * DAY).toISOString()
 const src = (p: string) => readFileSync(join(process.cwd(), 'src', p), 'utf8')
 
 const ASSET = 'a-amzn'
