@@ -217,7 +217,23 @@ create index if not exists memory_obligations_open_ix
 alter table public.memory_events      enable row level security;
 alter table public.memory_obligations enable row level security;
 
+/*
+ * Every policy below is dropped first.
+ *
+ * Postgres has no `create policy if not exists`, and everything else in this
+ * file is re-runnable -- `create table if not exists`, `create index if not
+ * exists`, `create or replace function`. These three statements were the only
+ * ones that would abort a second application with "policy already exists",
+ * which is exactly the state a partially-failed apply leaves behind: the
+ * tables and indexes are there, the policies are half-created, and the retry
+ * that should finish the job cannot run.
+ *
+ * `drop policy if exists` is safe on a fresh database (nothing to drop) and on
+ * a re-run (drops what this same file created, then recreates it identically).
+ */
+
 -- Read: members of the org named on the row itself.
+drop policy if exists memory_events_select on public.memory_events;
 create policy memory_events_select on public.memory_events
   for select to authenticated
   using (public.is_member_of_org(organization_id));
@@ -230,6 +246,7 @@ create policy memory_events_select on public.memory_events
  * that it says who concluded something. System events (actor_id null) cannot
  * be written by a client at all; they go through service_role.
  */
+drop policy if exists memory_events_insert on public.memory_events;
 create policy memory_events_insert on public.memory_events
   for insert to authenticated
   with check (
@@ -244,6 +261,7 @@ create policy memory_events_insert on public.memory_events
  * Corrections are new events.
  */
 
+drop policy if exists memory_obligations_select on public.memory_obligations;
 create policy memory_obligations_select on public.memory_obligations
   for select to authenticated
   using (public.is_member_of_org(organization_id));

@@ -71,6 +71,16 @@ export type OpportunityKind =
    * and the distinction this lens promised to keep visible.
    */
   | 'authored'
+  /**
+   * A name on the reader's own coverage with a gap and no idea open.
+   *
+   * Its own kind rather than folded into `no_thesis` or `new_evidence`,
+   * because what distinguishes it is not the gap -- it is that TESSERACT
+   * raised it from the coverage scan rather than anyone writing it down. That
+   * is the same distinction `authored` exists for, seen from the other side,
+   * and the reader is entitled to it on the chip.
+   */
+  | 'coverage_gap'
   | 'other'
 
 export interface Opportunity {
@@ -113,6 +123,12 @@ export function isIdeaWorthy(item: ExploreItem): boolean {
  */
 export function opportunityKind(item: ExploreItem): OpportunityKind {
   const sig = (item.signalType ?? '').toLowerCase()
+
+  /* Checked before the substring rules below, which would otherwise claim it:
+     `coverage_prompt` contains neither, but a future framing-qualified type
+     might, and the exact match is the producer's own statement of what this
+     is. An exact type always beats a substring guess. */
+  if (sig === 'coverage_prompt') return 'coverage_gap'
 
   if (sig.includes('price') || sig.includes('move') || sig.includes('drift')) return 'price_move'
   if (sig.includes('thesis') || sig.includes('case')) {
@@ -288,5 +304,9 @@ export const OPPORTUNITY_LABEL: Record<OpportunityKind, string> = {
   framework: 'Framework',
   workflow: 'Assigned work',
   authored: 'Written by someone',
+  /* Names the SOURCE, not the gap -- the gap is already in the headline the
+     candidate wrote, and the fact the reader cannot get anywhere else is that
+     this came off their coverage rather than off someone's pen. */
+  coverage_gap: 'From your coverage',
   other: 'Worth a look',
 }

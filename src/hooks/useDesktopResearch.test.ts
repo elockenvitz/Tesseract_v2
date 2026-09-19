@@ -22,9 +22,28 @@ describe('a save through the existing path refreshes Research', () => {
   const research = src('hooks/useDesktopResearch.ts')
 
   it('reads every Research query under one prefix', () => {
+    /*
+     * Named, not counted.
+     *
+     * This asked for at least THREE keys, and the third was the exposure read
+     * -- which moved out to `useHoldingsForAssets` so that Ideas and Research
+     * asking the identical question share one request and one cache entry.
+     * Its key is the question (the sorted asset ids) rather than the lens, and
+     * deliberately carries no lens prefix.
+     *
+     * Nothing was lost by that move: a thesis save cannot change a portfolio
+     * weight, so the exposure query was never a legitimate target of the
+     * invalidation this suite exists to protect.
+     *
+     * Lowering the number to 2 would have made the gate WEAKER than it was --
+     * a file with two copies of one key would pass. Naming the two queries
+     * cannot: rename either and this fails.
+     */
     const keys = [...research.matchAll(/queryKey:\s*\[([^\]]+)\]/g)].map(m => m[1])
-    expect(keys.length).toBeGreaterThanOrEqual(3)
+    expect(keys.length).toBeGreaterThanOrEqual(2)
     for (const key of keys) expect(key).toContain(`'${RESEARCH_PREFIX}'`)
+    expect(keys.some(k => k.includes("'scan'"))).toBe(true)
+    expect(keys.some(k => k.includes("'detail'"))).toBe(true)
   })
 
   it('invalidates that prefix when a contribution is saved', () => {

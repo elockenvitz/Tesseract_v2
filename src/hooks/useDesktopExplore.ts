@@ -7,7 +7,7 @@ import { diversifyExplore } from '../lib/mobile/explore-compose'
 import { exploreVisualFor } from '../lib/mobile/explore-visual'
 import { renderableExploreItems } from '../lib/desktop-ideas/explore-renderable'
 import { useDesktopCandidates } from './useDesktopCandidates'
-import type { ComposedExploreItem } from '../lib/mobile/explore-item'
+import type { ComposedExploreItem, ExploreItem } from '../lib/mobile/explore-item'
 import type { SignalCard } from '../lib/signals/contract'
 
 /**
@@ -92,8 +92,36 @@ export interface DesktopExplore {
   missing: string[]
 }
 
-export function useDesktopExplore(opts: { enabled?: boolean } = {}): DesktopExplore {
+export function useDesktopExplore(
+  opts: {
+    enabled?: boolean
+    /**
+     * Extra candidates, composed WITH the producers rather than after them.
+     *
+     * ── Why a supplier and not an array ─────────────────────────────────────
+     *
+     * Desktop Ideas tops a thin field up with coverage prompts, and how many
+     * it may add depends on how many real candidates the producers found --
+     * the rule `coverage-prompts` has always applied, counting a different
+     * population. The count is not known until `base` exists, so the caller
+     * cannot compute the array in advance without duplicating the composition
+     * it is trying to join.
+     *
+     * ── Why here and not in the caller ──────────────────────────────────────
+     *
+     * `diversifyExplore` scores, dedupes and applies repulsion across the
+     * WHOLE set. Prompts concatenated after it would be an unranked block
+     * stapled to a ranked one -- a separate section wearing the same tiles.
+     * Admitting them to `base` is what makes "ranked alongside" true rather
+     * than merely claimed.
+     *
+     * Explore itself passes nothing and is unchanged.
+     */
+    extra?: (realCount: number) => ExploreItem[]
+  } = {},
+): DesktopExplore {
   const enabled = opts.enabled ?? true
+  const extra = opts.extra
 
   /*
    * The same pool Ideas reads. Not a second set of producer calls — both modes
@@ -103,13 +131,17 @@ export function useDesktopExplore(opts: { enabled?: boolean } = {}): DesktopExpl
   const { lenses, scenarioCards, insights } = pool
 
   const items = useMemo(() => {
-    const base = [
+    const produced = [
       ...lensesToExplore(lenses as never),
       ...scenarioCardsToExplore(builtScenarioCards(scenarioCards)),
       ...insightsToExplore((insights ?? []) as never),
       ...ideasToExplore(pool.feedItems as never),
       ...newsToExplore([] as never),
     ]
+    /* Topped up before anything is ranked, so the supplement competes for
+       position on the same terms as everything else. The count it is given is
+       what the producers actually found. */
+    const base = extra ? [...produced, ...extra(produced.length)] : produced
     /*
      * Aggregates collapse a run of the same sort into one tile that resolves
      * to `filter` — the only action that narrows the grid rather than opening
@@ -136,7 +168,7 @@ export function useDesktopExplore(opts: { enabled?: boolean } = {}): DesktopExpl
     // defect, and a suppression nobody can see is how it survives.
     if (dropped.length) console.warn('[explore] not drawable', dropped)
     return diversifyExplore(drawable, now)
-  }, [lenses, scenarioCards, insights, pool.feedItems])
+  }, [lenses, scenarioCards, insights, pool.feedItems, extra])
 
   /*
    * Reported, not substituted.

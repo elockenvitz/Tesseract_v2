@@ -789,12 +789,18 @@ describe('size is importance, colour is condition', () => {
     const shell = src('components/desktop/DesktopTile.tsx')
     const rhythm = shell.slice(shell.indexOf('export function sizeByRankWithRhythm'))
     expect(rhythm.slice(0, rhythm.indexOf('\n}'))).not.toMatch(/item|subject|tone|chart|weight/)
-    // Ideas uses a density map, on the same rule: the index, and nothing
-    // about tone, stance, book or how much the card has to draw.
-    expect(src('components/ideas-v2/IdeasWorkspace.tsx')).toContain('density={densityForRank(rank)}')
-    const card = src('components/ideas-v2/IdeaCard.tsx')
-    const fn = card.slice(card.indexOf('export function densityForRank'))
-    expect(fn.split('\n}')[0]).not.toMatch(/tone|ladder|thesis|direction|conviction/)
+    /*
+     * Ideas is sized by `opportunitySize`, not by a density map.
+     *
+     * The lens no longer renders `IdeaCard`, so `density={densityForRank(rank)}`
+     * is not in `IdeasWorkspace.tsx` to be found. The RULE this pinned is the
+     * one that matters and it still holds: the size comes from the index and
+     * the candidate's own content, never from tone, stance or how much the
+     * card has to draw. Asserted against the function that decides it now.
+     */
+    const opp = src('lib/desktop-ideas/opportunity.ts')
+    const size = opp.slice(opp.indexOf('export function opportunitySize'))
+    expect(size.split('\n}')[0]).not.toMatch(/tone|ladder|thesis|direction|conviction/)
   })
 
   it('places by rank order, never by dense backfill', () => {

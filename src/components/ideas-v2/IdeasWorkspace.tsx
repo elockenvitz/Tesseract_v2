@@ -19,14 +19,12 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Sparkles } from 'lucide-react'
 import {
   useIdeaScan, useScanExposure, useScanFramework, useScanOpenPrice, useIdeaDetail,
   type ScanFrame,
 } from '../../hooks/useDesktopIdeas'
 import {
-  scoreIdea, compareIdeas, subscribeToOpenIdea, MATURITY_LABEL, targetFor,
-  coverageIdeaPrompts,
+  scoreIdea, compareIdeas, subscribeToOpenIdea, MATURITY_LABEL,
   type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
 import { useCoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
@@ -34,12 +32,10 @@ import { usePilotMode } from '../../hooks/usePilotMode'
 import { operationalAfterPilot } from '../../lib/pilot/seed-visibility'
 import { openCreate } from '../../lib/today/create-actions'
 import { IdeaDetail } from './IdeaDetail'
-import { IdeaCard, densityForRank, spanForRank } from './IdeaCard'
-/* The opportunity set, from the same candidates mobile Explore reads. */
+/* The opportunity set, from the same candidates mobile Explore reads. It is
+   the only field this lens renders, and it owns its own loading and empty
+   states -- which is why nothing from `IdeaCard` is imported here any more. */
 import { OpportunityGrid } from './OpportunityGrid'
-import { openAsset } from '../../lib/desktop-asset'
-import clsx from 'clsx'
-import { askAI, canDiscuss, discuss } from '../../lib/engagement'
 import {
   openDashboardFocus, type FocusIntent, type RailCard,
 } from '../../lib/dashboard/focus'
@@ -89,7 +85,9 @@ export interface IdeasWorkspaceProps {
 export function IdeasWorkspace({
   selectedIdeaId, focus, issue, focusObjectId, intent, onFocusConsumed,
 }: IdeasWorkspaceProps = {}) {
-  const { ideas: scanned, isLoading } = useIdeaScan()
+  /* `isLoading` is no longer read: the field owns its own loading state, and
+     gating the lens on the idea scan blanked a field that does not read it. */
+  const { ideas: scanned } = useIdeaScan()
   /*
    * The cached hint, for the reason Decisions and the coverage source already
    * use it.
@@ -119,7 +117,9 @@ export function IdeasWorkspace({
       scanned.map(i => ({ ...i, pilotSeed: i.isPilotSeed })), { hasGraduated: graduated }),
     [scanned, graduated],
   )
-  const { exposure, settled: exposureSettled } = useScanExposure(ideas)
+  /* `settled` is no longer read: it gated the whole lens on a weight that only
+     orders the deck's rail, which blanked a field that was ready to draw. */
+  const { exposure } = useScanExposure(ideas)
   const openPrice = useScanOpenPrice(ideas)
   const [arrival, setArrival] = useState<{ focus?: IdeaFocus | null; issue?: string | null } | null>(
     selectedIdeaId ? { focus, issue } : null,
@@ -159,17 +159,28 @@ export function IdeasWorkspace({
    * answers, and prompts append when the coverage scan does.
    */
   const gaps = useCoverageResearchGaps()
-  const prompts = useMemo(() => {
-    // Every asset an idea already concerns, including seeded rows hidden from
-    // the field: a prompt must not suggest starting work that exists.
-    const ideaAssetIds = new Set(
-      scanned.map(i => i.assetId).filter((id): id is string => !!id))
-    return coverageIdeaPrompts(gaps.candidates, { realCount: ideas.length, ideaAssetIds })
-  }, [gaps.candidates, ideas.length, scanned])
+
+  /*
+   * Every asset a real idea already concerns, including seeded rows hidden
+   * from the field: a prompt must not suggest starting work that exists.
+   *
+   * Read from `scanned` rather than `ideas` on purpose -- `ideas` is the
+   * visible list, and a graduated pilot's seeded rows are filtered out of it
+   * while still being work somebody did. Excluding on the visible list alone
+   * would suggest starting an idea that is sitting right there in history.
+   *
+   * Handed to the field rather than applied here: the prompts are projected
+   * into Explore's shape and ranked with every other candidate, so the rule
+   * travels to where the selection now happens.
+   */
+  const ideaAssetIds = useMemo(
+    () => new Set(scanned.map(i => i.assetId).filter((id): id is string => !!id)),
+    [scanned],
+  )
 
   const ranked = useMemo(() => {
     const now = Date.now()
-    return [...ideas, ...prompts]
+    return ideas
       .map(idea => ({
         idea,
         id: idea.id,
@@ -177,7 +188,7 @@ export function IdeasWorkspace({
       }))
       .sort(compareIdeas)
       .map(r => r.idea)
-  }, [ideas, prompts, exposure])
+  }, [ideas, exposure])
 
   /**
    * Selection lives in the deck. The ranking is untouched -- `ranked` is the
@@ -295,15 +306,48 @@ export function IdeasWorkspace({
    * they are free to land late -- which is the distinction between
    * progressive filling and re-layout.
    */
-  if (isLoading) return <Loading />
-  if (!exposureSettled || gaps.status === 'loading') return <Loading />
-  /* A failed or org-less coverage scan is not an empty lens. `status` is
-     'error' or 'no_org' here, and falling through to `Empty` told the reader
-     there were no open ideas when the truth is that we could not find out. */
-  if (!ranked.length && (gaps.status === 'error' || gaps.status === 'no_org')) {
-    return <ScanUnavailable />
-  }
-  if (!ranked.length) return <Empty />
+  /*
+   * ── What this lens may wait for, and what it may not ────────────────────
+   *
+   * Three gates used to stand here, all of them asking about the authored
+   * field this lens no longer draws:
+   *
+   *   `!exposureSettled`         exposure feeds `scoreIdea`, which orders
+   *                              `ranked` -- a list that now only supplies the
+   *                              deck, never the field. Holding the whole lens
+   *                              for it blanked a field that was ready.
+   *   `gaps.status === 'loading'` the coverage scan. Its candidates now reach
+   *                              the field as prompts, but they SUPPLEMENT a
+   *                              thin page; they are not the page. A slow
+   *                              coverage query must not hide the findings
+   *                              that already arrived.
+   *   `!ranked.length -> Empty`  the worst of the three. `ranked` is authored
+   *                              ideas. A reader who has written none was told
+   *                              the lens was empty while a full opportunity
+   *                              set sat underneath, unrendered.
+   *
+   * All three are gone. The field owns its own loading and empty states --
+   * `OpportunityGrid` draws a skeleton while its producers are in flight and
+   * says so plainly when there is genuinely nothing -- because the only list
+   * that can answer "is there anything to show" is the one being shown.
+   *
+   * A fourth gate went with them, for the same reason.
+   *
+   * `if (isLoading) return <Loading />` was the idea scan, and the field does
+   * not read the idea scan for anything it draws -- only for the set of asset
+   * ids a prompt may not suggest. So a slow scan blanked a field that was
+   * ready to paint, behind a skeleton built from `spanForRank` for a grid that
+   * no longer exists. It is the same defect as `!ranked.length -> Empty`, one
+   * step earlier, and it had to go too.
+   *
+   * Nothing downstream needs it. `selected` is found in `ranked`, which is
+   * empty while the scan is in flight, so the deck simply does not open and
+   * the field renders -- which is the correct behaviour rather than a
+   * tolerated one. The exclusion set is empty for that moment, and the only
+   * consequence is that a prompt may appear for a name whose idea has not
+   * loaded yet; it corrects itself on the next render, and showing one
+   * suggestion a beat early is a smaller lie than showing an empty lens.
+   */
 
   if (selected) {
     return (
@@ -317,56 +361,26 @@ export function IdeasWorkspace({
     )
   }
 
-  /** Ask AI about one idea, without expanding it first. */
-  const ask = (idea: IdeaRow) => {
-    const target = targetFor(idea, undefined)
-    if (target) askAI(target)
-  }
+  /*
+    Ask AI and Discuss moved to the field that draws the tiles.
 
-  /**
-   * Take one idea to the team, without expanding it first.
-   *
-   * The detail pane has offered this since D1; the browse field never did, so
-   * the only way to raise an idea with anyone was to open it first. Same seam,
-   * same target, and the same existing threads — `discuss` raises an
-   * EngagementRequest and the CommunicationPane answers it.
-   */
-  const talk = (idea: IdeaRow) => {
-    const target = targetFor(idea, undefined)
-    if (target) discuss(target)
-  }
+    These three built an `EngagementTarget` from an `IdeaRow` via `targetFor`.
+    The field no longer renders `IdeaRow`s, so all three were dead -- `tsc`
+    said so. The same two verbs are live on every tile, built from the
+    opportunity instead: see `targetForOpportunity`, which binds to the ASSET
+    so a thread raised from a candidate lands where a thread raised from the
+    idea it becomes lands. `IdeaDetail` keeps its own copies for the expanded
+    view, which is still an idea and still has a row.
+  */
+  /*
+    The `card` helper is gone with the authored grid it built.
 
-  /**
-   * Whether an idea can hold a thread at all, asked of the seam rather than
-   * assumed. `trade_idea` is in the discussable set today, so this is true for
-   * every row — but the card omits the action rather than offering one that
-   * would fail, and the day the allowlist changes the field follows it.
-   */
-  const discussable = (idea: IdeaRow) => {
-    const target = targetFor(idea, undefined)
-    return !!target && canDiscuss(target)
-  }
-
-  /**
-   * One card, from its rank.
-   *
-   * Rank is the only input to the slot, and it is computed here so no region
-   * can accidentally disagree with another about where an idea belongs.
-   */
-  const card = (idea: IdeaRow, rank: number) => (
-    <IdeaCard
-      key={idea.id}
-      idea={idea}
-      rank={rank}
-      density={densityForRank(rank)}
-      frame={framework[idea.assetId ?? '']}
-      exposure={exposure[idea.assetId ?? '']}
-      openPrice={openPrice[idea.id]}
-      onOpen={focus => open(idea, focus)}
-      onAskAI={() => ask(idea)}
-      onDiscuss={discussable(idea) ? () => talk(idea) : undefined}
-    />
-  )
+    It was the last reference to `IdeaCard` from this lens, and it was already
+    dead -- declared, never called, and reported as such by `tsc`. The card
+    component itself stays: `IdeaDetail` is still the expanded view, and
+    removing a component because one caller stopped using it is a separate
+    change from removing the caller.
+  */
 
   return (
     <div className="h-full overflow-y-auto" data-testid="ideas-lens">
@@ -411,6 +425,19 @@ export function IdeasWorkspace({
         height from its neighbours.
       */}
       <OpportunityGrid
+        /* The coverage scan's candidates, and the names already spoken for.
+           Projected into Explore's shape and ranked with everything else --
+           see `coverageExplorePrompts`. */
+        coverageCandidates={gaps.candidates}
+        excludeAssetIds={ideaAssetIds}
+        /* A failed or org-less coverage scan is named, not swallowed. It costs
+           the prompts, not the lens, so it is a gap in the note rather than a
+           full-page error that would overstate it. */
+        extraMissing={
+          gaps.status === 'error' || gaps.status === 'no_org'
+            ? ['coverage prompts']
+            : []
+        }
         /*
           The deck, not the asset page.
 
@@ -544,72 +571,29 @@ export function toRailCard(
 /* ----------------------------------------------------------------- states */
 
 /*
- * Ideas draws its own twelve-column field rather than `DesktopGallery`, so its
- * skeleton is built from `spanForRank` -- the same function the loaded field
- * uses -- instead of the shared one. What matters is the property, not which
- * helper provides it: the placeholders occupy the columns the real cards are
- * about to occupy, so the handover is a fade and not a re-layout. The old
- * skeleton was a three-column grid of equal cards in front of an 8/4 mosaic.
- */
-function Loading() {
-  return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
-      <div className="flex items-baseline gap-2.5">
-        <h1 className="text-[19px] font-semibold tracking-tight">Ideas</h1>
-        <span className="h-4 w-8 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
-      </div>
-      <div className="mt-5 grid grid-cols-12 gap-4">
-        {[0, 1, 2, 3, 4, 5].map(i => (
-          <div
-            key={i}
-            className={clsx(
-              spanForRank(i),
-              // Per rank, like the cards: the lead is a taller object than a
-              // fifth-place scanning unit, and one global height says otherwise.
-              i === 0 ? 'h-[248px]' : i <= 1 ? 'h-[248px]' : i <= 4 ? 'h-[196px]' : 'h-[148px]',
-              'animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]',
-            )}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
+  The lens-level skeleton is gone with the gate that showed it.
 
-/**
- * The scan could not be read.
- *
- * Distinct from `Empty` on purpose. "No open ideas" is a claim about the
- * desk -- that nobody has anything running -- and it is the best possible
- * state. A failed or org-less coverage scan is the opposite, and rendering the
- * good news over the failure is how a broken read goes unnoticed for weeks.
- */
-function ScanUnavailable() {
-  return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
-      <h1 className="text-[19px] font-semibold tracking-tight">Ideas</h1>
-      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 px-6 py-16 text-center dark:border-amber-900/40 dark:bg-amber-950/20">
-        <h2 className="text-[17px] font-semibold">Ideas could not be loaded</h2>
-        <p className="mx-auto mt-1.5 max-w-[46ch] text-[12px] text-gray-600 dark:text-gray-400">
-          This is a failed read, not an empty desk. Reload to try again.
-        </p>
-      </div>
-    </div>
-  )
-}
+  It was built from `spanForRank` so its placeholders would occupy the columns
+  the authored grid was about to occupy -- a fade rather than a re-layout. That
+  property still matters and is still honoured, one level down: `OpportunityGrid`
+  renders `GallerySkeleton` sized by `opportunitySize`, the same function the
+  loaded field uses. The skeleton moved to the field because the loading state
+  belongs to whoever is doing the loading.
+*/
 
-function Empty() {
-  return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
-      <h1 className="text-[19px] font-semibold tracking-tight">Ideas</h1>
-      <div className="mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">
-        <Sparkles className="mx-auto h-7 w-7 text-gray-400" />
-        <h2 className="mt-4 text-[17px] font-semibold">No open ideas</h2>
-        <p className="mx-auto mt-1.5 max-w-[46ch] text-[12px] text-gray-600 dark:text-gray-400">
-          Ideas appear here from the moment someone raises one, through research and
-          thesis to a decision. Nothing is currently open.
-        </p>
-      </div>
-    </div>
-  )
-}
+/*
+  `Empty` and `ScanUnavailable` are gone, and the distinction they carried
+  is not.
+
+  Both were whole-lens states decided on the authored list. The field decides
+  its own emptiness now, because it is the only thing that can -- see
+  `OpportunityGrid`.
+
+  What had to survive is the reason `ScanUnavailable` existed: "no open ideas"
+  is a claim about the desk and the best possible state, while a failed read is
+  the opposite, and rendering the good news over the failure is how a broken
+  query goes unnoticed for weeks. A failed coverage scan no longer empties this
+  lens -- it costs the prompts that supplement a thin field, and nothing else --
+  so it is reported as a named gap in the field's own note rather than as a
+  full-page error that would overstate it. See `missing` below.
+*/

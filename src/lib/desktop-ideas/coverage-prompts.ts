@@ -29,6 +29,9 @@ import type { CoverageResearchCandidate } from '../research/coverage-research-ga
 import { coverageWorkContext, selectCoverageWork, type StructuralKey } from '../research/coverage-work'
 import { CORE_SECTION_LABEL } from '../research/case-state'
 import type { IdeaRow } from './model'
+/* Explore's shape, for the desktop Ideas field. Type-only: nothing here
+   composes or ranks -- that stays with `diversifyExplore`. */
+import type { ExploreItem } from '../mobile/explore-item'
 
 /** A thin Ideas field is topped up to this many tiles with prompts. */
 export const IDEAS_FIELD_TARGET = 8
@@ -169,4 +172,120 @@ export function coverageIdeaPrompts(
     caps: IDEAS_PROMPT_CAPS,
     exclude: ideaAssetIds,
   }).map(coverageIdeaPrompt)
+}
+
+/**
+ * The same candidate, in Explore's shape.
+ *
+ * ── Why a second projection rather than a second selector ─────────────────
+ *
+ * Desktop Ideas stopped rendering `IdeaRow`s: its field is the opportunity
+ * set, composed from Explore's candidates and ranked by `diversifyExplore`.
+ * A prompt that stayed an `IdeaRow` simply never reached the screen.
+ *
+ * What does NOT move is the selection. `coverageExplorePrompts` below calls
+ * the very same `selectCoverageWork` with the very same caps and the very
+ * same exclusion set, so every safety rule that governed the old field
+ * governs this one:
+ *
+ *   - a name an idea already concerns is excluded, including ideas hidden
+ *     from the field (a graduated pilot's seeded demo rows), because the
+ *     caller passes those asset ids in `exclude`
+ *   - `IDEAS_PROMPT_CAPS` still stops fifty no-thesis names becoming fifty
+ *     identical tiles
+ *   - `IDEAS_PROMPT_LIMIT` still holds: a page of suggestions is not a queue
+ *
+ * Only the shape changed. Splitting the rule from the projection is what
+ * keeps that true -- if the selector had been reimplemented here, the two
+ * surfaces would have started disagreeing about which names are fair game.
+ *
+ * ── Still a suggestion, and still says so ─────────────────────────────────
+ *
+ * `subtype: 'research'` with `signalType: 'coverage_prompt'` is what
+ * `opportunityKind` reads to label the chip, and it resolves to its own kind
+ * rather than borrowing `authored`. A generated opportunity never wears an
+ * authored idea's vocabulary -- the reader can always tell which of the two
+ * they are looking at, which was the rule when these were `IdeaRow`s too.
+ *
+ * `positive` is deliberately absent, which reads as false: every framing here
+ * is a GAP -- no idea, no case, nothing recorded -- so the exposure bar is the
+ * right picture where a weight exists, and `question` carries the candidate's
+ * own prompt where it does not.
+ */
+export function coverageExplorePrompt(c: CoverageResearchCandidate): ExploreItem {
+  const e = c.exposure
+  const held = e.held && e.weightPct != null && e.weightPct > 0
+  return {
+    id: `coverage-prompt:${c.framing}:${c.assetId}`,
+    /* Keyed on the ASSET, not the framing: two framings of one name are one
+       thing to think about, and `dedupeExplore` should collapse them. */
+    dedupeKey: `coverage_prompt:${c.assetId}`,
+    signalType: 'coverage_prompt',
+    category: 'research',
+    subtype: 'research',
+    title: promptClaim(c),
+    context: coverageWorkContext(c),
+    state: promptLabel(c),
+    symbol: c.symbol,
+    assetId: c.assetId,
+    companyName: c.companyName,
+    metric: held
+      ? { value: `${e.weightPct!.toFixed(1)}%`, label: 'position', direction: 'neutral' }
+      : c.framing === 'price_move' && c.facts.movePct != null
+        ? {
+            value: pct(c.facts.movePct),
+            label: 'since last look',
+            direction: c.facts.movePct >= 0 ? 'good' : 'bad',
+          }
+        : undefined,
+    portfolio: held
+      ? { weightPct: e.weightPct!, name: e.portfolioName ?? undefined }
+      : undefined,
+    occurredAt: c.facts.reviewAnchor ?? null,
+    /*
+      Capture, not a detail pane.
+
+      A prompt has no row behind it, so there is nothing to open. The action
+      is the product's existing capture form with the asset bound -- the same
+      destination the tile had as an `IdeaRow`. A trade idea exists only once
+      the reader submits one.
+    */
+    destination: {
+      kind: 'action',
+      action: 'create_idea',
+      assetId: c.assetId,
+      symbol: c.symbol,
+    },
+    /* The scan's own strength, clamped to Explore's range. Not re-derived:
+       `selectCoverageWork` already ordered these by the same number. */
+    importance: Math.max(0, Math.min(1, c.score)),
+    visual: {
+      /* The candidate's own question, for the `question` archetype. Resolved
+         last, so a weight still draws exposure and a move still draws its
+         anchor -- the prompt fills the cards that would draw nothing. */
+      question: c.prompt,
+      movePct: c.framing === 'price_move' ? c.facts.movePct : null,
+      lastLookAt: c.facts.reviewAnchor,
+    },
+  }
+}
+
+/**
+ * The coverage prompts the opportunity set should carry.
+ *
+ * `realCount` is how many candidates the field already holds from every other
+ * producer, so a full page of real findings admits no prompts at all -- the
+ * thin-field rule, unchanged, just counting a different population.
+ */
+export function coverageExplorePrompts(
+  candidates: readonly CoverageResearchCandidate[],
+  { realCount, ideaAssetIds }: { realCount: number; ideaAssetIds: ReadonlySet<string> },
+): ExploreItem[] {
+  const room = Math.min(IDEAS_PROMPT_LIMIT, IDEAS_FIELD_TARGET - realCount)
+  if (room <= 0) return []
+  return selectCoverageWork(candidates, {
+    limit: room,
+    caps: IDEAS_PROMPT_CAPS,
+    exclude: ideaAssetIds,
+  }).map(coverageExplorePrompt)
 }

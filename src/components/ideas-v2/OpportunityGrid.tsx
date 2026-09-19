@@ -30,7 +30,7 @@
  * authored idea. Both belong in the lens; only one of them is somebody's
  * stated intent.
  */
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { clsx } from 'clsx'
 import {
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
@@ -42,6 +42,8 @@ import { ExploreVisualBlock } from '../mobile/ExploreVisual'
 import { exploreVisualFor } from '../../lib/mobile/explore-visual'
 import { useDesktopExplore } from '../../hooks/useDesktopExplore'
 import type { RailCard } from '../../lib/dashboard/focus'
+import { coverageExplorePrompts } from '../../lib/desktop-ideas/coverage-prompts'
+import type { CoverageResearchCandidate } from '../../lib/research/coverage-research-gaps'
 import {
   opportunitiesFrom, opportunitySize, withFeatureBudget, targetForOpportunity,
   OPPORTUNITY_LABEL, type Opportunity,
@@ -61,8 +63,15 @@ function toneFor(o: Opportunity): SemanticTone {
   return 'neutral'
 }
 
+/* One frozen empty set, so a lens that passes nothing does not hand the
+   supplier a new object every render and re-rank the field. */
+const EMPTY_IDS: ReadonlySet<string> = new Set()
+
 export function OpportunityGrid({
   onOpen,
+  excludeAssetIds,
+  coverageCandidates,
+  extraMissing,
 }: {
   /**
    * The shell owns navigation; this hands back the item that was chosen and
@@ -74,8 +83,52 @@ export function OpportunityGrid({
    * reader rotates away from it.
    */
   onOpen: (o: Opportunity, rail: RailCard[]) => void
+  /**
+   * Every asset a real idea already concerns, so a prompt never suggests
+   * starting work that exists.
+   *
+   * Supplied by the lens rather than read here, because it must include ideas
+   * the FIELD does not show -- a graduated pilot's seeded demo rows are hidden
+   * and still count. Only the workspace knows that set.
+   */
+  excludeAssetIds?: ReadonlySet<string>
+  /** Told, not discovered: the lens owns the coverage query. */
+  coverageCandidates?: readonly CoverageResearchCandidate[]
+  /**
+   * Producers the caller knows are not answering.
+   *
+   * Named beside this grid's own gaps rather than swallowed. A failed coverage
+   * scan costs the prompts that top up a thin field; it does not empty the
+   * lens, and it must not be reported as though it had -- but it must be
+   * reported.
+   */
+  extraMissing?: readonly string[]
 }) {
-  const { items, isLoading, missing } = useDesktopExplore()
+  /*
+   * Coverage prompts, composed with the producers rather than after them.
+   *
+   * `coverageExplorePrompts` applies the same `selectCoverageWork` with the
+   * same caps and the same exclusion set the authored field used, so every
+   * safety rule survives the change of shape -- and `useDesktopExplore` admits
+   * them to `base`, so `diversifyExplore` ranks them against everything else
+   * instead of appending a second section.
+   */
+  const extra = useCallback(
+    (realCount: number) => coverageExplorePrompts(coverageCandidates ?? [], {
+      realCount,
+      ideaAssetIds: excludeAssetIds ?? EMPTY_IDS,
+    }),
+    [coverageCandidates, excludeAssetIds],
+  )
+
+  const { items, isLoading, missing: ownMissing } = useDesktopExplore({ extra })
+
+  /* This grid's gaps and the caller's, in one list. A producer with no data is
+     a gap to report, wherever it was noticed. */
+  const missing = useMemo(
+    () => [...ownMissing, ...(extraMissing ?? [])],
+    [ownMissing, extraMissing],
+  )
 
   const opportunities = useMemo(() => opportunitiesFrom(items), [items])
 
@@ -112,6 +165,31 @@ export function OpportunityGrid({
   if (isLoading && opportunities.length === 0) {
     return <GallerySkeleton title="Ideas" sizeAt={i => opportunitySize(
       { composed: { emphasis: 'standard' } } as Opportunity, i) as TileSize} />
+  }
+
+  /*
+   * The field decides its own empty state.
+   *
+   * It used to be decided a level up, on a list of authored ideas this grid
+   * does not read -- so a reader with no written ideas was told the lens was
+   * empty while a full opportunity set sat here unrendered. The only list that
+   * can answer "is there anything to show" is the one being shown.
+   */
+  if (opportunities.length === 0) {
+    return (
+      <DesktopGallery
+        title="Ideas"
+        note={
+          <p className="max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
+            Nothing to explore yet. Ideas appear as positions move, research
+            lands, and names on your coverage go unexamined.
+            {missing.length > 0 && ` Not yet reaching desktop: ${missing.join(', ')}.`}
+          </p>
+        }
+      >
+        {null}
+      </DesktopGallery>
+    )
   }
 
   return (

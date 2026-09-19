@@ -77,6 +77,29 @@ vi.mock('../../hooks/useCoverageResearchGaps', () => ({
   useCoverageResearchGaps: () => ({ status: 'ready', candidates: [], coveredCount: 0 }),
 }))
 
+/*
+ * The review recorder and the view cursor, which `ResearchDetail` mounts.
+ *
+ * Both read auth and org context this suite does not stand up, so every case
+ * that expands the deck threw "useOrganization must be used within an
+ * OrganizationProvider" at mount, before any assertion ran. Not a product
+ * defect: the app mounts the provider, and the two sibling Research suites --
+ * `research-time-labels` and `coverage-research-tiles` -- already carry these
+ * exact mocks. This suite was the one that got missed.
+ *
+ * What they write is covered at the library level instead, where it can be
+ * asserted rather than stubbed.
+ */
+vi.mock('../../hooks/useThesisReview', () => ({
+  useThesisReviews: () => new Map(),
+  useRecordThesisReview: () => ({
+    record: vi.fn(), isPending: false, isDone: false, error: null,
+  }),
+}))
+vi.mock('../../hooks/useObjectViewCursor', () => ({
+  useRecordObjectView: () => ({ previous: null, ready: true }),
+}))
+
 vi.mock('../contributions', () => ({
   ThesisContainer: ({ assetId }: { assetId: string }) => {
     thesisContainerFor.push(assetId)
