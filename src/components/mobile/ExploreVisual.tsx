@@ -1,5 +1,5 @@
 import { clsx } from 'clsx'
-import { Quote } from 'lucide-react'
+import { Quote, HelpCircle } from 'lucide-react'
 
 import type { ExploreVisual as Visual } from '../../lib/mobile/explore-visual'
 
@@ -442,6 +442,32 @@ function QuoteVisual({ v }: { v: Extract<Visual, { kind: 'quote' }> }) {
   )
 }
 
+/**
+ * The producer's own question, as the object.
+ *
+ * Deliberately NOT the quote treatment. A quote is somebody's stated view and
+ * is set in italics as a thing that was said; this is a thing being ASKED, and
+ * it reads as an open question — upright, with the mark of an unanswered
+ * prompt beside it. The difference matters on a page carrying both.
+ *
+ * No answer buttons here. The card's action layer already owns what the reader
+ * can do, and a second set of affordances inside the picture would be a fourth
+ * place to click on a tile that has three.
+ */
+function QuestionVisual({ v }: { v: Extract<Visual, { kind: 'question' }> }) {
+  return (
+    <div data-explore-visual="question" className="mt-2">
+      <HelpCircle className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500" aria-hidden />
+      <p
+        data-question-text
+        className="mt-1 line-clamp-3 text-[14px] font-semibold leading-[1.35] text-gray-800 dark:text-gray-100"
+      >
+        {v.text}
+      </p>
+    </div>
+  )
+}
+
 interface ExploreVisualProps {
   visual: Visual
   /** The sparkline, injected — this component never reaches for price data. */
@@ -467,6 +493,7 @@ export function ExploreVisualBlock({ visual, sparkline, now }: ExploreVisualProp
     case 'last_look': return <LastLook v={visual} />
     case 'workflow': return <Workflow v={visual} />
     case 'quote': return <QuoteVisual v={visual} />
+    case 'question': return <QuestionVisual v={visual} />
     case 'price_trend': return sparkline ? <div data-explore-visual="price_trend">{sparkline}</div> : null
     // Typography carries it. Deliberately renders nothing rather than a box.
     case 'none': return null

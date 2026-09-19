@@ -101,7 +101,18 @@ export type TileSize = 'hero' | 'large' | 'medium' | 'compact'
  * equal column, and every tile keeps the same width. Chronology stays true and
  * the grid stays calm; the richer record still reads larger.
  */
-export type TileFlow = 'ranked' | 'chronological'
+/**
+ * `packed` is a third mode, for a lens whose order is not a total priority.
+ *
+ * Explore ranks by INTERESTINGNESS, and `explore-compose` states plainly that
+ * this is not a total order. A grid whose cells vary by content will not tile
+ * evenly, and the alternative to closing the holes is a field of gaps that
+ * read as cards which failed to render. Mobile's own packer already promotes
+ * within a lookahead for the same reason.
+ *
+ * `ranked` and `chronological` must never use it: there, position is a claim.
+ */
+export type TileFlow = 'ranked' | 'chronological' | 'packed'
 
 /*
   Every row closes, at every width, in emitted order.
@@ -148,12 +159,33 @@ const SPAN: Record<TileFlow, Record<TileSize, string>> = {
     medium: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
     compact: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
   },
+  /*
+    Packed uses the ranked spans -- the difference is `grid-auto-flow: row
+    dense` in the gallery, not the widths. Every span here is a divisor of the
+    track count at each breakpoint, so a row only goes short when a wide tile
+    follows a narrow one (3 + 6, then a 6 that will not fit). Dense backfills
+    that 3-wide hole with a later narrow tile instead of leaving it empty.
+  */
+  packed: {
+    hero: 'md:col-span-6 xl:col-span-5 2xl:col-span-6',
+    large: 'md:col-span-6 xl:col-span-4 2xl:col-span-6',
+    medium: 'md:col-span-3 xl:col-span-4 2xl:col-span-3',
+    compact: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
+  },
 }
 
 export function DesktopGallery({
-  title, count, action, note, flow = 'ranked', children,
+  title, action, note, flow = 'ranked', children,
 }: {
   title: React.ReactNode
+  /**
+   * Accepted and not drawn.
+   *
+   * The tally beside the heading restated a field the reader can see, and on a
+   * lens whose job is to say which FEW things matter, the total is the least
+   * useful number on the page. The prop stays so callers need not all change
+   * at once, and so a future summary line has somewhere to read it from.
+   */
   count?: number
   /** A filter or selector for the whole gallery. */
   action?: React.ReactNode
@@ -166,7 +198,15 @@ export function DesktopGallery({
     <div data-testid="desktop-gallery" data-flow={flow} className="px-6 pb-10 pt-5">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">{title}</h1>
-        {count != null && <span className="font-mono text-[11px] text-gray-500">{count}</span>}
+        {/*
+          No count beside the heading.
+
+          It restated something the reader can see -- the field is right there
+          -- and on a lens whose whole job is to say which few things matter,
+          a tally of how many there are in total is the least useful number on
+          the page. `count` stays in the props so callers need not all change
+          at once; it simply is not drawn.
+        */}
         {action && <div className="ml-auto">{action}</div>}
       </div>
       {note && <div className="mt-1.5">{note}</div>}
@@ -187,7 +227,26 @@ export function DesktopGallery({
       */}
       <div
         className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
-        style={{ gridAutoRows: 'minmax(88px, auto)', gridAutoFlow: 'row' }}
+        style={{
+          gridAutoRows: 'minmax(88px, auto)',
+          /*
+             ── When a lens may close its own holes ────────────────────────
+
+             `row` everywhere by default, and the reason is at the top of this
+             file: dense backfills earlier gaps with later items, so rank #7
+             lands above rank #4 the moment a row does not divide evenly, and
+             the layout quietly lies about priority.
+
+             `pack` is for a lens whose order is NOT a total priority. Explore
+             ranks by interestingness, which `explore-compose` says in as many
+             words is not a total order -- the fourth-most-interesting thing is
+             not meaningfully behind the third -- and mobile's own packer
+             already promotes a card within a lookahead window to avoid
+             stranding a hole. A lens that cannot make that claim leaves this
+             alone.
+          */
+          gridAutoFlow: flow === 'packed' ? 'row dense' : 'row',
+        }}
       >
         {children}
       </div>
@@ -281,6 +340,42 @@ export function sizeByRank(index: number, total: number): TileSize {
   // that is a scanning unit. A page of forty does not get ten mediums.
   if (index <= 3) return 'medium'
   return 'compact'
+}
+
+/**
+ * Rank, with room to breathe further down the page.
+ *
+ * ── The shape this fixes ─────────────────────────────────────────────────
+ *
+ * `sizeByRank` grades monotonically: hero, large, medium, medium, then compact
+ * for everything after. On a long field that is a page which starts big and
+ * flattens into an unbroken run of small cards -- reported as "gradually
+ * larger" at the top and nothing worth looking at below the fold.
+ *
+ * ── Why a rhythm is not a lie about rank ─────────────────────────────────
+ *
+ * Emission order is untouched: this changes how much room a position gets, not
+ * which position an item holds. Past the leading band the ranker's own scores
+ * are close together -- the fourteenth most interesting subject is not
+ * meaningfully behind the thirteenth -- so granting one of them a larger cell
+ * claims no more than "there is room to show this one properly".
+ *
+ * What it must not do is promote on CONTENT, which would let a tile grow
+ * because it happens to have a chart. The interval is positional and fixed, so
+ * it cannot be gamed by what an item carries.
+ *
+ * `every` is the cadence: one larger cell per that many compact ones. Seven
+ * puts roughly one per two rows at desktop widths, which breaks the run
+ * without turning the tail into a second leading band.
+ */
+export function sizeByRankWithRhythm(
+  index: number, total: number, every = 7,
+): TileSize {
+  const base = sizeByRank(index, total)
+  if (base !== 'compact') return base
+  // Offset so the first larger cell lands a full row into the tail rather
+  // than immediately after the leading band, where it would read as part of it.
+  return (index - 4) % every === every - 1 ? 'medium' : 'compact'
 }
 
 /**
@@ -498,7 +593,21 @@ const SHELF_H: Record<TileSize, string> = {
  * `group-focus-within` is not a nicety: without it the actions are reachable
  * by Tab but invisible while focused.
  */
-function TileShelf({
+/**
+ * Exported for Ideas, which is not built on `DesktopTile` and had its own.
+ *
+ * Its version was an opaque tray that grew UPWARD out of a 34px rail and
+ * closed over the analysis -- because its action layer was 47px of why-now
+ * plus buttons and would not fit the rail it was given. That is a real
+ * trade-off honestly made, but it means hovering a card hides the thing the
+ * reader was reading, which is what "cramped on hover" describes.
+ *
+ * This reserves the height instead and cross-fades opacity only, so nothing
+ * moves and nothing is covered. Ideas fits it by putting only the verbs in
+ * the action layer -- the why-now line is standing information and belongs in
+ * the resting one.
+ */
+export function TileShelf({
   size, context, actions,
 }: { size: TileSize; context?: React.ReactNode; actions?: React.ReactNode }) {
   return (

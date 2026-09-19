@@ -431,10 +431,17 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // Every card now carries a visual, so the honesty rule moved: the choice
     // is made from the data the idea actually has, and the fallback draws
     // lifecycle and elapsed time rather than a fabricated chart.
-    // Guarded for generated coverage prompts, which draw nothing at all; the
-    // selection rule inside the literal is what this pins.
+    /*
+     * The blanket guard for generated prompts is gone: a suggestion has a
+     * price, and often a modelled range and a weight the book already carries,
+     * and those are facts about the NAME rather than about an idea nobody has
+     * written. The primitives that genuinely need a written idea fall away on
+     * their own conditions -- `sizing` needs a `proposedWeight` a suggestion
+     * has no value for. The selection rule inside the literal is unchanged and
+     * is what this pins.
+     */
     const pick = ideas.slice(
-      ideas.indexOf('const available = (g ? [] : ['), ideas.indexOf(']).filter(Boolean)'))
+      ideas.indexOf('const available = (['), ideas.indexOf(']).filter(Boolean)'))
     expect(pick).toContain("weightPct != null && idea.proposedWeight != null ? 'sizing'")
     expect(pick).toContain("frame?.target != null && spot != null ? 'target'")
     // The fallback is an investment fact, not a workflow one: stage is nowhere
@@ -761,13 +768,27 @@ describe('size is importance, colour is condition', () => {
   })
 
   it('never demotes the top-ranked object for being sparse', () => {
+    /*
+     * Size still comes from POSITION, never from what a card has to draw --
+     * that is the rule, and it is what stops a tile growing because it happens
+     * to have a chart.
+     *
+     * Research reads `sizeByRankWithRhythm`, which grants a larger cell every
+     * few rows past the leading band. It is the same positional input: the
+     * monotonic grade flattened a long field into an unbroken run of compacts
+     * below the fold, and the rhythm breaks that run without consulting the
+     * item. Emission order is untouched in both.
+     */
     for (const f of [
       'components/research-v2/ResearchWorkspace.tsx',
       'components/portfolio-v2/PortfolioWorkspace.tsx',
     ]) {
-      // Size comes from the index alone, in the order the ranking produced.
-      expect(src(f)).toMatch(/size=\{sizeByRank\(i, /)
+      expect(src(f)).toMatch(/size=\{sizeByRank(WithRhythm)?\(i, /)
     }
+    // And the rhythm itself is positional: no item field reaches it.
+    const shell = src('components/desktop/DesktopTile.tsx')
+    const rhythm = shell.slice(shell.indexOf('export function sizeByRankWithRhythm'))
+    expect(rhythm.slice(0, rhythm.indexOf('\n}'))).not.toMatch(/item|subject|tone|chart|weight/)
     // Ideas uses a density map, on the same rule: the index, and nothing
     // about tone, stance, book or how much the card has to draw.
     expect(src('components/ideas-v2/IdeasWorkspace.tsx')).toContain('density={densityForRank(rank)}')

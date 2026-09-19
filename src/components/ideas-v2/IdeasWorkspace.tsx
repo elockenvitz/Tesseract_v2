@@ -35,6 +35,9 @@ import { operationalAfterPilot } from '../../lib/pilot/seed-visibility'
 import { openCreate } from '../../lib/today/create-actions'
 import { IdeaDetail } from './IdeaDetail'
 import { IdeaCard, densityForRank, spanForRank } from './IdeaCard'
+/* The opportunity set, from the same candidates mobile Explore reads. */
+import { OpportunityGrid } from './OpportunityGrid'
+import { openAsset } from '../../lib/desktop-asset'
 import clsx from 'clsx'
 import { askAI, canDiscuss, discuss } from '../../lib/engagement'
 import {
@@ -367,68 +370,89 @@ export function IdeasWorkspace({
 
   return (
     <div className="h-full overflow-y-auto" data-testid="ideas-lens">
-      <div className="px-6 pb-10 pt-5">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">Ideas</h1>
-          <span className="font-mono text-[11px] text-gray-500">{ranked.length}</span>
-        </div>
-        {/*
-          What this field is actually holding, rather than what an Ideas page
-          is in general.
+      {/*
+        No header here. `DesktopGallery` inside `OpportunityGrid` draws the
+        heading and the note, and this component drew a second `Ideas` above
+        it -- one lens, two titles, the field starting a viewport further down
+        than it needed to.
 
-          The line here read "Active investment ideas, from ready-to-decide to
-          early-stage" on every load, whatever the field contained. It is true,
-          it never changes, and it cost the first viewport a line to restate
-          the tab's own name — the definition of the dashboard chrome this
-          surface is trying not to be.
+        The gallery is the right owner: the heading belongs to the field it
+        labels, and every other lens reads the same way. The summary line that
+        sat here went with it. It counted how many of the reader's OWN ideas
+        were awaiting a decision or had gone cold, which was true of the
+        authored grid it was written for and is not true of what is on the
+        page now -- the field is the opportunity set, and a sentence counting
+        a different population is worse than no sentence.
 
-          The two facts that replace it are the ones a reader would otherwise
-          have to count by hand, and both are already computed per card and
-          then discarded: how many ideas are waiting on a decision nobody has
-          taken, and how many have gone cold. Stale is the card's own
-          threshold, and it was dead code -- `read()` derived it, no density
-          ever drew it, so "this has been sitting unresolved since February"
-          was a fact the page knew and never said.
-        */}
-        <p className="mt-1.5 max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
-          {/* The line describes the reader's OWN ideas; a suggestion is not
-              awaiting a decision and cannot have gone cold. */}
-          {summarise(ideas)}
-        </p>
+        The outer padding goes too. `DesktopGallery` already applies
+        `px-6 pb-10 pt-5`, so keeping it here indented the field twice.
+      */}
+      {/*
+        ── One field: the opportunity set ───────────────────────────────────
 
-        {/*
-          One grid. Not four.
+        Desktop Ideas is the dashboard counterpart to mobile Explore, not a
+        second recommendation engine: `useDesktopExplore` composes candidates
+        through the mobile adapters and ranks them with `diversifyExplore`,
+        and `lib/desktop-ideas/opportunity` narrows that to the subset
+        carrying an investment question -- the ones that could start, revive
+        or advance an idea. News and aggregates stay in Explore.
 
-          Every idea on the page is a cell of the same twelve-column grid, in
-          rank order, sized by `spanForRank` alone: 8 + 4 across the top, then
-          three-across standards, then a compact field that narrows to four
-          across at the widest desktop. Eight is two four-column tracks, so
-          every vertical edge on the page lands on the same lines.
+        The authored-idea grid that used to sit above this is gone. It was
+        kept for one pass so the two could be compared side by side, and two
+        fields answering the same question is exactly the "which of these am
+        I looking at" the lens should not ask. Authored ideas are not lost:
+        they reach this field through `ideasToExplore`, and the kind chip
+        keeps them distinguishable from a name Tesseract raised itself.
 
-          The previous version had a bespoke cluster component, a 7/5 tier
-          grid, a 4-up scan grid and a separate tail grid behind a rule --
-          four sets of column edges, and a visible phase transition where each
-          gave way to the next. Nothing here is a region: rank picks a density
-          and a span, and normal flow does the rest, so reading order, tab
-          order and rank order stay the same order.
+        Mounted directly under the scroll container, with no wrapper of its
+        own -- the same two-element structure Research and Portfolio have. A
+        lens is a scroll region and a gallery; anything between them is what
+        put this one's field at a different indent and a different starting
+        height from its neighbours.
+      */}
+      <OpportunityGrid
+        /*
+          The deck, not the asset page.
 
-          Cells stretch to their row, which is what makes the page read as
-          rows at all -- the outer shells of same-row cards share a top and a
-          bottom edge. Nothing INSIDE a card stretches: content is composed
-          from the top and the shell simply occupies the row, which is a
-          different thing from the `mt-auto` push that produced the old
-          bottom-of-card whitespace.
+          This called `openAsset`, which leaves the dashboard entirely and
+          drops the reader on a full asset route -- so a tile in Ideas behaved
+          unlike a tile in every other lens, where opening a tile expands it
+          into the work surface with the rest of the field beside it in the
+          rail. Decisions, Portfolio and Research all call
+          `openDashboardFocus`; this is the same call with this lens's
+          vocabulary.
 
-          Normal flow only, never a dense backfill: rank is authoritative, and
-          a shorter card must never be promoted into a gap above a taller one.
-        */}
-        <div
-          data-testid="idea-field"
-          className="mt-5 grid grid-cols-12 gap-4"
-        >
-          {ranked.map((idea, rank) => card(idea, rank))}
-        </div>
-      </div>
+          `objectType: 'asset'` is the honest type. A candidate is not an idea
+          row -- nobody has staged it, and `objectType: 'idea'` with an explore
+          item's id would name a row the deck cannot load. Research opens
+          assets the same way and its workspace handles them, which is why
+          `workspaceLens` is `research`: it is the surface that can actually
+          show an asset nobody has written an idea about yet.
+
+          A candidate with no asset id is not openable and is never given the
+          action -- checked here rather than navigating to nothing.
+        */
+        onOpen={(o, rail) => {
+          if (!o.item.assetId) return
+          openDashboardFocus({
+            target: {
+              originLens: 'ideas',
+              workspaceLens: 'research',
+              objectType: 'asset',
+              objectId: o.item.assetId,
+              symbol: o.item.symbol ?? null,
+              label: o.item.companyName ?? null,
+              portfolioName: o.item.portfolio?.name ?? null,
+              /* The producer's own words for the state. This lens does not
+                 re-describe a finding it did not detect. */
+              issue: o.item.title,
+              origin: 'ideas',
+            },
+            backLabel: 'Ideas',
+            rail,
+          })
+        }}
+      />
     </div>
   )
 }

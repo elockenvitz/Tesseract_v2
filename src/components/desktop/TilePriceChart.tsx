@@ -202,7 +202,29 @@ export function TilePriceChart({
   /* In fill mode the measured box IS the height. The floor matters: before the
      first measurement the box reports 0, and a chart with no height is a chart
      nobody can see. */
-  const H = fill ? Math.max(56, box.h > 0 ? box.h : height) : height
+  /*
+   * ── Fill may shrink to its box, never grow past `height` ─────────────────
+   *
+   * In fill mode the plot measures its own box and drew itself at that many
+   * pixels. Inside a tile whose grid row is `auto`, that pixel height IS
+   * content: the box grows to hold it, the next measurement is larger, and the
+   * card ratchets upward on every render -- which is the "cards gradually
+   * getting larger as you scroll" that was reported, worst furthest down the
+   * page where the loop has had the most passes.
+   *
+   * Two things break it, and both are here because either alone is fragile:
+   *
+   *   1. the SVG is sized in PERCENT in fill mode (below), so it contributes
+   *      no intrinsic height and cannot feed the measurement;
+   *   2. `height` becomes a CEILING rather than a fallback, so even if some
+   *      ancestor reintroduces a content-driven height the growth is bounded.
+   *
+   * Fill still does its job -- a chart in a short box shrinks to fit -- it
+   * simply cannot inflate the box it is measuring.
+   */
+  const H = fill
+    ? Math.min(height, Math.max(56, box.h > 0 ? box.h : height))
+    : height
   const min = Math.min(...w.series)
   const max = Math.max(...w.series)
   const span = (max - min) || 1
@@ -335,7 +357,9 @@ export function TilePriceChart({
             magnitude was unknowable. */}
         <div
           className="flex shrink-0 flex-col justify-between text-right font-mono text-[8px] leading-none text-gray-400 dark:text-gray-500"
-          style={{ height: H }}
+          /* Percent in fill mode for the same reason as the plot: a pixel
+             height here is content in the row the chart is trying to fit. */
+          style={{ height: fill ? '100%' : H }}
           aria-hidden
         >
           <span>{axisPrice(max)}</span>
@@ -370,7 +394,10 @@ export function TilePriceChart({
             */
             preserveAspectRatio="none"
             className="w-full cursor-crosshair"
-            style={{ height: H, display: 'block' }}
+            /* Percent in fill mode: an explicit pixel height here is content,
+               and content inside the very box being measured is the feedback
+               loop that made cards grow on every render. */
+            style={{ height: fill ? '100%' : H, display: 'block' }}
             role="img"
             aria-label={`Price ${axisPrice(w.series[0])} to ${axisPrice(last)}, ${w.changePct.toFixed(1)} percent, ${axisDate(w.from)} to ${axisDate(w.to)}`}
             onPointerMove={(e) => {

@@ -340,6 +340,48 @@ describe('a picture has to explain the finding it sits under', () => {
     expect(visualHeadlineValue({ kind: 'none' })).toBeNull()
   })
 
+  it('asks the producer\'s own question where nothing else could be drawn', () => {
+    // A thesis event with a ticker resolved to `none` and drew white space.
+    // The builder already wrote the question it wanted answered.
+    const v = exploreVisualFor(base({
+      signalType: 'thesis_update', subtype: 'research', category: 'research',
+      positive: true, portfolio: undefined,
+      visual: { question: 'Does this change the case?' },
+    }))
+    expect(v).toEqual({ kind: 'question', text: 'Does this change the case?' })
+  })
+
+  it('never lets the question take a card away from its own evidence', () => {
+    // The question rides along on every insight, so the guard that matters is
+    // that it is LAST: a breached range, an elapsed clock and an exposure bar
+    // all argue the finding and the question does not.
+    const withQuestion = { question: 'Has the investment view changed?' }
+    expect(exploreVisualFor(base({
+      signalType: 'no_research', subtype: 'research', category: 'research',
+      symbol: 'ROKU', portfolio: { weightPct: 1.1, name: 'Growth' },
+      visual: withQuestion,
+    })).kind).toBe('exposure')
+    expect(exploreVisualFor(base({
+      signalType: 'price_move', subtype: 'research', category: 'research',
+      visual: { ...withQuestion, movePct: 21, lastLookAt: '2026-01-04' },
+    })).kind).toBe('last_look')
+    // And a signal keeps the tape, which sits above the question too.
+    expect(exploreVisualFor(base({
+      signalType: 'other', positive: true, portfolio: undefined,
+      visual: withQuestion,
+    })).kind).toBe('price_trend')
+  })
+
+  it('does not print the question twice when it is also the headline', () => {
+    // Several builders write the prompt AS the headline on cards with no other
+    // copy; a picture that repeats the line above it is not a picture.
+    const q = 'What best describes this position?'
+    expect(exploreVisualFor(base({
+      signalType: 'thesis_update', subtype: 'research', category: 'research',
+      positive: true, portfolio: undefined, title: q, visual: { question: q },
+    })).kind).toBe('none')
+  })
+
   it('treats a weight the comparison bar already shows as said', () => {
     // The AMZN card printed "14.2%" inside the bar and "14.2% weight" in the
     // footer forty pixels below it.

@@ -29,7 +29,7 @@ import {
   TileTimeline,
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileMeta,
   TileFigure, TileVisual, TileBar, TileLead,
-  sizeByRank, GallerySkeleton, type TileSize,
+  sizeByRankWithRhythm, GallerySkeleton, type TileSize,
 } from '../desktop/DesktopTile'
 /* The shared price chart, anchored on the date the case was last written. */
 import { TilePriceChart } from '../desktop/TilePriceChart'
@@ -281,7 +281,11 @@ export function ResearchWorkspace({
             subject={s}
             maxWeight={maxWeight}
             weights={weights}
-            size={sizeByRank(i, ranked.length)}
+            /* Ranked, with a larger cell every few rows past the leading band.
+               The monotonic grade flattened into an unbroken run of compacts
+               below the fold; the rhythm is positional, so nothing is promoted
+               for having a chart to draw. */
+            size={sizeByRankWithRhythm(i, ranked.length)}
             onOpen={() => open(s)}
           />
         ))}

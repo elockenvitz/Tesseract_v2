@@ -101,6 +101,17 @@ vi.mock('../../hooks/useDesktopIdeas', () => ({
 vi.mock('../../hooks/useCoverageResearchGaps', () => ({
   useCoverageResearchGaps: () => ({ status: 'ready', candidates: [], coveredCount: 0 }),
 }))
+/*
+ * The opportunity set reads the shared Explore candidates, which reach for a
+ * QueryClient this suite does not stand up. Empty is the honest default here:
+ * these cases are about the AUTHORED idea field -- ranking, seeded-name
+ * suppression, what a prompt may claim -- and an empty opportunity grid leaves
+ * every one of those exactly as it was. The grid has its own coverage.
+ */
+vi.mock('../../hooks/useDesktopExplore', () => ({
+  useDesktopExplore: () => ({ items: [], isLoading: false, missing: [] }),
+}))
+
 vi.mock('../../hooks/usePilotMode', () => ({ usePilotMode: () => ({ hasGraduated: false }) }))
 
 // The detail pane's own dependencies. Stubbed rather than exercised: this
@@ -1160,8 +1171,20 @@ describe('scan, inspect, engage', () => {
     // lines fit the reserved strip honestly rather than being shrunk into it.
     // The face size comes from the system now.
     expect(card).toContain("compact ? 'leading-[13px]'")
-    expect(card).toContain("compact ? 'leading-[14px]'")
     expect(card).toContain("compact ? 'gap-0' : 'gap-1'")
+    /*
+     * The second resting line is the WHY-NOW line now, and it is hidden at
+     * compact rather than given a compact leading -- so there is no
+     * `compact ? 'leading-[14px]'` to pin any more.
+     *
+     * It replaced `Next {d.next}`, which was the same string the primary
+     * button carries, the two swapped by hover opacity: the card said the verb
+     * twice and the reader ever saw only one. Why-now moved down from the
+     * ACTION layer, which is what made that layer 47px in a 34px rail and
+     * forced it to grow upward over the analysis.
+     */
+    expect(card).toContain("size === 'featured' ? 'leading-[18px]' : 'leading-[15px]'")
+    expect(card).not.toContain('<span className={clsx(LABEL, \'shrink-0\')}>Next</span>')
   })
 
   it('draws a second primitive only where the data earns one', () => {
@@ -1192,9 +1215,15 @@ describe('scan, inspect, engage', () => {
     // `gap` is the statement that there is nothing to draw. It can be the only
     // thing on a card and never the second thing beside a real primitive.
     const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
-    // The list is now guarded for generated prompts, which draw nothing; the
-    // rule under test is what the literal itself may contain.
-    const body = card.slice(card.indexOf('const available = (g ? [] : ['))
+    /*
+     * The blanket `g ? [] : [...]` guard is gone: a suggestion has a price, and
+     * often a modelled range and a weight the book already carries, and those
+     * are facts about the NAME rather than about an idea nobody has written.
+     * The primitives that genuinely need a written idea fall away on their own
+     * conditions instead. The rule under test is unchanged -- what the literal
+     * itself may contain.
+     */
+    const body = card.slice(card.indexOf('const available = (['))
     const literal = body.slice(0, body.indexOf(']).filter(Boolean)'))
     expect(literal).toContain("'exposure'")
     expect(literal).not.toContain("'gap'")
@@ -1209,19 +1238,26 @@ describe('scan, inspect, engage', () => {
     expect(card).toContain('absolute inset-0 flex flex-col justify-end')
 
     /*
-     * The action layer is opaque and carries the rule itself.
+     * ── The action layer no longer covers anything ────────────────────────
      *
-     * Measured on hover: a 34px reserved strip holding a 47px action layer,
-     * which grew upward and put the strip's own `border-t` straight through
-     * the words "Why now" -- reported as "the line above the portfolio info is
-     * interfering with that info when I hover".
+     * It used to carry its own opaque ground and redraw the rule at `-top-px`,
+     * because a 34px reserved strip was holding a 47px action layer: why-now
+     * plus buttons. It grew upward out of the rail and closed over the
+     * analysis -- a deliberate trade at the time, and the reason hovering a
+     * card was reported as cramped.
      *
-     * Reserving 47px everywhere would have spent density on all ten cards to
-     * fix one state. Instead the layer covers the rule and redraws it at
-     * `-top-px`, exactly where it was, so nothing shifts and nothing is cut.
+     * The 47px was why-now, which is standing information about the object
+     * rather than a verb. Moved to the resting layer (where it replaced a
+     * duplicate of the primary button's own label), the action layer is
+     * buttons alone and fits the rail it was given.
+     *
+     * So: no background, no border, opacity only -- the same cross-fade the
+     * shared `TileShelf` performs on the other three lenses. Nothing is
+     * covered and nothing moves.
      */
     expect(card).toContain('absolute inset-x-0 bottom-0 flex flex-col justify-end')
-    expect(card).toContain('border-t bg-white opacity-0')
+    expect(card).not.toContain('border-t bg-white opacity-0')
+    expect(card).not.toContain('-top-px')
   })
 
   it('reveals why an idea is here now, not merely two links', () => {

@@ -30,6 +30,16 @@ vi.mock('../../../hooks/useDesktopIdeas', () => ({
   useIdeaDetail: () => ({ detail: undefined, isLoading: false }),
 }))
 vi.mock('../../../hooks/useCoverageResearchGaps', () => ({ useCoverageResearchGaps: () => env.gaps }))
+/*
+ * The opportunity set reads the shared Explore candidates, which reach for a
+ * QueryClient this suite does not stand up. Empty is the honest default: these
+ * cases are about the AUTHORED idea field and coverage prompts, and an empty
+ * opportunity grid leaves all of that exactly as it was.
+ */
+vi.mock('../../../hooks/useDesktopExplore', () => ({
+  useDesktopExplore: () => ({ items: [], isLoading: false, missing: [] }),
+}))
+
 vi.mock('../../../hooks/usePilotMode', () => ({ usePilotMode: () => ({ hasGraduated: env.graduated }) }))
 vi.mock('../../../hooks/useDesktopResearch', () => ({ useHasResearch: () => false }))
 vi.mock('../DecisionModule', () => ({ DecisionModule: () => null }))

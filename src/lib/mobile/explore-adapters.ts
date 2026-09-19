@@ -206,6 +206,9 @@ export function scenarioCardsToExplore(cards: any[]): ExploreItem[] {
       cases: (c.evidence?.data?.cases ?? [])
         .map((k: any) => ({ label: String(k?.name ?? k?.label ?? 'Case'), price: Number(k?.price) }))
         .filter((k: any) => Number.isFinite(k.price) && k.price > 0),
+      // The builder's own prompt. Used only if the ladder above is unusable,
+      // since the resolver takes the question last.
+      question: typeof c.prompt === 'string' ? c.prompt : undefined,
     },
     destination: {
       kind: 'action' as const, action: 'open_cases',
@@ -279,9 +282,20 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
        * Absent on the documentation gaps, which have no move — those resolve to
        * exposure, because "you own this much without the work" is what they say.
        */
-      visual: moved
-        ? { movePct: Number(issue.movePct), lastLookAt: anchoredAt }
-        : undefined,
+      /*
+        The insight's own question rides along in both branches.
+
+        A price-move insight still draws its anchored move -- the resolver
+        reaches `last_look` long before it reaches the question -- so carrying
+        it here costs that card nothing. The documentation gaps are the ones
+        this is for: those with a weight resolve to exposure as before, and
+        those WITHOUT one drew nothing at all and now ask what they were
+        written to ask.
+      */
+      visual: {
+        ...(moved ? { movePct: Number(issue.movePct), lastLookAt: anchoredAt } : {}),
+        question: typeof i.prompt === 'string' ? i.prompt : undefined,
+      },
       occurredAt: anchoredAt,
       destination: {
         kind: 'action' as const,

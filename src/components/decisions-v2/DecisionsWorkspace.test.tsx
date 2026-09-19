@@ -1528,8 +1528,13 @@ describe('the pilot’s seeded request, after graduation', () => {
     expect(rows).toHaveLength(1)
     expect(within(rows[0]).getByText('ORCL')).toBeInTheDocument()
     expect(screen.queryByText('AAPL')).not.toBeInTheDocument()
-    // The lens's own count says one, not two.
-    expect(within(screen.getByTestId('decisions-lens')).getByText('1')).toBeInTheDocument()
+    /*
+     * The tally beside the heading is gone -- it restated a field the reader
+     * can see, and on a lens about which few things matter the total is the
+     * least useful number on the page. The FACT it was standing in for is
+     * asserted directly above: one tile, and it is not the seeded one.
+     */
+    expect(screen.getAllByTestId('decision-tile')).toHaveLength(1)
   })
 
   it('is still the work while the pilot is running', () => {
