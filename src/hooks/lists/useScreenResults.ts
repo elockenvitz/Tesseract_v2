@@ -29,6 +29,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { assetAccess } from '../../lib/market-data/supabase-asset-source'
 import { evaluateCriteria } from '../../lib/lists/screen-evaluator'
 import type { ScreenCriteria } from '../../lib/lists/screen-types'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
@@ -42,9 +43,21 @@ interface UseScreenResultsOptions {
 type PriceTargetRow = { asset_id: string; type: 'bull' | 'base' | 'bear'; price: number }
 
 /**
- * The global reference columns the universe query selects. Declared because the
- * shared client is untyped, so a narrowed `.select()` resolves to `never` and
- * every downstream property read becomes an error.
+ * The global reference columns the universe query selects.
+ *
+ * Kept as an array as well as a type because `assetAccess` takes the column
+ * list as data, and a screen wants three columns (`current_price`,
+ * `market_cap`, `created_at`) that identity resolution does not.
+ */
+const UNIVERSE_COLUMNS = [
+  'id', 'symbol', 'company_name', 'current_price', 'market_cap',
+  'sector', 'industry', 'country', 'exchange',
+  'created_at', 'updated_at', 'created_by',
+] as const
+
+/**
+ * Declared because the shared client is untyped, so a narrowed `.select()`
+ * resolves to `never` and every downstream property read becomes an error.
  */
 type UniverseAssetRow = {
   id: string
@@ -68,19 +81,31 @@ export function useScreenResults({ enabled, criteria }: UseScreenResultsOptions)
   const { data: allAssets = [], isLoading: isLoadingAssets } = useQuery({
     queryKey: ['screen-asset-universe'],
     queryFn: async () => {
-      // Global reference columns only. The eight proprietary ones this used to
-      // request are revoked from `authenticated` at the column level, so asking
-      // for them is not merely wrong — it fails the whole query.
-      const { data, error } = await supabase
-        .from('assets')
-        .select(`
-          id, symbol, company_name, current_price, market_cap,
-          sector, industry, country, exchange,
-          created_at, updated_at, created_by
-        `)
-        .order('symbol', { ascending: true })
-      if (error) throw error
-      return (data ?? []) as UniverseAssetRow[]
+      /**
+       * Global reference columns only. The eight proprietary ones this used to
+       * request are revoked from `authenticated` at the column level, so asking
+       * for them is not merely wrong — it fails the whole query.
+       *
+       * ── Why this is paged now ────────────────────────────────────────────
+       *
+       * A screen genuinely needs the whole universe: its criteria are
+       * arbitrary and are evaluated here rather than in SQL. What it must not
+       * do is ASSUME one request returns the whole universe. PostgREST caps a
+       * response at 1,000 rows and answers HTTP 200, so past that size this
+       * screened the first thousand tickers by symbol and reported a clean
+       * result — a saved screen would silently stop matching anything late in
+       * the alphabet, and nothing on screen would say so.
+       *
+       * `allRows` pages by keyset and throws rather than returning a prefix.
+       * At today's 911 rows it is still exactly one request.
+       */
+      const rows = await assetAccess.allRows({ columns: UNIVERSE_COLUMNS })
+      // Sorted here rather than by the server: keyset paging orders by `id`,
+      // because `symbol` is not unique and a page boundary between two rows
+      // sharing a ticker can drop one and repeat the other.
+      return (rows as unknown as UniverseAssetRow[]).sort((a, b) =>
+        (a.symbol ?? '').localeCompare(b.symbol ?? ''),
+      )
     },
     enabled,
     staleTime: 60_000

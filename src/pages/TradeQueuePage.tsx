@@ -55,6 +55,9 @@ import { useAuth } from '../hooks/useAuth'
 import { useOrgMembers } from '../hooks/useOrgMembers'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePipelineItems } from '../hooks/usePipelineItems'
+import { PilotStepsBanner } from '../components/pilot/PilotStepsBanner'
+import { isPipelineBasicsCtaEvent } from '../lib/trade-lab/open-trade-lab'
+import { usePilotPipelineBanner } from '../hooks/usePilotPipelineBanner'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
 import { Button } from '../components/ui/Button'
@@ -151,7 +154,36 @@ const CONVICTION_CONFIG: Record<string, { label: string; color: string; bg: stri
   high: { label: 'High Conviction', color: 'text-green-700 dark:text-green-300', bg: 'bg-green-50 dark:bg-green-900/30', dot: 'bg-green-500' },
 }
 
-export function TradeQueuePage() {
+export interface TradeQueuePageProps {
+  /** An idea to bring into view on arrival. The pilot mission's "Open
+   *  Pipeline" sends the tutorial idea, so the reader is not dropped on a full
+   *  board with no indication which card is theirs. Not a filter — the board
+   *  is unchanged, the card is just scrolled to and flashed. */
+  focusIdeaId?: string | null
+  /** Called once the card has actually been brought into view, so the caller
+   *  can drop the id from the tab. Otherwise it persists and every later visit
+   *  re-scrolls to the same card. */
+  onFocusConsumed?: () => void
+  /** Expand the decision drawer on arrival.
+   *
+   *  A prop rather than the `openTradeQueue` event this used to listen for.
+   *  That event is dispatched by the same click that opens this tab, so the
+   *  listener below is only registered AFTER it has already fired -- the
+   *  drawer opened only when the Pipeline tab happened to be mounted already.
+   *  A race, not a contract, and the kind that looks intermittent rather than
+   *  broken. The payload is on the tab either way; reading it is deterministic
+   *  and needs no delay. */
+  openDecisionDrawer?: boolean
+  /** Called once the drawer has been opened, so the caller can drop the flag.
+   *  Separate from `onFocusConsumed` because the two arrive together but are
+   *  applied at different moments -- the card focus waits for the board to
+   *  render the card, the drawer does not. */
+  onDrawerConsumed?: () => void
+}
+
+export function TradeQueuePage({
+  focusIdeaId, onFocusConsumed, openDecisionDrawer, onDrawerConsumed,
+}: TradeQueuePageProps = {}) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const pilotMode = usePilotMode()
@@ -197,10 +229,10 @@ export function TradeQueuePage() {
   // on every Trade Lab button click) don't repeatedly hit the server.
   // markStage itself is also burst-deduped, but checking here saves a
   // function call + a render cycle.
-  const markPilotStep1 = useCallback(() => {
-    if (pilotStep1Done) return
-    markPilotStage('pipeline_step_moved')
-  }, [pilotStep1Done, markPilotStage])
+  // Step 1 has no marker here: a stage change is committed by the move
+  // mutation, not by the board, so it is marked in `useTradeIdeaService` where
+  // the phone's stage sheet arrives at the same write. See
+  // `usePipelineMoveMarker`.
   const markPilotStep2 = useCallback(() => {
     if (pilotStep2Done) return
     markPilotStage('pipeline_step_inbox')
@@ -215,7 +247,7 @@ export function TradeQueuePage() {
   // it once all steps are done — no flash from a useEffect dismissing it
   // a frame later.
   const allStepsDone = pilotStep1Done && pilotStep2Done && pilotStep3Done
-  const showPilotBanner = pilotMode.effectiveIsPilot && !pilotBannerDismissed && !allStepsDone
+  const pilotBanner = usePilotPipelineBanner()
   const dismissPilotBanner = useCallback(() => {
     markPilotStage('pipeline_banner_dismissed')
   }, [markPilotStage])
@@ -282,13 +314,27 @@ export function TradeQueuePage() {
   }, [])
   const [decisionPanelCollapsed, setDecisionPanelCollapsed] = useState(true)
 
-  // Listen for openDecisionDrawer event from Quick Ideas pane
+  /*
+   * Open the drawer because the arrival asked for it.
+   *
+   * The event listener that used to do this is kept below for the case it
+   * actually serves -- a request dispatched while this page is already
+   * mounted, which is the only case it ever worked for. The prop handles the
+   * arrival itself, which is the case it silently did not.
+   */
+  const drawerConsumedRef = useRef(false)
+  useEffect(() => {
+    if (!openDecisionDrawer || drawerConsumedRef.current) return
+    drawerConsumedRef.current = true
+    setDecisionPanelCollapsed(false)
+    onDrawerConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDecisionDrawer])
+
+  // Still listen, for a request made while this page is already open.
   useEffect(() => {
     const handleOpenDecisionDrawer = (event: CustomEvent) => {
-      const { openDecisionDrawer } = event.detail || {}
-      if (openDecisionDrawer) {
-        setDecisionPanelCollapsed(false)
-      }
+      if (event.detail?.openDecisionDrawer) setDecisionPanelCollapsed(false)
     }
     window.addEventListener('openTradeQueue', handleOpenDecisionDrawer as EventListener)
     return () => window.removeEventListener('openTradeQueue', handleOpenDecisionDrawer as EventListener)
@@ -367,6 +413,43 @@ export function TradeQueuePage() {
   // Shared with the phone's pipeline via usePipelineItems, which owns the query
   // and its key so both surfaces read one cache entry.
   const { data: tradeItems, isLoading, error } = usePipelineItems()
+
+  /*
+   * Bring the arriving idea into view.
+   *
+   * The mission's "Open Pipeline" has always sent `focusIdeaId` and nothing
+   * ever read it — the page was rendered with no props at all — so a pilot on
+   * step 2 landed on a full board with no indication which card was theirs.
+   *
+   * This is deliberately the smallest thing that fixes that: no filter, no
+   * selection, no new state. The board renders exactly as it always does and
+   * the one card is scrolled to and flashed, the same treatment Trade Book
+   * gives a just-committed row. Waits for the card to exist rather than
+   * guessing at a delay, and reports itself spent once applied so a later
+   * ordinary visit is ordinary.
+   */
+  const focusAppliedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!focusIdeaId) return
+    if (focusAppliedRef.current === focusIdeaId) return
+    if (!tradeItems || tradeItems.length === 0) return
+    if (!tradeItems.some(i => i.id === focusIdeaId)) return
+    focusAppliedRef.current = focusIdeaId
+
+    const timeout = setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(`[data-queue-item-id="${focusIdeaId}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+        el.classList.add('decision-recorded-flash')
+        setTimeout(() => el.classList.remove('decision-recorded-flash'), 2600)
+      }
+      // Spent — after the flash is on, for the reason Trade Book's is: dropping
+      // the id re-runs this effect and the cleanup would cancel the timer.
+      onFocusConsumed?.()
+    }, 80)
+    return () => clearTimeout(timeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusIdeaId, tradeItems])
 
   // Fetch pair trades with their legs
   const { data: pairTrades } = useQuery({
@@ -1272,8 +1355,14 @@ export function TradeQueuePage() {
     // recommendation" indicator that opens the recommendation flow on click.
     moveTrade({ tradeId: itemId, targetStatus: targetStatus as TradeQueueStatus, uiSource: 'drag_drop' })
     setDraggedItem(null)
-    if (pilotMode.effectiveIsPilot) markPilotStep1()
-  }, [tradeItems, pairTradeGroups, moveTrade, movePairTrade, user?.id, pilotMode.effectiveIsPilot, markPilotStep1])
+    /*
+     * Pilot step 1 used to be marked here, which credited the step for a drop
+     * the server could still reject, and credited it only for a drag — so the
+     * same stage change made on a phone earned nothing. It is now marked by
+     * the move mutation's success path in `useTradeIdeaService`, which both
+     * shells go through. See `usePipelineMoveMarker`.
+     */
+  }, [tradeItems, pairTradeGroups, moveTrade, movePairTrade, user?.id])
 
   const handleSort = useCallback((field: typeof sortBy) => {
     if (sortBy === field) {
@@ -1298,7 +1387,11 @@ export function TradeQueuePage() {
   // each call site.
   useEffect(() => {
     if (!pilotMode.effectiveIsPilot || pilotStep3Done) return
-    const handler = () => markPilotStep3()
+    const handler = (e: Event) => {
+      // The banner's own CTA marks only once its navigation is confirmed.
+      if (isPipelineBasicsCtaEvent(e)) return
+      markPilotStep3()
+    }
     window.addEventListener('openTradeLab', handler)
     return () => window.removeEventListener('openTradeLab', handler)
   }, [pilotMode.effectiveIsPilot, pilotStep3Done, markPilotStep3])
@@ -1521,50 +1614,10 @@ export function TradeQueuePage() {
           one-liner hint so a pilot reads exactly what to do.
           Dismissible per localStorage so a returning user isn't
           re-nagged. */}
-      {showPilotBanner && (
-        <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/90 to-amber-100/30 dark:from-amber-900/25 dark:via-amber-900/15 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
-          <div className="px-6 py-3 flex items-start gap-4">
-            <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
-              <Sparkles className="h-4 w-4" />
-              <span className="text-[12px] uppercase tracking-wider">Get started</span>
-            </div>
-            {/*
-              Stack steps vertically on narrow screens, horizontal on wider
-              ones. flex-wrap (the previous approach) produced confusing
-              orderings when steps overflowed — pilot tester saw step 3
-              wrap to a new row below step 1 instead of below step 2. Same
-              fix is applied in PilotTradeLabIntroBanner.
-            */}
-            <div className="flex flex-col md:flex-row md:items-start gap-y-2 md:gap-x-4 text-gray-700 dark:text-gray-300 min-w-0">
-              <PilotPipelineStep
-                n={1}
-                title="Drag ideas through the pipeline"
-                hint="Click and drag ideas left to right through stages as they mature."
-                done={pilotStep1Done}
-              />
-              <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
-              <PilotPipelineStep
-                n={2}
-                title="Open the Decision Inbox"
-                hint="The bottom drawer is where recommendations wait for your decision — click it."
-                done={pilotStep2Done}
-              />
-              <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
-              <PilotPipelineStep
-                n={3}
-                title="Open Trade Lab"
-                hint="Click the portfolio name on the recommendation card to jump into Trade Lab."
-                done={pilotStep3Done}
-              />
-            </div>
-            {/* Banner intentionally has no dismiss control — each step
-                gates the user's path into the next surface (drag → Inbox
-                → Trade Lab), and letting the user X-out lost them the
-                signposting without actually progressing. Banner auto-
-                retires once all three steps are marked complete. */}
-          </div>
-        </div>
-      )}
+      {/* Same steps, same flags, same visibility rule as the phone's
+          pipeline — see `usePilotPipelineBanner`. The board is where the
+          steps are performed, so the markers below stay with this page. */}
+      {pilotBanner.show && <PilotStepsBanner steps={pilotBanner.steps} label={pilotBanner.label} />}
 
       {/* Header */}
       <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
@@ -1990,7 +2043,7 @@ export function TradeQueuePage() {
               setExpandedProposalInputs(new Set())
             }}
           />
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-4 p-6 h-[70vh] flex flex-col">
+          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-4 p-6 h-viewport-70 flex flex-col">
             {/* Fixed Header */}
             <div className="flex-shrink-0">
               {proposalPairTrade ? (
@@ -4140,6 +4193,9 @@ function TradeQueueCard({
 
   return (
     <div
+      /* So an arrival carrying a specific idea can find its card. Trade Book's
+         highlighted rows carry `data-trade-id` for the same reason. */
+      data-queue-item-id={item.id}
       draggable={!isArchived}
       onDragStart={(e) => {
         dragOccurredRef.current = true

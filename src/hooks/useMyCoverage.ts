@@ -21,6 +21,7 @@ import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import {
   addPersonalCoverage,
+  addPersonalCoverageMany,
   coverageAnalystName,
   fetchMyCoverage,
   removePersonalCoverage,
@@ -52,6 +53,8 @@ export interface MyCoverageState {
 
 export interface MyCoverageActions {
   add: (assetId: string) => Promise<void>
+  /** Many at once. One read and one insert, not two round trips per name. */
+  addMany: (assetIds: string[]) => Promise<number>
   remove: (assetId: string) => Promise<void>
   setNotes: (assetId: string, notes: string | null) => Promise<void>
   isMutating: boolean
@@ -123,6 +126,15 @@ export function useMyCoverage(): MyCoverageState & MyCoverageActions {
     onSuccess: invalidate,
   })
 
+  const addManyMutation = useMutation({
+    mutationFn: (assetIds: string[]) =>
+      addPersonalCoverageMany(orgId, assetIds, analystName),
+    // One invalidation for the batch. Invalidating per name re-ran the feed's
+    // ranking index fifty times for one press, which is most of why saving a
+    // sector felt like it had hung.
+    onSuccess: invalidate,
+  })
+
   const removeMutation = useMutation({
     mutationFn: (assetId: string) => removePersonalCoverage(orgId, assetId),
     onSuccess: invalidate,
@@ -147,6 +159,11 @@ export function useMyCoverage(): MyCoverageState & MyCoverageActions {
       await addMutation.mutateAsync(assetId)
     }, [addMutation]),
 
+    addMany: useCallback(async (assetIds: string[]) => {
+      const created = await addManyMutation.mutateAsync(assetIds)
+      return created.length
+    }, [addManyMutation]),
+
     remove: useCallback(async (assetId: string) => {
       await removeMutation.mutateAsync(assetId)
     }, [removeMutation]),
@@ -156,6 +173,44 @@ export function useMyCoverage(): MyCoverageState & MyCoverageActions {
     }, [notesMutation]),
 
     isMutating:
-      addMutation.isPending || removeMutation.isPending || notesMutation.isPending,
+      addMutation.isPending || addManyMutation.isPending
+      || removeMutation.isPending || notesMutation.isPending,
+  }
+}
+
+/**
+ * Just the question "does this reader cover anything", for callers that are
+ * not a coverage surface.
+ *
+ * `useMyCoverage` returns four mutations along with the rows, and the pilot
+ * gate and the pilot entry sequence want neither — they want one boolean. This
+ * reads the SAME query key, so mounting it beside the full hook costs one
+ * cache entry rather than a second request.
+ *
+ * `isLoading` matters to both callers: coverage is now the pilot's first step,
+ * and a caller that treats "not loaded yet" as "no coverage" would show the
+ * setup surface for a frame to somebody who finished it last week.
+ */
+export function useHasCoverage(): { hasCoverage: boolean; count: number; isLoading: boolean } {
+  const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
+  const userId = user?.id ?? null
+  const orgId = currentOrgId ?? null
+
+  const query = useQuery({
+    queryKey: ['my-coverage', userId, orgId],
+    enabled: !!userId && !!orgId,
+    staleTime: 30_000,
+    queryFn: () => fetchMyCoverage(orgId),
+  })
+
+  const count = query.data?.length ?? 0
+
+  return {
+    hasCoverage: count > 0,
+    count,
+    // No org yet is not an answer about coverage, and the query is disabled in
+    // that state rather than pending — so say so explicitly.
+    isLoading: query.isLoading || !userId || !orgId,
   }
 }

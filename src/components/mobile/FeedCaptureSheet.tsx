@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
-import { ArrowLeft, ArrowUpRight, Lightbulb, List, MessageSquareQuote, Tag, Target, TrendingUp } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight } from 'lucide-react'
 import { BottomSheet } from './BottomSheet'
 import { CaptureFilePicker } from './CaptureFilePicker'
 import { QuickThoughtCapture } from '../thoughts/QuickThoughtCapture'
@@ -9,7 +9,7 @@ import { RecommendationQuickModal } from '../thoughts/RecommendationQuickModal'
 import { PromptModal } from '../thoughts/PromptModal'
 import type { CapturedContext } from '../thoughts/ContextSelector'
 
-type CaptureKind = 'thought' | 'trade-idea' | 'recommendation' | 'prompt' | 'add-to-list' | 'add-to-theme'
+import { CAPTURE_TYPES, captureType, type CaptureKind } from '../../lib/capture/capture-types'
 
 interface FeedCaptureSheetProps {
   open: boolean
@@ -47,65 +47,11 @@ interface FeedCaptureSheetProps {
   onOpenAsset?: (assetId: string, symbol: string) => void
 }
 
-const OPTIONS: {
-  kind: CaptureKind
-  label: string
-  hint: string
-  icon: typeof Lightbulb
-  tone: string
-  /** Hidden when the tile has no asset — filing needs something to file. */
-  needsAsset?: boolean
-}[] = [
-  {
-    kind: 'thought',
-    label: 'Quick thought',
-    hint: 'Something worth remembering. Structure it later.',
-    icon: Lightbulb,
-    tone: 'text-amber-500 bg-amber-50 dark:bg-amber-900/30',
-  },
-  {
-    kind: 'trade-idea',
-    label: 'Trade idea',
-    hint: 'A position to put on, with a direction.',
-    icon: TrendingUp,
-    tone: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30',
-  },
-  {
-    kind: 'recommendation',
-    label: 'Recommendation',
-    hint: 'Ask a PM to act. Goes to the decision queue.',
-    icon: Target,
-    tone: 'text-primary-600 bg-primary-50 dark:bg-primary-900/30',
-  },
-  {
-    kind: 'prompt',
-    label: 'Prompt',
-    hint: 'Ask someone for work or an answer.',
-    icon: MessageSquareQuote,
-    tone: 'text-purple-600 bg-purple-50 dark:bg-purple-900/30',
-  },
-  // Filing, not writing. "Keep an eye on this" is the most common reaction to
-  // a feed card and every option above it produces prose, so the only way to
-  // act on it was to leave the feed and find the list — by which point the
-  // impulse has cost more than it was worth. These need an asset, so they are
-  // hidden on cards that have none.
-  {
-    kind: 'add-to-list',
-    label: 'Add to a list',
-    hint: 'File it somewhere you already watch.',
-    icon: List,
-    tone: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30',
-    needsAsset: true,
-  },
-  {
-    kind: 'add-to-theme',
-    label: 'Add to a theme',
-    hint: 'Connect it to a thesis you are building.',
-    icon: Tag,
-    tone: 'text-fuchsia-600 bg-fuchsia-50 dark:bg-fuchsia-900/30',
-    needsAsset: true,
-  },
-]
+const OPTIONS = CAPTURE_TYPES
+
+/** Filing picks a destination; the other kinds ask the reader to write. */
+const isFiling = (kind: CaptureKind) =>
+  captureType(kind)?.group === 'file'
 
 /**
  * Capture from inside the feed.
@@ -142,7 +88,15 @@ export function FeedCaptureSheet({
   }, [open, initialKind])
 
   const close = () => {
-    setKind(null)
+    /*
+     * Close only. Clearing `kind` here put the four-way capture PICKER on
+     * screen while the sheet was still animating out, so submitting a trade
+     * idea flashed the base view before the sheet left.
+     *
+     * Nothing needs clearing: the effect above re-seeds `kind` on every open,
+     * which is why it exists. What animates away is now the form the reader
+     * just submitted.
+     */
     onClose()
   }
 
@@ -151,27 +105,17 @@ export function FeedCaptureSheet({
     close()
   }
 
-  // These two own their overlay, so they render outside the sheet rather than
-  // inside it — nesting them would put a modal inside a drag-dismissable panel.
-  if (open && kind === 'recommendation') {
-    return (
-      <RecommendationQuickModal
-        isOpen
-        onClose={close}
-        context={context ?? contextFromAsset(assetId, assetSymbol)}
-      />
-    )
-  }
+  /*
+    All four writable kinds render INSIDE the sheet now.
 
-  if (open && kind === 'prompt') {
-    return (
-      <PromptModal
-        isOpen
-        onClose={close}
-        context={context ?? contextFromAsset(assetId, assetSymbol)}
-      />
-    )
-  }
+    Prompt and Recommendation used to break out and draw their own full-screen
+    modals, on the grounds that nesting a modal inside a drag-dismissable panel
+    would be wrong. It would be — but both have supported an `embedded` mode
+    since the pane started rendering them inline, and embedded they draw no
+    overlay at all. So the reason had lapsed, and the cost was that two of the
+    four capture types arrived with different chrome, a different way to
+    dismiss, and none of the sheet's keyboard handling.
+  */
 
   return (
     <BottomSheet
@@ -181,8 +125,51 @@ export function FeedCaptureSheet({
          capture — it is everything you can do from this tile. "GOOGL actions"
          says whose actions these are, which matters when the sheet is opened
          from a feed the reader is scrolling quickly. */
-      title={kind ? undefined : (assetSymbol ? `${assetSymbol} actions` : 'Actions')}
-      snapPoints={kind ? [0.92] : [0.5]}
+      /*
+        When a type is chosen, the sheet's own header carries the way back and
+        the name of what is being written.
+
+        It used to be a row at the top of the sheet BODY, which is a scrolling
+        region, so the control that gets you out of a full-height writing form
+        scrolled away with the form. Putting it here also removes the wrapper it
+        lived in, which is what was clipping the form — see the branch below.
+      */
+      title={kind ? (
+        /* Tight to the title. A 36px circular button with its own negative
+           margin was spending a phone's header width on a control that is one
+           glyph — it read as a gap between the edge of the sheet and the name
+           of what you are writing. The hit area is unchanged where it matters:
+           the button still fills its box and the row is still 44px tall, so
+           this is padding coming off, not touch target. */
+        <div className="-ml-1 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setKind(null)}
+            className="no-touch-target flex h-8 w-7 items-center justify-center rounded-lg text-gray-500 active:bg-gray-100 dark:text-gray-400 dark:active:bg-gray-800"
+            aria-label="Back to capture options"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <span className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 dark:text-white">
+            {captureType(kind)?.label}
+          </span>
+        </div>
+      ) : (assetSymbol ? `${assetSymbol} actions` : 'Actions')}
+      /*
+        Sheet height follows the task.
+
+        The picker is a short list and wants half a screen. A writing form
+        wants the phone. `1` is the sheet's own maximum, not the screen's:
+        `BottomSheet` caps every snap at `available - TOP_PEEK`, so 24px of
+        backdrop stays visible and the surface still reads as a sheet rather
+        than a page. `0.92` was an arbitrary gap on top of that cap, which is
+        what made a writing workspace feel half-open. At `0.5` an open keyboard
+        would reduce Recommendation or Prompt to a strip a few lines tall.
+
+        Filing is a selection, not a writing task, so it keeps the shorter
+        sheet and does not ask for a screen it has no use for.
+      */
+      snapPoints={kind === null ? [0.5] : isFiling(kind) ? [0.7] : [1]}
     >
       {kind === null ? (
         <div className="px-3 pb-4">
@@ -229,49 +216,102 @@ export function FeedCaptureSheet({
             </p>
           )}
           <div className="space-y-1">
-            {OPTIONS.filter(opt => !opt.needsAsset || !!assetId).map(opt => {
+            {/*
+              One line each.
+
+              ── Why the descriptions came off ──────────────────────────────
+              Every option carried its hint as a second line, which made each
+              row 60px and the four writing choices 240px before the two filing
+              ones. Against a sheet opened at half of an 844px phone — and half
+              of 700px on a smaller one — choosing what to capture meant
+              scrolling first. A sentence under "Trade idea" is read once and
+              then never again; the icon and the name are what the reader picks
+              by, every time after that.
+
+              The hint is not lost. It is the row's accessible description, so
+              a screen reader still hears it, and the fuller `guidance` line
+              appears above the form once a type is chosen.
+            */}
+            {OPTIONS.filter(opt => !opt.needsAsset || !!assetId).map((opt, i, list) => {
               const Icon = opt.icon
+              // A rule where writing ends and filing begins. They are different
+              // gestures and the eye should not have to read six names to work
+              // that out.
+              const startsFiling = opt.group === 'file' && list[i - 1]?.group === 'write'
               return (
-                <button
-                  key={opt.kind}
-                  type="button"
-                  onClick={() => setKind(opt.kind)}
-                  className="w-full flex items-center gap-3 min-h-[60px] px-2 rounded-xl text-left active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
-                >
-                  <span className={clsx('h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0', opt.tone)}>
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">
+                <div key={opt.kind}>
+                  {startsFiling && (
+                    <div className="my-1.5 border-t border-gray-100 dark:border-gray-800" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setKind(opt.kind)}
+                    title={opt.hint}
+                    aria-label={`${opt.label}. ${opt.hint}`}
+                    className="w-full flex items-center gap-3 h-12 px-2 rounded-xl text-left active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
+                  >
+                    <span className={clsx('h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0', opt.tone)}>
+                      <Icon className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
                       {opt.label}
                     </span>
-                    <span className="block text-xs text-gray-500 dark:text-gray-400">{opt.hint}</span>
-                  </span>
-                </button>
+                  </button>
+                </div>
               )
             })}
           </div>
         </div>
       ) : (
-        <div className="flex flex-col min-h-0">
-          <div className="flex-shrink-0 flex items-center gap-2 px-3 pb-2">
-            <button
-              type="button"
-              onClick={() => setKind(null)}
-              className="flex items-center justify-center h-9 w-9 -ml-1 rounded-full text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
-              aria-label="Back to capture options"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-              {OPTIONS.find(o => o.kind === kind)?.label}
-            </span>
-          </div>
+        /*
+          One scroll owner, and no collapsed flex item.
 
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-4">
+          ── The defect this closes ──────────────────────────────────────────
+
+          Reported as "Actions → Prompt → content at the TOP of the sheet is
+          clipped/cut off", and it was geometry rather than anything in
+          `PromptModal`.
+
+          This branch was `<div class="flex flex-col min-h-0">` wrapping a
+          `<div class="flex-1 min-h-0 overflow-y-auto">` that held the form.
+          The wrapper has no height of its own, so it sizes to its content — and
+          a `flex: 1 1 0%` child whose `min-height` has been zeroed contributes
+          NOTHING to that measurement. Its hypothetical main size is its
+          flex-basis, which is zero, and with the automatic minimum removed
+          there is nothing to clamp it back up to its content. The form was
+          therefore laid out inside a box collapsed to near nothing, with
+          `overflow-y-auto` cutting off whatever did not fit — from the top,
+          because that is where the box begins.
+
+          It was also a scroller inside `BottomSheet`'s own scroller, which is
+          the nested scroll trap: a drag in the form moved the inner box while
+          the sheet stood still.
+
+          Both go away by making this plain flow content. The sheet's body is
+          already `flex-1 min-h-0 overflow-y-auto` against a definite height, so
+          it is the only scroller needed, and content in normal flow cannot be
+          collapsed by a flex basis it does not have.
+        */
+        <div className="px-3 pb-4">
+          {/* What to do now that you have chosen, in the words the registry
+              holds. The pane wrote its own sentence for each of these and they
+              had drifted; both surfaces read the same line now. */}
+          {captureType(kind)?.guidance && (
+            <p className="pb-2 text-xs text-gray-500 dark:text-gray-400">
+              {captureType(kind)!.guidance}
+            </p>
+          )}
+
+          <div>
+            {/* None of these carry `autoFocus`.
+
+                A sheet that opens with the keyboard already up gives the reader
+                half a screen and a decision they did not ask to make yet. They
+                tap the writing area when ready, and until then the whole
+                surface is theirs. Product contract, overriding the earlier
+                "writing actions may autofocus" note. */}
             {kind === 'thought' && (
               <QuickThoughtCapture
-                autoFocus
                 compact
                 initialContent={initialNote ?? undefined}
                 initialAssetId={assetId ?? undefined}
@@ -282,13 +322,28 @@ export function FeedCaptureSheet({
             )}
             {kind === 'trade-idea' && (
               <QuickTradeIdeaCapture
-                autoFocus
                 compact
                 assetId={assetId ?? undefined}
                 assetSymbol={assetSymbol ?? undefined}
                 assetName={assetName ?? undefined}
                 onSuccess={() => done('trade-idea')}
                 onCancel={() => setKind(null)}
+              />
+            )}
+            {kind === 'recommendation' && (
+              <RecommendationQuickModal
+                isOpen
+                embedded
+                onClose={() => setKind(null)}
+                context={context ?? contextFromAsset(assetId, assetSymbol)}
+              />
+            )}
+            {kind === 'prompt' && (
+              <PromptModal
+                isOpen
+                embedded
+                onClose={() => setKind(null)}
+                context={context ?? contextFromAsset(assetId, assetSymbol)}
               />
             )}
             {(kind === 'add-to-list' || kind === 'add-to-theme') && assetId && (

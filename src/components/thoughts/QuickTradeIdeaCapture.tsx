@@ -212,19 +212,36 @@ export function QuickTradeIdeaCapture({
   const [visibility, setVisibility] = useState<'private' | 'portfolio'>('private')
   const [showVisibilityMenu, setShowVisibilityMenu] = useState(false)
 
-  // Tick step 2 of the pilot Quick Capture banner the first time
-  // BOTH a thesis and a portfolio are present. We fire from a
-  // useEffect rather than per-keystroke so the event lands once
-  // the user has both fields filled, not as they type each char.
-  // Guarded by a ref so we only fire once per form lifecycle.
+  /*
+   * Step 2 of the pilot capture tracker: the form is ready to send.
+   *
+   * It fired when a thesis AND a portfolio were both present, and the form
+   * requires neither — Submit is enabled by an asset, or by both legs of a
+   * pair, and nothing else. The thesis field is labelled optional in this
+   * very form. So the step asked for one thing the form calls optional and a
+   * second thing it never asks for, and a reader who followed the form
+   * watched the step refuse to tick.
+   *
+   * The condition below is the submit button's own, so the tracker cannot
+   * disagree with the control it is describing. A single-asset idea satisfies
+   * it on the same action as step 1, which is the honest answer: once the
+   * name is picked, the idea can be sent.
+   *
+   * Guarded by a ref so it fires once per form lifecycle. The event name is
+   * unchanged — the listener, the flag and the storage key are all keyed on
+   * it, and renaming it would silently reset progress for pilots mid-flow.
+   */
   const step2FiredRef = useRef(false)
   useEffect(() => {
     if (step2FiredRef.current) return
-    if (rationale.trim().length > 0 && selectedPortfolioIds.length > 0) {
+    const ready = tradeType === 'pair'
+      ? longAssets.length > 0 && shortAssets.length > 0
+      : !!selectedAsset
+    if (ready) {
       step2FiredRef.current = true
       try { window.dispatchEvent(new CustomEvent('pilot-capture:thesis-portfolio-set')) } catch { /* ignore */ }
     }
-  }, [rationale, selectedPortfolioIds])
+  }, [tradeType, selectedAsset, longAssets, shortAssets])
 
   // Error state for inline feedback
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -922,6 +939,23 @@ export function QuickTradeIdeaCapture({
       // Pass the first trade idea ID to the callback
       const firstTradeId = data?.[0]?.id
       onSuccess?.(firstTradeId)
+      /*
+       * Announce the new idea so the pilot mission can adopt it.
+       *
+       * An event rather than a prop: this component is mounted several levels
+       * inside the capture sidebar, and threading a pilot concern up through
+       * hosts that have nothing to do with pilots would put onboarding in
+       * four files instead of one. Nothing here knows what a pilot is — the
+       * listener decides whether it cares, and ignores this entirely for a
+       * user who is not one.
+       */
+      if (firstTradeId) {
+        try {
+          window.dispatchEvent(new CustomEvent('pilot-mission:trade-idea-created', {
+            detail: { tradeIdeaId: firstTradeId },
+          }))
+        } catch { /* a telemetry-shaped signal must never break a save */ }
+      }
     },
     onError: (error: Error) => {
       // Log error for debugging (dev only)
@@ -941,6 +975,18 @@ export function QuickTradeIdeaCapture({
   })
 
   const handleSubmit = () => {
+    /*
+     * The in-flight guard lives here, not on the button.
+     *
+     * The submit button was disabled while pending; the ⌘/Ctrl-Enter path
+     * called straight through to `mutate()` with no such check. Two quick
+     * presses created two trade ideas — and for a pilot, the second one is a
+     * second candidate for the tutorial idea their whole mission is about.
+     * Both paths come through here, so the guard belongs here and the button's
+     * `disabled` becomes the visual half of one rule rather than the only
+     * enforcement of it.
+     */
+    if (createTradeIdea.isPending) return
     if (tradeType === 'single' && !selectedAsset) return
     if (tradeType === 'pair' && (longAssets.length === 0 || shortAssets.length === 0)) return
     // Block exact-pair duplicates — user must remove a leg or open the
@@ -1163,8 +1209,12 @@ export function QuickTradeIdeaCapture({
         </div>
       </div>
 
-      {/* Context Tags (optional, entity-based) */}
-      <div className="mb-3">
+      {/* Context Tags (optional, entity-based).
+
+          A quiet row rather than a block. Collapsed it is one 26px button, so
+          the margin around it was most of what it cost near the top of the
+          form — and it is the optional thing above two required ones. */}
+      <div className="mb-1.5 -ml-2">
         <ContextTagsInput
           value={contextTags}
           onChange={setContextTags}

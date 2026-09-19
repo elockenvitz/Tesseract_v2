@@ -18,7 +18,12 @@ const NAV_ITEMS = [
 
 export function OpsSidebar() {
   return (
-    <nav className="w-48 flex-shrink-0 bg-gray-900 border-r border-gray-800 py-4 px-2 space-y-0.5">
+    // Phone: a horizontal strip under the header. Desktop: the fixed 12rem
+    // column, which on a 390px screen left the page 198px to render in.
+    <nav
+      aria-label="Operations"
+      className="flex-shrink-0 bg-gray-900 flex gap-1 overflow-x-auto no-scrollbar px-2 py-1.5 border-b border-gray-800 md:block md:w-48 md:overflow-visible md:py-4 md:px-2 md:space-y-0.5 md:border-b-0 md:border-r"
+    >
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon
         return (
@@ -27,7 +32,7 @@ export function OpsSidebar() {
             to={item.to}
             end={(item as any).end}
             className={({ isActive }) => clsx(
-              'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+              'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors shrink-0 whitespace-nowrap',
               isActive
                 ? 'bg-gray-800 text-white'
                 : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'

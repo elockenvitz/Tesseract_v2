@@ -11,6 +11,7 @@ import {
   MessageCircleQuestion,
 } from 'lucide-react'
 import type { RecentItem } from '../../hooks/useRecentQuickIdeas'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 
 // ---------------------------------------------------------------------------
 // Types re-exported for backwards compat (hook still imports QuickIdeaSignal)
@@ -129,117 +130,113 @@ export function formatRelativeTime(dateString: string): string {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function SignalPill({ signal }: { signal: QuickIdeaSignal }) {
-  const config = SIGNAL_CONFIG[signal]
-  const Icon = config.icon
-
-  return (
-    <div
-      className={clsx(
-        'flex items-center justify-center w-5 h-5 rounded flex-shrink-0',
-        config.bgColor
-      )}
-      title={config.label}
-    >
-      <Icon className={clsx('h-3 w-3', config.textColor)} />
-    </div>
-  )
-}
-
-/** Subtle type tag: [PROMPT · OPEN] or [THOUGHT] */
-function TypeTag({ item }: { item: RecentItem }) {
-  if (item.kind === 'prompt') {
-    const st = STATUS_LABEL[item.status] || STATUS_LABEL.open
-    return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-medium leading-none">
-        <MessageCircleQuestion className="h-3 w-3 text-violet-500 dark:text-violet-400" />
-        <span className="uppercase tracking-wide text-violet-600 dark:text-violet-400">Prompt</span>
-        <span className="text-gray-300 dark:text-gray-600">·</span>
-        <span className={st.cls}>{st.text}</span>
-      </span>
-    )
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-medium leading-none">
-      <Lightbulb className="h-3 w-3 text-gray-400 dark:text-gray-500" />
-      <span className="uppercase tracking-wide text-gray-400 dark:text-gray-500">Thought</span>
-    </span>
-  )
-}
-
-/** Meta line under the title — differs by item kind */
-function MetaLine({ item }: { item: RecentItem }) {
-  const parts: React.ReactNode[] = []
-
-  // Timestamp
-  parts.push(
-    <span key="time" className="text-[10px] text-gray-400 dark:text-gray-500">
-      {formatRelativeTime(item.createdAt)}
-    </span>
-  )
-
-  // Context tag (e.g. COIN)
-  if (item.contextTag) {
-    parts.push(
-      <span key="ctx-dot" className="text-[10px] text-gray-300 dark:text-gray-600">·</span>,
-      <span key="ctx" className="text-[10px] font-medium text-gray-500 dark:text-gray-400 truncate max-w-[60px]">
-        {item.contextTag.label}
-      </span>
-    )
-  }
-
-  // Prompt-specific: assignee
-  if (item.kind === 'prompt' && item.assigneeName) {
-    parts.push(
-      <span key="to-dot" className="text-[10px] text-gray-300 dark:text-gray-600">·</span>,
-      <span key="to" className="text-[10px] text-gray-400 dark:text-gray-500 shrink-0">
-        To: {item.assigneeName}
-      </span>
-    )
-  }
-
-  return <div className="flex items-center gap-1.5 mt-0.5">{parts}</div>
-}
-
 // ---------------------------------------------------------------------------
 // Row component
 // ---------------------------------------------------------------------------
 
-function RecentItemRow({ item, onClick }: { item: RecentItem; onClick: () => void }) {
+/** A dot between metadata fragments. */
+function MetaDot() {
+  return <span className="text-gray-300 dark:text-gray-600" aria-hidden>·</span>
+}
+
+/**
+ * One recent item. Same structure on every surface; only density differs.
+ *
+ * ── What was wrong, and it was wrong on BOTH ──────────────────────────────
+ *
+ * The row drew its type twice: a coloured block on the left, then a type tag
+ * with the same icon and the word right beside it. For the common case — a
+ * thought with no sentiment — that block had no icon to hold, so it rendered
+ * as an empty grey square that reads as a broken avatar. Beneath it sat a
+ * third line for time and context. A two-field list item was three lines tall
+ * with a redundant gutter, and the chevron was `opacity-0 group-hover:100`, so
+ * on a touch screen the row had no affordance at all.
+ *
+ * ── The grammar ───────────────────────────────────────────────────────────
+ *
+ *   title                                    primary, what you scan for
+ *   type · state · signal · time · ctx · to  one line, everything else
+ *                                      ›     quiet, always drawn
+ *
+ * Nothing is dropped. The sentiment that lived in the left pill is the signal
+ * icon in the metadata line; the empty square had nothing to say and so no
+ * longer says it. Type keeps its icon and colour, so the list is still
+ * scannable by kind without spending a block on it.
+ *
+ * Long values cannot break the line: the metadata row is `overflow-hidden`,
+ * type, state, signal and time are `shrink-0`, and only context and assignee
+ * truncate. That is what holds at 320px, where a long assignee name would
+ * otherwise push the timestamp off-screen.
+ */
+export function RecentRow({ item, onClick, dense }: { item: RecentItem; onClick: () => void; dense: boolean }) {
+  const status = item.kind === 'prompt' ? (STATUS_LABEL[item.status] || STATUS_LABEL.open) : null
+  const signal = item.kind === 'thought' && item.signal ? SIGNAL_CONFIG[item.signal] : null
+  const SignalIcon = signal?.icon
+  const TypeIcon = item.kind === 'prompt' ? MessageCircleQuestion : Lightbulb
+  const typeTone = item.kind === 'prompt'
+    ? 'text-violet-600 dark:text-violet-400'
+    : 'text-amber-600 dark:text-amber-500'
+
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left group cursor-pointer"
-    >
-      {/* Signal icon — only for thoughts (prompts have no sentiment) */}
-      {item.kind === 'thought' && item.signal ? (
-        <SignalPill signal={item.signal} />
-      ) : item.kind === 'thought' ? (
-        <div className="w-5 h-5 rounded bg-gray-100 dark:bg-gray-700 flex-shrink-0" />
-      ) : (
-        // Prompt: subtle violet dot indicator
-        <div className="w-5 h-5 rounded bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center flex-shrink-0">
-          <MessageCircleQuestion className="h-3 w-3 text-violet-500 dark:text-violet-400" />
-        </div>
+      className={clsx(
+        'w-full flex items-center gap-3 text-left cursor-pointer transition-colors',
+        'hover:bg-gray-50 dark:hover:bg-gray-800/60 active:bg-gray-100 dark:active:bg-gray-800',
+        dense ? 'px-2.5 py-2.5' : 'px-2 py-2',
       )}
-
-      {/* Content */}
+    >
       <div className="flex-1 min-w-0">
-        {/* Type tag line */}
-        <TypeTag item={item} />
-
-        {/* Title / text */}
-        <p className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2 leading-snug mt-0.5">
+        <p className={clsx(
+          'font-medium text-gray-800 dark:text-gray-100 line-clamp-2 leading-snug',
+          dense ? 'text-sm' : 'text-[13px]',
+        )}>
           {item.text}
         </p>
-
-        {/* Meta row */}
-        <MetaLine item={item} />
+        <div className="mt-1 flex items-center gap-1.5 overflow-hidden text-[11px] leading-none">
+          <TypeIcon className={clsx('h-3 w-3 shrink-0', typeTone)} />
+          <span className={clsx('font-semibold uppercase tracking-wide shrink-0', typeTone)}>
+            {item.kind === 'prompt' ? 'Prompt' : 'Thought'}
+          </span>
+          {status && (
+            <>
+              <MetaDot />
+              <span className={clsx('font-medium shrink-0', status.cls)}>{status.text}</span>
+            </>
+          )}
+          {signal && SignalIcon && (
+            <>
+              <MetaDot />
+              <span className={clsx('flex items-center gap-0.5 shrink-0', signal.textColor)}>
+                <SignalIcon className="h-3 w-3" />
+                <span className="font-medium">{signal.label}</span>
+              </span>
+            </>
+          )}
+          <MetaDot />
+          <span className="text-gray-500 dark:text-gray-400 shrink-0">
+            {formatRelativeTime(item.createdAt)}
+          </span>
+          {item.contextTag && (
+            <>
+              <MetaDot />
+              <span className="font-medium text-gray-600 dark:text-gray-300 truncate">
+                {item.contextTag.label}
+              </span>
+            </>
+          )}
+          {item.kind === 'prompt' && item.assigneeName && (
+            <>
+              <MetaDot />
+              <span className="text-gray-500 dark:text-gray-400 truncate">To: {item.assigneeName}</span>
+            </>
+          )}
+        </div>
       </div>
-
-      {/* Hover chevron */}
-      <ChevronRight className="h-3 w-3 text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-1" />
+      <ChevronRight className={clsx(
+        'shrink-0 text-gray-400 dark:text-gray-500',
+        dense ? 'h-4 w-4' : 'h-3.5 w-3.5',
+      )} />
     </button>
   )
 }
@@ -254,21 +251,27 @@ export function RecentQuickIdeas({
   onViewAll,
   hasMore = false,
 }: RecentQuickIdeasProps) {
+  const dense = useIsMobile()
+  // `View all` was a 10px word with no padding — a click target on desktop and
+  // barely a tap target on a phone. Tinted and padded on both; the phone gets
+  // the larger box.
+  const viewAll = clsx(
+    'font-medium text-primary-600 dark:text-primary-400 rounded-md transition-colors',
+    'hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-100 dark:active:bg-gray-800',
+    dense ? 'text-xs px-2 py-1.5 -mr-2' : 'text-[11px] px-1.5 py-1 -mr-1.5',
+  )
+  const sectionLabel = clsx(
+    'font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide',
+    dense ? 'text-xs' : 'text-[11px]',
+  )
   // Empty state
   if (items.length === 0) {
     return (
       <div className="mt-4">
         <div className="border-t border-gray-200 dark:border-gray-700 mb-2" />
-        <div className="flex items-center justify-between px-1 mb-1">
-          <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
-            Recent
-          </span>
-          <button
-            onClick={onViewAll}
-            className="text-[10px] text-gray-400 dark:text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-          >
-            View all
-          </button>
+        <div className="flex items-center justify-between px-1">
+          <span className={sectionLabel}>Recent</span>
+          <button onClick={onViewAll} className={viewAll}>View all</button>
         </div>
         <p className="text-xs text-gray-400 dark:text-gray-500 text-center py-1">
           Nothing here yet — capture your first thought.
@@ -283,24 +286,18 @@ export function RecentQuickIdeas({
       <div className="border-t border-gray-200 dark:border-gray-700 mb-2" />
 
       {/* Header with View all */}
-      <div className="flex items-center justify-between px-1 mb-1">
-        <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
-          Recent
-        </span>
-        <button
-          onClick={onViewAll}
-          className="text-[10px] text-gray-400 dark:text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-        >
-          View all
-        </button>
+      <div className="flex items-center justify-between px-1">
+        <span className={sectionLabel}>Recent</span>
+        <button onClick={onViewAll} className={viewAll}>View all</button>
       </div>
 
       {/* Fixed list (no scrolling) */}
-      <div className="space-y-0.5">
+      <div className="divide-y divide-gray-100 dark:divide-gray-800">
         {items.map((item) => (
-          <RecentItemRow
+          <RecentRow
             key={item.id}
             item={item}
+            dense={dense}
             onClick={() => onOpen(item.id, item.kind)}
           />
         ))}

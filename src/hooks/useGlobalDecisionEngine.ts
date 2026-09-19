@@ -10,6 +10,12 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useThesisReviews, useThesisReviewConclusions } from './useThesisReview'
+import { useResearchScan } from './useDesktopResearch'
+import { useAssetViewCursors } from './useObjectViewCursor'
+import { useOrganization } from '../contexts/OrganizationContext'
+import { usePilotProgress } from './usePilotProgress'
+import { operationalAfterPilot, judgeIdeaRow } from '../lib/pilot/seed-visibility'
 import {
   runGlobalDecisionEngine,
   type GlobalDecisionEngineResult,
@@ -32,6 +38,12 @@ interface UseGlobalDecisionEngineResult {
 export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
   const { user } = useAuth()
   const userId = user?.id
+  const { currentOrgId } = useOrganization()
+  // The pilot's own flag. `cachedHasGraduated` covers the window where the
+  // live read has not resolved yet, so a graduated reader never sees the tour
+  // flash back into their feed on a refresh.
+  const { hasGraduated: liveGraduated, cachedHasGraduated } = usePilotProgress()
+  const hasGraduated = liveGraduated || cachedHasGraduated
 
   // ---- 1. Fetch user's portfolio coverage ----
   const { data: coverage, isLoading: coverageLoading } = useQuery({
@@ -75,7 +87,24 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
 
   // ---- 2. Fetch trade ideas (scoped to user's portfolios) ----
   const { data: tradeIdeas, isLoading: ideasLoading } = useQuery({
-    queryKey: ['decision-engine-ideas', userId, coverage?.portfolioIds],
+    /*
+     * `dashboard-engine` distinguishes this cache entry from
+     * `engine/decisionEngine/useDecisionEngine`, which reads the same table
+     * under the same prefix with a DIFFERENT select. Two query functions
+     * sharing one key is a cache-contract violation: whichever mounts first
+     * wins, they overwrite each other's rows, and every consumer re-renders on
+     * the difference. Latent for as long as both selects happened to be close
+     * enough to tolerate; named explicitly now rather than differentiated by
+     * whatever state each hook happens to append.
+     *
+     * The prefix stays shared so existing
+     * `invalidateQueries(['decision-engine-ideas'])` still reaches both.
+     *
+     * `hasGraduated` is part of the key, not just the body: graduating must
+     * refetch this list, or the tour stays in the feed until something else
+     * happens to invalidate it.
+     */
+    queryKey: ['decision-engine-ideas', 'dashboard-engine', userId, coverage?.portfolioIds, hasGraduated],
     queryFn: async () => {
       if (!coverage?.portfolioIds?.length) return []
 
@@ -83,7 +112,7 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
         .from('trade_queue_items')
         .select(`
           id, asset_id, portfolio_id, action, stage, rationale,
-          decision_outcome, decided_at, outcome, outcome_at,
+          decision_outcome, decided_at, outcome, outcome_at, origin_metadata,
           visibility_tier, created_by, created_at, updated_at,
           pair_id, pair_trade_id, pair_leg_type,
           proposed_weight, urgency,
@@ -96,11 +125,27 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
         .limit(100)
 
       if (error) throw error
-      const rows = (data || []).map((d: any) => ({
-        ...d,
-        asset_symbol: d.assets?.symbol,
-        portfolio_name: d.portfolios?.name,
-      }))
+      /*
+       * After graduation an untouched pilot seed is not live work.
+       *
+       * `origin_metadata` was not even selected here, so the rule could not be
+       * applied at all: Today counted, ranked and described the tour's five
+       * seeded ideas as the reader's own book. The ones they acted on stay --
+       * that is the whole distinction, and it is judged by the shared helper
+       * rather than re-decided here.
+       *
+       * Filtered before pair grouping, so a suppressed leg cannot leave a
+       * half-formed synthetic pair behind it.
+       */
+      const rows = operationalAfterPilot(
+        (data || []).map((d: any) => ({
+          ...d,
+          asset_symbol: d.assets?.symbol,
+          portfolio_name: d.portfolios?.name,
+          ...judgeIdeaRow(d),
+        })),
+        { hasGraduated },
+      )
 
       // Group pair trade legs into synthetic combined rows.
       // Support both pair_id (new) and pair_trade_id (legacy).
@@ -229,6 +274,53 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
     staleTime: 120_000,
   })
 
+  // Newest `thesis.reviewed` per asset. Its own query and cache entry, so
+  // recording a review refreshes the finding without refetching the engine's
+  // seven-query slice.
+  const thesisReviews = useThesisReviews()
+
+  // What Research would show, and when this reader last opened each name.
+  // Both are cached queries of their own: the scan is the same query key the
+  // Research workspace uses, so this costs nothing once Research has been
+  // opened, and the cursors refresh on their own when a visit is recorded.
+  const { subjects: researchSubjects } = useResearchScan()
+  const assetViewCursors = useAssetViewCursors()
+
+  // Every recorded conclusion about a thesis, `holds` included: the producer
+  // needs the latest word, and a later `holds` is what retires an earlier
+  // concern. Its own cache entry, so recording a review refreshes the finding
+  // without refetching the engine's slice.
+  const thesisConcernReviews = useThesisReviewConclusions()
+
+  // Active committed trades in the reader's coverage. Scoped by portfolio
+  // because `accepted_trades` carries no organization_id -- the portfolio is
+  // the only tenancy boundary this table has.
+  const { data: committedTrades } = useQuery({
+    queryKey: ['decision-engine-committed-trades', userId, coverage?.portfolioIds],
+    enabled: !!coverage?.portfolioIds?.length,
+    staleTime: 120_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('accepted_trades')
+        .select('id, asset_id, created_at, portfolio_id, assets:asset_id (symbol), portfolios:portfolio_id (name)')
+        .in('portfolio_id', coverage!.portfolioIds)
+        .eq('is_active', true)
+      if (error) throw error
+      type Row = {
+        id: string; asset_id: string | null; created_at: string
+        assets?: { symbol?: string | null } | null
+        portfolios?: { name?: string | null } | null
+      }
+      return (data as unknown as Row[] ?? []).map(t => ({
+        id: t.id,
+        asset_id: t.asset_id,
+        created_at: t.created_at,
+        asset_symbol: t.assets?.symbol ?? null,
+        portfolio_name: t.portfolios?.name ?? null,
+      }))
+    },
+  })
+
   // ---- 5. Fetch thesis staleness ----
   const { data: thesisUpdates, isLoading: thesisLoading } = useQuery({
     queryKey: ['decision-engine-thesis', userId, coverage?.assetIds],
@@ -327,11 +419,25 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
         proposals: proposals ?? [],
         ratingChanges: ratingChanges ?? [],
         thesisUpdates: thesisUpdates ?? [],
+        // "Reviewed and unchanged" is a fact about the thesis that no edit
+        // records. Without it the stale finding returns every morning until
+        // somebody edits a document that did not need editing.
+        thesisReviews,
+        // The two halves of "since you last looked". A subject with no cursor
+        // produces nothing -- never opened is not the same as neglected.
+        researchSubjects,
+        assetViewCursors,
+        // Capital already out, on a case somebody has since questioned.
+        committedTrades: committedTrades ?? [],
+        thesisConcernReviews,
+        organizationId: currentOrgId,
         projects: projects ?? [],
         // Skip: catalysts, prompts, recurrentWorkflows (not in data model)
       },
     })
-  }, [userId, coverage, tradeIdeas, proposals, ratingChanges, thesisUpdates, projects, coverageLoading])
+  }, [userId, coverage, tradeIdeas, proposals, ratingChanges, thesisUpdates, thesisReviews,
+      researchSubjects, assetViewCursors, committedTrades, thesisConcernReviews,
+      currentOrgId, projects, coverageLoading])
 
   const isLoading = coverageLoading || ideasLoading || proposalsLoading ||
     ratingsLoading || thesisLoading || projectsLoading

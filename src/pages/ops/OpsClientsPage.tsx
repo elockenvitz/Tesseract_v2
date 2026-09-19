@@ -109,7 +109,7 @@ export function OpsClientsPage() {
             sector: p.sector,
           }))
 
-          const { error: seedErr } = await supabase.rpc('seed_pilot_template_portfolio', {
+          const { data: seeded, error: seedErr } = await supabase.rpc('seed_pilot_template_portfolio', {
             p_org_id: data.organization_id,
             p_name: tpl.name,
             p_benchmark: tpl.benchmark,
@@ -120,6 +120,70 @@ export function OpsClientsPage() {
             // Non-fatal — the org still exists and can be managed. Surface the
             // error so the operator knows to re-run the seed if needed.
             console.warn('Template seed failed for new org:', seedErr)
+          }
+
+          /*
+           * The benchmark FILE, not just the label.
+           *
+           * `seed_pilot_template_portfolio` sets `portfolios.benchmark` and
+           * stops there, so every pilot book has carried a label pointing at
+           * nothing and zero rows in `portfolio_benchmark_weights`. Portfolio's
+           * benchmark comparison, Active Weight and the Trade Lab and Outcomes
+           * benchmark views all resolve through those rows, so all four had
+           * nothing to read.
+           *
+           * The RPC copies the newest canonical snapshot of the named index
+           * onto this portfolio; it invents no numbers, and writes nothing at
+           * all if no file for that index exists yet. Idempotent, so re-seeding
+           * an org is safe. Non-fatal for the same reason as the seed above —
+           * the nightly capture job now also targets portfolios by their
+           * declared benchmark, so a failure here self-heals.
+           */
+          /*
+           * Which template names could not be resolved to an asset.
+           *
+           * The seed joins `assets` on symbol with an INNER join, so a symbol
+           * with no asset row is dropped silently -- and it reports the full
+           * template length regardless, so nothing downstream could tell. That
+           * is why 25 of the 26 pilot books hold 34 of the template's 35 names:
+           * DUOL's asset row was created after they were seeded, and no one
+           * was told. Surfacing it here is the difference between a book that
+           * is quietly short a position and one an operator can fix.
+           */
+          const { data: unresolved } = await supabase.rpc(
+            'seed_pilot_unresolved_symbols' as never,
+            { p_positions: positions } as never,
+          )
+          const missing = (unresolved as string[] | null) ?? []
+          if (missing.length > 0) {
+            console.warn(
+              `Pilot seed: ${missing.length} template symbol(s) had no asset row and were NOT added to ${tpl.name}: ${missing.join(', ')}`,
+            )
+          }
+
+          const seededPortfolioId = (seeded as { portfolio_id?: string } | null)?.portfolio_id
+          // Read through a cast for the same reason: `data` types as `never`
+          // here, so every property access on it is an error in this file.
+          const seededOrgId = (data as { organization_id?: string } | null)?.organization_id
+          if (seededPortfolioId) {
+            // `as never` on both arguments for the same reason the seed call
+            // above needs it: these RPCs are not in the generated Supabase
+            // types, so the client types the name as a known-function union and
+            // the args as `undefined`. Casting here rather than regenerating
+            // keeps the repo type count flat.
+            const { data: benchRows, error: benchErr } = await supabase.rpc(
+              'seed_pilot_benchmark_weights' as never,
+              {
+                p_portfolio_id: seededPortfolioId,
+                p_org_id: seededOrgId,
+                p_index_name: tpl.benchmark,
+              } as never,
+            )
+            if (benchErr) {
+              console.warn('Benchmark seed failed for new org:', benchErr)
+            } else if (!benchRows) {
+              console.warn(`No ${tpl.benchmark} file to seed; nightly capture will fill it.`)
+            }
           }
         }
       }
@@ -156,6 +220,17 @@ export function OpsClientsPage() {
       }
 
       queryClient.invalidateQueries({ queryKey: ['ops-clients'] })
+      /*
+       * The operator's own membership list is a ten-minute cache, so a new org
+       * they just provisioned would not appear in the header selector — and
+       * the selector is the only canonical way into it, because provisioning
+       * deliberately does not switch anybody's active org.
+       *
+       * Refreshing the list is NOT a switch. It makes the org selectable; the
+       * reader still chooses it, and `switchOrg` still writes
+       * `current_organization_id` before any org-scoped query runs.
+       */
+      queryClient.invalidateQueries({ queryKey: ['user-organizations'] })
       setShowProvision(false)
       setForm({ name: '', slug: '', email: '', isPilot: true })
       if (data?.organization_id) navigate(`/ops/clients/${data.organization_id}`)
@@ -164,16 +239,16 @@ export function OpsClientsPage() {
   })
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
+    <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Clients</h1>
           <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">{clients.length} organization{clients.length !== 1 ? 's' : ''}</p>
         </div>
         <button
           onClick={() => setShowProvision(!showProvision)}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shrink-0 whitespace-nowrap"
         >
           <Plus className="w-4 h-4" />
           New Client
@@ -239,7 +314,7 @@ export function OpsClientsPage() {
               </p>
             </div>
           </label>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => provisionMutation.mutate()}
               disabled={!form.name.trim() || !form.slug.trim() || !form.email.trim() || provisionMutation.isPending}
@@ -281,18 +356,23 @@ export function OpsClientsPage() {
             <button
               key={client.id}
               onClick={() => navigate(`/ops/clients/${client.id}`)}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
+              className="w-full px-4 md:px-5 py-4 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
                   <Building2 className="w-4 h-4 text-indigo-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate dark:text-white">{client.name}</p>
-                  <p className="text-xs text-gray-400">{client.slug}</p>
+                  <p className="text-sm font-semibold text-gray-900 break-words md:truncate dark:text-white">{client.name}</p>
+                  <p className="text-xs text-gray-400 break-all">{client.slug}</p>
+                  {/* Phone: the counts the desktop row lays out to the right. */}
+                  <p className="md:hidden mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                    {client.member_count} member{client.member_count !== 1 ? 's' : ''} · {client.portfolio_count} portfolio{client.portfolio_count !== 1 ? 's' : ''} · {new Date(client.created_at).toLocaleDateString()}
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center gap-5 flex-shrink-0">
+              <ChevronRight className="md:hidden w-4 h-4 text-gray-300 shrink-0" />
+              <div className="hidden md:flex items-center gap-5 flex-shrink-0">
                 <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                   <Users className="w-3.5 h-3.5" />
                   {client.member_count}

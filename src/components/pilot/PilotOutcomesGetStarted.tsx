@@ -2,9 +2,9 @@
  * PilotOutcomesGetStarted — Get Started banner shown at the top of
  * Outcomes for a pilot user the first time they land here.
  *
- * Reaching Outcomes is the graduation moment — pilot gating drops
- * away and the rest of Tesseract becomes available. This banner
- * acknowledges the milestone and walks the user through the loop:
+ * Outcomes is pilot mission stage 5, "Close the loop". Finishing this
+ * banner completes the stage (see the mark below), and with stages 1–4
+ * done the mission graduates the pilot. It walks the user through:
  *
  *   1. Inspect the result — click your committed decision in the
  *      table to see Outcomes's analysis (price move, performance,
@@ -12,8 +12,8 @@
  *   2. Review why the decision was made — open the "Why this
  *      decision was made" section in the right pane to revisit
  *      the original thesis, why-now, and recommendation.
- *   3. Check how the trade is performing — open the "How it's
- *      performing" section to see price move, P&L, and the
+ *   3. Check how the trade is performing — open the "Performance
+ *      so far" section to see price move, P&L, and the
  *      decision-level scoring. Opening it graduates the user.
  *
  * Graduation now happens entirely on Outcomes — no navigation away
@@ -27,13 +27,17 @@
  */
 
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
-import { X, ArrowRight, Check, Trophy } from 'lucide-react'
-import { clsx } from 'clsx'
+import { PilotStepsBanner } from './PilotStepsBanner'
+import { Trophy } from 'lucide-react'
 import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { tutorialOutcomeReviewedKey } from '../../lib/pilot/mission'
 
 interface PilotOutcomesGetStartedProps {
   userId: string | undefined
   orgId?: string | null
+  /** `inset` on the phone list, where it sits as a card above the decisions. */
+  variant?: 'bar' | 'inset'
 }
 
 const DISMISS = 'dismissed'
@@ -50,12 +54,16 @@ const STEP_TO_EVENT: Record<string, PilotEventType> = {
   [STEP2]: 'pilot_outcomes_step_thesis_reviewed',
   [STEP3]: 'pilot_outcomes_step_performance_checked',
 }
-// Pending flag the global PilotGraduationModal reads. Setting this
-// when graduation occurs lets the modal pop wherever the user lands
-// after the step-3 navigation (since Outcomes itself unmounts when
-// the user clicks "Update research" → asset tab opens).
-const PENDING_GRAD = 'pending_graduation_modal'
-const GRAD_DISMISS = 'graduation_dismissed'
+/*
+ * This banner no longer decides when to celebrate.
+ *
+ * It used to write a `pending_graduation_modal` localStorage flag the moment
+ * its three LOCAL step flags were set, and PilotGraduationModal opened on that
+ * flag alone. Three browser-local booleans are not graduation: the modal could
+ * announce the full app to a reader whose tabs were all still gated. The mark
+ * below is this banner's whole contribution — the mission decides the rest, and
+ * `hasGraduated` is what the modal opens on.
+ */
 
 function flagKey(userId: string, orgId: string | null | undefined, suffix: string) {
   return `pilot_outcomes_intro_${suffix}_${userId || 'anon'}_${orgId || 'no-org'}`
@@ -113,6 +121,7 @@ function useFlag(userId: string | undefined, orgId: string | null | undefined, s
 export function PilotOutcomesGetStarted({
   userId,
   orgId,
+  variant = 'bar',
 }: PilotOutcomesGetStartedProps) {
   // Flags are read straight from localStorage on every render via
   // useSyncExternalStore — the source of truth is the disk, not React
@@ -129,7 +138,7 @@ export function PilotOutcomesGetStarted({
   //
   // Steps 2 and 3 both key off `outcomes:section-opened` — Step 2
   // when the "Why this decision was made" section opens
-  // (sectionId='thesis'), Step 3 when "How it's performing" opens
+  // (sectionId='thesis'), Step 3 when "Performance so far" opens
   // (sectionId='performance'). One listener handles both.
   useEffect(() => {
     if (!userId) return
@@ -150,33 +159,33 @@ export function PilotOutcomesGetStarted({
     }
   }, [userId, orgId])
 
-  // Once all three are done, retire the 3-step strip AND set the
-  // pending-graduation flag so the global PilotGraduationModal (mounted
-  // at the Dashboard level) pops the celebration. The modal lives
-  // outside this component so it survives the navigation that step 3
-  // typically triggers (Update Research opens the asset tab and
-  // unmounts Outcomes).
+  // "Finish the loop" finished is pilot mission stage 5 — the last one. The
+  // steps are browser-local, so this writes the one server-backed mark the
+  // roadmap reads; the mission then graduates the pilot, and graduation is what
+  // opens the celebration. Idempotent per (stage, org), and written for a pilot
+  // who finished before this existed.
   //
-  // The trigger does NOT depend on `!dismissed` — a user who manually
-  // X'd the banner still earns graduation when they finish the loop.
-  // PENDING_GRAD is the gate that prevents double-firing within a
-  // session; GRAD_DISMISS is the gate that prevents re-celebrating
-  // someone who already saw it.
+  // The mark does NOT depend on `!dismissed` — a user who manually X'd the
+  // banner still earns graduation when they finish the loop.
+  const { progress, mark } = usePilotProgress()
+  const stageMarked = !!progress[tutorialOutcomeReviewedKey(orgId ?? null)]
   useEffect(() => {
-    if (!userId || !step1 || !step2 || !step3) return
-    if (readFlag(userId, orgId, GRAD_DISMISS)) return
-    if (!readFlag(userId, orgId, PENDING_GRAD)) {
-      writeFlag(userId, orgId, PENDING_GRAD)
-      try { window.dispatchEvent(new CustomEvent('pilot-graduation:trigger')) } catch { /* ignore */ }
-    }
-    if (!dismissed) setFlag(userId, orgId, DISMISS)
+    if (!userId || !step1 || !step2 || !step3 || stageMarked) return
+    mark('tutorial_outcome_reviewed')
+  }, [userId, step1, step2, step3, stageMarked, mark])
+
+  // Retire the strip once its three steps are done.
+  useEffect(() => {
+    if (!userId || !step1 || !step2 || !step3 || dismissed) return
+    setFlag(userId, orgId, DISMISS)
   }, [dismissed, step1, step2, step3, userId, orgId])
 
-  if (dismissed) return null
+  // `stageMarked` retires it as well as the local flag, because the local flags
+  // are per-browser: a pilot who finished the loop on their laptop opened this
+  // on a second device and was asked to finish it again. The durable mark is
+  // the one that followed them.
+  if (dismissed || stageMarked) return null
 
-  const dismiss = () => {
-    if (userId) setFlag(userId, orgId, DISMISS)
-  }
 
   // Step 2 click — scroll the right pane to the "Why this decision
   // was made" section. The actual step completion fires when the
@@ -189,7 +198,7 @@ export function PilotOutcomesGetStarted({
     } catch { /* ignore */ }
   }
 
-  // Step 3 click — open the "How it's performing" section. The section's
+  // Step 3 click — open the "Performance so far" section. The section's
   // own open broadcast (sectionId='performance') ticks step 3.
   const handleCheckPerformance = () => {
     try {
@@ -199,85 +208,38 @@ export function PilotOutcomesGetStarted({
     } catch { /* ignore */ }
   }
 
+  /* The shell is shared; the identity is not. Outcomes is the terminal stage
+     of the loop and still says "Finish the loop" in its own colour. No dismiss
+     control, and it auto-retires once all steps complete. */
   return (
-    <div className="flex-shrink-0 bg-gradient-to-r from-emerald-50 via-teal-50 to-primary-50 dark:from-emerald-950/40 dark:via-teal-950/20 dark:to-primary-950/30 border-b border-emerald-200 dark:border-emerald-800/60">
-      <div className="px-6 py-3 flex items-start gap-4">
-        <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-semibold shrink-0 mt-0.5">
-          <Trophy className="h-4 w-4" />
-          <span className="text-[12px] uppercase tracking-wider whitespace-nowrap">Finish the loop</span>
-        </div>
-        <div className="flex items-start gap-x-4 text-gray-700 dark:text-gray-300 min-w-0 flex-wrap">
-          <Step
-            n={1}
-            title="Inspect the result"
-            hint="Click your decision in the table to see how Outcomes scored the thesis."
-            done={step1}
-          />
-          <ArrowRight className="h-3.5 w-3.5 text-emerald-400 dark:text-emerald-500 shrink-0 mt-[3px]" />
-          <button
-            type="button"
-            onClick={handleReviewThesis}
-            className="flex items-start gap-2 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
-          >
-            <Step
-              n={2}
-              title="Review why the decision was made"
-              hint="Open the “Why this decision was made” section in the right pane to revisit the thesis."
-              done={step2}
-            />
-          </button>
-          <ArrowRight className="h-3.5 w-3.5 text-emerald-400 dark:text-emerald-500 shrink-0 mt-[3px]" />
-          <button
-            type="button"
-            onClick={handleCheckPerformance}
-            className="flex items-start gap-2 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
-          >
-            <Step
-              n={3}
-              title="Check how the trade is performing"
-              hint="Open the “How it's performing” section to see the price move, P&L, and decision scoring."
-              done={step3}
-            />
-          </button>
-        </div>
-        {/* Banner intentionally has no dismiss control — Outcomes is the
-            terminal stage of the pilot loop, and each step guides the
-            user through what graduation actually unlocks. Auto-retires
-            once all steps complete. */}
-      </div>
-    </div>
+    <PilotStepsBanner
+      label="Finish the loop"
+      tone="emerald"
+      icon={Trophy}
+      variant={variant}
+      steps={[
+        {
+          n: 1,
+          title: 'Inspect the result',
+          hint: 'Open your decision to see how Outcomes scored the thesis.',
+          done: step1,
+        },
+        {
+          n: 2,
+          title: 'Review why the decision was made',
+          hint: 'Open the \u201cWhy this decision was made\u201d section to revisit the thesis.',
+          done: step2,
+          onClick: handleReviewThesis,
+        },
+        {
+          n: 3,
+          title: 'Check how the trade is performing',
+          hint: 'Open the \u201cPerformance so far\u201d section to see the price move, P&L, and decision scoring.',
+          done: step3,
+          onClick: handleCheckPerformance,
+        },
+      ]}
+    />
   )
 }
 
-function Step({ n, title, hint, done }: { n: number; title: string; hint: string; done: boolean }) {
-  return (
-    <div className="flex items-start gap-2 min-w-0">
-      <span
-        className={clsx(
-          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm",
-          done ? "bg-emerald-500 text-white" : "bg-emerald-600 text-white",
-        )}
-      >
-        {done ? <Check className="h-3 w-3" /> : n}
-      </span>
-      <div className="min-w-0 text-left">
-        <div
-          className={clsx(
-            "text-[12px] font-semibold leading-tight whitespace-nowrap",
-            done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-900 dark:text-white",
-          )}
-        >
-          {title}
-        </div>
-        <div
-          className={clsx(
-            "text-[11px] leading-snug whitespace-nowrap",
-            done ? "text-emerald-600/60 dark:text-emerald-400/60" : "text-gray-600 dark:text-gray-400",
-          )}
-        >
-          {hint}
-        </div>
-      </div>
-    </div>
-  )
-}

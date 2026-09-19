@@ -18,15 +18,40 @@ import { anchoredWindow } from '../../components/research-v2/ResearchVisual'
 const DAY = 86_400_000
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
 
-const subject = (over: Partial<ResearchSubject> = {}): ResearchSubject => ({
-  assetId: 'a-amzn', symbol: 'AMZN', companyName: 'Amazon.com',
-  thesisUpdatedAt: daysAgo(30), daysSinceReview: 30,
-  sectionCount: 3, coreSectionCount: 3,
-  coreSections: ['thesis', 'where_different', 'risks_to_thesis'],
-  evidenceCount: 4,
-  newestEvidenceAt: daysAgo(40), newSinceReview: 0,
-  ...over,
-})
+/**
+ * A subject whose clock and whose displayed date agree.
+ *
+ * ── Why this derives the timestamp ────────────────────────────────────────
+ *
+ * `stateOf` stopped reading `daysSinceReview` and now recomputes the age from
+ * `thesisUpdatedAt` and `lastReviewedAt`, so that recording "reviewed, nothing
+ * changed" can clear a stale flag without anyone editing a thesis that did not
+ * need editing. The two fields are deliberately different questions now:
+ * `daysSinceReview` is the date the page DISPLAYS, and the age clock is what
+ * decides attention.
+ *
+ * This fixture set `daysSinceReview` and left `thesisUpdatedAt` at its 30-day
+ * default, so every case that asked for a 200-day-old subject was handed a
+ * 30-day-old one and the clock, correctly, said `current`. Deriving the
+ * timestamp from the day count makes `subject({ daysSinceReview: 200 })` mean
+ * what it reads as. Every assertion below is unchanged.
+ *
+ * An explicit `thesisUpdatedAt` in `over` still wins -- the cases that set the
+ * pair deliberately, to prove they can disagree, need that.
+ */
+const subject = (over: Partial<ResearchSubject> = {}): ResearchSubject => {
+  const days = 'daysSinceReview' in over ? over.daysSinceReview : 30
+  return {
+    assetId: 'a-amzn', symbol: 'AMZN', companyName: 'Amazon.com',
+    thesisUpdatedAt: days == null ? null : daysAgo(days),
+    daysSinceReview: days ?? null,
+    sectionCount: 3, coreSectionCount: 3,
+    coreSections: ['thesis', 'where_different', 'risks_to_thesis'],
+    evidenceCount: 4,
+    newestEvidenceAt: daysAgo(40), newSinceReview: 0,
+    ...over,
+  }
+}
 
 describe('state — why a subject needs attention', () => {
   it('leads with evidence that arrived after the case was written', () => {
@@ -59,7 +84,7 @@ describe('why-it-matters is an investment reason, never a bare age', () => {
   it('names the count of new items, not the number of days', () => {
     const text = whyItMatters(subject({ newSinceReview: 3 }))
     expect(text).toContain('3 new research notes')
-    expect(text).toContain('since the thesis was written')
+    expect(text).toContain('since the thesis was last updated')
   })
 
   it('singularises', () => {
@@ -203,9 +228,9 @@ describe('the engagement target binds object and issue', () => {
     const t = targetFor(subject({ evidenceCount: 0, newSinceReview: 0, weightPct: undefined }))!
     const labels = (t.contextChips ?? []).map(c => c.label)
     expect(labels).not.toContain('Research')
-    expect(labels).not.toContain('New since review')
+    expect(labels).not.toContain('New since update')
     expect(labels).not.toContain('Weight')
-    expect(labels).toContain('Last review')
+    expect(labels).toContain('Last updated')
   })
 
   it('seeds AI with the actual problem, not a generic prompt', () => {

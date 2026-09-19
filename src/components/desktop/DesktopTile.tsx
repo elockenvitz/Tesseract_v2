@@ -19,17 +19,31 @@
  * what would I do. Not the detail workspace compressed into a card: the reader
  * is choosing what to open, not reading it here.
  *
- * ── No call to action on a tile ──────────────────────────────────────────
+ * ── No call to action AT REST ────────────────────────────────────────────
  *
  * The original three-column landing pages each carried their own verb, so
- * every tile competed with the workspace for the same decision. Opening IS the
- * action; the detail workspace owns the verbs. The shell offers no footer slot,
- * so a surface cannot add one back.
+ * every tile competed with the workspace for the same decision. Opening is
+ * still the action, and the detail workspace still owns the verbs.
+ *
+ * This file used to enforce that by offering no footer slot at all. That did
+ * not hold: Decisions added one anyway, with `<button>`s nested inside this
+ * shell's own `<button>` -- invalid HTML, and unreachable by keyboard. A rule
+ * a surface can break by accident is not a rule, it is a trap.
+ *
+ * So the constraint is now expressed where it belongs, in the resting state.
+ * `TileShelf` shows the object's standing context at rest and reveals the
+ * verbs only on hover or keyboard focus, in reserved height, so a gallery
+ * still reads as a field of objects rather than a wall of buttons -- and the
+ * verbs are real, accessible buttons when the reader reaches for them.
  */
 
 import { useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import type { SemanticTone } from '../../lib/semantic-tone'
+/* One definition of "which rows am I drawing", shared with the lens charts:
+   every bug this window has had was two pieces of code disagreeing about
+   where it starts. */
+import { windowOverCloses } from '../../lib/market-data/anchored-window'
 
 /**
  * The editorial gallery.
@@ -87,7 +101,18 @@ export type TileSize = 'hero' | 'large' | 'medium' | 'compact'
  * equal column, and every tile keeps the same width. Chronology stays true and
  * the grid stays calm; the richer record still reads larger.
  */
-export type TileFlow = 'ranked' | 'chronological'
+/**
+ * `packed` is a third mode, for a lens whose order is not a total priority.
+ *
+ * Explore ranks by INTERESTINGNESS, and `explore-compose` states plainly that
+ * this is not a total order. A grid whose cells vary by content will not tile
+ * evenly, and the alternative to closing the holes is a field of gaps that
+ * read as cards which failed to render. Mobile's own packer already promotes
+ * within a lookahead for the same reason.
+ *
+ * `ranked` and `chronological` must never use it: there, position is a claim.
+ */
+export type TileFlow = 'ranked' | 'chronological' | 'packed'
 
 /*
   Every row closes, at every width, in emitted order.
@@ -134,12 +159,33 @@ const SPAN: Record<TileFlow, Record<TileSize, string>> = {
     medium: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
     compact: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
   },
+  /*
+    Packed uses the ranked spans -- the difference is `grid-auto-flow: row
+    dense` in the gallery, not the widths. Every span here is a divisor of the
+    track count at each breakpoint, so a row only goes short when a wide tile
+    follows a narrow one (3 + 6, then a 6 that will not fit). Dense backfills
+    that 3-wide hole with a later narrow tile instead of leaving it empty.
+  */
+  packed: {
+    hero: 'md:col-span-6 xl:col-span-5 2xl:col-span-6',
+    large: 'md:col-span-6 xl:col-span-4 2xl:col-span-6',
+    medium: 'md:col-span-3 xl:col-span-4 2xl:col-span-3',
+    compact: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
+  },
 }
 
 export function DesktopGallery({
-  title, count, action, note, flow = 'ranked', children,
+  title, action, note, flow = 'ranked', children,
 }: {
   title: React.ReactNode
+  /**
+   * Accepted and not drawn.
+   *
+   * The tally beside the heading restated a field the reader can see, and on a
+   * lens whose job is to say which FEW things matter, the total is the least
+   * useful number on the page. The prop stays so callers need not all change
+   * at once, and so a future summary line has somewhere to read it from.
+   */
   count?: number
   /** A filter or selector for the whole gallery. */
   action?: React.ReactNode
@@ -152,7 +198,15 @@ export function DesktopGallery({
     <div data-testid="desktop-gallery" data-flow={flow} className="px-6 pb-10 pt-5">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">{title}</h1>
-        {count != null && <span className="font-mono text-[11px] text-gray-500">{count}</span>}
+        {/*
+          No count beside the heading.
+
+          It restated something the reader can see -- the field is right there
+          -- and on a lens whose whole job is to say which few things matter,
+          a tally of how many there are in total is the least useful number on
+          the page. `count` stays in the props so callers need not all change
+          at once; it simply is not drawn.
+        */}
         {action && <div className="ml-auto">{action}</div>}
       </div>
       {note && <div className="mt-1.5">{note}</div>}
@@ -173,9 +227,98 @@ export function DesktopGallery({
       */}
       <div
         className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
-        style={{ gridAutoRows: 'minmax(88px, auto)', gridAutoFlow: 'row' }}
+        style={{
+          gridAutoRows: 'minmax(88px, auto)',
+          /*
+             ── When a lens may close its own holes ────────────────────────
+
+             `row` everywhere by default, and the reason is at the top of this
+             file: dense backfills earlier gaps with later items, so rank #7
+             lands above rank #4 the moment a row does not divide evenly, and
+             the layout quietly lies about priority.
+
+             `pack` is for a lens whose order is NOT a total priority. Explore
+             ranks by interestingness, which `explore-compose` says in as many
+             words is not a total order -- the fourth-most-interesting thing is
+             not meaningfully behind the third -- and mobile's own packer
+             already promotes a card within a lookahead window to avoid
+             stranding a hole. A lens that cannot make that claim leaves this
+             alone.
+          */
+          gridAutoFlow: flow === 'packed' ? 'row dense' : 'row',
+        }}
       >
         {children}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The gallery's own loading state.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ *
+ * Every lens had hand-rolled a skeleton, and every one of them described a
+ * DIFFERENT page from the one that replaced it: a `md:grid-cols-2
+ * xl:grid-cols-3` grid of equal `h-56` cards handing over to a twelve-column
+ * mosaic of four different tile sizes. The handover was therefore a layout
+ * change rather than a fade -- the last and largest jump of a cold load,
+ * arriving exactly when the reader had started looking.
+ *
+ * So the skeleton is built from the same `SPAN` map, the same grid and the
+ * same size functions the real gallery uses. If the mosaic changes, this
+ * changes with it, because it is reading the same source rather than
+ * imitating it.
+ *
+ * Heights are per SIZE, not one global number: a hero and a compact do not
+ * occupy the same room, and a skeleton that pretends they do is the same
+ * mistake in a different place. They are honest approximations of a typical
+ * tile at that size -- the grid's `minmax(88px, auto)` still governs, so a
+ * real tile that wants more room takes it.
+ */
+const SKELETON_HEIGHT: Record<TileSize, string> = {
+  hero: 'h-[232px]',
+  large: 'h-[232px]',
+  medium: 'h-[172px]',
+  compact: 'h-[132px]',
+}
+
+export function GallerySkeleton({
+  title, count = 6, flow = 'ranked', sizeAt,
+}: {
+  title: React.ReactNode
+  /** How many placeholders. Default six: two rows of the usual mosaic. */
+  count?: number
+  flow?: TileFlow
+  /** Which size each index takes. Defaults to the ranked rule, so a lens that
+   *  ranks gets its real shape without having to say so. */
+  sizeAt?: (index: number, total: number) => TileSize
+}) {
+  const size = sizeAt ?? sizeByRank
+  return (
+    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
+      <div className="flex items-baseline gap-2.5">
+        <h1 className="text-[21px] font-semibold tracking-tight">{title}</h1>
+        <span className="h-4 w-8 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
+      </div>
+      <div
+        className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+        style={{ gridAutoRows: 'minmax(88px, auto)', gridAutoFlow: 'row' }}
+      >
+        {Array.from({ length: count }, (_, i) => {
+          const s = size(i, count)
+          return (
+            <div
+              key={i}
+              className={clsx(
+                SPAN[flow][s],
+                SKELETON_HEIGHT[s],
+                'animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]',
+              )}
+            />
+          )
+        })}
       </div>
     </div>
   )
@@ -197,6 +340,42 @@ export function sizeByRank(index: number, total: number): TileSize {
   // that is a scanning unit. A page of forty does not get ten mediums.
   if (index <= 3) return 'medium'
   return 'compact'
+}
+
+/**
+ * Rank, with room to breathe further down the page.
+ *
+ * ── The shape this fixes ─────────────────────────────────────────────────
+ *
+ * `sizeByRank` grades monotonically: hero, large, medium, medium, then compact
+ * for everything after. On a long field that is a page which starts big and
+ * flattens into an unbroken run of small cards -- reported as "gradually
+ * larger" at the top and nothing worth looking at below the fold.
+ *
+ * ── Why a rhythm is not a lie about rank ─────────────────────────────────
+ *
+ * Emission order is untouched: this changes how much room a position gets, not
+ * which position an item holds. Past the leading band the ranker's own scores
+ * are close together -- the fourteenth most interesting subject is not
+ * meaningfully behind the thirteenth -- so granting one of them a larger cell
+ * claims no more than "there is room to show this one properly".
+ *
+ * What it must not do is promote on CONTENT, which would let a tile grow
+ * because it happens to have a chart. The interval is positional and fixed, so
+ * it cannot be gamed by what an item carries.
+ *
+ * `every` is the cadence: one larger cell per that many compact ones. Seven
+ * puts roughly one per two rows at desktop widths, which breaks the run
+ * without turning the tail into a second leading band.
+ */
+export function sizeByRankWithRhythm(
+  index: number, total: number, every = 7,
+): TileSize {
+  const base = sizeByRank(index, total)
+  if (base !== 'compact') return base
+  // Offset so the first larger cell lands a full row into the tail rather
+  // than immediately after the leading band, where it would read as part of it.
+  return (index - 4) % every === every - 1 ? 'medium' : 'compact'
 }
 
 /**
@@ -229,10 +408,20 @@ export function sizeByRecency(index: number): TileSize {
  */
 export function DesktopTile({
   onOpen, eyebrow, tone = 'neutral', size = 'compact', flow = 'ranked',
-  testId, dataAttrs, children,
+  testId, dataAttrs, context, actions, children,
 }: {
   onOpen: () => void
   eyebrow: React.ReactNode
+  /**
+   * The object's standing context, shown at rest on the shelf. Omit to get no
+   * shelf at all -- a tile with no actions keeps the original anatomy exactly.
+   */
+  context?: React.ReactNode
+  /**
+   * The verbs, revealed on hover and on keyboard focus. Rendered into a rail
+   * of RESERVED height, so revealing them moves nothing.
+   */
+  actions?: React.ReactNode
   /** How much room this object earned. Importance, never severity. */
   size?: TileSize
   flow?: TileFlow
@@ -249,13 +438,42 @@ export function DesktopTile({
   dataAttrs?: Record<string, string | undefined>
   children: React.ReactNode
 }) {
+  /*
+   * A group, not a button -- and that reverses this file's original decision.
+   *
+   * The shell was a real `<button>`, which is why the header below says there
+   * is no footer slot: a tile that IS a button cannot contain one, because a
+   * nested `<button>` is invalid HTML and unreachable by keyboard. Decisions
+   * had already broken that rule in practice (its `TileAction` buttons sit
+   * inside this element today), so the constraint was being violated rather
+   * than honoured.
+   *
+   * Today and Ideas each independently arrived at the same answer: a
+   * `role="group"` with a portal click that ignores anything interactive
+   * underneath it. This adopts that contract rather than inventing a third.
+   * `tabIndex={0}` plus an Enter/Space handler keeps the whole tile reachable
+   * and openable from the keyboard, which is what the button gave us free.
+   */
+  const portalClick = (e: React.MouseEvent<HTMLElement>) => {
+    const t = e.target as HTMLElement
+    if (t.closest('button,a,input,select,textarea,[role="button"],[data-no-portal]')) return
+    // A drag that selected text is a read, not a decision to leave.
+    if (window.getSelection()?.toString()) return
+    onOpen()
+  }
+
   return (
-    <button
-      type="button"
+    <div
+      role="group"
+      tabIndex={0}
       data-testid={testId ?? 'desktop-tile'}
       data-tone={tone}
       data-size={size}
-      onClick={onOpen}
+      onClick={portalClick}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
+      }}
       {...Object.fromEntries(Object.entries(dataAttrs ?? {}).filter(([, v]) => v != null))}
       /*
         The Ideas card, everywhere.
@@ -274,7 +492,8 @@ export function DesktopTile({
       */
       className={clsx(
         SPAN[flow][size],
-        'flex h-full min-w-0 flex-col overflow-hidden rounded-[3px] border bg-white text-left',
+        // `group` is what the shelf's cross-fade hangs off.
+        'group flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-[3px] border bg-white text-left',
         'transition-colors duration-100',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
         'dark:bg-[#141a25]',
@@ -305,7 +524,155 @@ export function DesktopTile({
           {eyebrow}
         </div>
         {children}
+        {(context || actions) && (
+          <TileShelf size={size} context={context} actions={actions} />
+        )}
       </div>
+    </div>
+  )
+}
+
+/** Reserved height for the one visual a tile is allowed, by size.
+ *  `compact` gets none: an axis with no room for a label is decoration. */
+const VISUAL_H: Record<TileSize, string | null> = {
+  hero: 'h-16',      // 64px
+  large: 'h-12',     // 48px
+  medium: 'h-9',     // 36px
+  compact: null,
+}
+
+/**
+ * The one visual region, at a height the tile has already paid for.
+ *
+ * `TileVisual` (above) pins its child to the bottom but lets it be any height,
+ * so a gallery's rows settled to whatever each object happened to draw and the
+ * field had no baseline. This reserves the height instead: the slot is the
+ * same on every tile of a size, whether the object inside draws or not, so
+ * revealing the shelf or swapping the object moves nothing.
+ *
+ * Returns null at `compact` and for a missing child, so callers can hand it
+ * whatever they have without branching on size themselves.
+ */
+export function TileVisualSlot({ size, children }: { size: TileSize; children: React.ReactNode }) {
+  const h = VISUAL_H[size]
+  if (!h || !children) return null
+  return (
+    <div
+      data-testid="tile-visual-slot"
+      data-size={size}
+      // `data-no-portal`: a scrub across the object is a read, not a decision
+      // to leave the gallery.
+      data-no-portal
+      className={clsx('mt-auto flex shrink-0 flex-col justify-end overflow-hidden pt-1', h)}
+    >
+      {children}
+    </div>
+  )
+}
+
+/** Reserved height for the shelf, by size. Tall enough for a real button and
+ *  its focus ring, and no taller. */
+const SHELF_H: Record<TileSize, string> = {
+  hero: 'h-[34px]',
+  large: 'h-[34px]',
+  medium: 'h-[30px]',
+  compact: 'h-[26px]',
+}
+
+/**
+ * The canonical desktop action shelf, generalised from Ideas' card footer.
+ *
+ * Two layers in one rail of fixed height, cross-fading on hover and on
+ * keyboard focus anywhere inside the tile. At rest the reader sees the
+ * object's standing context; reaching for it reveals the verbs. Because the
+ * height is reserved and both layers are absolutely positioned, nothing
+ * reflows either way -- which is the whole point, and the reason Ideas' rail
+ * works where the older `group-hover:opacity` reveals on the legacy dashboard
+ * widgets pushed their cards around.
+ *
+ * `group-focus-within` is not a nicety: without it the actions are reachable
+ * by Tab but invisible while focused.
+ */
+/**
+ * Exported for Ideas, which is not built on `DesktopTile` and had its own.
+ *
+ * Its version was an opaque tray that grew UPWARD out of a 34px rail and
+ * closed over the analysis -- because its action layer was 47px of why-now
+ * plus buttons and would not fit the rail it was given. That is a real
+ * trade-off honestly made, but it means hovering a card hides the thing the
+ * reader was reading, which is what "cramped on hover" describes.
+ *
+ * This reserves the height instead and cross-fades opacity only, so nothing
+ * moves and nothing is covered. Ideas fits it by putting only the verbs in
+ * the action layer -- the why-now line is standing information and belongs in
+ * the resting one.
+ */
+export function TileShelf({
+  size, context, actions,
+}: { size: TileSize; context?: React.ReactNode; actions?: React.ReactNode }) {
+  return (
+    <div
+      data-testid="tile-shelf"
+      className={clsx(
+        'relative mt-auto shrink-0 border-t border-gray-200 pt-1.5 dark:border-white/10',
+        SHELF_H[size],
+      )}
+    >
+      {context && (
+        <div
+          data-testid="tile-shelf-context"
+          className={clsx(
+            'pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 truncate',
+            'text-[10px] text-gray-500 dark:text-gray-400',
+            'opacity-100 transition-opacity duration-150',
+            actions && 'group-hover:opacity-0 group-focus-within:opacity-0',
+          )}
+        >
+          {context}
+        </div>
+      )}
+      {actions && (
+        <div
+          data-testid="tile-shelf-actions"
+          className={clsx(
+            'pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-1.5',
+            'opacity-0 transition-opacity duration-150',
+            'group-hover:pointer-events-auto group-hover:opacity-100',
+            'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+          )}
+        >
+          {actions}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * A verb on the shelf.
+ *
+ * `stopPropagation` so pressing it is not also read as opening the tile, and
+ * `relative` so it sits above the resting layer it fades in over. Lives here
+ * rather than in each workspace so four lenses stop hand-rolling it -- which
+ * is how Decisions ended up with nested buttons inside a button.
+ */
+export function TileAction({
+  label, onClick, primary, testId,
+}: { label: string; onClick: () => void; primary?: boolean; testId?: string }) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      className={clsx(
+        'relative rounded-md px-2 py-[3px] text-[11px] font-semibold transition-colors',
+        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
+        primary
+          ? 'bg-blue-700 text-white hover:bg-blue-800'
+          : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10',
+      )}
+    >
+      {label}
     </button>
   )
 }
@@ -374,15 +741,34 @@ export function TileIdentity({
  * This is what earns a hero its space when there is no honest chart to draw.
  */
 export function TileHeroNumber({
-  figure, unit, label, tone = 'neutral',
+  figure, unit, label, tone = 'neutral', scale = 'hero',
 }: {
   figure: React.ReactNode
   unit?: string
   label: React.ReactNode
   tone?: SemanticTone
+  /**
+   * How much room the figure has.
+   *
+   * Added because Portfolio was saying the same fact four different ways: this
+   * primitive on hero and large, a hand-rolled span on medium, and a
+   * `TileMeta` row on compact -- three type scales and two label wordings, so
+   * one fact read as three across a scanned gallery. Below `large` the label
+   * sits inline, because a stacked caption under a 15px figure costs more
+   * height than the card has.
+   */
+  scale?: TileSize
 }) {
+  const stacked = scale === 'hero' || scale === 'large'
+  const figureSize = scale === 'hero' ? 'text-[30px]'
+    : scale === 'large' ? 'text-[25px]'
+    : scale === 'medium' ? 'text-[19px]'
+    : 'text-[15px]'
+  const unitSize = stacked ? 'text-[15px]' : 'text-[11px]'
+  const labelSize = stacked ? 'text-[12px]' : 'text-[10px]'
+
   return (
-    <div>
+    <div className={stacked ? undefined : 'flex min-w-0 flex-wrap items-baseline gap-x-1.5'}>
       {/*
         Subordinate to the ticker, and inked.
 
@@ -399,16 +785,23 @@ export function TileHeroNumber({
       */}
       <div className="flex items-baseline gap-1">
         <span className={clsx(
-          'font-mono text-[30px] font-semibold leading-[0.95] tabular-nums tracking-[-0.03em]',
+          'font-mono font-semibold leading-[0.95] tabular-nums tracking-[-0.03em]',
+          figureSize,
           tone === 'critical'
             ? 'text-rose-700 dark:text-rose-400'
             : 'text-gray-900 dark:text-gray-100',
         )}>
           {figure}
         </span>
-        {unit && <span className="text-[15px] font-semibold text-gray-500">{unit}</span>}
+        {unit && <span className={clsx('font-semibold text-gray-500', unitSize)}>{unit}</span>}
       </div>
-      <div className="mt-1 text-[12px] leading-snug text-gray-600 dark:text-gray-400">{label}</div>
+      <div className={clsx(
+        'leading-snug text-gray-600 dark:text-gray-400',
+        labelSize,
+        stacked && 'mt-1',
+      )}>
+        {label}
+      </div>
     </div>
   )
 }
@@ -787,32 +1180,155 @@ export function TileGap({ spot, target, label }: { spot: number; target: number;
   )
 }
 
-/** A price path, one ink, at tile scale. Never graded by direction. */
-export function TileSpark({ series, label }: { series: number[]; label: string }) {
-  if (series.length < 2) return null
-  const W = 200, H = 22
-  const min = Math.min(...series), max = Math.max(...series)
+/**
+ * A price path at small-tile scale, scrubbable, graded by direction.
+ *
+ * ── Why the small sizes get one at all ───────────────────────────────────
+ *
+ * Only Ideas drew a price below `large`. Research, Portfolio and Decisions
+ * put a visual on hero and large and nothing underneath, and Today has no
+ * price anywhere -- so a gallery scrolled into a run of tiles that were text
+ * over text over text, each one repeating the same share-of-book percentage
+ * the one above it had. "No variety among smaller cards" is the accurate
+ * description of that, and the fix is not more captions: it is the one object
+ * that differs per name.
+ *
+ * ── Why it is graded, when `TileSpark` was not ───────────────────────────
+ *
+ * The component this replaces drew a single slate ink on purpose, so a price
+ * path could not be read as a verdict on a decision. That argument holds for
+ * the DECISION and not for the PRICE: up and down are facts about the line, a
+ * desk reads them instantly, and the ungraded version was read as "no signal"
+ * rather than as neutrality. The percentage keeps its sign and the caption
+ * keeps saying what it measures; the hue says only which way the price went.
+ *
+ * ── Axes at this size ────────────────────────────────────────────────────
+ *
+ * A 26px band cannot carry gridlines, so the axis is the high and low of the
+ * window, printed once at the right where they cost no vertical room, and the
+ * scrubbed value replaces them while a pointer is down the line. That is what
+ * makes the amplitude readable -- the thing a bare sparkline withholds.
+ */
+export function TileSparkline({
+  points, anchorISO = null, label, height = 26, compact = false,
+}: {
+  /** Dated closes, oldest first. Fewer than two and nothing renders. */
+  points: { date: Date; value: number }[]
+  /** Where the window starts, when the tile has a date worth measuring from. */
+  anchorISO?: string | null
+  /** What the line is of -- "Since the fill", "90 days". */
+  label: string
+  height?: number
+  /** Drops the axis figures, for the smallest tiles. */
+  compact?: boolean
+}) {
+  const [at, setAt] = useState<number | null>(null)
+
+  /*
+   * The shared slicer, not a local one.
+   *
+   * This computed its own window at first -- `findIndex(p => p >= anchor)`,
+   * fall back to the whole series -- and reproduced the exact bug
+   * `anchoredWindow` had just been fixed for. When every close POST-dates the
+   * anchor, `findIndex` returns 0, so a two-day line read as "since the fill"
+   * about a fill from ten days back. The series has to START at or before the
+   * anchor to cover it, and that rule now has one home.
+   */
+  const w = windowOverCloses(points, anchorISO) ?? windowOverCloses(points, null)
+  if (!w) return null
+  const reaches = w.reachesAnchor
+  const values = w.series
+  /* The dates behind the window, for the axis. `from`/`to` come back with it
+     rather than being re-derived here, for the same reason. */
+  const series = points.slice(points.length - values.length)
+  const W = 200
+  const H = height
+  const min = Math.min(...values)
+  const max = Math.max(...values)
   const span = (max - min) || 1
-  const d = series
-    .map((v, i) => `${((i * W) / (series.length - 1)).toFixed(1)},${(H - 2 - (H - 4) * ((v - min) / span)).toFixed(1)}`)
-    .join(' L')
-  const change = ((series[series.length - 1] - series[0]) / series[0]) * 100
+  const x = (i: number) => (i * W) / (values.length - 1)
+  const y = (v: number) => 2 + (H - 4) * (1 - (v - min) / span)
+  const d = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' L')
+
+  const change = ((values[values.length - 1] - values[0]) / values[0]) * 100
+  const up = change >= 0
+  const stroke = up ? 'stroke-emerald-600 dark:stroke-emerald-400' : 'stroke-rose-600 dark:stroke-rose-400'
+  const fill = up ? 'fill-emerald-500' : 'fill-rose-500'
+  const ink = up ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
+
+  const cursor = at == null ? null : Math.max(0, Math.min(values.length - 1, at))
+  const shown = cursor == null ? change : ((values[cursor] - values[0]) / values[0]) * 100
+  const money = (v: number) => v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(2) : v.toFixed(3)
+
   return (
-    <div>
+    <div data-testid="tile-sparkline" data-reaches={reaches ? 'true' : 'false'} data-no-portal>
       <div className="flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">{label}</span>
-        <span className="ml-auto font-mono text-[11px] font-semibold tabular-nums">
-          {change >= 0 ? '+' : ''}{change.toFixed(1)}%
+        <span className="truncate text-[9px] font-semibold uppercase tracking-widest text-gray-500">
+          {reaches ? label : 'Price history'}
+        </span>
+        <span className={clsx('ml-auto shrink-0 font-mono text-[11px] font-semibold tabular-nums', ink)}>
+          {shown >= 0 ? '+' : ''}{shown.toFixed(1)}%
         </span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="mt-0.5 w-full" style={{ height: H }}
-           role="img" aria-label={`${label}, ${change.toFixed(1)} percent`}>
-        <path d={`M${d} L${W},${H} L0,${H} Z`} className="fill-slate-500 opacity-[0.09]" />
-        <path d={`M${d}`} fill="none" strokeWidth={1.4} strokeLinejoin="round"
-              className="stroke-slate-500 dark:stroke-slate-400" />
-      </svg>
+
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+          className="mt-0.5 w-full cursor-crosshair" style={{ height: H }}
+          role="img"
+          aria-label={`${label}, ${money(values[0])} to ${money(values[values.length - 1])}, ${change.toFixed(1)} percent`}
+          onPointerMove={(e) => {
+            const r = e.currentTarget.getBoundingClientRect()
+            if (r.width <= 0) return
+            setAt(Math.round(((e.clientX - r.left) / r.width) * (values.length - 1)))
+          }}
+          onPointerLeave={() => setAt(null)}
+        >
+          <path d={`M${d} L${W},${H} L0,${H} Z`} className={clsx(fill, 'opacity-[0.10]')} />
+          <path d={`M${d}`} fill="none" strokeWidth={1.4} strokeLinejoin="round" className={stroke} />
+          {cursor != null && (
+            <line x1={x(cursor)} y1={0} x2={x(cursor)} y2={H} strokeWidth={1}
+                  className="stroke-gray-400 opacity-60 dark:stroke-gray-500" />
+          )}
+        </svg>
+        {/* The end of the line, round because it is HTML: the SVG above is
+            stretched on one axis, which turns a circle into an ellipse. */}
+        <span
+          className={clsx(
+            'pointer-events-none absolute right-0 h-[5px] w-[5px] -translate-y-1/2 translate-x-1/2 rounded-full',
+            up ? 'bg-emerald-600 dark:bg-emerald-400' : 'bg-rose-600 dark:bg-rose-400',
+          )}
+          style={{ top: `${(y(values[values.length - 1]) / H) * 100}%` }}
+          aria-hidden
+        />
+      </div>
+
+      {/* The amplitude, which a bare sparkline withholds. Replaced by the
+          scrubbed price while a pointer is on the line. */}
+      {!compact && (
+        <div className="mt-0.5 flex justify-between font-mono text-[8px] leading-none text-gray-400 dark:text-gray-500">
+          {cursor == null ? (
+            <>
+              <span>{shortDay(series[0].date)}</span>
+              <span>{money(min)} – {money(max)}</span>
+            </>
+          ) : (
+            <>
+              <span>{shortDay(series[cursor].date)}</span>
+              <span className="text-gray-600 dark:text-gray-300">{money(values[cursor])}</span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
+}
+
+/** Month and day, the only precision an axis this size can carry. */
+function shortDay(d: Date) {
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 /**
@@ -844,8 +1360,12 @@ export function TileSpark({ series, label }: { series: number[]; label: string }
  * distance between them, and the window named underneath.
  */
 export function TileTimeline({
-  writtenAt, newestAt, count,
-}: { writtenAt: string | null; newestAt: string | null; count: number }) {
+  writtenAt, newestAt, count, startLabel = 'Case written',
+}: {
+  writtenAt: string | null; newestAt: string | null; count: number
+  /** What the start date is, where a caller knows it is not a first write (e.g. "Case updated"). */
+  startLabel?: string
+}) {
   const track = useRef<HTMLDivElement | null>(null)
   const [pick, setPick] = useState<number | null>(null)
   const written = writtenAt ? new Date(writtenAt).getTime() : null
@@ -872,7 +1392,7 @@ export function TileTimeline({
   return (
     <div>
       <div className="flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
-        <span>Case written</span>
+        <span>{startLabel}</span>
         <span className="font-mono tracking-normal normal-case text-gray-500">
           {pick != null
             ? `${day(pick)} · ${Math.max(0, Math.round((now - pick) / 86_400_000))}d ago`

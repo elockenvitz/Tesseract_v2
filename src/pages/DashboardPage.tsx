@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react'
-import { clsx } from 'clsx'
 import { arrayMove } from '@dnd-kit/sortable'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { Layout } from '../components/layout/Layout'
 import type { Tab } from '../components/layout/TabManager'
 import {
-  TabStateManager, LEGACY_DASHBOARD_ID, LEGACY_DASHBOARD_TITLE,
+  TabStateManager, CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID,
 } from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
+import { IdeasApp } from '../components/ideas-app/IdeasApp'
 import { DashboardShell } from '../components/dashboard/DashboardShell'
 import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
 import { MobilePipeline } from '../components/mobile/MobilePipeline'
@@ -27,9 +27,10 @@ import { ListTab } from '../components/tabs/ListTab'
 import { BlankTab } from '../components/tabs/BlankTab.tsx'
 import { DesktopOnlyCard } from '../components/mobile/DesktopOnlyCard'
 import { MobileDashboard } from '../components/mobile/MobileDashboard'
+import { MobilePilotHome } from '../components/mobile/MobilePilotHome'
 import { isDesktopOnly } from '../lib/mobile/mobile-surfaces'
+import { canonicalTabTarget } from '../lib/tabs/legacy-tab-aliases'
 import { useIsMobile } from '../hooks/useMediaQuery'
-const IdeaGeneratorPage = lazy(() => import('./IdeaGeneratorPage').then(m => ({ default: m.IdeaGeneratorPage })))
 const WorkflowsPage = lazy(() => import('./WorkflowsPage').then(m => ({ default: m.WorkflowsPage })))
 import { ProjectsPage } from './ProjectsPage'
 import { ProjectDetailTab } from '../components/tabs/ProjectDetailTab'
@@ -53,23 +54,18 @@ const CoveragePage = lazy(() => import('./CoveragePage').then(m => ({ default: m
 import { OrganizationPage } from './OrganizationPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
 import { AdminConsolePage } from './AdminConsolePage'
-import type { AttentionType } from '../types/attention'
-import type { DashboardItem } from '../types/dashboard-item'
-import { DashboardFilters } from '../components/dashboard/DashboardFilters'
-import { DecisionSystem } from '../components/dashboard/DecisionSystem'
-import { ResearchWorkbench } from '../components/dashboard/ResearchWorkbench'
-import { PortfolioWorkbench } from '../components/dashboard/PortfolioWorkbench'
-import { PortfolioGrid } from '../components/dashboard/PortfolioGrid'
-import { useDashboardScope } from '../hooks/useDashboardScope'
 import { ASSET_REFERENCE_SELECT } from '../lib/assets/asset-columns'
-import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
 import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
-import { PilotActionDashboard } from '../components/pilot/PilotActionDashboard'
+import { CoverageSummaryBanner } from '../components/coverage/CoverageSummaryBanner'
+import { PilotHomeSkeleton } from '../components/pilot/PilotHomeSkeletons'
 import { usePilotMode } from '../hooks/usePilotMode'
+import { usePilotSeeding } from '../hooks/usePilotSeeding'
+import { usePilotEntry } from '../hooks/usePilotEntry'
 import { TAB_TYPE_TO_PILOT_FEATURE, PILOT_ACCESS_DEFAULTS } from '../lib/pilot/pilot-access'
+import { shouldHoldForPilotDecision, dashboardTabTypeForRender } from '../lib/pilot/tab-gate'
 import { PilotTeaserModal } from '../components/pilot/PilotTeaserModal'
 import { PilotGraduationModal } from '../components/pilot/PilotGraduationModal'
 import { PilotTradeBookPreview } from '../components/pilot/PilotTradeBookPreview'
@@ -179,33 +175,29 @@ export function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab
     /*
      * A restored legacy Dashboard is residue, not a workspace choice.
      *
-     * ── What went wrong ───────────────────────────────────────────────────
+     * ── What this used to do, and why it is no longer enough ─────────────
      *
-     * Nothing in the product injects the legacy `dashboard` tab into a session
-     * any more — it is reachable only from the launcher's More group. But
-     * sessions persist, and one written earlier still carries it, titled
-     * plainly "Dashboard". Restored, it sat beside the canonical Dashboard
-     * under an identical name and, being the tab that was last active, took
-     * the home slot. A returning user met two tabs called "Dashboard", landed
-     * on the older surface, and had no way to tell which was which. Reaching
-     * the current product needed `sessionStorage.clear()`.
+     * The legacy tab was KEPT and renamed to "Dashboard (legacy)", so that two
+     * tabs could not both present themselves as "Dashboard" and the older one
+     * could not take the home slot. That was right while the surface still
+     * existed and was still offered from the launcher's More group.
      *
-     * ── Why this is not "always force today" ──────────────────────────────
+     * It no longer exists for a normal reader. The non-pilot desktop workbench
+     * is gone and both launcher entries with it, so a renamed legacy tab would
+     * be a tab whose only remaining content is the pilot branch — offered to
+     * a reader who is not a pilot. Keeping it reachable was the point of the
+     * rename; nothing is left to reach.
      *
-     * A persisted workspace IS a choice and is still honoured: someone who
-     * left on an Asset tab, Trade Lab or Research comes back to it, exactly as
-     * before. The only case re-anchored is the one nobody chose — the legacy
-     * home restored into the home slot. That is a narrower rule than forcing
-     * the Dashboard over everything, and it is the one that matches what the
-     * user actually decided.
+     * So it is migrated rather than renamed. `migrateLegacyTabs` in
+     * `TabStateManager.loadMainTabState` has already rewritten the type AND
+     * the id, collapsed a session holding both onto one, and carried the
+     * active id across — see `legacy-tab-aliases` for why one rewrite is
+     * correct on both desktop and phone. Nothing about that is device
+     * specific, and nothing here needs to repeat it.
      *
-     * The legacy tab is kept, renamed to the name the launcher already gives
-     * it, so it stays reachable and stops impersonating the home.
+     * A persisted workspace is still a choice: someone who left on an Asset
+     * tab, Trade Lab or Research comes back to it, exactly as before.
      */
-    const legacyHome = dedupedTabs.find(tab => tab.id === LEGACY_DASHBOARD_ID)
-    if (legacyHome && activeTabId === LEGACY_DASHBOARD_ID) {
-      activeTabId = CANONICAL_HOME.id
-    }
     return {
       tabs: dedupedTabs.map(tab => ({
         ...tab,
@@ -213,8 +205,6 @@ export function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab
         // Migrate old tab titles
         ...(tab.type === 'workflows' && tab.title !== 'Process' ? { title: 'Process' } : {}),
         ...(tab.type === 'priorities' && tab.title !== 'My Priorities' ? { title: 'My Priorities' } : {}),
-        // Two tabs may never both present themselves as "Dashboard".
-        ...(tab.id === LEGACY_DASHBOARD_ID ? { title: LEGACY_DASHBOARD_TITLE } : {}),
       })),
       activeTabId
     }
@@ -265,6 +255,18 @@ export function DashboardPage() {
 
   // ─── Pilot Mode gating ───────────────────────────────────────────────
   const pilotMode = usePilotMode()
+
+  /*
+   * A pilot's workspace is seeded from here because this is the one component
+   * both shells render, whatever tab is open. It used to be seeded by a hook
+   * inside Trade Lab, so a fresh pilot who went coverage → capture → Idea
+   * Pipeline arrived at an empty board that nothing had ever written to.
+   * No-ops for everyone who is not a pilot. See `usePilotSeeding`.
+   */
+  usePilotSeeding()
+
+  /* Coverage setup, then the five-step mission. See the `today` branch. */
+  const pilotEntry = usePilotEntry()
   const [pilotTeaser, setPilotTeaser] = useState<{ featureLabel: string; reason: 'preview' | 'hidden' } | null>(null)
 
   // Pilot users never see tabs backed by a pilot-hidden feature. Filtering
@@ -322,10 +324,22 @@ export function DashboardPage() {
     const activeAccess = activeFeature ? pilotMode.accessFor(activeFeature) : 'full'
 
     if (activeAccess === 'hidden') {
-      const dashboard = tabs.find(t => t.id === 'dashboard')
-      if (dashboard && dashboard.id !== activeTabId) {
-        setActiveTabId(dashboard.id)
-        setTabs(prev => prev.map(t => ({ ...t, isActive: t.id === dashboard.id })))
+      /*
+       * The canonical home, by its own identity.
+       *
+       * This looked for a tab with the literal id `dashboard`. That was the
+       * legacy home, and the session migration now rewrites it to `today`
+       * before this ever runs — so the guard was about to start looking for a
+       * tab that cannot exist, and a pilot on a gated surface would have been
+       * left there with nothing to snap back to.
+       *
+       * `CANONICAL_HOME_TAB.id` is the same constant the restore path and the
+       * default session use, which is what keeps the three from drifting.
+       */
+      const home = tabs.find(t => t.id === CANONICAL_HOME_TAB.id)
+      if (home && home.id !== activeTabId) {
+        setActiveTabId(home.id)
+        setTabs(prev => prev.map(t => ({ ...t, isActive: t.id === home.id })))
       }
     }
   }, [pilotMode.isPilot, pilotMode.isLoading, pilotMode.access, tabs, activeTabId])
@@ -419,50 +433,19 @@ export function DashboardPage() {
     return () => window.removeEventListener('org-auto-joined', handler)
   }, [])
 
-  // Dashboard scope (portfolio, coverage, urgent filters)
-  const [scope, setScope] = useDashboardScope()
-
-  // Portfolio list for scope bar
-  const { data: portfolios = [] } = useQuery({
-    queryKey: ['user-portfolios', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return []
-      const [ownedRes, teamRes] = await Promise.all([
-        supabase.from('portfolios').select('id, name, team_id, teams:team_id(id, name)').eq('created_by', user.id),
-        supabase
-          .from('portfolio_team')
-          .select('portfolio_id, portfolios:portfolio_id(id, name, team_id, teams:team_id(id, name))')
-          .eq('user_id', user.id),
-      ])
-      const owned = ownedRes.data ?? []
-      const team = (teamRes.data ?? [])
-        .map((t: any) => t.portfolios)
-        .filter(Boolean)
-      const all = [...owned, ...team]
-      const unique = Array.from(new Map(all.map(p => [p.id, p])).values())
-      return unique as { id: string; name: string; team_id: string | null; teams: { id: string; name: string } | null }[]
-    },
-    enabled: !!user?.id,
-    staleTime: 300_000,
-  })
-
+  /*
+   * The scope bar, its portfolio list and the cockpit feed went with the
+   * workbench they served. `useDashboardScope` and `useCockpitFeed` are left
+   * in the tree with no caller here: the lens shell may yet want the same
+   * material, and deleting a data hook is a separate decision from retiring
+   * the page that used it.
+   */
   // "New Trade Idea" modal — opened via decision-engine-action event from asset page
   const [tradeIdeaModal, setTradeIdeaModal] = useState<{ open: boolean; assetId?: string; portfolioId?: string }>({ open: false })
 
   // Stable navigate ref — handleSearchResult is defined below but onClick closures
   // only fire on user interaction (never during render), so a ref is safe.
   const navigateRef = useRef<(detail: any) => void>(() => {})
-  const stableNavigate = useCallback(
-    (detail: any) => navigateRef.current(detail),
-    [],
-  )
-
-  // Cockpit feed — merges Decision Engine + Attention System → stacked view model
-  const cockpit = useCockpitFeed(
-    { portfolioIds: scope.portfolioIds, urgentOnly: scope.urgentOnly },
-    stableNavigate,
-  )
-
   const handleSearchResult = async (result: any) => {
     // For asset type, if we don't have an ID but have a symbol, fetch the asset by symbol
     if (result.type === 'asset' && !result.data?.id && result.data?.symbol) {
@@ -489,6 +472,21 @@ export function DashboardPage() {
         id: result.data.pageType // Use pageType as ID for singleton pages
       }
     }
+
+    /*
+     * A retired tab type becomes the surface that answers for it now.
+     *
+     * Before the id is read, because everything below keys on it: the
+     * existing-tab lookup, the active id and the tab that gets created. An
+     * alias applied after that point would open a second tab for the same
+     * application, which is the duplicate this prevents.
+     *
+     * At the funnel rather than at the senders. A legacy descriptor can
+     * arrive from a banner, a search result, an event, a launcher tile or a
+     * saved session, and the list of senders anybody can enumerate is never
+     * all of them.
+     */
+    result = canonicalTabTarget(result)
 
     // For portfolios, prefer mnemonic (portfolio_id) as tab title
     const tabTitle = result.type === 'portfolio' && result.data?.portfolio_id
@@ -707,21 +705,34 @@ export function DashboardPage() {
     })
   }
 
-  // Phones cap the open tab set.
-  //
-  // The nav drawer only lists the five most recent, so without this the sixth
-  // tab and beyond stay open, holding their queries and their editor state,
-  // while being invisible and unreachable from the drawer. Closing them keeps
-  // what is listed and what exists in agreement.
-  //
-  // Routed through handleTabClose rather than setTabs so the empty-note cleanup
-  // and active-tab reassignment it owns still run. Dashboard is exempt — it
-  // cannot be closed — and the active tab is exempt so a tab cannot be closed
-  // out from under the person looking at it.
+  /*
+    Phones cap the open tab set.
+
+    The nav drawer lists the five most recent, so without this the sixth tab and
+    beyond stay open, holding their queries and their editor state, while being
+    invisible and unreachable from the drawer. Closing them keeps what is listed
+    and what exists in agreement.
+
+    Routed through handleTabClose rather than setTabs so the empty-note cleanup
+    and active-tab reassignment it owns still run. The active tab is exempt so a
+    tab cannot be closed out from under the person looking at it.
+
+    ── The home tab is exempt, and had to be told so twice ──────────────────
+    The exemption named `'dashboard'`, which was the home id when this was
+    written. The canonical home is `today`, so the home tab was closable — and
+    because it is the FIRST tab of a session it sits at the front of `tabs`,
+    which is exactly where `slice(0, …)` takes from. So opening a sixth tab
+    closed the home tab first, and the drawer's Home section, which rendered
+    only when that tab existed, vanished with it.
+
+    Both ids are exempt now: the canonical one, and the legacy one for a
+    restored session that still carries it.
+  */
   const MOBILE_TAB_LIMIT = 5
+  const HOME_TAB_IDS = new Set<string>([CANONICAL_HOME_TAB.id, LEGACY_DASHBOARD_ID])
   useEffect(() => {
     if (!isMobile) return
-    const closable = tabs.filter(t => t.id !== 'dashboard' && !t.isBlank)
+    const closable = tabs.filter(t => !HOME_TAB_IDS.has(t.id) && !t.isBlank)
     if (closable.length <= MOBILE_TAB_LIMIT) return
     const excess = closable.slice(0, closable.length - MOBILE_TAB_LIMIT)
     for (const tab of excess) {
@@ -853,15 +864,20 @@ export function DashboardPage() {
   // Listen for custom event to open Trade Lab with specific portfolio
   useEffect(() => {
     const handleOpenTradeLab = (event: CustomEvent) => {
-      const { labId, labName, portfolioId } = event.detail || {}
+      const { labId, labName, portfolioId, tradeQueueItemId } = event.detail || {}
       // Navigate to trade-lab tab with the portfolio/lab ID
       // Always use "Trade Lab" as the tab title for consistency
       navigateRef.current({
         id: labId || 'trade-lab',
         title: 'Trade Lab',
         type: 'trade-lab',
-        data: { id: labId, portfolioId }
+        // The idea is carried only when a caller named one, so every existing
+        // dispatch produces exactly the tab data it did before.
+        data: { id: labId, portfolioId, ...(tradeQueueItemId ? { tradeQueueItemId } : {}) }
       })
+      // Tell a cancelable dispatch that the navigation happened. A no-op for
+      // the non-cancelable ones. See `lib/trade-lab/open-trade-lab`.
+      event.preventDefault()
     }
 
     window.addEventListener('openTradeLab', handleOpenTradeLab as EventListener)
@@ -924,14 +940,16 @@ export function DashboardPage() {
   // Listen for custom event to open Ideas tab with filters (e.g., from "View all" in sidebar)
   useEffect(() => {
     const handleOpenIdeasTab = (event: CustomEvent) => {
-      const { filters } = event.detail || {}
-      // Navigate to idea-generator tab with initial filters
-      navigateRef.current({
-        id: 'idea-generator',
-        title: 'Ideas',
-        type: 'idea-generator',
-        data: { initialFilters: filters }
-      })
+      /*
+       * The filters go no further.
+       *
+       * They were `IdeasInitialFilters` — the retired generator's scope, view,
+       * time range and sort — and the standalone app has no counterpart for
+       * any of them. Translating them into something that looks equivalent
+       * would put the reader in a state they never chose, so the event now
+       * carries only what still means something: open Ideas.
+       */
+      navigateRef.current({ id: 'ideas', title: 'Ideas', type: 'ideas', data: null })
     }
 
     window.addEventListener('openIdeasTab', handleOpenIdeasTab as EventListener)
@@ -968,6 +986,39 @@ export function DashboardPage() {
     return () => window.removeEventListener('navigate-to-project', handleNavigateToProject as EventListener)
   }, [])
 
+  /*
+    Open a list or a theme the reader just filed something into.
+
+    The mobile capture sheet confirms with a toast carrying "View list" /
+    "View theme", and it cannot reach `handleSearchResult` — it is rendered
+    deep inside MobileDashboard, which this lane does not touch. The event is
+    the seam the surrounding code already uses for exactly this, alongside
+    `navigate-to-asset` and `navigate-to-project` above.
+
+    The name travels with the event, so the tab opens titled correctly without
+    a round trip; the id alone would show "List" until a fetch landed.
+  */
+  useEffect(() => {
+    const openFiled = (type: 'list' | 'theme') => (event: Event) => {
+      const { id, name } = (event as CustomEvent).detail || {}
+      if (!id) return
+      navigateRef.current({
+        id,
+        title: name || (type === 'list' ? 'List' : 'Theme'),
+        type,
+        data: { id, name },
+      })
+    }
+    const onList = openFiled('list')
+    const onTheme = openFiled('theme')
+    window.addEventListener('navigate-to-list', onList)
+    window.addEventListener('navigate-to-theme', onTheme)
+    return () => {
+      window.removeEventListener('navigate-to-list', onList)
+      window.removeEventListener('navigate-to-theme', onTheme)
+    }
+  }, [])
+
   // Listen for custom event to open Trade Queue (e.g., from toast action after creating trade idea)
   useEffect(() => {
     const handleOpenTradeQueue = (event: CustomEvent) => {
@@ -1000,10 +1051,14 @@ export function DashboardPage() {
       return <BlankTab onSearchResult={handleSearchResult} />
     }
 
+    // A restored or deep-linked Dashboard lens tab is the pilot home until the
+    // pilot graduates. See `dashboardTabTypeForRender`.
+    const tabType = dashboardTabTypeForRender(activeTab.type, pilotMode.effectiveIsPilot, CANONICAL_HOME_TAB.type)
+
     // Surfaces with no phone treatment get an honest explanation rather than a
     // desktop layout crushed into 390px. What is and isn't supported lives in
     // lib/mobile/mobile-surfaces.ts — unregistered types default to desktop-only.
-    if (isMobile && isDesktopOnly(activeTab.type)) {
+    if (isMobile && isDesktopOnly(tabType)) {
       return (
         <DesktopOnlyCard
           type={activeTab.type}
@@ -1044,11 +1099,11 @@ export function DashboardPage() {
     //
     // Desktop is deliberately untouched: `today` still falls through to the
     // `case 'today'` DashboardShell below.
-    if (activeTab.type === 'dashboard' || (isMobile && activeTab.type === 'today')) {
+    if (activeTab.type === 'dashboard' || (isMobile && tabType === 'today')) {
       return renderDashboardContent()
     }
 
-    switch (activeTab.type) {
+    switch (tabType) {
       case 'asset':
         if (!activeTab.data) return <AssetLoadingState />
         // Phones get a purpose-built asset page. AssetTab is 4,300 lines of
@@ -1076,8 +1131,6 @@ export function DashboardPage() {
         return <ListsPage onListSelect={handleSearchResult} />
       case 'list':
         return <ListTab list={activeTab.data} onAssetSelect={handleSearchResult} />
-      case 'idea-generator':
-        return <IdeaGeneratorPage onItemSelect={handleSearchResult} initialFilters={activeTab.data?.initialFilters} />
       case 'workflows':
         return <WorkflowsPage onNavigate={handleSearchResult} />
       case 'projects-list':
@@ -1088,11 +1141,74 @@ export function DashboardPage() {
         // The desktop board moves cards with native HTML5 drag, which never
         // fires on touch — the kanban is inert on a phone, not just cramped.
         // MobilePipeline shows one stage at a time and makes moving explicit.
-        return isMobile ? <MobilePipeline /> : <TradeQueuePage />
+        return isMobile ? (
+          <MobilePipeline
+            focusIdeaId={activeTab.data?.focusIdeaId ?? activeTab.data?.selectedTradeId ?? null}
+            onFocusConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'trade-queue') return t
+              if (!t.data?.focusIdeaId && !t.data?.selectedTradeId) return t
+              const data = { ...t.data }
+              delete data.focusIdeaId
+              delete data.selectedTradeId
+              return { ...t, data }
+            }))}
+          />
+        ) : (
+          <TradeQueuePage
+            /* Two payload names, one meaning: bring this card into view.
+               `focusIdeaId` is the pilot mission's; `selectedTradeId` is what
+               the dashboard attention items, the asset strips, the prioritiser
+               and the decision engine have always sent -- about eleven
+               producers, none of which this page read. They are coalesced here
+               rather than given a second mechanism, because the scroll, the
+               flash and the one-shot consume are already correct. */
+            focusIdeaId={activeTab.data?.focusIdeaId ?? activeTab.data?.selectedTradeId ?? null}
+            /* One arrival, one scroll — the rule the Outcomes focus and the
+               Trade Book highlight both follow. */
+            onFocusConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'trade-queue') return t
+              if (!t.data?.focusIdeaId && !t.data?.selectedTradeId) return t
+              // Both spellings, or the one that was not cleared would win on
+              // the next visit and re-scroll to the same card forever.
+              const data = { ...t.data }
+              delete data.focusIdeaId
+              delete data.selectedTradeId
+              return { ...t, data }
+            }))}
+            /* Read as a payload rather than raced as an event — the dispatch
+               happens on the click that opens this tab, so a listener inside
+               it registers too late. */
+            openDecisionDrawer={!!activeTab.data?.openDecisionDrawer}
+            onDrawerConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'trade-queue' || !t.data?.openDecisionDrawer) return t
+              const data = { ...t.data }
+              delete data.openDecisionDrawer
+              return { ...t, data }
+            }))}
+          />
+        )
       case 'trade-lab':
         return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} initialPortfolioId={activeTab.data?.portfolioId} shareId={activeTab.data?.shareId} />
       case 'trade-book':
-        return <TradeBookPage initialPortfolioId={activeTab.data?.portfolioId} highlightTradeIds={activeTab.data?.highlightTradeIds} highlightBatchId={activeTab.data?.highlightBatchId} />
+        return (
+          <TradeBookPage
+            initialPortfolioId={activeTab.data?.portfolioId}
+            highlightTradeIds={activeTab.data?.highlightTradeIds}
+            highlightBatchId={activeTab.data?.highlightBatchId}
+            /* One arrival, one highlight — the same rule Outcomes' focus id
+               follows. The ids otherwise stay on the tab and in its persisted
+               state, so every later visit re-opened whichever batch the
+               Decision Recorded modal last handed over. */
+            onHighlightConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'trade-book') return t
+              if (!t.data?.highlightTradeIds && !t.data?.highlightBatchId) return t
+              const data = { ...t.data }
+              delete data.highlightTradeIds
+              delete data.highlightBatchId
+              return { ...t, data }
+            }))}
+          />
+        )
       case 'asset-allocation':
         return <AssetAllocationPage />
       case 'tdf-list':
@@ -1198,7 +1314,129 @@ export function DashboardPage() {
         and the irreversible collapse stays a separate decision.
       */
       case 'today':
-        return <DashboardShell initialLens="today" />
+        /*
+         * Pilot onboarding LAYERS onto the canonical Dashboard.
+         *
+         * Both of these lived above the retired legacy workbench, and moving
+         * them onto the pilot branch of `renderDashboardContent` put them
+         * somewhere a pilot cannot reach: nothing creates a `dashboard` tab
+         * any more, and a restored one is migrated to `today` before it
+         * renders. So a desktop pilot had no Get Started checklist and no
+         * first-session coverage prompt at all.
+         *
+         * The components and their persisted state are reused exactly as they
+         * are — `FirstSessionCoveragePrompt` still owns its own latched
+         * show/dismiss decision and `PilotWelcomeBanner` its own progress, so
+         * a pilot who has finished or dismissed either still sees neither.
+         *
+         * Layered, not substituted: the shell below is the same element a
+         * non-pilot gets, unchanged, and the lens content is untouched. The
+         * point is that a pilot learns the real product with guidance on top
+         * of it, rather than a separate surface that disappears later.
+         */
+        return pilotMode.effectiveIsPilot ? (
+          /*
+           * An incomplete pilot gets the first run INSTEAD of the Dashboard,
+           * not on top of it.
+           *
+           * Layering the mission above the lens shell defeated the point: the
+           * lens bar and a full analytics surface sat under the guidance, so
+           * the reader was offered five ordered steps and a whole product at
+           * once. It also mounted every lens query for somebody who cannot
+           * use the answers yet — which is why this is a branch and not
+           * `hidden`. Nothing behind it is rendered, so nothing behind it is
+           * fetched.
+           *
+           * The tab is still `today` and still the home. What changes is what
+           * is inside it.
+           */
+          <div className="h-full overflow-y-auto">
+            {/* Wider than the Dashboard's reading column because the coverage
+                card is the whole screen here, and the same width holds after
+                the mission appears so nothing reflows on save. */}
+            <div className="mx-auto w-full max-w-4xl space-y-2.5 p-4">
+              {/*
+                Setup precedes the mission, and then gets out of its way.
+
+                These two rendered together, so a pilot's first screen asked
+                two unrelated things at once — tell us what you follow, and
+                also capture an investment idea. Coverage is what makes the
+                mission's destinations worth visiting, so it goes first and
+                alone; the mission appears the moment coverage is saved.
+                Sequence, not a sixth step — nothing about the five steps or
+                about graduation changes. `usePilotEntry` decides.
+
+                Afterwards the full card does NOT stay. A search box, a
+                suggestion list and a save button for a question already
+                answered was the largest thing on a screen whose subject is
+                the mission. One line says what they follow and opens the
+                Coverage app, which is reachable for them now.
+              */}
+              {/* The coverage read decides which of the two below this is.
+                  Holding the room keeps the swap from moving the page. */}
+              {pilotEntry.stage === 'loading' && <PilotHomeSkeleton />}
+              {pilotEntry.stage === 'coverage' && (
+                <FirstSessionCoveragePrompt
+                  variant="page"
+                  dismissible={false}
+                  /* The mission appearing IS the confirmation here. */
+                  confirmOnSave={false}
+                />
+              )}
+              {pilotEntry.stage === 'mission' && (
+                <>
+                  <PilotWelcomeBanner onNavigate={handleSearchResult} />
+                  <CoverageSummaryBanner
+                    onOpen={() => handleSearchResult({
+                      id: 'coverage', title: 'Coverage', type: 'coverage',
+                      data: { initialView: 'active' },
+                    })}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+          /*
+           * Everyone else, including a graduated pilot. `effectiveIsPilot` is
+           * already `hasGraduated ? false : isPilot`, and completing the five
+           * steps writes `graduated` through an optimistic mutation — so the
+           * full Dashboard appears on the same tick the mission finishes, with
+           * no reload.
+           */
+          <DashboardShell initialLens="today" />
+        )
+      /*
+       * Ideas — the standalone application.
+       *
+       * A phone already HAS the Ideas experience this app exists to bring to
+       * desktop: `renderDashboardContent()` returns MobileDashboard, which is
+       * the feed the whole convergence is modelled on. So `ideas` resolves
+       * there on a phone rather than mounting a desktop shell at 390px, which
+       * is the same thing `dashboard` and `today` already do.
+       */
+      /*
+       * `idea-generator` is a COMPATIBILITY tab type, not an application.
+       *
+       * It WAS the standalone desktop ideas app, so the standalone ideas app
+       * is what it meant, and it falls through to exactly the canonical
+       * render below — the smallest alias there is. Both the navigation
+       * funnel and the session restore rewrite it before it reaches here, so
+       * this arm should be unreachable in practice; it exists so a descriptor
+       * from a route nobody has thought of still lands somewhere real rather
+       * than on the blank default.
+       */
+      case 'idea-generator':
+      case 'ideas':
+        return isMobile ? renderDashboardContent() : <IdeasApp selectedIdeaId={activeTab.data?.selectedIdeaId ?? null} />
+      /*
+       * `ideas-v2` is a COMPATIBILITY tab type now, not an application. Its
+       * launcher entry is gone, but saved sessions and deep links still carry
+       * it and it still means what it always meant: the Dashboard's Ideas
+       * lens. Deliberately NOT aliased to the standalone app — that state
+       * represented a lens, and silently reinterpreting it as a different
+       * application would move readers somewhere they never chose.
+       */
       case 'ideas-v2':
         return (
           <DashboardShell
@@ -1206,6 +1444,16 @@ export function DashboardPage() {
             selectedIdeaId={activeTab.data?.selectedIdeaId ?? null}
             focus={activeTab.data?.focus ?? null}
             issue={activeTab.data?.issue ?? null}
+            /* One arrival, one opening — and the id leaves the tab, so the AI
+               subject chip cannot stay bound to it weeks later. */
+            onFocusConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'ideas-v2' || !t.data?.selectedIdeaId) return t
+              const data = { ...t.data }
+              delete data.selectedIdeaId
+              delete data.focus
+              delete data.issue
+              return { ...t, data }
+            }))}
           />
         )
       case 'research-v2':
@@ -1215,6 +1463,14 @@ export function DashboardPage() {
             selectedAssetId={activeTab.data?.selectedAssetId ?? null}
             issue={activeTab.data?.issue ?? null}
             origin={activeTab.data?.origin ?? null}
+            onFocusConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'research-v2' || !t.data?.selectedAssetId) return t
+              const data = { ...t.data }
+              delete data.selectedAssetId
+              delete data.issue
+              delete data.origin
+              return { ...t, data }
+            }))}
           />
         )
       case 'portfolio-v2':
@@ -1249,7 +1505,23 @@ export function DashboardPage() {
           data: user
         })} />
       case 'outcomes':
-        return <DecisionAccountabilityPage onItemSelect={handleSearchResult} />
+        return (
+          <DecisionAccountabilityPage
+            onItemSelect={handleSearchResult}
+            /* Carried by the pilot mission's "Review outcome" so the decision
+               being reviewed is the one on screen. Absent otherwise. */
+            focusDecisionId={activeTab.data?.tradeQueueItemId ?? null}
+            /* One arrival, one opening. The id otherwise stays on the tab
+               (and in its persisted state) and reopens that decision on
+               every return to Outcomes. */
+            onFocusConsumed={() => setTabs(prev => prev.map(t => {
+              if (t.type !== 'outcomes' || !t.data?.tradeQueueItemId) return t
+              const data = { ...t.data }
+              delete data.tradeQueueItemId
+              return { ...t, data }
+            }))}
+          />
+        )
       case 'files':
         return <FilesPage onItemSelect={handleSearchResult} />
       case 'charting':
@@ -1280,8 +1552,14 @@ export function DashboardPage() {
         // Model template - go to templates tab focused on models
         return <TemplatesTab initialTab="models" initialTemplateId={activeTab.data?.id} />
       case 'model-file':
-        // Model file - navigate to the asset's files or to files page
-        if (activeTab.data?.assetId) {
+        // Model file - navigate to the asset's files or to files page.
+        //
+        // Not on a phone. AssetTab is the wide-screen workspace the `asset`
+        // case above refuses to render on mobile for exactly this reason, and
+        // routing here through search put a phone inside it anyway. Files
+        // focused on the model is the same content on a surface that already
+        // has a mobile treatment. Desktop keeps the asset workspace.
+        if (activeTab.data?.assetId && !isMobile) {
           // Navigate to the asset tab focused on models/files
           return <AssetTab
             asset={{ id: activeTab.data.assetId, symbol: activeTab.data?.assets?.symbol }}
@@ -1327,15 +1605,6 @@ export function DashboardPage() {
     }
   }
 
-  const handleViewAll = (type: AttentionType) => {
-    handleSearchResult({
-      id: 'priorities',
-      title: 'My Priorities',
-      type: 'priorities' as any,
-      data: { filterType: type }
-    })
-  }
-
   const handleOpenTradeQueue = (filter?: string) => {
     handleSearchResult({
       id: 'trade-queue',
@@ -1344,11 +1613,6 @@ export function DashboardPage() {
       data: filter ? { stageFilter: filter } : undefined,
     })
   }
-
-  // Row click → navigate to item's primary action
-  const handleRowClick = useCallback((item: DashboardItem) => {
-    item.primaryAction.onClick()
-  }, [])
 
   const renderDashboardContent = () => {
     // First-time login window: we don't yet know whether the user
@@ -1366,6 +1630,18 @@ export function DashboardPage() {
     // multi-column workbenches; reflowed onto 390px they produce cramped cards
     // and horizontal overflow that breakpoints do not fix. See MobileDashboard.
     if (isMobile) {
+      /*
+       * An incomplete pilot gets the pilot home INSTEAD of the feed.
+       *
+       * Same rule as desktop and the same seam: `effectiveIsPilot` is already
+       * `hasGraduated ? false : isPilot`, so the ordinary dashboard returns on
+       * its own once the mission completes. Nothing of the feed renders
+       * underneath, so none of it is fetched and none of its seeded sample
+       * content competes with the one thing the reader is being asked to do.
+       */
+      if (pilotMode.effectiveIsPilot) {
+        return <MobilePilotHome onNavigate={handleSearchResult} />
+      }
       return (
         // No full-chart handler: Charting is desktop-only, so offering it here
         // just routes to a "desktop only" card. ReelsChartPanel hides its
@@ -1374,117 +1650,21 @@ export function DashboardPage() {
       )
     }
 
-    // Pilot users see a lightweight action dashboard (3 cards —
-    // Ready for Decision / In Progress / Feedback Loop) instead of
-    // the full analytics surfaces. Dashboard acts as a routing
-    // layer into the pilot loop, not a data-rich workbench.
-    if (pilotMode.effectiveIsPilot) {
-      return (
-        <PilotActionDashboard
-          onOpenTradeLab={(ctx) => handleSearchResult({
-            id: 'trade-lab',
-            title: 'Trade Lab',
-            type: 'trade-lab',
-            data: ctx ?? {},
-          })}
-          onOpenIdeaPipeline={() => handleOpenTradeQueue()}
-          onOpenTradeBook={() => handleSearchResult({
-            id: 'trade-book',
-            title: 'Trade Book',
-            type: 'trade-book',
-            data: {},
-          })}
-          onOpenOutcomes={() => handleSearchResult({
-            id: 'outcomes',
-            title: 'Outcomes',
-            type: 'outcomes',
-            data: {},
-          })}
-        />
-      )
-    }
-    return (
-      <div className="h-full overflow-auto">
-        <div className="p-3 space-y-2.5">
-          {/* First-session coverage, above everything else.
-              Everything below filters by scope, and a scope bar over an empty
-              coverage set is a control with nothing to control. Renders
-              nothing once the user has any coverage — the state is the rows
-              themselves, not a flag. */}
-          <FirstSessionCoveragePrompt
-            onGoToIdeas={() => handleSearchResult({
-              id: 'idea-generator', title: 'Ideas', type: 'idea-generator', data: null,
-            })}
-          />
-
-          {/* Pilot welcome banner — Get Started checklist. The
-              "Customize your workspace" step (formerly a standalone
-              card) is now the first item in this banner. */}
-          <PilotWelcomeBanner onNavigate={handleSearchResult} />
-
-          {/* Filters */}
-          <DashboardFilters
-            scope={scope}
-            onScopeChange={setScope}
-            portfolios={portfolios}
-          />
-
-          {/* MODE: DECISION */}
-          {scope.mode === 'decision' && (
-            <DecisionSystem
-              id="band-DECIDE"
-              viewModel={cockpit.viewModel}
-              pipelineStats={cockpit.pipelineStats}
-              isLoading={cockpit.isLoading}
-              onItemClick={handleRowClick}
-              onSnooze={cockpit.snooze}
-              onOpenTradeQueue={handleOpenTradeQueue}
-            />
-          )}
-
-          {/* MODE: RESEARCH */}
-          {scope.mode === 'research' && (
-            <ResearchWorkbench
-              viewModel={cockpit.viewModel}
-              onItemClick={handleRowClick}
-            />
-          )}
-
-          {/* MODE: PORTFOLIO */}
-          {scope.mode === 'portfolio' && (
-            <>
-              {scope.portfolioIds.length === 1 && (
-                <PortfolioWorkbench
-                  portfolioId={scope.portfolioIds[0]}
-                  portfolioName={portfolios.find(p => p.id === scope.portfolioIds[0])?.name ?? 'Portfolio'}
-                  viewModel={cockpit.viewModel}
-                  onItemClick={handleRowClick}
-                  onNavigate={handleSearchResult}
-                />
-              )}
-
-              {scope.portfolioIds.length !== 1 && (
-                <>
-                  <PortfolioGrid
-                    portfolios={portfolios}
-                    viewModel={cockpit.viewModel}
-                    onSelectPortfolio={(id) => setScope({ ...scope, portfolioIds: [id] })}
-                  />
-
-                  <PortfolioWorkbench
-                    portfolioIds={scope.portfolioIds.length > 0 ? scope.portfolioIds : portfolios.map(p => p.id)}
-                    portfolioName={scope.portfolioIds.length > 0 ? `${scope.portfolioIds.length} portfolios` : 'All Portfolios'}
-                    viewModel={cockpit.viewModel}
-                    onItemClick={handleRowClick}
-                    onNavigate={handleSearchResult}
-                  />
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-    )
+    /*
+     * There is no desktop surface left on this type, for anybody.
+     *
+     * The non-pilot workbench went first — a scope bar over a decision,
+     * research or portfolio pane, replaced by the lens shell. The pilot action
+     * dashboard followed it: three routing cards whose destinations the pilot
+     * tab picker already offers, no access control of its own, no setup state,
+     * no walkthrough and no telemetry. A pilot now learns the real Dashboard
+     * with the mission module on it, which is the whole point.
+     *
+     * `today` rather than a blank: the callers of this function include the
+     * no-active-tab and unknown-type fallbacks, and a fallback that renders
+     * nothing is how a reader lands on an empty page after a bad deep link.
+     */
+    return <DashboardShell initialLens="today" />
   }
 
   // Hold a minimal loading state during an org switch until pilot detection
@@ -1504,20 +1684,23 @@ export function DashboardPage() {
   // route guard swaps to Trade Lab — that was the visible flash.
   const activeTabForGate = tabs.find(t => t.id === activeTabId)
   const activeTabFeatureForGate = activeTabForGate ? TAB_TYPE_TO_PILOT_FEATURE[activeTabForGate.type] : null
-  const activeTabHiddenForPilot = activeTabFeatureForGate
-    ? PILOT_ACCESS_DEFAULTS[activeTabFeatureForGate] === 'hidden'
-    : false
-  // "Might be a pilot" covers three cases we must hold the loader through:
-  //   1. Auth/org haven't resolved yet (!currentOrgId)
-  //   2. Pilot-flags query still in flight (isLoading)
-  //   3. We've confirmed pilot but the route guard hasn't swapped the
-  //      active tab yet — that happens in a useEffect which runs AFTER the
-  //      render that flipped isLoading to false. Without (3), there's
-  //      always exactly one render where pilotMode.isLoading=false but
-  //      activeTabId is still 'dashboard' — and that's the Dashboard
-  //      flash-in-then-flash-out the user was still seeing.
-  const mightBePilot = pilotMode.effectiveIsPilot || !currentOrgId || pilotMode.isLoading
-  const awaitingPilotDecision = mightBePilot && activeTabHiddenForPilot
+  /*
+   * The rule itself lives in `lib/pilot/tab-gate`, because it is a decision
+   * with a failure mode — reading the static defaults where the resolved map
+   * belonged held the Coverage tab on a loader forever — and a decision worth
+   * a test is worth being a function.
+   */
+  const awaitingPilotDecision = shouldHoldForPilotDecision({
+    orgKnown: !!currentOrgId,
+    pilotLoading: pilotMode.isLoading,
+    isPilot: pilotMode.effectiveIsPilot,
+    hiddenByDefaults: activeTabFeatureForGate
+      ? PILOT_ACCESS_DEFAULTS[activeTabFeatureForGate] === 'hidden'
+      : false,
+    hiddenForThisPilot: activeTabFeatureForGate
+      ? pilotMode.accessFor(activeTabFeatureForGate) === 'hidden'
+      : false,
+  })
 
   // Boot-loader handoff. The persistent #tesseract-boot-loader paints
   // the cold-boot sequence (auth → org → pilot decision) without any

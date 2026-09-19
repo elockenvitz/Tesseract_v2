@@ -82,8 +82,8 @@ export function SectorExposureChart({ before, after, tradeAttribution }: SectorE
   }
 
   return (
-    <Card className="p-4">
-      <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+    <Card className="p-3 md:p-4">
+      <h3 className="font-semibold text-gray-900 dark:text-white mb-2.5 md:mb-4 flex items-center gap-2">
         <PieChart className="h-4 w-4" />
         Sector Exposure
       </h3>
@@ -112,7 +112,14 @@ export function SectorExposureChart({ before, after, tradeAttribution }: SectorE
                 )}
                 aria-expanded={isExpanded}
               >
-                <div className="flex items-center justify-between text-sm mb-1">
+                {/*
+                  The sector name shared a line with ~230px of fixed-width
+                  figures, leaving it about 92px at 390px — so "Information
+                  Technology" and "Consumer Discretionary" ran into the
+                  numbers beside them. The name owns its line on a phone and
+                  the figures sit underneath, indented to the name's text.
+                */}
+                <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:justify-between text-sm mb-1">
                   <div className="flex items-center gap-1.5 flex-1 min-w-0">
                     {hasDrivers ? (
                       isExpanded ? (
@@ -132,7 +139,7 @@ export function SectorExposureChart({ before, after, tradeAttribution }: SectorE
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                  <div className="flex items-center gap-2 pl-5 md:pl-0 md:ml-2 flex-shrink-0">
                     <span className="text-gray-500 dark:text-gray-400 tabular-nums w-14 text-right">
                       {sector.before.toFixed(2)}%
                     </span>
@@ -141,7 +148,7 @@ export function SectorExposureChart({ before, after, tradeAttribution }: SectorE
                       {sector.after.toFixed(2)}%
                     </span>
                     <span className={clsx(
-                      'w-20 text-right text-xs tabular-nums',
+                      'w-16 md:w-20 text-right text-xs tabular-nums',
                       !changed ? 'text-gray-400'
                         : sector.change > 0 ? 'text-emerald-600 dark:text-emerald-400'
                         : 'text-red-600 dark:text-red-400',

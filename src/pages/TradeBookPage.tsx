@@ -21,6 +21,7 @@ import { useAcceptedTrades, useTradeBatches } from '../hooks/useAcceptedTrades'
 import { AcceptedTradesTable } from '../components/trading/AcceptedTradesTable'
 import { buildPairInfoByAsset } from '../lib/trade-lab/pair-info'
 import { markStaleAcceptedTrades } from '../lib/services/trade-reconciliation-service'
+import { useSyncTradeReviewObligations } from '../hooks/useTradeReviewObligations'
 import { BatchListView } from '../components/trading/BatchListView'
 import { TabStateManager } from '../lib/tabStateManager'
 import type { ExecutionStatus, ActionContext, TradeAction } from '../types/trading'
@@ -63,9 +64,14 @@ interface TradeBookPageProps {
    *  arrives via the Decision Recorded modal we know exactly which batch
    *  they just committed; pre-selecting it skips a hunt-and-click. */
   highlightBatchId?: string
+  /** Called once the highlight has actually been applied, so the caller can
+   *  drop it from the tab. Without this the ids live on in the tab's persisted
+   *  state and every later visit to Trade Book re-opens the same old commit
+   *  instead of landing where Trade Book normally lands. */
+  onHighlightConsumed?: () => void
 }
 
-export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlightBatchId }: TradeBookPageProps = {}) {
+export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlightBatchId, onHighlightConsumed }: TradeBookPageProps = {}) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
 
@@ -116,6 +122,11 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
     lastHandledBatchHighlightRef.current = highlightBatchId
     setSelectedBatchId(highlightBatchId)
     setView('batches')
+    // Spent as soon as it has been applied. The selection is state from here
+    // on, so dropping the id from the tab changes nothing on screen — it only
+    // stops the next visit from re-opening this batch.
+    if (!highlightTradeIds || highlightTradeIds.length === 0) onHighlightConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightBatchId])
   // Transient "pre-fill the Trades view search with this string"
   // signal. Set ONLY by handleViewBatchTrades (explicit "Open in
@@ -279,9 +290,15 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
         el.classList.add('decision-recorded-flash')
         setTimeout(() => el.classList.remove('decision-recorded-flash'), 2600)
       }
+      // Spent. Told here rather than a moment earlier because dropping the ids
+      // re-runs this effect, and a cleanup firing before the 80ms tick would
+      // cancel the very scroll-and-flash this exists to do. The ring removals
+      // above are their own timers and outlive it.
+      onHighlightConsumed?.()
     }, 80)
 
     return () => clearTimeout(timeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightTradeIds, trades])
 
   // Staleness sweep: flag pending accepted_trades whose activity clock has
@@ -298,6 +315,18 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
       console.warn('[TradeBook] Staleness sweep failed', e),
     )
   }, [portfolioId])
+
+  /*
+   * Turn the lifecycle rule's "needs review" into a durable obligation.
+   *
+   * Beside the staleness sweep above, which is the existing sync point and
+   * already writes the very field the predicate reads. No new rule and no new
+   * schedule: it raises what `tradeLifecyclePhase` already says is owed, and
+   * clears what it no longer does. Page-local, like the sweep it rides on --
+   * a portfolio nobody opens is not evaluated, which a background sweep would
+   * fix and which is deliberately not invented here.
+   */
+  useSyncTradeReviewObligations(trades)
 
   // Full pair context for the Trade Book. Even if only one leg of a pair
   // has been committed to accepted_trades, we want its row to show the full
@@ -445,6 +474,28 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
     setSelectedBatchId(justCommittedBatchId)
   }, [justCommittedBatchId])
 
+  // Trade Book basics are shown once the pilot has executed a trade (Trade Book
+  // unlocked) and has trades here. The banner and, on a phone, the batch's Next
+  // steps card and Open Outcomes button all follow this.
+  const showPilotBasics = pilotMode.effectiveIsPilot && hasUnlockedTradeBook && !!trades && trades.length > 0
+
+  /*
+   * Deliberately the Outcomes page, not a decision on it.
+   *
+   * `focusDecisionId` exists and would open the batch's decision directly, but
+   * the reader's own click on their row is what ticks step 1 of "Finish the
+   * loop" — `selectTrade` dispatches `pilot-outcomes:result-inspected`, and
+   * the focus path does not. Deep-linking here would open the decision under a
+   * banner still asking them to open it. See the note in the handoff test.
+   */
+  const navigateToOutcomes = () => {
+    window.dispatchEvent(
+      new CustomEvent('decision-engine-action', {
+        detail: { id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: null },
+      }),
+    )
+  }
+
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header.
@@ -589,7 +640,14 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
               }))
             } catch { /* ignore */ }
           }}
-          className="order-2 sm:order-4 ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800/60 rounded-md transition-colors"
+          /* Hidden on a phone while Trade Book basics is active: the batch
+             page's own Open Outcomes button is the one way there, at the end
+             of the steps. */
+          className={clsx(
+            "order-2 sm:order-4 ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800/60 rounded-md transition-colors",
+            showPilotBasics && 'max-md:hidden',
+          )}
+          data-slot="tradebook-header-outcomes"
           title="See how these decisions are performing"
         >
           {/* A quiet shortcut in the corner, not a call to action — it is the
@@ -608,17 +666,11 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
           do NOT gate showing the banner on `hasUnlockedOutcomes` — the
           banner is the path that unlocks outcomes, not its consequence.
           Dismissible per-user. */}
-      {pilotMode.effectiveIsPilot && hasUnlockedTradeBook && trades && trades.length > 0 && (
+      {showPilotBasics && (
         <PilotTradeBookGetStarted
           userId={user?.id}
           orgId={currentOrgId}
-          onOpenOutcomes={() => {
-            window.dispatchEvent(
-              new CustomEvent('decision-engine-action', {
-                detail: { id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: null },
-              }),
-            )
-          }}
+          onOpenOutcomes={navigateToOutcomes}
         />
       )}
 
@@ -639,6 +691,7 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
             onSelectBatch={handleSelectBatch}
             onViewBatchTrades={handleViewBatchTrades}
             onAddComment={handleAddComment}
+            guide={showPilotBasics ? { userId: user?.id, orgId: currentOrgId, navigateToOutcomes } : undefined}
           />
         ) : (
           <AcceptedTradesTable

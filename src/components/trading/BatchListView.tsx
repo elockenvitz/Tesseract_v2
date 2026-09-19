@@ -45,8 +45,10 @@ import {
   type LifecyclePhase,
 } from '../../lib/trade-book/lifecycle'
 import { TradeRationaleLog } from './AcceptedTradesTable'
+import { MobileNoteField } from '../mobile/MobileNoteField'
 import { supabase } from '../../lib/supabase'
 import { useIsMobile } from '../../hooks/useMediaQuery'
+import { usePilotTradeBookSteps } from '../../hooks/usePilotTradeBookSteps'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type {
   TradeBatch,
@@ -182,6 +184,19 @@ interface BatchListViewProps {
    * landed without switching to the full Trades view.
    */
   onAddComment?: (tradeId: string, content: string) => void
+  /**
+   * The pilot's Trade Book basics, when they are active. On a phone the batch
+   * then leads with a Next steps card and ends with an Open Outcomes button,
+   * and the latest batch opens on arrival. Desktop ignores it.
+   */
+  guide?: TradeBookGuide
+}
+
+export interface TradeBookGuide {
+  userId: string | undefined
+  orgId: string | null | undefined
+  /** Navigation to Outcomes; recording the step is handled here. */
+  navigateToOutcomes: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +211,7 @@ function BatchCard({
   needsRationale,
   isSelected,
   onSelect,
+  onAddRationale,
 }: {
   batch: TradeBatch
   stats: { count: number; notional: number }
@@ -204,6 +220,8 @@ function BatchCard({
   needsRationale: boolean
   isSelected: boolean
   onSelect: () => void
+  /** Phone only: the rationale nudge opens the batch at its editor. */
+  onAddRationale?: () => void
 }) {
   const statusPill = batchStatusPill(phaseCounts)
   const isCancelledBatch = batch.status === 'cancelled'
@@ -220,7 +238,15 @@ function BatchCard({
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={(e) => {
+        // The nudge sits inside the card's one button (a nested button is not
+        // valid), so its tap is told apart by target rather than by element.
+        if (onAddRationale && (e.target as HTMLElement).closest?.('[data-slot="batch-card-add-rationale"]')) {
+          onAddRationale()
+        } else {
+          onSelect()
+        }
+      }}
       className={clsx(
         'w-full text-left rounded-lg border transition-all px-3 py-2.5',
         isCancelledBatch && 'opacity-60',
@@ -303,7 +329,7 @@ function BatchCard({
           is broken. Shown when the batch has no description AND no trade
           inside it has an acceptance_note. */}
       {needsRationale && (
-        <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+        <div data-slot="batch-card-add-rationale" className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">
           <Pencil className="w-3 h-3" />
           <span>Add rationale to explain this decision</span>
         </div>
@@ -406,10 +432,13 @@ function BatchTradesList({
   trades,
   batchDescription,
   onAddComment,
+  collapseSignal = 0,
 }: {
   trades: AcceptedTradeWithJoins[]
   batchDescription: string | null
   onAddComment?: (tradeId: string, content: string) => void
+  /** Each increment shuts any opened phone trade card. */
+  collapseSignal?: number
 }) {
   // Group trades by side — buys (buy, add) first, then sells (everything
   // else). A batch's buys and sells are meaningfully different: they're
@@ -435,11 +464,47 @@ function BatchTradesList({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <table className="w-full text-xs">
+      {/* Phones get cards.
+
+          The table is 720px wide with a frozen ticker column, so on a 390px
+          screen reading one trade meant dragging sideways past Action, Tgt
+          Wt, Δ Wt, Δ Shrs and Notional with only the symbol still anchored.
+          The same fields stack instead, and tapping a card opens the same
+          TradeRationaleLog the desktop row expands to — including the step-1
+          event, so the tutorial's "tap a trade" is a real action here. */}
+      <div className="md:hidden space-y-3">
+        {buyTrades.length > 0 && (
+          <MobileTradeGroup
+            label={buyTrades.length === 1 ? 'Buy' : 'Buys'}
+            accent="emerald"
+            trades={buyTrades}
+            batchDescription={batchDescription}
+            onAddComment={onAddComment}
+            collapseSignal={collapseSignal}
+          />
+        )}
+        {sellTrades.length > 0 && (
+          <MobileTradeGroup
+            label={sellTrades.length === 1 ? 'Sell' : 'Sells'}
+            accent="red"
+            trades={sellTrades}
+            batchDescription={batchDescription}
+            onAddComment={onAddComment}
+            collapseSignal={collapseSignal}
+          />
+        )}
+      </div>
+
+      <div className="hidden md:block rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        {/* Ten columns. Trade Book is registered as a full mobile surface, and
+            the shell clips horizontal overflow, so without this the batch's
+            numbers are invisible and unreachable on a phone. Matches the
+            committed-trades table in AcceptedTradesTable. */}
+        <div className="mobile-scroll-x show-scrollbar">
+        <table className="w-full text-xs min-w-[720px] sm:min-w-0">
           <thead className="bg-gray-50 dark:bg-gray-800/60">
             <tr className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              <th className="text-left px-3 py-2">Symbol</th>
+              <th className="text-left px-3 py-2 max-sm:sticky max-sm:left-0 max-sm:z-20 max-sm:bg-gray-50 dark:max-sm:bg-gray-800">Symbol</th>
               <th className="text-left px-3 py-2">Action</th>
               <th className="text-right px-3 py-2">Tgt Wt</th>
               <th className="text-right px-3 py-2">Δ Wt</th>
@@ -471,7 +536,172 @@ function BatchTradesList({
             />
           )}
         </table>
+        </div>
       </div>
+    </div>
+  )
+}
+
+/** One side of the buys/sells split, as cards. Same grouping and the same
+ *  order as the table — only the row shape differs. */
+function MobileTradeGroup({
+  label,
+  accent,
+  trades,
+  batchDescription,
+  onAddComment,
+  collapseSignal,
+}: {
+  label: string
+  accent: 'emerald' | 'red'
+  trades: AcceptedTradeWithJoins[]
+  batchDescription: string | null
+  onAddComment?: (tradeId: string, content: string) => void
+  collapseSignal: number
+}) {
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className={clsx(
+          'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide',
+          accent === 'emerald'
+            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+            : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+        )}>
+          {label}
+        </span>
+        <span className="text-[11px] tabular-nums text-gray-400">{trades.length}</span>
+      </div>
+      <div className="space-y-1.5">
+        {trades.map(t => (
+          <MobileTradeCard
+            key={t.id}
+            trade={t}
+            batchDescription={batchDescription}
+            onAddComment={onAddComment}
+            collapseSignal={collapseSignal}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/** One trade, stacked. Tap opens the same rationale log the table row does. */
+function MobileTradeCard({
+  trade,
+  batchDescription,
+  onAddComment,
+  collapseSignal,
+}: {
+  trade: AcceptedTradeWithJoins
+  batchDescription: string | null
+  onAddComment?: (tradeId: string, content: string) => void
+  collapseSignal: number
+}) {
+  const [expanded, setExpanded] = useState(false)
+  React.useEffect(() => { if (collapseSignal > 0) setExpanded(false) }, [collapseSignal])
+  const result = tradeLifecyclePhase(trade as any)
+  const meta = PHASE_META[result.phase]
+  const hasNote = !!(trade.acceptance_note && trade.acceptance_note.trim())
+  const canExpand = hasNote || !!onAddComment
+  const isSellSide = trade.action === 'sell' || trade.action === 'trim'
+
+  return (
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
+      <button
+        type="button"
+        data-slot="tradebook-mobile-trade"
+        onClick={canExpand ? () => {
+          setExpanded(v => !v)
+          // Same step-1 event the desktop row fires, for the same act:
+          // opening a committed trade's audit.
+          try { window.dispatchEvent(new CustomEvent('pilot-tradebook:trade-reviewed')) } catch { /* ignore */ }
+        } : undefined}
+        aria-expanded={canExpand ? expanded : undefined}
+        className="w-full text-left px-3 py-2 active:bg-gray-50 dark:active:bg-gray-800 no-touch-target"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-gray-900 dark:text-white">
+            {trade.asset?.symbol || 'Unknown'}
+          </span>
+          <span className={clsx(
+            'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase',
+            ACTION_COLORS[trade.action] || 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800',
+          )}>
+            {trade.action}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400">
+            {trade.asset?.company_name}
+          </span>
+          {hasNote && <MessageSquare className="w-3 h-3 shrink-0 text-gray-400" aria-label="Has rationale" />}
+          {canExpand && (expanded
+            ? <ChevronDown className="w-4 h-4 shrink-0 text-gray-400" />
+            : <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />)}
+        </div>
+
+        {/* The numbers that were behind a sideways drag. */}
+        <dl className="mt-1.5 grid grid-cols-3 gap-x-3">
+          <Cell label="Tgt Wt" value={trade.target_weight != null ? `${trade.target_weight.toFixed(2)}%` : '—'} />
+          <Cell
+            label="Δ Wt"
+            value={trade.delta_weight != null ? `${trade.delta_weight > 0 ? '+' : ''}${trade.delta_weight.toFixed(2)}%` : '—'}
+            tone={trade.delta_weight == null ? undefined : trade.delta_weight > 0 ? 'up' : trade.delta_weight < 0 ? 'down' : undefined}
+          />
+          <Cell
+            label="Notional"
+            value={trade.notional_value != null
+              ? `${isSellSide ? '-' : ''}$${Math.abs(trade.notional_value).toLocaleString()}`
+              : '—'}
+            tone={isSellSide ? 'down' : undefined}
+          />
+        </dl>
+
+        <div className="mt-1 flex items-center gap-2">
+          <span className={clsx(
+            'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold',
+            meta.pillClass,
+          )}>
+            <span className={clsx('w-1 h-1 rounded-full', meta.dotClass)} />
+            {meta.label}
+          </span>
+          <span className="text-[11px] tabular-nums text-gray-400">
+            {trade.delta_shares != null && trade.delta_shares !== 0
+              ? `${trade.delta_shares > 0 ? '+' : ''}${trade.delta_shares.toLocaleString()} sh`
+              : ''}
+          </span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-gray-100 dark:border-gray-800 px-3 py-2.5">
+          <TradeRationaleLog
+            tradeId={trade.id}
+            acceptanceNote={trade.acceptance_note}
+            batchDescription={batchDescription}
+            // Thesis first, then the analyst's rationale: the thesis is the
+            // durable case, the rationale the reason it was raised now.
+            originalCase={trade.trade_queue_item?.thesis_text || trade.trade_queue_item?.rationale}
+            onAddComment={onAddComment}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Cell({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] uppercase tracking-wider text-gray-400">{label}</dt>
+      <dd className={clsx(
+        'text-[12px] font-medium tabular-nums truncate',
+        tone === 'up' ? 'text-emerald-600 dark:text-emerald-400'
+          : tone === 'down' ? 'text-red-600 dark:text-red-400'
+          : 'text-gray-700 dark:text-gray-200',
+      )}>
+        {value}
+      </dd>
     </div>
   )
 }
@@ -561,6 +791,19 @@ function TradeRow({
   const srcCfg = SOURCE_CONFIG[src]
   const SourceIcon = srcCfg.icon
   const rowBg = rowIndex % 2 === 0 ? 'bg-gray-50/40 dark:bg-gray-800/20' : ''
+  // The frozen ticker needs an opaque fill of its own: the row banding above is
+  // translucent, and a see-through sticky cell lets the scrolling columns slide
+  // visibly underneath the symbol. Same reasoning, and the same pair of values,
+  // as AcceptedTradesTable — the two tables sit one toggle apart in Trade Book
+  // and should not disagree about this.
+  //
+  // `max-sm:` throughout. From 640px up `sm:min-w-0` means the table never
+  // scrolls sideways, so freezing buys nothing there — and the opaque fill WOULD
+  // be visible, replacing the translucent banding with a flat block. Confining
+  // it to phone widths is what keeps desktop byte-identical.
+  const stickyBg = rowIndex % 2 === 0
+    ? 'max-sm:bg-gray-50 dark:max-sm:bg-gray-900'
+    : 'max-sm:bg-white dark:max-sm:bg-gray-900'
 
   const hasNote = !!(trade.acceptance_note && trade.acceptance_note.trim())
   const canExpand = hasNote || !!onAddComment
@@ -581,7 +824,7 @@ function TradeRow({
         try { window.dispatchEvent(new CustomEvent('pilot-tradebook:trade-reviewed')) } catch { /* ignore */ }
       } : undefined}
     >
-      <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">
+      <td className={clsx('px-3 py-2 font-medium text-gray-900 dark:text-white max-sm:sticky max-sm:left-0 max-sm:z-10', stickyBg)}>
         {trade.asset?.symbol || 'Unknown'}
       </td>
       <td className="px-3 py-2">
@@ -701,6 +944,9 @@ function TradeRow({
             tradeId={trade.id}
             acceptanceNote={trade.acceptance_note}
             batchDescription={batchDescription}
+            // Thesis first, then the analyst's rationale: the thesis is the
+            // durable case, the rationale the reason it was raised now.
+            originalCase={trade.trade_queue_item?.thesis_text || trade.trade_queue_item?.rationale}
             onAddComment={onAddComment}
           />
         </td>
@@ -738,12 +984,78 @@ function BatchDetailPanel({
   trades,
   onViewInTradesView,
   onAddComment,
+  guide,
+  openRationaleOnArrival = false,
+  onRationaleArrivalHandled,
 }: {
   batch: TradeBatch
   trades: AcceptedTradeWithJoins[]
   onViewInTradesView: () => void
   onAddComment?: (tradeId: string, content: string) => void
+  guide?: TradeBookGuide
+  /** Phone: opened from the list card's rationale nudge. */
+  openRationaleOnArrival?: boolean
+  onRationaleArrivalHandled?: () => void
 }) {
+  /*
+   * Phone: summary, then the trades, then "Why this decision?" — the order a
+   * batch is read in, which is also the order Trade Book basics asks for. The
+   * page carries no tutorial step labels: it is the same page with or without
+   * Getting Started, and the amber banner alone carries tutorial progress.
+   * During the tutorial it ends with one Open Outcomes button.
+   */
+  const isMobile = useIsMobile()
+  const showGuide = isMobile && !!guide
+  const { openOutcomes, done: stepsDone } = usePilotTradeBookSteps(guide?.userId, guide?.orgId)
+
+  /*
+   * Phone: take the reader to "Why this decision?".
+   *
+   * Reviewing a trade opens its card, and the opened card used to leave the
+   * optional per-trade notes in front of the reader while the batch's required
+   * answer sat below it. Moving on shuts the opened trade, scrolls the answer
+   * into view, and opens its editor when it is still empty (the editor focuses
+   * its own field; otherwise the section takes focus).
+   */
+  const rationaleRef = React.useRef<HTMLElement>(null)
+  const [tradesCollapseSignal, setTradesCollapseSignal] = useState(0)
+  const [rationaleRequest, setRationaleRequest] = useState(0)
+  const goToRationale = React.useCallback(() => {
+    setTradesCollapseSignal(n => n + 1)
+    setRationaleRequest(n => n + 1)
+  }, [])
+  React.useEffect(() => {
+    if (rationaleRequest === 0) return
+    const frame = requestAnimationFrame(() => {
+      const el = rationaleRef.current
+      if (!el) return
+      el.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+      if (!el.contains(document.activeElement)) el.focus?.({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [rationaleRequest])
+
+  // Step 1 completing is the act of reviewing a trade while step 1 is still
+  // open. Only during the tutorial, and never once step 2 is already done.
+  const stepsRef = React.useRef(stepsDone)
+  stepsRef.current = stepsDone
+  React.useEffect(() => {
+    if (!showGuide) return
+    const onReviewed = () => {
+      if (stepsRef.current.reviewed || stepsRef.current.rationale) return
+      queueMicrotask(goToRationale)
+    }
+    window.addEventListener('pilot-tradebook:trade-reviewed', onReviewed)
+    return () => window.removeEventListener('pilot-tradebook:trade-reviewed', onReviewed)
+  }, [showGuide, goToRationale])
+
+  // Arrived from the list card's "Add rationale to explain this decision".
+  React.useEffect(() => {
+    if (!openRationaleOnArrival) return
+    goToRationale()
+    onRationaleArrivalHandled?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRationaleOnArrival])
   // Derive "just committed" purely from batch.created_at. No prop
   // threading, no sticky flag — the continuity card appears for any
   // batch committed in the last JUST_COMMITTED_WINDOW_MS and quietly
@@ -794,9 +1106,64 @@ function BatchDetailPanel({
 
   const isCancelledBatch = batch.status === 'cancelled'
 
+  /* Rationale. Editable in-place: if empty, clicking the placeholder opens a
+     textarea; if present, an Edit control. Saves to trade_batches.description.
+
+     "Why this decision?", not "Decision rationale": it is the ONE answer for
+     the whole batch — the one every trade inherited at commit — and it is what
+     Trade Book basics step 2 asks for. Each trade's own log is "Trade-specific
+     notes", optional. Two names for two scopes is what stops them reading as
+     the same field asked twice. */
+  const rationaleSection = (
+    <section
+      ref={rationaleRef}
+      data-slot="batch-rationale-section"
+      tabIndex={isMobile ? -1 : undefined}
+      className={isMobile ? 'scroll-mt-3 outline-none' : undefined}
+    >
+      {isMobile ? (
+        <div className="mb-2">
+          <h3 className="flex items-center gap-1.5 text-[15px] font-semibold text-gray-900 dark:text-white">
+            <FileText className="w-4 h-4 text-gray-400" />
+            Why this decision?
+          </h3>
+          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">One answer for the whole batch</p>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          <FileText className="w-3 h-3" />
+          Why this decision?
+          <span className="normal-case tracking-normal font-normal text-gray-400 dark:text-gray-500">· applies to the whole batch</span>
+        </div>
+      )}
+      <BatchRationaleEditor batch={batch} openRequest={isMobile ? rationaleRequest : 0} />
+    </section>
+  )
+
+  const tradesSection = (
+    <section data-slot="batch-trades-section">
+      {isMobile ? (
+        <div className="mb-2">
+          <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white">Trades in this batch</h3>
+          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Tap a trade to review it</p>
+        </div>
+      ) : (
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          Trades in this batch
+        </div>
+      )}
+      <BatchTradesList
+        trades={trades}
+        batchDescription={batch.description}
+        onAddComment={onAddComment}
+        collapseSignal={tradesCollapseSignal}
+      />
+    </section>
+  )
+
   return (
     <div className="h-full overflow-auto overscroll-contain">
-      <div className="px-3 sm:px-6 py-3 sm:py-4 space-y-3 sm:space-y-4">
+      <div className={clsx('px-3 sm:px-6 py-3 sm:py-4 space-y-3 sm:space-y-4', showGuide && 'space-y-4 pb-6')}>
         {/* Header — identity on one line, the escape hatch under it on a
             phone rather than beside it.
 
@@ -818,9 +1185,10 @@ function BatchDetailPanel({
               )}
             </div>
           </div>
+          {/* Not on a phone: the page's Batches / Trades control already goes there. */}
           <button
             onClick={onViewInTradesView}
-            className="self-start flex-shrink-0 inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+            className="max-md:hidden self-start flex-shrink-0 inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
             title="Open this batch in the full Trades view (for filtering, sorting, corrections)"
           >
             Open in Trades
@@ -957,38 +1325,40 @@ function BatchDetailPanel({
           </div>
         </section>
 
-        {/* Rationale — below stats so triage signals are seen first.
-            Editable in-place: if empty, clicking the placeholder opens
-            a textarea; if present, hovering reveals an Edit button.
-            Saves back to trade_batches.description. */}
-        <section>
-          <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            <FileText className="w-3 h-3" />
-            Rationale
-          </div>
-          <BatchRationaleEditor batch={batch} />
-        </section>
+        {/* Desktop: rationale, then trades (unchanged). Phone: the trades
+            first, because reviewing one is step 1 and the batch's "Why this
+            decision?" is step 2. */}
+        {isMobile ? <>{tradesSection}{rationaleSection}</> : <>{rationaleSection}{tradesSection}</>}
 
-        {/* Trades inline */}
-        <section>
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Trades in this batch
-          </div>
-          <BatchTradesList
-            trades={trades}
-            batchDescription={batch.description}
-            onAddComment={onAddComment}
-          />
-        </section>
+        {showGuide && (
+          <section data-slot="tradebook-outcomes-cta" className="rounded-2xl border border-teal-200 dark:border-teal-800/60 bg-teal-50/60 dark:bg-teal-900/15 p-4">
+            <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white">See how it plays out</h3>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              Outcomes tracks how this decision performs.
+            </p>
+            <button
+              type="button"
+              data-slot="tradebook-open-outcomes"
+              onClick={() => openOutcomes(guide!.navigateToOutcomes)}
+              className="mt-3 w-full h-11 rounded-xl bg-teal-600 active:bg-teal-700 text-sm font-semibold text-white inline-flex items-center justify-center gap-1.5"
+            >
+              Open Outcomes
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </section>
+        )}
 
         {/* System-of-record reinforcement — a quiet footnote that
             reframes Trade Book from "a list of trades" into "the
             archive of every decision, ever". Kept muted so it feels
-            like a truth the product holds, not a marketing line. */}
-        <div className="pt-1 flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500">
-          <Archive className="w-3 h-3" />
-          <span>Every decision in Trade Book is preserved for future review.</span>
-        </div>
+            like a truth the product holds, not a marketing line. Not
+            under the tutorial's closing button, which ends the page. */}
+        {!showGuide && (
+          <div className="pt-1 flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500">
+            <Archive className="w-3 h-3" />
+            <span>Every decision in Trade Book is preserved for future review.</span>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1026,6 +1396,7 @@ export function BatchListView({
   onSelectBatch,
   onViewBatchTrades,
   onAddComment,
+  guide,
 }: BatchListViewProps) {
   const isMobileViewport = useIsMobile()
 
@@ -1107,6 +1478,9 @@ export function BatchListView({
   // Debouncing isn't necessary — the batch list is in memory and the
   // filter pass is O(batches × tokens). Cleared via the in-input × icon.
   const [search, setSearch] = useState('')
+  // Phone: the batch whose list-card rationale nudge was tapped, until its
+  // detail has taken the reader to the editor.
+  const [rationaleArrivalId, setRationaleArrivalId] = useState<string | null>(null)
   const filteredBatches = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return batches
@@ -1150,6 +1524,23 @@ export function BatchListView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batches.length, selectedBatchId, isMobileViewport])
+
+  /*
+   * Phone + pilot: open the latest batch on arrival, once.
+   *
+   * The Trade Book basics steps all happen inside a batch, and on a phone a
+   * batch replaces the list — so a pilot who arrived without a selection saw a
+   * list of cards and had to find the batch before any step was in view. Once
+   * only, so "All batches" still takes them back to the list and stays there.
+   */
+  const guideOpenedRef = React.useRef(false)
+  React.useEffect(() => {
+    if (!isMobileViewport || !guide || guideOpenedRef.current) return
+    if (batches.length === 0) return
+    guideOpenedRef.current = true
+    if (!selectedBatchId) onSelectBatch(batches[0].id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobileViewport, !!guide, batches.length])
 
   if (batches.length === 0) {
     return (
@@ -1229,6 +1620,10 @@ export function BatchListView({
                 needsRationale={needsRationale}
                 isSelected={selectedBatchId === batch.id}
                 onSelect={() => onSelectBatch(batch.id)}
+                onAddRationale={isMobileViewport ? () => {
+                  setRationaleArrivalId(batch.id)
+                  onSelectBatch(batch.id)
+                } : undefined}
               />
             )
           })}
@@ -1252,6 +1647,9 @@ export function BatchListView({
             trades={selectedBatchTrades}
             onViewInTradesView={() => onViewBatchTrades(selectedBatch.id)}
             onAddComment={onAddComment}
+            guide={guide}
+            openRationaleOnArrival={rationaleArrivalId === selectedBatch.id}
+            onRationaleArrivalHandled={() => setRationaleArrivalId(null)}
           />
         </div>
       ) : (
@@ -1378,8 +1776,18 @@ function BatchNameEditor({
 // the trade-batches query so every surface picks up the new text.
 // ---------------------------------------------------------------------------
 
-function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
+export function BatchRationaleEditor({
+  batch,
+  openRequest = 0,
+}: {
+  batch: TradeBatch
+  /** Each increment opens the editor, when there is no rationale yet. */
+  openRequest?: number
+}) {
   const queryClient = useQueryClient()
+  // Phones get their own composition of the same editor: same draft, same
+  // mutation, same trade_batches.description. Desktop markup is unchanged.
+  const isMobile = useIsMobile()
   const existing = (batch.description || '').trim()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(existing)
@@ -1391,6 +1799,13 @@ function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
     setDraft(existing)
     setEditing(false)
   }, [batch.id, existing])
+
+  // After the reset above, so a request that lands with a batch switch wins.
+  // An existing rationale stays as it reads, with its Edit control.
+  React.useEffect(() => {
+    if (openRequest > 0 && !existing) setEditing(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest])
 
   const saveM = useMutation({
     mutationFn: async (nextDescription: string) => {
@@ -1453,6 +1868,59 @@ function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
       setDraft(existing)
       setEditing(false)
     }
+    const unchanged = draft.trim() === existing
+    if (isMobile) {
+      /*
+       * Phone: the field full width at three lines that grows with the text,
+       * with Cancel / Save right-aligned under it. No tinted box of its own
+       * and no full-width buttons: it sits under the section's own heading
+       * and matches the trade notes field above it. Save looks disabled only
+       * while it is — nothing changed yet, or the save is in flight.
+       */
+      return (
+        <div data-slot="batch-rationale-editor-mobile">
+          <MobileNoteField
+            value={draft}
+            onChange={setDraft}
+            minRows={3}
+            autoFocus
+            disabled={saveM.isPending}
+            placeholder="Why these trades? What's the thesis for the batch?"
+            ariaLabel="Why this decision?"
+            inputClassName="bg-gray-50 dark:bg-gray-800/60 focus:bg-white dark:focus:bg-gray-900 focus:ring-primary-400"
+            onSubmitShortcut={handleSave}
+            onEscape={handleCancel}
+            actions={
+              <>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={saveM.isPending}
+                  className="ml-auto h-10 px-3 rounded-lg text-[13px] font-medium text-gray-600 dark:text-gray-300 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  data-slot="batch-rationale-save"
+                  onClick={handleSave}
+                  disabled={saveM.isPending || unchanged}
+                  className="h-10 px-4 rounded-lg bg-primary-600 active:bg-primary-700 text-[13px] font-semibold text-white inline-flex items-center justify-center gap-1.5 no-touch-target disabled:bg-gray-100 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
+                >
+                  {saveM.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckIcon className="w-3.5 h-3.5" />}
+                  {saveM.isPending ? 'Saving…' : 'Save rationale'}
+                </button>
+              </>
+            }
+          />
+          {saveM.isError && (
+            <p className="text-xs text-red-600 mt-2">
+              {saveM.error instanceof Error ? saveM.error.message : 'Failed to save rationale'}
+            </p>
+          )}
+        </div>
+      )
+    }
     return (
       <div className="rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50/30 dark:bg-amber-900/10 px-3 py-2.5">
         <textarea
@@ -1477,7 +1945,7 @@ function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
           </button>
           <button
             onClick={handleSave}
-            disabled={saveM.isPending || draft.trim() === existing}
+            disabled={saveM.isPending || unchanged}
             className="text-[11px] font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:text-gray-500 rounded-md px-2.5 py-1 inline-flex items-center gap-1"
           >
             {saveM.isPending
@@ -1495,13 +1963,44 @@ function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
     )
   }
 
+  if (existing && isMobile) {
+    /*
+     * Phone: the rationale as plain readable text, with Edit on its own row
+     * underneath. The desktop layout pins a small Edit chip to the top-right
+     * corner over the text, which on a narrow card sat on top of the first
+     * line. Editing reopens the same editor with this text in it.
+     */
+    return (
+      <div data-slot="batch-rationale-saved-mobile" className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/30 p-3">
+        <p className="text-[15px] leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">
+          {existing}
+        </p>
+        <div className="mt-2.5 pt-2.5 border-t border-gray-200/80 dark:border-gray-700/60 flex justify-end">
+          <button
+            type="button"
+            data-slot="batch-rationale-edit-mobile"
+            onClick={() => { setDraft(existing); setEditing(true) }}
+            className="h-11 px-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            Edit rationale
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (existing) {
     return (
       <div className="group relative rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/30 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">
         {existing}
+        {/* Revealed on hover — and a phone has no hover, so once a batch had
+            a rationale there was no way to change it there at all. Always
+            visible below 768px; unchanged above it. */}
         <button
           onClick={() => setEditing(true)}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 bg-white/80 dark:bg-gray-900/80 rounded-md border border-gray-200 dark:border-gray-700 px-1.5 py-0.5"
+          data-slot="batch-rationale-edit"
+          className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 bg-white/80 dark:bg-gray-900/80 rounded-md border border-gray-200 dark:border-gray-700 px-1.5 py-0.5 no-touch-target tap-pad"
         >
           <Pencil className="w-3 h-3" />
           Edit
@@ -1519,10 +2018,10 @@ function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
         <Pencil className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <div className="text-[12px] font-semibold text-amber-800 dark:text-amber-300">
-            Add rationale to explain this decision
+            Explain why you made this decision
           </div>
           <div className="text-[11px] text-amber-700/80 dark:text-amber-300/70 mt-0.5 leading-relaxed">
-            Capture your thinking now, or revisit it later in Outcomes.
+            One answer for every trade in this batch. You can edit it later.
           </div>
         </div>
       </div>

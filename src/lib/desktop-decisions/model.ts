@@ -102,12 +102,41 @@ export interface DecisionRecord {
 
   deferredUntil: string | null
 
+  /**
+   * Planted by the pilot seeder -- on the request itself, or on the idea it
+   * was raised from. Provenance, carried rather than acted on here: the lens
+   * decides what it means once the pilot is over
+   * (lib/pilot/seed-visibility), and the record is never rewritten.
+   */
+  isPilotSeed?: boolean
+
   /** Execution is a separate fact, joined not assumed. */
   execution: {
     id: string
     status: string | null
     completedAt: string | null
     executedByName: string | null
+    /**
+     * What was actually committed, as `accepted_trades` recorded it: the
+     * weight the book was taken to, the change that made, and the cash it
+     * moved. Durable at commit time and read, never derived -- this is the
+     * decision as executed, which is what "what did we decide" means once
+     * something has been.
+     */
+    targetWeight?: number | null
+    deltaWeight?: number | null
+    notional?: number | null
+    /**
+     * The basis, as `accepted_trades` recorded it at commit.
+     *
+     * `price_at_acceptance` is the price the desk was looking at when it
+     * committed, and `delta_shares` is what actually moved -- so the average
+     * basis is a stored fact rather than a figure this lens computes from a
+     * weight. Where either is absent the tile says nothing instead of
+     * dividing by a number nobody captured.
+     */
+    priceAtAcceptance?: number | null
+    deltaShares?: number | null
   } | null
 
   /**
@@ -199,6 +228,9 @@ export type Provenance = 'human' | 'system'
 
 const SYSTEM_PREFIXES = [
   'Self-proposed via',
+  // Written by Trade Lab Execute when it resolves an existing pending request
+  // (execute-sim-variants-service `markDRAccepted`). Provenance, not a reason.
+  'Accepted via Trade Lab',
   'Withdrawn during cleanup',
   'Backfilled:',
   'Auto-',

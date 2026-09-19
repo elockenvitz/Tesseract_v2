@@ -24,6 +24,7 @@ import { clsx } from 'clsx'
 import { Button } from '../ui/Button'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { useOrganization } from '../../contexts/OrganizationContext'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -220,6 +221,11 @@ export function DecisionConfirmationModal({
   // every decision_recorded_* row landed with org=NULL and dropped out
   // of per-org analytics queries.
   const { currentOrgId } = useOrganization()
+  const isMobile = useIsMobile()
+  /* Per-trade context is reference material at this moment, not the news.
+     Collapsed by default on a phone so the executed summary and the footer
+     action are reachable without scrolling past every card. */
+  const [capturedOpen, setCapturedOpen] = useState(false)
 
   // Close on Escape — but not on backdrop click (too easy to dismiss
   // accidentally; we want the user to take an explicit action).
@@ -318,15 +324,37 @@ export function DecisionConfirmationModal({
   const hiddenCount = orderedDecisions.length - visibleOrdered.length
 
   return (
-    <div className="fixed inset-0 z-[100] overflow-y-auto">
+    /*
+      Two scroll containers used to be live at once on a phone: this fixed
+      layer scrolled, and the body inside the card scrolled within its own
+      max-h-viewport-60. The card was taller than the screen, so the footer —
+      sticky only within the card — scrolled off the bottom with it, and the
+      only way to discover "View in Trade Book" was to scroll past every
+      captured-context block to find it.
+
+      On a phone the card is the screen: this layer does not scroll, the card
+      fills it, and the body between the hero and the footer is the one
+      scrolling element. The footer is then always on screen because it is a
+      flex sibling of the scroller rather than a sticky child of a taller box.
+    */
+    <div className={clsx('fixed inset-0 z-[100]', isMobile ? 'overflow-hidden' : 'overflow-y-auto')}>
       {/* Backdrop — note: no onClick, user must use a button to dismiss. */}
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity" />
 
-      <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-2xl w-full mx-auto transform transition-all flex flex-col overflow-hidden">
+      <div className={clsx(
+        'flex justify-center',
+        isMobile ? 'h-full items-stretch' : 'min-h-full items-center p-4',
+      )}>
+        <div className={clsx(
+          'relative bg-white dark:bg-gray-900 shadow-2xl w-full mx-auto transform transition-all flex flex-col overflow-hidden',
+          isMobile ? 'h-full max-h-full pt-safe' : 'rounded-2xl max-w-2xl',
+        )}>
 
           {/* ─── Hero header ────────────────────────────────────── */}
-          <div className="relative bg-gradient-to-br from-emerald-50 via-white to-primary-50 dark:from-emerald-900/20 dark:via-gray-900 dark:to-primary-900/20 px-6 py-5 border-b border-gray-200 dark:border-gray-700">
+          <div className={clsx(
+            'relative shrink-0 bg-gradient-to-br from-emerald-50 via-white to-primary-50 dark:from-emerald-900/20 dark:via-gray-900 dark:to-primary-900/20 border-b border-gray-200 dark:border-gray-700',
+            isMobile ? 'px-4 py-3' : 'px-6 py-5',
+          )}>
             <button
               onClick={handleStay}
               className="absolute top-3 right-3 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-white/60 rounded-lg dark:hover:text-gray-300"
@@ -335,10 +363,13 @@ export function DecisionConfirmationModal({
               <X className="w-4 h-4" />
             </button>
             <div className="flex items-start gap-3">
-              <div className="w-12 h-12 rounded-xl bg-white shadow-md flex items-center justify-center shrink-0 ring-1 ring-emerald-100 dark:ring-emerald-900/50 dark:bg-gray-800">
+              <div className={clsx(
+                'rounded-xl bg-white shadow-md flex items-center justify-center shrink-0 ring-1 ring-emerald-100 dark:ring-emerald-900/50 dark:bg-gray-800',
+                isMobile ? 'w-9 h-9' : 'w-12 h-12',
+              )}>
                 {isMulti
-                  ? <Layers className="w-7 h-7 text-emerald-500" />
-                  : <CheckCircle2 className="w-7 h-7 text-emerald-500" />}
+                  ? <Layers className={isMobile ? 'w-5 h-5 text-emerald-500' : 'w-7 h-7 text-emerald-500'} />
+                  : <CheckCircle2 className={isMobile ? 'w-5 h-5 text-emerald-500' : 'w-7 h-7 text-emerald-500'} />}
               </div>
               <div className="min-w-0 flex-1 pr-8">
                 <div className="flex items-center gap-2 mb-0.5">
@@ -350,16 +381,23 @@ export function DecisionConfirmationModal({
                     {formatDistanceToNow(new Date(record.recordedAt), { addSuffix: true })}
                   </span>
                 </div>
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white leading-tight">
+                <h2 className={clsx(
+                  'font-semibold text-gray-900 dark:text-white leading-tight',
+                  isMobile ? 'text-base' : 'text-xl',
+                )}>
                   {isMulti
                     ? `${record.decisions.length} trades committed to Trade Book`
                     : `${primary.symbol} ${primary.action} — committed to Trade Book`}
                 </h2>
-                <p className="text-sm text-gray-700 dark:text-gray-300 mt-1.5 font-medium">
-                  {isMulti
-                    ? 'This batch decision updated multiple positions in your portfolio.'
-                    : 'Your portfolio now reflects this decision.'}
-                </p>
+                {/* The reassurance line costs two rows on a phone and says
+                    nothing the heading has not. The heading carries it. */}
+                {!isMobile && (
+                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-1.5 font-medium">
+                    {isMulti
+                      ? 'This batch decision updated multiple positions in your portfolio.'
+                      : 'Your portfolio now reflects this decision.'}
+                  </p>
+                )}
                 <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
                   {record.portfolioName}{record.batchName ? ` · Batch: ${record.batchName}` : ''}
                 </p>
@@ -368,7 +406,10 @@ export function DecisionConfirmationModal({
           </div>
 
           {/* ─── Scrollable body ────────────────────────────────── */}
-          <div className="overflow-y-auto px-6 py-5 space-y-5 max-h-[60vh]">
+          <div className={clsx(
+            'overflow-y-auto overscroll-contain',
+            isMobile ? 'flex-1 min-h-0 px-4 py-3 space-y-3' : 'px-6 py-5 space-y-5 max-h-viewport-60',
+          )}>
 
             {/* Aggregate summary — multi-trade only. Leads with the
                 numbers so the PM understands the size of the move before
@@ -419,25 +460,56 @@ export function DecisionConfirmationModal({
               )}
             </section>
 
-            {/* What was captured — per-trade */}
+            {/* What was captured — per-trade.
+
+                Every block rendered at full height, which on a phone put the
+                thesis, why-now and sizing of each trade between the reader
+                and the way forward. It is an accordion there, shut by
+                default: the context is preserved and one tap away, and the
+                thing that just happened stays the thing on screen. */}
             <section>
-              <SectionHeading
-                icon={FileText}
-                label={isMulti ? 'Per-trade context' : 'What was captured'}
-              />
-              <div className="space-y-2">
-                {(showingAll ? orderedDecisions : visibleOrdered).map(d =>
-                  <CapturedBlock key={d.tradeId} decision={d} isMulti={isMulti} />,
-                )}
-              </div>
-              {isMulti && !showingAll && hiddenCount > 0 && (
-                <p className="text-[11px] text-gray-400 dark:text-gray-500 italic mt-2">
-                  + {hiddenCount} more trade{hiddenCount !== 1 ? 's' : ''} — expand to view their context.
-                </p>
+              {isMobile ? (
+                <button
+                  type="button"
+                  data-slot="decision-captured-toggle"
+                  onClick={() => setCapturedOpen(v => !v)}
+                  aria-expanded={capturedOpen}
+                  className="w-full flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-left no-touch-target"
+                >
+                  <FileText className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    {isMulti ? 'Per-trade context' : 'Decision context'}
+                  </span>
+                  <span className="ml-auto shrink-0 text-gray-400">
+                    {capturedOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </span>
+                </button>
+              ) : (
+                <SectionHeading
+                  icon={FileText}
+                  label={isMulti ? 'Per-trade context' : 'What was captured'}
+                />
+              )}
+              {(!isMobile || capturedOpen) && (
+                <>
+                  <div className={clsx('space-y-2', isMobile && 'mt-2')}>
+                    {(showingAll ? orderedDecisions : visibleOrdered).map(d =>
+                      <CapturedBlock key={d.tradeId} decision={d} isMulti={isMulti} />,
+                    )}
+                  </div>
+                  {isMulti && !showingAll && hiddenCount > 0 && (
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 italic mt-2">
+                      + {hiddenCount} more trade{hiddenCount !== 1 ? 's' : ''} — expand to view their context.
+                    </p>
+                  )}
+                </>
               )}
             </section>
 
-            {/* Trade Book bridge */}
+            {/* Trade Book bridge. A paragraph explaining that the Trade Book
+                now holds this — directly above a permanently visible button
+                that goes there. On a phone the button is the message. */}
+            {!isMobile && (
             <section className="rounded-xl border-2 border-indigo-200 dark:border-indigo-800/60 bg-gradient-to-br from-indigo-50 via-white to-blue-50 dark:from-indigo-900/20 dark:via-gray-900 dark:to-blue-900/20 p-4 shadow-sm">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-white dark:bg-gray-900 shadow-md flex items-center justify-center shrink-0 ring-1 ring-indigo-100 dark:ring-indigo-800/50">
@@ -458,28 +530,47 @@ export function DecisionConfirmationModal({
                 </div>
               </div>
             </section>
+            )}
           </div>
 
           {/* ─── Footer CTAs ─────────────────────────────────────
-              Sticky inside the flex container — stays visible even if the
-              scrollable body is long (important for multi-trade records). */}
-          <div className="px-6 pt-4 pb-5 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shrink-0 sticky bottom-0">
-            <p className="text-[11px] text-center text-gray-500 dark:text-gray-400 mb-3">
-              See how {isMulti ? 'this batch' : 'this decision'} is tracked.
-            </p>
+              A flex sibling of the scrolling body, not a sticky child of a
+              taller card — which is what kept it off the screen on a phone.
+              It is always visible now, whatever the record's length. */}
+          <div className={clsx(
+            'border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shrink-0',
+            isMobile ? 'px-4 pt-3 pb-safe' : 'px-6 pt-4 pb-5 sticky bottom-0',
+          )}>
+            {!isMobile && (
+              <p className="text-[11px] text-center text-gray-500 dark:text-gray-400 mb-3">
+                See how {isMulti ? 'this batch' : 'this decision'} is tracked.
+              </p>
+            )}
             <Button
               onClick={handleViewTradeBook}
               size="lg"
-              className="w-full !py-3.5 text-base font-semibold bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 shadow-lg hover:shadow-xl transition-shadow"
+              data-slot="decision-view-trade-book"
+              className={clsx(
+                'w-full font-semibold bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 shadow-lg hover:shadow-xl transition-shadow',
+                isMobile ? '!py-3 text-[15px]' : '!py-3.5 text-base',
+              )}
             >
               <BookOpen className="w-5 h-5 mr-2" />
               View in Trade Book
               <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
-            <div className="mt-2.5 text-center">
+            <div className={clsx('text-center', isMobile ? 'mt-1 mb-1' : 'mt-2.5')}>
               <button
                 onClick={handleStay}
-                className="inline-flex items-center gap-1 text-[12px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                data-slot="decision-stay-in-trade-lab"
+                className={clsx(
+                  'inline-flex items-center gap-1 transition-colors',
+                  /* gray-400 on white read as disabled on a phone. Still text
+                     only and below the primary — just legible as a control. */
+                  isMobile
+                    ? 'text-[13px] font-medium py-1.5 px-3 no-touch-target text-gray-600 dark:text-gray-300 underline decoration-gray-300 dark:decoration-gray-600 underline-offset-4 active:text-gray-900 dark:active:text-white'
+                    : 'text-[12px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300',
+                )}
               >
                 Stay in Trade Lab
               </button>

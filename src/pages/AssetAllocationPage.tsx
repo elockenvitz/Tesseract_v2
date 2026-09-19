@@ -384,7 +384,16 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
 
       {/* Main Grid */}
       <div className="flex-1 overflow-auto p-3 sm:p-6">
+        {/* The grid is 900px wide and the phone shell clips horizontal overflow
+            (`overflow-x: clip` on html/body/#root), so without its own scroller
+            four of the five period columns are not merely off-screen — they are
+            unreachable. `.mobile-scroll-x` is the project's opt-in for exactly
+            this, and `.show-scrollbar` opts back out of the global phone
+            scrollbar hiding, because here the bar is the only thing saying
+            there is more to the right. Desktop is unchanged: `overflow-x: auto`
+            draws nothing when the content already fits. */}
         <Card className="overflow-hidden shadow-sm">
+          <div className="mobile-scroll-x show-scrollbar">
           <div className="min-w-[900px]">
             {/* Grid Header */}
             <div className="grid grid-cols-[220px_repeat(5,1fr)] border-b border-gray-200 dark:border-gray-700">
@@ -499,6 +508,7 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
                 </div>
               )
             })}
+          </div>
           </div>
         </Card>
 
@@ -841,7 +851,7 @@ function TeamManagementModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl max-h-viewport-80 flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
             <Users className="h-5 w-5 text-indigo-600" />

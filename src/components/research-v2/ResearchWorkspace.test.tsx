@@ -34,7 +34,7 @@ const detailFor: string[] = []
 
 vi.mock('../../hooks/useDesktopResearch', () => ({
   useResearchScan: () => ({ subjects: scan, isLoading: false }),
-  useResearchExposure: () => exposure,
+  useResearchExposure: () => ({ exposure, settled: true }),
   useResearchDetail: (s: ResearchSubject | null) => {
     if (s) detailFor.push(s.assetId)
     return { detail: s ? detail : undefined, isLoading: false }
@@ -47,6 +47,59 @@ vi.mock('../../hooks/useDesktopResearch', () => ({
  * contribution form, this stub stops being rendered and the tests below fail.
  */
 const thesisContainerFor: string[] = []
+/*
+ * Coverage-generated subjects have their own suite (research-v2/__tests__).
+ * Here the reader has no coverage gaps, so these cases stay about the scan.
+ */
+/*
+ * The tile sparkline's closes. The real hook reaches for a QueryClient this
+ * suite does not stand up, so without this every test fails on infrastructure
+ * rather than on what it is testing.
+ *
+ * Empty by default, which is the state that leaves this lens's existing
+ * compositions exactly as they were: with no stored closes the trailing
+ * visual falls through the `spark` rung to the one it used to pick. Cases
+ * about the price set `researchCloses`.
+ */
+let researchCloses: { date: Date; value: number }[] = []
+
+/* The position behind the corner weight: reads the book through `useBook`,
+   which needs a QueryClient this suite does not stand up. */
+vi.mock('../../hooks/useSubjectWeightDetail', () => ({
+  useSubjectWeightDetail: () => null,
+}))
+
+vi.mock('../../hooks/useTileCloses', () => ({
+  useTileCloses: () => ({ data: researchCloses, isLoading: false }),
+}))
+
+vi.mock('../../hooks/useCoverageResearchGaps', () => ({
+  useCoverageResearchGaps: () => ({ status: 'ready', candidates: [], coveredCount: 0 }),
+}))
+
+/*
+ * The review recorder and the view cursor, which `ResearchDetail` mounts.
+ *
+ * Both read auth and org context this suite does not stand up, so every case
+ * that expands the deck threw "useOrganization must be used within an
+ * OrganizationProvider" at mount, before any assertion ran. Not a product
+ * defect: the app mounts the provider, and the two sibling Research suites --
+ * `research-time-labels` and `coverage-research-tiles` -- already carry these
+ * exact mocks. This suite was the one that got missed.
+ *
+ * What they write is covered at the library level instead, where it can be
+ * asserted rather than stubbed.
+ */
+vi.mock('../../hooks/useThesisReview', () => ({
+  useThesisReviews: () => new Map(),
+  useRecordThesisReview: () => ({
+    record: vi.fn(), isPending: false, isDone: false, error: null,
+  }),
+}))
+vi.mock('../../hooks/useObjectViewCursor', () => ({
+  useRecordObjectView: () => ({ previous: null, ready: true }),
+}))
+
 vi.mock('../contributions', () => ({
   ThesisContainer: ({ assetId }: { assetId: string }) => {
     thesisContainerFor.push(assetId)
@@ -111,7 +164,8 @@ describe('the scan', () => {
     const tile = screen.getByTestId('research-tile')
     expect(tile).toHaveTextContent('3')
     expect(tile).toHaveTextContent('new notes since')
-    expect(tile).toHaveTextContent('the thesis was written')
+    // The scan's clock is the last save of the thesis, not a review or a first write.
+    expect(tile).toHaveTextContent('the thesis was last updated')
   })
 
   it('says the core thesis is missing without implying no research exists', async () => {
@@ -275,8 +329,8 @@ describe('a typed arrival expands the right card, or says it cannot', () => {
     const asPrice = render(<ResearchWorkspace focusObjectId="a-amzn" intent="price" />)
     const priceOrder = headings(asPrice.container)
     // Price is promoted out of the context column and now leads the case.
-    expect(priceOrder).toContain('Price since the last review')
-    expect(priceOrder.indexOf('Price since the last review'))
+    expect(priceOrder).toContain('Price since the last update')
+    expect(priceOrder.indexOf('Price since the last update'))
       .toBeLessThan(priceOrder.indexOf('The case'))
     // And it appears exactly once -- promoted, never duplicated.
     expect(priceOrder.filter(h => h === 'Price')).toHaveLength(0)

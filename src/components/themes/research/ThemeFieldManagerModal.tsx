@@ -135,7 +135,7 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
           </div>
 
           {/* Body */}
-          <div className="flex-1 min-h-0 p-4 sm:p-6 space-y-5 sm:space-y-6 overflow-y-auto overscroll-contain sm:max-h-[70vh]">
+          <div className="flex-1 min-h-0 p-4 sm:p-6 space-y-5 sm:space-y-6 overflow-y-auto overscroll-contain sm:max-h-viewport-70">
             {isLoading ? (
               <div className="h-40 bg-gray-100 rounded animate-pulse dark:bg-gray-800" />
             ) : (

@@ -25,10 +25,12 @@
  * and the tests alike.
  */
 
-import { RESEARCH_FILTER_PREFIX } from '../research/case-state'
+import { KIND_LABEL } from '../../components/signals/card-identity'
+import { RESEARCH_FILTER_OPTIONS, RESEARCH_FILTER_PREFIX } from '../research/case-state'
 import { CONTENT_REGISTRY } from '../signals/content-registry'
+import { entrySignalType } from './entry-signal-type'
 import type { SignalType } from '../signals/contract'
-import { PORTFOLIO_FILTER_PREFIX } from '../signals/portfolio-issues'
+import { PORTFOLIO_FILTER_OPTIONS, PORTFOLIO_FILTER_PREFIX } from '../signals/portfolio-issues'
 
 export type FeedCategory =
   /** A position has left, or never had, the framework it was written against. */
@@ -310,7 +312,10 @@ export function familyOf(entry: {
   kind?: string
   card?: { type?: string; capital?: { issueType?: string } | null } | null
   capital?: { issueType?: string | null } | null
+  signal?: { type?: string } | null
   signalType?: string | null
+  idea?: { type?: unknown } | null
+  attention?: { source_type?: string | null; attention_type?: string | null; reason_code?: string | null } | null
   insight?: { issue?: { framing?: string | null } | null } | null
 }): string | null {
   /**
@@ -332,11 +337,162 @@ export function familyOf(entry: {
   const framing = entry.insight?.issue?.framing
   if (framing) return `${RESEARCH_FILTER_PREFIX}${framing}`
 
-  const declared = entry.card?.type ?? entry.signalType
+  /**
+   * The type, from wherever the entry keeps it.
+   *
+   * ── Why the fallback was doing too much work ──────────────────────────────
+   *
+   * This read `entry.card?.type ?? entry.signalType`, which finds it on a
+   * scenario, a template and a lens and misses it on an idea, a signal and an
+   * attention item. Those three fell through to the entry kind — the name of
+   * the HOOK that produced the row — so `composeFeed`, which keys its diversity
+   * axis on this function, saw one bucket called `attention` holding "Needs
+   * review", "Overdue" and "Awaiting decision" alike, and could not break up a
+   * run of them. Reported from a phone as too many of the same tile in a row.
+   *
+   * `entrySignalType` is the same resolution the ranker performs per branch,
+   * in one place. The capital and framing refinements above it are unchanged:
+   * they are finer than the type and the diversity axis wants them.
+   */
+  const declared = entrySignalType(entry)
   if (declared) return declared
 
-  // No declared type: fall back to the entry kind so unclassifiable rows are
-  // still separable from each other, rather than collapsing into one family
-  // that the run rule would then try to break up forever.
+  // Still nothing: fall back to the entry kind so unclassifiable rows are
+  // separable from each other, rather than collapsing into one family that the
+  // run rule would then try to break up forever.
   return entry.kind ?? null
+}
+
+/**
+ * The family a tile's PILL prints — the identity a reader can act on.
+ *
+ * ── Two identities, and why the product now has both ──────────────────────
+ *
+ * `familyOf` refines by the capital stamp: a held framework break is
+ * `portfolio:framework_break` where an unheld case-vs-price is `scenario_gap`.
+ * That refinement is real and useful — Curate offers it by name, `composeFeed`
+ * keys its diversity axis on it, and Explore reads it — so it stays exactly
+ * where it is.
+ *
+ * The PILL does not show it. Only `buildInsightCard` sets a `kindLabel`, so a
+ * capital-stamped scenario tile prints `KIND_LABEL['scenario_gap']` — "Case vs
+ * price" — the same words as the unheld tile beside it. Filtering on the finer
+ * string therefore meant tapping one of two identical-looking chips hid the
+ * other, and opened a band reading "Framework break", which is a refinement the
+ * tile never displayed.
+ *
+ * The decision is that VISIBLE PILL IDENTITY WINS for user-facing filtering.
+ * Two tiles showing the same words are one family under the thumb. So this
+ * resolver mirrors how the chip is derived, and nothing else:
+ *
+ *   research framing   the card sets `kindLabel = RESEARCH_PILL[framing]`, so
+ *                      the five framings genuinely print five different words
+ *                      and stay five families
+ *   declared type      `KIND_LABEL[type]`, which is what every other chip reads
+ *   entry kind         the fallback, which names no family and is why
+ *                      `entryHasExactFamily` exists
+ *
+ * The capital branch is deliberately absent. A refinement that the tile does
+ * not display must not reach the filter or the banner.
+ *
+ * `family-label-agreement` in `feed-categories.test` holds the invariant: for
+ * every family this returns, `familyLabel` gives back the words the chip prints.
+ */
+export function displayFamilyOf(entry: {
+  kind?: string
+  card?: { type?: string; capital?: { issueType?: string } | null } | null
+  capital?: { issueType?: string | null } | null
+  signal?: { type?: string } | null
+  signalType?: string | null
+  idea?: { type?: unknown } | null
+  attention?: { source_type?: string | null; attention_type?: string | null; reason_code?: string | null } | null
+  insight?: { issue?: { framing?: string | null } | null } | null
+}): string | null {
+  const framing = entry.insight?.issue?.framing
+  if (framing) return `${RESEARCH_FILTER_PREFIX}${framing}`
+
+  /**
+   * Wherever the entry keeps its type, not only where two kinds keep it.
+   *
+   * This read `entry.card?.type ?? entry.signalType`, which finds it on a
+   * scenario, a template and a lens and misses it on an idea, a signal and an
+   * attention item — three kinds that dominate the feed. Their chips printed
+   * real, labelled families and their pills rendered inert, because a family
+   * that resolves only to the hook name correctly fails `isExactFamily`.
+   *
+   * Browser evidence, one chip of each: `SPAN` with `onClick: undefined` on a
+   * tile reading "Trade idea", `BUTTON` with a handler on one reading "News".
+   * See `entry-signal-type`, which is now the one place that answers this.
+   */
+  const declared = entrySignalType(entry)
+  if (declared) return declared
+
+  return entry.kind ?? null
+}
+
+/**
+ * The reader-facing name of a tile FAMILY, or null when the key is not one.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────
+ *
+ * `familyOf` returns three kinds of string, and only two of them are families
+ * a reader has ever seen:
+ *
+ *   `portfolio:framework_break`  a Curate row, already labelled
+ *   `research:no_case`           a Curate row, already labelled
+ *   `scenario_gap`               a SignalType, already labelled on the card
+ *   `signal` / `idea` / …        the ENTRY KIND, from the fallback at the
+ *                                bottom of `familyOf` — the name of the hook
+ *                                that produced the row, which no reader has
+ *                                seen and which names no family at all
+ *
+ * The fallback exists so the diversity rule can still separate unclassified
+ * rows from each other while composing. It is not a filter the reader can be
+ * offered: the pill on such a tile says something specific ("Case gaps"), and
+ * filtering by `signal` would return every finding that hook emits.
+ *
+ * So this resolver does double duty. It gives the banner the exact words the
+ * pill was printed in, and — by returning null — it is the test for whether a
+ * pill may be a filter control at all. One function, so a family that can be
+ * named and a family that can be filtered can never come apart.
+ *
+ * Every label is borrowed, never invented: the two Curate option lists and the
+ * card's own `KIND_LABEL`. Nothing here introduces a second vocabulary.
+ */
+const FAMILY_LABELS: Record<string, string> = {
+  ...Object.fromEntries(PORTFOLIO_FILTER_OPTIONS.map(o => [o.key, o.label])),
+  ...Object.fromEntries(RESEARCH_FILTER_OPTIONS.map(o => [o.key, o.label])),
+  ...KIND_LABEL,
+}
+
+export function familyLabel(family: string | null | undefined): string | null {
+  if (!family) return null
+  return FAMILY_LABELS[family] ?? null
+}
+
+/**
+ * Whether a family key names something the reader can be offered as a filter.
+ *
+ * True exactly when it has a label. A key with no label is `familyOf`'s
+ * entry-kind fallback, which is a producer and not a family.
+ */
+export function isExactFamily(family: string | null | undefined): family is string {
+  return familyLabel(family) !== null
+}
+
+/**
+ * Whether THIS tile's pill may act as a filter.
+ *
+ * The rule the feed holds: a pill that behaves like a control filters to
+ * exactly the family printed on it, or it is not a control. An entry whose
+ * family resolves only to its hook name fails this, and its pill renders
+ * inert rather than quietly widening the feed to everything that hook emits.
+ *
+ * Asks `displayFamilyOf`, because the question is about the PILL. Asking
+ * `familyOf` would gate on an identity the reader cannot see — and would pass
+ * a capital-stamped tile on the strength of a Curate row its chip never
+ * mentions.
+ */
+export function entryHasExactFamily(entry: Parameters<typeof displayFamilyOf>[0]): boolean {
+  return isExactFamily(displayFamilyOf(entry))
 }

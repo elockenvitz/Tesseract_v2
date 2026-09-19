@@ -34,6 +34,11 @@
 
 import { useState } from 'react'
 import { clsx } from 'clsx'
+/* The shared tile chart. Decisions positions it on the fill; Portfolio and
+   Research mount the same component with their own anchors. `anchoredWindow`
+   is no longer imported here: the chart that used it moved, and this file's
+   own `windowSinceDecision` is self-contained. */
+import { TilePriceChart } from '../desktop/TilePriceChart'
 
 export interface DecisionWindow {
   series: number[]
@@ -118,7 +123,10 @@ export function PriceSinceDecision({
 
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full" style={{ height: H }}
            role="img" aria-label={`Price, ${w.changePct.toFixed(1)} percent`}>
-        {/* One ink, either direction. */}
+        {/* One ink, either direction. The DETAIL pane keeps the neutral rule
+            this file's header argues for: at full size, beside the decision's
+            own words, a coloured line reads as a verdict on the call. The
+            tile chart is coloured because a gallery is scanned, not read. */}
         <path d={`M${d} L${W},${H} L0,${H} Z`} className="fill-slate-500 opacity-[0.09]" />
         <path d={`M${d}`} fill="none" strokeWidth={1.6} strokeLinejoin="round"
               className="stroke-slate-500 dark:stroke-slate-400" />
@@ -634,3 +642,82 @@ export function RecordGaps({
     </div>
   )
 }
+
+/**
+ * Price since the fill, at tile scale, scrubbable.
+ *
+ * ── Why a new one ────────────────────────────────────────────────────────
+ *
+ * `PriceSinceDecision` above draws the same idea at 340x92 and is NOT
+ * interactive: it has no pointer handling and its `DecisionWindow` carries
+ * `series: number[]` with the dates thrown away, so a tooltip has nothing to
+ * name. This takes the dated points the price hook already returns, so every
+ * readout can say which day it is reading.
+ *
+ * Real series only. `points` comes from `usePriceHistory`, which reads
+ * `price_history_cache` -- the product's canonical dated closes. If the
+ * window does not reach the anchor there is no chart, rather than a line
+ * starting wherever the cache happens to begin: that is the same mistake that
+ * made the "since the decision" percentage untrustworthy.
+ */
+/**
+ * The price around a decision — the same chart Research draws for a stale
+ * thesis, anchored on the fill instead of the review.
+ *
+ * ── One price object, not two ────────────────────────────────────────────
+ *
+ * This was a bespoke chart with its own geometry, its own green/red ink and
+ * its own vocabulary, sitting one tab away from `PriceSinceReview`. Two price
+ * charts that look different for no reason make the product read as two
+ * products, so this now shares Research's slicer (`anchoredWindow`), its
+ * dimensions, its single slate ink, its dashed anchor tick and its end dot.
+ * Scrubbing is the one addition, and it only adds a readout.
+ *
+ * ── "Into the filled" is gone ────────────────────────────────────────────
+ *
+ * That was my wording for a fill with no closes after it yet, and it was
+ * nonsense. Research already had the honest answer for the same situation: if
+ * the window cannot be measured from the anchor, say "Price over available
+ * history" and draw what there is, with no anchor tick and no since-claim.
+ * A decision filled today gets exactly that.
+ *
+ * One ink regardless of direction, for the reason stated at the top of this
+ * file: a buy that fell is not thereby a mistake, and a coloured line says it
+ * is louder than any caption can deny.
+ */
+/**
+ * The decision tile's price chart is the SHARED tile chart, anchored on the
+ * fill.
+ *
+ * ── Why the drawing left this file ───────────────────────────────────────
+ *
+ * It was built here, and then Portfolio needed a price on its cards. What
+ * Portfolio could reach was a 20-30px micro sparkline -- no axes, no horizon
+ * control, no scrub -- because the good chart was a lens-private component.
+ * Unreadable on its own terms, and it made the product read as two products
+ * one tab apart.
+ *
+ * So the drawing moved to `components/desktop/TilePriceChart`, the shared
+ * shell every lens can mount, and this is the Decisions-shaped call: the
+ * anchor is the fill, or the decision where nothing filled. Nothing about how
+ * it renders is decided here any more, which is the point -- one price object,
+ * three lenses positioning it.
+ */
+export function PriceSinceFill(props: {
+  points: { date: Date; value: number }[]
+  /** The fill, or the decision where nothing filled. */
+  anchorISO: string | null
+  /** A bare noun -- "fill", "decision" -- the chart builds sentences from it. */
+  anchorLabel?: string
+  height?: number
+  /** Rendered when there is no drawable series at all. */
+  empty?: React.ReactNode
+}) {
+  return <TilePriceChart {...props} />
+}
+
+/* The drawing that used to live here is now
+   `components/desktop/TilePriceChart`. What follows is deliberately gone: the
+   geometry, the axes, the horizon chips, the scrub readout and the
+   window-explaining paragraph all moved there intact, so Portfolio and
+   Research mount the same object Decisions does rather than a lesser copy. */

@@ -425,7 +425,7 @@ export function AssignmentSelector({
       {/* Assignment modal */}
       {showAssignModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg sm:max-w-xl md:max-w-2xl lg:max-w-3xl max-h-[85vh] sm:max-h-[90vh] flex flex-col dark:bg-gray-800">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg sm:max-w-xl md:max-w-2xl lg:max-w-3xl max-h-viewport-85 sm:max-h-viewport-90 flex flex-col dark:bg-gray-800">
             {/* Header */}
             <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 rounded-t-xl dark:border-gray-700 dark:bg-gray-800">
               <div className="flex items-center justify-between">

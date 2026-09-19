@@ -1,20 +1,15 @@
 /**
  * usePilotScenario — the preloaded decision a pilot user lands in Trade Lab with.
  *
- * Lifecycle:
- *   - On first call for a pilot user that has no active instantiation,
- *     we invoke the `ensure_pilot_scenario_for_user` RPC, which atomically
- *     clones the org template (or builds an AAPL long default) plus the
- *     matching trade_queue_items + trade_proposals rows. Partial unique
- *     index on pilot_scenarios guarantees a no-op on re-entry.
- *   - Subsequent calls just read the instantiated row back.
+ * This reads the instantiated row. It does not create it: seeding runs from
+ * the shell, in `usePilotSeeding`, because this hook mounts only inside Trade
+ * Lab and a pilot who never opened Trade Lab was never seeded at all.
  *
  * Filtering:
  *   - We only return *instantiated* scenarios (`is_template = FALSE`).
  *     Templates are never surfaced to pilot users directly.
  */
 
-import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
@@ -50,7 +45,11 @@ export interface PilotScenario {
 const PILOT_SCENARIO_SELECT =
   `*, asset:assets(symbol, company_name), portfolio:portfolios(name, portfolio_id)`
 
-async function fetchInstantiatedScenario(userId: string, organizationId: string): Promise<PilotScenario | null> {
+/**
+ * Exported so `usePilotSeeding` can ask the same question through the same
+ * query key. One cache entry, one request, two readers.
+ */
+export async function fetchInstantiatedScenario(userId: string, organizationId: string): Promise<PilotScenario | null> {
   const { data, error } = await supabase
     .from('pilot_scenarios')
     .select(PILOT_SCENARIO_SELECT)
@@ -68,7 +67,6 @@ async function fetchInstantiatedScenario(userId: string, organizationId: string)
 export function usePilotScenario() {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
-  const queryClient = useQueryClient()
 
   const query = useQuery({
     queryKey: ['pilot-scenario', user?.id, currentOrgId],
@@ -79,91 +77,12 @@ export function usePilotScenario() {
     }
   })
 
-  // Seeding: if no instantiation exists, call the RPC. The RPC itself
-  // checks pilot eligibility server-side and short-circuits with
-  // `seeded=false, reason='not_pilot'` for non-pilot users, so calling it
-  // unconditionally is safe (one cheap round trip per cold session).
-  useEffect(() => {
-    if (!user?.id || !currentOrgId) return
-    if (query.isLoading) return
-    if (query.data) return
-    let cancelled = false
-    void (async () => {
-      try {
-        const { data, error } = await supabase.rpc('ensure_pilot_scenario_for_user', {})
-        if (error) {
-          if (import.meta.env.DEV) console.warn('ensure_pilot_scenario_for_user:', error.message)
-          return
-        }
-        if (cancelled) return
-        if ((data as any)?.seeded) {
-          queryClient.invalidateQueries({ queryKey: ['pilot-scenario', user.id, currentOrgId] })
-          // The SimulationPage trade-ideas query is keyed `trade-queue-ideas`
-          // (not `trade-ideas`) — invalidating the wrong key meant the newly
-          // seeded AAPL recommendation + MSFT idea never showed up until the
-          // user hard-refreshed. Hit both the canonical key and the legacy
-          // one so any caller is covered.
-          queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
-          queryClient.invalidateQueries({ queryKey: ['trade-ideas'] })
-          queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] })
-        }
-        // Pipeline demo ideas — seeds NVDA/AMZN/META across the
-        // earlier research stages so the kanban has visible flow
-        // the first time a pilot opens the Idea Pipeline. The RPC is
-        // idempotent (origin_metadata slug check) and assets missing
-        // from the catalog are silently skipped, so this is safe to
-        // call on every scenario-ensure.
-        const { data: demoCount, error: demoErr } = await supabase.rpc('seed_pilot_pipeline_demo_ideas', {})
-        if (demoErr) {
-          if (import.meta.env.DEV) console.warn('seed_pilot_pipeline_demo_ideas:', demoErr.message)
-        } else if (!cancelled && ((demoCount as number) || 0) > 0) {
-          queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
-          queryClient.invalidateQueries({ queryKey: ['trade-ideas'] })
-        }
-      } catch (e) {
-        if (import.meta.env.DEV) console.warn('pilot seeding failed:', e)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [user?.id, currentOrgId, query.isLoading, query.data, queryClient])
-
-  // Demo-ideas + decision_request top-up — fires once per session
-  // for returning pilots whose main scenario was already seeded but
-  // who predate later additions (NVDA/AMZN/META demo ideas, the
-  // matching decision_request for the pilot's Inbox). All RPCs are
-  // idempotent, so calling them again for fully-seeded pilots is a
-  // safe no-op.
-  useEffect(() => {
-    if (!user?.id || !currentOrgId) return
-    if (!query.data) return
-    let cancelled = false
-    void (async () => {
-      try {
-        const { data: demoCount, error } = await supabase.rpc('seed_pilot_pipeline_demo_ideas', {})
-        if (error) {
-          if (import.meta.env.DEV) console.warn('seed_pilot_pipeline_demo_ideas:', error.message)
-        } else if (!cancelled && ((demoCount as number) || 0) > 0) {
-          queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
-          queryClient.invalidateQueries({ queryKey: ['trade-ideas'] })
-        }
-
-        // Decision Inbox seeding — the AAPL recommendation only
-        // appears in the pilot's Inbox once a matching
-        // decision_requests row exists. RPC creates one if missing
-        // and returns the existing id otherwise.
-        const { data: drId, error: drErr } = await supabase.rpc('ensure_pilot_decision_request_for_user', {})
-        if (drErr) {
-          if (import.meta.env.DEV) console.warn('ensure_pilot_decision_request_for_user:', drErr.message)
-        } else if (!cancelled && drId) {
-          queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
-          queryClient.invalidateQueries({ queryKey: ['decision-inbox'] })
-        }
-      } catch (e) {
-        if (import.meta.env.DEV) console.warn('pilot top-ups failed:', e)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [user?.id, currentOrgId, query.data?.id, queryClient])
+  /*
+   * Seeding does NOT live here. It used to, and because this hook mounts only
+   * inside `SimulationPage` — a lazily-loaded Trade Lab tab — a fresh pilot
+   * who went coverage → capture → Idea Pipeline never triggered it, and their
+   * workspace stayed empty. It now runs from the shell. See `usePilotSeeding`.
+   */
 
   return {
     scenario: query.data ?? null,
@@ -182,6 +101,10 @@ export function usePilotScenarioMutations(organizationId: string | null) {
     queryClient.invalidateQueries({ queryKey: ['pilot-scenarios', organizationId] })
     queryClient.invalidateQueries({ queryKey: ['pilot-scenario'] })
     queryClient.invalidateQueries({ queryKey: ['ops-pilot-user-scenarios'] })
+    // Seeding writes trade_queue_items, and the Idea Pipeline reads them under
+    // this key. Without it an ops-side seed or reset left the board showing a
+    // five-minute-stale result.
+    queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
     queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
     queryClient.invalidateQueries({ queryKey: ['trade-ideas'] })
     queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] })

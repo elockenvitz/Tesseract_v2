@@ -98,6 +98,12 @@ export function useUpsertDecisionReview() {
       decisionId: string
       userId: string
       patch: DecisionReviewPatch
+      /** Which table `decisionId` belongs to. `AccountabilityRow.decision_id`
+       *  is polymorphic and (source, category) is what disambiguates it:
+       *  discretionary → portfolio_trade_events, acted → trade_queue_items,
+       *  passed → decision_requests. The caller knows; this does not guess. */
+      subjectType?: 'idea' | 'decision' | 'trade'
+      organizationId?: string | null
     }) => {
       const { decisionId, userId, patch } = args
       const payload = {
@@ -115,7 +121,51 @@ export function useUpsertDecisionReview() {
         .select()
         .single()
       if (error) throw error
-      return data as DecisionReview
+      const review = data as DecisionReview
+
+      /*
+       * The conclusion, remembered as of this version.
+       *
+       * `decision_reviews` stays authoritative for the full review and can be
+       * edited; the event is immutable and records what was concluded at this
+       * moment. So the payload carries the normalised verdict fields only --
+       * re-reading the source later gives the conclusion as it stands NOW,
+       * which is a different question.
+       *
+       * `process_note` is deliberately absent. It is prose, it has an
+       * authoritative home, and it can be corrected there.
+       *
+       * Idempotency is the review VERSION: id + updated_at. Saving the same
+       * version twice (a retry, a double submit) lands once; a later edit is a
+       * genuinely new conclusion and gets its own event. Not calendar-day
+       * granularity, which would swallow a same-afternoon correction.
+       */
+      if (args.organizationId) {
+        const { error: evErr } = await supabase.from('memory_events').insert({
+          organization_id: args.organizationId,
+          actor_id: userId,
+          event_type: 'decision.reviewed',
+          subject_type: args.subjectType ?? 'decision',
+          subject_id: decisionId,
+          source_type: 'decision_reviews',
+          source_id: review.id,
+          provenance: 'ui:outcomes',
+          payload: {
+            thesis_played_out: review.thesis_played_out,
+            decision_quality: review.decision_quality,
+            sizing_quality: review.sizing_quality,
+          },
+          dedupe_key: `decision.reviewed:${review.id}:${review.updated_at}`,
+        } as never)
+        // A duplicate is the idempotency working: the same version was already
+        // recorded. Anything else must not silently lose the memory, but must
+        // not lose the authoritative review either -- it is already written.
+        if (evErr && !/duplicate key|unique constraint/i.test(evErr.message)) {
+          console.warn('[DecisionReview] review saved; memory event failed', evErr)
+        }
+      }
+
+      return review
     },
     onSuccess: (review) => {
       qc.invalidateQueries({ queryKey: ['decision-review', review.decision_id] })

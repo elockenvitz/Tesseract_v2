@@ -16,11 +16,18 @@
  * or outcome filter in the scan query.
  */
 
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useDecisionAccountability } from './useDecisionAccountability'
+import { inferDecisionIntelligence } from '../lib/decision-intelligence'
+import { phoneStatusLabel } from '../lib/outcomes/phone-status'
+import { groupByBatch, type BatchPnl } from '../lib/outcomes/batch-groups'
+import { NO_OUTCOME_FACTS, type OutcomeFacts } from '../lib/desktop-decisions/classes'
 import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
 import type { DecisionRecord, DecisionStatus } from '../lib/desktop-decisions/model'
+import { fallbackExecutionFor, needsExecutionFallback } from '../lib/desktop-decisions/execution-link'
+import { isPilotSeedRow } from '../lib/pilot/seed-visibility'
 
 const DAY = 86_400_000
 
@@ -57,9 +64,10 @@ export function useDecisionScan(portfolioId: string | null) {
           portfolios!inner(id, name, organization_id),
           reviewer:users!decision_requests_reviewed_by_fkey(first_name, last_name, email),
           requester:users!decision_requests_requested_by_fkey(first_name, last_name, email),
-          trade_queue_items(id, asset_id, assets(id, symbol, company_name)),
+          trade_queue_items(id, asset_id, origin_metadata, assets(id, symbol, company_name)),
           accepted_trades!decision_requests_accepted_trade_id_fkey(
-            id, execution_status, execution_completed_at, executed_by, batch_id)
+            id, execution_status, execution_completed_at, executed_by, batch_id,
+            target_weight, delta_weight, notional_value, price_at_acceptance, delta_shares)
         `)
         .eq('portfolios.organization_id', currentOrgId!)
         .order('reviewed_at', { ascending: false, nullsFirst: false })
@@ -70,12 +78,35 @@ export function useDecisionScan(portfolioId: string | null) {
       const { data, error } = await q
       if (error) throw new Error(error.message)
 
+      /*
+       * Executions Trade Lab never linked.
+       *
+       * Until the execute writer set `accepted_trade_id`, every Trade Lab
+       * execution arrived here with no embedded trade. The trade names its
+       * request through `accepted_trades.decision_request_id`, so those are
+       * read back by that FK -- for accepted requests only, within the books
+       * already scoped to this organisation above -- and kept only where
+       * exactly one active, original trade answers (lib/desktop-decisions/
+       * execution-link). A failure degrades to "no execution", as before.
+       */
+      const rows = (data ?? []) as any[]
+      const unlinked = rows.filter(r => !r.accepted_trades && needsExecutionFallback(r))
+      if (unlinked.length) {
+        const { data: trades } = await supabase.from('accepted_trades')
+          .select('id, decision_request_id, portfolio_id, is_active, corrects_accepted_trade_id, execution_status, execution_completed_at, executed_by, batch_id, target_weight, delta_weight, notional_value, price_at_acceptance, delta_shares')
+          .in('decision_request_id', unlinked.map(r => r.id))
+          .in('portfolio_id', [...new Set(unlinked.map(r => r.portfolio_id))])
+        for (const r of unlinked) {
+          r.accepted_trades = fallbackExecutionFor(r, (trades ?? []) as any[])
+        }
+      }
+
       // `accepted_trades.executed_by` references auth.users, which PostgREST
       // cannot embed from the API schema -- asking for it fails the ENTIRE
       // query rather than blanking a field. Resolved separately against
       // public.users, which mirrors the same ids.
       const executorIds = [...new Set(
-        ((data ?? []) as any[])
+        rows
           .map(r => r.accepted_trades?.executed_by)
           .filter((x): x is string => !!x),
       )]
@@ -91,7 +122,7 @@ export function useDecisionScan(portfolioId: string | null) {
        * than to "no decisions".
        */
       const batchIds = [...new Set(
-        ((data ?? []) as any[])
+        rows
           .map(r => r.accepted_trades?.batch_id)
           .filter((x): x is string => !!x),
       )]
@@ -114,7 +145,7 @@ export function useDecisionScan(portfolioId: string | null) {
         }
       }
 
-      return ((data ?? []) as any[]).map((r): DecisionRecord => {
+      return rows.map((r): DecisionRecord => {
         const snap = r.submission_snapshot ?? {}
         const idea = r.trade_queue_items
         const exec = r.accepted_trades
@@ -149,12 +180,22 @@ export function useDecisionScan(portfolioId: string | null) {
 
           deferredUntil: r.deferred_until ?? null,
 
+          // The marker sits on the request's snapshot or on the idea it came
+          // from, depending on which the seeder wrote. Read only.
+          isPilotSeed: isPilotSeedRow(r) || isPilotSeedRow(idea),
+
           execution: exec
             ? {
                 id: exec.id,
                 status: exec.execution_status ?? null,
                 completedAt: exec.execution_completed_at ?? null,
                 executedByName: exec.executed_by ? (executorNames.get(exec.executed_by) ?? null) : null,
+                // The committed trade's own figures, as recorded.
+                targetWeight: num(exec.target_weight),
+                deltaWeight: num(exec.delta_weight),
+                notional: num(exec.notional_value),
+                priceAtAcceptance: num(exec.price_at_acceptance),
+                deltaShares: num(exec.delta_shares),
               }
             : null,
 
@@ -186,6 +227,80 @@ export function usePortfoliosWithDecisions(decisions: DecisionRecord[]) {
     }
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
   }, [decisions])
+}
+
+/**
+ * What Outcomes already knows about these decisions.
+ *
+ * ── Read, never recomputed ───────────────────────────────────────────────
+ *
+ * The move since the decision, the dollar impact, whether the outcome has been
+ * reviewed and whether it has gone against the decision are all Outcomes'
+ * answers: `useDecisionAccountability` builds accountability rows from the
+ * `outcomes_payload` RPC, and `inferDecisionIntelligence` is the one place
+ * that judges them. Computing a second version here is how two surfaces end up
+ * disagreeing about the same trade.
+ *
+ * It costs one shared query: the same key Outcomes uses, so opening both pays
+ * for one RPC. Keyed on `trade_queue_item_id`, which is an accountability
+ * row's `decision_id` for anything acted on and a `DecisionRecord`'s `ideaId`.
+ */
+export function useDecisionOutcomeFacts() {
+  const { rows, isLoading } = useDecisionAccountability()
+
+  const byIdea = useMemo(() => {
+    const out = new Map<string, OutcomeFacts>()
+    for (const row of rows) {
+      if (!row.decision_id) continue
+      const intel = inferDecisionIntelligence(row)
+      out.set(row.decision_id, {
+        sincePct: row.move_since_decision_pct ?? row.move_since_execution_pct ?? null,
+        // Which number it is, so the surface can label it correctly instead of
+        // calling a move-since-fill "since the decision".
+        sinceBasis: row.move_since_decision_pct != null ? 'decision'
+          : row.move_since_execution_pct != null ? 'execution'
+          : null,
+        // Undated means `current-price` fell back to `assets.current_price`,
+        // which carries no timestamp. Dated old beats undated: the surface can
+        // show the age of the first and can only guess at the second.
+        sinceDated: row.current_price_as_of != null,
+        pnl: row.impact_proxy ?? null,
+        // The clearer relabelling of the same verdicts, already shared with
+        // the phone: "Outcome not reviewed" rather than "Needs Context".
+        verdictLabel: phoneStatusLabel(intel),
+        // Outcomes' own bar for reviewed: quality assessed against the
+        // execution, not a note on the request.
+        reviewed: intel.verdict === 'resolved',
+        hurting: intel.verdict === 'hurting',
+        executed: row.execution_status === 'executed',
+      })
+    }
+    return out
+  }, [rows])
+
+  /*
+   * A batch's dollars, by Outcomes' own rule.
+   *
+   * `groupByBatch` already decides when a batch may report a total at all --
+   * every trade in it needs its own P&L proxy, and none of them may belong to
+   * a second batch, or the same dollars would be counted twice. Reusing it
+   * means the Dashboard cannot say a different number from Outcomes, and it
+   * keeps the deliberate absence of a batch return percentage.
+   */
+  const batchPnl = useMemo(() => {
+    const items = rows.map(row => ({ row, intel: inferDecisionIntelligence(row) }))
+    const out = new Map<string, BatchPnl>()
+    for (const g of groupByBatch(items).groups) out.set(g.batch.id, g.pnl)
+    return out
+  }, [rows])
+
+  const factsFor = useCallback(
+    (d: { ideaId: string | null }) => (d.ideaId ? byIdea.get(d.ideaId) : undefined) ?? NO_OUTCOME_FACTS,
+    [byIdea],
+  )
+  const pnlForBatch = useCallback((id: string | null | undefined) => (id ? batchPnl.get(id) ?? null : null), [batchPnl])
+
+  return { factsFor, pnlForBatch, isLoading }
 }
 
 export interface DecisionDetail {

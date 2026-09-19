@@ -28,14 +28,22 @@ import type { IdeaEnrichment, IdeaRow } from './model'
  * 1 ready to decide, and nobody has
  * 2 a view exists and is being formed
  * 3 still gathering
+ * 4 a suggestion with a reason: exposure, a change, or an unfinished case
+ * 5 a suggestion from coverage alone
+ *
+ * 4 and 5 hold generated coverage prompts (lib/desktop-ideas/coverage-prompts)
+ * and exist so a real idea is never displaced by a suggestion: tier is a hard
+ * partition, so every real idea outranks every prompt whatever either scores.
  */
-export type IdeaTier = 0 | 1 | 2 | 3
+export type IdeaTier = 0 | 1 | 2 | 3 | 4 | 5
 
 export const IDEA_TIER_LABEL: Record<IdeaTier, string> = {
   0: 'being decided',
   1: 'ready to decide',
   2: 'thesis forming',
   3: 'researching',
+  4: 'worth an idea',
+  5: 'covered, nothing open',
 }
 
 const TIER_BY_MATURITY: Record<string, { tier: IdeaTier; base: number }> = {
@@ -90,6 +98,29 @@ export function scoreIdea(
   e: IdeaEnrichment | undefined,
   now: number = Date.now(),
 ): IdeaScore {
+  /*
+   * A generated prompt is ordered by what makes it worth thinking about --
+   * exposure, then the shared source's own priority and score -- inside its
+   * own tier, below every real idea. Never by maturity: it has none.
+   */
+  const g = idea.generated
+  if (g) {
+    const hasReason = g.context === 'held' || g.framing === 'new_evidence'
+      || g.framing === 'price_move' || g.framing === 'incomplete_case'
+    const tier: IdeaTier = hasReason ? 4 : 5
+    /*
+     * Exposure first, as the shared work order has it: a bigger position with
+     * nothing open is the one worth thinking about, and the exact weight is
+     * used rather than a band so two positions never tie into alphabetical
+     * order. Priority (1 is strongest in the shared source, inverted here) and
+     * the source's own score then order names that carry no exposure.
+     */
+    const score = (g.weightPct ?? 0) / 10
+      + Math.max(0, 0.3 - (g.priority - 1) * 0.05)
+      + g.score * 0.2
+    return { tier, score }
+  }
+
   const { tier, base } = TIER_BY_MATURITY[idea.maturity] ?? { tier: 3 as IdeaTier, base: 0.3 }
 
   let score = base

@@ -115,6 +115,27 @@ describe('the visual explains why the item matters', () => {
     expect(v.kind).toBe('timeline')
   })
 
+  it('never labels the elapsed time with the metric’s own label', () => {
+    /*
+     * `overdueLabel` names the ELAPSED TIME; `metric.label` describes the
+     * metric's value. Feeding one to the other rendered an expired MSFT
+     * target as "+8mo stated target" -- which says nothing, and which
+     * displaced the one word the reader needed to see, because the component
+     * only falls back to "overdue" when no label is supplied.
+     *
+     * Asserted as absent rather than as equal to 'overdue': the default lives
+     * in the component, and a resolver that started supplying the right word
+     * here would be a second place to change it.
+     */
+    const v = exploreVisualFor(item({
+      signalType: 'target_expired', symbol: 'MSFT',
+      metric: { value: '$420', label: 'stated target', direction: 'neutral' },
+      visual: { statedAt: '2025-06-01T00:00:00.000Z', dueAt: '2025-12-01T00:00:00.000Z' },
+    }))
+    expect(v.kind).toBe('timeline')
+    expect((v as Extract<typeof v, { kind: 'timeline' }>).overdueLabel).toBeUndefined()
+  })
+
   it('gives a trade idea a stage rail and a direction, not a chart', () => {
     const v = exploreVisualFor(item({
       signalType: 'trade_idea', subtype: 'idea', category: 'ideas', symbol: 'CROX',
@@ -338,6 +359,48 @@ describe('a picture has to explain the finding it sits under', () => {
     // competes with the metric line and both cards keep it.
     expect(visualHeadlineValue({ kind: 'timeline', statedAt: 'a', dueAt: 'b' })).toBeNull()
     expect(visualHeadlineValue({ kind: 'none' })).toBeNull()
+  })
+
+  it('asks the producer\'s own question where nothing else could be drawn', () => {
+    // A thesis event with a ticker resolved to `none` and drew white space.
+    // The builder already wrote the question it wanted answered.
+    const v = exploreVisualFor(base({
+      signalType: 'thesis_update', subtype: 'research', category: 'research',
+      positive: true, portfolio: undefined,
+      visual: { question: 'Does this change the case?' },
+    }))
+    expect(v).toEqual({ kind: 'question', text: 'Does this change the case?' })
+  })
+
+  it('never lets the question take a card away from its own evidence', () => {
+    // The question rides along on every insight, so the guard that matters is
+    // that it is LAST: a breached range, an elapsed clock and an exposure bar
+    // all argue the finding and the question does not.
+    const withQuestion = { question: 'Has the investment view changed?' }
+    expect(exploreVisualFor(base({
+      signalType: 'no_research', subtype: 'research', category: 'research',
+      symbol: 'ROKU', portfolio: { weightPct: 1.1, name: 'Growth' },
+      visual: withQuestion,
+    })).kind).toBe('exposure')
+    expect(exploreVisualFor(base({
+      signalType: 'price_move', subtype: 'research', category: 'research',
+      visual: { ...withQuestion, movePct: 21, lastLookAt: '2026-01-04' },
+    })).kind).toBe('last_look')
+    // And a signal keeps the tape, which sits above the question too.
+    expect(exploreVisualFor(base({
+      signalType: 'other', positive: true, portfolio: undefined,
+      visual: withQuestion,
+    })).kind).toBe('price_trend')
+  })
+
+  it('does not print the question twice when it is also the headline', () => {
+    // Several builders write the prompt AS the headline on cards with no other
+    // copy; a picture that repeats the line above it is not a picture.
+    const q = 'What best describes this position?'
+    expect(exploreVisualFor(base({
+      signalType: 'thesis_update', subtype: 'research', category: 'research',
+      positive: true, portfolio: undefined, title: q, visual: { question: q },
+    })).kind).toBe('none')
   })
 
   it('treats a weight the comparison bar already shows as said', () => {

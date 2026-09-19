@@ -2,9 +2,20 @@
  * PilotTradeLabIntroBanner — top-of-page onboarding strip for pilots
  * landing in Trade Lab. Walks them through the three concrete moves
  * to commit a trade:
- *   1. Click / expand the recommendation card to review the details
- *   2. Add the recommendation and size the trade
+ *   1. Add a recommendation (or the tutorial idea) to the simulation
+ *   2. Size the trade — set its weight or shares
  *   3. Execute
+ *
+ * Step 1 teaches the action — a recommendation, or the tutorial idea, written
+ * into the simulation. It does not decide the global mission, which reads the
+ * tutorial idea's own simulation and decision rows (`usePilotMission`), so an
+ * unrelated recommendation can teach this step without advancing the mission.
+ *
+ * Step 1 fires only from a real add. Expanding a card or opening its detail
+ * modal used to fire it too, which ticked the step off for someone who had
+ * only looked — the banner then said "done" about work that had not happened.
+ * It is now reported by the add mutations' success handlers, from the rows the
+ * write returned: see `lib/pilot/trade-lab-basics`.
  *
  * Steps tick off as the user does them — same progress pattern as the
  * Idea Pipeline banner. Each step listens for a window event:
@@ -18,14 +29,29 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import { Sparkles, X, ArrowRight, Check } from 'lucide-react'
-import { clsx } from 'clsx'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { PilotStepsBanner } from './PilotStepsBanner'
 import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
+import { TRADE_LAB_STEP1_EVENT, tradeLabStep1Hint } from '../../lib/pilot/trade-lab-basics'
 
 interface PilotTradeLabIntroBannerProps {
+  /**
+   * Which step is being taught, or null when nothing is.
+   *
+   * The banner used to carry its own recommendations button, which put a
+   * second large control for the same action one line above the one in the
+   * toolbar. The reader had two things to choose between for one job.
+   *
+   * So the tutorial explains and the app control acts: this reports which
+   * step is current, the surface points at its own control for as long as the
+   * step needs it, and there is one place to press.
+   */
+  onCurrentStepChange?: (step: 1 | 2 | 3 | null) => void
   userId: string
   /** Active org id, used to scope the banner state per pilot client. */
   orgId?: string | null
+  /** The tutorial idea's symbol, so step 1 can name what to add. */
+  tutorialSymbol?: string | null
 }
 
 const STEP1 = 'rec_reviewed'
@@ -52,7 +78,20 @@ function writeFlag(userId: string, orgId: string | null | undefined, suffix: str
   try { localStorage.setItem(flagKey(userId, orgId, suffix), '1') } catch { /* ignore */ }
 }
 
-export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBannerProps) {
+export function PilotTradeLabIntroBanner({ userId, orgId, onCurrentStepChange, tutorialSymbol }: PilotTradeLabIntroBannerProps) {
+  /*
+   * The two shells commit a trade through genuinely different controls, so
+   * one sentence cannot describe both without lying to one of them.
+   *
+   * The phone has a bar under the table that says how many trades it will
+   * commit. The desktop has an Execute Trade button on the idea's own action
+   * row, above the table, and it stays disabled until that idea is the
+   * selected one AND has sizing entered. The hint had been rewritten for the
+   * phone -- correctly -- and desktop pilots were then sent to the bottom of
+   * a table that has no button there, with no mention that the trade has to
+   * be picked first.
+   */
+  const isMobile = useIsMobile()
   const [dismissed, setDismissed] = useState<boolean>(() => readFlag(userId, orgId, DISMISS))
   const [step1, setStep1] = useState<boolean>(() => readFlag(userId, orgId, STEP1))
   const [step2, setStep2] = useState<boolean>(() => readFlag(userId, orgId, STEP2))
@@ -95,15 +134,27 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
     const onStep1 = defer(() => markStep(STEP1, setStep1))
     const onStep2 = defer(() => markStep(STEP2, setStep2))
     const onStep3 = defer(() => markStep(STEP3, setStep3))
-    window.addEventListener('pilot-tradelab:rec-reviewed', onStep1)
+    window.addEventListener(TRADE_LAB_STEP1_EVENT, onStep1)
     window.addEventListener('pilot-tradelab:rec-sized', onStep2)
     window.addEventListener('pilot-tradelab:executed', onStep3)
     return () => {
-      window.removeEventListener('pilot-tradelab:rec-reviewed', onStep1)
+      window.removeEventListener(TRADE_LAB_STEP1_EVENT, onStep1)
       window.removeEventListener('pilot-tradelab:rec-sized', onStep2)
       window.removeEventListener('pilot-tradelab:executed', onStep3)
     }
   }, [markStep])
+
+  /*
+   * Tell the surface which step is being taught, so it can point at its own
+   * control instead of this module growing one. Null once the banner has
+   * nothing left to say, which is what takes the emphasis away again.
+   */
+  useEffect(() => {
+    if (!onCurrentStepChange) return
+    const step = dismissed ? null : !step1 ? 1 : !step2 ? 2 : !step3 ? 3 : null
+    onCurrentStepChange(step)
+    return () => onCurrentStepChange(null)
+  }, [onCurrentStepChange, dismissed, step1, step2, step3])
 
   // Auto-dismiss when all three actions are done.
   useEffect(() => {
@@ -115,85 +166,61 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
 
   if (dismissed) return null
 
-  const dismiss = () => {
-    writeFlag(userId, orgId, DISMISS)
-    setDismissed(true)
-  }
 
+  /* Steps and semantics unchanged. No dismiss control, and it auto-retires
+     once all three are done, exactly as before. */
   return (
-    <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/90 to-amber-100/30 dark:from-amber-900/25 dark:via-amber-900/15 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
-      <div className="px-6 py-3 flex items-start gap-4">
-        <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
-          <Sparkles className="h-4 w-4" />
-          <span className="text-[12px] uppercase tracking-wider">Get started</span>
-        </div>
-        {/*
-          Stack steps vertically on narrow screens (mobile/laptop side-panel
-          widths) and lay them out horizontally on wider screens. The
-          previous `flex-wrap` approach put steps in the wrong visual order
-          when the row ran out of space — pilot tester saw step 3 appear
-          below step 1 instead of below step 2. The inter-step arrows are
-          decorative; we hide them in the stacked layout.
-        */}
-        <div className="flex flex-col md:flex-row md:items-start gap-y-2 md:gap-x-4 text-gray-700 dark:text-gray-300 min-w-0">
-          <Step
-            n={1}
-            title="Review and add the recommendation"
-            hint="Check the box on the recommendation card on the left to import it into the holdings table."
-            done={step1}
-          />
-          <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
-          <Step
-            n={2}
-            title="Pick your trade"
-            hint="Check the box on the trade row in the table below."
-            done={step2}
-          />
-          <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
-          <Step
-            n={3}
-            title="Execute"
-            hint="Click Execute Trade to commit it to the Trade Book."
-            done={step3}
-          />
-        </div>
-        {/* Banner intentionally has no dismiss control — each step
-            gates the user's path into the next surface (Trade Book).
-            Banner auto-retires once all three steps are marked complete. */}
-      </div>
-    </div>
+    <PilotStepsBanner
+      /* Local product teaching, like Pipeline basics — not the global
+         five-step pilot mission, which is what "Get started" names. */
+      label="Trade Lab basics"
+      steps={[
+        {
+          n: 1,
+          /* "Review a recommendation" described an action that did not
+             complete the step. The step completes when a recommendation is
+             added to the simulation, so the title says that — reading one and
+             closing it again leaves the step open, as it always did in the
+             data even while the copy implied otherwise. */
+          /* Your idea, not a recommendation.
+             The mission follows the one trade_queue_item the pilot captured,
+             and every later step reads against it. Teaching "add a
+             recommendation" here pointed at seeded demo content — a different
+             item — so a pilot could finish this tutorial and still be told to
+             test a trade, with nothing on the screen able to satisfy it.
+             Recommendations remain addable; they just do not graduate anyone. */
+          title: 'Add a trade to the simulation',
+          /* Names what counts: any recommendation from Ideas & recommendations,
+             or the tutorial idea. It completes only once the add has been
+             written. This is the local lesson; the global mission still
+             follows the tutorial idea alone. */
+          hint: tradeLabStep1Hint(tutorialSymbol),
+          done: step1,
+        },
+        {
+          n: 2,
+          /* "Pick your trade" described a desktop checkbox — and one a phone
+             never renders, so the step could not be completed there at all.
+             The act between adding a trade and committing it is deciding how
+             big it is, which is what the step now names and what its
+             predicate now watches. */
+          title: 'Size the trade',
+          hint: 'Tap the trade row and set its weight or shares.',
+          done: step2,
+        },
+        {
+          n: 3,
+          title: 'Execute the simulated trade',
+          /* "Click Execute Trade" named a desktop button. The phone's control
+             is a bar under the table and says how many trades it will
+             commit, so the hint names the act and where it lives. */
+          hint: isMobile
+            ? 'Tap Execute at the bottom of the table to commit it to the Trade Book.'
+            : 'Select the trade you sized, then click Execute Trade above the table to commit it to the Trade Book.',
+          done: step3,
+        },
+      ]}
+    />
   )
 }
 
-function Step({ n, title, hint, done }: { n: number; title: string; hint: string; done?: boolean }) {
-  return (
-    <div className="flex items-start gap-2 min-w-0">
-      <span
-        className={clsx(
-          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm",
-          done ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"
-        )}
-      >
-        {done ? <Check className="h-3 w-3" /> : n}
-      </span>
-      <div className="min-w-0">
-        <div
-          className={clsx(
-            "text-[12px] font-semibold leading-tight whitespace-nowrap",
-            done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-900 dark:text-white"
-          )}
-        >
-          {title}
-        </div>
-        <div
-          className={clsx(
-            "text-[11px] leading-snug whitespace-nowrap",
-            done ? "text-emerald-600/60 dark:text-emerald-400/60" : "text-gray-600 dark:text-gray-400"
-          )}
-        >
-          {hint}
-        </div>
-      </div>
-    </div>
-  )
-}

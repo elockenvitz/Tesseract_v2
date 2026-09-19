@@ -3,6 +3,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { usePilotMode } from './usePilotMode'
 import { TAB_TYPE_TO_PILOT_FEATURE } from '../lib/pilot/pilot-access'
+import { CANONICAL_HOME_TAB } from '../lib/tabStateManager'
 
 /**
  * "Take me to the thing called X" — search over object *names*.
@@ -29,7 +30,18 @@ export interface SearchResult {
 
 // Static pages/tabs that should be discoverable via search
 export const STATIC_PAGES = [
-  { id: 'dashboard', title: 'Dashboard', type: 'page' as const, subtitle: 'Home dashboard overview', keywords: ['home', 'main', 'overview'] },
+  /*
+    The home row points at the CANONICAL home, `today`, not at the legacy
+    `dashboard` id.
+
+    `handleSearchResult` turns a page hit into a tab whose id is this id, and
+    activates a tab that already carries it. Pointing at `dashboard` therefore
+    built a SECOND home beside the real one: on a phone both ids render the
+    ideas feed, so searching "home" left the user with two tabs called Ideas
+    and landed them on the newer, legacy one. The drawer's Ideas row was
+    repointed for exactly this reason; search still held the old id.
+  */
+  { id: CANONICAL_HOME_TAB.id, title: 'Dashboard', type: 'page' as const, subtitle: 'Home dashboard overview', keywords: ['home', 'main', 'overview', 'ideas', 'dashboard'] },
   { id: 'assets-list', title: 'Assets', type: 'page' as const, subtitle: 'Browse all assets', keywords: ['stocks', 'securities', 'holdings'] },
   { id: 'portfolios-list', title: 'Portfolios', type: 'page' as const, subtitle: 'Manage portfolios', keywords: ['funds', 'accounts'] },
   { id: 'themes-list', title: 'Themes', type: 'page' as const, subtitle: 'Investment themes', keywords: ['sectors', 'categories'] },
@@ -45,7 +57,7 @@ export const STATIC_PAGES = [
   { id: 'charting', title: 'Charting', type: 'page' as const, subtitle: 'Technical charts', keywords: ['charts', 'technical', 'graphs', 'price'] },
   { id: 'asset-allocation', title: 'Asset Allocation', type: 'page' as const, subtitle: 'Portfolio allocation analysis', keywords: ['allocation', 'weights', 'rebalance'] },
   // Prioritizer removed - consolidated into All Priorities
-  { id: 'idea-generator', title: 'Idea Generator', type: 'page' as const, subtitle: 'Investment ideas', keywords: ['ideas', 'opportunities', 'screening'] },
+  { id: 'ideas', title: 'Ideas', type: 'page' as const, subtitle: 'Attention feed and Explore', keywords: ['ideas', 'opportunities', 'screening', 'explore', 'attention'] },
   { id: 'outcomes', title: 'Outcomes', type: 'page' as const, subtitle: 'Decisions and results', keywords: ['decisions', 'execution', 'results', 'approved', 'trades'] },
   { id: 'priorities', title: 'My Priorities', type: 'page' as const, subtitle: 'What needs your attention right now', keywords: ['attention', 'alerts', 'flags', 'urgent', 'review', 'notifications', 'priorities', 'todo', 'decisions'] },
   { id: 'files', title: 'Files', type: 'page' as const, subtitle: 'File management', keywords: ['documents', 'uploads', 'models'] },

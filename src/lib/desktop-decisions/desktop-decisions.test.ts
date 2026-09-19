@@ -14,6 +14,10 @@ import {
   RESOLVED, NOT_RECORDED_AT_DECISION,
   type DecisionRecord, type DecisionStatus,
 } from './index'
+import {
+  eyebrowLabels, REASON_LABEL, NO_OUTCOME_FACTS,
+  type OutcomeFacts, type DecisionReason,
+} from './classes'
 import { windowSinceDecision } from '../../components/decisions-v2/DecisionVisual'
 
 const DAY = 86_400_000
@@ -112,6 +116,18 @@ describe('a system string is not a reason', () => {
     expect(provenanceOf('Self-proposed via Trade Lab Execute')).toBe('system')
     expect(provenanceOf('Withdrawn during cleanup — no active recommendation')).toBe('system')
     expect(provenanceOf('Backfilled: resolved by Trade Lab Execute (executed 2026-04-13)')).toBe('system')
+  })
+
+  it('classifies every note Trade Lab Execute writes as system provenance', () => {
+    // Each literal the execute service writes into decision_note.
+    for (const note of [
+      'Self-proposed via Trade Lab Execute',
+      'Accepted via Trade Lab Execute',
+      'Resolved by Trade Lab Execute (sibling of committed trade)',
+    ]) {
+      expect(provenanceOf(note), note).toBe('system')
+      expect(provable(decision({ decisionNote: note })).humanReason, note).toBe(false)
+    }
   })
 
   it('classifies the one real human note as human', () => {
@@ -336,5 +352,93 @@ describe('daysSince', () => {
     expect(daysSince(null)).toBeNull()
     expect(daysSince('not a date')).toBeNull()
     expect(daysSince(daysAgo(5))).toBe(5)
+  })
+})
+
+/* --------------------------------------------------------------- eyebrow */
+
+/**
+ * The eyebrow prints three vocabularies that describe the same decision from
+ * three angles, so they AGREE whenever the decision is unambiguous. Twice now
+ * that agreement has shipped as a visible duplicate:
+ *
+ *   - "Outcome not reviewed" (reason == verdict) on an executed, unreviewed
+ *     decision -- patched inline on one render path, left on the other.
+ *   - "Awaiting decision" (outcome == reason) on an undecided request, which
+ *     is `OUTCOME_LABEL.open` and `REASON_LABEL.decide` being the same string.
+ *
+ * These assert the rule rather than the two known pairs: no two labels the
+ * eyebrow emits may read the same.
+ */
+describe('eyebrowLabels says each thing once', () => {
+  const facts = (over: Partial<OutcomeFacts> = {}): OutcomeFacts => ({
+    ...NO_OUTCOME_FACTS, ...over,
+  })
+
+  it('drops the outcome when the reason is already those words', () => {
+    // The live collision: pending status -> OUTCOME_LABEL.open, and the
+    // 'decide' reason -> REASON_LABEL.decide. Both "Awaiting decision".
+    expect(OUTCOME_LABEL.open).toBe(REASON_LABEL.decide)
+
+    const labels = eyebrowLabels(
+      decision({ status: 'pending' }), { reason: 'decide' }, facts(),
+    )
+    expect(labels.map(l => l.text)).toEqual(['Awaiting decision'])
+  })
+
+  it('drops the verdict when the reason is already those words', () => {
+    const labels = eyebrowLabels(
+      decision({ status: 'accepted' }),
+      { reason: 'review_outcome' },
+      facts({ verdictLabel: 'Outcome not reviewed', reviewed: false }),
+    )
+    const texts = labels.map(l => l.text)
+    expect(texts.filter(t => t === 'Outcome not reviewed')).toHaveLength(1)
+    // ...and the surviving label still carries the tint the verdict owned.
+    expect(labels.find(l => l.text === 'Outcome not reviewed')?.asksForReview).toBe(true)
+  })
+
+  it('never emits two labels that read the same, for any pairing', () => {
+    const reasons: DecisionReason[] = [
+      'decide', 'explain', 'confirm', 'review_outcome', 'outcome_moved', 'committed',
+    ]
+    const statuses: DecisionStatus[] = [
+      'pending', 'accepted', 'rejected', 'withdrawn', 'deferred',
+      'accepted_with_modification', 'under_review', 'needs_discussion',
+    ]
+    const verdicts = [
+      null, 'Outcome not reviewed', 'Awaiting decision', 'Hurting', 'Working',
+      // Casing and padding must not smuggle a duplicate through: these are
+      // styled uppercase, so the reader cannot tell them apart.
+      'AWAITING DECISION', '  Outcome not reviewed  ',
+    ]
+    for (const reason of reasons) {
+      for (const status of statuses) {
+        for (const verdictLabel of verdicts) {
+          const labels = eyebrowLabels(
+            decision({ status }), { reason },
+            facts({ verdictLabel, reviewed: false }),
+          )
+          const keys = labels.map(l => l.text.trim().toLowerCase())
+          expect(new Set(keys).size).toBe(keys.length)
+        }
+      }
+    }
+  })
+
+  it('says nothing about a verdict the reader has already settled', () => {
+    const labels = eyebrowLabels(
+      decision({ status: 'accepted' }), { reason: 'committed' },
+      facts({ verdictLabel: 'Working', reviewed: true }),
+    )
+    expect(labels.map(l => l.text)).not.toContain('Working')
+  })
+
+  it('keeps a verdict that genuinely adds something', () => {
+    const labels = eyebrowLabels(
+      decision({ status: 'accepted' }), { reason: 'committed' },
+      facts({ verdictLabel: 'Hurting', reviewed: false }),
+    )
+    expect(labels.map(l => l.text)).toEqual(['Accepted', 'Committed', 'Hurting'])
   })
 })

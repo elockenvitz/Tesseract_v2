@@ -459,7 +459,9 @@ export function OrgPeopleTab({
           {/* Member rows */}
           {displayMembers.length > 0 ? (
             <div className="bg-white rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
-              <table className="w-full">
+              {/* The phone shell clips horizontal overflow, so a table this wide is unreachable without its own scroller. `sm:min-w-0` returns it to the container from 640px up, leaving desktop unchanged. */}
+              <div className="mobile-scroll-x show-scrollbar">
+              <table className="w-full min-w-[720px] sm:min-w-0">
                 <thead>
                   <tr className="bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
                     <th className="px-4 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-[40%]">Name</th>
@@ -496,6 +498,7 @@ export function OrgPeopleTab({
                   })}
                 </tbody>
               </table>
+              </div>
 
               {hasNextPage && (
                 <button
@@ -791,7 +794,7 @@ function InviteModal({ orgName, orgId, email, setEmail, selectedNodes, setSelect
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-viewport-85 flex flex-col overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Invite User</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">

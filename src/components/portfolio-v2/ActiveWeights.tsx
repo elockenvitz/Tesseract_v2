@@ -33,16 +33,41 @@
 
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import type { ActiveWeight } from '../../hooks/useDesktopPortfolio'
+import type { BenchmarkComparison } from '../../hooks/useDesktopPortfolio'
+
+/**
+ * No comparison to draw, said once in the strip's own place.
+ *
+ * A book with no benchmark file used to get an active share computed against
+ * an index of zeros. Now the strip names the absence (or the failed read) and
+ * computes nothing -- no active share, no overweight count, no bars.
+ */
+function NoComparison({ state }: { state: 'none' | 'unavailable' }) {
+  return (
+    <section data-testid="active-weights" data-benchmark={state}>
+      <div className="flex h-[18px] items-baseline gap-x-3 overflow-hidden whitespace-nowrap">
+        <h2 className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">
+          Against the benchmark
+        </h2>
+        <span data-testid="benchmark-absent" className="text-[11px] text-gray-500">
+          {state === 'none' ? 'No benchmark on file' : 'Benchmark unavailable'}
+        </span>
+      </div>
+    </section>
+  )
+}
 
 export function ActiveWeights({
-  rows, onOpen,
+  comparison, onOpen,
 }: {
-  rows: ActiveWeight[]
+  comparison: BenchmarkComparison
   /** Open a name. Inspection never calls it -- pointing is not navigating. */
   onOpen: (assetId: string) => void
 }) {
   const [at, setAt] = useState<number | null>(null)
+  if (comparison.state === 'loading') return null
+  if (comparison.state !== 'ready') return <NoComparison state={comparison.state} />
+  const rows = comparison.rows
   if (rows.length < 4) return null
 
   /*

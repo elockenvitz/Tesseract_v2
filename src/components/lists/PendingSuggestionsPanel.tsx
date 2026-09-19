@@ -227,7 +227,7 @@ export function PendingSuggestionsPanel({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm pt-20">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[70vh] overflow-hidden dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-viewport-70 overflow-hidden dark:bg-gray-800">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">

@@ -8,6 +8,7 @@ import { CommunicationPane } from '../communication/CommunicationPane'
 import { subscribeToEngagement } from '../../lib/engagement'
 import type { EngagementTarget } from '../../lib/engagement'
 import { NotificationPane } from '../notifications/NotificationPane'
+import { isNavigableNotificationTarget } from '../../lib/notifications/routing'
 import { useCommunication } from '../../hooks/useCommunication'
 import { useNotifications } from '../../hooks/useNotifications'
 import { useSidebarStore, type InspectableItemType } from '../../stores/sidebarStore'
@@ -15,6 +16,7 @@ import { useOrganization } from '../../contexts/OrganizationContext'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { MobileNavDrawer } from '../mobile/MobileNavDrawer'
 import { OverflowAuditOverlay } from '../mobile/OverflowAuditOverlay'
+import { ownsMobileViewport } from '../../lib/mobile/mobile-surfaces'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -32,7 +34,7 @@ interface LayoutProps {
 }
 
 // Tab types that should render full-width without padding
-const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'audit', 'lists', 'idea-generator', 'priorities', 'today', 'ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']
+const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'audit', 'lists', 'idea-generator', 'priorities', 'today', 'ideas', 'ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']
 
 export function Layout({
   children,
@@ -198,10 +200,21 @@ export function Layout({
       return
     }
 
-    // Handle other notification types...
-    if (notification.type === 'asset') {
-      onSearchResult(notification)
-      // Close the comm pane
+    /*
+      Everything else the pane resolved.
+
+      This used to read `if (notification.type === 'asset')`, so only asset
+      destinations navigated. NotificationPane also resolves notes, lists and
+      price targets, and each of those was a dead tap: nothing opened, nothing
+      closed, no feedback of any kind. On a phone that is worse than on
+      desktop, because the pane is a full-height sheet — the tap appeared to do
+      nothing at all rather than revealing a tab behind a 384px rail.
+
+      The pane decides where a notification goes; this only carries the reader
+      there and gets the sheet out of the way.
+    */
+    if (isNavigableNotificationTarget(notification)) {
+      onSearchResult?.(notification)
       if (isCommPaneOpen) {
         toggleCommPane()
       }
@@ -496,11 +509,35 @@ export function Layout({
           const activeTab = tabs.find(tab => tab.id === activeTabId)
           const isFullWidth = activeTab && FULL_WIDTH_TAB_TYPES.includes(activeTab.type)
           const isCompactPad = activeTab && ['outcomes'].includes(activeTab.type)
+          /*
+            A note on a phone is a writing surface, and this wrapper was taxing
+            it twice. `py-4` top and bottom is 32px of page margin around an
+            editor that already owns a header, a format bar and a save row; and
+            `overflow-auto` puts a second scrollport around a component whose
+            body is already `flex-1 overflow-y-auto`, which is the nested
+            scroller that makes a phone editor feel like it is dragging.
+
+            Both go away at phone width for the note tab only. The horizontal
+            padding stays, because the editor's own `max-sm:-mx-3` is what
+            reclaims it and the two have to agree. Desktop is untouched.
+          */
+          const isMobileNote = !!activeTab && activeTab.type === 'note' && isMobile
+          /*
+            Surfaces that own the phone viewport get it whole — no padding, no
+            wrapping scrollport — exactly as a full-width tab does.
+
+            Declared per surface in the mobile registry rather than inferred
+            here from what a page's root happens to look like; see
+            `ownsViewportOnMobile`. Phone only: on desktop these pages keep the
+            standard wrapper, so nothing about the wide layout moves.
+          */
+          const ownsViewport = !!activeTab && isMobile && ownsMobileViewport(activeTab.type)
+          const isBare = isFullWidth || ownsViewport
           return (
             <div className={clsx(
               "relative h-full flex flex-col",
-              isFullWidth ? "overflow-hidden" : isCompactPad ? "overflow-hidden p-2" : "overflow-auto",
-              !isFullWidth && !isCompactPad && "px-3 py-4 sm:px-6 sm:py-6 lg:px-8",
+              isBare || isMobileNote ? "overflow-hidden" : isCompactPad ? "overflow-hidden p-2" : "overflow-auto",
+              !isBare && !isCompactPad && (isMobileNote ? "px-3" : "px-3 py-4 sm:px-6 sm:py-6 lg:px-8"),
               "transition-[margin] duration-300 ease-in-out",
               // The comm pane becomes a bottom sheet on phones, so it must not
               // reserve a 384px right margin out of a 390px viewport.
@@ -566,11 +603,34 @@ export function Layout({
         <MobileNavDrawer
           open={isMobileNavOpen}
           onClose={() => setIsMobileNavOpen(false)}
-          onSearchResult={onSearchResult}
+          /*
+            Navigating from the drawer gets the pane out of the way.
+
+            ── The defect this closes ──────────────────────────────────────
+            On a phone the communication pane is a full-height sheet. Open
+            Quick Ideas, reach past it to the menu button in the header, pick
+            another surface — and the new surface opened BEHIND the sheet,
+            which stayed exactly where it was. Nothing looked like it had
+            happened, and the way out was to find the sheet's own close
+            control.
+
+            Hiding it is the whole fix, and it must be a hide rather than an
+            unmount: `CommunicationPane` is always mounted and merely
+            translated off-screen, so an in-progress capture keeps its type and
+            everything typed into it. Closing the pane preserves the draft;
+            tearing it down would not. See `capture-draft.test`.
+          */
+          onSearchResult={result => {
+            if (isCommPaneOpen) toggleCommPane()
+            onSearchResult?.(result)
+          }}
           onOpenSearch={onFocusSearch}
           tabs={tabs}
           activeTabId={activeTabId}
-          onTabChange={onTabChange}
+          onTabChange={tabId => {
+            if (isCommPaneOpen) toggleCommPane()
+            onTabChange(tabId)
+          }}
           onTabClose={onTabClose}
         />
       )}

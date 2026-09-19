@@ -66,6 +66,7 @@ export const KIND_LABEL: Record<SignalType, string> = {
   catalyst_ahead: 'Catalyst near',
   project_overdue: 'Overdue',
   awaiting_review: 'Needs review',
+  coverage_gap: 'Coverage gap',
   news: 'News',
   unusual_move: 'Unusual move',
   earnings_ahead: 'Earnings ahead',

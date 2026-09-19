@@ -57,6 +57,7 @@ import type { ScanExposure } from '../../hooks/useDesktopIdeas'
 import { DecisionModule } from './DecisionModule'
 import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
 import { useIdeaDecision } from '../../hooks/useIdeaDecision'
+import { useRecordObjectView } from '../../hooks/useObjectViewCursor'
 import {
   DirectionPill, MaturityPill, ConvictionPill, IdeaIdentity, EvolutionStrip,
 } from './IdeaChrome'
@@ -84,6 +85,10 @@ export function IdeaDetail({
   // Whether a decision can actually be completed here is a fact about the
   // portfolio tracks, so the verb is decided by the data, not by the stage.
   const { canDecide, pending } = useIdeaDecision(idea.id)
+
+  // A genuine view: this pane only mounts when the reader opened this idea or
+  // arrived on it by deep link. The gallery renders `IdeaCard`, not this.
+  useRecordObjectView('idea', idea.id)
   const primary = primaryActionFor(idea, detail, canDecide)
   const issue = issueFor(idea, detail)
   const teamable = !!target && canDiscuss(target)

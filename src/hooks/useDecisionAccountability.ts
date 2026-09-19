@@ -27,7 +27,10 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { currentPriceFor, type CachedClose, type CurrentPrice } from '../lib/outcomes/current-price'
 import { subDays, differenceInDays, parseISO } from 'date-fns'
+import { batchesByDecision } from '../lib/outcomes/batch-groups'
+import { useDecisionReviewsByIds } from './useDecisionReview'
 import type {
   AccountabilityRow,
   AccountabilityFilters,
@@ -52,6 +55,18 @@ const UNMATCHED_THRESHOLD_DAYS = 30
 
 /** Minimum absolute move % to count as positive/negative (avoids noise) */
 const RESULT_THRESHOLD_PCT = 0.1
+
+/**
+ * How far back to look for a name's newest cached close.
+ *
+ * Wide enough that a holiday week, a suspended name or a backfill that skipped
+ * a run still yields a dated price -- `currentPriceFor` decides whether what
+ * comes back is current, and flags it when it is not.
+ */
+const CLOSE_LOOKBACK_DAYS = 30
+
+/** One row of `price_history_cache`, as this hook reads it. */
+interface ClosesRow { symbol: string; date: string; close: number | string }
 
 // ============================================================
 // Direction compatibility for fuzzy matching
@@ -286,6 +301,9 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         acceptedTrades?: Array<{
           id: string; trade_queue_item_id: string; acceptance_note: string | null
           note_count: number | string; latest_note: string | null
+          /** Present once the payload carries batch fields; see the
+           *  outcomes_payload batch migration. */
+          batch_id?: string | null; batch_name?: string | null; batch_created_at?: string | null
         }>
       }
     },
@@ -340,13 +358,73 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
   }, [outcomesPayloadQuery.data?.rationales])
   const rationalesQuery = { data: rationalesData }
 
+  /**
+   * The names this payload measures, so their closes can be read.
+   *
+   * Built from the payload already in hand -- decisions, events and the trade
+   * ideas behind them -- rather than from a second read of `assets`.
+   */
+  const pricedAssets = useMemo(() => {
+    const map = new Map<string, string>()
+    const add = (id: unknown, symbol: unknown) => {
+      if (typeof id === 'string' && typeof symbol === 'string' && symbol) map.set(id, symbol)
+    }
+    for (const d of outcomesPayloadQuery.data?.decisions ?? []) add(d.asset_id, d.assets?.symbol)
+    for (const e of outcomesPayloadQuery.data?.events ?? []) add(e.asset_id, e.assets?.symbol)
+    return map
+  }, [outcomesPayloadQuery.data?.decisions, outcomesPayloadQuery.data?.events])
+
+  /**
+   * The newest cached close per name.
+   *
+   * `price_history_cache` is the product's canonical stored market price and
+   * the only one that carries a date. A short window is read rather than the
+   * whole series: this needs the last close, not a chart, and the table is
+   * capped at 1,000 rows per request whatever the limit says.
+   */
+  const symbols = useMemo(
+    () => [...new Set(pricedAssets.values())].sort(),
+    [pricedAssets],
+  )
+  const closesQuery = useQuery({
+    queryKey: ['outcomes-closes', symbols],
+    enabled: symbols.length > 0,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const floor = new Date(Date.now() - CLOSE_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10)
+      const { data, error } = await supabase
+        .from('price_history_cache')
+        .select('symbol, date, close')
+        .in('symbol', symbols)
+        .gte('date', floor)
+        .order('date', { ascending: false })
+      if (error) throw error
+      const newest = new Map<string, CachedClose>()
+      for (const r of (data ?? []) as ClosesRow[]) {
+        if (!newest.has(r.symbol)) newest.set(r.symbol, { close: r.close, date: r.date })
+      }
+      return newest
+    },
+  })
+
+  /**
+   * What each decision is measured against today, and as of when.
+   *
+   * `assets.current_price` is the undated fallback and nothing more -- it is
+   * written by whatever last touched the asset row, and on this project it sat
+   * a month behind the closes beside it, which is what reported an MSFT trade
+   * executed at 501.11 against a 497.12 close as -23.1%.
+   */
   const pricesData = useMemo(() => {
-    const map = new Map<string, number>()
+    const map = new Map<string, CurrentPrice>()
+    const closes = closesQuery.data
     for (const a of outcomesPayloadQuery.data?.prices ?? []) {
-      if (a.current_price != null) map.set(a.id, Number(a.current_price))
+      const symbol = pricedAssets.get(a.id)
+      const picked = currentPriceFor(symbol ? closes?.get(symbol) : null, a.current_price)
+      if (picked) map.set(a.id, picked)
     }
     return map
-  }, [outcomesPayloadQuery.data?.prices])
+  }, [outcomesPayloadQuery.data?.prices, closesQuery.data, pricedAssets])
   const pricesQuery = { data: pricesData }
 
   const snapshotsData = useMemo(() => {
@@ -433,7 +511,10 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
   const rows: AccountabilityRow[] = useMemo(() => {
     const events = eventData
     const rationaleMap = rationalesQuery.data || new Map<string, RationaleInfo>()
-    const priceMap = pricesQuery.data || new Map<string, number>()
+    const prices = pricesQuery.data || new Map<string, CurrentPrice>()
+    /** The number every move is measured to, or null where none can be dated. */
+    const priceMap = { get: (id: string) => prices.get(id)?.price ?? null }
+    const priceAsOf = (id: string | null | undefined) => (id ? prices.get(id)?.asOf ?? null : null)
     const snapshotMap = snapshotsQuery.data || new Map<string, { price: number; at: string }>()
     const acceptedByDecision = acceptedTradesQuery.data?.byDecisionId
       || new Map<string, { id: string; acceptance_note: string | null; latest_note: string | null; note_count: number }>()
@@ -558,6 +639,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           decision_price_at: decisionPriceAt,
           has_decision_price: hasDecisionPrice,
           current_price: currentPrice,
+          current_price_as_of: priceAsOf(item.asset_id),
           execution_price: null,
           move_since_decision_pct: moveSinceDecision,
           move_since_execution_pct: null,
@@ -674,10 +756,42 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         : { notional: null as number | null, basis: null as SizeBasis }
       const weightImpact = firstExec?.weight_delta ?? null
 
-      // Impact proxy = trade_notional × best available directionalized move / 100
-      const bestMove = moveSinceDecision ?? moveSinceExecution
-      const impactProxy = tradeNotional != null && bestMove != null
-        ? (tradeNotional * bestMove) / 100
+      /*
+       * ── Impact is measured from the EXECUTION price, not the decision ─────
+       *
+       * This was `moveSinceDecision ?? moveSinceExecution`, and the fallback
+       * order is a units error rather than a preference.
+       *
+       * `tradeNotional` is the size of the trade AT EXECUTION -- either the
+       * market-value delta the execution produced, or |quantity x execution
+       * price|. Multiplying that by a return measured from the DECISION price
+       * mixes two bases: it asks what the position is worth now against what
+       * the desk was looking at before it traded, and charges the difference
+       * to a position size that did not exist yet.
+       *
+       * With the execution basis the arithmetic collapses correctly:
+       *
+       *   notional x moveSinceExec / 100
+       *     = qty x execPrice x (now - execPrice) / execPrice
+       *     = qty x (now - execPrice)
+       *
+       * which is the P&L on the shares this trade actually moved. Checked
+       * against a clean row -- MSFT, 168 shares added at 501.11, last close
+       * 497.75 -- the execution basis gives -$564, and 168 x (497.75 - 501.11)
+       * is -$564. The decision basis gave a different number for the same
+       * trade, off by the drift between the decision and the fill.
+       *
+       * The decision-to-execution drift is not lost: it is `delay_cost_pct`,
+       * which is what that comparison is actually for, and it is reported
+       * separately because it answers a different question -- what the wait
+       * cost -- rather than what the position has made.
+       *
+       * The decision move is still the fallback where nothing recorded an
+       * execution price, since then there is no execution basis to prefer.
+       */
+      const impactMove = moveSinceExecution ?? moveSinceDecision
+      const impactProxy = tradeNotional != null && impactMove != null
+        ? (tradeNotional * impactMove) / 100
         : null
 
       // Weighted delay cost = trade_notional × delay_cost_pct / 100
@@ -711,6 +825,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         decision_price_at: decisionPriceAt,
         has_decision_price: hasDecisionPrice,
         current_price: currentPrice,
+        current_price_as_of: priceAsOf(item.asset_id),
         execution_price: executionPrice,
         move_since_decision_pct: moveSinceDecision,
         move_since_execution_pct: moveSinceExecution,
@@ -798,6 +913,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           decision_price_at: null,
           has_decision_price: false,
           current_price: currentPrice,
+          current_price_as_of: priceAsOf(evt.asset_id),
           execution_price: execPrice,
           move_since_decision_pct: null,
           move_since_execution_pct: moveSinceExec,
@@ -852,6 +968,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         decision_price_at: snapshotForIdea?.at ?? null,
         has_decision_price: decisionPrice != null,
         current_price: currentPrice,
+        current_price_as_of: priceAsOf(assetId),
         execution_price: null,
         move_since_decision_pct: moveSinceDecision,
         move_since_execution_pct: null,
@@ -865,12 +982,46 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       }
     })
 
-    return [...decisionRows, ...discretionaryRows, ...passedRows]
-  }, [decisionData, eventData, passedData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data, acceptedTradesQuery.data])
+    // The batch(es) each decision was committed in. Only decision rows can
+    // have one: discretionary rows are trade events and passed rows never
+    // became trades.
+    const batchMap = batchesByDecision(outcomesPayloadQuery.data?.acceptedTrades ?? [])
+    const withBatches = decisionRows.map(r => ({ ...r, batches: batchMap.get(r.decision_id) ?? [] }))
+
+    return [...withBatches, ...discretionaryRows, ...passedRows]
+  }, [decisionData, eventData, passedData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data, acceptedTradesQuery.data, outcomesPayloadQuery.data?.acceptedTrades])
+
+  /*
+   * Has this decision actually been reviewed?
+   *
+   * `decision_reviews` is the authoritative answer and nothing here was
+   * reading it. The Review Queue and the verdict engine both keyed off
+   * `matched_executions[].rationale_status`, which comes from
+   * `trade_event_rationales` -- a table with zero rows in production, and
+   * whose only writer is Trade Book. So saving a reflection in Outcomes never
+   * decremented the queue it was answering, and `getReviewState` could never
+   * return 'reviewed' at all.
+   *
+   * Fetched here rather than at the page, because the counts the strip renders
+   * are computed in this hook and must come from the same fact the rows do.
+   */
+  const reviewIds = useMemo(() => rows.map(r => r.decision_id).filter(Boolean), [rows])
+  const { data: reviewsByDecision } = useDecisionReviewsByIds(reviewIds)
+
+  const rowsWithReview = useMemo(
+    () => rows.map(r => ({
+      ...r,
+      // Presence of the row IS the review. `decision_quality` is never written
+      // by the current UI -- it exposes only `thesis_played_out` and a note --
+      // so requiring it would mean no review ever counted.
+      has_decision_review: !!reviewsByDecision?.get(r.decision_id),
+    })),
+    [rows, reviewsByDecision],
+  )
 
   // ── Step 7: Apply client-side filters ─────────────────────────
   const filteredRows = useMemo(() => {
-    let result = rows
+    let result = rowsWithReview
 
     // Asset search
     if (filters?.assetSearch) {
@@ -912,7 +1063,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     }
 
     return result
-  }, [rows, filters?.assetSearch, filters?.executionStatus, filters?.resultFilter, filters?.directionFilter, filters?.reviewFilter])
+  }, [rowsWithReview, filters?.assetSearch, filters?.executionStatus, filters?.resultFilter, filters?.directionFilter, filters?.reviewFilter])
 
   // ── Step 8: Compute unmatched executions ──────────────────────
   const unmatchedExecutions: UnmatchedExecution[] = useMemo(() => {
@@ -1041,12 +1192,19 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       topPositiveSymbol,
       topNegativeSymbol,
       // Review workflow counts (rationale_status-aware)
-      needsReviewCount: executed.filter(r => !r.matched_executions.some(e => e.has_rationale)).length,
+      // A real review takes a decision out of the queue. Previously these read
+      // `trade_event_rationales` only -- zero rows in production -- so the
+      // queue never moved no matter how many reviews were saved.
+      needsReviewCount: executed.filter(r =>
+        !r.has_decision_review && !r.matched_executions.some(e => e.has_rationale)
+      ).length,
       reviewInProgressCount: executed.filter(r =>
+        !r.has_decision_review &&
         r.matched_executions.some(e => e.has_rationale) &&
         !r.matched_executions.some(e => e.rationale_status === 'complete' || e.rationale_status === 'reviewed')
       ).length,
       reviewCapturedCount: executed.filter(r =>
+        r.has_decision_review ||
         r.matched_executions.some(e => e.rationale_status === 'complete' || e.rationale_status === 'reviewed')
       ).length,
     }

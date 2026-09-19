@@ -20,6 +20,8 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { CORE_SECTIONS, type EvidenceItem, type ResearchSubject, type ThesisSection } from '../lib/desktop-research'
 import { largestWeightByAsset, type HoldingRow } from '../lib/portfolio/holdings'
+import { useHoldingsForAssets } from './useHoldingsForAssets'
+import { useThesisReviews } from './useThesisReview'
 import { useOrganization } from '../contexts/OrganizationContext'
 
 const DAY = 86_400_000
@@ -116,6 +118,10 @@ export function useResearchScan() {
 
       for (const s of byAsset.values()) {
         s.daysSinceReview = daysSince(s.thesisUpdatedAt)
+        // Kept, not recomputed: a consumer with a different cutoff -- "since
+        // you last looked" rather than "since the case was written" -- needs
+        // the dates themselves, and these were already read.
+        s.evidenceDates = noteDates.get(s.assetId) ?? []
         if (s.thesisUpdatedAt) {
           s.newSinceReview = (noteDates.get(s.assetId) ?? [])
             .filter(d => d > s.thesisUpdatedAt!).length
@@ -126,7 +132,21 @@ export function useResearchScan() {
     },
   })
 
-  return { subjects: data ?? [], isLoading, error }
+  /*
+   * Reviews are joined here rather than inside the scan query.
+   *
+   * They live in `memory_events` and change on their own schedule -- recording
+   * a review must refresh the field without refetching every thesis section
+   * and note in the organisation. Separate query, separate cache entry, joined
+   * in memory on the way out.
+   */
+  const reviews = useThesisReviews()
+  const subjects = useMemo(
+    () => (data ?? []).map(s => ({ ...s, lastReviewedAt: reviews.get(s.assetId) ?? null })),
+    [data, reviews],
+  )
+
+  return { subjects, isLoading, error }
 }
 
 /**
@@ -173,32 +193,24 @@ export function useResearchExposure(subjects: ResearchSubject[]) {
     () => [...new Set(subjects.map(s => s.assetId))].sort(),
     [subjects],
   )
-  const { data } = useQuery<Record<string, number>>({
-    queryKey: ['desktop-research', 'exposure', ids.join('|')],
-    enabled: ids.length > 0,
-    staleTime: 5 * 60_000,
-    queryFn: async () => {
-      // Every row of every book that holds one of these assets: a weight
-      // cannot be computed from one position alone, because the denominator is
-      // the whole book.
-      const { data: mine, error } = await supabase.from('portfolio_holdings')
-        .select('portfolio_id').in('asset_id', ids)
-      if (error) throw new Error(error.message)
-      const portfolioIds = [...new Set(((mine ?? []) as any[]).map(r => r.portfolio_id))]
-      if (!portfolioIds.length) return {}
+  /*
+   * The rows come from the canonical holdings read, shared with Ideas, which
+   * asked the identical two-step question under a lens-namespaced key. What
+   * stays here is the derivation: Research wants one percentage per name.
+   */
+  const { rows, settled } = useHoldingsForAssets(ids)
 
-      const { data, error: e2 } = await supabase.from('portfolio_holdings')
-        .select('portfolio_id, asset_id, shares, price, cost, date')
-        .in('portfolio_id', portfolioIds)
-      if (e2) throw new Error(e2.message)
+  const exposure = useMemo(() => {
+    const all = largestWeightByAsset(rows)
+    const out: Record<string, number> = {}
+    for (const id of ids) if (all[id] != null) out[id] = all[id]
+    return out
+  }, [rows, ids])
 
-      const all = largestWeightByAsset((data ?? []) as unknown as HoldingRow[])
-      const out: Record<string, number> = {}
-      for (const id of ids) if (all[id] != null) out[id] = all[id]
-      return out
-    },
-  })
-  return data ?? {}
+  /** `settled` is false until the first real answer for the CURRENT id list has
+   *  landed. `weightPct` is a term in `scoreOf`, so it decides `compareSubjects`
+   *  order, and the order decides `sizeByRank(i, total)` for every tile. */
+  return { exposure, settled }
 }
 
 export interface ResearchDetail {

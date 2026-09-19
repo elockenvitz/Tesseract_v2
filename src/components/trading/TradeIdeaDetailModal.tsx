@@ -46,6 +46,7 @@ import { supabase } from '../../lib/supabase'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 import { emitAuditEvent } from '../../lib/audit'
 import { useAuth } from '../../hooks/useAuth'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { Button } from '../ui/Button'
 import { DatePicker } from '../ui/DatePicker'
@@ -108,6 +109,7 @@ const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string }> 
 
 export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'details', onNavigateToIdea }: TradeIdeaDetailModalProps) {
   const { user } = useAuth()
+  const isMobile = useIsMobile()
   const queryClient = useQueryClient()
   const discussionInputRef = useRef<UniversalSmartInputRef>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -2358,32 +2360,57 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full h-[85vh] max-h-[900px] overflow-hidden flex flex-col">
+    /* On a phone this was a 4xl dialog inset 16px inside a dimmed page and
+       capped at 85% of the viewport: a desktop window shrunk to 358px, with
+       a strip of greyed-out app above and below it that does nothing. It is
+       the whole screen there instead — no inset, no rounding, no letterbox —
+       which is both more room for the content and a clearer statement that
+       you have navigated somewhere rather than opened a floating panel. */
+    <div className={clsx(
+      'fixed inset-0 bg-black/50 flex z-50',
+      isMobile ? 'items-stretch justify-stretch' : 'items-center justify-center p-4'
+    )}>
+      <div className={clsx(
+        'bg-white dark:bg-gray-800 shadow-xl w-full overflow-hidden flex flex-col',
+        isMobile
+          ? 'h-full max-h-full pt-safe pb-safe'
+          : 'rounded-xl max-w-4xl h-viewport-85 max-h-[900px]'
+      )}>
         {/* Header */}
-        <div className="flex-shrink-0 p-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between mb-3">
+        <div className={clsx(
+          'flex-shrink-0 border-b border-gray-200 dark:border-gray-700',
+          isMobile ? 'px-3 pt-2 pb-1.5' : 'p-4'
+        )}>
+          <div className={clsx('flex items-center justify-between', isMobile ? 'mb-2' : 'mb-3')}>
             {/* Single Trade Header */}
             {trade && (
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
+                {/* One line on a phone. Action, ticker and conviction wrapped
+                    onto three lines there, which pushed the tabs and the
+                    content that answers the question below the fold. The
+                    company name moves to its own quiet line instead of
+                    competing for width with the ticker. */}
+                <div className={clsx('flex items-center gap-2', isMobile ? 'min-w-0' : 'flex-wrap')}>
                   <span className={clsx(
-                    "font-semibold uppercase text-base",
+                    "font-semibold uppercase shrink-0",
+                    isMobile ? "text-sm" : "text-base",
                     trade.action === 'buy' || trade.action === 'add'
                       ? "text-green-600 dark:text-green-400"
                       : "text-red-600 dark:text-red-400"
                   )}>
                     {trade.action}
                   </span>
-                  <span className="font-bold text-lg text-gray-900 dark:text-white">
+                  <span className={clsx('font-bold text-gray-900 dark:text-white shrink-0', isMobile ? 'text-base' : 'text-lg')}>
                     {trade.assets?.symbol}
                   </span>
-                  <span className="text-gray-500 dark:text-gray-400">
-                    {trade.assets?.company_name}
-                  </span>
+                  {!isMobile && (
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {trade.assets?.company_name}
+                    </span>
+                  )}
                   {trade.conviction && (
                     <span className={clsx(
-                      "text-[11px] font-medium flex items-center gap-1 px-1.5 py-0.5 rounded",
+                      "text-[11px] font-medium flex items-center gap-1 px-1.5 py-0.5 rounded shrink-0",
                       trade.conviction === 'high' ? "text-green-700 bg-green-50 dark:text-green-400 dark:bg-green-900/20" :
                       trade.conviction === 'medium' ? "text-blue-700 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/20" :
                       "text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-700"
@@ -2394,10 +2421,17 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                         trade.conviction === 'medium' ? "bg-blue-500" :
                         "bg-gray-400"
                       )} />
-                      {trade.conviction === 'high' ? 'High Conviction' : trade.conviction === 'medium' ? 'Med Conviction' : 'Low Conviction'}
+                      {trade.conviction === 'high' ? (isMobile ? 'High' : 'High Conviction')
+                        : trade.conviction === 'medium' ? (isMobile ? 'Med' : 'Med Conviction')
+                        : (isMobile ? 'Low' : 'Low Conviction')}
                     </span>
                   )}
                 </div>
+                {isMobile && trade.assets?.company_name && (
+                  <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">
+                    {trade.assets.company_name}
+                  </p>
+                )}
                 {/* Portfolio pills — second line.
                     Fallback: if no lab links exist but the trade row carries
                     a `portfolio_id` (idea was created via a path that didn't
@@ -2543,14 +2577,25 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
             })()}
             <button
               onClick={onClose}
-              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+              aria-label="Close"
+              className={clsx(
+                'shrink-0 hover:bg-gray-100 dark:hover:bg-gray-700 rounded',
+                /* 28px of target on a phone, where it is the only way back. */
+                isMobile ? 'h-10 w-10 -mr-1.5 flex items-center justify-center' : 'p-1'
+              )}
             >
               <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
             </button>
           </div>
 
-          {/* Tabs — compact text-only to prevent overflow */}
-          <div className="flex gap-0.5">
+          {/* Tabs — compact text-only to prevent overflow. Five of them plus
+              badges do not fit across 390px, and a flex row that cannot fit
+              squashes its children rather than clipping, so on a phone they
+              scroll sideways at full size instead of being crushed. */}
+          <div className={clsx(
+            'flex gap-0.5',
+            isMobile && '-mx-3 px-3 overflow-x-auto scrollbar-hide'
+          )}>
             {([
               { key: 'details' as const, label: 'Details' },
               { key: 'debate' as const, label: 'Debate', badge: totalTheses > 0 ? totalTheses : undefined },
@@ -2562,7 +2607,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
                 className={clsx(
-                  "px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-colors whitespace-nowrap",
+                  "px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-colors whitespace-nowrap shrink-0",
                   activeTab === tab.key
                     ? "bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300"
                     : "text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"

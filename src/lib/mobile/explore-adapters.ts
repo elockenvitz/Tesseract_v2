@@ -1,5 +1,6 @@
 import { signalTypeForTemplate } from '../signals/builders/legacy-kinds'
 import { insightSignalType } from '../signals/insight-type'
+import { ideaSignalType } from './entry-signal-type'
 import type { ExploreItem } from './explore-item'
 import type { FeedCategory } from './feed-categories'
 
@@ -205,6 +206,9 @@ export function scenarioCardsToExplore(cards: any[]): ExploreItem[] {
       cases: (c.evidence?.data?.cases ?? [])
         .map((k: any) => ({ label: String(k?.name ?? k?.label ?? 'Case'), price: Number(k?.price) }))
         .filter((k: any) => Number.isFinite(k.price) && k.price > 0),
+      // The builder's own prompt. Used only if the ladder above is unusable,
+      // since the resolver takes the question last.
+      question: typeof c.prompt === 'string' ? c.prompt : undefined,
     },
     destination: {
       kind: 'action' as const, action: 'open_cases',
@@ -278,9 +282,20 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
        * Absent on the documentation gaps, which have no move — those resolve to
        * exposure, because "you own this much without the work" is what they say.
        */
-      visual: moved
-        ? { movePct: Number(issue.movePct), lastLookAt: anchoredAt }
-        : undefined,
+      /*
+        The insight's own question rides along in both branches.
+
+        A price-move insight still draws its anchored move -- the resolver
+        reaches `last_look` long before it reaches the question -- so carrying
+        it here costs that card nothing. The documentation gaps are the ones
+        this is for: those with a weight resolve to exposure as before, and
+        those WITHOUT one drew nothing at all and now ask what they were
+        written to ask.
+      */
+      visual: {
+        ...(moved ? { movePct: Number(issue.movePct), lastLookAt: anchoredAt } : {}),
+        question: typeof i.prompt === 'string' ? i.prompt : undefined,
+      },
       occurredAt: anchoredAt,
       destination: {
         kind: 'action' as const,
@@ -722,9 +737,14 @@ export function exploreSymbols(items: ExploreItem[]): string[] {
  * trade-idea tiles, and the Explore matcher could not resolve one back to its
  * feed entry because the two sides had given it different types.
  */
-export function ideaSignalType(type: unknown): 'trade_idea' | 'thought' {
-  return type === 'trade' || type === 'trade_idea' ? 'trade_idea' : 'thought'
-}
+/**
+ * Re-exported, not redefined.
+ *
+ * It lived here and `displayFamilyOf` needs it too. Moving it to a leaf keeps
+ * one implementation and keeps `feed-categories` — which the gallery imports —
+ * clear of this module's builder dependencies.
+ */
+export { ideaSignalType }
 
 /**
  * A person's name, from the shape the feed actually emits.

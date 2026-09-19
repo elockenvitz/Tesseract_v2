@@ -56,6 +56,25 @@ vi.mock('../../hooks/useDayPerformance', () => ({
   useDayPerformance: () => null,
 }))
 
+/*
+ * The tile sparkline's closes, for the same reason as `useDayPerformance`
+ * above: the real hook reaches for a QueryClient this suite does not stand up.
+ *
+ * A rising year of dated closes, so the position tiles that now draw a price
+ * -- the compact card, and the hero of a position with no written case --
+ * render a real line rather than nothing.
+ */
+const A_YEAR_RISING: { date: Date; value: number }[] = Array.from({ length: 300 }, (_, i) => ({
+  date: new Date(Date.now() - (299 - i) * 86_400_000),
+  value: 100 + i * 0.08,
+}))
+/** Per test, so a case can say "this name has no stored closes". */
+let tileCloses: { date: Date; value: number }[] = A_YEAR_RISING
+
+vi.mock('../../hooks/useTileCloses', () => ({
+  useTileCloses: () => ({ data: tileCloses, isLoading: false }),
+}))
+
 vi.mock('../../hooks/useDesktopPortfolio', () => ({
   usePortfolioList: () => ({ portfolios, isLoading: false }),
   useBook: (id: string | null) => {
@@ -74,7 +93,7 @@ vi.mock('../../hooks/useDesktopPortfolio', () => ({
    * still exercising the real component path. `ActiveWeights` has its own
    * coverage where the population is large enough to draw.
    */
-  useActiveWeights: () => [],
+  useActiveWeights: () => ({ state: 'loading', rows: [] }),
   usePositionDetail: (p: any) => {
     if (p) detailRequestedFor.push(`${p.portfolioId}:${p.assetId}`)
     return { detail: p ? detail : undefined, isLoading: false }
@@ -116,6 +135,7 @@ beforeEach(() => {
   portfolios = [{ id: 'p1', name: 'Large Cap Growth', role: 'pm' }]
   rowsByBook = {}
   frames = {}
+  tileCloses = A_YEAR_RISING
   detail = { sections: [], alsoHeldIn: [] }
   bookRequestedFor.length = 0
   detailRequestedFor.length = 0
@@ -432,5 +452,232 @@ describe('severity is visible, and means one thing', () => {
     const badge = within(screen.getAllByTestId('position-tile')[0]).getByText('Decision pending')
     expect(badge.className).toMatch(/amber/)
     expect(badge.className).not.toMatch(/rose|violet/)
+  })
+})
+
+/*
+ * ── The big tiles are two columns, and the chart gets the width ───────────
+ *
+ * They were one stacked column: the weight figure, a sentence, the standing
+ * window, and at the bottom a weight BAR restating the figure at the top of
+ * the same card. The price chart, where it appeared at all, was squeezed under
+ * all of it and unreadable.
+ *
+ * The record now reads down the left; the right column carries the two things
+ * a reader compares across positions -- what it weighs, at the top, and what
+ * the price did, filling the rest.
+ */
+describe('a big position tile puts the weight above the price', () => {
+  const held = () => {
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 100 })] }
+    frames = { 'a-1': { ...EMPTY_FRAME } }
+  }
+
+  it('draws the price chart, not a weight bar, on the widest tile', () => {
+    held()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tile = screen.getAllByTestId('position-tile')[0]
+    expect(tile.getAttribute('data-size')).toMatch(/hero|large/)
+
+    // The chart is the shared one -- the same object Decisions draws.
+    expect(within(tile).getByTestId('price-since-fill')).toBeInTheDocument()
+    // With its axes and its horizon ladder, which the sparkline stub had not.
+    expect(within(tile).getByTestId('price-axes')).toBeInTheDocument()
+    expect(within(tile).getByTestId('price-ranges')).toBeInTheDocument()
+
+    // The weight is still stated, once, as a figure.
+    expect(within(tile).getByTestId('position-weight')).toBeInTheDocument()
+    // And the bar that restated it is gone: that is the room the chart has.
+    expect(within(tile).queryByText('Weight, against the whole book')).toBeNull()
+  })
+
+  it('names the chart for what it is, not for its window', () => {
+    held()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tile = screen.getAllByTestId('position-tile')[0]
+    expect(within(tile).getByTestId('price-since-fill')).toHaveTextContent(/price chart/i)
+    // The caption used to describe the window the ALL chip already names.
+    expect(tile.textContent).not.toMatch(/price over available history/i)
+  })
+
+  it('still draws nothing where the name has no stored closes', () => {
+    // A position whose symbol the product holds no prices for must not get an
+    // invented line, and the tile must not collapse around the gap.
+    tileCloses = []
+    held()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tile = screen.getAllByTestId('position-tile')[0]
+    expect(within(tile).queryByTestId('price-since-fill')).toBeNull()
+    expect(within(tile).getByTestId('position-weight')).toBeInTheDocument()
+  })
+})
+
+/*
+ * ── The card says each fact once, and the chart reaches the bottom ────────
+ *
+ * `whyItMatters` is written to stand alone, which is right in a rail card or a
+ * detail header where it is the only description. On a tile it is not alone:
+ * the ticker is the headline and the weight is the figure beside it, so
+ * "5.6% of the book in GOOGL, with no thesis behind it" is three facts the
+ * reader has already read, set as prose. That is how a card looks full of
+ * content and says nothing.
+ */
+describe('the tile drops prose that only restates itself', () => {
+  it('says nothing in words where the figures already said it', () => {
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'GOOGL', shares: 100, price: 100 })] }
+    frames = { 'a-1': { ...EMPTY_FRAME } }   // no framework
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tile = screen.getAllByTestId('position-tile')[0]
+
+    // The sentence that repeated the ticker, the weight and the absent case.
+    expect(tile.textContent).not.toMatch(/with no thesis behind it/i)
+    // What it says instead: the absence, once.
+    expect(within(tile).getByText('Nothing written')).toBeInTheDocument()
+    // And the weight is still there, as the figure.
+    expect(within(tile).getByTestId('position-weight')).toBeInTheDocument()
+  })
+
+  it('keeps prose that carries something the figures do not', () => {
+    // Spot outside the written case: how far outside is not on the card
+    // anywhere else, so the sentence stays.
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 400 })] }
+    frames = { 'a-1': { ...EMPTY_FRAME, ladder: ladder([['Bear', 100], ['Bull', 200]]) } }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tile = screen.getAllByTestId('position-tile')[0]
+    expect(tile.textContent).toMatch(/above your bull case/i)
+  })
+
+  it('lets the chart take the height the other column does not use', () => {
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'GOOGL', shares: 100, price: 100 })] }
+    frames = { 'a-1': { ...EMPTY_FRAME } }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const chart = within(screen.getAllByTestId('position-tile')[0])
+      .getByTestId('price-since-fill')
+
+    /*
+     * Fill mode, asserted structurally: the row is as tall as its taller
+     * column, so a FIXED height left dead space under the chart on exactly
+     * the cards whose other column says least. The chart has to grow into it.
+     */
+    expect(chart.className).toMatch(/h-full/)
+    expect(within(chart).getByTestId('price-axes').className).toMatch(/flex-1/)
+  })
+})
+
+/*
+ * ── The card is never split left/right ────────────────────────────────────
+ *
+ * It was, for three passes. Splitting gave the chart half the width and left
+ * the record in a narrow column that wrapped more -- worse for both, since a
+ * price line wants width and a short run of facts does not want a column. It
+ * also produced the dead space that took three attempts to chase: whichever
+ * column was shorter left a void beside the other, and which one that was
+ * depended on the name.
+ *
+ * Stacked, neither can happen, and there is no condition to get wrong.
+ */
+describe('the card stacks, and the chart runs full width', () => {
+  it('holds no side-by-side columns, whatever the case says', () => {
+    for (const frame of [
+      { ...EMPTY_FRAME },                                                   // nothing written
+      { ...EMPTY_FRAME, ladder: ladder([['Bear', 100], ['Bull', 200]]) },   // a written case
+      { ...EMPTY_FRAME, thesisUpdatedAt: daysAgo(40), daysSinceReview: 40 },// a review date
+    ]) {
+      rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'NVDA', shares: 100, price: 150 })] }
+      frames = { 'a-1': frame as PositionFrame }
+      const { unmount } = render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+      const tile = screen.getAllByTestId('position-tile')[0]
+      // The two-column grid this lens used to build.
+      expect(tile.innerHTML).not.toMatch(/minmax\(0,1fr\)_minmax\(0,1fr\)/)
+      unmount()
+    }
+  })
+
+  it('still says the absence, and still draws the price', () => {
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'NVDA', shares: 100, price: 100 })] }
+    frames = { 'a-1': { ...EMPTY_FRAME } }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tile = screen.getAllByTestId('position-tile')[0]
+    expect(within(tile).getByText('Nothing written')).toBeInTheDocument()
+    expect(within(tile).getByTestId('price-since-fill')).toBeInTheDocument()
+  })
+
+  it('puts the case objects on one row rather than stacking them', () => {
+    // A review date and a written ladder both present: they sit side by side
+    // across the width instead of becoming two more short lines.
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 150 })] }
+    frames = { 'a-1': {
+      ...EMPTY_FRAME,
+      thesisUpdatedAt: daysAgo(40), daysSinceReview: 40,
+      ladder: ladder([['Bear', 100], ['Bull', 200]]),
+    } }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tile = screen.getAllByTestId('position-tile')[0]
+    expect(tile.innerHTML).toMatch(/flex-wrap/)
+  })
+})
+
+/*
+ * ── The weight is the corner, and the rest is behind it ───────────────────
+ *
+ * "6.4%" answers one question and raises three: how many dollars, how does it
+ * compare to the index, how many shares. All four on the card buries the one
+ * that matters; none of them sends the reader to the detail pane for a number
+ * they wanted in passing.
+ */
+describe('the weight opens the size behind it', () => {
+  const held = () => {
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 250 })] }
+    frames = { 'a-1': { ...EMPTY_FRAME } }
+  }
+
+  it('states the weight in the corner, labelled weight', () => {
+    held()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const chip = within(screen.getAllByTestId('position-tile')[0])
+      .getByTestId('position-weight')
+    expect(chip).toHaveTextContent('100.0%')
+    expect(chip).toHaveTextContent(/weight/i)
+    // "of the book" was the old wording and the old place.
+    expect(chip.textContent).not.toMatch(/of (the|this) book/i)
+  })
+
+  it('reveals the dollars and the shares on a click, and opens no record', async () => {
+    const user = userEvent.setup()
+    held()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tile = screen.getAllByTestId('position-tile')[0]
+
+    expect(screen.queryByTestId('position-weight-detail')).toBeNull()
+    await user.click(within(tile).getByTestId('position-weight'))
+
+    /*
+     * Found on `screen`, not inside the tile: the panel renders through a
+     * portal into `document.body`. `DesktopTile`'s shell carries
+     * `overflow-hidden` -- it is what keeps the rounded corners -- so a panel
+     * positioned inside it was clipped, and on a compact card the reader got
+     * the top two rows and nothing else.
+     */
+    const panel = screen.getByTestId('position-weight-detail')
+    expect(panel).toHaveTextContent(/market value/i)
+    expect(panel).toHaveTextContent(/shares/i)
+    expect(panel).toHaveTextContent(/active weight/i)
+
+    // Reading a number is not a decision to leave the gallery.
+    expect(opened).toHaveLength(0)
+  })
+
+  it('says there is no benchmark rather than printing a zero index weight', async () => {
+    const user = userEvent.setup()
+    held()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    await user.click(within(screen.getAllByTestId('position-tile')[0]).getByTestId('position-weight'))
+    /*
+     * `useActiveWeights` is mocked to 'loading' in this suite, so no comparison
+     * is available. An index weight of zero for a name the file does not hold
+     * is not the same as a name the index holds at zero, and this lens is
+     * careful about that distinction elsewhere.
+     */
+    expect(screen.getByTestId('position-weight-detail')).toHaveTextContent(/no benchmark/i)
   })
 })

@@ -56,6 +56,14 @@ const TIER: Record<string, { tier: TodayTier; base: number }> = {
   OVERDUE_DELIVERABLE:        { tier: 3, base: 0.55 },
 
   HIGH_EV_NO_IDEA:            { tier: 4, base: 0.40 },
+
+  // Coverage backfill. Placed after real findings by TodayPage regardless of
+  // score; these only order the backfill against itself if anything sorts it.
+  COVERAGE_NEW_EVIDENCE:      { tier: 3, base: 0.30 },
+  COVERAGE_PRICE_MOVE:        { tier: 3, base: 0.28 },
+  COVERAGE_NO_THESIS:         { tier: 4, base: 0.20 },
+  COVERAGE_INCOMPLETE_THESIS: { tier: 4, base: 0.18 },
+  COVERAGE_STALE_THESIS:      { tier: 4, base: 0.16 },
 }
 
 /** Anything an evaluator adds later ranks as informational until mapped. */

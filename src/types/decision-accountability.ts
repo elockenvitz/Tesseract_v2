@@ -160,6 +160,15 @@ export interface AccountabilityRow {
   /** Execution matching */
   execution_status: ExecutionMatchStatus
   matched_executions: MatchedExecution[]
+  /**
+   * A `decision_reviews` row exists for this decision.
+   *
+   * The authoritative answer to "has this been reviewed", attached by
+   * `useDecisionAccountability`. Distinct from `rationale_status`, which is
+   * about whether a REASON was captured in Trade Book -- capturing why a trade
+   * was taken and reviewing how it turned out are different acts.
+   */
+  has_decision_review?: boolean
   /** First execution's lag in days (for summary metrics) */
   execution_lag_days: number | null
 
@@ -175,6 +184,15 @@ export interface AccountabilityRow {
   // ── Result / Impact fields ──────────────────────────────────
 
   current_price: number | null
+  /**
+   * The date the current price is as of -- the cached close's own date.
+   *
+   * Null where the only price available was `assets.current_price`, which
+   * carries no date anywhere in the schema (lib/outcomes/current-price). A
+   * surface showing a move may say how current the comparison is; one that
+   * cannot date it should not imply it is live.
+   */
+  current_price_as_of: string | null
   execution_price: number | null
   move_since_decision_pct: number | null
   move_since_execution_pct: number | null
@@ -220,6 +238,24 @@ export interface AccountabilityRow {
    * PROXY — not exact slippage.
    */
   weighted_delay_cost: number | null
+
+  /**
+   * Batches this decision was committed in, newest first — from its active
+   * accepted trades. Empty for a decision never committed through a batch
+   * (rejected, passed, ad hoc). Usually one; a decision executed more than
+   * once has one per execution. Absent until the Outcomes payload carries
+   * batch fields.
+   */
+  batches?: RowBatch[]
+}
+
+/** The batch a decision was committed in (`trade_batches`). */
+export interface RowBatch {
+  id: string
+  /** Null when the batch was never named. */
+  name: string | null
+  /** When the batch was committed (`trade_batches.created_at`). */
+  committedAt: string | null
 }
 
 // ============================================================

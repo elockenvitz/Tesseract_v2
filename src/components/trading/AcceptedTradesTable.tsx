@@ -26,6 +26,8 @@ import { PairBadge } from './PairBadge'
 import { CreateCorrectionModal } from './CreateCorrectionModal'
 import { buildPairInfoByAsset } from '../../lib/trade-lab/pair-info'
 import { useAcceptedTradeComments } from '../../hooks/useAcceptedTrades'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { MobileNoteField } from '../mobile/MobileNoteField'
 import { useAuth } from '../../hooks/useAuth'
 import {
   tradeLifecyclePhase,
@@ -252,36 +254,156 @@ export function TradeRationaleLog({
   tradeId,
   acceptanceNote,
   batchDescription,
+  originalCase,
   onAddComment,
 }: {
   tradeId: string
   acceptanceNote: string | null | undefined
   batchDescription?: string | null
+  /** The analyst's case on the originating idea, read through the FK the
+   *  committed trade already carries. Shown BEFORE the commit note because it
+   *  came first: it is why anybody wanted the trade, where `acceptance_note`
+   *  is why the PM took it. Absent for a trade with no originating idea. */
+  originalCase?: string | null
   onAddComment?: (tradeId: string, content: string) => void
 }) {
   const { data: additions = [] } = useAcceptedTradeComments(tradeId)
   const [draft, setDraft] = useState('')
+  const isMobile = useIsMobile()
 
   const initial = (acceptanceNote || '').trim()
   const batchDesc = (batchDescription || '').trim()
   const isInherited = initial.length > 0 && initial === batchDesc
+  /* Not shown when the PM's note simply repeats it -- one paragraph twice
+     under two labels reads as two findings. */
+  const original = (originalCase || '').trim()
+  const showOriginal = original.length > 0 && original !== initial && original !== batchDesc
 
   const handleSubmit = () => {
     if (!draft.trim() || !onAddComment) return
     onAddComment(tradeId, draft.trim())
-    // Tick step 2 of the pilot Trade Book Get Started banner the
-    // first time a rationale comment is added to any trade row.
-    try { window.dispatchEvent(new CustomEvent('pilot-tradebook:rationale-added')) } catch { /* ignore */ }
+    // Deliberately no Trade Book basics event: a trade-specific note is
+    // optional, and step 2 is the batch's "Why this decision?".
     setDraft('')
+  }
+
+  if (isMobile) {
+    /*
+     * Phone: the same log and the same write, stacked.
+     *
+     * Desktop runs a 64px label column beside each entry and a one-line input
+     * beside its button; at 390px that left the placeholder cut off and the
+     * button crowding the field. Here the commit-time reason is its own tinted
+     * block with its label on top, later notes follow as a plain list with who
+     * and when, and the note field is full width with Add note under it. An
+     * inherited batch rationale is shown as inherited — nothing asks for it
+     * again.
+     */
+    /*
+     * No box of its own. It renders inside a trade card that has just been
+     * opened, and a bordered box with a divided header inside that card read
+     * as a second panel to open. One section, one header line, then the log
+     * and a compact field.
+     */
+    return (
+      <div data-slot="trade-rationale-mobile" className="space-y-2.5">
+        {/* "Trade-specific notes", not "Trade rationale": the batch already has
+            the one rationale — "Why this decision?" — and this is the per-trade
+            log beside it. The hint beside the title says so. */}
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Trade-specific notes</h4>
+          <span className="text-[11px] text-gray-500 dark:text-gray-400">Optional · only for this trade</span>
+        </div>
+
+        {/* Why anybody wanted the trade, before why the PM took it. Read
+            through the idea this trade already points at. */}
+        {showOriginal && (
+          <div data-slot="trade-rationale-original" className="rounded-lg border-l-2 border-indigo-300 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-950/20 px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
+              The case for the idea
+            </div>
+            <p className="mt-0.5 text-[13px] leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{original}</p>
+          </div>
+        )}
+
+        <div data-slot="trade-rationale-initial" className="rounded-lg border-l-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            {initial ? (isInherited ? 'From “Why this decision?”' : 'At commit') : 'At commit'}
+          </div>
+          {initial ? (
+            <p className="mt-0.5 text-[13px] leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{initial}</p>
+          ) : (
+            <p className="mt-0.5 text-[13px] italic text-gray-400 dark:text-gray-500">No reason was captured at commit time.</p>
+          )}
+        </div>
+
+        {additions.length > 0 && (
+          <ul data-slot="trade-rationale-additions" className="space-y-2 pl-3">
+            {additions.map((c: AcceptedTradeComment) => (
+              <li key={c.id} className="min-w-0">
+                <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                  <span className="font-semibold uppercase tracking-wider text-[10px]">Added</span>
+                  {' · '}
+                  {c.user?.first_name || c.user?.email?.split('@')[0] || 'User'}
+                  {' · '}
+                  {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
+                </div>
+                <p className="mt-0.5 text-[13px] leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{c.content}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {onAddComment && (
+          <MobileNoteField
+            value={draft}
+            onChange={setDraft}
+            minRows={2}
+            placeholder="Add a note about this trade…"
+            ariaLabel="Add a trade-specific note"
+            inputClassName="bg-gray-50 dark:bg-gray-800/60 focus:bg-white dark:focus:bg-gray-900 focus:ring-primary-400"
+            onSubmitShortcut={handleSubmit}
+            dataSlot="trade-rationale-add-mobile"
+            actions={
+              // Optional, so not a full-width primary: a right-aligned button
+              // that stays quiet until there is something to add.
+              <button
+                type="button"
+                data-slot="trade-rationale-add-note"
+                onClick={handleSubmit}
+                disabled={!draft.trim()}
+                className="ml-auto h-10 px-4 rounded-lg bg-primary-600 active:bg-primary-700 text-[13px] font-semibold text-white no-touch-target disabled:bg-gray-100 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
+              >
+                Add note
+              </button>
+            }
+          />
+        )}
+      </div>
+    )
   }
 
   return (
     <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/60">
       <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-        Trade rationale
+        Trade-specific notes
       </div>
 
       <div className="px-3 py-2 space-y-2.5">
+        {/* The analyst's case, first, because it came first. Joined from the
+            originating idea rather than copied, so it stays whatever the idea
+            says. */}
+        {showOriginal && (
+          <div data-slot="trade-rationale-original" className="flex gap-2.5">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-indigo-500 dark:text-indigo-400 whitespace-nowrap pt-0.5 w-16 flex-shrink-0">
+              The case
+            </span>
+            <p className="text-xs text-gray-700 dark:text-gray-200 whitespace-pre-wrap leading-relaxed flex-1">
+              {original}
+            </p>
+          </div>
+        )}
+
         {/* Initial rationale — the reason captured at commit time. */}
         {initial ? (
           <div className="flex gap-2.5">
@@ -333,7 +455,7 @@ export function TradeRationaleLog({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            placeholder="Add to rationale — what's changed, what you learned..."
+            placeholder="Add a note about this trade — what's changed, what you learned…"
             className="flex-1 text-xs px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder:text-gray-400"
           />
           <button
@@ -1153,6 +1275,7 @@ function TradeDetailPane({
           tradeId={trade.id}
           acceptanceNote={trade.acceptance_note}
           batchDescription={batchDescription ?? null}
+          originalCase={trade.trade_queue_item?.thesis_text || trade.trade_queue_item?.rationale}
           onAddComment={onAddComment}
         />
       </div>

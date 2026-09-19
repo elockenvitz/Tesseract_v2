@@ -16,6 +16,7 @@
  */
 
 import { supabase } from '../supabase'
+import { fetchAllRows } from '../market-data/paging'
 import { extractReferencesFromHTML, extractPlainTextPatterns, type ExtractedReference } from './extract-references'
 import type { NoteSourceType } from './sync-note-links'
 
@@ -49,12 +50,37 @@ export async function backfillObjectLinks(): Promise<{
   const portfolioMap = new Map<string, string>() // lowercase-no-spaces name → portfolio ID
 
   try {
-    const [assetRes, themeRes, portfolioRes] = await Promise.all([
-      supabase.from('assets').select('id, symbol'),
+    /**
+     * Paged, because PostgREST caps a response at 1,000 rows on this project
+     * whatever the client asks for. An unpaged read of `assets` returns the
+     * first 1,000 and a 200, so past that size this map silently stops
+     * containing anything late in the alphabet — and a ticker with no entry
+     * here is not an error, it is a mention that never becomes a link. A
+     * backfill that reports success having linked two thirds of the notes is
+     * the worst available outcome, since nothing afterwards says which third.
+     */
+    const [assets, themeRes, portfolioRes] = await Promise.all([
+      fetchAllRows<{ id: string; symbol: string }>(
+        // Ordered by the primary key, not left to the planner. Ranged paging
+        // over an unordered result may repeat a row on one page and skip it on
+        // the next, which would produce a map that is wrong rather than short.
+        (from, to) => supabase.from('assets').select('id, symbol').order('id').range(from, to),
+        { label: 'assets (backfill ticker map)' },
+      ).catch((err: unknown) => {
+        /**
+         * Caught here rather than by the block below, so a failed asset read
+         * does not also discard the theme and portfolio maps. `Promise.all`
+         * rejects as a unit, and the three lookups were independently
+         * best-effort before this — an assets failure that silently stopped
+         * theme linking too would be a regression hidden inside a fix.
+         */
+        console.warn('[backfill] ticker map unavailable, ticker mentions will not link:', err)
+        return []
+      }),
       supabase.from('org_themes_v').select('id, name'),
       supabase.from('portfolios').select('id, name'),
     ])
-    if (assetRes.data) assetRes.data.forEach(a => tickerMap.set(a.symbol, a.id))
+    assets.forEach(a => tickerMap.set(a.symbol, a.id))
     if (themeRes.data) themeRes.data.forEach(t => themeMap.set(t.name.toLowerCase().replace(/\s+/g, ''), t.id))
     if (portfolioRes.data) portfolioRes.data.forEach(p => portfolioMap.set(p.name.toLowerCase().replace(/\s+/g, ''), p.id))
   } catch (err) {

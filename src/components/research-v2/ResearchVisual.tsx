@@ -29,49 +29,31 @@
  */
 
 
-export interface AnchoredWindow {
-  series: number[]
-  changePct: number
-  reachesAnchor: boolean
-  days: number
-}
+import { dateWords, type ResearchDateKind } from '../../lib/desktop-research'
+
+/*
+ * ── The slicer moved to `lib/market-data/anchored-window` ────────────────
+ *
+ * It lived here, and Decisions imported it from this lens -- one lens
+ * reaching into another. When the shared tile shell needed it too, that would
+ * have made `components/desktop` depend on `components/research-v2`, so a
+ * sparkline re-derived the window inline instead and reproduced this
+ * function's own bug within the hour: a series whose closes all post-date the
+ * anchor is not a since-the-anchor window.
+ *
+ * Re-exported here so this lens's own importers are unchanged.
+ */
+export { anchoredWindow } from '../../lib/market-data/anchored-window'
+import type { AnchoredWindow } from '../../lib/market-data/anchored-window'
+export type { AnchoredWindow }
 
 /**
- * Slice a series at the anchor, reporting honestly whether it got there.
- *
- * Exported and pure so the metric strip and the chart cannot disagree about
- * which window they describe — the failure mode where a tile shows "+24.6%
- * since review" beside a line covering ninety days.
+ * `since` names the date the window starts from -- a review only where one was
+ * recorded. It is required: the chart used to say "since last review" about
+ * every anchor it was given.
  */
-export function anchoredWindow(
-  history: { date: string; close: number }[] | undefined,
-  anchorISO: string | null | undefined,
-): AnchoredWindow | null {
-  if (!history || history.length < 2) return null
-
-  const anchor = anchorISO ? Date.parse(anchorISO) : NaN
-  const hasAnchor = Number.isFinite(anchor)
-  const first = Date.parse(history[0].date)
-  const reachesAnchor = hasAnchor && Number.isFinite(first) && first <= anchor
-
-  const startIndex = reachesAnchor
-    ? Math.max(0, history.findIndex(p => Date.parse(p.date) >= anchor))
-    : 0
-
-  const slice = history.slice(startIndex)
-  if (slice.length < 2 || !(slice[0].close > 0)) return null
-
-  return {
-    series: slice.map(p => p.close),
-    changePct: ((slice[slice.length - 1].close - slice[0].close) / slice[0].close) * 100,
-    reachesAnchor,
-    days: Math.round(
-      (Date.parse(slice[slice.length - 1].date) - Date.parse(slice[0].date)) / 86_400_000,
-    ),
-  }
-}
-
-export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height?: number }) {
+export function PriceSinceReview({ w, since, height = 88 }: { w: AnchoredWindow; since: ResearchDateKind; height?: number }) {
+  const words = dateWords(since)
   const W = 340
   const H = height
   const min = Math.min(...w.series)
@@ -85,10 +67,10 @@ export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height
     <div>
       <div className="mb-1 flex items-baseline gap-2">
         <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
-          {w.reachesAnchor ? 'Price since last review' : 'Price over available history'}
+          {w.reachesAnchor ? words.priceSince : 'Price over available history'}
         </span>
         <span className="ml-auto font-mono text-[10px] text-gray-500">
-          {w.reachesAnchor ? `since review · ${w.days}d` : `${w.days}d of history`}
+          {w.reachesAnchor ? `${words.since} · ${w.days}d` : `${w.days}d of history`}
         </span>
       </div>
 
@@ -102,7 +84,7 @@ export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height
             <line x1={0.5} y1={0} x2={0.5} y2={H - 2} strokeWidth={1} strokeDasharray="2 3"
                   className="stroke-gray-400 dark:stroke-gray-600" />
             <text x={4} y={9} className="fill-gray-500 text-[8px]" style={{ letterSpacing: '.05em' }}>
-              LAST REVIEW
+              {words.tick}
             </text>
           </>
         )}
@@ -115,7 +97,7 @@ export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height
       </div>
       {!w.reachesAnchor && (
         <p className="mt-1 text-[10px] text-gray-500">
-          History does not reach the review date, so this is not a since-review move.
+          History does not reach {words.the}, so this is not a {words.since} move.
         </p>
       )}
     </div>

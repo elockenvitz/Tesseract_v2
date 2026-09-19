@@ -20,6 +20,7 @@ import { fromDecisionContext } from '../engagement'
 import type { EngagementTarget } from '../engagement'
 import type { TodayArchetype, TodayItem, TodayMetric, TodayVisual } from './types'
 import { tierFor } from './tiers'
+import { ageEventFor } from './age-event'
 
 // ---------------------------------------------------------------------------
 // Chip reading
@@ -54,7 +55,7 @@ function whyNowFor(item: DecisionItem): string {
   switch (item.titleKey) {
     case 'THESIS_STALE':
       return age && age >= 180
-        ? `The written case for ${t} has not been revisited in over six months, so the position is sized on reasoning nobody has checked against what has happened since.`
+        ? `The written case for ${t} has not been updated in over six months, so the position is sized on reasoning nobody has checked against what has happened since.`
         : `The written case for ${t} is ageing, and nothing has confirmed it since it was last updated.`
     case 'PROPOSAL_AWAITING_DECISION':
       return `A proposal is open and unanswered. The position may be small, but an unanswered proposal is an unowned decision.`
@@ -186,6 +187,23 @@ export function visualFor(item: DecisionItem): TodayVisual {
       }
     }
 
+    case 'COVERAGE_NO_THESIS':
+    case 'COVERAGE_INCOMPLETE_THESIS': {
+      // The position the missing case sits under, where there is one. Bare
+      // coverage has no weight and draws nothing rather than a zero bar.
+      const weight = item.context.proposedWeight
+      if (weight == null) return fallback
+      return {
+        archetype: 'exposure',
+        caption: 'Position weight',
+        window: `${weight.toFixed(1)}% of ${item.context.portfolioName ?? 'the book'}`,
+        note: item.titleKey === 'COVERAGE_NO_THESIS'
+          ? 'No written thesis behind it.'
+          : 'The written case behind it is incomplete.',
+        exposure: { weightPct: weight },
+      }
+    }
+
     case 'IDEA_NOT_SIMULATED': {
       const weight = item.context.proposedWeight
       if (weight == null) return fallback
@@ -233,13 +251,28 @@ function metricsFor(item: DecisionItem): TodayMetric[] {
     // guess: if a number cannot be named, it is not a metric.
     if (!label) continue
 
+    /*
+      An idea's age is how long it has been open, not how long since a review:
+      nothing has reviewed it. "0d · Since review" on an idea created this
+      morning claimed a review that never happened.
+    */
+    if (c.label === 'Age' && item.titleKey === 'IDEA_NOT_SIMULATED') {
+      const days = num(c.value)
+      out.push(days === 0
+        ? { label: 'Opened', value: 'Today', tone: 'neutral' }
+        : { label: 'Open', value: c.value, tone: 'neutral' })
+      if (out.length === 3) break
+      continue
+    }
+
     const lower = c.label.toLowerCase()
     // `warn` for something genuinely waiting on a person; neutral for
     // everything a reader can interpret from the number itself. An age is not
     // a loss, and an expected return is not a gain.
     const tone: TodayMetric['tone'] =
       lower === 'open' || lower === 'overdue' ? 'warn' : 'neutral'
-    out.push({ label, value: c.value, tone })
+    // An age is named by the event it counts from (lib/today/age-event).
+    out.push({ label: c.label === 'Age' ? ageEventFor(item.titleKey, item.context.caseAnchor).label : label, value: c.value, tone })
     if (out.length === 3) break
   }
   return out
@@ -248,11 +281,12 @@ function metricsFor(item: DecisionItem): TodayMetric[] {
 /**
  * Chip label → the words an investor would use.
  *
- * "Age" is what the evaluator measured; "Since review" is what it means. The
- * strip is the densest text on the tile, so each label has to earn its width.
+ * The strip is the densest text on the tile, so each label has to earn its
+ * width. "Age" is listed so it is allowed through; what it is called depends on
+ * what it counts from, and `ageEventFor` names that per finding.
  */
 const METRIC_LABELS: Record<string, string> = {
-  Age: 'Since review',
+  Age: 'Age',
   Open: 'Open',
   Changed: 'Changed',
   From: 'Was',
@@ -269,7 +303,7 @@ const METRIC_LABELS: Record<string, string> = {
 }
 
 /** Labels allowed through unmapped, because they already read correctly. */
-const KNOWN_METRIC_LABELS = new Set<string>([])
+const KNOWN_METRIC_LABELS = new Set<string>(['Open ideas'])
 
 // ---------------------------------------------------------------------------
 // Seed prompts
@@ -282,6 +316,8 @@ const KNOWN_METRIC_LABELS = new Set<string>([])
  * only the evaluator knows what it found — a generic "tell me about AMZN"
  * would be exactly the context-recreation the engagement seam exists to remove.
  */
+const caseVerb = (item: DecisionItem) => (item.context.caseAnchor === 'reviewed' ? 'reviewed' : 'written')
+
 function seedPromptFor(item: DecisionItem): string | null {
   const t = chip(item, 'Ticker') ?? 'this position'
   switch (item.titleKey) {
@@ -299,6 +335,18 @@ function seedPromptFor(item: DecisionItem): string | null {
       return `This deliverable is overdue. What is the smallest useful version that could ship now?`
     case 'HIGH_EV_NO_IDEA':
       return `The model implies ${chip(item, 'EV') ?? 'meaningful'} upside on ${t} with no idea against it. What would have to be true for that to be real rather than a data artefact?`
+    case 'COVERAGE_NO_THESIS':
+      return `We have no written case on ${t}. What would a defensible thesis claim, where would we differ from consensus, and what would break it?`
+    case 'COVERAGE_INCOMPLETE_THESIS':
+      return `Our case for ${t} is only partly written. What belongs in the missing sections, and does writing them change the view?`
+    // The verb is the event the date really is: a recorded review, or the case
+    // being written.
+    case 'COVERAGE_PRICE_MOVE':
+      return `${t} has moved materially since our case was last ${caseVerb(item)}. Which of its claims does the move test, and does the case still hold?`
+    case 'COVERAGE_NEW_EVIDENCE':
+      return `New research arrived on ${t} after our case was last ${caseVerb(item)}. Which of it most challenges the existing view?`
+    case 'COVERAGE_STALE_THESIS':
+      return `Our case for ${t} was last ${caseVerb(item)} ${chip(item, 'Age') ?? 'months'} ago. Which of its claims are most likely to be stale?`
     default:
       return null
   }
@@ -328,7 +376,11 @@ export function targetFor(item: DecisionItem): EngagementTarget | null {
     },
     origin: { itemId: item.id, surface: 'today' },
     seedPrompt: seedPromptFor(item) ?? undefined,
-    contextChips: (item.chips ?? []).map(c => ({ label: c.label, value: c.value })),
+    // The AI reads the age under the event it counts from, as the tile does.
+    contextChips: (item.chips ?? []).map(c => ({
+      label: c.label === 'Age' ? ageEventFor(item.titleKey, item.context.caseAnchor).label : c.label,
+      value: c.value,
+    })),
   })
 }
 
@@ -349,6 +401,12 @@ const OBJECT_VERB: Record<string, string> = {
   IDEA_NOT_SIMULATED: 'Simulate idea',
   OVERDUE_DELIVERABLE: 'Review deliverable',
   HIGH_EV_NO_IDEA: 'Create idea',
+  // Coverage backfill (lib/today/coverage-items): the reader's coverage work.
+  COVERAGE_NO_THESIS: 'Write thesis',
+  COVERAGE_INCOMPLETE_THESIS: 'Finish thesis',
+  COVERAGE_PRICE_MOVE: 'Revisit thesis',
+  COVERAGE_NEW_EVIDENCE: 'Review evidence',
+  COVERAGE_STALE_THESIS: 'Review thesis',
 }
 
 const GENERIC_VERBS = /^(review|open|manage|view|review all|simulate all|resolve all)$/i

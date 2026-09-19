@@ -1,5 +1,6 @@
 import React, { useEffect, forwardRef, useImperativeHandle, useRef, useCallback, memo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { resolveResponsePolicy } from '../../lib/ai'
 import { useEditor, EditorContent, Extension } from '@tiptap/react'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
@@ -255,9 +256,14 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
     })
   }, [])
 
-  // Handle AI prompt submission (inline mode)
-  const handleAISubmit = useCallback(async (prompt: string, model: string | null): Promise<string | null> => {
+  // Handle AI prompt submission (inline mode).
+  //
+  // `model` is still in the signature because the extension that calls this
+  // passes it; ai-chat has never read it, and the canonical route is the
+  // request's `purpose`, not a per-caller model override.
+  const handleAISubmit = useCallback(async (prompt: string, _model: string | null): Promise<string | null> => {
     setIsAILoading(true)
+    const snippetPolicy = resolveResponsePolicy({ message: prompt, purpose: 'snippet' })
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -275,8 +281,15 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           },
           body: JSON.stringify({
             message: prompt,
+            // Inline generation is a snippet, and always was. It sent no
+            // `purpose` at all, so ai-chat's purpose routing left it on the
+            // full chat model — the most expensive route in the product, for
+            // the shortest output in it. `model` was sent and silently
+            // ignored by the function; dropping it removes a field that
+            // looked like it controlled something and never did.
+            purpose: 'snippet',
+            verbosity: snippetPolicy.verbosity,
             conversationHistory: [],
-            model: model || 'claude'
           }),
         }
       )
@@ -765,7 +778,11 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           'prose prose-sm max-w-none focus:outline-none',
           editorClassName
         ),
-        style: `min-height: ${minHeight}; padding: 0.5rem ${isMobileViewport ? '0.5rem' : '1rem'};`
+        style: `min-height: ${minHeight}; padding: ${isMobileViewport ? '0.5rem 0.5rem 1.25rem' : '0.5rem 1rem'};`
+        // The trailing room is INSIDE the editable element on purpose:
+        // ProseMirror maps a click in its own padding to the nearest
+        // position, so the caret can still be placed after the last
+        // paragraph. A spacer div below it would swallow that tap.
       },
       // Smart paste handling
       handlePaste: (view, event) => {
@@ -977,9 +994,13 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
 
   return (
     <div className={clsx('rich-text-editor relative', className)}>
-      {/* Toolbar - Sticky */}
+      {/* Toolbar - Sticky.
+
+          `top-[41px]` clears the note title band, which exists on desktop only
+          now; on a phone the title lives in the header row above the scrollport,
+          so the format bar sticks to the top of the pane. */}
       {!readOnly && (
-        <div className="sticky top-[41px] z-10 bg-white dark:bg-gray-800">
+        <div className="sticky top-0 sm:top-[41px] z-10 bg-white dark:bg-gray-800 flex-shrink-0">
           {isMobileViewport ? (
             <MobileFormatBar
               editor={editor}
@@ -1043,7 +1064,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
       {isHelpModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setIsHelpModalOpen(false)}>
           <div
-            className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden dark:bg-gray-800"
+            className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-viewport-80 overflow-hidden dark:bg-gray-800"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -1057,7 +1078,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 </svg>
               </button>
             </div>
-            <div className="px-4 sm:px-6 py-4 overflow-y-auto max-h-[70vh] sm:max-h-[60vh]">
+            <div className="px-4 sm:px-6 py-4 overflow-y-auto max-h-viewport-70 sm:max-h-viewport-60">
               <div className="space-y-6">
                 {/* AI Commands */}
                 <div>

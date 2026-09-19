@@ -54,6 +54,15 @@ vi.mock('../../hooks/useAttentionState', () => ({
   }),
 }))
 
+/*
+ * Coverage backfill has its own suite (today/__tests__). Here the reader has
+ * coverage and no gaps, so these cases stay about the engine's findings.
+ */
+vi.mock('../../hooks/useCoverageResearchGaps', () => ({
+  useCoverageResearchGaps: () => ({ status: 'ready', candidates: [], coveredCount: 3 }),
+}))
+vi.mock('../coverage/FirstSessionCoveragePrompt', () => ({ FirstSessionCoveragePrompt: () => null }))
+
 const { TodayPage, supportingSpan } = await import('./TodayPage')
 
 function renderPage() {

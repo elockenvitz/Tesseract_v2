@@ -45,10 +45,10 @@ const PRIMARY_SURFACES = [
     iconColor: 'text-rose-600'
   },
   {
-    id: 'idea-generator',
+    id: 'ideas',
     title: 'Ideas',
-    type: 'idea-generator',
-    description: 'Discover insights',
+    type: 'ideas',
+    description: 'What deserves attention, and what to explore',
     icon: Lightbulb,
     gradient: 'from-purple-100 to-pink-100',
     iconColor: 'text-purple-600'

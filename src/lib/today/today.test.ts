@@ -127,8 +127,49 @@ describe('adaptation', () => {
 
   it('names metrics semantically and drops any it cannot name', () => {
     const t = adaptDecisionItem(stale())
-    expect(t.metrics.map(m => m.label)).toEqual(['Since review'])
+    // A stale thesis counts from its last edit, not from a review.
+    expect(t.metrics.map(m => m.label)).toEqual(['Since update'])
     expect(t.metrics.map(m => m.label)).not.toContain('Age')
+  })
+
+  it('never claims a review on an idea nobody has reviewed', () => {
+    const idea = (age: string) => adaptDecisionItem(item({
+      titleKey: 'IDEA_NOT_SIMULATED', title: 'Idea Being Worked On',
+      chips: [{ label: 'Ticker', value: 'LLY' }, { label: 'Age', value: age }, { label: 'Portfolio', value: 'Growth' }],
+    }))
+    const fresh = idea('0d')
+    expect(fresh.metrics[0]).toEqual({ label: 'Opened', value: 'Today', tone: 'neutral' })
+    expect(idea('6d').metrics[0]).toEqual({ label: 'Open', value: '6d', tone: 'neutral' })
+    for (const t of [fresh, idea('6d')]) {
+      expect(t.metrics.map(m => m.label)).not.toContain('Since review')
+      expect(t.metrics.map(m => m.label)).toContain('Portfolio')
+    }
+    // Nor does a stale thesis: its age counts from the last edit.
+    expect(adaptDecisionItem(stale()).metrics[0].label).toBe('Since update')
+  })
+
+  it('names a proposal\'s and an execution\'s age by the event it counts from', () => {
+    const aged = (titleKey: string) => adaptDecisionItem(item({
+      titleKey,
+      chips: [{ label: 'Portfolio', value: 'Growth' }, { label: 'Ticker', value: 'TSM' }, { label: 'Age', value: '4d' }],
+      context: { assetId: 'a-tsm', assetTicker: 'TSM' },
+    }))
+    const proposal = aged('PROPOSAL_AWAITING_DECISION')
+    const execution = aged('EXECUTION_NOT_CONFIRMED')
+
+    expect(proposal.metrics).toContainEqual({ label: 'Since proposal', value: '4d', tone: 'neutral' })
+    expect(execution.metrics).toContainEqual({ label: 'Since decision', value: '4d', tone: 'neutral' })
+    for (const t of [proposal, execution]) {
+      expect(t.metrics.map(m => m.label).join(' ')).not.toMatch(/review|Age/i)
+      // Ask AI reads the same words.
+      const ctx = t.target!.contextChips!.map(c => c.label)
+      expect(ctx.join(' ')).not.toMatch(/review|^Age$/i)
+    }
+    expect(proposal.target!.contextChips).toContainEqual({ label: 'Since proposal', value: '4d' })
+    expect(execution.target!.contextChips).toContainEqual({ label: 'Since decision', value: '4d' })
+
+    // A stale thesis names its edit, in the AI context as on the tile.
+    expect(adaptDecisionItem(stale()).target!.contextChips).toContainEqual({ label: 'Since update', value: '210d' })
   })
 
   it('never renders an UNKNOWN metric, whatever chips arrive', () => {

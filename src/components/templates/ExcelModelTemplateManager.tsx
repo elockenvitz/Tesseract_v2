@@ -4109,7 +4109,7 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
       {/* Range Selection Modal */}
       {selectingForIndex !== null && workbook && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col dark:bg-gray-800">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-viewport-90 flex flex-col dark:bg-gray-800">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-xl dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center gap-3">
@@ -4273,7 +4273,7 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-            <div className="bg-white rounded-xl shadow-2xl max-w-[90vw] max-h-[90vh] flex flex-col dark:bg-gray-800">
+            <div className="bg-white rounded-xl shadow-2xl max-w-[90vw] max-h-viewport-90 flex flex-col dark:bg-gray-800">
               {/* Modal Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-xl dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex items-center gap-3">
@@ -6564,7 +6564,7 @@ export function ExcelModelTemplateManager() {
       {/* Preview Modal */}
       {previewTemplate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden dark:bg-gray-800">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-viewport-80 flex flex-col overflow-hidden dark:bg-gray-800">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{previewTemplate.name}</h3>
@@ -6736,7 +6736,7 @@ export function ExcelModelTemplateManager() {
       {/* Excel Data Preview Modal */}
       {excelPreviewData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col dark:bg-gray-800">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-viewport-90 flex flex-col dark:bg-gray-800">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center gap-3">
@@ -6849,7 +6849,7 @@ export function ExcelModelTemplateManager() {
                   </div>
 
                   {/* Spreadsheet Table */}
-                  <div className="overflow-auto border border-gray-200 rounded-lg max-h-[50vh] dark:border-gray-700">
+                  <div className="overflow-auto border border-gray-200 rounded-lg max-h-viewport-50 dark:border-gray-700">
                     <table className="min-w-full border-collapse text-sm">
                       <thead className="sticky top-0 z-20">
                         <tr>
@@ -6933,7 +6933,7 @@ export function ExcelModelTemplateManager() {
                         {excelPreviewData.item && (excelPreviewData.item as SnapshotRange).range}
                       </span>
                     </div>
-                    <div ref={snapshotPreviewRef} className="p-3 overflow-auto max-h-[60vh] bg-white dark:bg-gray-800">
+                    <div ref={snapshotPreviewRef} className="p-3 overflow-auto max-h-viewport-60 bg-white dark:bg-gray-800">
                       <table className="min-w-full">
                         <tbody>
                           {excelPreviewData.rangeData.rows.map((row, rowIdx) => (
@@ -6989,7 +6989,7 @@ export function ExcelModelTemplateManager() {
                   </div>
 
                   {/* Spreadsheet Table */}
-                  <div className="overflow-auto border border-gray-200 rounded-lg max-h-[50vh] dark:border-gray-700">
+                  <div className="overflow-auto border border-gray-200 rounded-lg max-h-viewport-50 dark:border-gray-700">
                     <table className="min-w-full border-collapse text-sm">
                       <thead className="sticky top-0 z-20">
                         <tr>

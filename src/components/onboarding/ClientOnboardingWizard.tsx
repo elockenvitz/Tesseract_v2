@@ -216,10 +216,15 @@ export function ClientOnboardingWizard() {
         date: snapshotDate,
       }))
     if (holdingsRows.length > 0) {
-      await supabase.from('portfolio_holdings').upsert(
+      // Checked, not discarded. RLS can refuse this write, and a template
+      // portfolio that silently arrives with no positions looks to the operator
+      // exactly like one that worked — they see the portfolio appear and only
+      // discover the empty book later, from a report.
+      const { error: hErr } = await supabase.from('portfolio_holdings').upsert(
         holdingsRows,
         { onConflict: 'portfolio_id,asset_id,date' }
       )
+      if (hErr) throw new Error(`Failed to seed holdings for the new portfolio: ${hErr.message}`)
     }
 
     // Seed sample trade ideas at different pipeline stages
@@ -534,10 +539,14 @@ export function ClientOnboardingWizard() {
           date: snapshotDate,
         }))
       if (holdingsRows.length > 0) {
-        await supabase.from('portfolio_holdings').upsert(
+        // Same rule as the template path, and it matters more here: the upload
+        // log written just below records the file as ingested, so a swallowed
+        // error produces a log entry claiming positions landed that did not.
+        const { error: hErr } = await supabase.from('portfolio_holdings').upsert(
           holdingsRows,
           { onConflict: 'portfolio_id,asset_id,date' }
         )
+        if (hErr) throw new Error(`Failed to write uploaded holdings: ${hErr.message}`)
       }
 
       // 4. Log upload

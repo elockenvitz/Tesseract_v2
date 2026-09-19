@@ -30,8 +30,22 @@ export function ExpiredTargetsAlert({
   const { checkExpiredTargets, isChecking } = useCheckExpiredTargets()
   const [dismissed, setDismissed] = React.useState(false)
 
-  // Check for expired targets on mount
+  /*
+    Fire the expiry sweep once, not once per mount.
+
+    `check_and_expire_user_targets` is a read-then-write loop over the pending
+    outcomes. StrictMode invokes this effect twice, so the two executions
+    overlapped and each claimed the same pending rows — three expired AMZN
+    targets came back as six notifications. The database now takes the rows
+    with SKIP LOCKED and folds duplicate alerts onto one semantic key, which is
+    where that had to be fixed; this stops the app asking for the same work
+    twice in the first place, and stops a remount re-running a sweep that
+    already ran this session.
+  */
+  const sweepRequested = React.useRef(false)
   React.useEffect(() => {
+    if (sweepRequested.current) return
+    sweepRequested.current = true
     checkExpiredTargets()
   }, [])
 

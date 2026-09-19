@@ -1080,12 +1080,19 @@ function IdRow({ label, value }: { label: string; value: string }) {
 function DiffTable({ from, to, fields }: { from: any; to: any; fields: string[] }) {
   return (
     <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
-      <table className="w-full text-xs">
+      {/* Three equal thirds put the From and To values in ~70px each at 320px,
+          and `break-all` on a monospace value then breaks mid-token every few
+          characters — technically visible, actually unreadable. A floor of
+          420px gives each column ~140px and lets the reader scroll instead.
+          Field names are short, so the thirds become 25/37.5/37.5 where the
+          extra width does the most good. Unchanged from 640px up. */}
+      <div className="mobile-scroll-x show-scrollbar">
+      <table className="w-full text-xs min-w-[420px] sm:min-w-0">
         <thead>
           <tr className="border-b border-gray-200 dark:border-gray-700">
-            <th className="text-left px-3 py-1.5 font-medium text-gray-500 dark:text-gray-400 w-1/3">Field</th>
-            <th className="text-left px-3 py-1.5 font-medium text-red-500 dark:text-red-400 w-1/3">From</th>
-            <th className="text-left px-3 py-1.5 font-medium text-green-500 dark:text-green-400 w-1/3">To</th>
+            <th className="text-left px-3 py-1.5 font-medium text-gray-500 dark:text-gray-400 w-1/4 sm:w-1/3">Field</th>
+            <th className="text-left px-3 py-1.5 font-medium text-red-500 dark:text-red-400 w-[37.5%] sm:w-1/3">From</th>
+            <th className="text-left px-3 py-1.5 font-medium text-green-500 dark:text-green-400 w-[37.5%] sm:w-1/3">To</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -1102,6 +1109,7 @@ function DiffTable({ from, to, fields }: { from: any; to: any; fields: string[] 
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

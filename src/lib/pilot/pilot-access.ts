@@ -19,7 +19,8 @@ export interface PilotAccessConfig {
   tradeLab:     PilotAccessLevel  // the wedge — always 'full' for pilots
   tradeBook:    PilotAccessLevel  // downstream — starts as 'preview'
   outcomes:     PilotAccessLevel  // further downstream — starts as 'preview'
-  ideaPipeline: PilotAccessLevel  // upstream (Ideas) — 'full' so pilots can see where ideas live
+  ideaPipeline: PilotAccessLevel  // upstream (Idea Pipeline) — 'full' so pilots can see where ideas live
+  ideas:        PilotAccessLevel  // the standalone Ideas app — 'hidden' until graduation
   dashboard:    PilotAccessLevel  // 'full' — pilot lands here on login as the action dashboard
   priorities:   PilotAccessLevel  // starts 'hidden'
   projects:     PilotAccessLevel  // starts 'hidden'
@@ -44,6 +45,21 @@ export const PILOT_ACCESS_DEFAULTS: PilotAccessConfig = {
   tradeBook:    'preview',
   outcomes:     'preview',
   ideaPipeline: 'full',   // was 'hidden' — pilots can now see the pipeline as a routing surface
+  /*
+   * The standalone Ideas app stays closed for the whole mission.
+   *
+   * It had no key. `ideas` was missing from the tab map below, and an unmapped
+   * tab type is ungated, so a pilot could open the app from the first screen.
+   * Its legacy alias `idea-generator` shared `ideaPipeline` with the Pipeline,
+   * which pilots must have open in step 2, so it could not be closed there
+   * without closing the Pipeline too.
+   *
+   * No progressive unlock layers on top of this. It opens the way everything
+   * does at the end: `usePilotMode` hands a graduated pilot full access, and
+   * graduation is written only when the mission is complete, Close the loop
+   * included.
+   */
+  ideas:        'hidden',
   dashboard:    'full',   // was 'hidden' — pilots now land here on login as a lightweight action dashboard
   priorities:   'hidden',
   projects:     'hidden',
@@ -80,7 +96,8 @@ export const TAB_TYPE_TO_PILOT_FEATURE: Record<string, keyof PilotAccessConfig |
 
   // Hidden (guard redirects to trade-lab)
   'dashboard':       'dashboard',
-  'idea-generator':  'ideaPipeline',
+  'ideas':           'ideas',
+  'idea-generator':  'ideas',        // legacy alias of the standalone app, not of the Pipeline
   'trade-queue':     'ideaPipeline',
   'priorities':      'priorities',
   'project':         'projects',

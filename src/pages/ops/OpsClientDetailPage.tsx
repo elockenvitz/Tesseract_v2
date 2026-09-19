@@ -589,23 +589,23 @@ export function OpsClientDetailPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
+    <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
       {/* Back + Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/ops/clients')} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700">
+        <button onClick={() => navigate('/ops/clients')} aria-label="Back to clients" className="p-1.5 shrink-0 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700">
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2 dark:text-white">
-            <Building2 className="w-5 h-5 text-indigo-600" />
-            {org?.name || 'Loading...'}
+        <div className="min-w-0">
+          <h1 className="text-lg md:text-xl font-bold text-gray-900 flex items-center gap-2 dark:text-white">
+            <Building2 className="w-5 h-5 text-indigo-600 shrink-0" />
+            <span className="min-w-0 break-words">{org?.name || 'Loading...'}</span>
           </h1>
-          <p className="text-xs text-gray-400">{org?.slug} &middot; Created {org?.created_at ? new Date(org.created_at).toLocaleDateString() : ''}</p>
+          <p className="text-xs text-gray-400 break-all">{org?.slug} &middot; Created {org?.created_at ? new Date(org.created_at).toLocaleDateString() : ''}</p>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
+      {/* Tabs — scroll sideways on a phone; six tabs need ~620px */}
+      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700 overflow-x-auto no-scrollbar md:overflow-visible">
         {TABS.map((tab) => {
           const Icon = tab.icon
           return (
@@ -613,7 +613,7 @@ export function OpsClientDetailPage() {
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={clsx(
-                'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px',
+                'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px shrink-0 whitespace-nowrap',
                 activeTab === tab.key
                   ? 'border-indigo-600 text-indigo-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
@@ -632,7 +632,7 @@ export function OpsClientDetailPage() {
         <div className="space-y-4">
           {pendingInvites.length > 0 && (
             <div className="bg-amber-50/60 border border-amber-200 rounded-xl overflow-hidden">
-              <div className="px-5 py-3 border-b border-amber-200 flex items-center gap-2">
+              <div className="px-4 md:px-5 py-3 border-b border-amber-200 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <Mail className="w-3.5 h-3.5 text-amber-700" />
                 <span className="text-xs font-semibold text-amber-900 uppercase tracking-wide">
                   Pending invites
@@ -644,14 +644,14 @@ export function OpsClientDetailPage() {
               </div>
               <div className="divide-y divide-amber-100">
                 {pendingInvites.map((inv: any) => (
-                  <div key={inv.id} className="px-5 py-2.5 flex items-center justify-between">
+                  <div key={inv.id} className="px-4 md:px-5 py-2.5 flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-7 h-7 rounded-full bg-amber-200/60 flex items-center justify-center flex-shrink-0">
                         <Mail className="w-3.5 h-3.5 text-amber-700" />
                       </div>
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{inv.email}</span>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="text-sm font-medium text-gray-900 break-all md:truncate dark:text-white">{inv.email}</span>
                           {inv.invited_is_org_admin && (
                             <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded">Admin</span>
                           )}
@@ -662,7 +662,7 @@ export function OpsClientDetailPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0 pl-10 md:pl-0">
                       <button
                         onClick={() => copyInviteLinkM.mutate(inv.id)}
                         disabled={copyInviteLinkM.isPending}
@@ -697,21 +697,23 @@ export function OpsClientDetailPage() {
                 : 'No members'}
             </div>
           ) : members.map((m: any) => (
-            <div key={m.id} className="px-5 py-3 flex items-center justify-between">
+            <div key={m.id} className="px-4 md:px-5 py-3 flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-3 min-w-0">
                 <div className={clsx('w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0', m.is_org_admin ? 'bg-indigo-600' : 'bg-gray-500')}>
                   {(m.user_full_name || '?').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{m.user_full_name}</span>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-sm font-medium text-gray-900 break-words md:truncate dark:text-white">{m.user_full_name}</span>
                     {m.is_org_admin && <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded">Admin</span>}
                     <span className={clsx('px-1.5 py-0.5 text-[10px] rounded', m.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800')}>{m.status}</span>
                   </div>
-                  <p className="text-xs text-gray-400 truncate">{m.user_email}</p>
+                  <p className="text-xs text-gray-400 break-all md:truncate">{m.user_email}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* Phone: actions on their own line under the member, so the name
+                  is not squeezed to nothing and the morph reason field has room. */}
+              <div className="flex items-center gap-1.5 flex-shrink-0 pl-10 md:pl-0">
                 {m.status === 'active' ? (
                   <>
                     {morphTargetId === m.user_id ? (
@@ -721,7 +723,7 @@ export function OpsClientDetailPage() {
                           placeholder="Reason..."
                           value={morphReason}
                           onChange={(e) => setMorphReason(e.target.value)}
-                          className="w-36 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500 dark:border-gray-600"
+                          className="flex-1 min-w-0 md:flex-none md:w-36 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500 dark:border-gray-600"
                           autoFocus
                           onKeyDown={(e) => { if (e.key === 'Enter') handleMorph(m.user_id); if (e.key === 'Escape') { setMorphTargetId(null); setMorphReason('') } }}
                         />
@@ -775,12 +777,12 @@ export function OpsClientDetailPage() {
           ) : portfolios.map((p: any) => {
             const hs = holdingsStatus.find((h: any) => h.portfolio_id === p.id)
             return (
-              <div key={p.id} className="px-5 py-3 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{p.name}</p>
+              <div key={p.id} className="px-4 md:px-5 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 break-words dark:text-white">{p.name}</p>
                   <p className="text-xs text-gray-400">{p.is_active ? 'Active' : 'Inactive'}</p>
                 </div>
-                <div className="text-xs text-right">
+                <div className="text-xs text-right min-w-0 break-words">
                   {hs ? (
                     <>
                       <p className="text-gray-600 dark:text-gray-400">{hs.total_positions} positions</p>
@@ -805,6 +807,7 @@ export function OpsClientDetailPage() {
             <div className="space-y-3">
               <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Latest Holdings Snapshots</h3>
               <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
+                <div className="mobile-scroll-x">
                 <table className="w-full text-xs">
                   <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
@@ -828,6 +831,7 @@ export function OpsClientDetailPage() {
                     })}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           )}
@@ -854,8 +858,8 @@ export function OpsClientDetailPage() {
           totalMembers). Reading top-to-bottom is a drop-off chart —
           where the bars get short is where pilots stalled. */}
       {activeTab === 'onboarding' && (
-        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between">
+        <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex flex-col items-start gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Pilot Get Started funnel</h3>
               <p className="text-[11px] text-gray-400 mt-0.5">
@@ -928,7 +932,7 @@ export function OpsClientDetailPage() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline justify-between gap-2">
-                                  <p className={clsx('text-sm font-medium truncate', item.count > 0 ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400')}>
+                                  <p className={clsx('text-sm font-medium break-words md:truncate', item.count > 0 ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400')}>
                                     {item.label}
                                   </p>
                                   <span className="text-[11px] text-gray-500 tabular-nums shrink-0 dark:text-gray-400">

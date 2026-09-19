@@ -1,6 +1,7 @@
 import { clsx } from 'clsx'
 import { Monitor } from 'lucide-react'
 import { getMobileNavSurfaces, getMobileSurface } from '../../lib/mobile/mobile-surfaces'
+import { CANONICAL_HOME_TAB } from '../../lib/tabStateManager'
 
 interface DesktopOnlyCardProps {
   /** Tab type, used to look up the title and the reason. */
@@ -25,7 +26,20 @@ export function DesktopOnlyCard({ type, title, onOpenSurface }: DesktopOnlyCardP
     surface?.desktopReason ??
     'This surface has not been adapted for phone screens yet, so it would not be usable here.'
 
-  const suggestions = getMobileNavSurfaces('core').slice(0, 6)
+  /*
+    Home first, then the rest of Core.
+
+    This card is a dead end, so the way back matters more here than anywhere.
+    The list used to be `getMobileNavSurfaces('core')` and Ideas was the first
+    entry in it — until Ideas left the Core nav list, because the drawer pins it
+    permanently instead. Taken from the registry by type rather than from the
+    nav list, so it survives that flag either way.
+  */
+  const home = getMobileSurface(CANONICAL_HOME_TAB.type)
+  const suggestions = [
+    ...(home ? [home] : []),
+    ...getMobileNavSurfaces('core').filter(s => s.type !== CANONICAL_HOME_TAB.type),
+  ].slice(0, 6)
 
   return (
     <div className="h-full overflow-y-auto px-5 py-8">

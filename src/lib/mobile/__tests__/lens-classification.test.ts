@@ -116,19 +116,63 @@ describe('the diversity cap is not what was hiding them', () => {
      * cap truncates a filtered category — `composeFeed` reorders and never
      * drops, which `feed-compose.test` asserts on the identity set.
      */
-    expect(src).toContain('const scope: ComposeScope =')
-    expect(src).toContain("feedFilter.signalTypes.length ? 'type'")
-    expect(src).toContain("(kindFilter || feedFilter.kinds.length) ? 'category'")
+    /**
+     * ── And why it changed again ────────────────────────────────────────
+     *
+     * The scope no longer reads the filter at all. It was coherent while the
+     * filter chose the pool being composed; it is not, now that one base order
+     * is composed per visit and every filter is a view over it. A scope that
+     * moved with the filter would change the composition RULES under a reader
+     * who only asked to hide some rows, and un-filtering would produce a third
+     * order matching neither. The base is always the mixed feed, so the scope
+     * is always `mixed`. See `lib/mobile/feed-continuity`.
+     */
+    expect(src).toContain("const scope: ComposeScope = 'mixed'")
+    expect(src).not.toContain("feedFilter.signalTypes.length ? 'type'")
   })
 
-  it('applies the reader\'s filter BEFORE ranking, not after', () => {
-    // So the ranked set under an explicit filter is already scoped, and there
-    // is no post-rank truncation that could cut a category short.
-    const filterAt = src.indexOf('const filtered = kindFilter ?')
+  it('ranks the unfiltered base, and filters after', () => {
+    /**
+     * ── The reversal, and why it is not a regression ────────────────────
+     *
+     * This used to assert the opposite: filter, then rank, so that a filtered
+     * category was ranked already-scoped and no post-rank step could truncate
+     * it. The no-truncation half of that claim is unchanged and still pinned —
+     * `composeFeed` reorders and never drops, on the identity set, in
+     * `feed-compose.test`.
+     *
+     * The ordering half had a cost nobody had priced: with the filter ahead of
+     * the ranker, and the filter state in the memo's dependency list, every
+     * pill tap re-ranked a different pool and returned a DIFFERENT feed. The
+     * tile the reader tapped the pill on moved or vanished, and clearing the
+     * filter could not restore an order that nothing had kept.
+     *
+     * So the pool is now everything, ranked once, and the filter is a view
+     * over the result.
+     */
     const rankAt = src.indexOf('const ranked = rankFeed<any>(')
-    expect(filterAt).toBeGreaterThan(0)
+    const viewAt = src.indexOf('const byPill = deriveFeedView(')
     expect(rankAt).toBeGreaterThan(0)
-    expect(filterAt).toBeLessThan(rankAt)
+    expect(viewAt).toBeGreaterThan(0)
+    expect(rankAt).toBeLessThan(viewAt)
+    /**
+     * The pool the ranker sees carries no filter — updated in place.
+     *
+     * It read `all.map(...)`. It now reads `afterComposition.map(...)`, and the
+     * claim is unchanged: absorption is not a filter. It decides what the
+     * CANDIDATES ARE — two findings asking one question are one tile — which is
+     * true of the feed before anybody narrows it, and it depends on no filter
+     * state. Ranking still runs once over the whole candidate set.
+     *
+     * What the assertion actually guards is that no filter reaches the pool, so
+     * that is what it now says.
+     */
+    expect(src).toContain('const pool = afterComposition.map(e => ({ ...e, subject: symbolOf(e) }))')
+    const poolAt = src.indexOf('const pool = afterComposition.map(')
+    const poolLine = src.slice(poolAt, poolAt + 120)
+    for (const filterState of ['tileFamily', 'feedFilter', 'kindFilter']) {
+      expect(poolLine).not.toContain(filterState)
+    }
   })
 })
 

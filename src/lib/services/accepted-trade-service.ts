@@ -38,10 +38,21 @@ import type {
 // trade_queue_item join exposes pair_id/pair_trade_id/pair_leg_type so the
 // Trade Book can render pair legs adjacent with a "↔ pair" badge. Without
 // this join there's no path from an accepted_trade to its pair grouping.
+// `rationale` and `thesis_text` come from the SAME join that was already here.
+//
+// The chain from a committed trade back to why anybody wanted it was never
+// broken in the schema -- `accepted_trades.trade_queue_item_id` is populated on
+// every row -- it was broken in this SELECT. Trade Book could therefore only
+// ever show `acceptance_note` (often null on an inbox accept) and the batch
+// description, and the analyst's original case was unreachable from the one
+// surface that records what the desk actually did.
+//
+// Two columns on an existing embed. No new query, no copy of the text, and no
+// second place for it to drift from.
 const TRADE_SELECT = `
   *,
   asset:assets(id, symbol, company_name, sector),
-  trade_queue_item:trade_queue_items!accepted_trades_trade_queue_item_id_fkey(id, pair_id, pair_trade_id, pair_leg_type, action)
+  trade_queue_item:trade_queue_items!accepted_trades_trade_queue_item_id_fkey(id, pair_id, pair_trade_id, pair_leg_type, action, rationale, thesis_text)
 `
 
 // Select comment rows; user display info is fetched separately so the
@@ -465,14 +476,36 @@ async function reverseTradeOnHoldings(
     return
   }
 
+  /*
+    The result of a holdings write is checked, not discarded.
+
+    These two statements dropped their error. `portfolio_holdings` carries RLS
+    that can refuse a write — the UPDATE and DELETE policies require the caller
+    to be the row's creator or an active admin of the org that owns the
+    portfolio — so a refusal is an ordinary outcome, not an exotic one. Ignoring
+    it meant a reversal that never happened reported the same as one that did,
+    and the book silently kept a position the desk believed it had unwound.
+
+    Thrown rather than logged: the caller is reversing an accepted trade, and
+    continuing as though the book matched the trade record is the failure worth
+    interrupting.
+  */
+  // `as any` on the row id follows this file's existing idiom for reading
+  // columns off a Supabase result the generated types resolve to `never`.
+  // Hoisted once so the id is named in the filter and the message without
+  // adding four more instances of that pre-existing typing defect.
+  const rowId = (existing as any).id as string
+
   const newShares = Number(existing.shares) + reverseDelta
   if (newShares <= 0) {
-    await supabase.from('portfolio_holdings').delete().eq('id', existing.id)
+    const { error } = await supabase.from('portfolio_holdings').delete().eq('id', rowId)
+    if (error) throw new Error(`Failed to reverse holding ${rowId} (delete): ${error.message}`)
   } else {
-    await supabase
+    const { error } = await supabase
       .from('portfolio_holdings')
       .update({ shares: newShares, updated_at: new Date().toISOString() })
-      .eq('id', existing.id)
+      .eq('id', rowId)
+    if (error) throw new Error(`Failed to reverse holding ${rowId} (update): ${error.message}`)
   }
 
   // Also reverse on the latest snapshot positions if Phase 1 wrote there.
@@ -551,7 +584,28 @@ export async function acceptFromInboxToAcceptedTrade(
     trade_queue_item_id: decisionRequest.trade_queue_item_id,
     proposal_id: decisionRequest.proposal_id ?? null,
     accepted_by: context.actorId,
-    acceptance_note: decisionNote || null,
+    /*
+     * The same precedence the Trade Lab execute path uses, for the same
+     * reason: a committed trade should not be the one record with no stated
+     * reason when a reason was sitting in the caller's own argument.
+     *
+     * This was `decisionNote || null`. The PM's note is optional in the single
+     * accept and is passed as `undefined` outright by the pair-leg accept, so
+     * the common case wrote NULL -- 15 of 52 committed trades in production
+     * have no note at all. Meanwhile `decisionRequest.context_note` (the
+     * analyst's "why now" on the request) and the idea's own rationale were
+     * both already in hand, in this very object, and discarded.
+     *
+     * Falls back, never overwrites: an explicit PM note still wins. The text
+     * is the analyst's existing words placed in the existing canonical field
+     * -- no new column, and nothing invented when all three are empty.
+     */
+    acceptance_note:
+      (decisionNote && decisionNote.trim())
+      || (decisionRequest.context_note && decisionRequest.context_note.trim())
+      || (decisionRequest.trade_queue_item?.thesis_text?.trim())
+      || (decisionRequest.trade_queue_item?.rationale?.trim())
+      || null,
   })
 
   // Update decision request status + link to the accepted trade
@@ -788,54 +842,58 @@ async function applyTradeToHoldings(
   portfolioId: string,
   trade: AcceptedTradeWithJoins
 ): Promise<ApplyTradeResult> {
-  const today = new Date().toISOString().split('T')[0]
   const price = trade.price_at_acceptance || 0
   const assetId = trade.asset_id
 
-  // ── portfolio_holdings (daily view) ──
-  const { data: existing } = await supabase
-    .from('portfolio_holdings')
-    .select('id, shares, price')
-    .eq('portfolio_id', portfolioId)
-    .eq('asset_id', assetId)
-    .eq('date', today)
-    .maybeSingle()
+  /*
+   * ── portfolio_holdings (daily view) ──
+   *
+   * One RPC, not four statements.
+   *
+   * This used to read (portfolio, asset, CURRENT_DATE) and insert a row when
+   * it found nothing — which on the first trade of any day it always does.
+   * The result was a dated snapshot containing only the traded position, with
+   * every other holding left behind on the previous date. `latestSnapshotRows`
+   * then correctly returned that one row as "current holdings", so the traded
+   * name read 100% and everything else looked newly opened at 0%.
+   *
+   * Rolling the prior date forward first is the fix, and it cannot be done
+   * from here: executeSimVariants commits a batch with Promise.all, so N
+   * concurrent callers would each see an empty date and each clone it. The
+   * carry-forward, the apply and the cash adjustment happen inside one
+   * transaction behind a per-portfolio advisory lock instead.
+   *
+   * The RPC is SECURITY INVOKER, so every write it performs is still subject
+   * to exactly the policies these client statements were subject to.
+   */
+  const { data: applied, error: applyError } = await supabase.rpc('apply_trade_to_holdings', {
+    p_portfolio_id: portfolioId,
+    p_asset_id: assetId,
+    p_target_shares: trade.target_shares ?? null,
+    p_delta_shares: trade.delta_shares ?? null,
+    p_price: price,
+  })
 
-  const sharesBefore = Number(existing?.shares ?? 0)
-
-  let newShares: number | null = null
-  if (trade.target_shares != null) {
-    newShares = trade.target_shares
-  } else if (trade.delta_shares != null) {
-    newShares = sharesBefore + trade.delta_shares
+  if (applyError) {
+    throw new Error(
+      `Failed to apply trade to holdings for asset ${assetId} in portfolio ${portfolioId}: ${applyError.message}`,
+    )
   }
 
-  if (newShares == null) {
-    // No share info on the trade — nothing to apply.
+  const result = (applied ?? {}) as {
+    shares_before?: number
+    shares_after?: number
+    applied?: boolean
+  }
+  const sharesBefore = Number(result.shares_before ?? 0)
+  const sharesAfter = Number(result.shares_after ?? 0)
+
+  if (result.applied === false) {
+    // No share information on the trade — nothing was written.
     return { sharesBefore, sharesAfter: sharesBefore, priceUsed: price, applied: false }
   }
 
-  if (newShares <= 0) {
-    if (existing) {
-      await supabase.from('portfolio_holdings').delete().eq('id', existing.id)
-    }
-  } else if (existing) {
-    await supabase
-      .from('portfolio_holdings')
-      .update({ shares: newShares, price, updated_at: new Date().toISOString() })
-      .eq('id', existing.id)
-  } else {
-    await supabase.from('portfolio_holdings').insert({
-      portfolio_id: portfolioId,
-      asset_id: assetId,
-      shares: newShares,
-      price,
-      cost: price,
-      date: today,
-    })
-  }
-
-  const sharesAfter = Math.max(newShares, 0)
+  const newShares = sharesAfter
 
   // ── portfolio_holdings_snapshots (keep latest snapshot in sync) ──
   try {

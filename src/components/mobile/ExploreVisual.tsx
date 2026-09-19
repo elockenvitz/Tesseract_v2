@@ -1,5 +1,5 @@
 import { clsx } from 'clsx'
-import { Quote } from 'lucide-react'
+import { Quote, HelpCircle } from 'lucide-react'
 
 import type { ExploreVisual as Visual } from '../../lib/mobile/explore-visual'
 
@@ -219,9 +219,44 @@ const shortDate = (iso: string) => {
  * different failures. Prose collapses them into one "4mo"; two lengths of one
  * line cannot.
  */
-function Timeline({ v, now }: { v: Extract<Visual, { kind: 'timeline' }>; now: number }) {
+function Elapsed({ v, now }: { v: Extract<Visual, { kind: 'timeline' }>; now: number }) {
   const t0 = new Date(v.statedAt).getTime()
-  const t1 = new Date(v.dueAt).getTime()
+  if (!Number.isFinite(t0) || now <= t0) return null
+  return (
+    <div data-explore-visual="timeline" data-timeline-shape="elapsed" className="mt-2">
+      <div className={clsx('h-2 w-full rounded-full', TRACK)}>
+        <div data-timeline-elapsed className="h-full w-full rounded-full bg-amber-400 dark:bg-amber-500" />
+      </div>
+      <div className="mt-1 flex items-baseline justify-between">
+        <Cap>Last {shortDate(v.statedAt)}</Cap>
+        <span className="text-[10px] font-bold tabular-nums text-amber-600 dark:text-amber-400">
+          {elapsed(now - t0)}
+        </span>
+      </div>
+      <p className="mt-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+        {v.overdueLabel ?? 'since anything was recorded'}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * With no `dueAt` there is no commitment to have missed.
+ *
+ * So there is nothing to split the track on: one stretch, the date it started,
+ * and how long it has run. Coverage neglect is the case — nothing has happened
+ * since a date, and nobody ever set a deadline. Drawing the amber "due" cap on
+ * it would assert a promise nobody made, which is the rule `target_compare`
+ * already follows when it refuses to draw a target that does not exist.
+ *
+ * The same primitive rather than a second one: an aging strip and a deadline
+ * strip differ by whether a marker exists, which is a property of the data.
+ */
+function Timeline({ v, now }: { v: Extract<Visual, { kind: 'timeline' }>; now: number }) {
+  const dueAt = v.dueAt
+  if (!dueAt) return <Elapsed v={v} now={now} />
+  const t0 = new Date(v.statedAt).getTime()
+  const t1 = new Date(dueAt).getTime()
   if (!Number.isFinite(t0) || !Number.isFinite(t1) || t1 <= t0) return null
   const t2 = Math.max(now, t1 + 1)
 
@@ -242,10 +277,10 @@ function Timeline({ v, now }: { v: Extract<Visual, { kind: 'timeline' }>; now: n
       </div>
       <div className="mt-1 flex items-baseline justify-between">
         <Cap>Set {shortDate(v.statedAt)}</Cap>
-        <Cap className="text-amber-600 dark:text-amber-400">Due {shortDate(v.dueAt)}</Cap>
+        <Cap className="text-amber-600 dark:text-amber-400">Due {shortDate(dueAt)}</Cap>
       </div>
       <p className="mt-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
-        +{elapsed(over)} overdue
+        +{elapsed(over)} {v.overdueLabel ?? 'overdue'}
       </p>
     </div>
   )
@@ -407,6 +442,32 @@ function QuoteVisual({ v }: { v: Extract<Visual, { kind: 'quote' }> }) {
   )
 }
 
+/**
+ * The producer's own question, as the object.
+ *
+ * Deliberately NOT the quote treatment. A quote is somebody's stated view and
+ * is set in italics as a thing that was said; this is a thing being ASKED, and
+ * it reads as an open question — upright, with the mark of an unanswered
+ * prompt beside it. The difference matters on a page carrying both.
+ *
+ * No answer buttons here. The card's action layer already owns what the reader
+ * can do, and a second set of affordances inside the picture would be a fourth
+ * place to click on a tile that has three.
+ */
+function QuestionVisual({ v }: { v: Extract<Visual, { kind: 'question' }> }) {
+  return (
+    <div data-explore-visual="question" className="mt-2">
+      <HelpCircle className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500" aria-hidden />
+      <p
+        data-question-text
+        className="mt-1 line-clamp-3 text-[14px] font-semibold leading-[1.35] text-gray-800 dark:text-gray-100"
+      >
+        {v.text}
+      </p>
+    </div>
+  )
+}
+
 interface ExploreVisualProps {
   visual: Visual
   /** The sparkline, injected — this component never reaches for price data. */
@@ -432,6 +493,7 @@ export function ExploreVisualBlock({ visual, sparkline, now }: ExploreVisualProp
     case 'last_look': return <LastLook v={visual} />
     case 'workflow': return <Workflow v={visual} />
     case 'quote': return <QuoteVisual v={visual} />
+    case 'question': return <QuestionVisual v={visual} />
     case 'price_trend': return sparkline ? <div data-explore-visual="price_trend">{sparkline}</div> : null
     // Typography carries it. Deliberately renders nothing rather than a box.
     case 'none': return null

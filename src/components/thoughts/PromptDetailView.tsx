@@ -74,6 +74,14 @@ function pluralizeResponseCount(n: number): string {
 interface PromptDetailViewProps {
   promptId: string
   onClose?: () => void
+  /**
+   * Arrive with the response composer open.
+   *
+   * Set by the Ideas feed's "Respond" progression, which has to land somewhere
+   * more specific than the prompt's read view — otherwise it is a second way
+   * to do what clicking the tile already does.
+   */
+  startComposing?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +113,7 @@ const STATUS_CONFIG: Record<PromptStatus, { label: string; icon: typeof Clock; c
 // Component
 // ---------------------------------------------------------------------------
 
-export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
+export function PromptDetailView({ promptId, onClose, startComposing = false }: PromptDetailViewProps) {
   const { user } = useAuth()
   const { success } = useToast()
   const queryClient = useQueryClient()
@@ -421,6 +429,7 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
             Responses
           </h4>
           <IdeaComments
+          startComposing={startComposing}
             itemId={promptId}
             itemType="quick_thought"
             maxVisible={10}

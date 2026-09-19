@@ -267,10 +267,10 @@ export function OpsAIUsagePage() {
   const recent = useMemo(() => rows.slice(0, 50), [rows])
 
   return (
-    <div className="p-6 max-w-[1400px] mx-auto space-y-6">
+    <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start md:items-center justify-between gap-3">
+        <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <Sparkles className="w-5 h-5 text-purple-500" />
             <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">AI Usage</h1>
@@ -279,7 +279,7 @@ export function OpsAIUsagePage() {
         </div>
         <button
           onClick={() => refetch()}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800 shrink-0"
         >
           <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
           Refresh
@@ -287,7 +287,7 @@ export function OpsAIUsagePage() {
       </div>
 
       {/* KPI tiles */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiTile
           icon={DollarSign}
           iconClass="text-emerald-600 bg-emerald-50"
@@ -318,11 +318,13 @@ export function OpsAIUsagePage() {
         />
       </div>
 
-      {/* Daily spark + by-purpose/by-model side-by-side */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* Daily spark + by-purpose/by-model side-by-side. Stacked on a phone:
+          a bare `col-span-2` inside one column adds an implicit second track
+          and pushes the page sideways. */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Daily cost chart (2 cols) */}
-        <div className="col-span-2 bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between mb-3">
+        <div className="md:col-span-2 bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-3">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Daily cost · last 14 days</h3>
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {fmtUsd(daily.reduce((s, d) => s + d.cost, 0))} total · {daily.reduce((s, d) => s + d.requests, 0).toLocaleString()} requests
@@ -379,9 +381,9 @@ export function OpsAIUsagePage() {
       </div>
 
       {/* Top users + by model */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Top users (2 cols) */}
-        <div className="col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+        <div className="md:col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Top users · month-to-date</h3>
             <span className="text-xs text-gray-500 dark:text-gray-400">{topUsersMtd.length} with activity</span>
@@ -389,7 +391,8 @@ export function OpsAIUsagePage() {
           {topUsersMtd.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-400">No usage this month yet.</div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="mobile-scroll-x">
+            <table className="w-full min-w-[480px] md:min-w-0 text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide dark:text-gray-400 dark:bg-gray-900">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">User</th>
@@ -420,6 +423,7 @@ export function OpsAIUsagePage() {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 
@@ -452,10 +456,10 @@ export function OpsAIUsagePage() {
       </div>
 
       {/* By organization + by team */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* By organization (2 cols) */}
-        <div className="col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+        <div className="md:col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-1.5">
               <Building2 className="w-4 h-4 text-gray-400" />
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Cost by organization · MTD</h3>
@@ -465,7 +469,8 @@ export function OpsAIUsagePage() {
           {byOrgMtd.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-400">No usage this month yet.</div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="mobile-scroll-x">
+            <table className="w-full min-w-[520px] md:min-w-0 text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide dark:text-gray-400 dark:bg-gray-900">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">Organization</th>
@@ -496,6 +501,7 @@ export function OpsAIUsagePage() {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 
@@ -536,7 +542,10 @@ export function OpsAIUsagePage() {
         {recent.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-400">No AI requests logged yet.</div>
         ) : (
-          <table className="w-full text-xs">
+          // A nine-column request log stays a table; on a phone it scrolls
+          // sideways inside its card instead of widening the page.
+          <div className="mobile-scroll-x">
+          <table className="w-full min-w-[760px] md:min-w-0 text-xs">
             <thead className="bg-gray-50 text-[10px] text-gray-500 uppercase tracking-wide dark:text-gray-400 dark:bg-gray-900">
               <tr>
                 <th className="text-left px-4 py-2 font-medium">When</th>
@@ -575,6 +584,7 @@ export function OpsAIUsagePage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

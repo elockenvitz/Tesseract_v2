@@ -8,11 +8,15 @@
  * that every route out reuses a seam another stage already owns.
  */
 
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 import type { DecisionRecord } from '../../lib/desktop-decisions'
+import { NO_OUTCOME_FACTS, type OutcomeFacts } from '../../lib/desktop-decisions/classes'
+import type { BatchPnl } from '../../lib/outcomes/batch-groups'
 
 const DAY = 86_400_000
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
@@ -40,6 +44,11 @@ const priceSeries = (days: number, rising: boolean) =>
   }))
 
 let decisions: DecisionRecord[] = []
+/** What Outcomes knows, keyed by the decision's idea id. */
+let outcomeFacts: Record<string, OutcomeFacts> = {}
+let batchPnls: Record<string, BatchPnl> = {}
+/** Whether the pilot has ended, for the seeded-record rule. */
+const pilot = vi.hoisted(() => ({ graduated: false }))
 let detail: any = {}
 let scanError: Error | null = null
 const detailRequestedFor: string[] = []
@@ -49,6 +58,19 @@ vi.mock('../../hooks/useDesktopDecisions', async importOriginal => {
   return {
     ...actual,
     useDecisionScan: () => ({ decisions, isLoading: false, error: scanError }),
+    /*
+     * What Outcomes knows, supplied per test.
+     *
+     * The real hook reads the shared `outcomes_payload`; this suite is about
+     * which act is on screen and how it is classified, so the facts are given
+     * rather than fetched. Default: nothing known, which is the honest state
+     * for a decision Outcomes has no row for.
+     */
+    useDecisionOutcomeFacts: () => ({
+      factsFor: (d: DecisionRecord) => outcomeFacts[d.ideaId ?? ''] ?? NO_OUTCOME_FACTS,
+      pnlForBatch: (id: string | null | undefined) => (id ? batchPnls[id] ?? null : null),
+      isLoading: false,
+    }),
     useDecisionDetail: (d: DecisionRecord | null) => {
       if (d) detailRequestedFor.push(d.id)
       return { detail: d ? detail : undefined, isLoading: false }
@@ -57,6 +79,41 @@ vi.mock('../../hooks/useDesktopDecisions', async importOriginal => {
 })
 
 const openEngagement = vi.fn()
+/*
+ * Graduation, off by default.
+ *
+ * The lens asks the pilot whether it has ended, to decide whether a seeded
+ * request is still work (lib/pilot/seed-visibility). That rule has its own
+ * cases below; everywhere else this suite is about genuine records.
+ */
+/*
+ * The tile's price column reads `price_history_cache` through a real
+ * `useQuery`, and this suite renders without a `QueryClientProvider` on
+ * purpose -- it mocks its data hooks instead. Left unmocked, every test in
+ * this file dies on "No QueryClient set" inside `PriceColumn`.
+ *
+ * Per test, because the closes are no longer only the chart's business: the
+ * tile's headline percentage is measured from them too, and whether a record
+ * earns the hero slot depends on whether there is a move to draw. A test
+ * about sizing has to be able to say "this name has no stored closes".
+ *
+ * `A_YEAR_RISING` is the default -- dated closes reaching back a year, so the
+ * reaches-the-anchor guard is satisfied and a real series renders.
+ */
+const A_YEAR_RISING = Array.from({ length: 300 }, (_, i) => ({
+  date: new Date(Date.now() - (299 - i) * 86_400_000),
+  value: 100 + i * 0.08,
+}))
+let tileCloses: { date: Date; value: number }[] = A_YEAR_RISING
+
+vi.mock('../../hooks/useDecisionTileCloses', () => ({
+  useDecisionTileCloses: () => ({ data: tileCloses, isLoading: false }),
+}))
+
+vi.mock('../../hooks/usePilotProgress', () => ({
+  usePilotProgress: () => ({ hasGraduated: pilot.graduated, cachedHasGraduated: false }),
+}))
+
 vi.mock('../../lib/engagement', async importOriginal => {
   const actual = await importOriginal<typeof import('../../lib/engagement')>()
   return {
@@ -82,6 +139,10 @@ const onTyped = (e: Event) => typedEvents.push(e as CustomEvent)
 
 beforeEach(() => {
   decisions = []
+  outcomeFacts = {}
+  batchPnls = {}
+  tileCloses = A_YEAR_RISING
+  pilot.graduated = false
   detail = {}
   scanError = null
   detailRequestedFor.length = 0
@@ -203,6 +264,295 @@ describe('it opens as a queue of work, never auto-opening one', () => {
   })
 })
 
+/*
+ * ── Small tiles get an object of their own ───────────────────────────────
+ *
+ * Below `large` this lens's visual ladder ended in `null`, so a committed
+ * decision with no gaps in its record, no intervals to draw and no sizing
+ * question -- which is most of them -- rendered as text over text. A run of
+ * those is what reads as "no variety among the smaller cards", and the
+ * repetition was real: the tiles differed only in their words, and the
+ * generated summary sentence that filled the space had the same shape on
+ * every card.
+ */
+describe('the smaller tiles draw a price, not another paragraph', () => {
+  const small = (over: Partial<DecisionRecord> = {}) => decision({
+    symbol: 'MSFT', status: 'accepted', decidedAt: daysAgo(20),
+    decisionNote: 'Added on the cloud reacceleration.',
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(20), executedByName: 'Eric' },
+    ...over,
+  })
+
+  /** Four records, so the newest takes hero/large and the rest fall below. */
+  const gallery = () => {
+    decisions = [0, 1, 2, 3, 4].map(i => small({
+      id: `d${i}`, ideaId: `tq-${i}`, symbol: ['MSFT', 'AAPL', 'NVDA', 'AMZN', 'META'][i],
+      decidedAt: daysAgo(10 + i * 5),
+      execution: { id: `at-${i}`, status: 'complete', completedAt: daysAgo(10 + i * 5), executedByName: 'Eric' },
+    }))
+  }
+
+  it('gives every tile below the lead a visual', () => {
+    gallery()
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    const smallOnes = tiles.filter(t => {
+      const s = t.getAttribute('data-size')
+      return s === 'medium' || s === 'compact'
+    })
+    expect(smallOnes.length).toBeGreaterThan(0)
+    for (const t of smallOnes) {
+      expect(within(t).getByTestId('tile-sparkline')).toBeInTheDocument()
+    }
+  })
+
+  it('stops printing a sentence that restates the tile', () => {
+    // `summaryOf` produced "Eric accepted a trim in MSFT at 2.0%" directly
+    // under the eyebrow, ticker, stance and figures already carrying all four.
+    decisions = [small({ decisionNote: null, contextNote: null })]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    expect(tile.textContent).not.toMatch(/accepted a .* in MSFT/i)
+  })
+
+  it('draws nothing where the name has no stored closes', () => {
+    // COIN, CLOV, CROX, GH, LRCX, PARA and TGT hold zero rows today. An
+    // invented line would be worse than an absent one.
+    tileCloses = []
+    gallery()
+    render(<DecisionsWorkspace />)
+    expect(screen.queryAllByTestId('tile-sparkline')).toHaveLength(0)
+  })
+
+  it('does not claim a since-the-fill window it does not have', () => {
+    // Closes that start well after the fill: there is a line worth drawing,
+    // but it is not a move since the fill, and the caption must not say so.
+    tileCloses = [
+      { date: new Date(Date.now() - 2 * DAY), value: 100 },
+      { date: new Date(Date.now() - 1 * DAY), value: 110 },
+    ]
+    gallery()
+    render(<DecisionsWorkspace />)
+    for (const s of screen.getAllByTestId('tile-sparkline')) {
+      expect(s).toHaveAttribute('data-reaches', 'false')
+      expect(s).toHaveTextContent(/price history/i)
+      expect(s.textContent).not.toMatch(/since the fill/i)
+    }
+  })
+})
+
+/*
+ * ── The reader picks the horizon ─────────────────────────────────────────
+ *
+ * The chart had exactly one window -- since the fill, or the whole stored
+ * history captioned "Price over available history". That caption was the only
+ * thing the reader could do about it, and it reads as an apology for a missing
+ * control rather than as a choice, because it was one.
+ *
+ * The ladder is shared with the mobile price chart through
+ * `lib/market-data/price-ranges`, so a chip labelled 3M selects the same 91
+ * days in both places.
+ */
+describe('the price chart offers horizons', () => {
+  const filled = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'h1', ideaId: 'tq-h1', symbol: 'LLY', status: 'accepted',
+    decidedAt: daysAgo(40), decisionNote: 'Sized into the franchise.',
+    execution: {
+      id: 'at-1', status: 'complete', completedAt: daysAgo(40), executedByName: 'Eric',
+      targetWeight: 6.0, deltaWeight: 0.5, notional: 100000,
+    },
+    ...over,
+  })
+
+  it('defaults to the window since the fill, and offers the ladder', () => {
+    decisions = [filled()]
+    render(<DecisionsWorkspace />)
+    const ranges = screen.getByTestId('price-ranges')
+    expect(ranges).toHaveAttribute('data-range', 'since')
+    expect(within(ranges).getByRole('button', { name: 'Since fill' })).toBeInTheDocument()
+    // The shared ladder, not a second list declared here. The fixture holds
+    // 300 closes -- a 299-day span -- so 1Y is correctly absent: see the
+    // case below about never offering a window the history cannot fill.
+    for (const key of ['5D', '1M', '3M', '6M', 'ALL']) {
+      expect(within(ranges).getByRole('button', { name: key })).toBeInTheDocument()
+    }
+    expect(within(ranges).queryByRole('button', { name: '1Y' })).toBeNull()
+  })
+
+  it('changes the window and the caption when a horizon is picked', async () => {
+    const user = userEvent.setup()
+    decisions = [filled()]
+    render(<DecisionsWorkspace />)
+    await user.click(within(screen.getByTestId('price-ranges')).getByRole('button', { name: '3M' }))
+    expect(screen.getByTestId('price-ranges')).toHaveAttribute('data-range', '3M')
+    expect(screen.getByTestId('price-since-fill')).toHaveTextContent(/Price, last 3M/i)
+  })
+
+  it('does not open the record when a horizon is pressed', async () => {
+    const user = userEvent.setup()
+    decisions = [filled()]
+    render(<DecisionsWorkspace />)
+    await user.click(within(screen.getByTestId('price-ranges')).getByRole('button', { name: '6M' }))
+    // The shell treats an unhandled click as "open this", so a control inside
+    // it has to declare itself one.
+    expect(detailRequestedFor).toHaveLength(0)
+  })
+
+  it('never offers a window the stored history cannot fill', () => {
+    // Ninety days held: 1Y, 5Y and ALL would draw three identical lines, which
+    // reads as a broken control rather than as a short history.
+    tileCloses = Array.from({ length: 90 }, (_, i) => ({
+      date: new Date(Date.now() - (89 - i) * DAY),
+      value: 400 + i,
+    }))
+    decisions = [filled()]
+    render(<DecisionsWorkspace />)
+    const ranges = screen.getByTestId('price-ranges')
+    expect(within(ranges).queryByRole('button', { name: '1Y' })).toBeNull()
+    expect(within(ranges).queryByRole('button', { name: '5Y' })).toBeNull()
+    // Everything held is always a meaningful choice, whatever its length.
+    expect(within(ranges).getByRole('button', { name: 'ALL' })).toBeInTheDocument()
+  })
+
+  /* No `Since fill` chip where the closes cannot span the fill: a control
+     that selects a window the data does not have is worse than its absence. */
+  it('offers no since-the-fill chip where there is no such window', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 1 * DAY), value: 1150 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    decisions = [filled({
+      decidedAt: new Date().toISOString(),
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: new Date().toISOString(),
+        executedByName: 'Eric', targetWeight: 6.0, deltaWeight: 0.5, notional: 100000,
+      },
+    })]
+    render(<DecisionsWorkspace />)
+    const ranges = screen.getByTestId('price-ranges')
+    expect(within(ranges).queryByRole('button', { name: 'Since fill' })).toBeNull()
+    // It falls back to everything held, and says so in the caption.
+    expect(ranges).toHaveAttribute('data-range', 'ALL')
+  })
+})
+
+/*
+ * ── Why there is no move, said in the reader's terms ─────────────────────
+ *
+ * The chart used to explain itself with "Stored closes do not cover the
+ * Filled, so this is not a since-Filled move" -- unreadable, and in the
+ * COMMON case untrue. Two opposite situations land on that branch:
+ *
+ *   - the trade filled today, so there are not yet two closes after it. The
+ *     closes cover the fill perfectly well.
+ *   - the cached history genuinely begins after the fill.
+ *
+ * Telling a PM we lack prices covering a trade that filled this morning is
+ * wrong in a way they can check, which is the fastest way to lose them.
+ */
+describe('the chart explains a missing move without jargon', () => {
+  const filled = (at: string) => decision({
+    id: 'p1', ideaId: 'tq-p1', symbol: 'LLY', status: 'accepted',
+    decidedAt: at, decisionNote: 'Sized into the obesity franchise.',
+    execution: { id: 'at-1', status: 'complete', completedAt: at, executedByName: 'Eric' },
+  })
+
+  /*
+   * The chart no longer explains its window in prose at all.
+   *
+   * The paragraph said, most often, "this filled on Sep 16, so there is no
+   * price move to show yet. The line is the last 395 days." -- a recent fill
+   * and a year-long line named in the same breath, which is the opposite of
+   * clarifying. The day count beside the caption said "395d" about the same
+   * fill and invited the same wrong conclusion.
+   *
+   * Both went, because the tile now ANSWERS the question instead of
+   * apologising for it: the headline measures from the close on the fill day
+   * where no window exists, and the chip row lets the reader pick any other
+   * horizon. What the window is, the chips say; where it starts and ends, the
+   * date axis says.
+   */
+  it('explains the window with controls and an axis, not a paragraph', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 2 * DAY), value: 1140 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1150 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    decisions = [filled(new Date().toISOString())]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+
+    expect(screen.queryByTestId('price-absence-reason')).toBeNull()
+    expect(tile.textContent).not.toMatch(/no price move to show yet/i)
+    // The day count that said "395d" about a fill from two days ago.
+    expect(tile.textContent).not.toMatch(/\d+d of history/i)
+    expect(tile.textContent).not.toMatch(/\d+d since the/i)
+
+    // The controls and the axis carry it instead.
+    expect(screen.getByTestId('price-ranges')).toBeInTheDocument()
+    expect(screen.getByTestId('price-axes')).toBeInTheDocument()
+  })
+
+  /*
+   * ── A fill on the newest close still has a percentage ────────────────────
+   *
+   * A trade filled ON the latest close has one close at or after its fill, so
+   * there is no window -- and the tile used to show nothing, which reads as
+   * broken rather than as new. But a percentage needs two PRICES, not two
+   * chart points, and there are two: the close the day it filled, and the
+   * newest close. Where they are the same row the answer is 0.00%, which is
+   * the truth and worth saying. "Nothing here" is not the same statement as
+   * "it has not moved".
+   */
+  it('says it has not moved, rather than saying nothing', () => {
+    /*
+     * The live LLY shape: filled ON the newest close we hold, so exactly one
+     * close sits at or after the fill and there is no window. The fill-day
+     * close and the newest close are then the SAME row, so the honest answer
+     * is 0.00% -- and saying it is not the same as leaving the slot empty.
+     */
+    tileCloses = [
+      { date: new Date(Date.now() - 1 * DAY), value: 1150 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    decisions = [filled(new Date().toISOString())]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    expect(within(tile).getByTestId('decision-lead-move')).toHaveTextContent('0.00%')
+    // And it says which price it measured from, because a 0.00% measured
+    // from somewhere the reader did not expect is worse than a caption.
+    expect(within(tile).getByTestId('decision-move-proxy'))
+      .toHaveTextContent(/close on the fill day/i)
+  })
+
+  it('prefers the closes window, with no proxy caption, where one exists', () => {
+    // Two closes after the fill: a real window, which is what the chart
+    // beside it draws, so the headline must use the same rows.
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: 1000 },
+      { date: new Date(Date.now() - 2 * DAY), value: 1100 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1120 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    decisions = [filled(daysAgo(2))]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // 1100 -> 1152.44 is +4.77%, measured from the fill itself.
+    expect(within(tile).getByTestId('decision-lead-move')).toHaveTextContent('+4.77%')
+    expect(within(tile).queryByTestId('decision-move-proxy')).toBeNull()
+  })
+
+  it('never phrases the anchor as a verb in the caption', () => {
+    decisions = [filled(daysAgo(30))]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    expect(tile).toHaveTextContent(/since the fill/i)
+    // "Price since Filled" / "since-Filled" -- the old phrasings.
+    expect(tile.textContent).not.toMatch(/since Filled/)
+    expect(tile.textContent).not.toMatch(/since-Filled/)
+  })
+})
+
 /* ---------------------------------------------------------------- metrics */
 
 describe('the header counts say what they mean', () => {
@@ -231,6 +581,36 @@ describe('the header counts say what they mean', () => {
     ]
     render(<DecisionsWorkspace />)
     expect(metric('decision rationales')).toHaveTextContent('0')
+  })
+
+  it('never counts Trade Lab provenance as a rationale, and queues it for one', () => {
+    decisions = [
+      decision({ id: 'a', decisionNote: 'Accepted via Trade Lab Execute' }),
+      decision({ id: 'b', decisionNote: 'Self-proposed via Trade Lab Execute' }),
+    ]
+    render(<DecisionsWorkspace />)
+    expect(metric('decision rationales')).toHaveTextContent('0')
+    expect(screen.getAllByTestId('decision-tile')).toHaveLength(2)
+  })
+
+  it('counts a linked Trade Lab trade as executed, with its batch rationale', () => {
+    decisions = [
+      decision({
+        id: 'pilot',
+        decisionNote: 'Self-proposed via Trade Lab Execute',
+        execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(1), executedByName: 'Pilot' },
+        batch: { id: 'b-1', name: '1 buy', description: 'Adding on weakness ahead of the print.' },
+      }),
+      // Something still open, so the header counts render beside the queue.
+      decision({ id: 'open', symbol: 'MSFT', status: 'pending', decidedAt: null, decidedByName: null, decidedBy: null }),
+    ]
+    render(<DecisionsWorkspace />)
+    expect(metric('executed')).toHaveTextContent('1')
+    expect(metric('decision rationale')).toHaveTextContent('1')
+    // Decided and explained: it does not queue, so no "Never executed" card.
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles).toHaveLength(1)
+    expect(tiles[0]).not.toHaveTextContent('Never executed')
   })
 
   it('counts resolved and executed separately', () => {
@@ -428,6 +808,764 @@ describe('the index is a queue of what still wants something', () => {
   })
 })
 
+/* --------------------------------------------------- what the lens holds */
+
+describe('three classes, ranked', () => {
+  const facts = (over: Partial<OutcomeFacts> = {}): OutcomeFacts => ({
+    ...NO_OUTCOME_FACTS, executed: true, ...over,
+  })
+  /** Committed, explained, executed and reviewed: the record. */
+  const committed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'recent-1', ideaId: 'tq-recent', symbol: 'MSFT', status: 'accepted',
+    decidedAt: daysAgo(2), requestedAt: daysAgo(3),
+    decisionNote: null, batch: { id: 'b-msft', name: '1 buy · 09/15/2026', description: 'test' },
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric Lockenvitz' },
+    ...over,
+  })
+
+  it('shows a committed decision instead of an empty lens', () => {
+    // Bogey Cap on graduation day: one decision, made, executed and explained
+    // by its batch. The old lens rendered "all 1 record is complete" over an
+    // empty page, which is not an answer to "what did we decide?".
+    decisions = [committed()]
+    outcomeFacts = { 'tq-recent': facts({ reviewed: true, sincePct: -0.8, pnl: -670, verdictLabel: 'Working' }) }
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles).toHaveLength(1)
+    expect(within(tiles[0]).getByText('MSFT')).toBeInTheDocument()
+    expect(within(tiles[0]).getByTestId('decision-reason')).toHaveTextContent('Committed')
+    /*
+     * What the record actually knows, on the one strip that now carries it.
+     *
+     * This previously asserted the word "Executed", which this fixture never
+     * earned: it carries no `execution` object at all, so the old assertion
+     * was matching that word somewhere else on the card. The strip states the
+     * ask, the dollar proxy and the age -- which is the point of the test:
+     * a committed decision renders as a record instead of an empty lens.
+     */
+    const figures = within(tiles[0]).getByTestId('decision-figures')
+    expect(figures).toHaveTextContent(/asked for/i)
+    // P&L is a LEAD figure now, at the same weight as the percentage.
+    expect(within(tiles[0]).getByTestId('decision-lead-pnl')).toHaveTextContent('P&L')
+  })
+
+  it('ranks work above the record, whatever the record carries', () => {
+    decisions = [
+      committed(),
+      // Executed and explained, but nobody reviewed how it went: a revisit,
+      // which must still rank under anything that owes an answer or a reason.
+      committed({
+        id: 'revisit', ideaId: 'tq-revisit', symbol: 'CCC',
+        batch: null, decisionNote: 'Trimmed into strength.',
+      }),
+      decision({ id: 'owed', ideaId: 'tq-owed', symbol: 'AAA', decisionNote: null, decidedAt: daysAgo(1) }),
+      decision({
+        id: 'pending', ideaId: 'tq-pending', symbol: 'BBB', status: 'pending',
+        decidedAt: null, decidedBy: null, decidedByName: null, requestedAt: daysAgo(30),
+      }),
+    ]
+    outcomeFacts = {
+      'tq-recent': facts({ reviewed: true }),
+      'tq-revisit': facts({ reviewed: false, verdictLabel: 'Outcome not reviewed' }),
+    }
+    render(<DecisionsWorkspace />)
+    const order = screen.getAllByTestId('decision-tile').map(t => t.textContent)
+    expect(order[0]).toContain('BBB')   // awaiting a decision, waiting longest
+    expect(order[1]).toContain('AAA')   // answered, no reason recorded
+    expect(order[2]).toContain('CCC')   // done, but never looked at again
+    expect(order[3]).toContain('MSFT')  // the record, last
+  })
+
+  it('asks for a revisit when the outcome was never reviewed, or has gone against us', () => {
+    decisions = [committed(), committed({ id: 'r2', ideaId: 'tq-hurt', symbol: 'ORCL', batch: null })]
+    outcomeFacts = {
+      'tq-recent': facts({ reviewed: false, verdictLabel: 'Outcome not reviewed' }),
+      'tq-hurt': facts({ hurting: true, verdictLabel: 'Hurting' }),
+    }
+    // ORCL has no batch, so its own note must explain it.
+    decisions[1] = { ...decisions[1], decisionNote: 'Cut the position after the print.' }
+    render(<DecisionsWorkspace />)
+    const reasons = screen.getAllByTestId('decision-reason').map(e => e.textContent)
+    expect(reasons).toContain('Outcome not reviewed')
+    expect(reasons).toContain('Moving against us')
+  })
+
+  it('treats an approved decision whose execution never completed as work', () => {
+    decisions = [committed({
+      id: 'unconfirmed', ideaId: 'tq-unconfirmed', symbol: 'NKE', decidedAt: daysAgo(200),
+      execution: { id: 'at-9', status: 'pending', completedAt: null, executedByName: null },
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-reason')).toHaveTextContent('Execution unconfirmed')
+  })
+
+  it('does not resurrect an old approval nobody ever executed', () => {
+    decisions = [committed({ id: 'ancient', ideaId: 'tq-ancient', decidedAt: daysAgo(240), execution: null })]
+    render(<DecisionsWorkspace />)
+    expect(screen.queryAllByTestId('decision-tile')).toHaveLength(0)
+  })
+})
+
+describe('what happened, in Outcomes’ own numbers', () => {
+  const committed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', status: 'accepted',
+    decidedAt: daysAgo(2), decisionNote: 'Added on the cloud reacceleration.',
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric Lockenvitz' },
+    ...over,
+  })
+
+  /*
+   * ── The headline is measured from the closes, not from the snapshot ──────
+   *
+   * `facts.sincePct` is `move_since_decision_pct`, computed upstream against
+   * `submission_snapshot.price` -- which inherits the sizing price, and that
+   * price is `baseline?.price || 100` whenever the quote provider fails. So
+   * on a real trade it reported roughly +1050%: LLY filled at 1152.44 and the
+   * arithmetic was done against 100.
+   *
+   * The tile now measures the same dated closes the chart beside it draws.
+   * That is the invariant these cases assert: the number and the line are the
+   * same arithmetic on the same rows, so the reader can check one against the
+   * other.
+   */
+  it('measures the headline from the closes, not from the snapshot price', () => {
+    decisions = [committed()]
+    // A fill two days back, and closes that rose 10% over those two days.
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: 50 },
+      { date: new Date(Date.now() - 2 * DAY), value: 100 },
+      { date: new Date(Date.now() - 1 * DAY), value: 105 },
+      { date: new Date(Date.now()), value: 110 },
+    ]
+    outcomeFacts = {
+      'tq-c1': {
+        ...NO_OUTCOME_FACTS, executed: true,
+        // The corrupt figure. It must not reach the screen.
+        sincePct: 1052.4, sinceBasis: 'decision', sinceDated: true,
+        pnl: -670, verdictLabel: 'Outcome not reviewed',
+      },
+    }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // 100 -> 110 across the window that starts at the fill.
+    expect(within(tile).getByTestId('decision-lead-move')).toHaveTextContent('+10.00%')
+    expect(tile.textContent).not.toContain('1052')
+    // Named by the date the window starts from, which is the fill.
+    expect(tile).toHaveTextContent(/since it filled/i)
+    expect(within(tile).getByTestId('decision-lead-pnl')).toHaveTextContent('−$670')
+    // The class already says the outcome is unreviewed; the strip says which
+    // record carries a reason, so the two are not read as one contradiction.
+    expect(screen.getByTestId('decision-reason')).toHaveTextContent('Outcome not reviewed')
+    expect(within(tile).getByTestId('decision-figures')).toHaveTextContent('2d ago')
+    expect(tile.textContent).not.toContain('Needs rationale')
+    // The reasoning itself, not a note that some exists.
+    expect(tile).toHaveTextContent('Added on the cloud reacceleration.')
+    expect(tile.textContent).not.toContain('No decision reason')
+  })
+
+  /*
+   * ── The move has to be trustworthy to be the biggest thing on the card ───
+   *
+   * `lib/outcomes/current-price` falls back to `assets.current_price`, which
+   * carries no timestamp anywhere in the schema and on this project was last
+   * written a month before the closes beside it. A percentage measured to it
+   * is unfalsifiable, and it is how MSFT's real +0.8% was once reported as
+   * -23.1%. So an undated move does not get to lead.
+   */
+  it('refuses to lead with a move measured to an undated price', () => {
+    decisions = [committed()]
+    outcomeFacts = {
+      'tq-c1': {
+        ...NO_OUTCOME_FACTS, executed: true,
+        sincePct: -23.1, sinceBasis: 'decision', sinceDated: false,
+        pnl: -670, verdictLabel: 'Outcome not reviewed',
+      },
+    }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // No giant figure, and no claim about what it measures.
+    expect(tile.textContent).not.toContain('since the decision')
+    expect(tile.textContent).not.toContain('-23.1')
+    // The rest of the record still reads: suppressing one figure is not
+    // blanking the card.
+    expect(within(tile).getByTestId('decision-lead-pnl')).toHaveTextContent('−$670')
+  })
+
+  /* A move with no captured decision price is the move since the FILL. That
+     is a real fact against a later date, so it is labelled, not hidden. */
+  it('labels a move measured from the fill as such', () => {
+    decisions = [committed()]
+    outcomeFacts = {
+      'tq-c1': {
+        ...NO_OUTCOME_FACTS, executed: true,
+        sincePct: 1.4, sinceBasis: 'execution', sinceDated: true,
+        pnl: 120, verdictLabel: 'Outcome not reviewed',
+      },
+    }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // Sentence-cased as a caption under the figure now.
+    expect(tile).toHaveTextContent(/since it filled/i)
+    expect(tile.textContent).not.toMatch(/since the decision/i)
+  })
+
+  it('says nothing where Outcomes knows nothing', () => {
+    decisions = [committed({ ideaId: 'tq-unknown' })]
+    render(<DecisionsWorkspace />)
+    // Nothing is invented: no move, no dollars, and no lead figure claiming
+    // an outcome Outcomes has no row for.
+    const figures = screen.getByTestId('decision-figures')
+    expect(figures.textContent).not.toMatch(/since|P&L/)
+    expect(screen.getByTestId('decision-tile').textContent).not.toContain('since the decision')
+  })
+
+  it('gives a batch its own dollars and never a batch return percentage', () => {
+    const b = { id: 'b-2', name: '3 trades · 09/15/2026', description: 'Rotated into staples.' }
+    decisions = [
+      committed({ id: 'l1', ideaId: 'tq-l1', symbol: 'AAA', batch: b, decisionNote: null }),
+      committed({ id: 'l2', ideaId: 'tq-l2', symbol: 'BBB', batch: b, decisionNote: null }),
+    ]
+    outcomeFacts = {
+      'tq-l1': { ...NO_OUTCOME_FACTS, executed: true, sincePct: 4.2, pnl: 1200, verdictLabel: 'Working' },
+      'tq-l2': { ...NO_OUTCOME_FACTS, executed: true, sincePct: -1.1, pnl: -300, verdictLabel: 'Working' },
+    }
+    batchPnls = { 'b-2': { kind: 'total', value: 900 } }
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles).toHaveLength(1)
+    // The batch is the container; the legs stay underneath it.
+    expect(within(tiles[0]).getByTestId('batch-legs')).toHaveTextContent('AAA')
+    expect(within(tiles[0]).getByTestId('batch-legs')).toHaveTextContent('BBB')
+    const strip = within(tiles[0]).getByTestId('decision-figures')
+    expect(strip).toHaveTextContent('+$900')
+    // No batch return percentage, ever: a batch mixes names and sizes.
+    expect(strip.textContent).not.toMatch(/% since/)
+    expect(tiles[0].textContent).not.toContain('since the decision')
+  })
+})
+
+describe('the card answers what we decided and what happened', () => {
+  const executed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', companyName: 'Microsoft', status: 'accepted',
+    portfolioName: 'Tech & Consumer Growth', decidedAt: daysAgo(2),
+    sizingWeight: 6.4, baselineWeight: 6.1, decisionNote: 'Added on the cloud reacceleration.',
+    batch: { id: 'b-1', name: '1 buy · 09/15/2026', description: null },
+    execution: {
+      id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric',
+      targetWeight: 6.39, deltaWeight: 0.25, notional: 84186.48,
+    },
+    ...over,
+  })
+
+  it('leads with the trade, then what was committed, then the reasoning', () => {
+    decisions = [executed()]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, sincePct: -0.8, pnl: -670 } }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // The ticker is the identity; a one-trade batch's name is context, not a title.
+    expect(within(tile).getByText('MSFT')).toBeInTheDocument()
+    // The book and the act it was committed in, each said once: the date is
+    // in the eyebrow and the people are in the footer.
+    const context = within(tile).getByTestId('decision-context').textContent ?? ''
+    expect(context).toContain('Tech & Consumer Growth')
+    /* The batch's own auto-generated name is not context for the trade: on a
+       batch called "testing" this line read "committed in testing". The batch
+       is named in its own block below; this line carries the book. */
+    expect(context).not.toContain('committed in')
+    expect(tile.textContent!.match(/Tech & Consumer Growth/g)).toHaveLength(1)
+    // What was actually committed, in the trade's own recorded figures, in
+    // the same metric strip the other lenses use.
+    /*
+     * Captioned, two decimals, and each unit named.
+     *
+     * "6.4% target" and "+0.25% change" put a WEIGHT and a DIFFERENCE of
+     * weights in the same unit: the change is percentage points, not a
+     * percent of anything. And one decimal on a portfolio weight hides the
+     * distinction between 6.35 and 6.44.
+     */
+    const figures = within(tile).getByTestId('decision-figures')
+    expect(figures).toHaveTextContent('Target weight')
+    expect(figures).toHaveTextContent('6.39%')
+    expect(figures).toHaveTextContent('Trade')
+    expect(figures).toHaveTextContent('+0.25 pp')
+    expect(figures).toHaveTextContent('Dollar basis')
+    expect(figures).toHaveTextContent('$84K')
+    expect(tile).toHaveTextContent('Added on the cloud reacceleration.')
+  })
+
+  /*
+   * ── A price nobody paid does not get shown ───────────────────────────────
+   *
+   * `accepted_trades.price_at_acceptance` comes from the sizing computation,
+   * whose price is `baseline?.price || 100` in SimulationPage when the quote
+   * provider fails -- and a circuit breaker then keeps the provider off for
+   * the rest of the session, so it is 100 for every trade after the first
+   * failure. Live rows: META 100 against a real close of 682.31, V 100
+   * against 369.93, PLTR 100 against 176.24, LLY 100 against 1152.44.
+   *
+   * The closes are the check. A fill booked at 100 on a day the name closed
+   * at 1152 is not a stale quote, and `notional_value` is
+   * `(weight/100) * total / price` on that same number, so neither figure
+   * describes the trade.
+   */
+  it('withholds a commit price the closes contradict, and says so', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: 1150 },
+      { date: new Date(Date.now() - 2 * DAY), value: 1152.44 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1160 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric',
+        targetWeight: 6.39, deltaWeight: 0.25, notional: 84186.48,
+        priceAtAcceptance: 100, deltaShares: 841,
+      },
+    })]
+    render(<DecisionsWorkspace />)
+    const figures = within(screen.getByTestId('decision-tile')).getByTestId('decision-figures')
+    expect(within(figures).getByTestId('decision-basis-untrusted')).toBeInTheDocument()
+    expect(figures.textContent).not.toContain('$100.00')
+    // The share count and the notional are the same arithmetic on that price.
+    expect(figures.textContent).not.toContain('841')
+    expect(figures.textContent).not.toContain('$84K')
+  })
+
+  /*
+   * ── The real populations, from production ────────────────────────────────
+   *
+   * Checked against the close on each trade's own fill date, `accepted_trades`
+   * holds both of these, and a ratio band cannot tell them apart:
+   *
+   *   fabricated, but inside any sane band:
+   *     PLTR x5   100 vs 132.37   ratio 0.76
+   *     ABT       100 vs  90.62   ratio 1.10
+   *   genuine, but far outside one:
+   *     AVB    177.81 vs  60.71   ratio 2.93
+   *     MNST    77.56 vs  39.12   ratio 1.98
+   *
+   * A half-to-double band passes six fabricated rows and rejects three real
+   * ones. These cases exist so that band can never come back.
+   */
+  const withCommit = (price: number, closeAtFill: number) => {
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: closeAtFill },
+      { date: new Date(Date.now() - 2 * DAY), value: closeAtFill },
+      { date: new Date(Date.now() - 1 * DAY), value: closeAtFill * 1.01 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric',
+        targetWeight: 6.39, deltaWeight: 0.25, notional: 84186.48,
+        priceAtAcceptance: price, deltaShares: 200,
+      },
+    })]
+  }
+  const basisVerdict = () => {
+    const figures = within(screen.getByTestId('decision-tile')).getByTestId('decision-figures')
+    return within(figures).queryByTestId('decision-basis-untrusted') ? 'bad' : 'ok'
+  }
+
+  it('catches the placeholder even where the ratio looks harmless', () => {
+    // PLTR: the literal 100 against a 132.37 close. Ratio 0.76.
+    withCommit(100, 132.37)
+    render(<DecisionsWorkspace />)
+    expect(basisVerdict()).toBe('bad')
+  })
+
+  it('catches the placeholder even where the ratio looks perfect', () => {
+    // ABT: the literal 100 against a 90.62 close. Ratio 1.10.
+    withCommit(100, 90.62)
+    render(<DecisionsWorkspace />)
+    expect(basisVerdict()).toBe('bad')
+  })
+
+  it('keeps a real price sitting beside a bad close', () => {
+    // AVB: a genuine 177.81 fill; the stored close of 60.71 is the wrong
+    // number here, and that is the close's problem, not the trade's.
+    withCommit(177.81, 60.71)
+    render(<DecisionsWorkspace />)
+    expect(basisVerdict()).toBe('ok')
+  })
+
+  it('keeps a real price at twice the stored close', () => {
+    withCommit(77.56, 39.12) // MNST
+    render(<DecisionsWorkspace />)
+    expect(basisVerdict()).toBe('ok')
+  })
+
+  it('accepts a genuine fill that really did land on 100', () => {
+    // 100.00 happens. When it does, the close that day is near 100 too.
+    withCommit(100, 99.4)
+    render(<DecisionsWorkspace />)
+    expect(basisVerdict()).toBe('ok')
+  })
+
+  /*
+   * ── The percentage and the dollars are one finding ───────────────────────
+   *
+   * The tile showed a P&L with no percentage beside it, because the
+   * percentage came only from the closes WINDOW -- which does not exist for a
+   * trade filled today, since there are not yet two closes after it. So the
+   * half that invites checking was missing and the half that reads as
+   * authoritative was not.
+   *
+   * Both are computed from the execution price. Where that price is
+   * fabricated they are both fiction, and neither may appear: the LLY tile
+   * was reporting +$3.54M, because 3,363 shares were booked at a notional of
+   * 336,300 -- $100 a share against a real close of 1,152.44.
+   */
+  it('names the missing P&L rather than leaving a blank beside the move', () => {
+    // The live LLY shape: filled 17 Sep, and 17 Sep is the newest close.
+    tileCloses = [
+      { date: new Date(Date.now() - 2 * DAY), value: 1140 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1150 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: new Date().toISOString(),
+        executedByName: 'Eric', targetWeight: 6.39, deltaWeight: 0.25,
+        notional: 336300, priceAtAcceptance: 100, deltaShares: 3363,
+      },
+    })]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, pnl: 3540000 } }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // The fabricated figure is gone...
+    expect(tile.textContent).not.toContain('3.5M')
+    // ...and the gap is NAMED, because a blank beside a percentage reads as a
+    // bug and the reader cannot tell it from a figure we failed to draw.
+    expect(within(tile).getByTestId('decision-pnl-unavailable'))
+      .toHaveTextContent(/fill price on this trade was not recorded/i)
+  })
+
+  it('shows the percentage beside the P&L on a fill from today', () => {
+    // One close after the fill, so there is no window -- the case that left
+    // the dollars standing alone.
+    tileCloses = [
+      { date: new Date(Date.now() - 1 * DAY), value: 400 },
+      { date: new Date(Date.now()), value: 440 },
+    ]
+    decisions = [executed({
+      decidedAt: new Date().toISOString(),
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: new Date().toISOString(),
+        executedByName: 'Eric', targetWeight: 6.39, deltaWeight: 0.25,
+        notional: 84186.48, priceAtAcceptance: 400, deltaShares: 200,
+      },
+    })]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, pnl: 8000 } }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // Paid 400, now 440: the comparison the desk actually makes.
+    expect(within(tile).getByTestId('decision-lead-move')).toHaveTextContent('+10.00%')
+    expect(within(tile).getByTestId('decision-lead-pnl')).toBeInTheDocument()
+  })
+
+  it('withholds the P&L as well as the percentage when the price is fabricated', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 2 * DAY), value: 1150 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1152.44 },
+      { date: new Date(Date.now()), value: 1152.44 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: daysAgo(1), executedByName: 'Eric',
+        targetWeight: 6.39, deltaWeight: 0.25, notional: 336300,
+        priceAtAcceptance: 100, deltaShares: 3363,
+      },
+    })]
+    // The number the tile was actually printing.
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, pnl: 3540000 } }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    expect(within(tile).queryByTestId('decision-lead-pnl')).toBeNull()
+    expect(tile.textContent).not.toContain('3.5M')
+  })
+
+  /*
+   * A fabricated execution price must not take a true number down with it.
+   *
+   * The percentage from the closes window is closes-to-closes arithmetic and
+   * never touches the execution price, so it stands even where the P&L cannot.
+   * A first pass suppressed both, which threw away a true number because a
+   * different one was false.
+   */
+  it('keeps the closes-derived percentage when only the P&L is fabricated', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: 1000 },
+      { date: new Date(Date.now() - 2 * DAY), value: 1100 },
+      { date: new Date(Date.now() - 1 * DAY), value: 1150 },
+      { date: new Date(Date.now()), value: 1200 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric',
+        targetWeight: 6.39, deltaWeight: 0.25, notional: 336300,
+        priceAtAcceptance: 100, deltaShares: 3363,
+      },
+    })]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, pnl: 3540000 } }
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // 1100 -> 1200 across the window that starts at the fill: true, and the
+    // reader can check it against the line beside it.
+    expect(within(tile).getByTestId('decision-lead-move')).toHaveTextContent('+9.09%')
+    // The dollars still go: they are computed from the fabricated price.
+    expect(within(tile).queryByTestId('decision-lead-pnl')).toBeNull()
+  })
+
+  it('names which price the P&L runs from', () => {
+    decisions = [executed()]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, pnl: -670 } }
+    render(<DecisionsWorkspace />)
+    // "P&L" alone left the reader to guess whether it ran from the decision
+    // or the fill, and those are different numbers.
+    expect(within(screen.getByTestId('decision-tile')).getByTestId('decision-lead-pnl'))
+      .toHaveTextContent(/P&L since fill/i)
+  })
+
+  it('shows a commit price the closes agree with', () => {
+    tileCloses = [
+      { date: new Date(Date.now() - 3 * DAY), value: 418 },
+      { date: new Date(Date.now() - 2 * DAY), value: 420.5 },
+      { date: new Date(Date.now() - 1 * DAY), value: 425 },
+    ]
+    decisions = [executed({
+      execution: {
+        id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric',
+        targetWeight: 6.39, deltaWeight: 0.25, notional: 84186.48,
+        priceAtAcceptance: 419.75, deltaShares: 200,
+      },
+    })]
+    render(<DecisionsWorkspace />)
+    const figures = within(screen.getByTestId('decision-tile')).getByTestId('decision-figures')
+    expect(figures).toHaveTextContent('$419.75')
+    expect(figures).toHaveTextContent('200 sh')
+    expect(figures).toHaveTextContent('$84K')
+    expect(within(figures).queryByTestId('decision-basis-untrusted')).toBeNull()
+  })
+
+  /* Unproven is not disproven: a row that never recorded a price was not
+     written by the failing path, so its dollar basis still stands. */
+  it('keeps the dollar basis where no commit price was recorded at all', () => {
+    decisions = [executed()]
+    render(<DecisionsWorkspace />)
+    const figures = within(screen.getByTestId('decision-tile')).getByTestId('decision-figures')
+    expect(figures).toHaveTextContent('$84K')
+    expect(within(figures).queryByTestId('decision-basis-untrusted')).toBeNull()
+  })
+
+  it('quotes a one-trade batch’s own sentence as that trade’s reason', () => {
+    decisions = [executed({
+      decisionNote: null,
+      batch: { id: 'b-1', name: '1 buy', description: 'Rotated into quality on the print.' },
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-tile')).toHaveTextContent('Rotated into quality on the print.')
+  })
+
+  it('drops the sizing rail where it would only restate a number', () => {
+    decisions = [executed()]
+    render(<DecisionsWorkspace />)
+    // The committed figures are on the line above; the rail drew the ASK,
+    // which on a committed decision is neither current nor target.
+    expect(screen.queryByTestId('decision-size')).not.toBeInTheDocument()
+    /*
+     * A real object takes its place. The price column wins the slot wherever a
+     * dated series reaches the fill -- "what has it done since" is the question
+     * this lens is asked -- and the requested/decided/executed track is the
+     * fallback for records with no series.
+     */
+    expect(screen.getByTestId('decision-price-column')).toBeInTheDocument()
+  })
+
+  it('keeps the rail where it draws a real change: an undecided request', () => {
+    decisions = [executed({
+      id: 'open', ideaId: 'tq-open', status: 'pending', decidedAt: null, decidedBy: null,
+      decidedByName: null, requestedAt: daysAgo(4), execution: null, batch: null,
+    })]
+    render(<DecisionsWorkspace />)
+    // 6.1% held against 6.4% asked for: the question itself, and the one
+    // place the rail says something the lines above cannot.
+    expect(screen.getByTestId('decision-size')).toBeInTheDocument()
+  })
+
+  it('keeps the batch as the container when several trades were committed together', () => {
+    const b = { id: 'b-2', name: '3 trades · 09/15/2026', description: 'Rotated into staples.' }
+    decisions = [
+      executed({ id: 'l1', ideaId: 'tq-l1', symbol: 'AAA', batch: b, decisionNote: null }),
+      executed({ id: 'l2', ideaId: 'tq-l2', symbol: 'BBB', batch: b, decisionNote: null }),
+    ]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    expect(within(tile).getByText('3 trades · 09/15/2026')).toBeInTheDocument()
+    expect(within(tile).getByTestId('batch-legs')).toHaveTextContent('AAA')
+    expect(within(tile).getByTestId('batch-legs')).toHaveTextContent('BBB')
+    expect(within(tile).getByTestId('batch-description')).toHaveTextContent('Rotated into staples.')
+  })
+})
+
+describe('the lens is a field of cards, not a banner', () => {
+  const committed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', status: 'accepted',
+    portfolioName: 'Tech & Consumer Growth', decidedAt: daysAgo(2),
+    decisionNote: 'Added on the cloud reacceleration.',
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric' },
+    ...over,
+  })
+
+  it('names the book inside the card, never as a page-level label', () => {
+    decisions = [committed()]
+    render(<DecisionsWorkspace />)
+    const lens = screen.getByTestId('decisions-lens')
+    const tile = screen.getByTestId('decision-tile')
+    // Said once, and inside the record it belongs to.
+    expect(lens.textContent!.match(/Tech & Consumer Growth/g)).toHaveLength(1)
+    expect(within(tile).getByTestId('decision-context')).toHaveTextContent('Tech & Consumer Growth')
+  })
+
+  it('offers the book as a control only where there is a choice', () => {
+    decisions = [committed()]
+    const one = render(<DecisionsWorkspace />)
+    expect(one.queryByTestId('book-filter')).not.toBeInTheDocument()
+    one.unmount()
+
+    decisions = [committed(), committed({ id: 'c2', ideaId: 'tq-c2', portfolioId: 'p2', portfolioName: 'Global Equity' })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('book-filter')).toBeInTheDocument()
+  })
+
+  it('uses the shared gallery and its rank sizes, not a grid of its own', () => {
+    decisions = [
+      committed(),
+      committed({ id: 'c2', ideaId: 'tq-c2', symbol: 'ORCL' }),
+      committed({ id: 'c3', ideaId: 'tq-c3', symbol: 'NKE' }),
+      committed({ id: 'c4', ideaId: 'tq-c4', symbol: 'CRM' }),
+    ]
+    render(<DecisionsWorkspace />)
+    // The same gallery every other lens renders into...
+    expect(screen.getByTestId('desktop-gallery')).toBeInTheDocument()
+    // ...and the shared mosaic's own sizes, in order.
+    expect(screen.getAllByTestId('decision-tile').map(t => t.getAttribute('data-size')))
+      .toEqual(['hero', 'large', 'medium', 'medium'])
+  })
+
+  it('keeps work ahead of the record inside that one mosaic', () => {
+    decisions = [
+      committed(),
+      decision({ id: 'owed', ideaId: 'tq-owed', symbol: 'AAA', decisionNote: null, decidedAt: daysAgo(1) }),
+    ]
+    render(<DecisionsWorkspace />)
+    const order = screen.getAllByTestId('decision-tile')
+    expect(order[0].textContent).toContain('AAA')
+    expect(order[0].getAttribute('data-size')).toBe('hero')
+    expect(order[1].textContent).toContain('MSFT')
+  })
+})
+
+describe('the follow-up happens where it belongs', () => {
+  const tabs: Array<Record<string, unknown>> = []
+  const listen = (e: Event) => tabs.push((e as CustomEvent).detail)
+
+  beforeEach(() => {
+    tabs.length = 0
+    window.addEventListener('decision-engine-action', listen)
+    decisions = [decision({
+      id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', status: 'accepted', portfolioId: 'p1',
+      decidedAt: daysAgo(2), decisionNote: 'Added on the cloud reacceleration.',
+      batch: { id: 'b-msft', name: '1 buy', description: 'test' },
+      execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric' },
+    })]
+    outcomeFacts = { 'tq-c1': { ...NO_OUTCOME_FACTS, executed: true, verdictLabel: 'Outcome not reviewed' } }
+  })
+  afterEach(() => window.removeEventListener('decision-engine-action', listen))
+
+  it('sends the review to Outcomes, on this decision', async () => {
+    const user = userEvent.setup()
+    render(<DecisionsWorkspace />)
+    await user.click(screen.getByTestId('decision-review-outcome'))
+    expect(tabs).toEqual([{ id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: { tradeQueueItemId: 'tq-c1' } }])
+  })
+
+  it('sends the committed act to Trade Book, as a batch', async () => {
+    const user = userEvent.setup()
+    render(<DecisionsWorkspace />)
+    await user.click(screen.getByTestId('decision-open-trade-book'))
+    expect(tabs).toEqual([{
+      id: 'trade-book', title: 'Trade Book', type: 'trade-book',
+      data: { portfolioId: 'p1', highlightBatchId: 'b-msft', highlightTradeIds: null },
+    }])
+  })
+
+  it('never grows a chart or a reflection of its own', () => {
+    render(<DecisionsWorkspace />)
+    const lens = screen.getByTestId('decisions-lens')
+    expect(within(lens).queryByTestId('decision-reflection')).not.toBeInTheDocument()
+    expect(lens.querySelectorAll('svg.recharts-surface')).toHaveLength(0)
+  })
+})
+
+/* ------------------------------------------------------ the pilot's seeds */
+
+describe('the pilot’s seeded request, after graduation', () => {
+  /** The seeder's AAPL request: pending, and nobody ever answered it. */
+  const seeded = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'seed-aapl', ideaId: 'tq-seed', symbol: 'AAPL', companyName: 'Apple',
+    status: 'pending', decidedBy: null, decidedByName: null, decidedAt: null,
+    requestedAt: daysAgo(3), isPilotSeed: true, ...over,
+  })
+  const mine = () => decision({
+    id: 'mine', ideaId: 'tq-mine', symbol: 'ORCL', status: 'pending',
+    decidedBy: null, decidedByName: null, decidedAt: null, requestedAt: daysAgo(2),
+  })
+
+  it('stops being work awaiting a decision, and stops being counted', () => {
+    decisions = [seeded(), mine()]
+    pilot.graduated = true
+    render(<DecisionsWorkspace />)
+    const rows = screen.getAllByTestId('decision-tile')
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('ORCL')).toBeInTheDocument()
+    expect(screen.queryByText('AAPL')).not.toBeInTheDocument()
+    /*
+     * The tally beside the heading is gone -- it restated a field the reader
+     * can see, and on a lens about which few things matter the total is the
+     * least useful number on the page. The FACT it was standing in for is
+     * asserted directly above: one tile, and it is not the seeded one.
+     */
+    expect(screen.getAllByTestId('decision-tile')).toHaveLength(1)
+  })
+
+  it('is still the work while the pilot is running', () => {
+    decisions = [seeded(), mine()]
+    render(<DecisionsWorkspace />)
+    expect(screen.getAllByTestId('decision-tile')).toHaveLength(2)
+  })
+
+  it('keeps a seeded request the reader actually decided', () => {
+    // Bogey Cap's pilot ends on a seeded idea the reader decided and
+    // executed. That is their decision, and it stays in the record.
+    decisions = [seeded({
+      id: 'seed-msft', symbol: 'MSFT', status: 'accepted',
+      decidedBy: 'u1', decidedByName: 'Eric Lockenvitz', decidedAt: daysAgo(1),
+      decisionNote: null,
+    })]
+    pilot.graduated = true
+    render(<DecisionsWorkspace />)
+    const rows = screen.getAllByTestId('decision-tile')
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('MSFT')).toBeInTheDocument()
+  })
+
+  it('is never deleted: the record still opens by id', () => {
+    decisions = [seeded(), mine()]
+    pilot.graduated = true
+    render(<DecisionsWorkspace focusObjectId="seed-aapl" />)
+    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
+  })
+})
+
 /* -------------------------------------------------- portfolio-scoped memory */
 
 describe('the same idea in two books is two decisions', () => {
@@ -509,6 +1647,38 @@ describe('a system string is never shown as reasoning', () => {
     expect(screen.getByText(/Submitted by Seb Barbero/)).toBeInTheDocument()
     expect(screen.getByText(/the proposal rationale, not the decider/)).toBeInTheDocument()
     expect(screen.queryByText('Why we decided')).not.toBeInTheDocument()
+  })
+
+  it('shows the batch’s written rationale for a Trade Lab decision, as the batch’s', () => {
+    /*
+     * The pilot's executed trade: its own note is Trade Lab provenance, and the
+     * reason the desk wrote is Trade Book's "Why this decision?" on the batch.
+     */
+    decisions = [decision({
+      id: 'x',
+      decisionNote: 'Self-proposed via Trade Lab Execute',
+      execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(1), executedByName: 'Pilot' },
+      batch: { id: 'b-1', name: '1 buy · 09/14/2026', description: 'Adding on weakness ahead of the print.' },
+    })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    const quote = screen.getByTestId('decision-batch-reason')
+    expect(quote).toHaveTextContent('Adding on weakness ahead of the print.')
+    expect(quote.closest('section')).toHaveTextContent('Why this decision?')
+    expect(screen.getByText(/Written for the batch · 1 buy · 09\/14\/2026/)).toBeInTheDocument()
+    // Not presented as the decision note, and the system string is not a reason.
+    expect(screen.queryByText('Why we decided')).not.toBeInTheDocument()
+    expect(screen.queryByText('No human rationale was captured.')).not.toBeInTheDocument()
+  })
+
+  it('does not treat a system-written batch description as the batch’s rationale', () => {
+    decisions = [decision({
+      id: 'x',
+      decisionNote: 'Accepted via Trade Lab Execute',
+      batch: { id: 'b-1', name: null, description: 'Auto-generated from Trade Lab' },
+    })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    expect(screen.queryByTestId('decision-batch-reason')).not.toBeInTheDocument()
+    expect(screen.getByText('No human rationale was captured.')).toBeInTheDocument()
   })
 
   it('keeps both apart when both exist', () => {
@@ -773,5 +1943,137 @@ describe('outcome chips are categories, not grades', () => {
     decisions = [decision({ status: 'pending', decidedAt: null, decidedByName: null })]
     render(<DecisionsWorkspace />)
     expect(screen.getAllByText('Awaiting decision')[0].className).toMatch(/blue/)
+  })
+})
+
+/**
+ * Hero is earned, and the track has to have something to draw.
+ *
+ * Recency hands the newest record the hero slot; recency does not know whether
+ * that record has anything to put in it. A one-day decision with no captured
+ * price and a complete record was 64px of reserved visual over a claim and two
+ * figures -- the oversized, whitespace-heavy card this pass is about.
+ */
+describe('the hero slot is earned by having something to fill it', () => {
+  beforeEach(() => { decisions = []; outcomeFacts = {} })
+
+  const committed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', status: 'accepted',
+    decidedAt: daysAgo(2), decisionNote: 'Added on the cloud reacceleration.',
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric Lockenvitz' },
+    ...over,
+  })
+
+  /* Requested, decided and filled on the same day is three marks on top of
+     each other and "0d" twice. The lengths ARE the finding; with no lengths
+     there is no finding. */
+  it('does not draw the track when every interval is zero', () => {
+    const sameDay = '2026-09-15T10:00:00Z'
+    decisions = [committed({
+      requestedAt: sameDay, decidedAt: sameDay,
+      execution: { id: 'e', status: 'completed', completedAt: sameDay, executedByName: 'PM' },
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.queryByTestId('decision-path')).not.toBeInTheDocument()
+  })
+
+  it('draws the track once one interval is real', () => {
+    decisions = [committed({
+      requestedAt: '2026-09-10T10:00:00Z',
+      decidedAt: '2026-09-14T10:00:00Z',
+      execution: { id: 'e', status: 'completed', completedAt: '2026-09-14T10:00:00Z', executedByName: 'PM' },
+      // No symbol, so no price series and no price column. The track is the
+      // FALLBACK object, and this is what still exercises it.
+      symbol: null,
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-path')).toBeInTheDocument()
+  })
+
+  /* The band is a ceiling, not an allocation: a record with no object takes
+     `large`, which is the same width and less height. Order is untouched. */
+  it('demotes the newest record out of hero when it has no object to draw', () => {
+    const sameDay = '2026-09-15T10:00:00Z'
+    // Nothing cached for the name, so there is no move and no chart either --
+    // which is the real case this covers: COIN, CLOV, CROX, GH, LRCX, PARA
+    // and TGT all have zero rows in `price_history_cache`.
+    tileCloses = []
+    decisions = [committed({
+      requestedAt: sameDay, decidedAt: sameDay,
+      sizingWeight: null, baselineWeight: null,
+      execution: { id: 'e', status: 'completed', completedAt: sameDay, executedByName: 'PM' },
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-tile')).toHaveAttribute('data-size', 'large')
+  })
+
+  it('keeps hero where the record does have one', () => {
+    decisions = [committed({
+      requestedAt: '2026-09-10T10:00:00Z', decidedAt: '2026-09-14T10:00:00Z',
+      execution: { id: 'e', status: 'completed', completedAt: '2026-09-15T10:00:00Z', executedByName: 'PM' },
+    })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-tile')).toHaveAttribute('data-size', 'hero')
+  })
+
+  /* Demotion must not reorder: the newest record is still the first tile. */
+  it('changes how much room the newest record gets, never which record is newest', () => {
+    const sameDay = '2026-09-15T10:00:00Z'
+    tileCloses = []
+    decisions = [
+      committed({ id: 'new', ideaId: 'tq-new', requestedAt: sameDay, decidedAt: sameDay,
+        sizingWeight: null, baselineWeight: null,
+        execution: { id: 'e1', status: 'completed', completedAt: sameDay, executedByName: 'PM' } }),
+      committed({ id: 'old', ideaId: 'tq-old', decidedAt: '2026-08-01T10:00:00Z' }),
+    ]
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles[0]).toHaveAttribute('data-size', 'large')
+    expect(tiles[0].textContent).toContain('MSFT')
+  })
+})
+
+/** Contrast carries condition and direction, and only those. */
+describe('the tile inks what matters', () => {
+  beforeEach(() => { decisions = []; outcomeFacts = {} })
+
+  const committed = (over: Partial<DecisionRecord> = {}) => decision({
+    id: 'c1', ideaId: 'tq-c1', symbol: 'MSFT', status: 'accepted',
+    decidedAt: daysAgo(2), decisionNote: 'Added on the cloud reacceleration.',
+    execution: { id: 'at-1', status: 'complete', completedAt: daysAgo(2), executedByName: 'Eric Lockenvitz' },
+    ...over,
+  })
+
+  /*
+   * Asserted at the source, deliberately.
+   *
+   * The verdict line it lives on is gated on `situation.klass === 'recent'` --
+   * a pre-existing gate this pass did not touch and does not want to widen, so
+   * most fixtures never render it and a DOM test would be testing the gate
+   * rather than the ink. What matters here is the branch: an unreviewed
+   * outcome is the one condition on a committed record that asks the reader
+   * for something, so it is enclosed and tinted; every other verdict stays
+   * grey, because a gallery where each label is coloured says nothing.
+   */
+  it('tints an unreviewed outcome and leaves a reviewed one quiet', () => {
+    const ws = readFileSync(
+      path.join(process.cwd(), 'src/components/decisions-v2/DecisionsWorkspace.tsx'), 'utf8')
+    const line = ws.slice(ws.indexOf('data-testid="decision-state"'))
+    const branch = line.slice(0, line.indexOf('</p>'))
+    expect(branch).toContain('facts.reviewed ? (')
+    expect(branch).toContain('text-gray-500')
+    expect(branch).toContain('decision-verdict-chip')
+    expect(branch).toContain('bg-amber-50')
+  })
+
+  it('inks the stance by direction, not by severity', () => {
+    decisions = [committed({ action: 'buy' })]
+    const { unmount } = render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-stance').className).toContain('emerald')
+    unmount()
+
+    decisions = [committed({ action: 'sell' })]
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-stance').className).toContain('rose')
   })
 })

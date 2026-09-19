@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { isPriceable } from '../../lib/signals/instruments'
+import { isPilotSeedRow } from '../../lib/pilot/seed-visibility'
 import { loadDispositions } from '../../lib/signals/dispositions'
 import { BASELINE_TOLERANCE_DAYS, DAY_MS, judgmentTouches } from '../../lib/signals/stale-signal'
 import {
@@ -81,8 +82,14 @@ export interface DerivedInsight {
   held: boolean
   /** How many current books hold it, so a chip never implies a single one. */
   portfolioCount: number
-  /** Live trade-queue items on this name. Context only — never rank or tier. */
-  liveIdeas: { id: string; action: string | null }[]
+  /**
+   * Live trade-queue items on this name. Context only — never rank or tier.
+   *
+   * `pilotSeed` is provenance, carried rather than acted on here: a reader of
+   * this scan decides whether a seeded idea still counts as live work
+   * (lib/pilot/seed-visibility). The phone feed's behaviour is unchanged.
+   */
+  liveIdeas: { id: string; action: string | null; pilotSeed?: boolean }[]
   /**
    * Who covers this name, resolved to display names where possible.
    *
@@ -202,7 +209,24 @@ export function useDerivedInsights() {
 
   return useQuery<DerivedInsight[]>({
     queryKey: ['derived-insights', 'research-v2', user?.id, currentOrgId],
-    queryFn: async () => {
+    queryFn: () => scanResearchInsights(user, currentOrgId),
+    enabled: !!user && !!currentOrgId,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+/**
+ * The scan itself, outside React.
+ *
+ * `useDerivedInsights` is the cached way in and every surface should use it.
+ * Named so the one scan can be exercised directly -- by tests over a database
+ * double, and by a measurement against the live project -- without mounting a
+ * provider tree. Moving it out changed nothing it does.
+ */
+export async function scanResearchInsights(
+  user: { id: string } | null | undefined,
+  currentOrgId: string | null | undefined,
+): Promise<DerivedInsight[]> {
       // Without an org there is nothing safe to show: these queries would
       // otherwise return positions and research from every organisation the
       // user belongs to and present them as the current book.
@@ -593,18 +617,18 @@ export function useDerivedInsights() {
       }
 
       // Live ideas, for context only. Never rank, never tier, never headline.
-      const liveIdeaByAsset = new Map<string, { id: string; action: string | null }[]>()
+      const liveIdeaByAsset = new Map<string, { id: string; action: string | null; pilotSeed?: boolean }[]>()
       if (universeIds.length) {
         const { data: ideas } = await supabase
           .from('trade_queue_items')
-          .select('id, asset_id, action, status')
+          .select('id, asset_id, action, status, origin_metadata')
           .eq('organization_id', currentOrgId)
           .in('asset_id', universeIds)
           .in('status', ['idea', 'deciding'])
-        for (const r of (ideas ?? []) as { id: string; asset_id: string | null; action: string | null }[]) {
+        for (const r of (ideas ?? []) as { id: string; asset_id: string | null; action: string | null; origin_metadata?: unknown }[]) {
           if (!r.asset_id) continue
           const list = liveIdeaByAsset.get(r.asset_id) ?? []
-          list.push({ id: r.id, action: r.action })
+          list.push({ id: r.id, action: r.action, pilotSeed: isPilotSeedRow(r) })
           liveIdeaByAsset.set(r.asset_id, list)
         }
       }
@@ -697,10 +721,6 @@ export function useDerivedInsights() {
       }
 
       return out.sort((a, b) => b.score - a.score)
-    },
-    enabled: !!user && !!currentOrgId,
-    staleTime: 5 * 60 * 1000,
-  })
 }
 
 export { insightSignalType } from '../../lib/signals/insight-type'

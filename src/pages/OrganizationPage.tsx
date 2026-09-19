@@ -3705,7 +3705,9 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                       </div>
                     </div>
                     <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
-                      <table className="w-full text-sm">
+                      {/* The phone shell clips horizontal overflow, so a table this wide is unreachable without its own scroller. `sm:min-w-0` returns it to the container from 640px up, leaving desktop unchanged. */}
+                      <div className="mobile-scroll-x show-scrollbar">
+                      <table className="w-full text-sm min-w-[720px] sm:min-w-0">
                         <thead>
                           <tr className="bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
                             <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Team</th>
@@ -3810,6 +3812,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                           </tfoot>
                         )}
                       </table>
+                      </div>
                     </div>
                   </Card>
                 </div>
@@ -5747,9 +5750,12 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Summary stats */}
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-green-50 rounded-lg p-4 text-center">
+              {/* Summary stats — three tiles across IS the shape, so the row is
+                  kept and the spacing is what gives way. At 320px the old
+                  gap-4/p-4 left 61px of content per tile and wrapped every
+                  label; this leaves 77px, which fits them. */}
+              <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                <div className="bg-green-50 rounded-lg p-3 sm:p-4 text-center">
                   <div className="text-2xl font-bold text-green-700">
                     {coverageByVisibility['team']?.length || 0}
                   </div>
@@ -5757,7 +5763,7 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
                     <Users className="w-3 h-3" /> Team Only
                   </div>
                 </div>
-                <div className="bg-blue-50 rounded-lg p-4 text-center">
+                <div className="bg-blue-50 rounded-lg p-3 sm:p-4 text-center">
                   <div className="text-2xl font-bold text-blue-700">
                     {coverageByVisibility['division']?.length || 0}
                   </div>
@@ -5765,7 +5771,7 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
                     <FolderOpen className="w-3 h-3" /> Division
                   </div>
                 </div>
-                <div className="bg-purple-50 rounded-lg p-4 text-center">
+                <div className="bg-purple-50 rounded-lg p-3 sm:p-4 text-center">
                   <div className="text-2xl font-bold text-purple-700">
                     {coverageByVisibility['firm']?.length || 0}
                   </div>
@@ -6295,7 +6301,7 @@ function AddContactModal({ onClose, onSave, isLoading }: AddContactModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 max-h-[90vh] overflow-y-auto dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 max-h-viewport-90 overflow-y-auto dark:bg-gray-800">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">Add Contact</h3>
         <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
           Add a person who doesn't have platform access but may need to receive reports or communications.
@@ -7326,7 +7332,7 @@ function NodeDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-viewport-90 overflow-hidden flex flex-col dark:bg-gray-800">
         {/* Header */}
         <div
           className="p-5 border-b border-gray-100 dark:border-gray-800"

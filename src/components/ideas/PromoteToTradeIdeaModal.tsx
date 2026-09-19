@@ -401,7 +401,7 @@ export function PromoteToTradeIdeaModal({
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-[480px] max-h-[90vh] bg-white rounded-lg shadow-xl overflow-hidden dark:bg-gray-800">
+      <div className="relative w-[480px] max-h-viewport-90 bg-white rounded-lg shadow-xl overflow-hidden dark:bg-gray-800">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-center gap-2">

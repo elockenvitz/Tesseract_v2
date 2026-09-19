@@ -72,7 +72,7 @@ export function KeyboardHelpModal({ isOpen, onClose }: KeyboardHelpModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200 dark:bg-gray-800">
+      <div className="relative bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-viewport-80 overflow-hidden animate-in fade-in zoom-in-95 duration-200 dark:bg-gray-800">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">

@@ -18,6 +18,13 @@ import {
   evaluateRatingNoFollowup,
   evaluateHighExpectedReturn,
   evaluateThesisStale,
+  evaluateTradeReviewOwed,
+  evaluateResearchChangedSinceView,
+  evaluateThesisChangedAfterCommit,
+  type OpenTradeReviewObligation,
+  type ViewedResearchSubject,
+  type ThesisConcernReview,
+  type CommittedTrade,
 } from './evaluators'
 
 // ---------------------------------------------------------------------------
@@ -47,6 +54,22 @@ export interface EngineArgs {
     executions?: any[]
     assets?: any[]
     thesisUpdates?: any[]
+    /** Newest `thesis.reviewed` per asset id. Moves the staleness clock only;
+     *  the thesis's own written date is unchanged wherever it is shown. */
+    thesisReviews?: Map<string, string>
+    /** Open `trade_review` obligations. Raised and cleared by the lifecycle
+     *  rule; this surface only reports them. */
+    tradeReviewObligations?: OpenTradeReviewObligation[]
+    /** Research subjects and when this reader last opened each one. Together
+     *  they answer "what changed since I looked"; neither answers it alone. */
+    researchSubjects?: readonly ViewedResearchSubject[]
+    assetViewCursors?: Map<string, string>
+    /** Active committed trades, and the reviews that concluded a case no
+     *  longer stands. Together they say capital is out on a thesis somebody
+     *  has since questioned. */
+    committedTrades?: readonly CommittedTrade[]
+    thesisConcernReviews?: readonly ThesisConcernReview[]
+    organizationId?: string | null
     ratings?: any[]
     ratingChanges?: any[]
     projects?: any[]
@@ -114,7 +137,35 @@ export function runGlobalDecisionEngine(args: EngineArgs): GlobalDecisionEngineR
   // Thesis stale (always action)
   allItems.push(...evaluateThesisStale({
     thesisUpdates: args.data.thesisUpdates,
+    // A thesis confirmed to still hold is not stale, even if nobody edited it.
+    thesisReviews: args.data.thesisReviews,
     now,
+  }))
+
+  // Committed trades the lifecycle rule says need review. The obligation is
+  // already a row; this only voices it on the surface that exists to say what
+  // needs doing.
+  allItems.push(...evaluateTradeReviewOwed({
+    tradeReviewObligations: args.data.tradeReviewObligations,
+    now,
+  }))
+
+  // A person concluded the written case no longer stands, and the capital is
+  // already committed. Asset-level language, because the linkage is
+  // asset-level -- see the producer.
+  allItems.push(...evaluateThesisChangedAfterCommit({
+    committedTrades: args.data.committedTrades,
+    thesisConcernReviews: args.data.thesisConcernReviews,
+    organizationId: args.data.organizationId,
+  }))
+
+  // Intel: research that arrived while this reader was not looking. Lands on
+  // the intel surface because it is information, not work owed -- so it is
+  // scored and sorted apart from the action queue and cannot displace it.
+  allItems.push(...evaluateResearchChangedSinceView({
+    subjects: args.data.researchSubjects,
+    viewCursors: args.data.assetViewCursors,
+    organizationId: args.data.organizationId,
   }))
 
   // I2 (Catalysts) and I4 (Prompts) — skip gracefully if no data

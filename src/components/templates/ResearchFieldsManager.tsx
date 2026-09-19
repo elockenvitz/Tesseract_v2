@@ -2962,8 +2962,8 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
       <div className={clsx(
         "bg-white rounded-xl shadow-xl w-full mx-4 flex flex-col transition-all duration-200 dark:bg-gray-800",
         fieldKind === 'multi' && createStep === 3
-          ? 'max-w-[1400px] h-[90vh]'
-          : 'max-w-3xl h-[85vh]',
+          ? 'max-w-[1400px] h-viewport-90'
+          : 'max-w-3xl h-viewport-85',
         'overflow-hidden'
       )}>
         {/* Header */}

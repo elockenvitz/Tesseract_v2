@@ -43,10 +43,26 @@ import { CoverageQuickStart } from './CoverageQuickStart'
  */
 
 interface FirstSessionCoveragePromptProps {
-  variant?: 'card' | 'sheet'
-  /** Where "see what's happening" goes, if this surface is not already Ideas. */
-  onGoToIdeas?: () => void
+  variant?: 'card' | 'sheet' | 'page'
   className?: string
+  /**
+   * Whether "Not now" is offered, and whether a stored dismissal is honoured.
+   *
+   * False where this prompt is the whole surface — the pilot's setup stage,
+   * where the mission is deliberately not shown yet. Dismissing there leaves
+   * a reader on an empty home with no way forward, which is the same argument
+   * the pilot Get Started banners already make for having no dismiss control.
+   * It also ignores a dismissal stored earlier, on a screen where the card was
+   * one of several things to look at rather than the only one.
+   */
+  dismissible?: boolean
+  /**
+   * Whether a successful save is confirmed in place. See the note on the same
+   * prop in `CoverageQuickStart`: false where declaring coverage is what
+   * replaces this card, so the confirmation would be displaced before it
+   * could be read.
+   */
+  confirmOnSave?: boolean
 }
 
 const dismissKey = (userId: string, orgId: string) =>
@@ -104,15 +120,21 @@ export function resetCoverageSessionDecision() {
 
 export function FirstSessionCoveragePrompt({
   variant = 'card',
-  onGoToIdeas,
   className,
+  dismissible = true,
+  confirmOnSave = true,
 }: FirstSessionCoveragePromptProps) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
   const { hasCoverage, isLoading } = useMyCoverage()
 
-  // Starts dismissed so nothing can flash before the real answer is known.
-  const [dismissed, setDismissed] = useState(true)
+  /*
+   * Starts dismissed so nothing can flash before the real answer is known —
+   * except where dismissal is not on offer, and there is nothing to read.
+   * Starting true there cost a frame of blank between the skeleton going
+   * and the card arriving, for a stored value that would be ignored anyway.
+   */
+  const [dismissed, setDismissed] = useState(dismissible)
 
   /**
    * The decision to show, latched on the first trustworthy evaluation.
@@ -144,18 +166,40 @@ export function FirstSessionCoveragePrompt({
     return () => { listeners.delete(sync) }
   }, [decisionKey])
 
-  const show = session.show ?? null
+  /*
+   * Latched once, but decided on the first render that can decide it.
+   *
+   * The latch is written by an effect, which runs after paint — so the
+   * render where the coverage query resolved still saw `null` and drew
+   * nothing. On the pilot home that is a frame of blank between the
+   * skeleton disappearing and the card appearing. The fallback is the same
+   * answer the effect is about to store, so nothing can disagree; once the
+   * store has it, the store wins and the latch behaves exactly as before.
+   */
+  const show = session.show ?? (isLoading ? null : !hasCoverage)
+
+  /*
+   * A setup surface that has saved stays on screen until it is replaced.
+   *
+   * Where `confirmOnSave` is false — the pilot's setup screen — what follows a
+   * save is the surface above swapping this card for the mission. The session
+   * decision is set to "don't show" at that save (see `onSaved`), so the card
+   * keeps itself up with this until the swap, rather than blanking for the
+   * round trip before the coverage read lands.
+   */
+  const [heldAfterSave, setHeldAfterSave] = useState(false)
 
   // Read after mount rather than during render: localStorage throws in some
   // embedded contexts, and this renders inside the gallery harness too.
   useEffect(() => {
     if (!user?.id || !currentOrgId) return
+    if (!dismissible) { setDismissed(false); return }
     try {
       setDismissed(!!localStorage.getItem(dismissKey(user.id, currentOrgId)))
     } catch {
       setDismissed(false)
     }
-  }, [user?.id, currentOrgId])
+  }, [user?.id, currentOrgId, dismissible])
 
   // Latch the decision once the coverage query has actually resolved.
   useEffect(() => {
@@ -171,13 +215,13 @@ export function FirstSessionCoveragePrompt({
   // failure that makes onboarding feel like it is not paying attention.
   if (isLoading || show === null) return null
   if (dismissed) return null
-  if (!show) return null
+  if (!show && !heldAfterSave) return null
 
   return (
     <CoverageQuickStart
       variant={variant}
       className={className}
-      onGoToIdeas={onGoToIdeas}
+      confirmOnSave={confirmOnSave}
       /**
        * The confirmation is owned here, not by the child.
        *
@@ -186,8 +230,26 @@ export function FirstSessionCoveragePrompt({
        * prop is what a replacement instance wakes up holding.
        */
       savedCount={session.savedCount ?? null}
-      onSaved={count => { if (decisionKey) patchSession(decisionKey, { savedCount: count }) }}
-      onDismiss={() => {
+      onSaved={count => {
+        if (!decisionKey) return
+        if (confirmOnSave) {
+          patchSession(decisionKey, { savedCount: count })
+          return
+        }
+        /*
+         * Saved on the setup surface: the question is answered for this session.
+         *
+         * The latched `show: true` from before the save used to stay in the
+         * store, so the NEXT surface to mount the prompt — the ideas feed, the
+         * moment a pilot graduates, in the same page load — reused it and asked
+         * "What do you follow?" of somebody who had just followed fifty names.
+         * The remount the latch exists for is the feed replacing its own
+         * confirming card, which is the branch above and is unchanged.
+         */
+        setHeldAfterSave(true)
+        patchSession(decisionKey, { savedCount: count, show: false })
+      }}
+      onDismiss={!dismissible ? undefined : () => {
         try {
           localStorage.setItem(dismissKey(user.id, currentOrgId), '1')
         } catch {

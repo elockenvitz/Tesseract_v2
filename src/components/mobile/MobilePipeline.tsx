@@ -1,12 +1,18 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { isPipelineBasicsCtaEvent, requestOpenTradeLab } from '../../lib/trade-lab/open-trade-lab'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import {
-  ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight,
+  ArrowRight, Beaker, Check, ChevronDown, ChevronLeft, ChevronRight,
   Loader2, ListTodo, Lock, Search, X,
 } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { usePipelineItems } from '../../hooks/usePipelineItems'
+import { usePilotPipelineBanner } from '../../hooks/usePilotPipelineBanner'
+import { usePilotMode } from '../../hooks/usePilotMode'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { DecisionInboxPanel } from '../trading/DecisionInboxPanel'
+import { PilotStepsBanner } from '../pilot/PilotStepsBanner'
 import { useTradeIdeaService } from '../../hooks/useTradeIdeaService'
 import { isCreatorOrCoAnalyst } from '../../lib/permissions/trade-idea-permissions'
 import { RESEARCH_STAGES, RESEARCH_STAGE_CONFIG } from '../../lib/trade-status-semantics'
@@ -60,9 +66,20 @@ const VIEWS: { key: View; label: string }[] = [
  * the service enforces, so the reader is told what is missing before tapping
  * rather than after.
  */
-export function MobilePipeline() {
+export interface MobilePipelineProps {
+  /** The idea to bring into view on arrival — the same payload the desktop
+   *  board takes, so a hand-off means the same thing on both. */
+  focusIdeaId?: string | null
+  /** Called once it has actually been applied, so the shell can drop it. */
+  onFocusConsumed?: () => void
+}
+
+export function MobilePipeline({ focusIdeaId, onFocusConsumed }: MobilePipelineProps = {}) {
   const { user } = useAuth()
   const { data: items = [], isLoading } = usePipelineItems()
+  const pilotBanner = usePilotPipelineBanner()
+  const pilotMode = usePilotMode()
+  const { hasCompletedPipelineStepInbox, hasCompletedPipelineStepTradeLab, mark: markPilotStage } = usePilotProgress()
   const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
 
   const [view, setView] = useState<View>('pipeline')
@@ -70,7 +87,56 @@ export function MobilePipeline() {
   const [search, setSearch] = useState('')
   const [stagePickerOpen, setStagePickerOpen] = useState(false)
   const [detail, setDetail] = useState<PipelineRow | null>(null)
-  const [moveTarget, setMoveTarget] = useState<PipelineRow | null>(null)
+  /*
+   * Whether the open detail is showing its stage chooser.
+   *
+   * This was a second row-shaped state and a sheet mounted beside the
+   * detail, which meant two full-screen portals were siblings on the body
+   * and the one the reader saw came down to z-[90] against z-[60]. The
+   * chooser lost, so tapping Move appeared to do nothing until the detail
+   * was closed. It is a mode of the detail, so it is a flag on the detail.
+   */
+  const [moving, setMoving] = useState(false)
+  /*
+   * The Decision Inbox drawer, which a phone did not have at all.
+   *
+   * `DecisionInboxPanel` was mounted only by `TradeQueuePage`, and a phone
+   * renders this instead — so the Pipeline tutorial's second step told the
+   * reader to open a drawer that nothing drew. The panel itself was never
+   * desktop-bound: it is `absolute bottom-0` with percentage heights and one
+   * `hidden sm:inline` label, so it needed a positioned ancestor and a piece
+   * of state, not a mobile version of itself.
+   */
+  const [inboxCollapsed, setInboxCollapsed] = useState(true)
+  const toggleInbox = () => setInboxCollapsed(prev => {
+    // Marked on collapsed → open only, so closing the drawer does not mark,
+    // and short-circuited once earned — the same rule and the same stage key
+    // the board uses. See `TradeQueuePage`.
+    if (prev && pilotMode.effectiveIsPilot && !hasCompletedPipelineStepInbox) {
+      markPilotStage('pipeline_step_inbox')
+    }
+    return !prev
+  })
+
+  /*
+   * Pipeline basics step 3 — handing off to Trade Lab from this board.
+   *
+   * The desktop board marks it by listening for `openTradeLab` while it is
+   * mounted; the phone board had no marker at all. That was invisible while
+   * the three steps fed nothing, but mission stage 2 now waits for all three,
+   * so without this a pilot on a phone could never finish it. Same event and
+   * same stage key as `TradeQueuePage`.
+   */
+  useEffect(() => {
+    if (!pilotMode.effectiveIsPilot || hasCompletedPipelineStepTradeLab) return
+    const handler = (e: Event) => {
+      // The banner's own CTA marks only once its navigation is confirmed.
+      if (isPipelineBasicsCtaEvent(e)) return
+      markPilotStage('pipeline_step_tradelab')
+    }
+    window.addEventListener('openTradeLab', handler)
+    return () => window.removeEventListener('openTradeLab', handler)
+  }, [pilotMode.effectiveIsPilot, hasCompletedPipelineStepTradeLab, markPilotStage])
 
   const busy = isMoving || isMovingPairTrade
 
@@ -92,6 +158,48 @@ export function MobilePipeline() {
     }
     return map
   }, [visible])
+
+  /*
+   * Bring the arriving idea into view.
+   *
+   * The shell rendered `<MobilePipeline />` with no props at all, so every
+   * hand-off carrying an idea -- about eleven producers -- was discarded
+   * outright on a phone. Desktop scrolls and flashes; here the board shows one
+   * stage at a time, so "into view" also means switching to the stage the card
+   * is actually in. Without that the scroll would look for a card the board is
+   * not currently drawing.
+   *
+   * Searching would hide everything else, which is a filter, not a focus. The
+   * stage switch is the smallest thing that makes the card reachable.
+   */
+  const focusAppliedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!focusIdeaId || focusAppliedRef.current === focusIdeaId) return
+    const match = rows.find(r =>
+      r.kind === 'pair'
+        ? r.legs.some((l: { id?: string } | null) => l?.id === focusIdeaId)
+        : r.item?.id === focusIdeaId)
+    if (!match) return
+    focusAppliedRef.current = focusIdeaId
+
+    if (COMMITTED_PIPELINE_STATUSES.includes(match.status)) setView('committed')
+    else if (ARCHIVED_PIPELINE_STATUSES.includes(match.status)) setView('archived')
+    else { setView('pipeline'); setStage(match.stage as ResearchStage) }
+
+    const timeout = setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(`[data-pipeline-row-id="${match.id}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el.classList.add('decision-recorded-flash')
+        setTimeout(() => el.classList.remove('decision-recorded-flash'), 2600)
+      }
+      // Spent after the flash is on, for the reason the desktop board's is:
+      // dropping the id re-runs this effect and the cleanup would cancel it.
+      onFocusConsumed?.()
+    }, 80)
+    return () => clearTimeout(timeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusIdeaId, rows])
 
   const committedRows = useMemo(
     () => visible.filter(r => COMMITTED_PIPELINE_STATUSES.includes(r.status)),
@@ -126,14 +234,15 @@ export function MobilePipeline() {
     } else {
       moveTrade({ tradeId: row.id, targetStatus: target as any, uiSource })
     }
-    setMoveTarget(null)
+    setMoving(false)
     setDetail(null)
   }
 
   return (
-    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950">
+    /* `relative` so the inbox drawer has something to be absolute against. */
+    <div className="relative h-full flex flex-col bg-gray-50 dark:bg-gray-950">
       <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-        <div className="flex gap-1 px-3 pt-2">
+        <div className="flex gap-1 px-3 pt-1.5">
           {VIEWS.map(v => {
             const count =
               v.key === 'pipeline' ? pipelineTotal
@@ -164,7 +273,7 @@ export function MobilePipeline() {
             edge, gave no sense of position in a five-step process, and made the
             last stage a scroll away. */}
         {view === 'pipeline' && (
-          <div className="flex items-center gap-1.5 px-3 py-2">
+          <div className="flex items-center gap-1.5 px-3 pt-1.5 pb-1.5">
             <button
               type="button"
               disabled={stageIndex === 0}
@@ -206,7 +315,7 @@ export function MobilePipeline() {
           </div>
         )}
 
-        <div className={clsx('px-3 pb-2', view !== 'pipeline' && 'pt-2')}>
+        <div className={clsx('px-3 pb-2', view !== 'pipeline' && 'pt-1.5')}>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
@@ -236,6 +345,21 @@ export function MobilePipeline() {
             ? 'Approved and executed. Read-only here — corrections stay on desktop.'
             : 'Rejected, deferred and archived. Read-only here.'}
       </p>
+
+      {/* The Pipeline Get Started banner, in its compact phone form.
+
+          It lived inline in `TradeQueuePage`, which a phone never renders, so
+          it had simply never appeared here. Same steps and the same completion
+          flags as desktop — see `usePilotPipelineBanner`.
+
+          Below the board's own controls rather than wedged between the view
+          tabs and the stage pager, and inset rather than full-bleed: three
+          stacked strips before the first card read as three pieces of chrome
+          of equal standing, and guidance about the board should not outrank
+          the board. */}
+      {pilotBanner.show && view === 'pipeline' && (
+        <PilotStepsBanner steps={pilotBanner.steps} label={pilotBanner.label} variant="inset" />
+      )}
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-safe space-y-2">
         {isLoading ? (
@@ -291,22 +415,33 @@ export function MobilePipeline() {
         </div>
       </BottomSheet>
 
+      {/* The canonical drawer, on the board it belongs to. Not shown on the
+          committed or archived tabs, which are read-only here and have no
+          decisions waiting. `sheet` opens it as a full-height pane over the
+          board instead of a 60% drawer with the Pipeline still showing. */}
+      {view === 'pipeline' && (
+        <DecisionInboxPanel
+          variant="sheet"
+          collapsed={inboxCollapsed}
+          onToggleCollapsed={toggleInbox}
+          onIdeaClick={tradeId => {
+            const row = rows.find(r => r.id === tradeId)
+            if (row) setDetail(row)
+          }}
+        />
+      )}
+
       {detail && (
         <IdeaDetail
           row={detail}
           readOnly={view !== 'pipeline'}
           movable={view === 'pipeline' && canMove(detail)}
-          onClose={() => setDetail(null)}
-          onRequestMove={() => setMoveTarget(detail)}
-        />
-      )}
-
-      {moveTarget && (
-        <MoveSheet
-          row={moveTarget}
+          moving={moving}
           busy={busy}
-          onClose={() => setMoveTarget(null)}
-          onConfirm={target => commit(moveTarget, target, 'mobile_sheet')}
+          onClose={() => { setMoving(false); setDetail(null) }}
+          onRequestMove={() => setMoving(true)}
+          onCancelMove={() => setMoving(false)}
+          onConfirmMove={target => commit(detail, target, 'mobile_sheet')}
         />
       )}
     </div>
@@ -327,14 +462,34 @@ function actionTone(action: string): string {
  * where the idea can actually be read first — the previous inline arrows made
  * advancing an idea easier than opening it.
  */
-function PipelineCard({ row, onOpen }: { row: PipelineRow; onOpen: () => void }) {
+export function PipelineCard({ row, onOpen }: { row: PipelineRow; onOpen: () => void }) {
   const subject: any = row.kind === 'pair' ? row.legs[0] : row.item
+  const portfolioName: string | undefined = subject?.portfolios?.name
+  const portfolioId: string | undefined = subject?.portfolios?.id || subject?.portfolio_id || undefined
 
+  /*
+   * The portfolio is the way into Trade Lab, as it is on the desktop board.
+   *
+   * The card was one <button>, so its portfolio could only be grey text, and
+   * on a phone the sole route from an idea to Trade Lab was a link three
+   * layers down inside the Decision Inbox drawer. The card is a div with the
+   * button role now, so the portfolio can be a real control of its own: the
+   * same `openTradeLab` hand-off, scoped to this idea and this portfolio. The
+   * analyst's name stays plain text.
+   */
   return (
-    <button
-      type="button"
+    <div
+      /* So an arrival carrying a specific idea can find its card, the same way
+         the desktop board's cards carry `data-queue-item-id`. */
+      data-pipeline-row-id={row.id}
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      className="w-full text-left rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 active:bg-gray-50 dark:active:bg-gray-800"
+      onKeyDown={e => {
+        if (e.target !== e.currentTarget) return
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
+      }}
+      className="w-full text-left rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 active:bg-gray-50 dark:active:bg-gray-800 cursor-pointer"
     >
       {row.kind === 'pair' ? (
         <>
@@ -381,10 +536,26 @@ function PipelineCard({ row, onOpen }: { row: PipelineRow; onOpen: () => void })
       )}
 
       <p className="mt-1.5 text-[11px] text-gray-400 truncate">
-        {subject?.portfolios?.name ?? 'No portfolio'}
+        {portfolioName && portfolioId ? (
+          <button
+            type="button"
+            data-slot="pipeline-card-portfolio"
+            onClick={e => {
+              e.stopPropagation()
+              requestOpenTradeLab({ portfolioId, tradeQueueItemId: subject.id })
+            }}
+            aria-label={`Open ${portfolioName} in Trade Lab`}
+            className="-my-1 -ml-1 px-1 py-1 rounded inline-flex items-center gap-1 align-middle font-medium text-primary-600 dark:text-primary-400 active:bg-primary-50 dark:active:bg-primary-900/30"
+          >
+            <Beaker className="h-3 w-3 shrink-0" />
+            <span className="underline decoration-primary-300 underline-offset-2 dark:decoration-primary-700">{portfolioName}</span>
+          </button>
+        ) : (
+          portfolioName ?? 'No portfolio'
+        )}
         {subject?.users && ' · ' + [subject.users.first_name, subject.users.last_name].filter(Boolean).join(' ')}
       </p>
-    </button>
+    </div>
   )
 }
 
@@ -411,28 +582,67 @@ function IdeaDetail({
   row,
   readOnly,
   movable,
+  moving,
+  busy,
   onClose,
   onRequestMove,
+  onCancelMove,
+  onConfirmMove,
 }: {
   row: PipelineRow
   readOnly: boolean
   movable: boolean
+  moving: boolean
+  busy: boolean
   onClose: () => void
   onRequestMove: () => void
+  onCancelMove: () => void
+  onConfirmMove: (target: ResearchStage) => void
 }) {
+  /*
+   * The node the stage chooser is drawn into.
+   *
+   * State rather than a ref so attaching it re-renders: the chooser must not
+   * fall back to the body on the render that opens it, which is the exact
+   * layering the whole change exists to remove.
+   */
+  const [host, setHost] = useState<HTMLDivElement | null>(null)
+
   if (typeof document === 'undefined') return null
 
   const subject: any = row.kind === 'pair' ? row.legs[0] : row.item
   const stageCfg = RESEARCH_STAGE_CONFIG[row.stage as ResearchStage]
+  const company = row.kind === 'pair' ? row.pair?.description : row.item.assets?.company_name
 
   return createPortal(
-    <div className="fixed inset-0 z-[90] flex flex-col bg-white dark:bg-gray-900">
-      <div className="flex-shrink-0 flex items-center gap-2 px-3 h-14 pt-safe border-b border-gray-200 dark:border-gray-700">
-        <span className="min-w-0 flex-1 truncate text-base font-bold text-gray-900 dark:text-white">
-          {row.kind === 'pair'
-            ? row.pair?.name || 'Pair trade'
-            : `${row.item.assets?.symbol ?? '—'}`}
-        </span>
+    <div ref={setHost} className="fixed inset-0 z-[90] flex flex-col bg-white dark:bg-gray-900">
+      {/* Identity and stage on one line each, in the header.
+
+          The stage chip used to be the first thing in the scrolling body, on a
+          row of its own with nothing beside it — a whole line of chrome before
+          any fact about the idea. It belongs with the name it describes. */}
+      <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 pt-safe border-b border-gray-200 dark:border-gray-700">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 truncate text-base font-bold text-gray-900 dark:text-white">
+              {row.kind === 'pair'
+                ? row.pair?.name || 'Pair trade'
+                : `${row.item.assets?.symbol ?? '—'}`}
+            </span>
+            {stageCfg && (
+              <span className={clsx('shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide', stageCfg.color)}>
+                {stageCfg.label}
+              </span>
+            )}
+          </div>
+          {(company || row.status) && (
+            <p className="mt-0.5 truncate text-[11px] text-gray-400">
+              {[company, row.status ? String(row.status).replace(/_/g, ' ') : null]
+                .filter(Boolean)
+                .join(' \u00b7 ')}
+            </p>
+          )}
+        </div>
         <button
           type="button"
           onClick={onClose}
@@ -443,20 +653,7 @@ function IdeaDetail({
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-4">
-        <div className="flex items-center gap-2">
-          {stageCfg && (
-            <span className={clsx('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide', stageCfg.color)}>
-              {stageCfg.label}
-            </span>
-          )}
-          {row.status && (
-            <span className="text-[11px] text-gray-400 capitalize">
-              {String(row.status).replace(/_/g, ' ')}
-            </span>
-          )}
-        </div>
-
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-3 pb-2 space-y-3">
         {row.kind === 'pair' ? (
           <div className="space-y-2">
             {row.legs.map((leg: any) => (
@@ -530,7 +727,14 @@ function IdeaDetail({
       </div>
 
       {!readOnly && (
-        <div className="flex-shrink-0 px-4 py-3 pb-safe border-t border-gray-200 dark:border-gray-700">
+        <div className="flex-shrink-0 px-4 pt-2.5 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))] border-t border-gray-200 dark:border-gray-700">
+          {/* Names where the idea is now, so the control below reads as being
+              about this idea rather than as a generic footer button. */}
+          {movable && stageCfg && (
+            <p className="mb-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+              Currently in <span className="font-semibold text-gray-700 dark:text-gray-200">{stageCfg.label}</span>
+            </p>
+          )}
           <button
             type="button"
             disabled={!movable}
@@ -544,6 +748,19 @@ function IdeaDetail({
             )}
           </button>
         </div>
+      )}
+
+      {/* Inside this pane, not beside it. `container` puts the sheet in this
+          element's stacking context, so it is above the detail by construction
+          and no global layer had to be renumbered. */}
+      {moving && (
+        <MoveSheet
+          row={row}
+          busy={busy}
+          container={host}
+          onClose={onCancelMove}
+          onConfirm={onConfirmMove}
+        />
       )}
     </div>,
     document.body
@@ -566,11 +783,14 @@ function IdeaDetail({
 function MoveSheet({
   row,
   busy,
+  container,
   onClose,
   onConfirm,
 }: {
   row: PipelineRow
   busy: boolean
+  /** The pane that opened it — see the note where it is rendered. */
+  container: HTMLElement | null
   onClose: () => void
   onConfirm: (target: ResearchStage) => void
 }) {
@@ -579,7 +799,13 @@ function MoveSheet({
   const label = row.kind === 'pair' ? (row.pair?.name || 'this pair') : (row.item.assets?.symbol ?? 'this idea')
 
   return (
-    <BottomSheet open onClose={onClose} title={chosen ? 'Confirm move' : `Move ${label}`} fitContent>
+    <BottomSheet
+      open
+      onClose={onClose}
+      title={chosen ? 'Confirm move' : `Move ${label}`}
+      fitContent
+      container={container}
+    >
       {chosen ? (
         <div className="px-4 pb-4">
           <p className="text-[15px] leading-relaxed text-gray-900 dark:text-gray-100">

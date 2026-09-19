@@ -99,11 +99,36 @@ describe('a feed session belongs to one reader in one organization', () => {
     expect(loadFeedSession(A)).toBeNull()
   })
 
-  /** As did the reload rule: a refresh is a request for a fresh feed. */
+  /**
+   * As did the reload rule: a refresh is a request for a fresh feed.
+   *
+   * What the refresh discards is the place the reader had BEFORE it, so the
+   * entry has to be dated before this document started for the rule to apply.
+   * A real refresh gives the new document a later `timeOrigin` than anything
+   * the old one wrote; a test cannot reload the module, so it says so directly.
+   *
+   * The date matters because the feed now re-reads the session every time the
+   * reader arrives back at it. `performance.navigation` answers "reload" for
+   * the whole life of a refreshed page, so an undated rule would wipe the
+   * position the reader rebuilt AFTER the refresh, every time, for the rest of
+   * the visit. The test below pins that half.
+   */
   it('does not resume across an explicit reload', () => {
     saveFeedSession(A, SESSION)
+    const key = 'tesseract:feed-session:user-a:org-x'
+    const stored = JSON.parse(sessionStorage.getItem(key)!)
+    sessionStorage.setItem(key, JSON.stringify({ ...stored, savedAt: performance.timeOrigin - 1 }))
+
     vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'reload' } as any])
     expect(loadFeedSession(A)).toBeNull()
+  })
+
+  /** And the position rebuilt after that refresh is the reader's, not debris. */
+  it('does resume what was saved since the reload', () => {
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'reload' } as any])
+    saveFeedSession(A, SESSION)
+
+    expect(loadFeedSession(A)?.scrollTop).toBe(SESSION.scrollTop)
   })
 
   /** Still only ordering state. Nothing about what the cards say. */

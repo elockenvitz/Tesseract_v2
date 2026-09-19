@@ -10,7 +10,7 @@ import type { DecisionItem, DecisionSeverity } from '../../engine/decisionEngine
 import { adaptDecisionItem } from './adapt'
 import { compareTodayItems, TODAY_LIMIT } from './tiers'
 import { diversify } from './diversity'
-import { applyEnrichment, priceWindowSince, windowLabel } from './enrich'
+import { applyEnrichment, priceWindowSince, windowLabel, type TodayEnrichment } from './enrich'
 import type { TodayItem } from './types'
 
 function make(id: string, titleKey: string, over: Partial<DecisionItem> = {}): TodayItem {
@@ -166,15 +166,36 @@ describe('enrichment honesty', () => {
   it('refuses to call it "since review" when history starts later', () => {
     const w = priceWindowSince(hist('2026-06-01', [100, 120]), '2026-01-01')!
     expect(w.reachesAnchor).toBe(false)
-    expect(windowLabel(w, 246)).not.toMatch(/since review/)
-    expect(windowLabel(w, 246)).toMatch(/of history/)
+    expect(windowLabel(w, 246, 'review')).not.toMatch(/since review/)
+    expect(windowLabel(w, 246, 'review')).toMatch(/of history/)
     // The move itself is still real -- it is the WINDOW that is not claimed.
     expect(w.changePct).toBeCloseTo(20, 5)
   })
 
+  it('does not call the whole history a move since an anchor newer than every close', () => {
+    // An idea opened today, with closes only up to yesterday.
+    const w = priceWindowSince(hist('2026-01-01', [100, 110, 160]), '2026-01-10')!
+    expect(w.reachesAnchor).toBe(false)
+    expect(w.anchorIndex).toBeNull()
+    expect(w.changePct).toBeCloseTo(60, 5)
+    expect(windowLabel(w, 0, 'idea')).not.toMatch(/since/)
+  })
+
+  it('never labels an idea\'s price move as since review', () => {
+    const idea = (createdAt: string) => applyEnrichment(adaptDecisionItem({
+      id: 'idea-lly', surface: 'action', severity: 'orange', category: 'process',
+      title: 'Idea Being Worked On', titleKey: 'IDEA_NOT_SIMULATED', description: 'x',
+      chips: [{ label: 'Ticker', value: 'LLY' }, { label: 'Age', value: '0d' }],
+      context: { assetId: 'a-lly', assetTicker: 'LLY' }, ctas: [], sortScore: 0, createdAt,
+    } as DecisionItem), { history: hist('2026-01-01', [100, 110, 160]) } as TodayEnrichment)
+    const price = (createdAt: string) => idea(createdAt).metrics.find(m => m.label.startsWith('Price'))!
+    expect(price('2026-01-10').label).toBe('Price over history')
+    expect(price('2026-01-02')).toMatchObject({ label: 'Price since idea', value: '+45.5%' })
+  })
+
   it('names the window as since-review only when it truly is', () => {
     const w = priceWindowSince(hist('2026-01-01', [100, 125]), '2026-01-01')!
-    expect(windowLabel(w, 246)).toBe('since review · 246d')
+    expect(windowLabel(w, 246, 'review')).toBe('since review · 246d')
   })
 
   it('returns nothing rather than a window from one point', () => {
@@ -217,7 +238,7 @@ describe('enrichment honesty', () => {
 
   /** The age the strip already states, read the way `enrich` reads it. */
   function ageFromMetricsForTest(item: ReturnType<typeof make>) {
-    const m = item.metrics.find(x => x.label === 'Since review' || x.label === 'Open')
+    const m = item.metrics.find(x => x.label === 'Since update' || x.label === 'Open')
     return m ? Number(m.value.replace(/[^\d.-]/g, '')) : null
   }
 
@@ -274,7 +295,7 @@ describe('enrichment honesty', () => {
     const captionFor = (key: string) =>
       applyEnrichment(make('x', key, { createdAt: from }), { history, spot: 129 }).visual.caption
 
-    expect(captionFor('THESIS_STALE')).toMatch(/since last review/i)
+    expect(captionFor('THESIS_STALE')).toMatch(/since the last thesis update/i)
     expect(captionFor('RATING_NO_FOLLOWUP')).toMatch(/since the rating changed/i)
     expect(captionFor('EXECUTION_NOT_CONFIRMED')).toMatch(/since the decision/i)
     expect(captionFor('PROPOSAL_AWAITING_DECISION')).toMatch(/since the proposal/i)
@@ -300,6 +321,50 @@ describe('enrichment honesty', () => {
     const labels = out.metrics.map(m => m.label)
     expect(new Set(labels).size).toBe(labels.length)
     expect(labels).toContain('Price since decision')
+  })
+
+  it('draws a proposal and an execution as waiting on their own event, not as unreviewed', () => {
+    const tile = (key: string) => make('tsm', key, {
+      chips: [{ label: 'Ticker', value: 'TSM' }, { label: 'Age', value: '12d' }],
+    })
+    const proposal = applyEnrichment(tile('PROPOSAL_AWAITING_DECISION'), undefined).visual
+    const execution = applyEnrichment(tile('EXECUTION_NOT_CONFIRMED'), undefined).visual
+
+    expect(proposal).toMatchObject({ archetype: 'aging', caption: 'Awaiting decision for', window: '12 days' })
+    expect(proposal.aging!.milestones[0].label).toBe('proposed')
+    expect(execution).toMatchObject({ archetype: 'aging', caption: 'Unconfirmed for', window: '12 days' })
+    expect(execution.aging!.milestones[0].label).toBe('decided')
+    for (const v of [proposal, execution]) {
+      expect(`${v.caption} ${v.note} ${v.aging!.milestones[0].label}`).not.toMatch(/review|written/i)
+    }
+
+    // A stale thesis counts from its last edit.
+    expect(applyEnrichment(make('amzn', 'THESIS_STALE'), undefined).visual.caption).toBe('Not updated for')
+  })
+
+  it('gives Ask AI the event-true age and price window for a proposal and an execution', () => {
+    const from = new Date(Date.now() - 20 * 86_400_000).toISOString()
+    const history = Array.from({ length: 30 }, (_, i) => ({
+      date: new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10),
+      close: 100 + i,
+    }))
+    const ctx = (key: string) => applyEnrichment(make('tsm', key, {
+      chips: [{ label: 'Ticker', value: 'TSM' }, { label: 'Age', value: '20d' }],
+      createdAt: from,
+    }), { history, spot: 129 }).target!.contextChips!
+
+    const proposal = ctx('PROPOSAL_AWAITING_DECISION')
+    const execution = ctx('EXECUTION_NOT_CONFIRMED')
+    expect(proposal.map(c => c.label)).toEqual(expect.arrayContaining(['Since proposal', 'Price since proposal']))
+    expect(execution.map(c => c.label)).toEqual(expect.arrayContaining(['Since decision', 'Price since decision']))
+    for (const chips of [proposal, execution]) {
+      expect(chips.map(c => c.label).join(' ')).not.toMatch(/review/i)
+      // The age is stated once, not once per wording.
+      expect(chips.filter(c => c.value === '20d')).toHaveLength(1)
+    }
+
+    const thesis = ctx('THESIS_STALE').map(c => c.label)
+    expect(thesis).toEqual(expect.arrayContaining(['Since update', 'Price since update']))
   })
 
   it('gives an overdue deliverable no price story to tell', () => {

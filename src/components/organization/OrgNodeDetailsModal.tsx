@@ -528,7 +528,7 @@ export function OrgNodeDetailsModal({
           role="dialog"
           aria-label={`Details for ${node.name}`}
           tabIndex={-1}
-          className="pointer-events-auto w-full max-w-[640px] h-[85vh] bg-white rounded-lg shadow-2xl overflow-hidden outline-none animate-in fade-in zoom-in-95 duration-150 dark:bg-gray-800"
+          className="pointer-events-auto w-full max-w-[640px] h-viewport-85 bg-white rounded-lg shadow-2xl overflow-hidden outline-none animate-in fade-in zoom-in-95 duration-150 dark:bg-gray-800"
         >
           {/* ── Sliding container ── */}
           <div

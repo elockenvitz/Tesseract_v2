@@ -124,21 +124,41 @@ function useUserContext() {
   // contexts/CoverageRelevanceContext.
   const coverageIndex = useCoverageIndex()
 
+  /*
+    Which names this organization holds.
+
+    `portfolio_holdings` carries no `organization_id` of its own — the org
+    lives on `portfolios` — so the scope has to come through the join. This
+    query already joined `portfolios` and selected only `id`, which meant the
+    join existed and the filter did not: every holding RLS admitted, across
+    every organization the reader belongs to, landed in this Set.
+
+    Nothing here is rendered, so this was influence rather than disclosure:
+    `scoreFeedItem` uses the Set as a relevance boost, so a post about a name
+    held in another org outranked one held in this org. Lower severity than
+    the same defect in useSignalCards and the same root cause, which is why
+    both are fixed the same way rather than each in its own idiom.
+
+    The key carries the org for the same reason. Without it the cached Set
+    survives an org switch untouched for the whole 60s staleTime, so scoping
+    the query alone would still have ranked org A's feed by org B's book.
+  */
   const holdingsQuery = useQuery({
-    queryKey: ['feed-context', 'holdings', user?.id],
+    queryKey: ['feed-context', 'holdings', user?.id, currentOrgId],
     queryFn: async () => {
-      if (!user) return new Set<string>()
+      if (!user || !currentOrgId) return new Set<string>()
       const { data } = await supabase
         .from('portfolio_holdings')
         // holdings-audit: safe — builds a Set of asset ids, and a set is
         // unaffected by the same asset appearing on several snapshot dates.
         // No sum, no denominator, so latestSnapshotRows would change nothing.
-        .select('asset_id, portfolios!inner(id)')
+        .select('asset_id, portfolios!inner(organization_id)')
+        .eq('portfolios.organization_id', currentOrgId)
       const ids = new Set<string>()
       for (const h of data || []) if (h.asset_id) ids.add(h.asset_id)
       return ids
     },
-    enabled: !!user,
+    enabled: !!user && !!currentOrgId,
     staleTime: 60_000,
   })
 
@@ -416,7 +436,7 @@ async function fetchFeedPage(
     queries.push((async () => {
       let q = supabase
         .from('quick_thoughts')
-        .select('id, content, created_at, updated_at, sentiment, visibility, is_pinned, tags, asset_id, created_by, source_url, source_title, assets:asset_id(id, symbol, company_name)')
+        .select('id, content, created_at, updated_at, sentiment, visibility, is_pinned, tags, asset_id, created_by, source_url, source_title, promoted_to_trade_idea_id, assets:asset_id(id, symbol, company_name)')
         .eq('is_archived', false)
         .eq('organization_id', ctx.organizationId!)
         .gte('created_at', timeStart)
@@ -452,6 +472,9 @@ async function fetchFeedPage(
         tags: d.tags || [],
         source_url: d.source_url,
         source_title: d.source_title,
+        /* Whether this thought has already become a trade idea. Read by the
+           feed's progression CTA so a promoted thought is not offered again. */
+        promoted_to_trade_idea_id: d.promoted_to_trade_idea_id ?? null,
         asset: d.assets || undefined,
       }))
     })())
@@ -937,6 +960,18 @@ export function useIdeasFeed(filters: IdeasFeedFilters) {
 
   return {
     items,
+    /**
+     * True while the identity this feed is FOR is still resolving.
+     *
+     * The query is `enabled: !!userId && !!organizationId`. A disabled query in
+     * React Query v5 reports `isLoading: false` — it is pending but idle — so
+     * before auth and the org context hydrate the feed answered "not loading,
+     * no items", which a caller correctly renders as an empty feed.
+     *
+     * On client navigation both are already resolved and this is never false,
+     * which is why the defect only appeared on a hard refresh.
+     */
+    isContextReady: !!ctx.userId && !!ctx.organizationId,
     isLoading: query.isLoading,
     isFetchingNextPage: query.isFetchingNextPage,
     hasNextPage: !!query.hasNextPage,

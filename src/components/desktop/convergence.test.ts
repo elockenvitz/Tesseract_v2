@@ -63,15 +63,78 @@ const DETAILS = [
   'components/decisions-v2/DecisionDetail.tsx',
 ]
 
-describe('a price path is never graded', () => {
-  it('draws one ink regardless of direction, on every surface', () => {
+/*
+ * ── The rule this describe used to state, and why it narrowed ────────────
+ *
+ * It said no price path may be graded by direction, anywhere. The reasoning
+ * was sound for what it was protecting: a red line under a decision reads as
+ * "bad decision", and post-decision drift is evidence, not a verdict.
+ *
+ * That argument is about the DECISION. It is not about the price. Up and down
+ * are facts about a line, a desk reads them instantly, and in review the
+ * uniformly grey chart was read as "no signal" rather than as neutrality --
+ * so the product owner called it, and the price line is now graded.
+ *
+ * The protection survives where it was actually needed. The objects that
+ * render a JUDGEMENT on a decision -- the lifecycle path, and the detail
+ * pane's since-the-decision chart -- stay on one neutral ink, and these
+ * cases hold them there.
+ */
+describe('a decision is never graded, though its price may be', () => {
+  /** The objects that depict the decision itself, not the market. */
+  const NEVER_GRADED = [
+    ['components/decisions-v2/DecisionVisual.tsx', 'export function PriceSinceDecision'],
+    ['components/decisions-v2/DecisionVisual.tsx', 'export function DecisionPath'],
+  ] as const
+
+  it('keeps the decision objects on one ink regardless of direction', () => {
+    for (const [file, marker] of NEVER_GRADED) {
+      const body = src(file)
+      const start = body.indexOf(marker)
+      expect(start, `${marker} not found in ${file}`).toBeGreaterThan(-1)
+      // To the next top-level export, so one component's ink is examined.
+      const rest = body.slice(start + marker.length)
+      const end = rest.indexOf('\nexport function ')
+      const fn = end === -1 ? rest : rest.slice(0, end)
+
+      // The pattern that grades: a ternary on direction picking a hue.
+      expect(fn).not.toMatch(/up \? 'stroke-emerald/)
+      expect(fn).not.toMatch(/up \? 'fill-emerald/)
+      expect(fn).not.toMatch(/up \? 'text-emerald/)
+      expect(fn).not.toMatch(/up \? 'bg-emerald/)
+    }
+  })
+
+  it('never grades with the severity palette, on any visual surface', () => {
+    /*
+     * Direction and condition are different axes and must stay different.
+     * A price line may say which way it went; it may never borrow the ink
+     * that means "this framework is broken", because a fall is not a break.
+     * Rose and amber stay reserved for condition on every visual module.
+     */
     for (const f of VISUALS) {
       const body = src(f)
-      // The pattern that graded returns: a ternary on direction picking a hue.
-      expect(body).not.toMatch(/up \? 'stroke-emerald/)
-      expect(body).not.toMatch(/up \? 'fill-emerald/)
-      expect(body).not.toMatch(/up \? 'text-emerald/)
-      expect(body).not.toMatch(/up \? 'bg-emerald/)
+      expect(body).not.toMatch(/up \? 'stroke-amber/)
+      expect(body).not.toMatch(/up \? 'text-amber/)
+      // Down may be rose, but only paired with emerald as a direction pair --
+      // never rose alone standing in for "bad".
+      const roseAlone = /(?<!emerald[^\n]*)\bdown \? 'stroke-rose/
+      expect(body).not.toMatch(roseAlone)
+    }
+  })
+
+  it('grades the price line by direction, and says so in one place', () => {
+    // The tile chart and the small-tile sparkline both grade, and both derive
+    // it from the same `up` the percentage's sign comes from -- so the hue
+    // and the number can never disagree about which way the price went.
+    /* The tile chart moved out of the Decisions lens into the shared shell,
+       so Portfolio and Research mount the same object rather than a sparkline
+       reduction of it. The grading rule follows the drawing. */
+    const chart = src('components/desktop/TilePriceChart.tsx')
+    const spark = src('components/desktop/DesktopTile.tsx')
+    for (const body of [chart, spark]) {
+      expect(body).toMatch(/const up = [^\n]*>= 0/)
+      expect(body).toMatch(/up \? 'stroke-emerald/)
     }
   })
 
@@ -235,10 +298,31 @@ describe('browse, then engage: one mode at a time', () => {
       expect(body).not.toContain('Full scan')
       expect(body).not.toContain('Full book')
     }
-    // The shell offers no footer slot, so a surface cannot add one back, and
-    // no selected ring, because nothing remains for a tile to stay tied to.
+    /*
+     * ── No call to action AT REST ───────────────────────────────────────
+     *
+     * This used to assert the shell offered no footer slot at all, so a
+     * surface could not add one back. That did not hold: Decisions added one
+     * anyway, with `<button>`s nested inside the shell's own `<button>` --
+     * invalid HTML, and unreachable by keyboard. A rule a surface can break
+     * by accident is not a rule, it is a trap.
+     *
+     * So the shell now owns an `actions` slot, and the constraint moved to
+     * where it belongs: the resting state. `TileShelf` renders the object's
+     * standing context at rest and reveals the verbs only on hover or
+     * keyboard focus, in height reserved either way -- so a gallery still
+     * reads as a field of objects rather than a wall of buttons, and the
+     * verbs are real accessible buttons when reached for.
+     */
     const shell = code('components/desktop/DesktopTile.tsx')
-    expect(shell).not.toMatch(/footer\s*[?:]|actions\s*\?:/)
+    expect(shell).toMatch(/function TileShelf/)
+    // Reveal is opacity only, inside reserved height: no layout shift, and
+    // nothing appears that was not already occupying its space.
+    expect(shell).toMatch(/group-hover:/)
+    expect(shell).toMatch(/group-focus-within:/)
+    // The shell is not itself a button any more, which is what made nesting
+    // one inside it invalid in the first place.
+    expect(shell).toMatch(/role="group"/)
     expect(shell).not.toMatch(/selected\s*\?:/)
   })
 })
@@ -283,10 +367,34 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // The tile used to print ACCEPTED, TRIM, MNST, then "Eric accepted a trim
     // in MNST at 2.0%", then the book, then Eric again -- six lines carrying
     // three facts, with the largest of them adding nothing.
+    /*
+     * Code, not prose. The tile carries a comment explaining why the generated
+     * summary was removed, and a rule that cannot tell an explanation of a
+     * defect from the defect forces the next person to delete the reasoning in
+     * order to make the suite pass.
+     */
     const body = src('components/decisions-v2/DecisionsWorkspace.tsx')
-    const tile = body.slice(body.indexOf('function DecisionTile'), body.indexOf('function TileShape'))
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+    const start = body.indexOf('function DecisionTile')
+    /*
+     * `function TileShape` was the old end anchor and has not existed in this
+     * file for some time. `indexOf` returned -1, `slice(start, -1)` ran to the
+     * end of the file, and the assertion was quietly examining every component
+     * below the tile as well -- so it failed on code it was never about.
+     *
+     * A missing anchor must fail loudly, not silently widen the subject.
+     */
+    const endMarker = 'function Loading('
+    const end = body.indexOf(endMarker)
+    expect(start, 'DecisionTile not found').toBeGreaterThan(-1)
+    expect(end, `${endMarker} not found — fix this anchor`).toBeGreaterThan(start)
+
+    const tile = body.slice(start, end)
     expect(tile).not.toContain('summaryOf')
-    expect(tile).not.toContain('OUTCOME_LABEL')
+    // The outcome word reaches the tile only through the deduplicating
+    // eyebrow, never printed a second time beside it.
+    expect(tile).not.toContain('OUTCOME_LABEL[')
   })
 
   it('differentiates the three research states structurally, not by wording', () => {
@@ -296,7 +404,8 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // everything else keeps the sentence.
     expect(tile).toMatch(/state === 'evidence-since-review' \?/)
     expect(tile).toContain('<TileLead')
-    expect(tile).toMatch(/state === 'no-thesis' \?/)
+    // A thesis partly written is the same absence, drawn with what exists.
+    expect(tile).toMatch(/state === 'no-thesis' \|\| state === 'incomplete-thesis' \?/)
     // The missing structure, drawn: three named parts and what is behind each.
     expect(tile).toContain('<MissingThesis')
     // Never a completion score: the question is whether the case argues, not
@@ -322,8 +431,17 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // Every card now carries a visual, so the honesty rule moved: the choice
     // is made from the data the idea actually has, and the fallback draws
     // lifecycle and elapsed time rather than a fabricated chart.
+    /*
+     * The blanket guard for generated prompts is gone: a suggestion has a
+     * price, and often a modelled range and a weight the book already carries,
+     * and those are facts about the NAME rather than about an idea nobody has
+     * written. The primitives that genuinely need a written idea fall away on
+     * their own conditions -- `sizing` needs a `proposedWeight` a suggestion
+     * has no value for. The selection rule inside the literal is unchanged and
+     * is what this pins.
+     */
     const pick = ideas.slice(
-      ideas.indexOf('const available = (['), ideas.indexOf('].filter(Boolean)'))
+      ideas.indexOf('const available = (['), ideas.indexOf(']).filter(Boolean)'))
     expect(pick).toContain("weightPct != null && idea.proposedWeight != null ? 'sizing'")
     expect(pick).toContain("frame?.target != null && spot != null ? 'target'")
     // The fallback is an investment fact, not a workflow one: stage is nowhere
@@ -410,7 +528,8 @@ describe('a detail page is not five white rectangles', () => {
     expect(src('components/ideas-v2/IdeaDetail.tsx'))
       .toMatch(/<DesktopModule\s+title="Decision"/)
     expect(src('components/research-v2/ResearchDetail.tsx'))
-      .toMatch(/title="New since review"/)
+      // Keyed by id: its title names the thesis date and changes with it.
+      .toMatch(/<DesktopModule\s+id="new-since-review"/)
   })
 
   it('emits the anchor its own scroll target looks for', () => {
@@ -600,7 +719,24 @@ describe('one Dashboard, five lenses', () => {
     for (const t of ['ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']) {
       expect(page).toContain(`case '${t}':`)
     }
-    expect(page).toMatch(/case 'today':\s*\n\s*return <DashboardShell initialLens="today" \/>/)
+    /*
+     * `today` mounts the shell on its own lens. Asserted as a mount rather
+     * than as the exact next line: a pilot now gets the same shell with the
+     * Get Started checklist and the first-session coverage prompt layered
+     * above it, so the case arm is a branch and the adjacency no longer holds.
+     * What matters is that both arms end at this shell and this lens.
+     */
+    const todayArm = page.slice(page.indexOf("case 'today':"), page.indexOf("case 'ideas':"))
+    /*
+     * One mount, on the arm that is not the pilot first run. An incomplete
+     * pilot gets the mission INSTEAD of the Dashboard rather than on top of
+     * it — layering meant the lens bar and every lens query sat under the
+     * guidance — and `effectiveIsPilot` is already `hasGraduated ? false :
+     * isPilot`, so the shell returns the moment the mission completes.
+     */
+    expect(todayArm.match(/<DashboardShell initialLens="today" \/>/g)).toHaveLength(1)
+    expect(todayArm).toContain('pilotMode.effectiveIsPilot')
+    expect(todayArm).toContain('PilotWelcomeBanner')
     const tabs = src('components/layout/TabManager.tsx')
     for (const t of ['ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']) {
       expect(tabs).toContain(t)
@@ -632,19 +768,39 @@ describe('size is importance, colour is condition', () => {
   })
 
   it('never demotes the top-ranked object for being sparse', () => {
+    /*
+     * Size still comes from POSITION, never from what a card has to draw --
+     * that is the rule, and it is what stops a tile growing because it happens
+     * to have a chart.
+     *
+     * Research reads `sizeByRankWithRhythm`, which grants a larger cell every
+     * few rows past the leading band. It is the same positional input: the
+     * monotonic grade flattened a long field into an unbroken run of compacts
+     * below the fold, and the rhythm breaks that run without consulting the
+     * item. Emission order is untouched in both.
+     */
     for (const f of [
       'components/research-v2/ResearchWorkspace.tsx',
       'components/portfolio-v2/PortfolioWorkspace.tsx',
     ]) {
-      // Size comes from the index alone, in the order the ranking produced.
-      expect(src(f)).toMatch(/size=\{sizeByRank\(i, /)
+      expect(src(f)).toMatch(/size=\{sizeByRank(WithRhythm)?\(i, /)
     }
-    // Ideas uses a density map, on the same rule: the index, and nothing
-    // about tone, stance, book or how much the card has to draw.
-    expect(src('components/ideas-v2/IdeasWorkspace.tsx')).toContain('density={densityForRank(rank)}')
-    const card = src('components/ideas-v2/IdeaCard.tsx')
-    const fn = card.slice(card.indexOf('export function densityForRank'))
-    expect(fn.split('\n}')[0]).not.toMatch(/tone|ladder|thesis|direction|conviction/)
+    // And the rhythm itself is positional: no item field reaches it.
+    const shell = src('components/desktop/DesktopTile.tsx')
+    const rhythm = shell.slice(shell.indexOf('export function sizeByRankWithRhythm'))
+    expect(rhythm.slice(0, rhythm.indexOf('\n}'))).not.toMatch(/item|subject|tone|chart|weight/)
+    /*
+     * Ideas is sized by `opportunitySize`, not by a density map.
+     *
+     * The lens no longer renders `IdeaCard`, so `density={densityForRank(rank)}`
+     * is not in `IdeasWorkspace.tsx` to be found. The RULE this pinned is the
+     * one that matters and it still holds: the size comes from the index and
+     * the candidate's own content, never from tone, stance or how much the
+     * card has to draw. Asserted against the function that decides it now.
+     */
+    const opp = src('lib/desktop-ideas/opportunity.ts')
+    const size = opp.slice(opp.indexOf('export function opportunitySize'))
+    expect(size.split('\n}')[0]).not.toMatch(/tone|ladder|thesis|direction|conviction/)
   })
 
   it('places by rank order, never by dense backfill', () => {
@@ -671,7 +827,16 @@ describe('size is importance, colour is condition', () => {
      */
     expect(body).toContain('sizeByRecency(i)')
     expect(body).toContain('flow="chronological"')
-    expect(body).toContain('compareWork')
+    /*
+     * The ordering moved into the classifier. `compareWork` was the workspace's
+     * own comparator; it is now `compareSituations`, applied by `selectForLens`
+     * over `classifySituations` -- one place that decides both which records
+     * make the lens and what order they come in, rather than a sort here and a
+     * membership rule there. The invariant is unchanged: the lens lists what
+     * still wants something, longest-waiting first.
+     */
+    expect(body).toContain('selectForLens(classifySituations(')
+    expect(src('lib/desktop-decisions/classes.ts')).toContain('export function compareSituations')
     expect(body).not.toMatch(/sizeByRank/)
     const fn = src('components/desktop/DesktopTile.tsx')
     const band = fn.slice(fn.indexOf('export function sizeByRecency'))
@@ -682,9 +847,27 @@ describe('size is importance, colour is condition', () => {
   it('lets a hero earn its space with a number when it has no chart', () => {
     const shell = src('components/desktop/DesktopTile.tsx')
     expect(shell).toContain('export function TileHeroNumber')
-    // Portfolio's hero leads with weight. Research leads with the note that
-    // arrived, or with the age -- the object, never a numeral for its own sake.
-    expect(src('components/portfolio-v2/PortfolioWorkspace.tsx')).toContain('<TileHeroNumber')
+
+    /*
+     * Portfolio no longer LEADS with the weight.
+     *
+     * It did, because the tile had no other object worth the space. Now every
+     * position tile draws its price, so the hero earns its space with the
+     * chart and the weight moved to the corner -- stated once, as a control
+     * that opens the dollars, the shares and the active weight behind it.
+     *
+     * The rule underneath is unchanged and is what these assert: the weight
+     * is said ONCE on a card, and it is not a numeral competing with the
+     * ticker for the top of the tile.
+     */
+    const pw = src('components/portfolio-v2/PortfolioWorkspace.tsx')
+    expect(pw).toContain('<WeightChip')
+    expect(pw).not.toContain('<TileHeroNumber')
+    // One statement of it per card: no second figure in the body.
+    expect(pw).not.toContain('<WeightFigure')
+
+    // Research still leads with the object -- the note that arrived, or the
+    // age -- never a numeral for its own sake.
     expect(src('components/research-v2/ResearchWorkspace.tsx')).toContain('newestEvidenceTitle')
   })
 })
@@ -723,11 +906,11 @@ describe('the launcher names the product, not the build', () => {
     expect(header).not.toContain("title: 'Book'")
   })
 
-  it('demotes the pre-Today dashboard rather than deleting it', () => {
-    // Named as legacy where a user meets it, and still reachable.
-    expect(header).toContain('Dashboard (legacy)')
-    expect(header).toContain("type: 'dashboard'")
-    // It is no longer manufactured as a default tab anywhere.
+  it('offers no route to the pre-Today dashboard', () => {
+    // Demotion was the previous stage: named as legacy, kept in the More
+    // group. The surface behind it is retired now, so the entries are gone
+    // and there is nothing to name.
+    expect(header).not.toContain('Dashboard (legacy)')
     expect(src('pages/DashboardPage.tsx')).not.toContain("title: 'Dashboard (legacy)'")
   })
 })
@@ -810,17 +993,36 @@ describe('the canonical Dashboard is where a session begins', () => {
     expect(page).not.toContain("title: 'Dashboard (legacy)'")
   })
 
-  it('keeps the legacy dashboard built and routable', () => {
-    // Demoted, not deleted: the tab type still renders its own content.
+  it('keeps the dashboard type routable, with no desktop surface on it', () => {
+    /*
+     * The TYPE survives because a saved session or a deep link can still
+     * carry it, and because the pilot action dashboard is still hosted there
+     * pending a separate decision about the pilot programme. What is gone is
+     * the non-pilot desktop workbench and every way of asking for it.
+     */
     expect(page).toContain("activeTab.type === 'dashboard'")
     expect(page).toContain('renderDashboardContent')
-    // And the launcher offers it, named as legacy, in the MORE group --
-    // which is now the ONLY way back to it, since it is no longer injected
-    // into every session.
+
+    /*
+     * Every desktop surface that once lived on this type, by the components
+     * only it rendered. The non-pilot workbench went first; `PilotActionDashboard`
+     * followed once it was proved to own no access control, no setup state, no
+     * walkthrough and no telemetry of its own.
+     */
+    for (const gone of [
+      'DashboardFilters', 'DecisionSystem', 'ResearchWorkbench',
+      'PortfolioWorkbench', 'PortfolioGrid', 'PilotActionDashboard',
+    ]) expect(page).not.toContain(gone)
+
+    // And no way in: the launcher's More group no longer offers it.
     const header = src('components/layout/Header.tsx')
     const more = header.slice(header.indexOf('>More<'))
-    expect(more).toContain("title: 'Dashboard (legacy)'")
-    expect(more).toContain("type: 'dashboard'")
+    expect(more).not.toContain("type: 'dashboard'")
+  })
+
+  it('sends a legacy dashboard descriptor to the canonical Dashboard', () => {
+    const aliases = src('lib/tabs/legacy-tab-aliases.ts')
+    expect(aliases).toMatch(/'dashboard': \{ type: 'today', id: 'today'/)
   })
 
   it('does not force the Dashboard over a legitimately persisted tab', () => {
@@ -961,9 +1163,21 @@ describe('a handoff never promises what is not there', () => {
      * about the calendar, and painting its weight amber claims the position
      * is wrong when nobody has said so.
      */
+    /*
+     * The size is a `scale` prop now rather than a literal in one class
+     * string: Portfolio was saying the same fact four different ways below
+     * `large`, so the primitive grew the sizes instead of each lens
+     * hand-rolling its own. The RULES are what matter and they are unchanged.
+     */
     const hero = src('components/desktop/DesktopTile.tsx')
-    expect(hero).toContain("'font-mono text-[30px] font-semibold leading-[0.95]")
-    expect(hero).not.toContain("tone === 'review' ? 'text-amber-700 dark:text-amber-400'")
+    // Hero is 30px, and 44px -- louder than the ticker -- never comes back.
+    expect(hero).toMatch(/scale === 'hero' \? 'text-\[30px\]'/)
+    expect(hero).not.toMatch(/text-\[44px\]/)
+    expect(hero).toContain("font-mono font-semibold leading-[0.95]")
+    // Only a genuine break inks it. A due review is a calendar fact.
+    expect(hero).not.toMatch(/tone === 'review' \? 'text-amber/)
+    expect(src('components/portfolio-v2/PortfolioWorkspace.tsx'))
+      .not.toMatch(/tone === 'review' \? 'text-amber-700 dark:text-amber-500'\s*\n?\s*:\s*'text-gray-900/)
   })
 
   it('never draws a meter where it can draw the population', () => {
@@ -1018,7 +1232,14 @@ describe('a handoff never promises what is not there', () => {
      * telling them apart is the point of this lens.
      */
     expect(src('components/decisions-v2/DecisionVisual.tsx')).toContain('export const OUTCOME_INK')
-    expect(src('components/decisions-v2/DecisionsWorkspace.tsx')).toContain('OUTCOME_INK[kind]')
+    /*
+     * Indexed by the outcome directly now. `OutcomeChip` held a local `kind`
+     * and was deleted when the eyebrow started deduplicating its labels -- the
+     * outcome word is dropped entirely when the reason already says it, which
+     * a component that always rendered could not do. The ink is unchanged.
+     */
+    expect(src('components/decisions-v2/DecisionsWorkspace.tsx'))
+      .toContain('OUTCOME_INK[outcomeOf(d.status)]')
   })
 
   it('states the book against its index without inventing a return', () => {
@@ -1156,8 +1377,19 @@ describe('a handoff never promises what is not there', () => {
      * size has no quantity to draw, but the wait is a fact and it is the
      * whole complaint on a card nobody has answered.
      */
-    expect(src('components/decisions-v2/DecisionsWorkspace.tsx'))
-      .toContain('No size was asked for, so there is no quantity to draw')
+    /*
+     * The caption this asserted no longer exists anywhere in the lens, and had
+     * not for several passes -- the assertion was stale, not protective.
+     *
+     * What it was defending is real and still holds: an unanswered request
+     * whose size is unknown must still show the WAIT, because the wait is the
+     * whole complaint on a card nobody has answered. That now lives in the
+     * lifecycle fallback rather than in a sentence, so it is asserted
+     * structurally.
+     */
+    const dws = src('components/decisions-v2/DecisionsWorkspace.tsx')
+    expect(dws).toContain('drawsPath')
+    expect(dws).toContain('pathHasIntervals')
 
     // A real axis with the book's own scale on it: a weight bar with no ticks
     // is a proportion of something the reader has to guess.
@@ -1207,7 +1439,8 @@ describe('a handoff never promises what is not there', () => {
     const visual = src('components/today/TodayVisual.tsx')
       .replace(/\/\*[\s\S]*?\*\//g, '')
     expect(visual).not.toContain('<text')
-    expect(visual).toContain("{(r.anchorLabel ?? 'Last review').toLowerCase()}")
+    // The label names the window's own anchor; its fallback never assumes a review.
+    expect(visual).toContain("{(r.anchorLabel ?? 'Start').toLowerCase()}")
   })
 
   it('draws the one fact a stale card has, rather than nothing', () => {
@@ -1278,9 +1511,22 @@ describe('a handoff never promises what is not there', () => {
      * it is showing. A compact tile still has room for an axis, it just
      * cannot carry ticks and both end labels.
      */
-    expect(ws).toContain("{work === 'explain' ? (")
-    expect(ws).toContain(') : d.sizingWeight != null ? (')
-    expect(ws).not.toContain("size !== 'compact' && (")
+    /*
+     * Still a ladder, and still ungated on baseline or density -- it simply
+     * has a rung above it now (the price column at hero and large), so the
+     * explain branch is a continuation rather than the opening `{`.
+     */
+    expect(ws).toContain("work === 'explain' ? (")
+    /*
+     * One deliberate density gate, which is the opposite of the two this case
+     * removed. Those suppressed a visual that had something to draw. This one
+     * chooses BETWEEN visuals on the smallest tile, where there is room for
+     * exactly one: the share-of-book bar is the object this product draws most
+     * -- every lens has one -- so at compact the price takes the slot, being
+     * the one object that differs from the tile above.
+     */
+    expect(ws).toContain("outcome === 'open' && size !== 'compact'")
+    expect(ws).toContain('drawsSpark')
     const visual = src('components/decisions-v2/DecisionVisual.tsx')
     expect(visual).toContain('const known = from != null')
     expect(visual).toContain('compact?: boolean')

@@ -74,6 +74,18 @@ export interface ExecuteSimVariantsResult {
   trades: AcceptedTradeWithJoins[]
   /** Variants that failed to commit (e.g. missing sizing). One entry per failure. */
   failures: Array<{ variantId: string; symbol: string; reason: string }>
+  /**
+   * Resolves when the post-commit background work has finished: the
+   * pro-forma fold into every active simulation's `baseline_holdings`, the
+   * `simulation_trades` cleanup and the variant deletes.
+   *
+   * The commit itself is already durable when this result is returned — this
+   * is only about the derived simulation state. A caller that then writes
+   * `baseline_holdings` itself MUST await this first, or the two writers race
+   * on one JSONB column and the loser's value is what the user sees. Never
+   * rejects: the background task catches its own failures.
+   */
+  settled: Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -656,6 +668,37 @@ async function markDRAccepted(decisionRequestId: string, ctx: ActionContext): Pr
   if (error) throw error
 }
 
+/**
+ * Record which trade executed the request, once the trade exists.
+ *
+ * The request is resolved (case A) or created (cases B/C) before
+ * `createAcceptedTrade` runs, so neither write can carry the trade's id. The
+ * trade already names its request (`accepted_trades.decision_request_id`); this
+ * writes the other direction, `decision_requests.accepted_trade_id`, which is
+ * what the Inbox accept path writes and what desktop Decisions reads. Without
+ * it an executed Trade Lab trade showed there as never executed.
+ *
+ * Only fills an empty link, so it never repoints a request another path
+ * already linked. Non-fatal like the other post-commit steps: the trade is
+ * committed, and Decisions can still resolve an unlinked request from the
+ * trade side (lib/desktop-decisions/execution-link).
+ */
+async function linkDecisionRequestToTrade(decisionRequestId: string, acceptedTradeId: string): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('decision_requests')
+      // The generated client types `decision_requests` updates as `never` (the
+      // same error every other update in this file carries); cast rather than
+      // add one more to the repo count.
+      .update({ accepted_trade_id: acceptedTradeId, updated_at: new Date().toISOString() } as never)
+      .eq('id', decisionRequestId)
+      .is('accepted_trade_id', null)
+    if (error) console.warn('[ExecuteSim] Failed to link decision request to its trade', error)
+  } catch (e) {
+    console.warn('[ExecuteSim] Link decision request to trade threw', e)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -755,6 +798,7 @@ export async function executeSimVariants(
         const trade = await createAcceptedTrade(
           buildAcceptedTradeInput(v, decisionRequestId, tradeQueueItemId, batch.id, context, reason, batchDescription),
         )
+        await linkDecisionRequestToTrade(decisionRequestId, trade.id)
 
         // Resolve orphan proposals + sibling DRs, and advance the TQI
         // in parallel — both are idempotent and non-fatal. Their helpers
@@ -803,7 +847,9 @@ export async function executeSimVariants(
   // the Trade Book history.
   if (trades.length === 0) {
     await supabase.from('trade_batches').delete().eq('id', batch.id)
-    return { batch, trades, failures }
+    // Nothing committed, so there is no background work to wait on — but the
+    // field is not optional, so a caller can await it unconditionally.
+    return { batch, trades, failures, settled: Promise.resolve() }
   }
 
   // 4. Post-commit cleanup — fire-and-forget.
@@ -825,7 +871,15 @@ export async function executeSimVariants(
   // delete) so the SimulationPage sync effect can't observe an orphaned
   // sim_trade mid-flight.
   const committedAssetIds = Array.from(new Set(trades.map(t => t.asset_id)))
-  void (async () => {
+  // Handed back as `settled` rather than dropped on the floor. It was
+  // fire-and-forget, which meant a caller that also writes
+  // `baseline_holdings` — SimulationPage re-snapshots it from
+  // portfolio_holdings after a bulk execute — was a second unordered writer
+  // on the same column. Whichever landed last won: re-snapshot last gave the
+  // right holdings, fold last added the trade's deltas to a baseline that
+  // already contained them and doubled the position. Still not awaited here,
+  // so the Decision Recorded modal appears as immediately as before.
+  const settled = (async () => {
     try {
       await foldTradesIntoActiveSimulations(trades, portfolioId)
       await Promise.all([
@@ -843,5 +897,5 @@ export async function executeSimVariants(
     }
   })()
 
-  return { batch, trades, failures }
+  return { batch, trades, failures, settled }
 }

@@ -79,6 +79,9 @@ import {
   asymmetry, type Range, type VisualSize, type OpenAnchor,
 } from './IdeaVisuals'
 import type { ScanExposure } from '../../hooks/useDesktopIdeas'
+/* The shared tile chart, so an idea's price reads the same as the same name's
+   price in Decisions, Portfolio and Research. */
+import { TilePriceChart } from '../desktop/TilePriceChart'
 
 /**
  * How much of the page an idea gets to be.
@@ -208,7 +211,12 @@ export interface IdeaCardProps {
 function read(
   idea: IdeaRow, frame?: ScanFrame, exposure?: ScanExposure, openPrice?: number,
 ) {
-  const weightPct = exposure?.pct
+  /*
+   * A generated coverage prompt carries its own exposure: the scan's exposure
+   * map is built from real ideas, and a suggested name is not one of them.
+   */
+  const g = idea.generated
+  const weightPct = g ? (g.weightPct ?? undefined) : exposure?.pct
   const rung = (n: string) => frame?.ladder?.find(c => c.name === n)?.price ?? null
   const bear = rung('Bear'), bull = rung('Bull'), base = rung('Base')
   const spot = frame?.spot ?? null
@@ -234,6 +242,24 @@ function read(
    * statement that there is nothing to draw, so it can be the only thing on a
    * card but never the second thing.
    */
+  /*
+   * ── A suggestion draws what it actually has ──────────────────────────────
+   *
+   * This was `g ? [] : [...]` -- a blanket exclusion, on the reasoning that
+   * every primitive answers a question about an idea that EXISTS and a prompt
+   * has none of that. That is true of the framework primitives and false of
+   * the rest: a suggested name still has a price, and often a range somebody
+   * modelled and a weight the book already carries. Those are facts about the
+   * NAME, not about an idea nobody has written yet.
+   *
+   * So the exclusion is per-primitive instead of per-card. The ones that need
+   * a written idea fall away on their own conditions -- `sizing` needs
+   * `proposedWeight`, which a suggestion has no value for -- and the ones that
+   * describe the name survive.
+   *
+   * The claim is still the card. This only stops a suggestion being the one
+   * kind of tile in the lens that draws nothing at all.
+   */
   const available = ([
     range ? 'range' : null,
     /*
@@ -256,7 +282,7 @@ function read(
     // written but never priced is somebody stopping one step short of a
     // decidable idea; nothing modelled at all is a different finding.
     (frame?.casesNamed ?? 0) > 0 ? 'cases' : null,
-  ].filter(Boolean) as IdeaVisualKind[])
+  ]).filter(Boolean) as IdeaVisualKind[]
 
   return {
     range,
@@ -319,12 +345,17 @@ function read(
      * facts the client is authorised to read: the written case lives behind
      * column-level grants the scan does not hold.
      */
-    gaps: [
+    /*
+     * A suggestion names no absences. "No cases · no target · not held" is a
+     * complaint about an idea that exists; here nothing exists yet, and the
+     * tile's whole content is the reason to start one.
+     */
+    gaps: (g ? [] : [
       'No cases',
       frame?.target != null ? null : 'No target',
       spot != null ? null : 'No price',
       weightPct != null ? null : 'Not held',
-    ].filter(Boolean) as string[],
+    ].filter(Boolean)) as string[],
     /**
      * What this idea is asking someone to do.
      *
@@ -349,13 +380,19 @@ function read(
       target: frame?.target,
       weightPct,
     }, false) ?? 'Open idea',
-    whyNow: [
+    // A suggestion has no maturity to report: it says what it is and where the
+    // exposure sits.
+    whyNow: (g ? [
+      g.coverage === 'own' ? 'Your coverage' : 'Assigned to you',
+      idea.portfolioName ? `in ${idea.portfolioName}` : null,
+      weightPct != null ? `${weightPct.toFixed(1)}% held` : null,
+    ] : [
       MATURITY_LABEL[idea.maturity],
       idea.portfolioName ? `in ${idea.portfolioName}` : 'no book assigned',
       weightPct != null ? `${weightPct.toFixed(1)}% held` : null,
       idea.proposedWeight != null ? `${idea.proposedWeight.toFixed(1)}% proposed` : null,
       range && asymmetry(range).outside ? 'price outside the range' : null,
-    ].filter(Boolean).join(' · '),
+    ]).filter(Boolean).join(' · '),
     /**
      * The one metadata line, and everything that belongs on it.
      *
@@ -365,15 +402,53 @@ function read(
      * nearly every row in production, so printing it everywhere would be
      * chrome rather than signal.
      */
-    context: [
+    // Nothing is "open" on a suggestion, so its line carries the standing
+    // context and no age.
+    context: (g ? [
+      idea.portfolioName,
+      weightPct != null ? `${weightPct.toFixed(1)}% held` : 'not held',
+    ] : [
       idea.portfolioName,
       days < 45 ? `${days}d open` : `open ${Math.round(days / 30)} months`,
       idea.conviction === 'high' ? 'High conviction' : null,
       idea.urgency === 'urgent' || idea.urgency === 'high'
         ? `${idea.urgency === 'urgent' ? 'Urgent' : 'High'} urgency` : null,
       weightPct != null ? `${weightPct.toFixed(1)}% held` : null,
-    ].filter(Boolean).join(' · '),
+    ]).filter(Boolean).join(' · '),
   }
+}
+
+/**
+ * What kind of thing this tile is, in the card's own typographic grammar.
+ *
+ * A real idea states its stance and how far the thinking has got. A generated
+ * coverage prompt has neither -- nothing has been proposed and nothing is
+ * being researched -- so it says it is a suggestion and names the gap instead.
+ * Same line, same weights, same rule: the reader is never told a maturity that
+ * does not exist.
+ */
+function Stance({ idea }: { idea: IdeaRow }) {
+  if (idea.generated) {
+    return (
+      <>
+        <span
+          data-testid="idea-suggested"
+          className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-700 dark:text-blue-400"
+        >
+          Suggested
+        </span>
+        <span className="shrink-0 border-l border-gray-300 pl-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:border-white/15 dark:text-gray-400">
+          {idea.generated.label}
+        </span>
+      </>
+    )
+  }
+  return (
+    <>
+      <DirectionPill direction={idea.direction} />
+      <StagePill maturity={idea.maturity} />
+    </>
+  )
 }
 
 export function IdeaCard(props: IdeaCardProps) {
@@ -433,8 +508,7 @@ function FeaturedCard(props: IdeaCardProps) {
       pad={PAD.featured}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <DirectionPill direction={idea.direction} />
-        <StagePill maturity={idea.maturity} />
+        <Stance idea={idea} />
       </div>
 
       <div className={clsx('flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1', GAP.tight)}>
@@ -460,7 +534,11 @@ function FeaturedCard(props: IdeaCardProps) {
       {/* The setup, drawn on the card's own ground. No inner panel: a bordered
           white widget sitting on the featured tint read as a chart pasted onto
           the briefing rather than part of it. */}
-      <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="lg" />
+      {/* A suggestion has no relationship to draw: nothing exists yet, and a
+          panel listing what the idea it is not would lack is noise. */}
+      {!idea.generated && (
+        <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="lg" />
+      )}
 
       <div className="mt-auto pt-3"><Footer {...props} d={d} size="featured" /></div>
     </Shell>
@@ -484,8 +562,7 @@ function StandardCard(props: IdeaCardProps) {
   return (
     <Shell {...props} pad={PAD.standard}>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-        <DirectionPill direction={idea.direction} />
-        <StagePill maturity={idea.maturity} />
+        <Stance idea={idea} />
       </div>
 
       <div className={clsx('flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1', GAP.tight)}>
@@ -508,7 +585,9 @@ function StandardCard(props: IdeaCardProps) {
         </p>
       )}
 
-      <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="md" />
+      {!idea.generated && (
+        <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="md" />
+      )}
 
       <div className="mt-auto pt-2"><Footer {...props} d={d} size="standard" /></div>
     </Shell>
@@ -540,8 +619,7 @@ function CompactCard(props: IdeaCardProps) {
           margin, which is a lot of page for something that fits here. */}
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className={TICKER.compact}>{idea.symbol ?? '—'}</span>
-        <DirectionPill direction={idea.direction} />
-        <StagePill maturity={idea.maturity} />
+        <Stance idea={idea} />
       </div>
 
       {idea.thesis ? (
@@ -557,7 +635,9 @@ function CompactCard(props: IdeaCardProps) {
         </p>
       )}
 
-      <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="sm" />
+      {!idea.generated && (
+        <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="sm" />
+      )}
 
       <div className="mt-auto pt-1.5"><Footer {...props} d={d} size="compact" /></div>
     </Shell>
@@ -690,6 +770,24 @@ function Visual({
     size === 'lg' ? 'mt-3 pt-3' : size === 'md' ? 'mt-3 pt-3' : 'mt-2 pt-2',
   )
 
+  /*
+   * ── The price is drawn as well, not instead ──────────────────────────────
+   *
+   * The ladder above picks ONE visual, and the price-bearing kinds sit below
+   * the framework ones in it: `range` is rank 1, `path` rank 2, `since` rank
+   * 5. So an idea with a modelled range drew the ladder and the chart was
+   * simply never reached -- on most cards, because most ideas worth tiling
+   * have a range. From outside the lens it read as "Ideas has no charts",
+   * which is what it was reported as.
+   *
+   * The other three lenses had the same defect in their own dialects and it is
+   * fixed the same way: a price is not an alternative to a framework, it is
+   * the other half of the question. The situational object keeps the slot it
+   * earned and the price is drawn under it.
+   *
+   * Skipped where the chosen visual IS a price -- `path` and `since` both draw
+   * the series already -- so no card shows the same line twice.
+   */
   const draw = (kind: IdeaVisualKind, at: VisualSize) =>
     // Activating a case is a request to work on the framework, and opening the
     // idea is where that work happens. Inspection routes nowhere and needs no
@@ -769,6 +867,46 @@ function Visual({
   const [picked, setPicked] = useState<IdeaVisualKind | null>(null)
   const options = pair ? d.available.filter(k => k !== d.visual) : d.available
   const shown = picked && options.includes(picked) ? picked : (options[0] ?? d.visual)
+
+  /*
+   * ── The price is drawn as well, not instead ──────────────────────────────
+   *
+   * The resolver picks ONE visual, and the price-bearing kinds sit below the
+   * framework ones in its order: `range` is rank 1, `path` rank 2, `since`
+   * rank 5. So an idea with a modelled range drew the ladder and the chart was
+   * never reached -- on most cards, because most ideas worth tiling have a
+   * range. From outside the lens that reads as "Ideas has no charts", which is
+   * how it was reported.
+   *
+   * The other three lenses had the same defect in their own dialects, and it
+   * is fixed the same way: a price is not an alternative to a framework, it is
+   * the other half of the question. The situational object keeps the slot it
+   * earned; the price is ambient context beneath it.
+   *
+   * Declared AFTER `shown`, which is not a style preference -- a const read
+   * before its declaration is a temporal dead zone error, and one in this
+   * codebase's tile code took the whole app to a blank screen once already.
+   */
+  const isPrice = (k: IdeaVisualKind) => k === 'path' || k === 'since'
+  const priceSeries = d.closes.length >= 2
+    ? d.closes.map(c => ({ date: new Date(c.date), value: c.close }))
+    : []
+  /* Neither slot may already be a price: the two-column layout draws
+     `d.visual` beside `shown`, so checking only the visible one would put the
+     same line on one card twice. */
+  const drawsPrice = priceSeries.length >= 2 && !isPrice(shown) && !isPrice(d.visual)
+  const priceChart = drawsPrice ? (
+    <div className={size === 'sm' ? 'mt-2' : 'mt-3'}>
+      <TilePriceChart
+        points={priceSeries}
+        /* The day the idea was written, so the line says what the market has
+           done TO US rather than over an arbitrary window. */
+        anchorISO={d.anchor?.date ?? null}
+        anchorLabel="idea"
+        height={size === 'lg' ? 132 : size === 'md' ? 104 : 72}
+      />
+    </div>
+  ) : null
 
   /*
    * Focus: one visual, alone, at a size worth working on.
@@ -937,6 +1075,7 @@ function Visual({
         >
           {strip}
           {draw(shown, 'md')}
+          {priceChart}
         </div>
         {focus}
       </div>
@@ -949,6 +1088,7 @@ function Visual({
       <div className={clsx('min-w-0', size === 'lg' && 'lg:max-w-[620px]')}>
         {strip}
         {draw(shown, size)}
+        {priceChart}
       </div>
       {/* The range is the one primitive whose compact form still wants words:
           the two distances are the whole reason to look at a framework, and
@@ -1071,13 +1211,30 @@ function Footer({
           The next step, as a labelled instruction rather than a to-do item.
           The bullet was a blue dot, which is the visual grammar of a checklist.
         */}
-        <p className={clsx(
-          'flex items-baseline gap-2 truncate text-[12px] font-semibold text-gray-800 dark:text-gray-200',
-          compact ? 'leading-[14px]' : size === 'featured' ? 'leading-[18px]' : 'leading-[15px]',
-        )}>
-          <span className={clsx(LABEL, 'shrink-0')}>Next</span>
-          {d.next}
-        </p>
+        {/*
+          ── Why now, not the next step ────────────────────────────────────
+
+          This line was `Next {d.next}` -- the same string the primary button
+          carries, with the two swapped by hover opacity. So the card said the
+          verb twice and the reader only ever saw one of them, which is the
+          worst of both: a duplicated fact that never reads as duplicated.
+
+          The why-now line takes its place. It was living in the ACTION layer,
+          which is what made that layer 47px in a 34px rail and forced it to
+          grow upward over the analysis -- the covering tray that reads as
+          cramped on hover. Why-now is standing information about the object,
+          not a verb, so it belongs at rest; with it gone the action layer is
+          buttons alone and fits the rail it was given.
+        */}
+        {!compact && d.whyNow && (
+          <p className={clsx(
+            'flex items-baseline gap-2 truncate text-[12px] text-gray-700 dark:text-gray-300',
+            size === 'featured' ? 'leading-[18px]' : 'leading-[15px]',
+          )}>
+            <span className={clsx(LABEL, 'shrink-0')}>Why now</span>
+            {d.whyNow}
+          </p>
+        )}
       </div>
 
       {/*
@@ -1103,22 +1260,31 @@ function Footer({
         analysis above it instead. A box that grows with its content brings
         its background and its rule up with it, which is the whole point.
       */}
+      {/*
+        ── No longer a tray that closes over the card ─────────────────────
+
+        This carried its own opaque ground and its own top rule, and grew
+        upward out of the rail, because at 47px it did not fit the 34px it was
+        given. Hovering a card therefore hid the analysis the reader was
+        looking at -- the behaviour reported as cramped.
+
+        With the why-now line moved to the resting layer this is buttons only,
+        which fits. So it drops the background and the border and becomes what
+        the shared `TileShelf` already is on the other three lenses: an
+        opacity-only cross-fade inside reserved height, covering nothing and
+        moving nothing.
+      */}
       <div className={clsx(
         'pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-end',
-        'border-t bg-white opacity-0 transition-opacity duration-150',
+        'opacity-0 transition-opacity duration-150',
         'group-hover:pointer-events-auto group-hover:opacity-100',
         'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
-        'dark:bg-[#141a25]', RULE,
       )}>
-        {!compact && (
-          <p className="truncate text-[11px] text-gray-700 dark:text-gray-300">
-            <span className="mr-1.5 text-[9px] font-semibold uppercase tracking-widest text-gray-400">
-              Why now
-            </span>
-            {d.whyNow}
-          </p>
-        )}
-        <div className="mt-1 flex items-center gap-1">
+        {/* Buttons alone. The why-now line moved to the resting layer above:
+            it is standing information rather than a verb, and keeping it here
+            is what made this layer taller than the rail and forced it to grow
+            up over the analysis. */}
+        <div className="flex items-center gap-1">
           {/*
             Respond, and it says what responding to THIS idea means.
 
@@ -1231,10 +1397,14 @@ function Shell({
       data-testid="idea-tile"
       data-density={density}
       data-rank={rank}
-      data-maturity={idea.maturity}
+      data-maturity={idea.generated ? 'suggested' : idea.maturity}
       tabIndex={0}
       role="group"
-      aria-label={`${idea.symbol ?? 'Idea'}, ${MATURITY_LABEL[idea.maturity]}. Open idea.`}
+      /* A suggestion has no maturity to announce and nothing to open: it says
+         what it is and what the action will do. */
+      aria-label={idea.generated
+        ? `${idea.symbol ?? 'Asset'}, suggested. Start an idea.`
+        : `${idea.symbol ?? 'Idea'}, ${MATURITY_LABEL[idea.maturity]}. Open idea.`}
       onClick={portalClick}
       onKeyDown={e => {
         if (e.target !== e.currentTarget) return

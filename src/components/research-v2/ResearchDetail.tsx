@@ -33,8 +33,24 @@ import {
 import { clsx } from 'clsx'
 import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
+import { useRecordThesisReview, type ThesisReviewOutcome } from '../../hooks/useThesisReview'
+import { useRecordObjectView } from '../../hooks/useObjectViewCursor'
 import { openAsset } from '../../lib/desktop-asset'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
+
+/**
+ * The three conclusions, in the order a reader reaches them.
+ *
+ * Wording matters here: each is a statement about the CASE, not an instruction
+ * to the reader. "Needs work" says the document cannot be judged as written --
+ * which is a different fact from the case having broken, and the two were
+ * previously both unsayable.
+ */
+const REVIEW_CHOICES: ReadonlyArray<{ outcome: ThesisReviewOutcome; label: string }> = [
+  { outcome: 'holds', label: 'Still holds' },
+  { outcome: 'changed', label: 'Changed' },
+  { outcome: 'needs_work', label: 'Needs work' },
+]
 
 /**
  * Research → Ideas.
@@ -49,9 +65,10 @@ function routeToIdea(ideaId: string, issue: string) {
   openIdea(request)
 }
 import {
-  stateOf, whyItMatters, primaryActionFor, targetFor,
-  SECTION_LABEL, ALL_SECTIONS, CORE_SECTIONS, STATE_LABEL,
-  type ResearchSubject,
+  stateOf, whyItMatters, primaryActionFor, targetFor, issueFor,
+  SECTION_LABEL, ALL_SECTIONS, CORE_SECTIONS,
+  dateWords, ageKindOf, thesisDateKindOf,
+  type ResearchSubject, type ResearchDateWords,
 } from '../../lib/desktop-research'
 import type { ResearchDetail as Detail } from '../../hooks/useDesktopResearch'
 import { stripHtml } from '../../utils/stripHtml'
@@ -82,6 +99,12 @@ export function ResearchDetail({
   const teamable = !!target && canDiscuss(target)
   const window = anchoredWindow(detail?.history, subject.thesisUpdatedAt)
   const why = whyItMatters(subject, window?.reachesAnchor ? window.changePct : null)
+  // Two dates, each named for what it is (lib/desktop-research/anchor-words):
+  // the subject's age and new-since count, and `thesisUpdatedAt`, which the
+  // chart and the new-evidence split start from.
+  const thesisDate = thesisDateKindOf(subject)
+  const age = dateWords(ageKindOf(subject))
+  const caseDate = dateWords(thesisDate)
 
   const sections = (detail?.sections ?? [])
     .slice()
@@ -105,7 +128,7 @@ export function ResearchDetail({
    * place that owns it. The primary action now takes the reader there, with
    * the reason intact.
    */
-  const authoring = state === 'no-thesis' || state === 'stale' || state === 'thin'
+  const authoring = state === 'no-thesis' || state === 'incomplete-thesis' || state === 'stale' || state === 'thin'
   const jump =
     state === 'evidence-since-review' ? (newEvidence.length ? 'new-since-review' : 'the-case')
     : 'the-case'
@@ -151,6 +174,22 @@ export function ResearchDetail({
       : intent === 'book' && detail?.portfolioName ? 'book'
       : 'case'
 
+  const {
+    record: recordReview, isPending: reviewPending, isDone: reviewDone,
+  } = useRecordThesisReview(subject.assetId)
+
+  /*
+   * This is a genuine view: the detail pane is mounted, which only happens
+   * when a reader opened this subject or arrived on it by deep link. The
+   * gallery tile renders `ResearchWorkspace`, not this.
+   *
+   * The cursor is advanced here and the PRIOR value handed back, so "new since
+   * you last looked" has something truthful to compare against. Nothing reads
+   * it yet -- Research still measures new evidence against the thesis date --
+   * and changing that is its own pass.
+   */
+  useRecordObjectView('asset', subject.assetId)
+
   const runPrimary = () => {
     // An authoring state's next step is authoring, which happens on the Asset
     // page. Everything else is understood here, so the verb scrolls.
@@ -182,11 +221,11 @@ export function ResearchDetail({
           </div>
           <div className="ml-auto flex flex-wrap gap-2">
             {subject.daysSinceReview != null && (
-              <DesktopStat value={`${subject.daysSinceReview}d`} label="Last review" />
+              <DesktopStat value={`${subject.daysSinceReview}d`} label={age.last} />
             )}
             <DesktopStat value={String(subject.evidenceCount)} label="Evidence" />
             {subject.newSinceReview > 0 && (
-              <DesktopStat value={`+${subject.newSinceReview}`} label="Since review" tone="warn" />
+              <DesktopStat value={`+${subject.newSinceReview}`} label={capitalize(age.since)} tone="warn" />
             )}
             {detail?.weightPct != null && (
               <DesktopStat value={`${detail.weightPct.toFixed(1)}%`} label="Weight" />
@@ -207,6 +246,44 @@ export function ResearchDetail({
               ? <PencilLine className="h-3.5 w-3.5 opacity-70" />
               : <ArrowDown className="h-3.5 w-3.5 opacity-70" />}
           </button>
+          {/*
+            The verb this surface never had, now with all three answers.
+
+            Reading a case and reaching a conclusion about it was unrecordable:
+            the only durable trace was an edit, so "it still holds" and "this is
+            broken" both had to be expressed by rewriting a document -- one that
+            did not need editing, and one nobody had time to rewrite yet.
+
+            Secondary styling on purpose, and deliberately AFTER the primary
+            action. Concluding something about the thesis is not a substitute
+            for fixing it; it is what you can honestly record when you have read
+            it and are not going to rewrite it right now. Each writes one event
+            and touches no thesis text.
+          */}
+          {subject.thesisUpdatedAt && (
+            <span className="inline-flex items-center gap-0.5" data-slot="research-thesis-review">
+              <span className="pl-1 pr-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                Reviewed
+              </span>
+              {REVIEW_CHOICES.map(choice => (
+                <button
+                  key={choice.outcome}
+                  type="button"
+                  data-slot={`research-review-${choice.outcome}`}
+                  onClick={() => recordReview(choice.outcome)}
+                  disabled={reviewPending || reviewDone}
+                  className="rounded-md px-2.5 py-2 text-[12px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-60 dark:text-gray-300 dark:hover:bg-gray-800"
+                >
+                  {choice.label}
+                </button>
+              ))}
+              {(reviewPending || reviewDone) && (
+                <span className="pl-1 text-[12px] text-gray-500">
+                  {reviewDone ? 'Recorded' : 'Recording…'}
+                </span>
+              )}
+            </span>
+          )}
           {target && (
             <button
               type="button"
@@ -237,7 +314,7 @@ export function ResearchDetail({
               type="button"
               onClick={() => routeToIdea(
                 detail.liveIdea!.id,
-                `${subject.symbol ?? 'Asset'} — ${STATE_LABEL[state]}`,
+                `${subject.symbol ?? 'Asset'} — ${issueFor(subject)}`,
               )}
               className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
@@ -287,6 +364,8 @@ export function ResearchDetail({
         */}
         {subject.thesisUpdatedAt && (
           <SinceReview
+            age={age}
+            caseDate={caseDate}
             days={subject.daysSinceReview}
             window={window}
             arrivals={newEvidence.length}
@@ -305,8 +384,8 @@ export function ResearchDetail({
         <DesktopColumns
           lead={<>
             {leadPanel === 'price' && (
-              <DesktopSection id="price" title="Price since the last review" lead>
-                <PriceSinceReview w={window!} />
+              <DesktopSection id="price" title={caseDate.priceSince} lead>
+                <PriceSinceReview w={window!} since={thesisDate} />
               </DesktopSection>
             )}
             {leadPanel === 'book' && (
@@ -321,7 +400,7 @@ export function ResearchDetail({
           id="the-case"
           title="The case"
           lead={leadPanel === 'case'}
-          meta={subject.daysSinceReview != null ? `reviewed ${subject.daysSinceReview}d ago` : undefined}
+          meta={subject.daysSinceReview != null ? `${age.verb} ${subject.daysSinceReview}d ago` : undefined}
           action={
             <button
               type="button"
@@ -378,14 +457,14 @@ export function ResearchDetail({
               the loudest thing in an investment workspace. */}
           {state === 'stale' && (
             <p className="mt-3 text-[10px] text-gray-500">
-              Saving a section is what moves the review date; there is no
+              Saving a section is what moves the thesis date; there is no
               separate &ldquo;reviewed, no change&rdquo; record.
             </p>
           )}
           {peripheral.length > 0 && (
             <p className="mt-3 text-[11px] text-gray-500">
               {peripheral.length} supporting section{peripheral.length === 1 ? '' : 's'} sit
-              outside the core case and do not move the review date.
+              outside the core case and do not move the thesis date.
             </p>
           )}
         </DesktopSection>
@@ -398,14 +477,14 @@ export function ResearchDetail({
             {newEvidence.length > 0 && (
               <DesktopModule
                 id="new-since-review"
-                title="New since review"
+                title={caseDate.newSince}
                 meta={`${newEvidence.length} item${newEvidence.length === 1 ? '' : 's'}`}
               >
                 <div className="flex flex-col gap-2">
                   {newEvidence.map(e => <EvidenceRow key={e.id} item={e} isNew />)}
                 </div>
                 <p className="mt-2.5 text-[10px] text-gray-500">
-                  Dated after the case was last written. Whether each supports or
+                  Dated after {caseDate.sinceThe.replace(/^since /, '')}. Whether each supports or
                   challenges it is not recorded — that is the review.
                 </p>
               </DesktopModule>
@@ -413,7 +492,7 @@ export function ResearchDetail({
 
             {window && leadPanel !== 'price' && (
               <DesktopModule title="Price">
-                <PriceSinceReview w={window} />
+                <PriceSinceReview w={window} since={thesisDate} />
               </DesktopModule>
             )}
 
@@ -498,9 +577,15 @@ function EvidenceRow({ item, isNew }: { item: { title: string | null; content: s
  * refuses to claim a since-review number it cannot support, and that refusal
  * is more useful than a figure covering the wrong window.
  */
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
 function SinceReview({
-  days, window: w, arrivals, weightPct,
+  age, caseDate, days, window: w, arrivals, weightPct,
 }: {
+  /** Words for the subject's age. */
+  age: ResearchDateWords
+  /** Words for the thesis date the price and new research are measured from. */
+  caseDate: ResearchDateWords
   days: number | null
   window: { changePct: number; reachesAnchor: boolean } | null
   arrivals: number
@@ -513,11 +598,11 @@ function SinceReview({
       className="mb-6 border-b border-gray-200 pb-5 dark:border-white/10"
     >
       <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-        Since the thesis was written
+        {capitalize(caseDate.sinceThe)}
       </h3>
       <div className="mt-3 flex flex-wrap items-baseline gap-x-10 gap-y-4">
         {days != null && (
-          <Fact value={`${days}d`} label="since review" lead />
+          <Fact value={`${days}d`} label={age.since} lead />
         )}
         <Fact
           value={move != null ? `${move >= 0 ? '+' : ''}${move.toFixed(1)}%` : '—'}
@@ -534,7 +619,7 @@ function SinceReview({
       </div>
       {arrivals === 0 && (
         <p className="mt-3 text-[12px] text-gray-500">
-          No new research since the last review. The thesis is simply due a look.
+          No new research {caseDate.sinceThe}. The thesis is simply due a look.
         </p>
       )}
     </section>

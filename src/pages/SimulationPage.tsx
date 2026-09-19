@@ -44,6 +44,38 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { latestBenchmarkRows } from '../lib/holdings/latest-benchmark'
+/* The stored closes, so a failed live quote falls back to a real observed
+   price rather than to the literal 100 this page used to invent. */
+import { fetchLatestCloses, LATEST_CLOSE_WINDOW_DAYS } from '../lib/market-data/latest-closes'
+
+/**
+ * What this page uses when it does not know a price.
+ *
+ * ── Why it is zero and not a plausible number ────────────────────────────
+ *
+ * Every price expression on this page used to end in `|| 100`. That reads as
+ * a harmless display default, and it is not one: `normalize-sizing` divides
+ * the portfolio value by this price to get a share count, so a wrong price
+ * produces a wrong share count, a wrong weight delta and a wrong notional --
+ * and `apply_trade_to_holdings` then writes all three into
+ * `portfolio_holdings` and the portfolio's CASH balance. `accepted_trades`
+ * carries the evidence: META, V, PLTR and LLY were all booked at 100 against
+ * real closes of 682.31, 369.93, 176.24 and 1152.44.
+ *
+ * 100 is dangerous precisely because it is plausible. It sizes a trade, it
+ * books, it renders, and nothing downstream can tell it from a real quote.
+ *
+ * Zero cannot do any of that. `normalize-sizing` already rejects a price of
+ * zero with "Invalid price (must be > 0)", and the `apply_trade_to_holdings`
+ * RPC refuses a null or non-positive price loudly. So an unknown price now
+ * BLOCKS the trade and says so, which is the correct outcome: a desk that
+ * cannot price a name cannot size a position in it either.
+ *
+ * With the stored-close ladder above, this fires only for names the product
+ * holds no market data for at all -- COIN, CLOV, CROX, GH, LRCX, PARA and TGT
+ * have zero rows in `price_history_cache` today.
+ */
+const NO_PRICE = 0
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useMorphSession } from '../hooks/useMorphSession'
@@ -64,6 +96,7 @@ import { TradeIdeaDetailModal } from '../components/trading/TradeIdeaDetailModal
 import { DecisionConfirmationModal, type DecisionRecord } from '../components/trading/DecisionConfirmationModal'
 import { buildDecisionRecord } from '../lib/trade-lab/decision-record'
 import { usePilotProgress } from '../hooks/usePilotProgress'
+import { operationalAfterPilot, judgeIdeaRow } from '../lib/pilot/seed-visibility'
 import type {
   SimulationWithDetails,
   SimulationTradeWithDetails,
@@ -102,6 +135,14 @@ import { MobileTradesView } from '../components/mobile/trade-lab/MobileTradesVie
 import { MobileIdeasDrawer } from '../components/mobile/trade-lab/MobileIdeasDrawer'
 import { HoldingsSimulationTable } from '../components/trading/HoldingsSimulationTable'
 import { PilotTradeLabIntroBanner } from '../components/pilot/PilotTradeLabIntroBanner'
+import { reportTradeLabStep1 } from '../lib/pilot/trade-lab-basics'
+import { TesseractLoader } from '../components/ui/TesseractLoader'
+import {
+  deriveProposalMembership,
+  type MembershipProposal,
+  type MembershipTrade,
+  type ProposalTarget,
+} from '../lib/trade-lab/proposal-membership'
 import { SharedSimulationBanner } from '../components/trading/SharedSimulationBanner'
 import { SharedWithMeList } from '../components/trading/SharedWithMeList'
 import { useIntentVariants } from '../hooks/useIntentVariants'
@@ -115,6 +156,7 @@ import type { SizingValidationError, AssetPrice, IntentVariant } from '../types/
 import { OrgBadge } from '../components/common/OrgBadge'
 import { DebateIndicatorBadge } from '../components/trading/DebateIndicatorBadge'
 import { latestSnapshotRows } from '../lib/holdings/latest-snapshot'
+import { invalidateAfterExecute } from '../lib/services/execute-invalidations'
 
 interface SimulationPageProps {
   simulationId?: string
@@ -368,24 +410,33 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const { isMorphing } = useMorphSession()
   const pilotMode = usePilotMode()
   const { scenario: pilotScenario } = usePilotScenario()
-  const { mark: markPilotStage } = usePilotProgress()
+  const {
+    tutorialIdeaId,
+    hasGraduated: liveGraduatedForSeeds,
+    cachedHasGraduated: cachedGraduatedForSeeds,
+  } = usePilotProgress()
+  // `cached` covers the window before the live read resolves, so the tour does
+  // not flash back into the Lab's queue on a refresh.
+  const hasGraduatedForSeeds = liveGraduatedForSeeds || cachedGraduatedForSeeds
+  /*
+   * One object, end to end. The mission follows the captured tutorial idea
+   * through simulation → accepted trade → outcome, so Trade Lab basics step 1
+   * counts only a written simulation row whose trade_queue_item_id is that
+   * idea — see `reportTradeLabStep1`. A non-pilot has no tutorial idea, so it
+   * never fires for them.
+   */
   const queryClient = useQueryClient()
   const toast = useToast()
 
-  // Pilot sequential unlock: Trade Book unlocks only when the pilot
-  // actually executes a trade THROUGH Trade Lab (the step-3 event in
-  // the Trade Lab Get Started banner). Previously this also fired from
-  // the "View in Trade Book" button on the commit nudge / decision
-  // modal — but those only show after execution anyway, so the listener
-  // covers them. Critically, accepting a recommendation from the
-  // Decision Inbox does NOT fire this event, so it no longer bypasses
-  // the Trade Lab onboarding into the next stage.
-  useEffect(() => {
-    if (!pilotMode.isPilot) return
-    const handler = () => markPilotStage('trade_book_unlocked')
-    window.addEventListener('pilot-tradelab:executed', handler)
-    return () => window.removeEventListener('pilot-tradelab:executed', handler)
-  }, [pilotMode.isPilot, markPilotStage])
+  // Pilot Trade Book unlock is NOT written from here.
+  //
+  // This page marked `trade_book_unlocked` on every execute (and again from
+  // the "View in Trade Book" buttons), whatever was executed. The unlock is
+  // scoped to the tutorial idea now: `usePilotMode` writes the mark once an
+  // accepted trade exists for it, and both execute paths below invalidate
+  // `accepted-trades`, which is the prefix that read lives under — so it
+  // still flips the moment the tutorial trade lands. See
+  // `lib/pilot/pilot-unlocks`.
 
   // Share context — when viewing a shared simulation
   const [activeShareId, setActiveShareId] = useState<string | null>(propShareId || null)
@@ -399,6 +450,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // Phones render MobileSimulationList in place of the eleven-column table.
   const isMobileViewport = useIsMobile()
   const [mobileLabMenuOpen, setMobileLabMenuOpen] = useState(false)
+  /* The phone's add-a-position sheet. It used to be opened by a floating
+     button inside the table; the control that opens it now lives in the
+     toolbar, so the state comes up here with it. */
+  const [mobileAddOpen, setMobileAddOpen] = useState(false)
+  /* Which Trade Lab basics step is being taught, so the toolbar can
+     emphasise its own control rather than the tutorial growing one. */
+  const [labBasicsStep, setLabBasicsStep] = useState<1 | 2 | 3 | null>(null)
 
   // Suggestion review panel state (owner-side)
   const [suggestionReviewOpen, setSuggestionReviewOpen] = useState(false)
@@ -489,6 +547,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false)
   const [shareSnapshotSheet, setShareSnapshotSheet] = useState<import('../types/trading').TradeSheet | null>(null)
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null)
+  /** Set when the phone's recommendation list opened a detail — see onOpenIdea. */
+  const [reopenIdeasAfterDetail, setReopenIdeasAfterDetail] = useState(false)
   const [tradeModalInitialTab, setTradeModalInitialTab] = useState<'details' | 'discussion' | 'decisions' | 'activity'>('details')
   const [holdingsGroupBy, setHoldingsGroupBy] = useState<'none' | 'sector' | 'action' | 'change'>('none')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -508,11 +568,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [leftPaneSearch, setLeftPaneSearch] = useState('')
   const [leftPaneStageFilter, setLeftPaneStageFilter] = useState<'all' | 'investigate' | 'deep_research' | 'thesis_forming' | 'ready_for_decision'>('all')
 
-  // Track which proposals have been applied to the simulation
-  const [appliedProposalIds, setAppliedProposalIds] = useState<Set<string>>(new Set())
-
-  // Track asset_ids that were added via proposals (not via idea checkbox)
-  const [proposalAddedAssetIds, setProposalAddedAssetIds] = useState<Set<string>>(new Set())
+  // Which recommendations are in the simulation is derived from persisted
+  // membership below (`deriveProposalMembership`), not held in state here.
 
   // Local optimistic state for instant checkbox feedback (avoids full re-render through React Query)
   // Single override map for instant checkbox feedback.
@@ -674,6 +731,26 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       setSelectedPortfolioId(portfolios[0].id)
     }
   }, [pilotMode.isLoading, pilotMode.isPilot, portfolios, selectedPortfolioId, initialPortfolioId])
+
+  /*
+   * The pilot's own portfolio, when the scenario did not name one.
+   *
+   * The skip above is right about "a random portfolio", but it left a dead
+   * end: a pilot org with no staged scenario resolved no portfolio at all, so
+   * the mission said "add an idea, size it, and execute it" over an empty
+   * workbench with nothing selected and no way to proceed. "Exactly one
+   * visible portfolio" is not a guess — there is nothing else it could be —
+   * and the scenario effect above still wins whenever it has an answer.
+   */
+  useEffect(() => {
+    if (pilotMode.isLoading) return
+    if (!pilotMode.isPilot) return
+    if (selectedPortfolioId || initialPortfolioId) return
+    if (pilotScenario?.portfolio_id) return
+    if (portfolios?.length !== 1) return
+    const only = portfolios[0] as { id?: string } | undefined
+    if (only?.id) setSelectedPortfolioId(only.id)
+  }, [pilotMode.isLoading, pilotMode.isPilot, selectedPortfolioId, initialPortfolioId, pilotScenario?.portfolio_id, portfolios])
 
   // Update selectedPortfolioId when initialPortfolioId changes (e.g., when navigating from Trade Labs section)
   useEffect(() => {
@@ -959,7 +1036,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // Fetch trade ideas from queue for the selected portfolio
   // Include ideas with direct portfolio_id match OR linked via trade_lab_idea_links
   const { data: tradeIdeas, isLoading: tradeIdeasLoading, isFetching: tradeIdeasFetching, refetch: refetchTradeIdeas } = useQuery({
-    queryKey: ['trade-queue-ideas', selectedPortfolioId],
+    // Graduation changes which ideas are available to simulate, so it belongs
+    // in the key rather than only in the body.
+    queryKey: ['trade-queue-ideas', selectedPortfolioId, hasGraduatedForSeeds],
     queryFn: async () => {
       // First, get idea IDs linked to this portfolio via trade_lab_idea_links
       const { data: linkedIds } = await supabase
@@ -995,7 +1074,17 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
       if (error) throw error
 
-      return data as TradeQueueItemWithDetails[]
+      /*
+       * After graduation the tour's untouched ideas are not candidates to
+       * simulate. `select('*')` already carried `origin_metadata` and the
+       * acted-on fields, so this boundary had everything it needed and simply
+       * never asked. Judged before the Lab groups pair legs or builds its
+       * queue, so a suppressed seed never reaches a basket.
+       */
+      return operationalAfterPilot(
+        ((data || []) as Array<Record<string, unknown>>).map(d => ({ ...d, ...judgeIdeaRow(d) })),
+        { hasGraduated: hasGraduatedForSeeds },
+      ) as TradeQueueItemWithDetails[]
     },
     enabled: !!selectedPortfolioId,
     staleTime: 30000, // Consider data stale after 30 seconds
@@ -1139,35 +1228,36 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     enabled: canSuggest || (!isSharedView && !!selectedSimulationId),
   })
 
-  // Hydrate appliedProposalIds + proposalAddedAssetIds from DB on mount/refresh.
-  // Cross-references simulation_trades (by trade_queue_item_id) with activeProposals
-  // so proposal checkboxes reflect what's already in the simulation.
-  const hydratedRef = useRef(false)
-  useEffect(() => {
-    if (hydratedRef.current) return
-    if (!simulation?.simulation_trades?.length || !activeProposals?.length) return
-    hydratedRef.current = true
-
-    const tradeItemIds = new Set(
-      simulation.simulation_trades.map((t: any) => t.trade_queue_item_id).filter(Boolean)
-    )
-
-    const proposalIds = new Set<string>()
-    const assetIds = new Set<string>()
-
-    for (const proposal of activeProposals) {
-      if (tradeItemIds.has(proposal.trade_queue_item_id)) {
-        proposalIds.add(proposal.id)
-        const assetId = (proposal.trade_queue_items as any)?.assets?.id
-        if (assetId) assetIds.add(assetId)
-      }
-    }
-
-    if (proposalIds.size > 0) {
-      setAppliedProposalIds(proposalIds)
-      setProposalAddedAssetIds(assetIds)
-    }
-  }, [simulation?.simulation_trades, activeProposals])
+  /*
+   * Which recommendations are in the simulation, derived every render.
+   *
+   * These were two sets in state, hydrated once on load and changed only by
+   * the recommendation's own toggle — so removing its row from the table (or
+   * the phone sheet's trash, or clear all) left "Added to simulation" showing
+   * on every reopen until a hard refresh. Now they are a function of the
+   * persisted `simulation_trades` for each recommendation's source idea, with
+   * the per-asset `checkboxOverrides` covering the moment between a tap and
+   * its write. See `lib/trade-lab/proposal-membership`.
+   *
+   * Pair legs resolve the way `toggleProposalInSimulation` resolves them: by
+   * leg id, else by symbol among pair ideas.
+   */
+  const { appliedProposalIds, proposalAddedAssetIds } = useMemo(() => {
+    const proposals: MembershipProposal[] = (activeProposals ?? []).map((proposal: any) => {
+      const sizingContext = proposal.sizing_context
+      const legs = sizingContext?.isPairTrade === true ? (sizingContext?.legs ?? []) : []
+      const targets: ProposalTarget[] = legs.length
+        ? legs.map((l: any) => {
+            const legItem = l.legId
+              ? tradeIdeas?.find(t => t.id === l.legId)
+              : tradeIdeas?.find(t => t.assets?.symbol === l.symbol && (t.pair_id || t.pair_trade_id))
+            return { assetId: legItem?.asset_id, tradeQueueItemId: legItem?.id || l.legId }
+          })
+        : [{ assetId: proposal.trade_queue_items?.assets?.id, tradeQueueItemId: proposal.trade_queue_item_id }]
+      return { id: proposal.id, targets }
+    })
+    return deriveProposalMembership(proposals, simulation?.simulation_trades as MembershipTrade[] | undefined, checkboxOverrides)
+  }, [activeProposals, tradeIdeas, simulation?.simulation_trades, checkboxOverrides])
 
   // Handler for fixing conflicts via one-click action change
   const handleFixConflict = async (variantId: string, suggestedAction: string) => {
@@ -1178,7 +1268,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     // Build a mock price for the update
     const price: AssetPrice = {
       asset_id: variant.asset_id,
-      price: priceMap?.[variant.asset_id] || 100,
+      price: priceMap?.[variant.asset_id] || NO_PRICE,
       timestamp: new Date().toISOString(),
       source: 'realtime',
     }
@@ -1342,10 +1432,29 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       // three variant-source buckets (linked-DR / queue-item-no-DR / ad-hoc),
       // creates the trade_batch, and delegates holdings_source finalization
       // (paper auto-applies, live_feed stays pending) to createAcceptedTrade.
+      /*
+       * Carry the idea's own case into the commit.
+       *
+       * The bulk path collects a per-variant reason and a batch description
+       * from the Execute modal; the single-trade path sent neither, so
+       * `buildAcceptedTradeInput`'s precedence fell all the way through to
+       * `v.notes || null`. And `lab_variants` are hard-deleted moments later,
+       * so when the variant had no notes the reason for the trade was gone
+       * permanently -- Trade Book's own "Add rationale to explain this
+       * decision" nudge exists because of this hole.
+       *
+       * Nothing new is invented and nowhere new is written: this is the
+       * analyst's existing text, placed in the existing canonical field by the
+       * existing precedence. The thesis is preferred over the rationale for
+       * the same reason Trade Book prefers it -- the durable argument over the
+       * note about timing.
+       */
+      const ideaCase = (idea.thesis_text || idea.rationale || '').trim()
       const result = await executeSimVariants({
         variants: [variant],
         portfolioId: selectedPortfolioId,
         batchName: null,
+        reasonsByVariantId: ideaCase ? { [variant.id]: ideaCase } : undefined,
         context: {
           actorId: user.id,
           actorName: (user as any)?.first_name || user.email || 'PM',
@@ -1375,13 +1484,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       }))
       // Tick step 3 of the pilot Trade Lab Get Started banner.
       try { window.dispatchEvent(new CustomEvent('pilot-tradelab:executed')) } catch { /* ignore */ }
-      queryClient.invalidateQueries({ queryKey: ['simulation'] })
-      queryClient.invalidateQueries({ queryKey: ['intent-variants'] })
-      queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-batches'] })
+      // One list, shared with the bulk path below. This one used to be its own
+      // and had drifted five keys behind — so a pilot who executed a single
+      // trade, which is exactly what the mission asks for, opened Outcomes to
+      // pre-commit state. The identity lets it also tell the pilot gate what
+      // this callback already knows, so Trade Book is not locked on arrival.
+      invalidateAfterExecute(queryClient, { orgId: currentOrgId, userId: user?.id })
     },
     onError: (err: any) => {
       toast.error('Execute failed', err.message)
+    },
+    // Closed when the commit settles, not when the button is pressed — that is
+    // what lets the confirm modal show a pending state at all. On failure the
+    // reader returns to the workbench with the toast, exactly as before.
+    onSettled: () => {
+      setConfirmExecuteIdea(null)
     },
   })
 
@@ -1475,7 +1592,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         let computed = cacheV.computed
         if (!computed) {
           const baseline = baselineByAsset.get(cacheV.asset_id)
-          const price = priceMap?.[cacheV.asset_id] || baseline?.price || 100
+          const price = priceMap?.[cacheV.asset_id] || baseline?.price || NO_PRICE
           const normResult = normalizeSizing({
             action: cacheV.action,
             sizing_input: cacheV.sizing_input!,
@@ -1627,6 +1744,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         }))
         // Tick step 3 of the pilot Trade Lab Get Started banner.
         try { window.dispatchEvent(new CustomEvent('pilot-tradelab:executed')) } catch { /* ignore */ }
+        /*
+         * The global mission derives "decided" from accepted_trades, and this
+         * is the moment one appears. It was not in the invalidation list, so
+         * the mission kept whatever facts it had cached until something else
+         * happened to refetch it.
+         */
+        queryClient.invalidateQueries({ queryKey: ['pilot-mission'] })
         // Surface partial-state warnings as a small toast since the modal is the hero.
         if (failed > 0 || stillSaving.length > 0) {
           const descParts: string[] = []
@@ -1652,6 +1776,22 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       if (committed > 0 && selectedSimulationId && selectedPortfolioId) {
         void (async () => {
           try {
+            /*
+             * Wait for the execute service's own background work first.
+             *
+             * It folds the committed trades into `baseline_holdings` while
+             * this block replaces that same column with a fresh snapshot of
+             * portfolio_holdings. Both used to start at once and neither
+             * waited, so which one the user ended up looking at was decided
+             * by round-trip timing: re-snapshot last was correct, fold last
+             * read a baseline that already contained the trade and added its
+             * deltas a second time — the executed position showed up at
+             * double size. `portfolio_holdings` is already written by then
+             * (finalizeTradeForHoldingsSource is awaited inside
+             * createAcceptedTrade), so ordering these makes the snapshot the
+             * last word rather than the lucky one.
+             */
+            await result.settled
             const { data: holdingsRaw } = await supabase
               .from('portfolio_holdings')
               .select('asset_id, shares, price, assets (id, symbol, company_name, sector), date')
@@ -1698,25 +1838,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       // Refresh downstream queries. The variants cache was already
       // patched above — invalidating it triggers a background refetch
       // that reconciles with the server's authoritative state.
-      queryClient.invalidateQueries({ queryKey: ['simulation'] })
-      queryClient.invalidateQueries({ queryKey: ['intent-variants'] })
-      queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-batches'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
-      queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
-      // Per-org "has committed ≥1 trade" flag — drives the pilot Get
-      // Started banner auto-dismiss and the Trade Book / Outcomes
-      // unlocks. Invalidating here makes them flip the instant the
-      // first trade lands, without waiting for the 60s staleTime.
-      queryClient.invalidateQueries({ queryKey: ['org-has-accepted-trade'] })
-      // Outcomes (DecisionAccountabilityPage) keys its data under
-      // 'decision-accountability'. Without this invalidate, switching
-      // to Outcomes right after Execute shows the prior cached state
-      // and the just-committed trade only appears after a hard
-      // refresh.
-      queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })
+      //
+      // The list itself lives in `execute-invalidations`, shared with the
+      // single-trade path, because two hand-written lists that have to agree
+      // is what let them stop agreeing. Each key is justified there against
+      // the table the pipeline actually writes.
+      invalidateAfterExecute(queryClient, { orgId: currentOrgId, userId: user?.id })
     },
     onError: (err: any) => {
       // Nothing to roll back — we never removed variants optimistically.
@@ -1864,6 +1991,28 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       const quotesDisabled = typeof window !== 'undefined'
         && window.sessionStorage?.getItem('tesseract_live_quotes_disabled') === '1'
 
+      /*
+       * ── The stored closes, so a failed quote never means a made-up price ──
+       *
+       * This used to end in `baseline?.price || 100`. For a NEW position
+       * there is no baseline holding, so the price became the literal 100 --
+       * and the circuit breaker below then keeps the provider chain off for
+       * the rest of the session, so every trade booked afterwards took 100
+       * too. It is in production data now: META, V, PLTR and LLY all carry
+       * `price_at_acceptance = 100` against real closes of 682.31, 369.93,
+       * 176.24 and 1152.44.
+       *
+       * It is not a display bug. `normalize-sizing` divides by this price to
+       * get shares, so the share count, the weight delta and the notional are
+       * all wrong by the same factor, and `apply_trade_to_holdings` then
+       * writes them into `portfolio_holdings` and the portfolio's CASH.
+       *
+       * One batched read of `price_history_cache` -- the same dated closes
+       * every other surface measures against -- gives a real answer for
+       * nearly every name the provider could not reach.
+       */
+      const latestCloses = await fetchLatestCloses(Array.from(symbolsToFetch.values()))
+
       let anyQuoteSucceeded = false
       const fetchPromises = Array.from(symbolsToFetch.entries()).map(async ([assetId, symbol]) => {
         if (!quotesDisabled) {
@@ -1874,17 +2023,49 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               return { assetId, price: quote.price }
             }
           } catch {
-            // Fallback to baseline price
+            // Fall through to the stored close.
           }
         }
+        /*
+         * The ladder, every rung a real observed price:
+         *   1. the newest stored close for the name, with its date;
+         *   2. the book's own last price for a position already held;
+         *   3. nothing.
+         *
+         * Three is a real answer. A trade whose price we do not know must not
+         * be sized, and the RPC already refuses a null or non-positive price
+         * loudly -- so the trade is blocked instead of silently booked at a
+         * number nobody paid. That is the behaviour this ladder restores.
+         */
+        const close = latestCloses.get(symbol)
+        if (close != null) {
+          const value = Number(close.close)
+          if (Number.isFinite(value) && value > 0) return { assetId, price: value }
+        }
         const baseline = baselineHoldings.find(h => h.asset_id === assetId)
-        return { assetId, price: baseline?.price || 100 }
+        if (baseline?.price != null && baseline.price > 0) {
+          return { assetId, price: baseline.price }
+        }
+        return { assetId, price: null }
       })
 
       const results = await Promise.all(fetchPromises)
       results.forEach(r => {
-        prices[r.assetId] = r.price
+        // An unknown price is an ABSENT key, never a placeholder value.
+        // Callers read `priceMap[id]` and must handle undefined; writing a
+        // number here is what made "we don't know" indistinguishable from
+        // "it costs 100".
+        if (r.price != null) prices[r.assetId] = r.price
       })
+
+      const unpriced = results.filter(r => r.price == null).length
+      if (unpriced > 0) {
+        console.warn(
+          `[SimulationPage] ${unpriced} of ${results.length} assets have no real price ` +
+          `(no live quote, no close within ${LATEST_CLOSE_WINDOW_DAYS} days, no baseline). ` +
+          'They cannot be sized or executed until a price is available.',
+        )
+      }
 
       // If this pass tried the live providers and not a single quote came
       // back, disable live quotes for the rest of the session.
@@ -2199,7 +2380,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       currentPosition,
       price: {
         asset_id: assetId,
-        price: priceMap?.[assetId] || holding?.price || 100,
+        price: priceMap?.[assetId] || holding?.price || NO_PRICE,
         timestamp: new Date().toISOString(),
         source: 'realtime' as const,
       },
@@ -2218,6 +2399,26 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
    * the two drift.
    */
   const handleVariantSizingUpdate = (variantId: string, updates: { action?: TradeAction; sizingInput?: string }) => {
+    /*
+     * Tick step 2 of Trade Lab basics — the trade has been sized.
+     *
+     * Step 2's only dispatch lived on HoldingsSimulationTable's promote
+     * checkbox, and a phone never renders that table: MobileSimulationList
+     * has no promote selection, so the step could not be completed on a phone
+     * at all, and the pilot stalled between adding a recommendation and being
+     * told how to execute it. It also meant the step's predicate was "pick
+     * the row you want to execute", which is not what setting a size is.
+     *
+     * This is the one path both surfaces share — the desktop table's inline
+     * cell edit and the phone's sizing sheet both land here — so the step now
+     * means what it says on either. The promote dispatch stays: a desktop
+     * pilot who accepts the recommended size without editing it still has a
+     * way through, and selecting an already-sized row is not mere reading.
+     */
+    if (updates.sizingInput !== undefined && updates.sizingInput !== '') {
+      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-sized')) } catch { /* ignore */ }
+    }
+
     // Temp variants: apply cache update for instant display, store
     // pending sizing so it's used when the real variant arrives.
     if (variantId.startsWith('temp-')) {
@@ -2258,7 +2459,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     } : null
     const assetPrice = {
       asset_id: assetId,
-      price: priceMap?.[assetId] || holding?.price || 100,
+      price: priceMap?.[assetId] || holding?.price || NO_PRICE,
       timestamp: new Date().toISOString(),
       source: 'realtime' as const,
     }
@@ -2309,7 +2510,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             simulation_id: simulation.id,
             asset_id: assetId,
             action: updates.action || variant?.action || 'add',
-            price: priceMap?.[assetId] || holding?.price || 100,
+            price: priceMap?.[assetId] || holding?.price || NO_PRICE,
             sort_order: simulation.simulation_trades.length,
           }, { onConflict: 'simulation_id,asset_id' })
           .select()
@@ -2474,7 +2675,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         cost_basis: null,
         active_weight: null,
       }
-      const price = priceMap?.[h.asset_id] || h.price || 100
+      const price = priceMap?.[h.asset_id] || h.price || NO_PRICE
       const assetPrice = {
         asset_id: h.asset_id,
         price,
@@ -2565,7 +2766,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           currentPosition,
           price: {
             asset_id: assetId,
-            price: priceMap?.[assetId] || holding?.price || 100,
+            price: priceMap?.[assetId] || holding?.price || NO_PRICE,
             timestamp: new Date().toISOString(),
             source: 'realtime' as const,
           },
@@ -2689,7 +2890,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               active_weight: null,
             } : null
 
-            const tradePrice = priceMap[trade.asset_id] || trade.price || 100
+            const tradePrice = priceMap[trade.asset_id] || trade.price || NO_PRICE
             const sizingInput = trade.weight != null
               ? String(trade.weight)
               : trade.shares != null
@@ -2805,7 +3006,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       // ~2.3×. Using the baseline price keeps normalization consistent.
       const baselineHoldingsForPrice = simulation.baseline_holdings as BaselineHolding[]
       const baselineForPrice = baselineHoldingsForPrice?.find(h => h.asset_id === tradeIdea.asset_id)
-      const price = priceMap?.[tradeIdea.asset_id] || baselineForPrice?.price || tradeIdea.target_price || 100
+      const price = priceMap?.[tradeIdea.asset_id] || baselineForPrice?.price || tradeIdea.target_price || NO_PRICE
 
       // Upsert: if the trade already exists (from a rapid toggle race), just return it
       const { data, error } = await supabase
@@ -2844,12 +3045,24 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           return
         }
 
+        /*
+         * Trade Lab basics step 1, from the row the write returned.
+         *
+         * Every single add — an idea, a recommendation, a pair leg, a manual
+         * position — arrives here, and only once the upsert has succeeded and
+         * the reader has not toggled it back off. Any idea or recommendation
+         * counts; a manual position (no idea) does not. This is the local banner
+         * step only — the mission moves on an executed trade. See
+         * `lib/pilot/trade-lab-basics`.
+         */
+        reportTradeLabStep1([data])
+
         // User still wants this trade — sync lab_variant
         if (tradeLab?.id && simulation) {
           try {
             const baselineHoldingsForSync = simulation.baseline_holdings as BaselineHolding[]
             const baselineForSync = baselineHoldingsForSync?.find(h => h.asset_id === tradeIdea.asset_id)
-            const price = priceMap?.[tradeIdea.asset_id] || baselineForSync?.price || tradeIdea.target_price || 100
+            const price = priceMap?.[tradeIdea.asset_id] || baselineForSync?.price || tradeIdea.target_price || NO_PRICE
             const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
             const currentHolding = baselineHoldings.find(h => h.asset_id === tradeIdea.asset_id)
             const currentPosition = currentHolding ? {
@@ -3006,7 +3219,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         action: leg.action,
         shares: leg.proposed_shares,
         weight: leg.proposed_weight,
-        price: priceMap?.[leg.asset_id] || leg.target_price || 100,
+        price: priceMap?.[leg.asset_id] || leg.target_price || NO_PRICE,
         sort_order: (simulation.simulation_trades?.length || 0) + index,
       }))
 
@@ -3038,7 +3251,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 active_weight: null,
               } : null
 
-              const legPrice = priceMap?.[leg.asset_id] || leg.target_price || 100
+              const legPrice = priceMap?.[leg.asset_id] || leg.target_price || NO_PRICE
               const sizingInput = leg.proposed_weight != null
                 ? String(leg.proposed_weight)
                 : leg.proposed_shares != null
@@ -3085,6 +3298,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       return data
     },
     onSuccess: (data, pairTradeLegs) => {
+      // Trade Lab basics step 1 — the legs that were written and are still
+      // wanted. A leg toggled off in flight is removed below and is not an add.
+      reportTradeLabStep1(
+        ((data ?? []) as Array<{ asset_id: string; trade_queue_item_id: string | null }>)
+          .filter(trade => checkboxOverridesRef.current.get(trade.asset_id) !== false),
+      )
       // Rapid toggle reconciliation for each leg
       if (data) {
         (data as any[]).forEach((trade: any) => {
@@ -3152,15 +3371,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       // Return assetId for onSuccess to clear from proposal tracking
       return { assetId, unlinkFromIdea }
     },
-    onSuccess: (result) => {
-      // Clear from proposal tracking if unlinked
-      if (result?.unlinkFromIdea && result?.assetId) {
-        setProposalAddedAssetIds(prev => {
-          const next = new Set(prev)
-          next.delete(result.assetId)
-          return next
-        })
-      }
+    onSuccess: () => {
+      // An unlinked trade has no trade_queue_item_id, so the refetch below drops
+      // it from derived recommendation membership on its own.
       queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
       setEditingTradeId(null)
     },
@@ -3332,17 +3545,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         return tradeItem?.assets?.id === assetId && appliedProposalIds.has(p.id)
       })
       if (appliedProposal) {
-        setAppliedProposalIds(prev => {
-          const next = new Set(prev)
-          next.delete(appliedProposal.id)
-          return next
-        })
-        setProposalAddedAssetIds(prev => {
-          const next = new Set(prev)
-          next.delete(assetId)
-          return next
-        })
-        // Remove the simulation trade for this asset
+        // Membership is derived from the trades, so removing the trade is what
+        // un-applies the recommendation. Remove the simulation trade for this asset
         const trade = simulation?.simulation_trades?.find(t => t.asset_id === assetId)
         if (trade && !trade.id.startsWith('temp-')) {
           supabase.from('simulation_trades').delete().eq('id', trade.id).then(() => {
@@ -3370,12 +3574,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     checkboxOverridesRef.current.set(assetId, true)
     setCheckboxOverrides(new Map(checkboxOverridesRef.current))
 
-    // Tick step 1 of the pilot Trade Lab Get Started banner.
-    // Step 1 is "review the recommendation and add it to the holdings
-    // table" — checking the rec in the LEFT pane fulfills that. Step 2
-    // (select the trade row in the holdings table to execute) is
-    // independent and fires from HoldingsSimulationTable's row checkbox.
-    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
+    // Trade Lab basics step 1 is reported by importTradeMutation.onSuccess,
+    // from the row the write returned — not here, before the write exists.
 
     // Prime priceMap with a price hint for this asset so quickEstimate in
     // useSimulationRows can compute a non-zero notional immediately. Without
@@ -3392,7 +3592,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     if (selectedSimulationId && (priceMap?.[assetId] == null)) {
       const baselineHoldingsForHint = simulation?.baseline_holdings as BaselineHolding[] | undefined
       const baselineForHint = baselineHoldingsForHint?.find(h => h.asset_id === assetId)
-      const priceHint = baselineForHint?.price || (idea as any).target_price || 100
+      const priceHint = baselineForHint?.price || (idea as any).target_price || NO_PRICE
       queryClient.setQueryData<Record<string, number>>(
         ['simulation-prices', selectedSimulationId],
         (old) => ({ ...(old || {}), [assetId]: priceHint }),
@@ -3427,7 +3627,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             priceMap?.[assetId] ||
             baseline?.price ||
             (idea as any).target_price ||
-            100
+            NO_PRICE
           try {
             const normResult = normalizeSizing({
               action: (idea.action || 'buy') as any,
@@ -4022,6 +4222,213 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     return { proposals: filteredProposals, ideas: filteredIdeas }
   }, [itemsByCategory, leftPaneSearch, leftPaneStageFilter])
 
+  /**
+   * Is this recommendation's trade already in the simulation?
+   *
+   * `activeProposals` infers as `never[]`, so every field read off a proposal
+   * is a type error at whichever site reads it. The desktop row works around
+   * that the same way. Narrowed to `any` once here rather than at each access.
+   */
+  const isProposalInSimulation = useCallback(
+    (proposalItem: ProposalItem) => appliedProposalIds.has((proposalItem.proposal as any)?.id),
+    [appliedProposalIds],
+  )
+
+  /**
+   * Put a recommendation's trades into the simulation, or take them out again.
+   *
+   * This logic used to live inside the desktop proposal row's own render
+   * closure, which is why the phone had no way to run it: a trade_queue_item
+   * with a proposal is filed under `proposals` and excluded from `ideas`, so
+   * on a phone a recommendation appeared only in a list whose rows opened a
+   * detail modal and did nothing else. The pilot's first step is to add one,
+   * and the surface offered no control that could.
+   *
+   * Lifted as-is — same optimistic overrides, the same importsInFlightRef
+   * guard and the same importTradeMutation lifecycle. Only the per-proposal
+   * values it used to close over are derived here instead of by the row.
+   */
+  const toggleProposalInSimulation = useCallback((proposalItem: ProposalItem) => {
+    const { isPairTrade, legs } = proposalItem
+    // See isProposalInSimulation — `activeProposals` infers as never[].
+    const proposal = proposalItem.proposal as any
+    const tradeItem = proposal.trade_queue_items as any
+    const asset = tradeItem?.assets
+
+    // Enrich legs with asset_id from tradeIdeasWithStatus.
+    // Try legId first, fall back to matching by symbol.
+    const enrichedLegs = isPairTrade && legs?.length
+      ? legs.map((l: any) => {
+          const legItem = l.legId
+            ? tradeIdeasWithStatus.find(t => t.id === l.legId)
+            : tradeIdeasWithStatus.find(t =>
+                t.assets?.symbol === l.symbol && (t.pair_id || t.pair_trade_id)
+              )
+          return {
+            ...l,
+            assetId: legItem?.asset_id,
+            tradeQueueItemId: legItem?.id || l.legId,
+            companyName: legItem?.assets?.company_name || '',
+            sector: legItem?.assets?.sector || null,
+          }
+        })
+      : []
+
+    const isProposalApplied = appliedProposalIds.has(proposal.id)
+    const proposalAssetIds = isPairTrade && enrichedLegs.length
+      ? enrichedLegs.map((l: any) => l.assetId).filter(Boolean)
+      : asset?.id ? [asset.id] : []
+
+    if (isProposalApplied) {
+      // === UNCHECK: remove proposal from simulation ===
+      // Membership is derived from the trades, so the remove path is all it takes.
+      // Reuse the battle-tested remove path (optimistic variant removal,
+      // cancelQueries, DB delete via removeTradeMutation, convergence cleanup)
+      proposalAssetIds.forEach((aid: string) => handleRemoveAsset(aid))
+      return
+    }
+
+    // === CHECK: add proposal to simulation ===
+
+    // Trade Lab basics step 1 is reported by importTradeMutation.onSuccess once
+    // the row exists; `_proposalId` below is what tells it this was a
+    // recommendation.
+
+    // Per-asset exclusivity: uncheck any idea-sourced trade first
+    proposalAssetIds.forEach((aid: string) => uncheckOtherSourcesForAsset(aid, 'proposal'))
+
+    // Clear any stale false overrides that handleRemoveAsset
+    // (from uncheckOtherSourcesForAsset) may have set
+    proposalAssetIds.forEach((aid: string) => {
+      checkboxOverridesRef.current.delete(aid)
+      convergenceRemovalsInFlightRef.current.delete(aid)
+    })
+
+    // No proposal-level state to track: the per-asset overrides set below show
+    // it as added at once, and persisted membership takes over when they converge.
+
+    // Build per-asset info for the import
+    const assetsToAdd = isPairTrade && enrichedLegs.length
+      ? enrichedLegs.map((l: any) => ({
+          assetId: l.assetId as string,
+          tradeQueueItemId: l.tradeQueueItemId as string,
+          action: (l.action || 'buy') as TradeAction,
+          symbol: l.symbol as string,
+          companyName: (l.companyName || '') as string,
+          sector: (l.sector || null) as string | null,
+          weight: l.weight as number | null,
+        })).filter((l: any) => l.assetId)
+      : asset?.id ? [{
+          assetId: asset.id,
+          /*
+           * The recommendation's source idea. The joined row supplies it when it
+           * came back; the proposal's own `trade_queue_item_id` is the same fact
+           * and is always selected. Without the fallback a missing join sent a
+           * random id below, which lost the lineage before the write.
+           */
+          tradeQueueItemId: tradeItem?.id ?? proposal.trade_queue_item_id ?? undefined,
+          action: (tradeItem?.action || 'buy') as TradeAction,
+          symbol: asset.symbol || '',
+          companyName: asset.company_name || '',
+          sector: asset.sector || null,
+          weight: proposal.weight as number | null,
+        }] : []
+
+    // Reuse the exact handleAddAsset pattern for each asset:
+    // checkboxOverride=true → temp variant → importsInFlight → importTradeMutation
+    for (const a of assetsToAdd) {
+      // Build a TradeQueueItemWithDetails-shaped object
+      // For sell/trim actions, negate the weight so the sizing parser
+      // treats it as a reduction (e.g., sell 10% → sizing_input "-10")
+      const rawWeight = a.weight ?? proposal.weight ?? null
+      const isSellAction = a.action === 'sell' || a.action === 'trim'
+      const signedWeight = rawWeight != null && isSellAction && rawWeight > 0 ? -rawWeight : rawWeight
+
+      const tradeIdeaLike = {
+        id: a.tradeQueueItemId || crypto.randomUUID(),
+        asset_id: a.assetId,
+        action: a.action,
+        proposed_shares: null,
+        proposed_weight: signedWeight,
+        target_price: null,
+        assets: { id: a.assetId, symbol: a.symbol, company_name: a.companyName, sector: a.sector },
+        _proposalId: proposal.id, // Provenance: which recommendation this came from
+      } as unknown as TradeQueueItemWithDetails
+
+      // Instant UI: override + temp variant + in-flight + mutation
+      checkboxOverridesRef.current.set(a.assetId, true)
+
+      if (tradeLab?.id) {
+        const variantQueryKey = ['intent-variants', tradeLab.id, null]
+        const tempSizingForLeg = signedWeight != null ? String(signedWeight) : null
+        // Pre-compute sizing_spec + computed so the temp row
+        // shows real shares / weight / notional immediately
+        // (and cash impact picks it up too).
+        let preSpec: any = null
+        let preComputed: any = null
+        if (tempSizingForLeg && simulation) {
+          const baselineHoldings = (simulation.baseline_holdings as BaselineHolding[]) || []
+          const baseline = baselineHoldings.find(h => h.asset_id === a.assetId)
+          const price = priceMap?.[a.assetId] || baseline?.price || NO_PRICE
+          try {
+            const normResult = normalizeSizing({
+              action: a.action as any,
+              sizing_input: tempSizingForLeg,
+              current_position: baseline ? {
+                shares: baseline.shares,
+                weight: baseline.weight,
+                cost_basis: null,
+                active_weight: null,
+              } : null,
+              portfolio_total_value: simulation.baseline_total_value || 0,
+              price: { asset_id: a.assetId, price, timestamp: new Date().toISOString(), source: 'realtime' as const },
+              rounding_config: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' as const },
+              active_weight_config: getActiveWeightConfig(a.assetId),
+              has_benchmark: hasBenchmark,
+            })
+            if (normResult.is_valid) {
+              preSpec = normResult.sizing_spec ?? null
+              preComputed = normResult.computed ?? null
+            }
+          } catch { /* fall through to null */ }
+        }
+        queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
+          if (old?.some(v => v.asset_id === a.assetId)) return old
+          return [...(old || []), {
+            id: `temp-${a.assetId}`,
+            asset_id: a.assetId,
+            trade_lab_id: tradeLab.id,
+            action: a.action,
+            sizing_input: tempSizingForLeg,
+            sizing_spec: preSpec,
+            computed: preComputed,
+            direction_conflict: null,
+            below_lot_warning: false,
+            active_weight_config: null,
+            asset: { id: a.assetId, symbol: a.symbol, company_name: a.companyName, sector: a.sector },
+          } as IntentVariant]
+        })
+      }
+
+      importsInFlightRef.current.add(a.assetId)
+      importTradeMutation.mutate(tradeIdeaLike)
+    }
+
+    setCheckboxOverrides(new Map(checkboxOverridesRef.current))
+  }, [
+    appliedProposalIds,
+    tradeIdeasWithStatus,
+    handleRemoveAsset,
+    uncheckOtherSourcesForAsset,
+    tradeLab?.id,
+    simulation,
+    priceMap,
+    getActiveWeightConfig,
+    hasBenchmark,
+    queryClient,
+    importTradeMutation,
+  ])
+
   // Count sandbox trade stats
   const tradeStats = useMemo(() => {
     // Use simulationRows.tradedRows for accurate action breakdown
@@ -4073,7 +4480,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
     traded.forEach(row => {
       const action = row.derivedAction
-      const price = priceMap?.[row.asset_id] || row.baseline?.price || 100
+      const price = priceMap?.[row.asset_id] || row.baseline?.price || NO_PRICE
       const tradeShares = Math.abs(row.deltaShares)
       const tradeWeight = Math.abs(row.deltaWeight)
       const tradeValue = Math.abs(row.notional)
@@ -4320,7 +4727,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       baseline,
       currentHolding,
       simulation.baseline_total_value || 0,
-      priceMap?.[trade.asset_id] || trade.price || 100
+      priceMap?.[trade.asset_id] || trade.price || NO_PRICE
     )
 
     workbenchQueueChange(trade.id, {
@@ -4385,7 +4792,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       baseline,
       currentHolding,
       simulation.baseline_total_value || 0,
-      priceMap?.[trade.asset_id] || trade.price || 100
+      priceMap?.[trade.asset_id] || trade.price || NO_PRICE
     )
 
     // Force immediate save of any pending changes
@@ -4419,12 +4826,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         }
         return next
       })
-      // Tick step 1 of the pilot Trade Lab Get Started banner —
-      // expanding the chevron counts as reviewing the recommendation.
-      // (The outer-card onClick already dispatches this for body
-      // clicks, but stopPropagation here means the chevron path
-      // needs its own dispatch.)
-      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
+      // No step-1 dispatch. Expanding a card is reading, and step 1 is
+      // "add a recommendation to the simulation" — the checkbox path owns it.
     }
 
     const timePressure = getTimePressure(idea)
@@ -4466,11 +4869,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       <div
         key={idea.id}
         onClick={() => {
+          // Opening the detail modal is reading, not adding, so it no longer
+          // ticks step 1 — the checkbox is what puts the idea in the
+          // simulation and what the banner now asks for.
           setSelectedTradeId(idea.id)
-          // Tick step 1 of the pilot Trade Lab Get Started banner.
-          // Clicking the recommendation card to open its detail
-          // modal counts as "reviewing the recommendation."
-          try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
         }}
         className={clsx(
           "rounded-lg border border-l-[3px] transition-colors cursor-pointer relative p-2.5",
@@ -4870,7 +5272,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     const isExpanded = expandedTradeIds.has(pairTrade.id)
     const toggleExpand = (e: React.MouseEvent) => {
       e.stopPropagation()
-      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
+      // Expanding a pair to read its legs is not adding it. Step 1 is
+      // dispatched from the leg checkboxes, which is where the add happens.
       setExpandedTradeIds(prev => {
         const next = new Set(prev)
         if (next.has(pairTrade.id)) {
@@ -5350,7 +5753,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           (review, size, execute) or manually dismisses via the X. The
           banner manages its own per-(user, org) step state and auto-
           dismisses internally once step 3 fires. We deliberately do NOT
-          hide based on `hasCommittedTradeInOrg`: a pilot may have
+          hide based on a committed trade in the org: a pilot may have
           committed a trade via the Decision Inbox without ever using
           Trade Lab, and the intro needs to keep coaching them through
           the Trade Lab execute path until they actually do it here. */}
@@ -5358,15 +5761,23 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         && !!pilotScenario
         && user?.id
         && (
-          <PilotTradeLabIntroBanner userId={user.id} orgId={currentOrgId} />
+          <PilotTradeLabIntroBanner
+            userId={user.id}
+            orgId={currentOrgId}
+            onCurrentStepChange={setLabBasicsStep}
+            tutorialSymbol={tradeIdeas?.find(i => i.id === tutorialIdeaId)?.assets?.symbol ?? null}
+          />
         )}
 
       {/* Header Bar - Portfolio Selector + View Tabs */}
       <div className="flex-shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         {/* Top row: Portfolio selector and actions */}
-        <div className="px-3 sm:px-6 py-2 flex items-center justify-between gap-2">
+        <div className="px-3 sm:px-6 py-1.5 sm:py-2 flex items-center justify-between gap-1.5 sm:gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Beaker className="h-5 w-5 text-primary-600 shrink-0" />
+            {/* Desktop only. On a phone it is a 20px picture of a
+                laboratory beside the word Trade Lab in the tab bar, on the
+                one row the portfolio has to fit into. */}
+            <Beaker className="hidden sm:block h-5 w-5 text-primary-600 shrink-0" />
             <h1 className="hidden sm:block text-lg font-semibold text-gray-900 dark:text-white">
               {isSharedView ? 'Shared Simulation' : 'Trade Lab'}
             </h1>
@@ -5377,20 +5788,31 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{sharedSimData.name}</span>
               </>
             )}
-            {!isSharedView && <span className="text-gray-300 dark:text-gray-600">|</span>}
+            {!isSharedView && <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>}
             {/* Portfolio Selector - Searchable Dropdown — hidden in shared view */}
             {!isSharedView && <div className="relative flex-1 min-w-0 sm:flex-none" ref={portfolioDropdownRef}>
               <button
                 onClick={() => setPortfolioDropdownOpen(!portfolioDropdownOpen)}
+                /* On a phone this was a full-width form field with a 200px
+                   floor, so the portfolio name read as the subject of the
+                   screen rather than as which book you are in. It keeps the
+                   dropdown and the truncation and gives the row back. */
                 className={clsx(
-                  "flex items-center gap-2 px-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors w-full sm:w-auto sm:min-w-[200px]",
+                  /* The one thing in this row that can give ground, so it is
+                     the only one that is allowed to. 40vw is what is left
+                     once Ideas, Add and the overflow have their real widths
+                     at 390px; the name truncates inside it. `no-touch-target`
+                     is load-bearing — without it the global phone rule gives
+                     this button min-width:44px AND overrides the height, and
+                     a min-width cannot be capped by a max-width. */
+                  "flex items-center h-8 no-touch-target tap-pad gap-1 px-2 py-1 text-sm border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors max-w-[40vw] sm:h-auto sm:max-w-none sm:gap-2 sm:px-3 sm:py-1.5 sm:w-auto sm:min-w-[200px]",
                   portfolioDropdownOpen
                     ? "border-primary-500 ring-2 ring-primary-500/20"
                     : "border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
                 )}
               >
-                <Briefcase className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                <span className="flex-1 text-left truncate">
+                <Briefcase className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400 flex-shrink-0" />
+                <span className="min-w-0 flex-1 text-left truncate font-medium">
                   {portfolios?.find(p => p.id === selectedPortfolioId)?.name || 'Select portfolio...'}
                 </span>
                 <ChevronDown className={clsx(
@@ -5465,19 +5887,82 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             )}
           </div>
 
-          {/* Right side controls */}
-          <div className="flex items-center gap-2">
+          {/* Right side controls.
+              `shrink-0` on a phone is the fix for the overlap: every child
+              here is shrink-0, but this box was not, so the row squeezed the
+              box and the contents simply spilled out of it — over the
+              portfolio name to its left. Made rigid, the squeeze lands on the
+              portfolio, which is the one thing in the row that can truncate.
+              Desktop keeps the default so a narrow window still reflows. */}
+          <div className="flex shrink-0 sm:shrink items-center gap-1.5 sm:gap-2">
             {/* On a phone these collapse into one control. Ideas, Workspace,
                 Snapshots and Save Snapshot were four separate affordances
                 spread across two header rows for actions taken occasionally;
                 the tabs that get used constantly — Simulation / Impact /
                 Trades — now own the row below on their own. */}
+            {/*
+              ── One utility row ──────────────────────────────────────────
+
+              Which book you are in, the two things you do to it, and
+              everything else. These were three bands: the portfolio on its
+              own, then a full-width pair of actions, then the mode switch —
+              chrome stacked on chrome before a single holding.
+
+              Recommendations keeps a named control here because it is the
+              durable way in; while the tutorial is teaching that step it also
+              offers one, and the two are deliberately not the same size. The
+              loud one belongs to the step that is asking.
+            */}
+            {isMobileViewport && !isSharedView && selectedPortfolioId && selectedViewType !== 'lists' && (
+              <>
+                {/* The one recommendations control. While Trade Lab basics
+                    is teaching step one it is also the thing that step points
+                    at, so it wears the emphasis for exactly that long. */}
+                <button
+                  type="button"
+                  data-slot="mobile-lab-ideas"
+                  data-emphasised={labBasicsStep === 1 ? 'true' : 'false'}
+                  onClick={() => setShowIdeasPanel(true)}
+                  className={clsx(
+                    /* no-touch-target + tap-pad: the global phone rule forces
+                       every button to 44x44, which is why this row overflowed
+                       whatever height these classes asked for. The drawn
+                       control is 32px; the thumb still gets 44. */
+                    'shrink-0 h-8 no-touch-target tap-pad inline-flex items-center gap-1 rounded-lg border px-2 text-[12px] font-medium',
+                    labBasicsStep === 1
+                      ? 'border-amber-400 bg-amber-50 text-amber-800 ring-2 ring-amber-300/60 dark:border-amber-600 dark:bg-amber-900/25 dark:text-amber-200'
+                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300',
+                  )}
+                >
+                  <Layers className={clsx('h-3.5 w-3.5', labBasicsStep === 1 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-400')} />
+                  Ideas
+                  {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
+                    <span className="rounded-full bg-primary-100 px-1 text-[11px] font-semibold tabular-nums text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                      {filteredItems.proposals.length + filteredItems.ideas.length}
+                    </span>
+                  )}
+                </button>
+                {!tableReadOnly && (
+                  <button
+                    type="button"
+                    data-slot="mobile-lab-add"
+                    onClick={() => setMobileAddOpen(true)}
+                    aria-label="Add trade"
+                    title="Add trade"
+                    className="shrink-0 h-8 no-touch-target tap-pad inline-flex items-center gap-0.5 rounded-lg border border-gray-200 dark:border-gray-700 px-2 text-[12px] font-medium text-gray-600 dark:text-gray-300"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add
+                  </button>
+                )}
+              </>
+            )}
             {isMobileViewport && !isSharedView && (
               <button
                 type="button"
                 onClick={() => setMobileLabMenuOpen(true)}
                 aria-label="Trade Lab menu"
-                className="relative shrink-0 h-9 w-9 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300"
+                className="shrink-0 h-8 w-8 no-touch-target tap-pad flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300"
               >
                 <MoreHorizontal className="h-4 w-4" />
                 {simulationRows.summary.tradedCount > 0 && (
@@ -5485,23 +5970,28 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 )}
               </button>
             )}
-            {/* Workbench Status Indicator */}
+            {/* Workbench Status Indicator.
+                Everything to its right is shrink-0 and the portfolio button to
+                its left is the only flexible thing in the row, so on a phone
+                "Saved about an hour ago" — 130-odd pixels of prose about work
+                that already finished — was taken out of the portfolio name.
+                A phone gets the dot and the word; the sentence is desktop. */}
             {simulation && (
               <>
                 {workbenchHasUnsavedChanges && !workbenchSaving && (
-                  <div className="flex items-center gap-1 text-sm text-amber-600 dark:text-amber-400">
+                  <div className="flex shrink-0 items-center gap-1 text-sm text-amber-600 dark:text-amber-400">
                     <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
                     <span className="text-xs">Unsaved</span>
                   </div>
                 )}
                 {workbenchSaving && (
-                  <div className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
+                  <div className="flex shrink-0 items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
                     <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    <span className="text-xs">Saving...</span>
+                    <span className="hidden sm:inline text-xs">Saving...</span>
                   </div>
                 )}
-                {workbenchLastSaved && !workbenchHasUnsavedChanges && !workbenchSaving && (
-                  <div className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
+                {workbenchLastSaved && !workbenchHasUnsavedChanges && !workbenchSaving && !isMobileViewport && (
+                  <div className="flex shrink-0 items-center gap-1 text-sm text-green-600 dark:text-green-400">
                     <Check className="h-3.5 w-3.5" />
                     <span className="text-xs">Saved {formatDistanceToNow(workbenchLastSaved, { addSuffix: true })}</span>
                   </div>
@@ -5546,24 +6036,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
         {/* View Tabs Row */}
         {(selectedPortfolioId || isSharedView) && (
-          <div className="px-3 sm:px-6 pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="px-3 sm:px-6 pb-1.5 sm:pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             {/* Left: View Type Tabs — hidden in shared view */}
             {!isSharedView ? (
               <div className={clsx('items-center gap-1', isMobileViewport ? 'hidden' : 'flex')}>
-                {isMobileViewport && (
-                  <button
-                    onClick={() => setShowIdeasPanel(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800"
-                  >
-                    <Layers className="h-4 w-4" />
-                    Ideas
-                    {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
-                      <Badge variant="default" className="text-xs">
-                        {filteredItems.proposals.length + filteredItems.ideas.length}
-                      </Badge>
-                    )}
-                  </button>
-                )}
+                {/* The phone's Ideas control used to be here, inside a
+                    container this very expression hides on a phone — so it
+                    rendered into nothing. It is a named control in the action
+                    row above now. */}
                 <button
                   onClick={() => setSelectedViewType('private')}
                   className={clsx(
@@ -5594,11 +6074,24 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             {/* Right: View Toggle (only show for workbench views, not Trade Sheets) */}
             {selectedViewType !== 'lists' && (simulation || isSharedView) && (
               <div className="flex items-center gap-2 w-full sm:w-auto">
-                <div className="flex sm:inline-flex w-full sm:w-auto items-center p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                {/* The primary control on the surface, and sized like it:
+                    a taller band than the utilities above it and than the
+                    measure switch inside the table below. */}
+                {/* Still the tallest and loudest band on the surface — it is
+                    app-level navigation — but 44px of segmented control above
+                    a table that only gets ~55% of the screen was more weight
+                    than the job needs. 38 still reads as primary next to the
+                    32px utilities above and the 32px measure switch below. */}
+                <div className="flex sm:inline-flex w-full sm:w-auto items-center p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg h-10 sm:h-auto">
                   <button
                     onClick={() => setImpactView('simulation')}
                     className={clsx(
-                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                      /* no-touch-target: these are the segments of a 40px
+                         band, and the global phone rule would otherwise give
+                         each one min-height:44px — bursting out of the pill
+                         that is meant to contain them. The band itself is the
+                         hit area, and it is 40px. */
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all no-touch-target",
                       impactView === 'simulation'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
@@ -5615,7 +6108,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <button
                     onClick={() => setImpactView('impact')}
                     className={clsx(
-                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                      /* no-touch-target: these are the segments of a 40px
+                         band, and the global phone rule would otherwise give
+                         each one min-height:44px — bursting out of the pill
+                         that is meant to contain them. The band itself is the
+                         hit area, and it is 40px. */
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all no-touch-target",
                       impactView === 'impact'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
@@ -5631,7 +6129,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <button
                     onClick={() => setImpactView('trades')}
                     className={clsx(
-                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                      /* no-touch-target: these are the segments of a 40px
+                         band, and the global phone rule would otherwise give
+                         each one min-height:44px — bursting out of the pill
+                         that is meant to contain them. The band itself is the
+                         hit area, and it is 40px. */
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 h-full sm:h-auto sm:py-1.5 rounded-md text-sm font-semibold sm:font-medium transition-all no-touch-target",
                       impactView === 'trades'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
@@ -5674,7 +6177,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             </div>
             <button
               onClick={() => {
-                if (pilotMode.isPilot) markPilotStage('trade_book_unlocked')
                 window.dispatchEvent(new CustomEvent('navigate-to-asset', {
                   detail: {
                     id: 'trade-book',
@@ -5711,10 +6213,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         {/* Loading state - unified loading for all initial data */}
         {(sharedSimLoading || tradeLabLoading || simulationsLoading || isAutoCreating || (selectedPortfolioId && !simulation && simulationLoading && !isSharedView)) ? (
           <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900/50">
-            <div className="text-center">
-              <RefreshCw className="h-8 w-8 text-gray-400 animate-spin mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-gray-400">Loading workbench...</p>
-            </div>
+            {/* The branded loader the boot screen and the feed use, in the same
+                centred slot: shared phase, so it continues rather than restarts
+                a loop already on screen, and a still mark under reduced motion. */}
+            <TesseractLoader size={64} compact text="Loading workbench..." />
           </div>
         ) : !selectedPortfolioId && !isSharedView ? (
           /* No portfolio selected state — pilot users see a bespoke copy
@@ -5872,11 +6374,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                       if (isAdded) handleRemoveAsset(idea.asset_id)
                       else handleAddAsset(idea)
                     }}
+                    onToggleProposal={(p) => toggleProposalInSimulation(p)}
+                    isProposalAdded={(p) => isProposalInSimulation(p)}
                     onOpenIdea={(id) => {
                       // The drawer is a z-[70] full-screen overlay on a phone, so
                       // the detail modal opened underneath it and only appeared
                       // once the drawer was dismissed. Opening an idea IS leaving
                       // the list, so close it on the way.
+                      //
+                      // But closing the detail used to land you back in the lab
+                      // with the list gone, so deciding to add the thing you had
+                      // just finished reading cost two taps to get back to it.
+                      // Reading is a detour, not an exit: the list comes back.
+                      setReopenIdeasAfterDetail(true)
                       setShowIdeasPanel(false)
                       setSelectedTradeId(id)
                     }}
@@ -6021,177 +6531,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                   // Check if this proposal has been applied
                                   const isProposalApplied = appliedProposalIds.has(proposal.id)
 
-                                  // Get asset IDs for this proposal
-                                  const proposalAssetIds = isPairTrade && enrichedLegs.length
-                                    ? enrichedLegs.map((l: any) => l.assetId).filter(Boolean)
-                                    : asset?.id ? [asset.id] : []
-
-                                  // Handle applying/unapplying proposal to simulation.
-                                  // Delegates to the same handleAddAsset / handleRemoveAsset flow
-                                  // used by ideas, so proposals get the exact same optimistic-UI,
-                                  // importsInFlightRef guards, and importTradeMutation lifecycle.
+                                  // The apply/unapply logic now lives at page
+                                  // level as `toggleProposalInSimulation`, so the
+                                  // phone's recommendation list can call the same
+                                  // path. Behaviour here is unchanged.
                                   const handleAddProposal = (e: React.MouseEvent) => {
                                     e.stopPropagation()
-
-                                    if (isProposalApplied) {
-                                      // === UNCHECK: remove proposal from simulation ===
-                                      setAppliedProposalIds(prev => {
-                                        const next = new Set(prev)
-                                        next.delete(proposal.id)
-                                        return next
-                                      })
-                                      setProposalAddedAssetIds(prev => {
-                                        const next = new Set(prev)
-                                        proposalAssetIds.forEach((id: string) => next.delete(id))
-                                        return next
-                                      })
-                                      // Reuse the battle-tested remove path (optimistic variant removal,
-                                      // cancelQueries, DB delete via removeTradeMutation, convergence cleanup)
-                                      proposalAssetIds.forEach((aid: string) => handleRemoveAsset(aid))
-                                      return
-                                    }
-
-                                    // === CHECK: add proposal to simulation ===
-
-                                    // Tick steps 1 + 2 of the pilot Trade Lab Get Started
-                                    // banner. The pilot's seeded "Recommendation" is
-                                    // rendered as a proposal (this code path), NOT as
-                                    // an idea. Step 1 = "review the rec and add it to
-                                    // holdings"; step 2 fires later from the holdings
-                                    // table's row checkbox.
-                                    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
-
-                                    // Per-asset exclusivity: uncheck any idea-sourced trade first
-                                    proposalAssetIds.forEach((aid: string) => uncheckOtherSourcesForAsset(aid, 'proposal'))
-
-                                    // Clear any stale false overrides that handleRemoveAsset
-                                    // (from uncheckOtherSourcesForAsset) may have set
-                                    proposalAssetIds.forEach((aid: string) => {
-                                      checkboxOverridesRef.current.delete(aid)
-                                      convergenceRemovalsInFlightRef.current.delete(aid)
-                                    })
-
-                                    // Track proposal-level state
-                                    setAppliedProposalIds(prev => {
-                                      const next = new Set(prev)
-                                      next.add(proposal.id)
-                                      return next
-                                    })
-                                    setProposalAddedAssetIds(prev => {
-                                      const next = new Set(prev)
-                                      proposalAssetIds.forEach((id: string) => next.add(id))
-                                      return next
-                                    })
-
-                                    // Build per-asset info for the import
-                                    const assetsToAdd = isPairTrade && enrichedLegs.length
-                                      ? enrichedLegs.map((l: any) => ({
-                                          assetId: l.assetId as string,
-                                          tradeQueueItemId: l.tradeQueueItemId as string,
-                                          action: (l.action || 'buy') as TradeAction,
-                                          symbol: l.symbol as string,
-                                          companyName: (l.companyName || '') as string,
-                                          sector: (l.sector || null) as string | null,
-                                          weight: l.weight as number | null,
-                                        })).filter((l: any) => l.assetId)
-                                      : asset?.id ? [{
-                                          assetId: asset.id,
-                                          tradeQueueItemId: tradeItem?.id,
-                                          action: (tradeItem?.action || 'buy') as TradeAction,
-                                          symbol: asset.symbol || '',
-                                          companyName: asset.company_name || '',
-                                          sector: asset.sector || null,
-                                          weight: proposal.weight as number | null,
-                                        }] : []
-
-                                    // Reuse the exact handleAddAsset pattern for each asset:
-                                    // checkboxOverride=true → temp variant → importsInFlight → importTradeMutation
-                                    for (const a of assetsToAdd) {
-                                      // Build a TradeQueueItemWithDetails-shaped object
-                                      // For sell/trim actions, negate the weight so the sizing parser
-                                      // treats it as a reduction (e.g., sell 10% → sizing_input "-10")
-                                      const rawWeight = a.weight ?? proposal.weight ?? null
-                                      const isSellAction = a.action === 'sell' || a.action === 'trim'
-                                      const signedWeight = rawWeight != null && isSellAction && rawWeight > 0 ? -rawWeight : rawWeight
-
-                                      const tradeIdeaLike = {
-                                        id: a.tradeQueueItemId || crypto.randomUUID(),
-                                        asset_id: a.assetId,
-                                        action: a.action,
-                                        proposed_shares: null,
-                                        proposed_weight: signedWeight,
-                                        target_price: null,
-                                        assets: { id: a.assetId, symbol: a.symbol, company_name: a.companyName, sector: a.sector },
-                                        _proposalId: proposal.id, // Provenance: which recommendation this came from
-                                      } as unknown as TradeQueueItemWithDetails
-
-                                      // Instant UI: override + temp variant + in-flight + mutation
-                                      checkboxOverridesRef.current.set(a.assetId, true)
-
-                                      if (tradeLab?.id) {
-                                        const variantQueryKey = ['intent-variants', tradeLab.id, null]
-                                        const tempSizingForLeg = signedWeight != null ? String(signedWeight) : null
-                                        // Pre-compute sizing_spec + computed so the temp row
-                                        // shows real shares / weight / notional immediately
-                                        // (and cash impact picks it up too).
-                                        let preSpec: any = null
-                                        let preComputed: any = null
-                                        if (tempSizingForLeg && simulation) {
-                                          const baselineHoldings = (simulation.baseline_holdings as BaselineHolding[]) || []
-                                          const baseline = baselineHoldings.find(h => h.asset_id === a.assetId)
-                                          const price = priceMap?.[a.assetId] || baseline?.price || 100
-                                          try {
-                                            const normResult = normalizeSizing({
-                                              action: a.action as any,
-                                              sizing_input: tempSizingForLeg,
-                                              current_position: baseline ? {
-                                                shares: baseline.shares,
-                                                weight: baseline.weight,
-                                                cost_basis: null,
-                                                active_weight: null,
-                                              } : null,
-                                              portfolio_total_value: simulation.baseline_total_value || 0,
-                                              price: { asset_id: a.assetId, price, timestamp: new Date().toISOString(), source: 'realtime' as const },
-                                              rounding_config: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' as const },
-                                              active_weight_config: getActiveWeightConfig(a.assetId),
-                                              has_benchmark: hasBenchmark,
-                                            })
-                                            if (normResult.is_valid) {
-                                              preSpec = normResult.sizing_spec ?? null
-                                              preComputed = normResult.computed ?? null
-                                            }
-                                          } catch { /* fall through to null */ }
-                                        }
-                                        queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
-                                          if (old?.some(v => v.asset_id === a.assetId)) return old
-                                          return [...(old || []), {
-                                            id: `temp-${a.assetId}`,
-                                            asset_id: a.assetId,
-                                            trade_lab_id: tradeLab.id,
-                                            action: a.action,
-                                            sizing_input: tempSizingForLeg,
-                                            sizing_spec: preSpec,
-                                            computed: preComputed,
-                                            direction_conflict: null,
-                                            below_lot_warning: false,
-                                            active_weight_config: null,
-                                            asset: { id: a.assetId, symbol: a.symbol, company_name: a.companyName, sector: a.sector },
-                                          } as IntentVariant]
-                                        })
-                                      }
-
-                                      importsInFlightRef.current.add(a.assetId)
-                                      importTradeMutation.mutate(tradeIdeaLike)
-                                    }
-
-                                    setCheckboxOverrides(new Map(checkboxOverridesRef.current))
+                                    toggleProposalInSimulation(proposalItem)
                                   }
 
                                   // Expand/collapse state for this proposal
                                   const isProposalExpanded = expandedTradeIds.has(`proposal-${proposal.id}`)
                                   const toggleProposalExpand = (e: React.MouseEvent) => {
                                     e.stopPropagation()
-                                    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
+                                    // Reading the recommendation is not adding it —
+                                    // step 1 fires from the checkbox path only.
                                     setExpandedTradeIds(prev => {
                                       const next = new Set(prev)
                                       const key = `proposal-${proposal.id}`
@@ -6343,6 +6697,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                                       proposed_weight: signedWeight,
                                                       target_price: null,
                                                       assets: { id: legAssetId, symbol: leg.symbol, company_name: leg.companyName || '', sector: leg.sector || null },
+                                                      _proposalId: proposal.id, // Provenance: the recommendation this leg came from
                                                     } as unknown as TradeQueueItemWithDetails
                                                     checkboxOverridesRef.current.set(legAssetId, true)
                                                     // Temp variant for instant table row + quickEstimate
@@ -6591,6 +6946,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             onUpdateVariant={handleVariantSizingUpdate}
                             onCreateVariant={handleCreateVariantForHolding}
                             onDeleteVariant={handleVariantDelete}
+                            onRemoveAsset={handleRemoveAsset}
                             // Same handler and same search the desktop table
                             // uses for its inline "add trade" row, so an ad-hoc
                             // ticker takes the identical import + variant path.
@@ -6598,6 +6954,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             assetSearch={phantomAssetSearch}
                             onAssetSearchChange={setPhantomAssetSearch}
                             assetSearchResults={phantomAssetResults ?? []}
+                            addOpen={mobileAddOpen}
+                            onAddOpenChange={setMobileAddOpen}
+                            // The same mutation and the same PM-only gate as
+                            // the desktop table's onBulkPromote below. Omitting
+                            // the handler hides the control, which is how
+                            // execute stays PM-only on both surfaces.
+                            onExecute={!isSharedView && selectedPortfolioId && isCurrentUserPM ? (variantIds, opts) => {
+                              bulkExecuteM.mutate({
+                                variantIds,
+                                batchName: opts?.batchName ?? null,
+                                batchDescription: opts?.batchDescription ?? null,
+                                reasons: opts?.reasons,
+                              })
+                            } : undefined}
+                            isExecuting={bulkExecuteM.isPending}
                           />
                         </div>
                       ) : (
@@ -7136,16 +7507,30 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     )}
                   </div>
 
+                  {/*
+                    The modal stays up until the commit settles.
+                    It used to close on the click, which meant the `disabled`
+                    below never guarded anything and there was no indication at
+                    all that the most consequential action in the product was in
+                    flight — the workbench simply sat there until the Decision
+                    Recorded modal appeared. Closing is now driven by the
+                    mutation settling, and the button says what is happening.
+                    Both stay `flex-1`, so the longer label does not move them.
+                  */}
                   <div className="flex gap-3">
-                    <button onClick={() => setConfirmExecuteIdea(null)} className="flex-1 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    <button
+                      onClick={() => setConfirmExecuteIdea(null)}
+                      disabled={executeTradeM.isPending}
+                      className="flex-1 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                    >
                       Cancel
                     </button>
                     <button
-                      onClick={() => { executeTradeM.mutate(confirmExecuteIdea); setConfirmExecuteIdea(null) }}
+                      onClick={() => executeTradeM.mutate(confirmExecuteIdea)}
                       disabled={executeTradeM.isPending}
                       className="flex-1 px-4 py-2 text-sm font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-colors disabled:opacity-50"
                     >
-                      Execute Trade
+                      {executeTradeM.isPending ? 'Executing…' : 'Execute Trade'}
                     </button>
                   </div>
                 </div>
@@ -7253,10 +7638,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           // They're going straight to Trade Book — no need for the persistent
           // in-lab nudge.
           setCommitNudge(null)
-          // Pilot unlock: the first decision the user views in Trade Book
-          // promotes Trade Book access from 'preview' to 'full'. Idempotent
-          // (the mutation guards against double-marks).
-          if (pilotMode.isPilot) markPilotStage('trade_book_unlocked')
           window.dispatchEvent(new CustomEvent('navigate-to-asset', {
             detail: {
               id: 'trade-book',
@@ -7280,6 +7661,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           onClose={() => {
             setSelectedTradeId(null)
             setTradeModalInitialTab('details') // Reset to default tab
+            // Back to the list you were reading from, with its Add control.
+            if (reopenIdeasAfterDetail) {
+              setReopenIdeasAfterDetail(false)
+              setShowIdeasPanel(true)
+            }
           }}
           onNavigateToIdea={(ideaId) => {
             setSelectedTradeId(ideaId)
@@ -7521,20 +7907,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         fitContent
       >
         <div className="px-3 pb-3 space-y-1">
-          <button
-            type="button"
-            onClick={() => { setMobileLabMenuOpen(false); setShowIdeasPanel(true) }}
-            className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800 no-touch-target"
-          >
-            <Layers className="h-4 w-4 text-gray-400" />
-            Trade ideas
-            {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
-              <span className="ml-auto text-[11px] tabular-nums text-gray-400">
-                {filteredItems.proposals.length + filteredItems.ideas.length}
-              </span>
-            )}
-          </button>
-
+          {/* Trade ideas used to sit here as well, which was the same
+              action in two places — and this was the hidden one. The row
+              above carries it now, so the sheet is only what the row has no
+              space for. */}
           <button
             type="button"
             onClick={() => { setMobileLabMenuOpen(false); setSelectedViewType('private') }}
@@ -7842,7 +8218,7 @@ function calculateSimulationMetrics(
     const trade = trades.find(t => t.asset_id === assetId)
     const variant = variantByAsset.get(assetId)
     const existing = holdingsMap.get(assetId)
-    const price = priceMap[assetId] || trade?.price || 100
+    const price = priceMap[assetId] || trade?.price || NO_PRICE
 
     // Determine the action: prefer variant's derived action, then trade's action
     const action = trade?.action || variant?.action || 'add'

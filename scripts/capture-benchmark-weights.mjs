@@ -217,8 +217,29 @@ const main = async () => {
     process.exit(1)
   }
 
-  // Which portfolios already track this index, and their org. Only those get a
-  // snapshot — a benchmark belongs to a portfolio, not to the database.
+  /*
+   * Which portfolios track this index, and their org.
+   *
+   * ── The bootstrap gap this closes ──────────────────────────────────────
+   *
+   * This used to ask `portfolio_benchmark_weights` who the targets were: a
+   * portfolio got a snapshot if it ALREADY had weights. That works forever
+   * once a portfolio has its first file and never works before — so a newly
+   * created portfolio could not acquire one from here, which is why all 26
+   * pilot books carry a benchmark label and zero rows. A refresh job cannot
+   * be the thing that performs the first write.
+   *
+   * The question it should have been asking is which portfolios DECLARE this
+   * index, which is `portfolios.benchmark`. That covers both cases in one
+   * pass: a portfolio with rows is refreshed exactly as before, and one
+   * without is initialised. The upserts below are keyed on
+   * (portfolio_id, source, as_of_date) and (portfolio_id, asset_id,
+   * as_of_date), so a second run on the same day changes nothing.
+   *
+   * The union with the old query is deliberate rather than a replacement: a
+   * portfolio that has a file but whose `benchmark` label was cleared or
+   * renamed keeps being refreshed instead of silently going stale.
+   */
   const targets = USE_REST
     ? await (async () => {
         /**
@@ -250,13 +271,32 @@ const main = async () => {
           // total keeps this correct if rows are written while it runs.
           if (page.length < PAGE) break
         }
+        // ...and every portfolio that DECLARES this index, whether or not it
+        // has a file yet. This is the half that lets a new portfolio start.
+        for (let from = 0; ; from += PAGE) {
+          const page = await rest(
+            `portfolios?select=id,organization_id&benchmark=eq.${encodeURIComponent(SOURCE.index)}&organization_id=not.is.null`,
+            { headers: { Range: `${from}-${from + PAGE - 1}`, 'Range-Unit': 'items' } },
+          )
+          for (const r of page) {
+            if (!seen.has(r.id)) {
+              seen.set(r.id, { portfolio_id: r.id, organization_id: r.organization_id })
+            }
+          }
+          if (page.length < PAGE) break
+        }
         return [...seen.values()]
       })()
     : await sql(`
         select distinct p.id as portfolio_id, p.organization_id
           from public.portfolios p
           join public.portfolio_benchmark_weights w on w.portfolio_id = p.id
-         where p.organization_id is not null`)
+         where p.organization_id is not null
+        union
+        select p.id, p.organization_id
+          from public.portfolios p
+         where p.organization_id is not null
+           and p.benchmark = ${lit(SOURCE.index)}`)
   console.log(`portfolios tracking a benchmark: ${targets.length}`)
 
   const existingCount = USE_REST

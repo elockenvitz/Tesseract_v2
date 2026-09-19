@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import { X } from 'lucide-react'
-import { useKeyboardInset, useViewportHeight } from '../../hooks/useMediaQuery'
+import { useIsMobile, useKeyboardInset, useViewportHeight } from '../../hooks/useMediaQuery'
+import { useDismissOnBack } from '../../hooks/useDismissOnBack'
 
 export interface BottomSheetProps {
   open: boolean
@@ -33,6 +34,17 @@ export interface BottomSheetProps {
   className?: string
   contentClassName?: string
   'aria-label'?: string
+  /**
+   * Where the sheet is portaled. Defaults to `document.body`.
+   *
+   * A sheet opened from inside another full-screen portal is a sibling of it
+   * on the body, so which one the reader sees is decided by two z-indexes
+   * that were chosen independently — and the sheet loses. Handing it the
+   * opening surface's own node puts it inside that surface's stacking
+   * context, where it is above the thing that opened it by construction, and
+   * no global layer has to be renumbered to make it so.
+   */
+  container?: HTMLElement | null
   children: React.ReactNode
 }
 
@@ -63,11 +75,24 @@ export function BottomSheet({
   className,
   contentClassName,
   'aria-label': ariaLabel,
+  container,
   children,
 }: BottomSheetProps) {
   const viewportHeight = useViewportHeight()
   const rawKeyboardInset = useKeyboardInset()
   const keyboardInset = avoidKeyboard ? rawKeyboardInset : 0
+
+  /*
+    Back closes the sheet instead of leaving the app.
+
+    Phones only: this component is also mounted on desktop by the lists,
+    theme and simulation surfaces, and pushing history entries there would
+    change behaviour nobody asked to change. `dismissible` is honoured too —
+    a sheet held open through a commit must not be dismissed by a back
+    gesture any more than by a backdrop tap.
+  */
+  const isMobile = useIsMobile()
+  useDismissOnBack(open, onClose, { enabled: isMobile && dismissible })
 
   const [mounted, setMounted] = useState(open)
   const [visible, setVisible] = useState(false)
@@ -231,6 +256,27 @@ export function BottomSheet({
 
   const onPointerDown = (event: React.PointerEvent) => {
     if (!dismissible) return
+    /*
+      A press on a control in this row is a press, not a drag.
+
+      ── The defect this closes ────────────────────────────────────────────
+      The close button lives INSIDE the drag row, and the row captures the
+      pointer on `pointerdown`. Pointer capture retargets every later pointer
+      event — `pointerup` included — to the capturing element, and a browser
+      only fires `click` when down and up land on the same node. So the X
+      received the press, lost the release to this div, and never got a click
+      at all. `onClose` was wired correctly and simply never ran.
+
+      It affected every sheet. It surfaced on the thesis drawer because that
+      one is near-full height over a keyboard-heavy editor, where the X is the
+      only exit anyone reaches for — elsewhere the backdrop or a drag got used
+      first and hid it.
+
+      Dragging still works from the handle, the title and the empty space
+      around them, which is all a drag affordance needs.
+    */
+    if ((event.target as HTMLElement | null)?.closest('button')) return
+
     dragRef.current = {
       startY: event.clientY,
       startTime: event.timeStamp,
@@ -367,6 +413,11 @@ export function BottomSheet({
         )}
       </div>
     </div>,
-    document.body
+    /*
+     * The opening surface's node when it gave us one. `z-[60]` below then
+     * resolves inside that surface's stacking context rather than against
+     * every other portal on the body.
+     */
+    container ?? document.body
   )
 }

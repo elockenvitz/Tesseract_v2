@@ -5133,7 +5133,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {addingCoverage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setAddingCoverage(null)} />
-          <div className="relative bg-white rounded-lg max-w-lg w-full max-h-[85vh] flex flex-col dark:bg-gray-800">
+          <div className="relative bg-white rounded-lg max-w-lg w-full max-h-viewport-85 flex flex-col dark:bg-gray-800">
             <div className="flex items-center justify-between p-5 pb-3 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{addingCoverage.editingCoverageId ? 'Edit Assignment' : 'Add Coverage Assignment'}</h3>
@@ -6135,7 +6135,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             setUploadSuccess(null)
             if (fileInputRef.current) fileInputRef.current.value = ''
           }} />
-          <div className="relative bg-white rounded-lg w-full max-w-3xl max-h-[85vh] flex flex-col dark:bg-gray-800">
+          <div className="relative bg-white rounded-lg w-full max-w-3xl max-h-viewport-85 flex flex-col dark:bg-gray-800">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
               <div>
@@ -6509,7 +6509,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {requestingChange && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setRequestingChange(null)} />
-          <div className="relative bg-white rounded-lg p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto dark:bg-gray-800">
+          <div className="relative bg-white rounded-lg p-6 max-w-lg w-full max-h-viewport-90 overflow-y-auto dark:bg-gray-800">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {requestingChange.requestType === 'add' ? 'Request New Coverage' :
@@ -6803,7 +6803,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {selectedHistoryEvent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setSelectedHistoryEvent(null)} />
-          <div className="relative bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto dark:bg-gray-800">
+          <div className="relative bg-white rounded-lg p-6 max-w-2xl w-full max-h-viewport-80 overflow-y-auto dark:bg-gray-800">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Coverage Change Details</h3>
               <button
@@ -7344,7 +7344,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       />
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-7xl w-full mx-auto transform transition-all h-[90vh] overflow-hidden flex flex-col dark:bg-gray-800">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-7xl w-full mx-auto transform transition-all h-viewport-90 overflow-hidden flex flex-col dark:bg-gray-800">
           {content}
         </div>
       </div>

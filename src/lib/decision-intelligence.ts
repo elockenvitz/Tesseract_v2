@@ -111,10 +111,20 @@ function formatImpactDollars(impact: number | null | undefined, movePositive: bo
   if (impact == null || !Number.isFinite(impact)) return null
   const magnitude = Math.abs(impact)
   if (magnitude < 100) return null
-  const sign = movePositive ? '+' : '−'
-  if (magnitude >= 1_000_000) return `${sign}$${(magnitude / 1_000_000).toFixed(1)}M`
-  if (magnitude >= 1_000) return `${sign}$${(magnitude / 1_000).toFixed(0)}K`
-  return `${sign}$${Math.round(magnitude)}`
+  return formatCompactDollars(magnitude, movePositive ? '+' : '−')
+}
+
+/**
+ * The one compact dollar shape Outcomes uses for P&L: "$1.2M", "$15K",
+ * "$245" — millions to one decimal, thousands and below to whole numbers.
+ * A decision's P&L label and a batch's P&L total both go through here, so the
+ * same amount reads the same in both places.
+ */
+export function formatCompactDollars(magnitude: number, sign: '+' | '−' | '' = ''): string {
+  const m = Math.abs(magnitude)
+  if (m >= 1_000_000) return `${sign}$${(m / 1_000_000).toFixed(1)}M`
+  if (m >= 1_000) return `${sign}$${(m / 1_000).toFixed(0)}K`
+  return `${sign}$${Math.round(m)}`
 }
 
 // ─── Per-Row Intelligence ─────────────────────────────────────
@@ -409,6 +419,20 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
 
 function getReviewState(row: AccountabilityRow): 'needs_review' | 'in_progress' | 'captured' | 'reviewed' | null {
   if (row.execution_status !== 'executed') return null
+  /*
+   * `decision_reviews` is the authoritative answer, and this asked the wrong
+   * table.
+   *
+   * `rationale_status` comes from `trade_event_rationales`, which holds zero
+   * rows in production and whose only writer is Trade Book. So the 'reviewed'
+   * branch below was unreachable, and a PM who saved a reflection in Outcomes
+   * watched the Review Queue ignore it. The comment on that branch even
+   * claimed it meant "the user has captured a reflection", which it never did.
+   *
+   * The rationale branches stay: capturing a reason and reviewing an outcome
+   * are different acts, and Trade Book still records the former.
+   */
+  if (row.has_decision_review) return 'reviewed'
   if (row.matched_executions.some(e => e.rationale_status === 'reviewed')) return 'reviewed'
   if (row.matched_executions.some(e => e.rationale_status === 'complete')) return 'captured'
   if (row.matched_executions.some(e => e.has_rationale)) return 'in_progress'

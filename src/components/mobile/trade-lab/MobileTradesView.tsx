@@ -72,10 +72,10 @@ export function MobileTradesView({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2.5">
       {/* Cash flow first: the one number a PM checks before anything else is
           whether this simulation needs cash or releases it. */}
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2.5">
         <div className="flex items-baseline gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
             Net cash
@@ -97,16 +97,20 @@ export function MobileTradesView({
             is their balance, not their absolute sizes. */}
         <CashBar buy={totalBuyValue} sell={totalSellValue} />
 
-        <div className="mt-2 grid grid-cols-3 gap-2">
+        {/* Trades / Buying / Selling were three stacked label-over-value
+            blocks, 34px tall for three short numbers. One line of inline
+            pairs says the same thing in a third of the height, and the
+            per-group headers below already repeat the counts and totals. */}
+        <div className="mt-1.5 flex items-baseline gap-3 text-[11px]">
           <Figure label="Trades" value={String(tradeStats.total)} />
-          <Figure label="Buying" value={formatUsd(totalBuyValue)} tone="up" />
-          <Figure label="Selling" value={formatUsd(totalSellValue)} tone="down" />
+          <Figure label="Buy" value={formatUsd(totalBuyValue)} tone="up" />
+          <Figure label="Sell" value={formatUsd(totalSellValue)} tone="down" />
         </div>
       </div>
 
       {groups.map(group => (
         <section key={group.action} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
-          <header className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800">
+          <header className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
             <span
               className={clsx(
                 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide',
@@ -126,7 +130,7 @@ export function MobileTradesView({
 
           <div className="divide-y divide-gray-100 dark:divide-gray-800">
             {group.trades.map(t => (
-              <div key={t.id} className="px-3 py-2.5">
+              <div key={t.id} className="px-3 py-2">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-gray-900 dark:text-white">{t.symbol}</span>
                   <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400">
@@ -139,7 +143,7 @@ export function MobileTradesView({
 
                 {/* Labelled pairs rather than columns — the label travels with
                     the number instead of living in a header that scrolls away. */}
-                <dl className="mt-1.5 grid grid-cols-3 gap-x-3 gap-y-1">
+                <dl className="mt-1 grid grid-cols-3 gap-x-3">
                   <Pair label="Shares" value={formatShares(t.shares)} />
                   <Pair label="Price" value={t.price ? `$${t.price.toFixed(2)}` : '—'} />
                   <Pair
@@ -169,19 +173,19 @@ function CashBar({ buy, sell }: { buy: number; sell: number }) {
 
 function Figure({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
   return (
-    <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</div>
-      <div
+    <span className="inline-flex items-baseline gap-1">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</span>
+      <span
         className={clsx(
-          'mt-0.5 text-sm font-bold tabular-nums',
+          'text-[13px] font-bold tabular-nums',
           tone === 'up' ? 'text-emerald-600 dark:text-emerald-400'
             : tone === 'down' ? 'text-red-600 dark:text-red-400'
             : 'text-gray-900 dark:text-white'
         )}
       >
         {value}
-      </div>
-    </div>
+      </span>
+    </span>
   )
 }
 

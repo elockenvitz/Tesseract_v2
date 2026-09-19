@@ -38,7 +38,7 @@ vi.mock('../../components/dashboard/DashboardShell', () => ({
 
 import { getInitialTabState } from '../DashboardPage'
 import {
-  CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID, LEGACY_DASHBOARD_TITLE,
+  CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID,
 } from '../../lib/tabStateManager'
 
 const USER = 'u1'
@@ -85,17 +85,24 @@ describe('returning to /dashboard', () => {
     expect(r.tabs.map(t => t.id)).toContain('asset-nvda')
   })
 
-  it('C. a session left on the legacy Dashboard lands on the canonical one', () => {
+  /**
+   * Migrated, not demoted.
+   *
+   * This used to assert the legacy tab survived under a new name, because the
+   * surface behind it still existed and was still offered from the launcher.
+   * It is retired now, so a tab pointing at it is a tab pointing at nothing a
+   * reader can use — it becomes the canonical Dashboard instead.
+   */
+  it('C. a session left on the legacy Dashboard becomes the canonical one', () => {
     saveSession([legacyTab({ isActive: true })], LEGACY_DASHBOARD_ID)
     const r = read()
 
     expect(r.activeTabId).toBe(CANONICAL_HOME_TAB.id)
     expect(activeTab(r)?.type).toBe('today')
-    // Demoted, not deleted: still reachable, no longer the home.
-    expect(r.tabs.map(t => t.id)).toContain(LEGACY_DASHBOARD_ID)
+    expect(r.tabs.map(t => t.id)).not.toContain(LEGACY_DASHBOARD_ID)
   })
 
-  it('D. a session holding both never shows two tabs called Dashboard', () => {
+  it('D. a session holding both collapses to one canonical Dashboard', () => {
     saveSession(
       [legacyTab({ isActive: true }), canonicalTab()],
       LEGACY_DASHBOARD_ID,
@@ -103,9 +110,9 @@ describe('returning to /dashboard', () => {
     const r = read()
 
     expect(r.activeTabId).toBe(CANONICAL_HOME_TAB.id)
-    const dashboards = titles(r).filter(t => t === 'Dashboard')
-    expect(dashboards).toHaveLength(1)
-    expect(titles(r)).toContain(LEGACY_DASHBOARD_TITLE)
+    expect(titles(r).filter(t => t === 'Dashboard')).toHaveLength(1)
+    expect(r.tabs.filter(t => t.type === 'today')).toHaveLength(1)
+    expect(r.tabs.map(t => t.id)).not.toContain(LEGACY_DASHBOARD_ID)
   })
 
   it('E. unrelated workspaces are preserved, and their order is not shuffled', () => {
@@ -133,13 +140,14 @@ describe('returning to /dashboard', () => {
     expect(activeTab(r)?.type).toBe('asset')
   })
 
-  it('re-anchors only when the legacy tab was the active one', () => {
-    // Legacy present but not active, and a real workspace chosen: untouched.
+  it('migrates an inactive legacy tab without disturbing the chosen one', () => {
+    // The reader chose the Asset tab, and still has it. The legacy tab beside
+    // it is rewritten in place rather than left pointing at a retired surface.
     saveSession([legacyTab(), assetTab({ isActive: true })], 'asset-nvda')
     const r = read()
     expect(r.activeTabId).toBe('asset-nvda')
-    // It is still renamed, because two Dashboards may never share a name.
-    expect(titles(r)).toContain(LEGACY_DASHBOARD_TITLE)
+    expect(r.tabs.map(t => t.id)).not.toContain(LEGACY_DASHBOARD_ID)
+    expect(r.tabs.map(t => t.type)).toContain('today')
   })
 })
 

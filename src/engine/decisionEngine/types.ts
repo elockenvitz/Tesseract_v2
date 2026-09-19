@@ -45,6 +45,11 @@ export type DecisionContext = {
   isPairTrade?: boolean
   /** Original trade queue stage (idea, simulating, deciding) */
   stage?: string
+  /**
+   * For a finding about a written case: which clock its age and `createdAt`
+   * count from -- a recorded review, or the case being written. Wording only.
+   */
+  caseAnchor?: 'reviewed' | 'written'
 }
 
 export type DecisionCTA = {

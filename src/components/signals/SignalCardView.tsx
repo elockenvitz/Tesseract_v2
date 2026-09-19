@@ -98,6 +98,22 @@ interface SignalCardViewProps {
   card: SignalCard
   onAction: (actionId: string, card: SignalCard) => void
   /**
+   * Which height regime this card is in.
+   *
+   * `viewport` is the phone: one card per screen, `h-full`, and an analytical
+   * band that takes whatever the header and footer leave. Every fixed pixel
+   * height in this component is a share of a screen, chosen for that regime.
+   *
+   * `flow` is a card sitting in a scrolling desktop column, where there is no
+   * screen to divide. The same numbers there reserve a 264px stage for a
+   * two-word conviction pane and push the description hundreds of pixels down.
+   *
+   * The regime is the CALLER's knowledge — only it knows whether the card owns
+   * a screen — so it is a prop rather than a media query. Default is
+   * `viewport`, so every existing call site is unchanged.
+   */
+  layout?: 'viewport' | 'flow'
+  /**
    * @deprecated Navigation moved into the actions sheet.
    *
    * The footer no longer renders an `Open TICKER` button, so nothing in this
@@ -294,7 +310,7 @@ function utcDay(iso: string): string {
 
 export function SignalCardView({
   card, onAction, evidence, detail, panes, onFilterKind, onContext, onOpenPortfolio, focusPaneId,
-  onFeedback, onPaneChange, primaryOverride = null,
+  onFeedback, onPaneChange, primaryOverride = null, layout = 'viewport',
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
   /**
@@ -724,7 +740,12 @@ export function SignalCardView({
        * content tucked under the bar on whichever card gets there first.
        */
       style={{ ['--card-bar' as string]: 'calc(4.25rem + env(safe-area-inset-bottom))' } as React.CSSProperties}
-      className="relative flex h-full w-full flex-col overflow-hidden bg-white dark:bg-gray-900"
+      className={clsx(
+        'relative flex w-full flex-col overflow-hidden bg-white dark:bg-gray-900',
+        // `h-full` is the one-screen-per-card promise. In a flowing column
+        // there is no screen to fill, and the card should be as tall as it is.
+        layout === 'flow' ? 'h-auto' : 'h-full',
+      )}
     >
       {/* Only critical cards get the rule. If everything has one it stops
           meaning anything, which is what the old 4px rail on every card did. */}
@@ -747,20 +768,44 @@ export function SignalCardView({
               types made every research finding read as the same card; the kind
               is what a reader scans for. Tappable, restoring the filter-by-kind
               affordance the legacy tiles had and the first convergence lost. */}
-          <button
-            type="button"
-            data-slot="kind"
-            onClick={() => onFilterKind?.(card.type)}
-            className={clsx(
-              'shrink-0 rounded-full px-2 py-0.5 uppercase tracking-[0.06em] transition-opacity active:opacity-70 no-touch-target',
-              skin.chip,
-            )}
-          >
-            {/* The card may name itself more precisely than its type can —
-                see `SignalCard.kindLabel`. The TAP still filters by type,
-                because that is the vocabulary Curate speaks. */}
-            {card.kindLabel ?? KIND_LABEL[card.type] ?? card.type}
-          </button>
+          {/* A control only where it can act.
+
+              The chip was always a `<button>`, and five of the feed's six
+              render sites passed no `onFilterKind` — so most tiles offered a
+              button that swallowed the tap. It now renders as a label when no
+              handler is given, which is also how the feed declines to offer a
+              filter for a tile whose family resolves only to the hook that
+              produced it: see `pillFilterFor` in MobileDashboard.
+
+              Same classes in both branches. The chip's geometry is measured by
+              the phone layout suite, and `no-touch-target` is a deliberate
+              opt-out of the global 44px minimum that a plain span must keep. */}
+          {onFilterKind ? (
+            <button
+              type="button"
+              data-slot="kind"
+              onClick={() => onFilterKind(card.type)}
+              className={clsx(
+                'shrink-0 rounded-full px-2 py-0.5 uppercase tracking-[0.06em] transition-opacity active:opacity-70 no-touch-target',
+                skin.chip,
+              )}
+            >
+              {/* The card may name itself more precisely than its type can —
+                  see `SignalCard.kindLabel`. The TAP filters by the entry's
+                  family, which is the vocabulary the banner and Curate speak. */}
+              {card.kindLabel ?? KIND_LABEL[card.type] ?? card.type}
+            </button>
+          ) : (
+            <span
+              data-slot="kind"
+              className={clsx(
+                'shrink-0 rounded-full px-2 py-0.5 uppercase tracking-[0.06em] transition-opacity active:opacity-70 no-touch-target',
+                skin.chip,
+              )}
+            >
+              {card.kindLabel ?? KIND_LABEL[card.type] ?? card.type}
+            </span>
+          )}
 
           <span className={clsx('shrink-0', SEVERITY_MARK[card.severity])} aria-hidden />
 
@@ -835,6 +880,25 @@ export function SignalCardView({
                     a desktop card, a digest — still wants the action in the
                     grammar, and nine builders and their tests should not churn
                     for a decision this component is the only one making. */}
+                {/*
+                    On desktop the quick actions live HERE, not in the footer.
+                    In the split workspace the tile itself is the primary act,
+                    so a row of secondary buttons on every card competes with
+                    the one thing the reader is meant to do. Same ids, same
+                    routing, same labels — moved, not removed. The phone keeps
+                    them in the bar, where the card IS the interaction.
+                */}
+                {(layout === 'flow' ? card.actions.quick : []).map(a => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    data-slot="menu-item"
+                    onClick={() => { setMenuOpen(false); onAction(a.id, card) }}
+                    className="block min-h-[44px] w-full px-4 py-3 text-left text-[14px] font-medium normal-case tracking-normal text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700/60"
+                  >
+                    {a.label}
+                  </button>
+                ))}
                 {card.actions.menu.filter(a => a.id !== 'why').map(a => (
                   <button
                     key={a.id}
@@ -1302,7 +1366,16 @@ export function SignalCardView({
              * exists, and where none does the spacer is the only claimant and
              * takes all of it. One rule, no branch on card shape.
              */
-            merged ? 'grow-[999] shrink basis-[38%]'
+            /*
+             * In `flow` the band is sized by what is IN it.
+             *
+             * Not a smaller fixed height — that would be the same mistake with
+             * a nicer number. A conviction pane is two words and should be two
+             * words tall; a chart or a ladder earns its room and takes it, up
+             * to a ceiling that stops one card owning the column.
+             */
+            layout === 'flow' ? 'h-auto max-h-[420px]'
+              : merged ? 'grow-[999] shrink basis-[38%]'
               : detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',
@@ -1367,7 +1440,26 @@ export function SignalCardView({
            * it, nothing overflows in either state — verified in the running
            * app, where the note fits on arrival with 88px to spare.
            */
-          style={merged || judgmentPane
+          /*
+           * The floor below is a VIEWPORT rule and now says so.
+           *
+           * It exists because a card given one phone screen divides that screen
+           * between its regions, and a band that shrinks rather than overflows
+           * can silently collapse to nothing — the whole reason it is a floor
+           * and not a hint. Every word of that reasoning depends on the height
+           * being shared out from a fixed total.
+           *
+           * In `flow` there is no total to share. The band is `h-auto` and the
+           * card is as tall as its content, so the floor cannot protect a pane
+           * from anything; it can only pad one. Measured on the target-hit card
+           * at 1920: 68px of pane content held open to 168px, and the 100px
+           * landed immediately above the disclosure, which is exactly where a
+           * reader sees it as a gap.
+           *
+           * Scoped rather than lowered. `PANE_VIEWPORT_MIN_PX` is unchanged and
+           * the phone keeps it.
+           */
+          style={layout !== 'flow' && (merged || judgmentPane)
             ? {
                 /**
                  * ONE height, for the life of the card.
@@ -1920,7 +2012,41 @@ export function SignalCardView({
           The bottom inset is not decoration: on iOS the home indicator sits
           over the last ~34px of the viewport, and a 44px button ending flush
           with the card was a button whose bottom third could not be tapped. */}
-      <div data-slot="actions" className="sticky bottom-0 flex min-h-[var(--card-bar)] items-center gap-2 border-t border-gray-100 bg-white/95 px-4 pt-3 pb-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+      <div
+        data-slot="actions"
+        className={clsx(
+          'flex items-center gap-2 border-t border-gray-100 px-4 dark:border-gray-800',
+          /*
+           * No footer at all on desktop.
+           *
+           * The tile IS the way into the workspace, and every control that was
+           * left here duplicated it. `primary` for a post is documented in
+           * `builders/ideas.ts` as deliberately absent — a trade idea's old
+           * `Open idea` was a dead button and was removed there. For the lens
+           * families `contextualActions` resolves `review_target`, `open_cases`
+           * and friends to an asset destination with a focus, which is the
+           * SAME place the tile already opens with `assetFocusFor` — so
+           * rendering it would be a second button to the same pane.
+           *
+           * Everything else lives in the overflow, which stays. A card with no
+           * legitimate next step gets no fake CTA.
+           */
+          layout === 'flow' && 'hidden',
+          /*
+           * The bar is sticky and full-bleed on a phone because it is the only
+           * thing anchoring a thumb on a card that fills the screen. In a
+           * desktop column it is neither needed nor wanted: sticky against a
+           * content-height card does nothing, and a full-width dark primary on
+           * every card turns a feed into a wall of buttons.
+           *
+           * Same buttons, same ids, same routing — the row simply stops
+           * dominating. See the sizing below for the rest of it.
+           */
+          layout === 'flow'
+            ? 'justify-end py-2'
+            : 'sticky bottom-0 min-h-[var(--card-bar)] bg-white/95 pt-3 pb-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur dark:bg-gray-900/95',
+        )}
+      >
         {/* Two buttons, not three.
             ── Why `Open TICKER` left the bar ─────────────────────────────
             Every asset card carried `Capture | <decision> | Open TICKER`, so
@@ -1931,13 +2057,17 @@ export function SignalCardView({
             routes exactly where this button did — see `FeedCaptureSheet`.
             `card.actions.open` is untouched in the contract: the sheet reads
             it, and every builder keeps its label and href. */}
-        {card.actions.quick.map(a => (
+        {/* Desktop renders these in the overflow instead — see the menu. */}
+        {(layout === 'flow' ? [] : card.actions.quick).map(a => (
           <button
             key={a.id}
             type="button"
             data-slot="quick"
             onClick={() => onAction(a.id, card)}
-            className="h-11 min-w-0 shrink-0 basis-[38%] overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"
+            className={clsx(
+              'min-w-0 shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200',
+              layout === 'flow' ? 'h-9 px-3 text-[13px]' : 'h-11 basis-[38%] text-[15px]',
+            )}
           >
             {barLabel(a)}
           </button>
@@ -1962,10 +2092,25 @@ export function SignalCardView({
             onAction((primaryOverride ?? card.actions.primary).id, card)
           }}
           className={clsx(
-            'h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl text-[15px] font-bold',
+            'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl font-bold',
+            // `flex-1` is what makes this span the card on a phone. In a
+            // column it should be the size of its own label.
+            layout === 'flow' ? 'h-9 px-4 text-[13px]' : 'h-11 flex-1 text-[15px]',
+            /*
+             * On a phone the primary IS the card's action, so it is filled.
+             *
+             * In the desktop feed it is not: clicking the tile opens the
+             * workspace, and that is the primary act. A dark filled button
+             * repeated down every tile competes with the thing the reader is
+             * actually meant to do, and says "press me" about the lesser
+             * option. Outlined here — same label, same id, same routing,
+             * demoted in weight only.
+             */
             primaryOverride?.disabled
               ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-              : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900',
+              : layout === 'flow'
+                ? 'border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
+                : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900',
           )}
         >
           {barLabel(primaryOverride ?? card.actions.primary)}

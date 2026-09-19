@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { Check, ChevronRight, Layers, Lightbulb, Scale, Search, X } from 'lucide-react'
+import { Check, ChevronRight, Layers, Lightbulb, Plus, Scale, Search, X } from 'lucide-react'
 
 /**
  * Deliberately loose. The drawer's items come from three different shapes in
@@ -27,6 +27,16 @@ interface MobileIdeasDrawerProps {
   onSearchChange: (v: string) => void
   onToggleAsset: (idea: any, isAdded: boolean) => void
   onOpenIdea: (ideaId: string) => void
+  /**
+   * Put a recommendation's trades into the simulation, or take them out.
+   *
+   * Recommendations had no add control here at all — a trade_queue_item that
+   * carries a proposal is filed under proposals and excluded from ideas, so
+   * the only row a pilot could reach opened a detail modal and nothing else.
+   * The first tutorial step asks for an add, so the list has to offer one.
+   */
+  onToggleProposal: (proposalItem: any) => void
+  isProposalAdded: (proposalItem: any) => boolean
 }
 
 const STAGE_LABEL: Record<string, string> = {
@@ -62,6 +72,8 @@ export function MobileIdeasDrawer({
   onSearchChange,
   onToggleAsset,
   onOpenIdea,
+  onToggleProposal,
+  isProposalAdded,
 }: MobileIdeasDrawerProps) {
   const [tab, setTab] = useState<'ideas' | 'proposals'>(
     proposals.length > 0 ? 'proposals' : 'ideas'
@@ -122,73 +134,131 @@ export function MobileIdeasDrawer({
             )
           )
         ) : (
-          proposals.map((p, i) => {
-            const item = p.proposal?.trade_queue_items
-            const asset = item?.assets
-            const proposer = p.proposal?.users
-            return (
-              <button
-                key={p.proposal?.id ?? `proposal-${i}`}
-                type="button"
-                onClick={() => onOpenIdea(item?.id ?? p.proposal?.trade_queue_item_id)}
-                className="w-full text-left rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-900/10 p-3 active:bg-amber-100/60"
-              >
-                <div className="flex items-center gap-2">
-                  <Scale className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <span className="text-sm font-bold text-gray-900 dark:text-white">
-                    {asset?.symbol ?? p.legs?.[0]?.symbol ?? '—'}
-                  </span>
-                  {(item?.action || p.legs?.[0]?.action) && (
-                    <span
-                      className={clsx(
-                        'px-1.5 py-0.5 rounded text-[10px] font-bold uppercase',
-                        (item?.action ?? p.legs?.[0]?.action) === 'buy' || (item?.action ?? p.legs?.[0]?.action) === 'add'
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                          : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                      )}
-                    >
-                      {item?.action ?? p.legs?.[0]?.action}
-                    </span>
-                  )}
-                  {p.isPairTrade && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
-                      Pair
-                    </span>
-                  )}
-                  <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-gray-300" />
-                </div>
-
-                <p className="mt-0.5 min-w-0 truncate text-[11px] text-gray-500 dark:text-gray-400">
-                  {asset?.company_name}
-                </p>
-
-                {/* The recommended size is the recommendation. Without it the
-                    card names a ticker and says nothing about what is being
-                    asked for. */}
-                {(p.proposal?.weight != null || p.proposal?.shares != null) && (
-                  <p className="mt-1 text-[12px] font-semibold tabular-nums text-gray-800 dark:text-gray-100">
-                    {p.proposal.weight != null ? `${Number(p.proposal.weight).toFixed(2)}% target` : ''}
-                    {p.proposal.weight != null && p.proposal.shares != null ? ' · ' : ''}
-                    {p.proposal.shares != null ? `${Number(p.proposal.shares).toLocaleString()} sh` : ''}
-                  </p>
-                )}
-
-                {(p.proposal?.notes || item?.rationale) && (
-                  <p className="mt-1 text-[12px] leading-snug text-gray-600 dark:text-gray-300 line-clamp-2">
-                    {p.proposal?.notes || item?.rationale}
-                  </p>
-                )}
-
-                {proposer && (
-                  <p className="mt-1 text-[11px] text-gray-400 truncate">
-                    from {[proposer.first_name, proposer.last_name].filter(Boolean).join(' ') || proposer.email}
-                  </p>
-                )}
-              </button>
-            )
-          })
+          proposals.map((p, i) => (
+            <ProposalRow
+              key={p.proposal?.id ?? `proposal-${i}`}
+              item={p}
+              added={isProposalAdded(p)}
+              onToggle={() => onToggleProposal(p)}
+              onOpen={() => onOpenIdea(p.proposal?.trade_queue_items?.id ?? p.proposal?.trade_queue_item_id)}
+            />
+          ))
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * A recommendation, with the add spelled out.
+ *
+ * The card used to be one big button whose only action was "open the detail
+ * modal", which meant the surface said what the recommendation was and never
+ * how to use it. Reading and adding are separate intentions, so they are
+ * separate targets: the body opens the detail, and a full-width labelled
+ * action underneath puts the trade in the simulation.
+ */
+function ProposalRow({
+  item,
+  added,
+  onToggle,
+  onOpen,
+}: {
+  item: any
+  added: boolean
+  onToggle: () => void
+  onOpen: () => void
+}) {
+  const queueItem = item.proposal?.trade_queue_items
+  const asset = queueItem?.assets
+  const proposer = item.proposal?.users
+  const action = queueItem?.action ?? item.legs?.[0]?.action
+  const symbol = asset?.symbol ?? item.legs?.[0]?.symbol ?? '—'
+
+  return (
+    <div
+      className={clsx(
+        'rounded-xl border overflow-hidden',
+        added
+          ? 'border-primary-300 dark:border-primary-800 bg-primary-50/50 dark:bg-primary-900/15'
+          : 'border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-900/10'
+      )}
+    >
+      <button type="button" onClick={onOpen} className="w-full text-left px-3 pt-2.5 pb-2 active:opacity-70">
+        <div className="flex items-center gap-2">
+          <Scale className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span className="text-sm font-bold text-gray-900 dark:text-white">{symbol}</span>
+          {action && (
+            <span
+              className={clsx(
+                'px-1.5 py-0.5 rounded text-[10px] font-bold uppercase',
+                action === 'buy' || action === 'add'
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                  : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+              )}
+            >
+              {action}
+            </span>
+          )}
+          {item.isPairTrade && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+              Pair
+            </span>
+          )}
+          {/* The chevron is the only thing that said this opens something.
+              It keeps a word next to it now that the card has two actions. */}
+          <span className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-medium text-gray-400 shrink-0">
+            Details
+            <ChevronRight className="h-3.5 w-3.5" />
+          </span>
+        </div>
+
+        <p className="mt-0.5 min-w-0 truncate text-[11px] text-gray-500 dark:text-gray-400">
+          {asset?.company_name}
+        </p>
+
+        {/* The recommended size is the recommendation. Without it the
+            card names a ticker and says nothing about what is being
+            asked for. */}
+        {(item.proposal?.weight != null || item.proposal?.shares != null) && (
+          <p className="mt-1 text-[12px] font-semibold tabular-nums text-gray-800 dark:text-gray-100">
+            {item.proposal.weight != null ? `${Number(item.proposal.weight).toFixed(2)}% target` : ''}
+            {item.proposal.weight != null && item.proposal.shares != null ? ' · ' : ''}
+            {item.proposal.shares != null ? `${Number(item.proposal.shares).toLocaleString()} sh` : ''}
+          </p>
+        )}
+
+        {(item.proposal?.notes || queueItem?.rationale) && (
+          <p className="mt-1 text-[12px] leading-snug text-gray-600 dark:text-gray-300 line-clamp-2">
+            {item.proposal?.notes || queueItem?.rationale}
+          </p>
+        )}
+
+        {proposer && (
+          <p className="mt-1 text-[11px] text-gray-400 truncate">
+            from {[proposer.first_name, proposer.last_name].filter(Boolean).join(' ') || proposer.email}
+          </p>
+        )}
+      </button>
+
+      {/* The action, named. This is what the tutorial's first step asks for,
+          and until now the phone had no control that did it. */}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={added}
+        data-slot="mobile-rec-add"
+        aria-label={`${added ? 'Remove this recommendation from' : 'Add this recommendation to'} the simulation`}
+        className={clsx(
+          'w-full h-10 inline-flex items-center justify-center gap-1.5 border-t text-[13px] font-semibold no-touch-target',
+          added
+            ? 'border-primary-200 dark:border-primary-900 text-primary-700 dark:text-primary-300 active:bg-primary-100/60'
+            : 'border-amber-200 dark:border-amber-900/50 bg-amber-500 text-white active:bg-amber-600'
+        )}
+      >
+        {added ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+        {added ? 'Added — tap to remove' : 'Add to simulation'}
+      </button>
     </div>
   )
 }
@@ -222,12 +292,19 @@ function TabButton({
 }
 
 /**
- * The checkbox and the row body are separate targets.
+ * An idea, with the add spelled out — the same shape as ProposalRow.
  *
  * Adding an idea to the simulation and opening it to read are different
  * intentions with different costs, and on the desktop they are told apart by a
  * stopPropagation on a 20px square. At thumb resolution that is a coin toss,
- * so the toggle gets its own 44px column outside the row's tap area.
+ * so the toggle had its own column outside the row's tap area.
+ *
+ * A column of ticks was still the wrong control. That checkbox ran
+ * handleAddAsset / handleRemoveAsset — it put the trade in the simulation and
+ * took it out again — while looking exactly like the list-selection checkbox
+ * it was not. Nothing on the row said what ticking it would do, and a
+ * recommendation two tabs away was by then asking for the same thing with a
+ * named button. Same act, same words.
  */
 function IdeaRow({
   idea,
@@ -251,30 +328,18 @@ function IdeaRow({
   const isForeign = !!idea.portfolio_id && !!currentPortfolioId && idea.portfolio_id !== currentPortfolioId
 
   return (
-    <div className="flex items-stretch gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => onToggleAsset(idea, added)}
-        aria-pressed={added}
-        aria-label={`${added ? 'Remove' : 'Add'} ${idea.assets?.symbol ?? 'this idea'} ${added ? 'from' : 'to'} the simulation`}
-        className="shrink-0 w-12 flex items-center justify-center border-r border-gray-100 dark:border-gray-800 active:bg-gray-50 dark:active:bg-gray-800"
-      >
-        <span
-          className={clsx(
-            'h-6 w-6 rounded-md border-2 flex items-center justify-center transition-colors',
-            added
-              ? 'bg-primary-600 border-primary-600 text-white'
-              : 'border-gray-300 dark:border-gray-600'
-          )}
-        >
-          {added && <Check className="h-4 w-4" />}
-        </span>
-      </button>
-
+    <div
+      className={clsx(
+        'rounded-xl border overflow-hidden',
+        added
+          ? 'border-primary-300 dark:border-primary-800 bg-primary-50/50 dark:bg-primary-900/15'
+          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900'
+      )}
+    >
       <button
         type="button"
         onClick={() => onOpenIdea(idea.id)}
-        className="min-w-0 flex-1 text-left py-2.5 pr-3 active:bg-gray-50 dark:active:bg-gray-800"
+        className="w-full min-w-0 text-left px-3 pt-2.5 pb-2 active:opacity-70"
       >
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold text-gray-900 dark:text-white">
@@ -295,7 +360,10 @@ function IdeaRow({
           <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400">
             {idea.assets?.company_name}
           </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+          <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-gray-400 shrink-0">
+            Details
+            <ChevronRight className="h-3.5 w-3.5" />
+          </span>
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[11px]">
           {stage && (
@@ -321,6 +389,27 @@ function IdeaRow({
             </>
           )}
         </div>
+      </button>
+
+      {/* The same act and the same words as a recommendation's action. It
+          runs the same handlers the checkbox ran — onToggleAsset, which is
+          handleAddAsset / handleRemoveAsset in the page. Only the control
+          changed; the mutation path did not. */}
+      <button
+        type="button"
+        onClick={() => onToggleAsset(idea, added)}
+        aria-pressed={added}
+        data-slot="mobile-idea-add"
+        aria-label={`${added ? 'Remove' : 'Add'} ${idea.assets?.symbol ?? 'this idea'} ${added ? 'from' : 'to'} the simulation`}
+        className={clsx(
+          'w-full h-10 inline-flex items-center justify-center gap-1.5 border-t text-[13px] font-semibold no-touch-target',
+          added
+            ? 'border-primary-200 dark:border-primary-900 text-primary-700 dark:text-primary-300 active:bg-primary-100/60'
+            : 'border-gray-200 dark:border-gray-700 bg-primary-600 text-white active:bg-primary-700'
+        )}
+      >
+        {added ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+        {added ? 'Added — tap to remove' : 'Add to simulation'}
       </button>
     </div>
   )

@@ -19,3 +19,5 @@ export {
   // one question five times.
   workOf, compareWork, hasHumanReason, subjectOf, groupIntoSituations,
 } from './model'
+export type { TradeLinkCandidate, RequestForLink } from './execution-link'
+export { fallbackExecutionFor, needsExecutionFallback } from './execution-link'

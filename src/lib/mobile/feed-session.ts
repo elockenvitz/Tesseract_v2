@@ -14,6 +14,8 @@
  * session can persist for days.
  */
 
+import { wasFeedBackgrounded } from './feed-continuity'
+
 /**
  * The unscoped key this used to live under, kept only so it can be deleted.
  *
@@ -32,6 +34,15 @@ const LEGACY_KEY = 'tesseract:feed-session'
 const KEY_PREFIX = 'tesseract:feed-session:'
 /** Beyond this, treat it as a new visit and start fresh. */
 const MAX_AGE_MS = 30 * 60 * 1000
+/**
+ * The same window, for a tab the system killed while it was in the background.
+ *
+ * Eight hours, matching `feed-continuity`'s own. The two have to agree: the
+ * order and the position are restored by that module and the seed and cycle by
+ * this one, and a feed handed back half of each would land the reader at an
+ * offset into a shorter list than the one they left.
+ */
+const BACKGROUND_MAX_AGE_MS = 8 * 60 * 60 * 1000
 
 /**
  * Whose feed, in which organization.
@@ -83,6 +94,18 @@ export interface FeedSession {
  * navigation. A reload is the user asking for a fresh feed; restoring the
  * previous order and position in that case makes refreshing look broken.
  */
+/**
+ * When this page load began, so an entry can be dated against it.
+ *
+ * Anything written after this moment belongs to the CURRENT visit, whatever
+ * kind of navigation started it. See the reload rule in `loadFeedSession`.
+ */
+function pageLoadedAt(): number {
+  if (typeof performance === 'undefined') return 0
+  const origin = performance.timeOrigin
+  return typeof origin === 'number' && Number.isFinite(origin) ? origin : 0
+}
+
 function isPageReload(): boolean {
   if (typeof performance === 'undefined') return false
   try {
@@ -98,31 +121,124 @@ export function loadFeedSession(scope: FeedSessionScope): FeedSession | null {
   dropLegacy()
   const key = scopedKey(scope)
   if (!key) return null
-  // Resume only for in-app navigation. Without this a browser refresh looked
-  // identical to returning from an asset page, so it restored the same seed
-  // and offset — the feed appeared not to change at all.
-  if (isPageReload()) {
-    clearFeedSession(scope)
-    return null
-  }
+  /**
+   * Resume for an in-app navigation, and for a tab the system killed.
+   *
+   * ── What the reload check was getting wrong ─────────────────────────────
+   *
+   * Its reasoning holds and is kept: a browser refresh looked identical to
+   * returning from an asset page, so it restored the same seed and offset and
+   * the feed appeared not to change at all.
+   *
+   * It assumed a reload is always the reader asking for one. On a phone it
+   * usually is not. Reported from an iPhone: leave Safari for another app,
+   * come back, and the feed is at the top — because iOS evicts a backgrounded
+   * tab under memory pressure and reloads it on return, and
+   * `performance.navigation` calls that a reload too.
+   *
+   * `wasFeedBackgrounded` is the thing that tells them apart: a reader who
+   * hits refresh is LOOKING at the page, and a tab iOS discards was hidden.
+   */
+  const backgrounded = wasFeedBackgrounded(`${scope.userId}:${scope.orgId}`)
   try {
     const raw = sessionStorage.getItem(key)
     if (!raw) return null
     const parsed = JSON.parse(raw) as FeedSession
     if (typeof parsed?.seed !== 'number') return null
-    if (Date.now() - (parsed.savedAt ?? 0) > MAX_AGE_MS) return null
+    /**
+     * The reload discards the place the reader had BEFORE the refresh.
+     *
+     * ── Why this is dated rather than latched ───────────────────────────────
+     *
+     * The rule used to be "on a reload, discard", evaluated on every read. That
+     * was harmless while the only read was the dashboard's mount. It is not
+     * harmless now the feed re-reads this every time the reader arrives back at
+     * it, because `performance.navigation` describes the DOCUMENT: once a page
+     * was loaded by refresh it answers "reload" for the rest of that page's
+     * life. So the second read after a refresh would wipe the position the
+     * reader had just built up, and every read after that too — one refresh
+     * poisoning the whole visit.
+     *
+     * What the rule always meant is "the place they had before they asked for a
+     * fresh feed". So the entry is dated against the page load: anything written
+     * since this document started belongs to this visit and is kept, and a
+     * refresh still opens on a fresh feed at the top.
+     */
+    const savedThisPageLoad =
+      typeof parsed.savedAt === 'number' && parsed.savedAt >= pageLoadedAt()
+    if (isPageReload() && !backgrounded && !savedThisPageLoad) {
+      clearFeedSession(scope)
+      return null
+    }
+    /**
+     * A longer window for a phone that was put down.
+     *
+     * Thirty minutes was chosen for an in-app navigation, where it is generous.
+     * It is far too short for "I switched apps", which is the case this now
+     * also serves — a meeting, a commute or an afternoon all count as "where I
+     * was", and the next morning still does not.
+     */
+    const maxAge = backgrounded ? BACKGROUND_MAX_AGE_MS : MAX_AGE_MS
+    if (Date.now() - (parsed.savedAt ?? 0) > maxAge) return null
     return parsed
   } catch {
     return null
   }
 }
 
-export function saveFeedSession(scope: FeedSessionScope, session: Omit<FeedSession, 'savedAt'>): void {
+/**
+ * What to write when the caller cannot see where the reader was.
+ *
+ * ── The report ────────────────────────────────────────────────────────────
+ *
+ * From a phone: scroll the Ideas feed, tap Explore, come back, and the feed is
+ * at the top.
+ *
+ * This is one of three causes behind that single report, and on its own it does
+ * not fix it — see the re-entry read in `MobileDashboard` for the one that
+ * does. It is stated as reasoning about the code rather than as a measurement:
+ * an attempt to measure it in a live browser was made in a tab the browser
+ * considered hidden, where no scroll events fire at all, and those numbers were
+ * discarded as worthless.
+ *
+ * The dashboard writes on a 400ms throttle while the reader scrolls and once
+ * more when its effect tears down, so the last flick is not lost. That teardown
+ * write read `scrollTop` off the scrolling element, and by then React had
+ * already detached it. A detached element reports `scrollTop` as 0, so the
+ * teardown wrote 0 over the good value the throttle had just saved.
+ *
+ * ── Why `null` rather than a remembered offset ────────────────────────────
+ *
+ * `null` means "keep the offset already stored". The teardown still has a job
+ * beyond the offset — it records the seed and the cycle, without which the
+ * restored position points into a differently ordered feed — so it cannot
+ * simply be skipped.
+ *
+ * A ref holding the last known offset was the alternative. It has to be updated
+ * at every site that writes `scrollTop`, the restore included, and a site missed
+ * later brings this bug back silently. Keeping what is already stored has
+ * nothing to keep in sync.
+ *
+ * The cost is bounded and deliberate: up to one throttle window of scrolling,
+ * so a reader who flicks and leaves inside 400ms returns a little above where
+ * they left, rather than at the top.
+ */
+export type FeedSessionWrite = Omit<FeedSession, 'savedAt' | 'scrollTop'> & {
+  scrollTop: number | null
+}
+
+export function saveFeedSession(scope: FeedSessionScope, session: FeedSessionWrite): void {
   if (typeof sessionStorage === 'undefined') return
   const key = scopedKey(scope)
   if (!key) return
   try {
-    sessionStorage.setItem(key, JSON.stringify({ ...session, savedAt: Date.now() }))
+    let scrollTop = session.scrollTop
+    if (scrollTop == null) {
+      const raw = sessionStorage.getItem(key)
+      const stored = raw ? (JSON.parse(raw) as Partial<FeedSession>) : null
+      scrollTop = typeof stored?.scrollTop === 'number' ? stored.scrollTop : 0
+    }
+    sessionStorage.setItem(key, JSON.stringify({ ...session, scrollTop, savedAt: Date.now() }))
   } catch {
     /* storage full or unavailable — the feed simply starts from the top */
   }

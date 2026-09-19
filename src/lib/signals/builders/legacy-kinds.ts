@@ -21,6 +21,8 @@ import {
   materialNoThesisCopy, MATERIAL_NO_THESIS, type CapitalContext,
 } from '../portfolio-issues'
 import { attributiveHorizon } from '../horizon-copy'
+import { targetHitSeverity } from '../lens-severity'
+import { attentionCardType } from '../../mobile/entry-signal-type'
 import type { TemplateCard } from '../../mobile/feed-templates'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import type {
@@ -944,7 +946,17 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
 }
 
 export function buildTargetHitCard(b: TargetBreach): CardResult {
-  return lensCard('target_hit', 'research', b.overshootPct >= 0.1 ? 'critical' : 'attention', {
+  /**
+   * One severity derivation, shared with the ranker.
+   *
+   * This was `b.overshootPct >= 0.1` while `rankInputFor` promoted at 15, so
+   * the rail and the score disagreed for every overshoot between the two — and
+   * `judgmentPresentationFor` reads the card's severity, so the card also asked
+   * its question inline on a case the product's own materiality bar says is not
+   * material. `MATERIAL_DEVIATION_PCT` was introduced to end exactly this;
+   * see `lens-severity` for the evidence.
+   */
+  return lensCard('target_hit', 'research', targetHitSeverity(b.overshootPct), {
     id: `target_hit:${b.assetId}`,
     assetId: b.assetId,
     symbol: b.symbol,
@@ -1374,6 +1386,15 @@ export function buildIdeasSignalCard(sig: IdeasSignal): CardResult {
 export interface AttentionLike {
   attention_id: string
   attention_type: 'informational' | 'action_required' | 'decision_required' | 'alignment'
+  /**
+   * What `useAttention` noticed, which is finer than `attention_type`.
+   *
+   * Carried because it decides the card's type for the reasons that name their
+   * own situation — see `ATTENTION_REASON_CARD_TYPE`. `attention_type` stamps
+   * coverage neglect `action_required`, and a card typed from that alone told
+   * the reader a deadline had passed on work nobody assigned.
+   */
+  reason_code?: string | null
   reason_text?: string | null
   title: string
   subtitle?: string | null
@@ -1387,12 +1408,14 @@ export interface AttentionLike {
   context?: { asset_id?: string | null } | null
 }
 
-const ATTENTION_TYPE: Record<AttentionLike['attention_type'], SignalType> = {
-  decision_required: 'awaiting_review',
-  action_required: 'project_overdue',
-  alignment: 'thesis_conflict',
-  informational: 'team_focus',
-}
+/**
+ * Moved to `lib/mobile/entry-signal-type`, and imported rather than copied.
+ *
+ * The pill filter and the diversity axis both have to know what this card's
+ * chip will say, and a second table is how they came to disagree: the display
+ * resolver keyed on `source_type` while this keys on `attention_type`, so tiles
+ * printing "Overdue" answered to the "Needs review" family.
+ */
 
 /**
  * The last kind still rendering as a legacy tile.
@@ -1424,8 +1447,21 @@ export function buildAttentionCard(
    * `CaseEditor` from showing an edit control for a row RLS will refuse.
    */
   can?: { approve?: boolean; reject?: boolean; markDone?: boolean; defer?: boolean },
+  /**
+   * The clock, injectable so a fixture can pin it.
+   *
+   * This file has always read `Date.now()` directly for the due-date metric,
+   * which was harmless while that metric only appeared on rows the tests did
+   * not measure. The elapsed-silence metric below appears on the rows the tile
+   * engine's parity fixtures ARE built around, and those fixtures pin their own
+   * clock — so a builder reading the wall clock reports a different number for
+   * the same row every day the suite runs.
+   *
+   * Defaulted, so every production call site is unchanged.
+   */
+  now: number = Date.now(),
 ): CardResult {
-  const type = ATTENTION_TYPE[a.attention_type] ?? 'awaiting_review'
+  const type = attentionCardType(a) as SignalType
   return gate(type, () => {
     const entity = asset?.symbol || a.attention_id
     if (!isQualityContent(a.title)) {
@@ -1434,7 +1470,12 @@ export function buildAttentionCard(
 
     const occurredAt = a.last_activity_at || a.created_at || new Date().toISOString()
     const dueDays = a.due_at
-      ? Math.round((new Date(a.due_at).getTime() - Date.now()) / 86_400_000)
+      ? Math.round((new Date(a.due_at).getTime() - now) / 86_400_000)
+      : null
+    /** How long the thing has been sitting, for the rows that have no deadline. */
+    const quietSince = Date.parse(occurredAt)
+    const quietDays = Number.isFinite(quietSince)
+      ? Math.floor((now - quietSince) / 86_400_000)
       : null
 
     /**
@@ -1496,6 +1537,29 @@ export function buildAttentionCard(
         : a.attention_type === 'action_required' ? 'attention'
         : 'informational',
       headline: a.title.trim(),
+      /**
+       * The number that says why this is in front of the reader.
+       *
+       * ── Why a deadline was not enough ─────────────────────────────────────
+       *
+       * The metric came from `due_at` alone, so any item without one showed no
+       * number at all. Several collectors raise rows that have no deadline by
+       * construction — a queued trade nobody has moved on, a project untouched
+       * for a month, a covered name with no contribution in three weeks — and
+       * those are the ones whose whole claim is about ELAPSED TIME.
+       *
+       * Reported from a phone: a tile headed "BUY MSFT" that gave no context or
+       * clarity about why it was showing. The row's own `reason_text` said "no
+       * updates in 5 days" and the card had nowhere to put the 5.
+       *
+       * So where there is no deadline the metric becomes how long the thing has
+       * been sitting, which for an item with no date IS its magnitude. Where
+       * there is one the deadline still wins: a due date is a harder fact than
+       * a silence, and a row that has both is about the date.
+       *
+       * Bounded at a day, because "quiet for 0 days" is not a finding and a row
+       * raised this morning is not stale.
+       */
       metric: dueDays != null && Number.isFinite(dueDays)
         ? {
             value: dueDays < 0 ? `${Math.abs(dueDays)}d` : `${dueDays}d`,
@@ -1504,7 +1568,15 @@ export function buildAttentionCard(
             source: 'stated',
             asOf: a.due_at!,
           }
-        : null,
+        : quietDays != null && quietDays >= 1
+          ? {
+              value: `${quietDays}d`,
+              label: 'Since update',
+              direction: 'neutral',
+              source: 'computed',
+              asOf: occurredAt,
+            }
+          : null,
       body: body.trim(),
       prompt: a.attention_type === 'decision_required'
         ? 'What is your answer?'

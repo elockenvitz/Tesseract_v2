@@ -7,20 +7,36 @@ import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
 import { markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
+import { rotateForRound } from '../../lib/mobile/feed-rounds'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { useAttention } from '../../hooks/useAttention'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
+import {
+  anchorKeyAt, clearFeedContinuity, deepestRead, deriveFeedView, feedScopeKey,
+  hydrateFeedContinuity, indexOfKey, markFeedHidden, nearestRememberedKey,
+  persistFeedContinuity, readFeedContinuity, reconcileToRemembered, rememberBaseOrder,
+  resolveAnchorIndex, writeFeedContinuity,
+} from '../../lib/mobile/feed-continuity'
 import { useFeedSessionStability } from '../../hooks/mobile/useFeedSessionStability'
 import { useReaderSnapshots } from '../../hooks/mobile/useReaderSnapshots'
 import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
+import type { StaleTarget, TargetBreach } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { isFlagOn } from '../../lib/flags'
+import {
+  adoptComposedTarget, adoptCoverageGap, adoptResearchInsight, adoptScenarioGap,
+  adoptStaleTarget, adoptTargetHit, adoptWorkOverdue, adoptedTile, declinedTile,
+  type AdoptedTile, type CoverageAttentionRow, type OverdueAttentionRow,
+} from '../../lib/tile-engine/adopt/mobile'
+import { ExploreVisualBlock } from './ExploreVisual'
+import type { ExploreVisual } from '../../lib/mobile/explore-visual'
+import { absorbedTargetLenses, composedTargetKeys, type TargetPair } from '../../lib/tile-engine/adopt/target-composition'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
 import { parseNumericEntry } from '../../lib/mobile/exploration'
@@ -45,7 +61,10 @@ import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../..
 import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
-import { CATEGORY_LABEL, categoryOf, familyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import {
+  attentionCardType, attentionDisplayType, attentionRankSeverity, attentionSignalType,
+} from '../../lib/mobile/entry-signal-type'
+import { CATEGORY_LABEL, categoryOf, displayFamilyOf, familyLabel, familyOf, isExactFamily, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
@@ -67,7 +86,8 @@ import type { ExploreItem } from '../../lib/mobile/explore-item'
 import { ScenarioLadderPane } from '../signals/ScenarioLadderPane'
 import { ScenarioGapPanes } from '../signals/ScenarioGapPanes'
 import { scenarioReviewOptions } from '../../lib/signals/scenario-review'
-import { deriveScenarioState } from '../../lib/signals/scenario-state'
+import { deriveScenarioState, dislocationPct } from '../../lib/signals/scenario-state'
+import { staleTargetSeverity, targetHitSeverity } from '../../lib/signals/lens-severity'
 import { currentBook } from '../../lib/holdings/portfolio-context'
 import { frameworkCapitalFor } from '../../lib/signals/framework-break'
 import {
@@ -101,13 +121,18 @@ import {
 import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
-import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
-import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import {
+  claimedSubjects, coverageDuplicateAssets, suppressCoveredAttention, suppressCoveredInsights,
+} from '../../lib/signals/feed-dedupe'
+import { baseFor, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
 import {
   insightPanePlan, IDEA_POST_PANE_MIN_BODY,
 } from '../../lib/signals/pane-plan'
 import { tileRequirementFor } from '../../lib/mobile/tile-requirement'
 import { readerQuestionFor } from '../../lib/signals/reader-question'
+import { briefClassFor } from '../../lib/signals/brief-class'
+import { attentionBase } from '../../lib/signals/attention-strength'
+import type { DeskExposure } from '../../lib/signals/desk-exposure'
 import type { TileContainer } from '../../lib/signals/tile-geometry'
 import {
   composeFeed, type ComposeScope, type ComposeTraceRow,
@@ -166,6 +191,65 @@ import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
  * not hold.
  */
 
+/**
+ * How long a restore may wait for the feed to stop growing, in frames.
+ *
+ * Forty, the same bound the saved-offset restore uses and for the same reason:
+ * a feed that never reaches the remembered depth — the reader was deeper than
+ * today's feed goes — must settle rather than spin.
+ */
+const SETTLE_FRAMES = 40
+
+/**
+ * How many of the composed feed's opening cards are recorded as having LED it.
+ *
+ * Three, and small on purpose. This record exists for the composer's lead band,
+ * which decides one slot, so it is a record of what opened the feed rather than
+ * of what was seen.
+ *
+ * The arithmetic that fixes the number: `feed-rotation` keeps `MAX_TRACKED`
+ * 300 entries and expires them after three days. At three per open, a reader
+ * opening ten times a day accumulates about ninety inside that window, well
+ * clear of eviction, so a card that led on Monday is still remembered on
+ * Wednesday and the rotation has a real period. Marking a screenful instead
+ * would fill the map in two days and evict the record before the expiry could
+ * mean anything.
+ */
+const LEAD_MARK_COUNT = 3
+
+/**
+ * How far back from the end of the feed variety is measured.
+ *
+ * Twenty cards, which at a viewport of six is a little over three phone
+ * screens — roughly what one flick covers. A fetch started when the reader is
+ * that far from the thin part lands before they reach it.
+ */
+const VARIETY_RUNWAY = 20
+
+/**
+ * How few distinct families at the tail counts as running out.
+ *
+ * Three, and borrowed rather than invented: `feed-variety` already asserts
+ * that an average screen shows at least three distinct families, so falling
+ * below it at the tail is the same measurement saying the pool is spent.
+ */
+const MIN_TAIL_FAMILIES = 3
+
+/**
+ * How far past the reader the feed is held still.
+ *
+ * The read depth alone is not enough. A tile one below the fold is partly on
+ * screen and about to be scrolled to, and letting it recompose between the
+ * reader deciding to swipe and the swipe landing is the reordering this whole
+ * module exists to prevent, at the one moment it would be most obvious.
+ *
+ * Ten, which is about a screen and a half at a viewport of six, so the tile
+ * under the thumb and the one after it are settled before the reader can reach
+ * them. Everything past it is material they have never seen, where there is
+ * nothing to keep still and composing is strictly better.
+ */
+const FREEZE_LOOKAHEAD = 10
+
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
 }
@@ -220,6 +304,17 @@ function lensSignalType(l: {
   }
   return 'crowding'
 }
+
+/**
+ * Leaving the pill filter, written once.
+ *
+ * `family: null` drops the filter; `position: { viewKey: null }` drops the
+ * anchor that belonged to the filtered VIEW while leaving `baseKey` — the tile
+ * the reader was on when they filtered — for the unfiltered order to land on.
+ * Both the banner's Clear and re-tapping the active pill write this exact
+ * object, so there is one way out of a filter and one place it is defined.
+ */
+const CLEAR_TILE_FAMILY = { family: null, position: { viewKey: null } } as const
 
 export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const { user } = useAuth()
@@ -358,6 +453,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * its comment already documented.
    */
   const debugOn = isFlagOn('feed-debug')
+
+  /**
+   * Tile Engine V2, for Target Expired and Case vs Price only.
+   *
+   * Read here beside `debugOn` and for the same reason: flags are consumed at
+   * module load in `main.tsx`, and a latch inside the feed runs after the
+   * router has already discarded the query string.
+   */
+  const tileEngineOn = isFlagOn('tile-engine-v2')
 
   const [lastThought, setLastThought] = useState<{ id: string; symbol: string | null } | null>(null)
 
@@ -932,7 +1036,63 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     () => ({ userId: userId ?? null, orgId: currentOrgId }),
     [userId, currentOrgId],
   )
-  const [resumed] = useState(() => loadFeedSession(feedScope))
+  const [resumed, setResumed] = useState(() => loadFeedSession(feedScope))
+
+  /**
+   * The same scope, as the key the in-memory continuity map is filed under.
+   *
+   * `feed-session` remembers the SEED across a reload; this remembers the
+   * FILTER and the tile across an in-app navigation and deliberately not
+   * across a reload. Two lifetimes, two stores, one scope. See
+   * `lib/mobile/feed-continuity`.
+   */
+  const continuityKey = useMemo(() => feedScopeKey(feedScope), [feedScope])
+  /**
+   * Read once, at mount, before anything can overwrite it.
+   *
+   * Returning from an asset page remounts this component, so this read IS the
+   * restore: whatever the reader had filtered to, and where they were in it
+   * and underneath it, is still in the module from before they left.
+   */
+  /**
+   * Read once, at mount — after a persisted snapshot has been handed back.
+   *
+   * ── The report ────────────────────────────────────────────────────────────
+   *
+   * From an iPhone: leave Safari for another app, come back, and the feed is at
+   * the top. iOS evicts a backgrounded tab under memory pressure and reloads it
+   * on return, and this module's state lived only for the life of the bundle —
+   * so a page load the reader never asked for looked exactly like a refresh and
+   * threw their place away.
+   *
+   * `hydrateFeedContinuity` puts the snapshot back before this read, and only
+   * when the page was hidden at the moment it died. A reader who actually hits
+   * refresh still gets a fresh feed, which is what the continuity module's
+   * header argues for and what this must not cost.
+   */
+  const [restoredContinuity, setRestoredContinuity] = useState(() => {
+    hydrateFeedContinuity(feedScopeKey(feedScope))
+    return readFeedContinuity(feedScopeKey(feedScope))
+  })
+
+  /**
+   * The tile pill's filter: ONE family, or nothing.
+   *
+   * ── What this replaces ────────────────────────────────────────────────────
+   *
+   * The pill handed `card.type` up and the dashboard threw it away, filtering
+   * instead by `categoryOf({ kind: trackAs })` — the entry KIND reclassified
+   * into one of six broad categories. So tapping "Case vs Price" asked for all
+   * of Decisions, and which category you got depended on which hook had
+   * produced the row rather than on the pill you touched. Two different pills
+   * on two cards of the same kind gave the identical feed.
+   *
+   * `familyOf` is the vocabulary the pill is already written in — it is what
+   * tells a held framework break from an unheld case-vs-price, and the five
+   * Research framings from each other. It is also exactly what the Curate
+   * sheet's rows resolve to, so the pill and the sheet cannot disagree.
+   */
+  const [tileFamily, setTileFamily] = useState<string | null>(() => restoredContinuity.family)
   const [shuffleSeed, setShuffleSeed] = useState(() => resumed?.seed ?? Math.floor(Math.random() * 2 ** 31))
 
   // The feed must not end. Ideas paginate from the server, but attention,
@@ -961,6 +1121,49 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // nothing and never re-ran, which is why pull-to-refresh did nothing and the
   // scroll position was never saved.
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
+
+  /**
+   * Land the reader's position before the first paint, not after it.
+   *
+   * ── The report ────────────────────────────────────────────────────────────
+   *
+   * "Switching back to Ideas from Explore, the tile sort of flashes instead of
+   * smoothly opening."
+   *
+   * That flash is the restore itself becoming visible. The restores below run
+   * in effects, after React has committed and the browser has painted, and the
+   * earliest of them waits a frame more for `requestAnimationFrame`. So the
+   * feed paints once at the top, and the reader sees it there before it jumps.
+   *
+   * It is new. While the restore was broken the feed simply stayed at the top,
+   * which is wrong but never moves; a restore that works is what made the jump
+   * visible.
+   *
+   * ── Why the ref callback is the right moment ──────────────────────────────
+   *
+   * It runs during the commit, once the scroller and its slots are in the DOM
+   * and before the browser has painted anything. Setting `scrollTop` here means
+   * the first paint IS the restored position, so there is no intermediate frame
+   * to see.
+   *
+   * The measurement is available that early because of how the feed is built:
+   * every slot is exactly one scroller height whether or not its card is
+   * mounted, so `scrollHeight` describes the whole list from the first commit
+   * rather than growing as cards arrive.
+   *
+   * This does not replace the effects below. A feed that is still growing —
+   * a cold load, where the entries themselves have not arrived — needs the
+   * retry loop they own. This removes the flash from the common case, which is
+   * a return to a feed that is already built.
+   */
+  const attachScroller = useCallback((el: HTMLDivElement | null) => {
+    setScroller(el)
+    if (!el) return
+    const want = loadFeedSession(feedScope)?.scrollTop ?? 0
+    if (!want) return
+    const reachable = el.scrollHeight - el.clientHeight
+    if (reachable > 0) el.scrollTop = Math.min(want, reachable)
+  }, [feedScope])
 
   /**
    * The feed's own box, observed ONCE for the whole feed.
@@ -1507,6 +1710,32 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     book: lenses?.book ?? null,
   })
 
+  /**
+   * Whether the feed's ordering-critical sources have all landed.
+   *
+   * ── Why this moved up here ──────────────────────────────────────────────
+   *
+   * It was declared beside the loader it gates, a couple of thousand lines
+   * below, and that made it look like a rendering concern. It is not. It is the
+   * only thing that says whether the candidate pool is COMPLETE, and the base
+   * order is committed from that pool — so anything committed before this is
+   * false is committed from a partial feed.
+   *
+   * Manual QA on localhost: nine Trade Idea and Thought tiles, then three
+   * Overdue. That order is impossible from a single composed list, because
+   * attention sits a tier above posts and would lead them. It is exactly what
+   * you get when the posts resolve first, the base order is remembered from
+   * them alone, and everything that lands afterwards is APPENDED — which is
+   * what `reconcileToRemembered` is contracted to do, and is right once a
+   * reader is actually looking at something.
+   *
+   * The commit is gated on it now. See the effect below.
+   */
+  const composing =
+    isLoading || attentionLoading || signalsLoading || insightsLoading ||
+    lensesLoading || scenariosLoading || recsLoading ||
+    (attentionSourceIds.length > 0 && pairInfoLoading)
+
 
   /**
    * Scenario cards, with the portfolio chip's books given real exposure.
@@ -1623,6 +1852,277 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const coverageIndex = useCoverageIndex()
 
+  /**
+   * What the book says about one name, for the ranker.
+   *
+   * ── Why this exists and why it is one lookup ──────────────────────────────
+   *
+   * The ranking model asks how much a card matters and had one answer for it:
+   * the position's weight in its heaviest book. A desk has three, and the other
+   * two were computed, stored and never read — a name held in eight books is
+   * the firm's view rather than one PM's, and a two percent position against a
+   * five percent index weight is a three point UNDERWEIGHT, which a size band
+   * cannot see at all.
+   *
+   * `lenses.weightIndex` already holds all three, keyed by asset, sorted
+   * heaviest book first, built once inside the query. So this is a `Map.get`
+   * per card with no scan and no allocation. `frameworkCapitalFor`, which two
+   * branches already call, copies and re-sorts the same rows on every call to
+   * answer less.
+   *
+   * Null when the name is not in the book, which the model reads as "not
+   * known" rather than as zero. That distinction is load-bearing:
+   * `benchmarkPct` null means the book has no benchmark file, while 0 means the
+   * file exists and does not list the name, and only the second can produce an
+   * active weight.
+   */
+  const exposureFor = useCallback((assetId: string | null | undefined): DeskExposure | null => {
+    if (!assetId) return null
+    const rows = lenses?.weightIndex?.get(assetId)
+    if (!rows?.length) return null
+    // Heaviest first, by construction — see `currentBook`. No sort here.
+    const top = rows[0]
+    return {
+      weightPct: top.portfolioPct,
+      benchmarkPct: top.benchmarkPct,
+      activePct: top.activePct ?? null,
+      bookCount: rows.length,
+    }
+  }, [lenses?.weightIndex])
+
+  /**
+   * The tile engine, at its only two seams.
+   *
+   * ── What this does and, more importantly, what it cannot do ────────────
+   *
+   * Off, it returns the card it was given. On, it adapts the card into a
+   * semantic finding, composes a situation, resolves a presentation plan for
+   * the mobile briefing and projects the plan back onto the SAME card
+   * contract — so `SignalCardView` and the panes below it render it exactly as
+   * they render everything else. There is no second renderer and no component
+   * per situation.
+   *
+   * It runs AFTER ranking, composition, filtering and windowing have all
+   * finished, on a card that is already on screen. That ordering is the whole
+   * safety argument: the projection preserves `id`, `type`, `severity`,
+   * `entity`, `provenance`, `expiry` and `dedupeKey`, and nothing in the feed
+   * pipeline is reachable from here anyway. Toggling the flag mid-session
+   * cannot reorder the feed, cannot change what is in it, and cannot move the
+   * reader's position in it.
+   *
+   * A card the engine declines to adopt renders as production built it, so the
+   * worst case is no change rather than a missing tile.
+   */
+  /**
+   * Names carrying BOTH a reached target and an expired one.
+   *
+   * `usePortfolioLenses` pushes into `breaches` and `stale` from inside one
+   * loop over the same assets, so this intersection is real and is usually
+   * tiny. The cards are built only for it — the engine needs a card's identity
+   * to make a finding, and building one per asset in the book to answer a
+   * question about a handful would be a real cost for no reason.
+   */
+  const targetPairs = useMemo<TargetPair[]>(() => {
+    if (!tileEngineOn) return []
+    const breaches = lenses?.breaches ?? []
+    const stales = lenses?.stale ?? []
+    if (!breaches.length || !stales.length) return []
+
+    const staleBy = new Map(stales.map(t => [t.assetId, t]))
+    const out: TargetPair[] = []
+    for (const b of breaches) {
+      const t = staleBy.get(b.assetId)
+      if (!t) continue
+      const hitCard = buildTargetHitCard(b)
+      const staleCard = buildStaleTargetCard(t)
+      if (!hitCard.ok || !staleCard.ok) continue
+      out.push({
+        assetId: b.assetId,
+        hit: { row: b, card: hitCard.card },
+        expired: { row: t, card: staleCard.card },
+      })
+    }
+    return out
+  }, [tileEngineOn, lenses?.breaches, lenses?.stale])
+
+  /**
+   * Which lens entry each of those names gives up.
+   *
+   * The composer decides — this file does not know that a reached target
+   * outranks an expired one, and must not, or the rule would live in two
+   * places and drift.
+   */
+  const absorbedTargets = useMemo(
+    () => absorbedTargetLenses(targetPairs, id => coverageRelevanceFor(coverageIndex, id)),
+    [targetPairs, coverageIndex],
+  )
+
+  /**
+   * The stable identity of each composed tile, by asset.
+   *
+   * Stamped onto the surviving entry below so `feedEntryKeys` can key it on the
+   * SITUATION rather than on whichever lens row happens to be leading. See
+   * `composedTargetKeys` for why a lead-derived key moves a tile the reader has
+   * not touched.
+   */
+  const composedTargetKeyByAsset = useMemo(
+    () => composedTargetKeys(targetPairs, id => coverageRelevanceFor(coverageIndex, id)),
+    [targetPairs, coverageIndex],
+  )
+
+  /** The pair for one asset, when both halves are present. */
+  const targetPairFor = useCallback(
+    (assetId: string) => targetPairs.find(p => p.assetId === assetId) ?? null,
+    [targetPairs],
+  )
+
+  const adoptTile = useCallback((
+    /**
+     * A card, always. Never a maybe.
+     *
+     * It was `any` and the seam checked it for falsiness, which read as
+     * defensive and was in fact the hole: the falsy branch returned something
+     * shaped differently from every other branch. Three of the four call sites
+     * narrow on `ok` before they get here and cannot pass nothing; the fourth
+     * is a raw producer array and now checks itself, where the answer is
+     * "this entry is not a tile" rather than "adopt nothing".
+     */
+    original: SignalCard,
+    /**
+     * The producer row this card came from, where the adapter needs it.
+     *
+     * Three families, one seam. Which adapter runs is decided by which source
+     * the call site has, not by inspecting the card — a card sniffed for its
+     * family is a family switch, and this seam exists so that there is exactly
+     * one and it is this line.
+     */
+    source?:
+      | { stale: StaleTarget }
+      | { breach: TargetBreach }
+      | { insight: DerivedInsight }
+      | { coverage: CoverageAttentionRow }
+      | { overdue: OverdueAttentionRow },
+    /**
+     * Declared, and that is the fix.
+     *
+     * This was `any`, and under `any` a function may return two shapes without
+     * anybody hearing about it. It did: the success path returned the triple
+     * and two early returns returned the bare card, so every `.card` on those
+     * paths read `undefined` and the scenario renderer crashed the feed on its
+     * first line. See `AdoptedTile`.
+     */
+  ): AdoptedTile => {
+    /**
+     * Coverage is adopted whether or not the comparison flag is on.
+     *
+     * ── Why this one family is not behind the flag ──────────────────────
+     *
+     * The flag exists so an adopted presentation can be compared against the
+     * shipping one before it replaces it. That argument holds for the four
+     * families whose legacy card is fine. It does not hold here, because
+     * Coverage Gap's IDENTITY already shipped unflagged — the chip, the pill,
+     * the category and the dedupe rule all say "Coverage gap" for every reader
+     * — while its presentation stayed behind the flag.
+     *
+     * So the flagged-off state is not the old behaviour. It is a tile that
+     * calls itself a coverage finding, opens a "Coverage gap only" band, and
+     * then reads "AMZN — Research stale" over a price chart. Manual QA saw
+     * exactly that and reported it as the presentation being wrong.
+     *
+     * A card whose face contradicts its own chip is not a comparison, it is a
+     * defect, and the honest fix is the narrow one: this family renders through
+     * the engine for everybody. Nothing else moves.
+     */
+    /**
+     * Both attention adoptions are flagless, and for one reason.
+     *
+     * The comparison flag exists so an adopted presentation can be measured
+     * against the shipping one before it replaces it. That argument holds for a
+     * family whose legacy card is fine. It does not hold for either of these:
+     * the coverage tile's chip already contradicted its own face, and the
+     * overdue tile's picture was the price of a name that has nothing to do
+     * with why the work is late. A card that is wrong is not a comparison.
+     */
+    const flagless = !!source && ('coverage' in source || 'overdue' in source)
+    if (!tileEngineOn && !flagless) return declinedTile(original)
+    const viewer = {
+      readerId: userId ?? null,
+      // The same value `rankInputFor` supplies, from the same function.
+      coverage: coverageRelevanceFor(coverageIndex, String(original.entity?.id ?? '')),
+    }
+    /**
+     * A composed pair beats either half.
+     *
+     * When a name carries both target findings the surviving entry renders the
+     * SITUATION, not its own finding — otherwise the tile would be the lead's
+     * card with the corroboration silently missing, which is the failure mode
+     * composition exists to avoid.
+     */
+    const assetId = String(original.entity?.id ?? '')
+    const pair = source && ('stale' in source || 'breach' in source)
+      ? targetPairFor(assetId)
+      : null
+
+    const result =
+      pair
+        ? adoptComposedTarget(pair, original, viewer, feedContainer)
+      : source && 'stale' in source
+        ? adoptStaleTarget(source.stale, original, viewer, feedContainer)
+      : source && 'breach' in source
+        ? adoptTargetHit(source.breach, original, viewer, feedContainer)
+      : source && 'insight' in source
+        ? adoptResearchInsight(source.insight, original, viewer, feedContainer)
+      : source && 'overdue' in source
+        ? adoptWorkOverdue(source.overdue, original, viewer, feedContainer, Date.now())
+      : source && 'coverage' in source
+        /**
+         * The one adapter that needs the time.
+         *
+         * `collectNeglectedCoverage` puts the elapsed days into prose and keeps
+         * only the timestamps, so the span is subtracted rather than read. The
+         * clock stays out here, in the component that already has one.
+         */
+        ? adoptCoverageGap(source.coverage, original, viewer, feedContainer, Date.now())
+      : adoptScenarioGap(
+          original,
+          // `rankInputFor`'s own derivation, not a second one.
+          frameworkCapitalFor(lenses?.book ?? null, String(original.entity?.id ?? '')),
+          viewer,
+          feedContainer,
+        )
+    /**
+     * `adopted` is the seam's own answer, and it is not "did the card change".
+     *
+     * A decline must leave BOTH halves of production alone — its card and the
+     * panes the caller was going to build. Comparing cards to infer that would
+     * be reading a result out of an identity check; the result is already here.
+     */
+    return adoptedTile(original, result)
+  }, [tileEngineOn, userId, coverageIndex, lenses?.book, feedContainer, targetPairFor])
+
+  /**
+   * The plan's picture, as a pane, using the renderer Explore already has.
+   *
+   * ── Why this is one function and not a component per situation ──────────
+   *
+   * `ExploreVisualBlock` is a closed switch over the ten primitives, and the
+   * plan's vocabulary is aliased from that union precisely so it cannot name
+   * anything else. So "render what the resolver chose" is a lookup, not a
+   * design decision, and a new situation that resolves to an existing primitive
+   * costs nothing here at all.
+   *
+   * Null when the engine has no picture — a declined adoption, or a claim whose
+   * data cannot support one — and the caller keeps whatever pane it built.
+   */
+  const planPane = useCallback((visual: ExploreVisual | null) => {
+    if (!visual || visual.kind === 'none') return null
+    return {
+      id: 'evidence',
+      label: 'Evidence',
+      content: <ExploreVisualBlock visual={visual} />,
+    }
+  }, [])
+
   const rankInputFor = useCallback((e: any): PriorityInput => {
     /** The stored judgment for a card, so acknowledgment can be read. */
     const judgmentFor = (type: SignalType, entityId?: string | null): JudgmentRecord | null => {
@@ -1648,6 +2148,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       ...i,
       judgment: judgmentFor(judgmentType, entityId),
       /**
+       * What the book says about the name, on every branch at once.
+       *
+       * Threaded here rather than added to twelve call sites, for the same
+       * reason `coverage` below it is: every branch already routes its entity
+       * id through this function, so a branch cannot answer the coverage
+       * question and forget the exposure one. A branch that has no asset —
+       * a post, a market template with no match — passes null and the model
+       * falls back to the weight band exactly as before.
+       *
+       * A branch that already knows a better weight than the book's heaviest
+       * row keeps it: `i.weightPct` is not overwritten, and
+       * `deskMateriality` takes the strongest claim of the three.
+       */
+      exposure: exposureFor(entityId),
+      /**
        * The coverage seam, finally populated.
        *
        * `PriorityInput.owned` carried a comment since it was written saying it
@@ -1663,10 +2178,43 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     switch (e.kind) {
       case 'scenario': {
         const c = e.card
-        // The card's own metric IS the deviation: a percentage of the case the
-        // price broke through, and the same number the builder computed the
-        // severity from. Reading it back beats recomputing it differently.
-        const dev = Number(String(c?.metric?.value ?? '').replace(/[^0-9.]/g, ''))
+        /**
+         * The deviation, from the ladder rather than from the label.
+         *
+         * ── The defect this replaces ──────────────────────────────────────
+         *
+         * This read `c.metric.value` and stripped the non-digits out of it, on
+         * the reasoning that the card's metric IS the deviation. That holds for
+         * two of the three claims `buildScenarioGapCard` emits and is false for
+         * the third: `at_expected` renders the probability-weighted expected
+         * value, a PRICE, so a card reading "$244" was handed to the scorer as
+         * a 244% deviation.
+         *
+         * 244 is past `SEVERE_DEVIATION_PCT`, so the claim that means "the
+         * market agrees with your own arithmetic" took the maximum deviation
+         * band — inside tier 0, `decision_mismatch`, where the base is the
+         * highest in the product. The one scenario state that says nothing has
+         * left anything was ranking as the most dislocated card the feed can
+         * produce.
+         *
+         * ── Why the fix is structural and not a guard on the string ───────
+         *
+         * The structured data was always there: `evidence.data` carries the
+         * price and the ladder, and `deriveScenarioState` is the shared
+         * derivation the builder itself uses to decide the claim. `dislocationPct`
+         * returns null when the price is inside the range, which is the honest
+         * answer and the one the scorer wants — a null deviation is the neutral
+         * band, not the bottom one.
+         *
+         * Nothing about a real dislocation changes except that the number is no
+         * longer rounded to a whole percent on its way through a label.
+         */
+        const ladder = c?.evidence?.data as
+          { price?: number; cases?: { name: string; price: number }[] } | undefined
+        const scenarioState = ladder?.cases && Number.isFinite(ladder?.price)
+          ? deriveScenarioState(ladder.price as number, ladder.cases as any[])
+          : null
+        const dev = scenarioState ? dislocationPct(ladder!.price as number, scenarioState) : null
         /**
          * The position behind the framework, from the canonical book.
          *
@@ -1698,7 +2246,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           type: c.type as SignalType,
           severity: c.severity,
           occurredAt: c.provenance?.occurredAt ?? null,
-          deviationPct: Number.isFinite(dev) ? dev : null,
+          deviationPct: dev != null && Number.isFinite(dev) ? dev : null,
           held: scenarioPosition != null,
           weightPct: scenarioPosition?.weightPct ?? null,
         }, c?.entity?.id)
@@ -1711,7 +2259,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             return withJudgment({
               id: `breach-${l.breach.assetId}`,
               type: 'target_hit',
-              severity: Math.abs(l.breach.overshootPct * 100) >= 15 ? 'critical' : 'attention',
+              // One home for the ranking severity, shared with the tile engine.
+              // See `lens-severity`, which also records where the card's own
+              // threshold disagrees with this one.
+              severity: targetHitSeverity(l.breach.overshootPct),
               occurredAt: l.breach.asOf,
               // `TargetBreach` carries no weight at all. Null is neutral here,
               // not zero — see `materialityBand`.
@@ -1723,7 +2274,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             return withJudgment({
               id: `stale-${l.target.assetId}`,
               type: 'target_expired',
-              severity: l.target.overdueMonths >= 6 ? 'critical' : 'attention',
+              severity: staleTargetSeverity(l.target.overdueMonths),
               occurredAt: l.target.expiredAt,
               weightPct: null,
               held: true,
@@ -1828,17 +2379,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
          * `leadWith: 'attention'`. Mapping by source is what lets the overdue
          * project sink while the pending trade stays competitive.
          */
-        const type: SignalType =
-          a.source_type === 'trade_queue_item' ? 'recommendation'
-          : a.source_type === 'project' || a.source_type === 'project_deliverable' ? 'project_overdue'
-          : a.attention_type === 'informational' ? 'thought'
-          : 'awaiting_review'
+        // One mapping, shared with `displayFamilyOf` — see `entry-signal-type`.
+        // The pill filter and the ranker must not disagree about what an
+        // attention item IS, and they did: the chip printed a family the filter
+        // could not resolve, so the pill rendered inert.
+        const type = attentionSignalType(a) as SignalType
         return withJudgment({
           id: String(a.attention_id),
           type,
-          severity: a.priority === 'high' ? 'critical'
-            : a.priority === 'medium' ? 'attention'
-            : 'informational',
+          /**
+           * `severity`, the field the row actually has.
+           *
+           * This read `a.priority`, which `AttentionItem` does not define —
+           * so every attention item in the feed has always ranked
+           * `informational`, whatever its collector said. See
+           * `attentionRankSeverity`, which carries the diagnosis and the
+           * mapping the original branch was reaching for.
+           */
+          severity: attentionRankSeverity(a),
           occurredAt: a.created_at ?? null,
           weightPct: null,
           held: !!a.context?.asset_id,
@@ -1855,6 +2413,34 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           overdueDays: a.due_at
             ? Math.floor((Date.now() - new Date(a.due_at).getTime()) / DAY_MS)
             : null,
+          /**
+           * The magnitude, from the score the attention system already computed.
+           *
+           * ── What was being thrown away ──────────────────────────────────
+           *
+           * Everything above this line is a category: which type, which
+           * severity band, whether it is overdue at all. None of it says HOW
+           * MUCH, and for a workflow card the ranker has nothing else to go on
+           * — `weightPct` and `deviationPct` are null, so its two largest
+           * components are inert and the per-type constant is the whole score.
+           *
+           * Measured: eight overdue projects, one a day late and one
+           * forty-six days late, all scoring exactly 0.576. They formed a
+           * block no composition rule could break into, and inside it the
+           * order fell through every tie-break to a SHA-256 digest.
+           *
+           * `useAttention` has computed a real per-item score all along — ten
+           * points per day overdue, bonuses for ownership, decisions and
+           * blockers, a staleness penalty — and writes it onto this very
+           * object. The sections are already sorted by it. The feed simply
+           * never read it.
+           *
+           * `attentionBase` lifts the type's own floor by it rather than
+           * replacing it, and saturates, because the overdue term is unbounded
+           * and a project a hundred days late must not outrank a decision.
+           * See `attention-strength`, which carries both numbers and why.
+           */
+          base: attentionBase(type, a.score, a.score_breakdown) ?? undefined,
         }, a.context?.asset_id)
       }
 
@@ -1866,10 +2452,42 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // its own builder — so it is named here rather than falling to news.
           type: signalTypeForTemplate(c.kind),
           severity: c.tone === 'negative' ? 'attention' : 'informational',
-          occurredAt: c.occurredAt ?? null,
-          weightPct: c.weightPct ?? null,
-          held: !!c.heldIn?.length,
-          deviationPct: null,
+          /**
+           * `eventDate`, which is the field the card actually has.
+           *
+           * This read `c.occurredAt`, `c.weightPct` and `c.heldIn` — and
+           * `TemplateCard` declares none of the three. So every market card
+           * ever ranked passed `occurredAt: null`, which switches `recencyBoost`
+           * off entirely: a print from this morning and one from three weeks
+           * ago scored the same, on the one card family whose whole claim is
+           * that something just happened.
+           *
+           * The weight and the holding come from the book now, through
+           * `exposure` on the entity id below, which is where every other
+           * branch gets them.
+           */
+          occurredAt: c.eventDate ?? null,
+          weightPct: null,
+          held: false,
+          /**
+           * The move, on the one card kind that measures one.
+           *
+           * `unusualMovers` computes `score` as a MAD-sigma multiple of the
+           * day's cross-section — how far this name moved relative to how far
+           * everything else did — and the number reached the interleaver, which
+           * used it to order market cards among themselves, and then died.
+           * `deviationBand` is exactly the component it belongs in.
+           *
+           * Rescaled from sigmas to the percentage points the band speaks: the
+           * filter admits a card at 1.5 sigma and `MATERIAL_DEVIATION_PCT` is
+           * 15, so ten points a sigma puts the weakest admitted mover at the
+           * material band and a 3-sigma move at the severe one. Only for this
+           * kind: an earnings card's score is a day count and means nothing on
+           * this axis.
+           */
+          deviationPct: c.kind === 'unusual_move' && Number.isFinite(c.score)
+            ? c.score * 10
+            : null,
         }, c.assetId)
       }
 
@@ -1892,13 +2510,63 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           primarySymbol: n?.primarySymbol, symbols: n?.symbols,
         })?.symbol ?? null
         const linkedId = chartSym ? assetBySymbol.get(chartSym)?.id ?? null : null
+        /**
+         * Whether the desk owns the name, and how much of it.
+         *
+         * ── What was pinned off ─────────────────────────────────────────────
+         *
+         * This branch passed `weightPct: null, held: false` for every story
+         * ever ranked. `materialityBand` reads null-and-unheld as 0.15, its
+         * FLOOR — so a story about a ten percent position and a story about a
+         * name nobody here has heard of were ranked identically, at the worst
+         * band the model has. News is already the second-lowest base in the
+         * table; this held it there whatever it was about.
+         *
+         * The book is the same one every other branch reads, and the asset was
+         * already resolved on the line above for the chart. Nothing new is
+         * fetched and nothing is invented where the book is silent: an unheld
+         * name still passes null, which is its own band and not the bottom one.
+         *
+         * This is ranking only. What the CARD says about the position is a
+         * separate seam and is still starved at the builder call site.
+         */
+        const newsPosition = linkedId
+          ? frameworkCapitalFor(lenses?.book ?? null, linkedId)
+          : null
         return withJudgment({
           id: String(n?.id ?? n?.url ?? 'news'),
           type: 'news',
-          severity: 'informational',
+          /**
+           * A story about a position the desk holds is not the same news as a
+           * story about a name it does not. `buildNewsCard` has graded exactly
+           * this since it was written and the ranker discarded the answer.
+           */
+          severity: newsPosition != null ? 'attention' : 'informational',
           occurredAt: n?.publishedAt ?? n?.published_at ?? null,
-          weightPct: null,
-          held: false,
+          weightPct: newsPosition?.weightPct ?? null,
+          held: newsPosition != null,
+          /**
+           * How much this story is about the name it was filed under.
+           *
+           * The provider sends a relevance in 0..1 and nothing downstream has
+           * ever read it — the edge function sorts on it once and drops it, and
+           * it is not even a field on the builder's input type. A tagged mention
+           * in a sector round-up and a story whose subject IS the company arrive
+           * here indistinguishable.
+           *
+           * Applied as a lift on the type's floor, the same shape and for the
+           * same reason as the attention magnitude beside it: a relevant story
+           * is still news and must not become a decision.
+           *
+           * One caveat, recorded rather than assumed. Of the four providers
+           * behind `market-news` only Alpha Vantage supplies this, and that
+           * function's own header records its key sitting unset — so the field
+           * is absent more often than not, and absent must mean "unchanged",
+           * which is what the null does.
+           */
+          base: typeof n?.relevanceScore === 'number' && Number.isFinite(n.relevanceScore)
+            ? Math.min(baseFor('news') + Math.min(Math.max(n.relevanceScore, 0), 1) * 0.10, 1)
+            : undefined,
         }, linkedId ?? n?.primarySymbol ?? 'market')
       }
 
@@ -1943,7 +2611,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           held: false,
         }, e.signal?.entity?.id)
     }
-  }, [dispositions, assetBySymbol, coverageIndex])
+    /**
+     * `lenses?.book` and `exposureFor` belong here, and their absence was a
+     * live staleness bug.
+     *
+     * The body has closed over `lenses?.book` since the scenario branch was
+     * written — `frameworkCapitalFor` reads it — while the dependency list
+     * named only three unrelated things. It was masked because `baseFeedEntries`
+     * lists `lenses` in ITS deps, so the memo re-ran when the book landed; but
+     * it re-ran calling a `rankInputFor` still closed over the previous book,
+     * so the first ranked pass after the holdings resolved used stale weights.
+     *
+     * `rankInputFor` is deliberately NOT in `baseFeedEntries`' deps — it also
+     * closes over `dispositions`, and re-ranking on every judgment would pull
+     * the feed out from under a reader mid-scroll. So the fix is here, where it
+     * touches the book and not the judgments.
+     */
+  }, [dispositions, assetBySymbol, coverageIndex, exposureFor, lenses?.book])
 
   /**
    * Symbol -> the desk's actual position, for surfaces that only know a ticker.
@@ -2123,7 +2807,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const rankTraceRef = useRef<FeedRankTrace | null>(null)
 
-  const feedEntries = useMemo(() => {
+  /**
+   * The base feed: one order per visit, and the only thing that ranks.
+   *
+   * Named apart from `feedEntries` on purpose. `feedEntries` is what the
+   * reader sees, which is a filtered VIEW of this; this is the snapshot that
+   * makes clearing a filter a restoration rather than a recomputation.
+   */
+  const baseFeedEntries = useMemo(() => {
     /**
      * A note on the `score` each producer stamps below.
      *
@@ -2167,15 +2858,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       signal: sig,
     }))
 
-    // Cycle 0 is the first pass; each additional cycle re-presents the derived
-    // insights further down the book, so scrolling keeps yielding real
-    // observations about real positions rather than running out.
-    const insightEntries = Array.from({ length: cycle + 1 }).flatMap((_, round) =>
-      derivedInsights.map((ins, idx) => ({
+    /**
+     * One round's worth, like every other source.
+     *
+     * This used to be `Array.from({ length: cycle + 1 })` — the derived
+     * insights were the ONLY source that repeated when the server ran out, so
+     * an endless scroll produced an endless stream of research prompts with
+     * the rest of the product absent from it. Rounds are the whole pool's job
+     * now and are applied once, after composition; see `rounds` below.
+     *
+     * `round` stays on the entry at 0. It is read by the card copy and by the
+     * entry key, and removing it would be a rename in three files for no gain.
+     */
+    const insightEntries = derivedInsights.map((ins, idx) => ({
         kind: 'insight' as const,
         score: derivedInsights.length - idx,
         insight: ins,
-        round,
+        round: 0,
         /**
          * The capital stamp, on the ENTRY.
          *
@@ -2194,7 +2893,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           lenses?.book ?? null, ins.assetId, ins.issue?.framing,
         ),
       }))
-    )
 
     // News is the only source that brings genuinely new material between
     // visits — everything else is the book restated. Ranked on the provider's
@@ -2335,10 +3033,86 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      */
     allEntriesRef.current = all
 
-    // Filtering before the interleave rather than after: interleaving exists to
-    // stop one kind running consecutively, and with a single kind selected that
-    // constraint has nothing to do — applying it first would just be a shuffle
-    // fighting a rule that can never be satisfied.
+    /**
+     * One target question, one tile — the last step before ranking.
+     *
+     * ── Where this sits in the pipeline, and why exactly here ─────────────
+     *
+     * Absorption is a statement about WHAT THE CANDIDATES ARE: two findings
+     * that ask one question are one tile, and that is true of the feed before
+     * anybody filters it or ranks it. So it runs over the unfiltered candidate
+     * set, ahead of `rankFeed`, and the base order is computed from its result.
+     *
+     * It must not run any later. A filter is a VIEW, and a view that absorbed
+     * differently from the base would make clearing the filter restore an order
+     * the base never had — the same class of defect as filtering inside the
+     * ranking memo, which is what this file just stopped doing.
+     *
+     * It must not run any earlier either. `allEntriesRef` is what Explore
+     * matches its tiles against, and Explore builds its target tiles straight
+     * from the lens rows, so a candidate dropped before that record would be
+     * unmatchable when tapped.
+     *
+     * Between those two lines there is exactly one position, and this is it.
+     *
+     * `absorbedTargets` depends on the lenses and the coverage index and on no
+     * filter state, so a pill tap cannot change what is absorbed.
+     */
+    const composedAssetOf = (e: any): string | null => {
+      if (e.kind !== 'lens') return null
+      const l = e.lens
+      if (l.type === 'breach') return l.breach.assetId
+      if (l.type === 'stale') return l.target.assetId
+      return null
+    }
+
+    /**
+     * The Research card wins over the attention copy of the same finding.
+     *
+     * `useAttention` raises a "<SYM> — Research stale" item for any covered name
+     * with no contribution in three weeks, and `useDerivedInsights` makes the
+     * same observation as a `long_silence` Research card with a real pill, real
+     * panes and an action that opens the thesis. Showing both said one thing
+     * twice, and the weaker copy wore a workflow chip on a finding that is not
+     * workflow.
+     *
+     * Placed here, beside the target absorption and after `allEntriesRef`, for
+     * the same reason: Explore matches its tiles against the recorded candidate
+     * set, so a row dropped before that record would be unmatchable when tapped.
+     *
+     * ── Same question, not same asset ───────────────────────────────────
+     *
+     * This passed every asset with any Research card on it, so a name with a
+     * price-move card lost its coverage tile as well — two different questions,
+     * one of them silently deleted for sharing a ticker.
+     * `coverageDuplicateAssets` narrows it to the one framing that makes the
+     * same claim.
+     */
+    const researchedAssets = coverageDuplicateAssets(derivedInsights)
+    const afterDuplicates = suppressCoveredAttention(all, researchedAssets)
+
+    const afterComposition = absorbedTargets.size
+      ? afterDuplicates
+          .filter((e: any) => {
+            const assetId = composedAssetOf(e)
+            if (!assetId) return true
+            const drop = absorbedTargets.get(assetId)
+            return !drop || drop !== e.lens.type
+          })
+          /**
+           * The survivor carries the situation's identity.
+           *
+           * Stamped here, on the composed candidate set, so every downstream
+           * reader — the key, the snapshot, the anchor, React — sees one tile
+           * with one name whichever finding is currently leading it.
+           */
+          .map((e: any) => {
+            const assetId = composedAssetOf(e)
+            const key = assetId ? composedTargetKeyByAsset.get(assetId) : null
+            return key ? { ...e, composedKey: key } : e
+          })
+      : afterDuplicates
+
     /**
      * The symbol a tile is about, where it has one.
      *
@@ -2350,103 +3124,31 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      */
     const symbolOf = symbolOfEntry
 
-    const assetFacetsActive =
-      feedFilter.sectors.length > 0 || feedFilter.countries.length > 0 ||
-      feedFilter.exchanges.length > 0 || feedFilter.symbols.length > 0
-
-    const matchesFilter = (e: any): boolean => {
-      // Categories, not internal kinds. `feedFilter.kinds` carries category
-      // keys now, so the Curate sheet and the header banner are filtering the
-      // same objects by the same words — see lib/mobile/feed-categories.
-      if (feedFilter.kinds.length) {
-        const cat = categoryOf(e)
-        if (!cat || !feedFilter.kinds.includes(cat)) return false
-      }
-      /**
-        * The card's own pill. Composes with the category above rather than
-        * replacing it: Research + No thesis is a narrower question than either.
-        *
-        * Read through `rankInputFor`, not off `e.card`. Lens and scenario
-        * entries build their card at RENDER time, so the entry itself has no
-        * `.card` — and `signalTypeOf` returned null for exactly the pills the
-        * reader asked about: Oversized, Target reached, Target expired, Case vs
-        * price. `rankInputFor` is the one place that already names every
-        * entry's type, which is why the ranker and the Explore matcher both use
-        * it.
-        */
-      if (feedFilter.signalTypes.length) {
-        /**
-         * Research is selected by FRAMING; everything else by type.
-         *
-         * A `research:<framing>` key resolves against the entry's own framing,
-         * so "Material move" selects exactly the move cards and leaves the
-         * other four Research states out. No `SignalType` was added to make
-         * that possible — see `RESEARCH_FILTER_OPTIONS`.
-         */
-        const framings = feedFilter.signalTypes
-          .map(researchFramingFromFilterKey)
-          .filter((f): f is ResearchFraming => f != null)
-        /**
-         * Portfolio is selected by the capital ISSUE, for the same reason.
-         *
-         * The card's own stamp answers it: the builder sets `capital` only
-         * where a position is genuinely behind the break, so selecting
-         * "Framework break" cannot pick up an unheld scenario card, and
-         * selecting "Case vs price" cannot pick up a held one.
-         */
-        const issues = feedFilter.signalTypes
-          .map(portfolioIssueFromFilterKey)
-          .filter((i): i is string => i != null)
-        const types = feedFilter.signalTypes
-          .filter(k => !researchFramingFromFilterKey(k) && !portfolioIssueFromFilterKey(k))
-
-        const entryFraming = (e as any)?.insight?.issue?.framing as ResearchFraming | undefined
-        const framingHit = !!entryFraming && framings.includes(entryFraming)
-
-        // Same reason as the category above: an insight entry has no card at
-        // filter time, so the stamp has to be read from either place.
-        const capitalIssue = ((e as any)?.capital ?? (e as any)?.card?.capital)
-          ?.issueType as string | undefined
-        const issueHit = !!capitalIssue && issues.includes(capitalIssue)
-
-        const t = rankInputFor(e)?.type ?? signalTypeOf(e)
-        /**
-         * A held framework break is NOT a `scenario_gap` row any more.
-         *
-         * Both rows exist and each selects exactly its own half. Without this,
-         * asking for "Case vs price" would also return every capital card, and
-         * turning Framework break off would leave them all visible under the
-         * other row — which is the reviewability gap this change is about.
-         */
-        const typeHit = !!t && types.includes(t) && !capitalIssue
-
-        if (!framingHit && !typeHit && !issueHit) return false
-      }
-      if (!assetFacetsActive) return true
-
-      const sym = symbolOf(e)
-      // No symbol and an asset facet is set: this tile cannot be shown to
-      // satisfy it, so it is excluded rather than assumed to qualify.
-      if (!sym) return false
-      if (feedFilter.symbols.length && !feedFilter.symbols.includes(sym)) return false
-
-      const f = facets?.bySymbol.get(sym.toUpperCase())
-      if (feedFilter.sectors.length && !(f?.sector && feedFilter.sectors.includes(f.sector))) return false
-      if (feedFilter.countries.length && !(f?.country && feedFilter.countries.includes(f.country))) return false
-      if (feedFilter.exchanges.length && !(f?.exchange && feedFilter.exchanges.includes(f.exchange))) return false
-      return true
-    }
-
-    // Facets intersect: two sectors widen, adding a country narrows. The chip
-    // filter stays a separate one-tap override on top.
-    const curated = filterCount(feedFilter) ? all.filter(matchesFilter) : all
-    // The one-tap chip filter speaks the same vocabulary as the sheet.
-    const filtered = kindFilter ? curated.filter(e => categoryOf(e) === kindFilter) : curated
-
+    /**
+     * Everything, ranked. The filters do not run here any more.
+     *
+     * ── Why they moved out ────────────────────────────────────────────────
+     *
+     * They ran HERE, ahead of `rankFeed` and `composeFeed`, with `feedFilter`
+     * and `kindFilter` in this memo's dependency list. So a filter toggle
+     * re-ranked and re-composed a different candidate pool, and the order that
+     * came back was a different feed — not the old one with rows hidden. Three
+     * consequences, all reported:
+     *
+     *   - the tile the reader tapped the pill ON was somewhere else, or gone
+     *   - clearing the filter could not restore the previous order, because
+     *     nothing had kept it
+     *   - `scope` below is derived from the filter, so the composition RULES
+     *     changed too — un-filtering was not the inverse of filtering
+     *
+     * One base order per visit is the whole fix. Filtering is a view over it,
+     * computed in `feedEntries` below, and a view cannot reorder what it is a
+     * view of. See `lib/mobile/feed-continuity`.
+     */
     // Tag each entry with what it is *about* so the interleaver can keep one
     // name off three consecutive screens. symbolOf already knows where each
     // kind hides its subject.
-    const pool = filtered.map(e => ({ ...e, subject: symbolOf(e) }))
+    const pool = afterComposition.map(e => ({ ...e, subject: symbolOf(e) }))
 
     /**
      * Rank deterministically, then interleave only what is left.
@@ -2535,10 +3237,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * family, so alternating families would mean inserting what they excluded.
      * That, and only that, turns the family rule off.
      */
-    const scope: ComposeScope =
-      feedFilter.signalTypes.length ? 'type'
-      : (kindFilter || feedFilter.kinds.length) ? 'category'
-      : 'mixed'
+    /**
+     * Always the mixed scope, because this list is always the mixed feed.
+     *
+     * It read the filter — `'type'` under a signal-type selection, `'category'`
+     * under a category one — which was coherent while the filter chose the pool
+     * being composed. It is not coherent for a base order that is composed once
+     * and then viewed through filters: the rules would change under a reader
+     * who only asked to hide some rows, and un-filtering would compose a third
+     * order that matched neither.
+     *
+     * The diversity rules this turns on are the right ones for a mixed list,
+     * which is what the base always is. What a filtered VIEW of it needs
+     * instead is a Tile Engine V2 question — see the note on `researchScoped`.
+     */
+    const scope: ComposeScope = 'mixed'
 
     /**
      * One pass over the whole ranked list — no lead, no tail, no interleaver.
@@ -2562,9 +3275,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * owns the sequence and already caps a framing run at two. Running both
      * would mean two rules reordering one list against each other.
      */
-    const composed = researchScoped
-      ? { order: ordered, trace: [] as ComposeTraceRow[] }
-      : composeFeed(ordered, {
+    /**
+     * Compose one round, so the feed can compose several.
+     *
+     * Lifted out of the single call it used to be for the endless feed below.
+     * Everything inside it is unchanged; the only new thing is that the ranked
+     * list it reads is a parameter rather than always `ordered`.
+     */
+    const composeRound = (input: typeof ordered) => researchScoped
+      ? { order: input, trace: [] as ComposeTraceRow[] }
+      : composeFeed(input, {
           familyOf: (e: any) => familyOf(e),
           subjectOf: (e: any) => e?.subject ?? null,
           categoryOf: (e: any) => categoryOf(e),
@@ -2575,10 +3295,79 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
            */
           questionOf: (e: any) =>
             readerQuestionFor(rankInputFor(e)?.type ?? signalTypeOf(e)),
+          /**
+           * Which lane of the briefing, which is coarser than all three above.
+           *
+           * Manual QA saw "Needs Review, Overdue, Coverage Gap, Needs Review,
+           * Coverage Gap, Overdue" and called it repetitive, while the family,
+           * question and category rules all read it as varied — because
+           * `research_stale` prints the same words as `awaiting_review`,
+           * coverage is filed under research, and a recommendation is filed
+           * under decisions. Four names, one lane. See `brief-class`.
+           *
+           * Derived from the same type the other two are, so a card cannot be
+           * one thing to the ranker and another to the composer.
+           */
+          briefOf: (e: any) =>
+            briefClassFor(rankInputFor(e)?.type ?? signalTypeOf(e)),
+          /**
+           * What led the feed recently, so it does not lead it again today.
+           *
+           * ── The requirement ─────────────────────────────────────────────
+           *
+           * Importance should generally lead, and a reader opening the app
+           * every morning should not meet the same tile every morning. The
+           * composer resolves that at one slot only and within a band the
+           * priority model calls indistinguishable — see `LEAD_BAND`.
+           *
+           * `seenAtMount` is the map `feed-rotation` already keeps, snapshotted
+           * once per mount by `useReaderSnapshots`. Reading the snapshot rather
+           * than the live map is what keeps the composer a pure function and
+           * stops the feed reordering under the reader the moment the marking
+           * effect below fires.
+           *
+           * The set, not `rotateBySeen`. That helper puts every seen card
+           * behind every unseen one, which is right for a list of posts and
+           * would flatten importance across a mixed feed.
+           */
+          ledRecently: new Set(Object.keys(seenAtMount ?? {})),
           scope,
           trace: import.meta.env.DEV,
         })
-    const finalOrder = composed.order
+
+    /**
+     * The feed has no bottom.
+     *
+     * ── What "endless" used to mean ─────────────────────────────────────────
+     *
+     * One source repeated. When the server ran out of posts the observer
+     * incremented `cycle`, and `cycle` re-emitted the derived insights and
+     * nothing else — so scrolling past the end of the real feed produced an
+     * endless stream of research prompts with the rest of the product missing
+     * from it.
+     *
+     * Now every round is the whole pool. A reader who reaches the end meets
+     * the feed again rather than a fragment of it, and `feedEntryKeys` gives
+     * the second copy of a card its own key, so continuity, filtering and the
+     * renderer all treat it as its own tile.
+     *
+     * ── Why each round is composed rather than repeated ────────────────────
+     *
+     * "The order could and should be different if duplicates are showing." A
+     * replay reads as a loop. So each round composes from a rotation of the
+     * ranked list — see `feed-rounds` — which changes what the greedy pass
+     * sees at every step and therefore which substitutions win, all the way
+     * down. Same cards, genuinely different sequence.
+     *
+     * Round 0 is always the ranked order untouched, so the first pass is the
+     * honest one and nothing about repetition can reach the opening.
+     */
+    const composed = composeRound(ordered)
+    const rounds = [composed]
+    for (let round = 1; round <= cycle; round++) {
+      rounds.push(composeRound(rotateForRound(ordered, round)))
+    }
+    const finalOrder = rounds.flatMap(r => r.order)
 
     // Recorded before the filter is applied downstream — see `unfilteredRef`.
     if (!kindFilter && !feedFilter.kinds.length) {
@@ -2616,7 +3405,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       funnelRef.current = {
         produced: all.length + (insightEntries.length - insightEntriesDeduped.length),
         deduped: all.length,
-        filtered: filtered.length,
+        // No filter stage in the base any more; it is a view, counted where
+        // the view is built.
+        filtered: all.length,
         ranked: ordered.length,
         diversityEnabled: !researchScoped,
         scope,
@@ -2686,7 +3477,326 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * feed out from under their thumb mid-scroll, which is the failure
      * `seenAtMount` and `interestAtMount` were both introduced to prevent.
      */
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, kindFilter, lenses, feedFilter, facets, scenarioCards, coverageSignature(coverageIndex)])
+    /**
+     * `kindFilter`, `feedFilter` and `facets` are deliberately NOT here.
+     *
+     * They are what the reader is asking to SEE, and this memo decides what
+     * the feed IS. Leaving them in was the mechanism of the reported bug: a
+     * pill tap invalidated this memo, so ranking and composition ran again
+     * over a different pool and produced an order that had no relationship to
+     * the one the reader was looking at. `feedEntries` below depends on them
+     * instead, and only filters.
+     *
+     * Pinned by `does not re-rank when only the filter changes`.
+     */
+    /**
+     * `seenAtMount` is safe to depend on and `visibleItems` already does.
+     *
+     * It is a snapshot taken once per mount, so it cannot change mid-visit and
+     * cannot pull the feed out from under a reader. Adding it here is what
+     * lets the lead band see yesterday's leader on the first pass rather than
+     * on some later recompute.
+     */
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, seenAtMount, lenses, scenarioCards, coverageSignature(coverageIndex), absorbedTargets, composedTargetKeyByAsset])
+
+  /**
+   * The base order this page lifetime is committed to.
+   *
+   * ── Why the ranked memo is not already the answer ─────────────────────────
+   *
+   * `baseFeedEntries` is a `useMemo`, and a memo is component state. Opening an
+   * asset UNMOUNTS this component, so coming back recomputes the order from
+   * whatever its inputs say at that moment — and several of those inputs are
+   * written by the very visit being resumed:
+   *
+   *   - `visibleItems` is `rotateBySeen(ideas, seenAtMount)`, and this feed
+   *     calls `markSeen` on its top ten 1.5s after mount. The second mount
+   *     loads the map the first one wrote, and `rotateBySeen` demotes exactly
+   *     those ten behind every unseen idea. That is a guaranteed reorder on the
+   *     first return, with no data change anywhere.
+   *   - `interestAtMount` is re-snapshotted per mount from dwell telemetry this
+   *     session records.
+   *   - `rankFeed` is handed `Date.now()`.
+   *   - any write's `invalidateQueries` refetches a source mid-visit.
+   *
+   * Restoring the reader's TILE into a feed whose surrounding order had shifted
+   * is only half a promise. The snapshot has to be the ORDER, so it is kept in
+   * the continuity store — page-lifetime memory, cleared by a reload — and
+   * re-imposed here on every recompute.
+   *
+   * Ordering only. Membership still comes from the ranker, so a card that
+   * suppression or a refetch removed does disappear, and new findings do
+   * arrive; they simply arrive after everything already on screen.
+   */
+  /**
+   * How much variety is left at the end of the feed.
+   *
+   * ── Why this is a fetch trigger and not a display concern ─────────────────
+   *
+   * The share cap holds a family to a fifth of the feed only while the pool has
+   * something else to show. Once the small families are spent the tail is
+   * whatever remains, however it is sorted — that is arithmetic, not a weak
+   * rule, and the only fix is more material.
+   *
+   * So the last stretch of the composed order is measured, and a thin one
+   * widens the prefetch margin below. Measured on the last three screens
+   * because that is roughly a flick: a fetch started when the reader is that
+   * far out lands before they reach it.
+   *
+   * Distinct families rather than a count of cards. Twenty tiles of one family
+   * is exactly the case this exists to catch, and a length check would call it
+   * healthy.
+   */
+  const tailVariety = useMemo(() => {
+    const tail = baseFeedEntries.slice(-VARIETY_RUNWAY)
+    return new Set(tail.map(e => familyOf(e as any) ?? 'unknown')).size
+  }, [baseFeedEntries])
+
+  const feedBaseline = useMemo(() => {
+    const keys = feedEntryKeys(baseFeedEntries)
+    const paired = baseFeedEntries.map((item, i) => ({ key: keys[i], item }))
+    const remembered = readFeedContinuity(continuityKey).baseOrder
+    const reconciled = reconcileToRemembered(paired, remembered)
+    return {
+      entries: reconciled.map(p => p.item),
+      keys: reconciled.map(p => p.key),
+      remembered,
+    }
+  }, [baseFeedEntries, continuityKey])
+
+  /**
+   * Commit the order, in an effect rather than in the memo above.
+   *
+   * `rememberBaseOrder` is append-only and `reconcileToRemembered` honours what
+   * it holds, so remembering a reconciled list yields that same list — the pair
+   * is a fixed point and cannot oscillate across renders. Writing during render
+   * would still be a side effect in a memo that also reads the same store,
+   * which is the one shape guaranteed to be confusing later.
+   */
+  useEffect(() => {
+    if (!continuityKey) return
+    /**
+     * Nothing is remembered from a feed that is still arriving.
+     *
+     * This effect runs on every render, including the ones behind the loader —
+     * an early return in the render body does not stop an effect that was
+     * declared above it. So on the first paint it committed whichever sources
+     * had resolved, usually the posts, and `reconcileToRemembered` then held
+     * that order and appended everything else behind it for the life of the
+     * page. Nine Trade Ideas and then the Overdue tiles, with a fully composed
+     * order computed on every render and discarded by the line that reconciles
+     * it.
+     *
+     * Waiting costs nothing: while `composing` is true the reader is looking at
+     * the loader, so there is no position to protect and nothing on screen to
+     * keep still. The moment it goes false the pool is complete, the composed
+     * order is the real one, and THAT is what gets remembered.
+     */
+    if (composing) return
+    /**
+     * Only what the reader has passed is frozen.
+     *
+     * ── What committing the whole order cost ────────────────────────────────
+     *
+     * This remembered every key the composer produced, and
+     * `reconcileToRemembered` then held all of them in place. Correct for the
+     * promise — nothing moves under the reader — and far wider than the promise
+     * needs, because it also froze the part of the feed nobody has seen. The
+     * consequence is that anything arriving afterwards can only be APPENDED: a
+     * page of posts fetched at the bottom of a long scroll lands after every
+     * tile in the feed instead of interleaving into the stretch about to be
+     * reached, which is exactly where variety is thinnest.
+     *
+     * The read depth plus a screen is what actually has to hold still. Below
+     * that the composer governs, so new material takes its place on merit.
+     */
+    const frozen = deepestRead(readFeedContinuity(continuityKey).readDepth, 0)
+      + FREEZE_LOOKAHEAD
+    const next = rememberBaseOrder(
+      feedBaseline.remembered, feedBaseline.keys.slice(0, frozen),
+    )
+    if (next.length === (feedBaseline.remembered?.length ?? -1)) return
+    writeFeedContinuity(continuityKey, { baseOrder: next })
+  }, [continuityKey, feedBaseline, composing])
+
+  /**
+   * Record what LED the feed, so tomorrow it leads with something else.
+   *
+   * ── Why the existing call was not enough ──────────────────────────────────
+   *
+   * `markSeen` is called above on `visibleItems.slice(0, 10)` — the top ten
+   * IDEAS, keyed by post id. That is the right record for `rotateBySeen`, which
+   * rotates the posts pipeline, and it is the wrong one for the lead band:
+   * nothing that is not a post has ever been marked, so an Overdue tile or a
+   * framework break could lead the feed every single morning and the map would
+   * never know.
+   *
+   * This marks the composed feed's own opening, keyed the way the composer
+   * keys it. Both calls write the same map deliberately: for a post the two ids
+   * are the same string, and a trade idea that led the feed genuinely has been
+   * shown, so demoting it in the posts rotation too is correct rather than a
+   * collision.
+   *
+   * Three, not ten. This records what led, and the band only decides slot zero.
+   * Marking a screenful would fill `MAX_TRACKED` inside two days and evict the
+   * record before the three-day expiry could give the rotation its period.
+   *
+   * Gated on `composing` for the same reason the commit above is: a feed still
+   * arriving has no real leader, and marking a partial one would put the wrong
+   * card beyond reach for three days.
+   */
+  useEffect(() => {
+    if (!userId || composing || !feedBaseline.entries.length) return
+    const ids = feedBaseline.entries
+      .slice(0, LEAD_MARK_COUNT)
+      .map(e => rankInputFor(e)?.id)
+      .filter((id): id is string => !!id)
+    if (!ids.length) return
+    // The same 1.5s the posts call waits, for the same reason: it records that
+    // the reader actually arrived, not that a render happened.
+    const timer = setTimeout(() => markSeen(userId, ids), 1500)
+    return () => clearTimeout(timer)
+  }, [userId, composing, feedBaseline, rankInputFor])
+
+  /**
+   * What the reader sees: the base order, with rows hidden.
+   *
+   * ── The one rule ──────────────────────────────────────────────────────────
+   *
+   * This may remove entries and may not reorder them. `Array.prototype.filter`
+   * preserves order by construction, which is the entire guarantee behind
+   * "clearing the filter restores the original feed" — there is nothing to
+   * restore, because the base was never disturbed.
+   *
+   * `tileFamily` (the pill) and `feedFilter`/`kindFilter` (the Curate sheet and
+   * the chip row) compose: they are three ways of narrowing the same list, and
+   * an entry has to satisfy all of the ones that are set.
+   */
+  /**
+   * The family a tile's chip PRINTS, for this render.
+   *
+   * ── Why the pure resolver is not enough on its own ──────────────────────
+   *
+   * `displayFamilyOf` answers from the entry alone, which is right for every
+   * kind but one. A trade-queue attention item becomes a recommendation card
+   * only when `recommendationBySource` actually holds one for its `source_id`;
+   * with no match the generic attention card renders and its chip reads "Needs
+   * review". The entry cannot see that map, so the tile said "Needs review" and
+   * the band it opened said "Awaiting decision".
+   *
+   * The lookup lives here, so the resolution that depends on it lives here too.
+   * Everything else defers to the pure function.
+   */
+  const tileFamilyOf = useCallback((entry: any): string | null => {
+    if (entry?.kind === 'attention') {
+      const a = entry.attention
+      const hasCard = !!(a?.source_type === 'trade_queue_item' && a?.source_id
+        && recommendationBySource.has(a.source_id))
+      return attentionDisplayType(a, hasCard)
+    }
+    return displayFamilyOf(entry)
+  }, [recommendationBySource])
+
+  const feedEntries = useMemo(() => {
+    const symbolOf = symbolOfEntry
+    const assetFacetsActive =
+      feedFilter.sectors.length > 0 || feedFilter.countries.length > 0 ||
+      feedFilter.exchanges.length > 0 || feedFilter.symbols.length > 0
+
+    const matchesFilter = (e: any): boolean => {
+      // Categories, not internal kinds. `feedFilter.kinds` carries category
+      // keys now, so the Curate sheet and the header banner are filtering the
+      // same objects by the same words — see lib/mobile/feed-categories.
+      if (feedFilter.kinds.length) {
+        const cat = categoryOf(e)
+        if (!cat || !feedFilter.kinds.includes(cat)) return false
+      }
+      /**
+        * The card's own pill. Composes with the category above rather than
+        * replacing it: Research + No thesis is a narrower question than either.
+        *
+        * Read through `rankInputFor`, not off `e.card`. Lens and scenario
+        * entries build their card at RENDER time, so the entry itself has no
+        * `.card` — and `signalTypeOf` returned null for exactly the pills the
+        * reader asked about: Oversized, Target reached, Target expired, Case vs
+        * price. `rankInputFor` is the one place that already names every
+        * entry's type, which is why the ranker and the Explore matcher both use
+        * it.
+        */
+      if (feedFilter.signalTypes.length) {
+        /**
+         * Research is selected by FRAMING; everything else by type.
+         *
+         * A `research:<framing>` key resolves against the entry's own framing,
+         * so "Material move" selects exactly the move cards and leaves the
+         * other four Research states out. No `SignalType` was added to make
+         * that possible — see `RESEARCH_FILTER_OPTIONS`.
+         */
+        const framings = feedFilter.signalTypes
+          .map(researchFramingFromFilterKey)
+          .filter((f): f is ResearchFraming => f != null)
+        /**
+         * Portfolio is selected by the capital ISSUE, for the same reason.
+         *
+         * The card's own stamp answers it: the builder sets `capital` only
+         * where a position is genuinely behind the break, so selecting
+         * "Framework break" cannot pick up an unheld scenario card, and
+         * selecting "Case vs price" cannot pick up a held one.
+         */
+        const issues = feedFilter.signalTypes
+          .map(portfolioIssueFromFilterKey)
+          .filter((i): i is string => i != null)
+        const types = feedFilter.signalTypes
+          .filter(k => !researchFramingFromFilterKey(k) && !portfolioIssueFromFilterKey(k))
+
+        const entryFraming = (e as any)?.insight?.issue?.framing as ResearchFraming | undefined
+        const framingHit = !!entryFraming && framings.includes(entryFraming)
+
+        // Same reason as the category above: an insight entry has no card at
+        // filter time, so the stamp has to be read from either place.
+        const capitalIssue = ((e as any)?.capital ?? (e as any)?.card?.capital)
+          ?.issueType as string | undefined
+        const issueHit = !!capitalIssue && issues.includes(capitalIssue)
+
+        const t = rankInputFor(e)?.type ?? signalTypeOf(e)
+        /**
+         * A held framework break is NOT a `scenario_gap` row any more.
+         *
+         * Both rows exist and each selects exactly its own half. Without this,
+         * asking for "Case vs price" would also return every capital card, and
+         * turning Framework break off would leave them all visible under the
+         * other row — which is the reviewability gap this change is about.
+         */
+        const typeHit = !!t && types.includes(t) && !capitalIssue
+
+        if (!framingHit && !typeHit && !issueHit) return false
+      }
+      if (!assetFacetsActive) return true
+
+      const sym = symbolOf(e)
+      // No symbol and an asset facet is set: this tile cannot be shown to
+      // satisfy it, so it is excluded rather than assumed to qualify.
+      if (!sym) return false
+      if (feedFilter.symbols.length && !feedFilter.symbols.includes(sym)) return false
+
+      const f = facets?.bySymbol.get(sym.toUpperCase())
+      if (feedFilter.sectors.length && !(f?.sector && feedFilter.sectors.includes(f.sector))) return false
+      if (feedFilter.countries.length && !(f?.country && feedFilter.countries.includes(f.country))) return false
+      if (feedFilter.exchanges.length && !(f?.exchange && feedFilter.exchanges.includes(f.exchange))) return false
+      return true
+    }
+    /**
+     * `displayFamilyOf`, because a filter is a user-facing gesture.
+     *
+     * `familyOf` keeps the capital refinement for composition, diversity and
+     * Curate. The pill filters on what the chip prints, so two tiles reading
+     * "Case vs price" are one family under the thumb.
+     */
+    const byPill = deriveFeedView(feedBaseline.entries, (e: any) => tileFamilyOf(e), tileFamily)
+    const curated = filterCount(feedFilter) ? byPill.filter(matchesFilter) : byPill
+    // The one-tap chip filter speaks the same vocabulary as the sheet.
+    return kindFilter ? curated.filter(e => categoryOf(e) === kindFilter) : curated
+  }, [feedBaseline, tileFamily, feedFilter, kindFilter, facets, rankInputFor, tileFamilyOf])
 
   /**
    * Every signal type, for the filter sheet — not only the ones on screen.
@@ -2743,13 +3853,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   }, [])
 
   /**
-   * Keys that survive a recompute.
-   *
-   * The pipeline rebuilds every entry object each time it runs, so identity
-   * cannot come from the object. A slot whose key changed would remount its
-   * card and lose the carousel pane the reader had paged to.
-   */
-  /**
    * What the reader narrowed to, in their own words, for the empty state.
    *
    * Names the SIGNAL type where one is selected, because that is the specific
@@ -2759,15 +3862,162 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * phrase, so the sentence is grammatical whatever is set.
    */
   const activeFilterLabel = useMemo(() => {
+    // The pill first: it is the narrowest thing that can be active, so when it
+    // is set it is what emptied the view. Named through the same resolver the
+    // banner uses, so the empty state and the banner cannot say different words
+    // about one filter.
+    if (tileFamily) return familyLabel(tileFamily) ?? tileFamily
     const [type] = feedFilter.signalTypes
     if (type) return KIND_LABEL[type as keyof typeof KIND_LABEL] ?? type
     const [cat] = feedFilter.kinds
     if (cat) return CATEGORY_LABEL[cat as FeedCategory] ?? cat
     if (kindFilter) return CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter
     return 'match for these filters'
-  }, [feedFilter.signalTypes, feedFilter.kinds, kindFilter])
+  }, [feedFilter.signalTypes, feedFilter.kinds, kindFilter, tileFamily])
 
+  /**
+   * Keys that survive a recompute.
+   *
+   * The pipeline rebuilds every entry object each time it runs, so identity
+   * cannot come from the object. A slot whose key changed would remount its
+   * card and lose the carousel pane the reader had paged to.
+   */
   const feedKeys = useMemo(() => feedEntryKeys(feedEntries), [feedEntries])
+
+  /**
+   * Where the reader is, measured from the DOM rather than from an index.
+   *
+   * `data-feed-key` is on each slot, so this reads the same identity the
+   * continuity store holds. Measuring beats counting here: slots have three
+   * different heights and the windowed ones below the fold have not laid out
+   * yet, so no arithmetic over the list can say which tile fills the screen.
+   */
+  const currentAnchorKey = useCallback((): string | null => {
+    if (!scroller) return null
+    const slots = scroller.querySelectorAll<HTMLElement>('[data-feed-key]')
+    const offsets = Array.from(slots).map(el => ({
+      key: el.dataset.feedKey ?? '',
+      top: el.offsetTop - scroller.offsetTop,
+    }))
+    return anchorKeyAt(offsets, scroller.scrollTop)
+  }, [scroller])
+
+  /**
+   * Put the reader on a named tile.
+   *
+   * Returns whether it found one, so a caller can decide what to do when the
+   * remembered tile is not in the current view — `resolveAnchorIndex` says the
+   * top, and the top is what the DOM query failing already produces.
+   */
+  /**
+   * Where a named tile currently sits, or null when it is not rendered.
+   *
+   * Separated from the scroll so a caller can watch the number rather than
+   * only act on it once. The feed grows for seconds after first paint — slots
+   * below the fold have not laid out and the windowed ones are placeholders —
+   * so a tile's offset is not final at the moment it first becomes findable.
+   *
+   * Compared, not selected. Entry keys carry `:` and `#` —
+   * `insight:<id>:<round>`, `lens:<type>:<sym>` and the `#n` suffix
+   * `feedEntryKeys` adds to a repeat — and building an attribute selector out
+   * of one means deciding how to escape it. Walking the nodes compares the
+   * strings the browser already parsed, so there is no escaping question to get
+   * wrong.
+   */
+  const offsetOfKey = useCallback((key: string | null): number | null => {
+    if (!scroller || !key) return null
+    const slots = scroller.querySelectorAll<HTMLElement>('[data-feed-key]')
+    for (const el of Array.from(slots)) {
+      if (el.dataset.feedKey !== key) continue
+      return el.offsetTop - scroller.offsetTop
+    }
+    return null
+  }, [scroller])
+
+  const scrollToKey = useCallback((key: string | null): boolean => {
+    const top = offsetOfKey(key)
+    if (top == null || !scroller) return false
+    scroller.scrollTop = top
+    return true
+  }, [scroller, offsetOfKey])
+
+  /**
+   * Tap a tile's pill: filter to that family, or clear it if it is already on.
+   *
+   * Both halves record an anchor, and they record DIFFERENT ones, which is the
+   * whole of requirement 3. Filtering remembers the tile in the base order so
+   * that clearing can come back to it; clearing consumes that memory and
+   * returns there rather than to wherever the tile sits in the full list.
+   */
+  const toggleTileFamily = useCallback((entry: any) => {
+    // The family the chip PRINTS. Not `familyOf`: that refines a held framework
+    // break to `portfolio:*` while the tile still prints "Case vs price", so
+    // filtering by it hid a tile whose chip said the identical words and opened
+    // a band naming a refinement the tile never showed. See `tileFamilyOf`.
+    const family = tileFamilyOf(entry)
+    // A family with no reader-facing name is the entry-kind fallback — the hook
+    // that produced the row. Filtering by it would widen the feed to everything
+    // that hook emits, which is not what the pill said. Callers already gate on
+    // this; refused here too so the state cannot be reached by a path that
+    // forgets.
+    if (!family || !isExactFamily(family)) return
+    const here = currentAnchorKey()
+    setTileFamily(prev => {
+      if (prev === family) {
+        // Tapping the active pill again is the same gesture as Clear, and goes
+        // through the same write. See `clearTileFamily`.
+        writeFeedContinuity(continuityKey, CLEAR_TILE_FAMILY)
+        return null
+      }
+      // Entering a filter: the tile under the thumb is both where we are in
+      // the filtered view and where to return to when it is cleared.
+      writeFeedContinuity(continuityKey, { family, position: { baseKey: here, viewKey: here } })
+      return family
+    })
+  }, [currentAnchorKey, continuityKey])
+
+  /**
+   * Leave the pill filter, from the banner's Clear.
+   *
+   * The same write the toggle's off-branch makes, and deliberately not a second
+   * mechanism: it keeps the BASE anchor — the tile the reader was on when they
+   * filtered — and drops only the view anchor, so clearing returns them to that
+   * tile in the original order rather than to wherever it sits in the full list.
+   * `feedBaseline` is untouched, so the order they come back to is the order
+   * they left, not a re-rank.
+   */
+  /**
+   * The pill's handler for a tile, or undefined when its pill is not a control.
+   *
+   * ── The rule this enforces ────────────────────────────────────────────────
+   *
+   * A pill that behaves like a filter must filter to EXACTLY the family printed
+   * on it. Four of the feed's eight entry kinds carry no family metadata, so
+   * `familyOf` falls back to the hook that produced them — `signal`, `idea`,
+   * `attention`, `news`-by-coincidence. A tile whose pill says "Case gaps"
+   * would then have asked for every finding that hook emits.
+   *
+   * Returning undefined makes `SignalCardView` render the chip as a label
+   * rather than a button, so the reader is never offered a control that would
+   * do something other than what it says.
+   *
+   * One helper rather than a condition repeated at six render sites, which is
+   * how five of them came to drop the handler entirely.
+   */
+  const pillFilterFor = useCallback(
+    // Gated on the family this tile's chip PRINTS, so a pill is a control
+    // exactly where tapping it selects what it says.
+    (entry: any) => (isExactFamily(tileFamilyOf(entry)) ? () => toggleTileFamily(entry) : undefined),
+    [toggleTileFamily, tileFamilyOf],
+  )
+
+  const clearTileFamily = useCallback(() => {
+    setTileFamily(prev => {
+      if (prev === null) return prev
+      writeFeedContinuity(continuityKey, CLEAR_TILE_FAMILY)
+      return null
+    })
+  }, [continuityKey])
 
   /**
    * The names to fetch closes for, taken from the feed that was actually
@@ -2846,17 +4096,40 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         if (!entries[0].isIntersecting) return
         if (hasNextPage && !isFetchingNextPage) {
           fetchNextPage()
-        } else if (derivedInsights.length > 0) {
-          // Server exhausted — keep the scroll alive with another pass over
-          // the book rather than dead-ending.
+        } else if (baseFeedEntries.length > 0) {
+          /**
+           * Server exhausted, so the feed starts again rather than stopping.
+           *
+           * This was gated on `derivedInsights.length`, because the insights
+           * were the only source that repeated. They are not any more — a round
+           * is the whole pool — so the gate is now simply "is there a feed at
+           * all", and a desk with no research prompts still gets an endless
+           * one.
+           */
           setCycle(c => c + 1)
         }
       },
-      { rootMargin: '400px' }
+      {
+        /**
+         * Reach further ahead when the feed is about to run out of variety.
+         *
+         * A share cap can only hold a family to a fifth of the feed while the
+         * pool has something else to show. Once the small families are spent
+         * the tail is whatever is left, and no ordering rule can help — the
+         * only fix is more material, fetched before the reader arrives rather
+         * than when they hit the bottom.
+         *
+         * So the margin is a function of what is left to interleave against.
+         * Four hundred pixels is about one snap slot of warning, which is
+         * enough when the next page is a nicety; sixteen hundred is four, which
+         * is roughly a flick, and that is what a thin tail needs.
+         */
+        rootMargin: tailVariety < MIN_TAIL_FAMILIES ? '1600px' : '400px',
+      }
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, derivedInsights.length])
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, baseFeedEntries.length, tailVariety])
 
   // Restore once, after the entries that make up the remembered offset exist.
   // Attempting it before render leaves scrollTop clamped to zero.
@@ -2911,51 +4184,95 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     const el = scroller
     if (!el) return
     let timer: ReturnType<typeof setTimeout> | null = null
-    const persist = () => saveFeedSession(feedScope, { seed: shuffleSeed, cycle, scrollTop: el.scrollTop })
+    /**
+     * A detached scroller is not asked where the reader was.
+     *
+     * This runs on the throttle, on the way out of view, AND in the cleanup
+     * below. In the cleanup React has usually already removed the element, and
+     * a detached element reports `scrollTop` as 0 — so this used to write 0
+     * over the position the throttle had just saved, and returning from Explore
+     * landed at the top of the feed.
+     *
+     * `null` tells `saveFeedSession` to keep the offset already stored, which
+     * leaves the seed and cycle still recorded. See `lib/mobile/feed-session`.
+     */
+    const persist = () =>
+      saveFeedSession(feedScope, {
+        seed: shuffleSeed,
+        cycle,
+        scrollTop: el.isConnected ? el.scrollTop : null,
+      })
     const onScroll = () => {
       if (timer) return
       timer = setTimeout(() => { timer = null; persist() }, 400)
     }
+    /**
+     * Save on the way out of view, which on a phone is the only reliable moment.
+     *
+     * ── Why the scroll throttle and the unmount were not enough ─────────────
+     *
+     * Switching apps neither unmounts this component nor fires another scroll,
+     * so the last thing written was whatever the 400ms throttle happened to
+     * catch — and if the reader's last act was a flick that landed inside that
+     * window, nothing at all. iOS then evicts the tab and the position is gone.
+     *
+     * `visibilitychange` is the event that actually fires when Safari goes to
+     * the background, and `pagehide` covers the tab being closed or replaced.
+     * `beforeunload` deliberately is not used: it does not fire reliably on
+     * iOS and blocks the back-forward cache where it does.
+     *
+     * The same handler marks the page as hidden, which is what lets the next
+     * load tell an eviction from a refresh.
+     */
+    const onHide = () => {
+      persist()
+      markFeedHidden(continuityKey, true)
+      persistFeedContinuity(continuityKey)
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') onHide()
+      // Back in view without having died: this was not an eviction, so the
+      // marker must not survive to make a later refresh look like one.
+      else markFeedHidden(continuityKey, false)
+    }
     el.addEventListener('scroll', onScroll, { passive: true })
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', onHide)
     return () => {
       el.removeEventListener('scroll', onScroll)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', onHide)
       if (timer) clearTimeout(timer)
       persist()
     }
-  }, [scroller, shuffleSeed, cycle, feedScope])
+  }, [scroller, shuffleSeed, cycle, feedScope, continuityKey])
 
   /**
-   * A filter change starts the feed again, at the top.
+   * A filter change keeps the reader's tile. It does not start the feed again.
    *
-   * ── The bug ───────────────────────────────────────────────────────────────
+   * ── What this replaces, and why it was wrong ──────────────────────────────
    *
-   * Reported from a phone: scroll down five tiles, come back up, apply a
-   * filter, and the old tiles are still there — the filtered ones only begin
-   * once you scroll past everything you had already seen.
+   * It was `setCycle(0)` plus `scrollTop = 0`, on the reasoning that selecting
+   * a category is a request to see that category from the start. That was the
+   * correct fix for the bug in front of it — the feed was REBUILT underneath a
+   * reader standing five screens down, so the top was the only defensible
+   * place to put them.
    *
-   * Two causes, and they compound. `cycle` grows as the reader scrolls, and
-   * each cycle re-presents the derived insights further down, so the rendered
-   * list is several times longer than the candidate set. And the scroll
-   * position is left where it was, so the reader is standing in the middle of a
-   * list that has just been rebuilt underneath them.
+   * It is the wrong answer now that filtering no longer rebuilds anything. The
+   * reader taps a pill ON a tile: that tile is the subject of the gesture, and
+   * throwing them to the top of the result is the app discarding the thing
+   * they were pointing at. Clearing the filter has the same shape in reverse.
    *
-   * Selecting a category is a request to see that category, from the start. It
-   * resets the depth and returns to the top, which is also what stops the DOM
-   * from carrying five screens of cards nobody can reach any more — most of the
-   * slowdown after a long scroll.
-   */
-  /**
-   * Every facet, not only the categories.
-   *
-   * This read `kinds` alone, so narrowing to a sector, country, exchange or
-   * symbol reset neither the depth nor the scroll position — the reader was
-   * left standing five screens down a list that had just been rebuilt
-   * underneath them, which is the half of the report that survived the first
-   * fix. Any change to what the reader asked for starts the feed again.
+   * `cycle` is deliberately left alone too. It was reset because the rendered
+   * list was several times longer than the candidate set and a rebuild made
+   * the depth meaningless. The base is stable now, so the depth still means
+   * what it meant.
    */
   const filterKey = [
+    tileFamily ?? '',
     kindFilter ?? '',
     feedFilter.kinds.join(','),
+    feedFilter.signalTypes.join(','),
     feedFilter.sectors.join(','),
     feedFilter.countries.join(','),
     feedFilter.exchanges.join(','),
@@ -2965,9 +4282,184 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   useEffect(() => {
     if (lastFilterKey.current === filterKey) return
     lastFilterKey.current = filterKey
-    setCycle(0)
-    if (scroller) scroller.scrollTop = 0
-  }, [filterKey, scroller])
+    const remembered = readFeedContinuity(continuityKey)
+    /**
+     * Under a filter, land on the tile within it; with none, on the tile the
+     * reader was on before they set one.
+     *
+     * `resolveAnchorIndex` decides what an unfindable key means — the top —
+     * and `scrollToKey` reaches the same conclusion by failing to find the
+     * element, so the two agree without either consulting the other.
+     */
+    const want = tileFamily ? remembered.position.viewKey : remembered.position.baseKey
+    if (!scrollToKey(want) && scroller) {
+      scroller.scrollTop = resolveAnchorIndex(feedKeys, want) === 0 ? 0 : scroller.scrollTop
+    }
+  }, [filterKey, scroller, continuityKey, tileFamily, scrollToKey, feedKeys])
+
+  /**
+   * Record where the reader is, in both the view and the base underneath it.
+   *
+   * Two keys because they answer two questions and drift apart the moment the
+   * reader scrolls inside a filter: `viewKey` is what to restore on the way
+   * back to this filtered feed, `baseKey` is what to restore when the filter
+   * comes off. Under no filter they are the same tile and both are written.
+   */
+  useEffect(() => {
+    const el = scroller
+    if (!el) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const record = () => {
+      /**
+       * A discarded scroller reports scrollTop 0, which resolves to the FIRST
+       * tile — so recording from one on the way out would remember the top of
+       * the feed as the place the reader had reached. The same defect as the
+       * offset half, in the half that names the tile.
+       */
+      if (!el.isConnected) return
+      const key = currentAnchorKey()
+      if (!key) return
+      writeFeedContinuity(continuityKey, {
+        position: tileFamily ? { viewKey: key } : { baseKey: key, viewKey: key },
+        /**
+         * How deep the reader has been, which is what may not move.
+         *
+         * Only recorded on the unfiltered feed. Depth inside a filtered view is
+         * a depth into a different list, and freezing the base by it would
+         * freeze tiles the reader has never met.
+         *
+         * `indexOfKey` reads the base order, so this is the reader's position
+         * in the feed the snapshot is about rather than in whatever is on
+         * screen. `writeFeedContinuity` keeps the deeper of the two, so
+         * scrolling back up cannot unfreeze what is below.
+         */
+        ...(tileFamily ? {} : {
+          readDepth: indexOfKey(feedBaseline.keys, key) + 1,
+        }),
+      })
+    }
+    const onScroll = () => {
+      if (timer) return
+      timer = setTimeout(() => { timer = null; record() }, 200)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      if (timer) clearTimeout(timer)
+      // Once more on the way out: opening an asset unmounts this component,
+      // and that navigation is exactly the one the position has to survive.
+      record()
+    }
+  }, [scroller, continuityKey, tileFamily, currentAnchorKey])
+
+  /**
+   * Coming back: put the reader on the tile they left.
+   *
+   * Runs once the feed has entries, and only while there is something
+   * remembered. The seed/offset restore below is the other half of returning —
+   * it handles a RELOAD, this handles an in-app navigation — and they do not
+   * fight because a reload leaves nothing in the continuity module to restore.
+   */
+  const continuityRestoredRef = useRef(false)
+  useEffect(() => {
+    if (continuityRestoredRef.current) return
+    if (!scroller || !feedEntries.length) return
+    const el = scroller
+    const remembered = restoredContinuity.family
+      ? restoredContinuity.position.viewKey
+      : restoredContinuity.position.baseKey
+    if (!remembered) { continuityRestoredRef.current = true; return }
+
+    /**
+     * Settle onto the tile, rather than jumping at it once.
+     *
+     * ── The reset this ends ─────────────────────────────────────────────
+     *
+     * Manual QA: leave Ideas for another tab, come back, and the feed is at the
+     * beginning. Switching tabs unmounts this component, so the return is a
+     * remount and this effect is the restore.
+     *
+     * It fired on the first commit that had entries and took the answer it got.
+     * At that moment the slots exist but the feed has not laid out: `FeedSlot`
+     * keeps about five cards mounted and the rest are placeholders, so a tile
+     * twenty down measures a few hundred pixels from the top instead of several
+     * thousand. The jump "succeeded", landed near the beginning, and latched —
+     * and it also set `restoredRef`, which switched off the saved-offset
+     * restore below, the one place that already knew to keep trying.
+     *
+     * So both halves of returning were disabled by the weaker one winning the
+     * race. This watches the offset instead: it re-measures every frame, moves
+     * with the tile as the feed grows underneath it, and stops when the number
+     * stops changing. Bounded, for the same reason the other is — a feed that
+     * never settles must not spin forever.
+     */
+    let tries = 0
+    let raf = 0
+    let last = -1
+    const attempt = () => {
+      /**
+       * The tile, or the nearest one the reader was ever shown.
+       *
+       * Resolved each frame rather than once: a tile can arrive late as its
+       * source resolves, and a neighbour chosen in the first frame would strand
+       * the reader one card off for the rest of the visit.
+       */
+      const key = nearestRememberedKey(restoredContinuity.baseOrder, feedKeys, remembered)
+      const top = offsetOfKey(key)
+      if (top == null) {
+        // Not rendered yet. Keep waiting, but not forever.
+        if (tries++ > SETTLE_FRAMES) { continuityRestoredRef.current = true; return }
+        raf = requestAnimationFrame(attempt)
+        return
+      }
+      el.scrollTop = top
+      // We have the position; the saved-offset restore must not fight us.
+      restoredRef.current = true
+      if (top === last || tries++ > SETTLE_FRAMES) {
+        continuityRestoredRef.current = true
+        return
+      }
+      last = top
+      raf = requestAnimationFrame(attempt)
+    }
+    raf = requestAnimationFrame(attempt)
+    return () => cancelAnimationFrame(raf)
+  }, [scroller, feedEntries.length, restoredContinuity, offsetOfKey, feedKeys])
+
+  /**
+   * Arriving back at the feed is a restore, even when nothing unmounted.
+   *
+   * ── The report ────────────────────────────────────────────────────────────
+   *
+   * "I scroll the Ideas feed, tap Explore, go back to Ideas, and it is at the
+   * start." Both restores above were written for a REMOUNT — opening an asset,
+   * or switching to another app — where this component is rebuilt and reads
+   * what was remembered on the way up.
+   *
+   * Ideas and Explore are not that. `mode` is state on this component, so the
+   * switch never unmounts it: the two values the restores work from are read
+   * once in `useState` initialisers and are still the ones from the original
+   * mount, and both latches were switched off by the restore that ran then. The
+   * feed's scroller subtree DOES unmount, so the position is gone from the DOM
+   * while the only things that could put it back are stale and disarmed.
+   *
+   * The scroller's own identity is what says the reader has arrived. A new
+   * element means a new arrival — from Explore, from another app, from an asset
+   * page — so that is when the remembered values are re-read and the latches
+   * are re-armed. Restoring into the same element twice is what the latches
+   * exist to prevent, and `restoredForRef` keeps that intact.
+   */
+  const restoredForRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = scroller
+    if (!el || restoredForRef.current === el) return
+    restoredForRef.current = el
+    hydrateFeedContinuity(continuityKey)
+    setRestoredContinuity(readFeedContinuity(continuityKey))
+    setResumed(loadFeedSession(feedScope))
+    restoredRef.current = false
+    continuityRestoredRef.current = false
+  }, [scroller, continuityKey, feedScope])
 
   // A deliberate refresh: refetch every source, re-deal the order, drop the
   // saved position and return to the top. The browser's own pull-to-refresh
@@ -2976,6 +4468,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     setShuffleSeed(Math.floor(Math.random() * 2 ** 31))
     setCycle(0)
     clearFeedSession(feedScope)
+    // Pull-to-refresh IS the reader asking for a different feed, so the
+    // remembered filter and tile go with the old one. This and a browser
+    // reload are the only two things that may.
+    setTileFamily(null)
+    setKindFilter(null)
+    setFeedFilter(EMPTY_FILTER)
+    clearFeedContinuity(continuityKey)
     restoredRef.current = true // nothing to restore after an explicit refresh
     await Promise.all([
       refetch(),
@@ -2986,7 +4485,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       queryClient.invalidateQueries({ queryKey: ['derived-insights'] }),
     ].filter(Boolean) as Promise<unknown>[])
     scroller?.scrollTo({ top: 0 })
-  }, [refetch, refetchAttention, queryClient, scroller])
+  }, [refetch, refetchAttention, queryClient, scroller, feedScope, continuityKey])
 
   const { indicatorRef, isRefreshing, armed } = usePullToRefresh({
     scroller,
@@ -3615,6 +5114,20 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const renderCard = (
     result: ReturnType<typeof buildInsightCard>,
+    /**
+     * The feed entry this card was built from.
+     *
+     * Threaded explicitly rather than read from a render-scoped variable
+     * because one call site is deferred — the lens branch hands `renderCard`
+     * to a child as a `render` callback, which runs after `renderEntry` has
+     * returned. A lexical parameter is correct in both regimes; anything
+     * ambient is correct only in one.
+     *
+     * Needed because the pill filters by FAMILY, and family is a property of
+     * the entry: the capital stamp and the research framing live there, and
+     * the built card cannot recover either.
+     */
+    entry: any,
     trackAs: string,
     assetId: string | null,
     /**
@@ -3683,6 +5196,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     return (
       <div key={card.id} className="h-full w-full" ref={track({ assetId, kind: trackAs })}>
         <SignalCardSection
+          onFilterKind={pillFilterFor(entry)}
           card={card}
           panes={panes}
           onPaneChange={shell?.onPaneChange}
@@ -3697,13 +5211,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           onSnooze={c => triageCard(c, 'snooze')}
           onDismiss={c => triageCard(c, 'dismiss')}
           onPrimary={shell?.onPrimary ?? (() => {})}
-          // Tapping the kind chip narrows the feed, exactly as the legacy
-          // tile chips did. `trackAs` is the feed's own entry kind, which is
-          // what kindFilter already speaks — mapping SignalType back to it
-          // would be lossy in both directions.
-          // The card's own category, so tapping its chip and choosing the same
-          // word in Curate produce the same feed.
-          onFilterKind={() => setKindFilter(categoryOf({ kind: trackAs }) ?? null)}
+          /**
+           * Tapping the pill shows THIS tile type, and keeps this tile.
+           *
+           * The entry, not `card.type` and not `trackAs`. `familyOf` reads the
+           * capital stamp and the research framing off the entry, which is what
+           * separates a held framework break from an unheld case-vs-price and
+           * the five research framings from one another. `card.type` collapses
+           * each of those pairs, and `trackAs` — the hook that produced the row
+           * — collapses all of them into a category.
+           *
+           * `toggleTileFamily` also records the anchor, because "filter to this
+           * type" and "stay on this tile" are one gesture.
+           */
         />
       </div>
     )
@@ -3744,12 +5264,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * sources. Gating on them would trade a stable first card for a slower one
    * and gain nothing: a news card appearing late changes nothing above it.
    */
-  const composing =
-    isLoading || attentionLoading || signalsLoading || insightsLoading ||
-    lensesLoading || scenariosLoading || recsLoading ||
-    (attentionSourceIds.length > 0 && pairInfoLoading)
-
-
   if (composing) {
     return (
       // The branded mark, not a border-radius with a spinning edge.
@@ -3809,7 +5323,30 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * they were never in the pool. They are ordinary feed entries now, and
    * this is the same JSX moved rather than rewritten.
    */
-  const renderScenarioCard = (card: any) => {
+  /**
+   * The scenario tile — Case vs Price, and Framework break when a book is
+   * behind it.
+   *
+   * Takes the ENTRY as well as the card. It used to take only the card, so it
+   * had nothing to give `pillFilterFor` and its `SignalCardSection` shipped no
+   * `onFilterKind` at all: tapping the Case vs Price pill did nothing, on the
+   * one family whose exact filtering already worked everywhere else.
+   */
+  const renderScenarioCard = (card: any, entry: any) => {
+    /**
+     * Containment, and explicitly not the fix.
+     *
+     * The invariant is upstream: `adoptTile` now declares its return type, so
+     * this cannot be handed a hole by the seam again. This guard is here
+     * because a feed of forty tiles should not go blank when one of them is
+     * malformed, and until `FeedSlot` has a boundary of its own the cheapest
+     * containment is for a renderer to decline a card it cannot draw.
+     *
+     * An empty slot, not a dropped entry: the slot keeps its height and its
+     * snap point, so the reader gets a gap rather than a feed that reshuffles
+     * around a missing item.
+     */
+    if (!card?.entity || !card?.evidence?.data) return null
     const symbol = String(card.entity?.ticker ?? card.entity?.name ?? '')
     const assetId = String(card.entity?.assetId ?? card.entity?.id ?? '')
     const price = card.evidence.data.price
@@ -3956,6 +5493,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       >
         {({ panes, onPaneChange, primaryOverride }) => (
           <SignalCardSection
+            onFilterKind={pillFilterFor(entry)}
             card={card}
             panes={panes}
             onPaneChange={onPaneChange}
@@ -3990,7 +5528,22 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // Ranked in with everything else now, rather than rendered in its own
           // block above the feed. The JSX is unchanged; only its position in the
           // list is decided differently.
-          if (entry.kind === 'scenario') return renderScenarioCard(entry.card)
+          // Seam 1 of 4. Off, `adoptTile` is the identity function.
+          // The ENTRY travels alongside the adopted card because the pill needs
+          // a family to resolve and the card alone carries none.
+          if (entry.kind === 'scenario') {
+            /**
+             * A scenario entry with no card is a malformed candidate.
+             *
+             * `scenarioEntries` maps the producer's array straight onto entries,
+             * so a null in it arrives here as an entry with nothing to render.
+             * That is not an adoption question and the seam is not asked one:
+             * the renderer declines and the slot stays empty, keeping its height
+             * and its snap point.
+             */
+            const scenarioCard = entry.card ? adoptTile(entry.card).card : null
+            return renderScenarioCard(scenarioCard, entry)
+          }
 
           if (entry.kind === 'attention') {
             const a = entry.attention
@@ -4014,6 +5567,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   // section directly, with no wrapper — filled it.
                   className="h-full w-full" ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })}>
                   <SignalCardSection
+                    onFilterKind={pillFilterFor(entry)}
                     /**
                      * Approve and Decline are not offered here, because this
                      * surface cannot do either.
@@ -4149,12 +5703,76 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              * the axis as a marker rather than into the prose, so the reader
              * sees the gap between the ask and now rather than computing it.
              */
-            const attnBuilt = buildAttentionCard(a as any, linked ? {
+            const attnRaw = buildAttentionCard(a as any, linked ? {
               id: linked.id, symbol: linked.symbol,
               companyName: (linked as any).company_name ?? null,
             } : null)
+            /**
+             * Seam 4 of 4: the coverage producer, adopted where it is built.
+             *
+             * Keyed on the reason code, which is what names the situation —
+             * `source_type` is shared with the earnings collector and
+             * `attention_type` is the routing hint that made these tiles read
+             * "Overdue". Every other attention row is handed straight back.
+             */
+            /**
+             * Adopted only where the name resolved.
+             *
+             * The engine's actions land on the asset — update the thesis, read
+             * the research, open the name — and `buildAttentionCard` gives the
+             * card a PROJECT entity when the lookup misses, which those keys
+             * cannot route from. An unlinked coverage row keeps production's
+             * card, whose primary is the honest generic one.
+             */
+            const isCoverageStale = (a as any).reason_code === 'coverage_neglected' && !!linked
+            /**
+             * Work with a date on it, whether or not it names an asset.
+             *
+             * No `linked` requirement, unlike coverage: the engine's actions for
+             * this family are `open_item` and `capture`, and both work on a row
+             * with no ticker. The adapter declines a row with no due date, so a
+             * generic `action_required` item still renders as it ships.
+             */
+            const isWorkOverdue = attentionCardType(a as any) === 'project_overdue'
+            const attnAdopted = !attnRaw.ok ? null
+              : isCoverageStale ? adoptTile(attnRaw.card, { coverage: a as any })
+              : isWorkOverdue ? adoptTile(attnRaw.card, { overdue: a as any })
+              : null
+            const attnBuilt: typeof attnRaw =
+              attnAdopted ? { ok: true, card: attnAdopted.card } : attnRaw
+            /**
+             * The clock, where the resolver asked for one.
+             *
+             * This is the pane the price chart used to occupy. It is not a
+             * coverage component: `planPane` renders whatever primitive the
+             * plan named, through the switch Explore already owns.
+             */
+            const attnPlanPane = planPane(attnAdopted?.visual ?? null)
             const attnRaisedAt = a.created_at ?? a.last_activity_at ?? null
-            const attnPrice = pricePane(linked?.symbol, {
+            /**
+             * The tape, except where the resolver has said it is the wrong picture.
+             *
+             * A coverage finding is a claim about elapsed attention, and the
+             * price series has no bearing on it — the engine draws the clock for
+             * exactly that reason. Leaving a chart underneath would contradict
+             * the picture the card just chose, and manual QA already reported
+             * these tiles as "not showing much besides just a price chart".
+             *
+             * Not gated on the flag, for the same reason the adoption is not:
+             * the chip already says Coverage gap for every reader, and a price
+             * series underneath it is the picture the resolver rejected.
+             */
+            /**
+             * The tape, unless the engine took this row on.
+             *
+             * General rather than per-family, and keyed on the ADOPTION rather
+             * than on whether a picture came out of it. Once the engine owns a
+             * card it owns its evidence: a coverage clock and an overdue
+             * deadline both say the price is not why the reader is here, and a
+             * claim that resolved to no picture at all is saying the same thing
+             * more strongly. A declined row keeps production's pane untouched.
+             */
+            const attnPrice = attnAdopted?.adopted ? null : pricePane(linked?.symbol, {
               markers: attnRaisedAt
                 ? [{ date: attnRaisedAt, label: 'Raised', kind: 'event' as const }]
                 : [],
@@ -4183,9 +5801,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             }
 
             return renderCard(attnBuilt,
+entry,
 'attention',
 a.context?.asset_id ?? null,
 [
+...(attnPlanPane ? [attnPlanPane] : []),
 ...(attnPrice ? [attnPrice] : []),
 ...(attnBuilt.ok ? [{ id: 'verdict', label: 'Respond', content: (
 <VerdictBar
@@ -4260,12 +5880,41 @@ a.context?.asset_id ?? null,
 
           if (entry.kind === 'lens') {
             const l = entry.lens
-            const built =
+            const rawBuilt =
               l.type === 'conviction' ? buildConvictionCard(l.gap)
               : l.type === 'crowded'  ? buildCrowdingCard(l.name)
               : l.type === 'breach'   ? buildTargetHitCard(l.breach)
               : l.type === 'untargeted' ? buildNoTargetCard(l.position)
               :                         buildStaleTargetCard(l.target)
+            /**
+             * Seam 2 of 4: one adoption point for the whole lens family.
+             *
+             * Both target kinds go through here, so the composed situation is
+             * resolved once whichever of the two survived. The other three lens
+             * kinds are not adopted and `adoptTile` hands them straight back.
+             */
+            const lensAdopted = rawBuilt.ok && (l.type === 'breach' || l.type === 'stale')
+              ? adoptTile(
+                  rawBuilt.card,
+                  l.type === 'breach' ? { breach: l.breach } : { stale: l.target },
+                )
+              : null
+            const built: typeof rawBuilt =
+              lensAdopted ? { ok: true, card: lensAdopted.card } : rawBuilt
+            /**
+             * The plan's picture, ahead of the tape.
+             *
+             * Target Hit resolves to `target_compare` — one level and the price
+             * that passed it, which is the whole of "where is the price
+             * relative to the target that was reached". The chart still follows
+             * it in the carousel, carrying the path and the target band, which
+             * is the context rather than the claim.
+             *
+             * Target Expired renders through its own component below and never
+             * reaches this list, so `stale` resolves a plan and uses none of it
+             * here. That is deliberate: this stage adopts Target Hit.
+             */
+            const lensPlanPane = planPane(lensAdopted?.visual ?? null)
             const assetId =
               l.type === 'conviction' ? l.gap.assetId
               : l.type === 'crowded'  ? l.name.assetId
@@ -4298,6 +5947,7 @@ a.context?.asset_id ?? null,
             if (l.type === 'stale' && built.ok) {
               const s = l.target
               const traded = tradedSymbolOf(s.symbol)
+              // Already adopted above, with the whole lens family.
               const staleCard = built.card
               /**
                * One commit path: MUTATE, then judge, then resolve.
@@ -4343,7 +5993,7 @@ a.context?.asset_id ?? null,
                     companyName: assetBySymbol.get(traded)?.companyName ?? null,
                     series, bands, markers,
                   })}
-                  render={(panes, shell) => renderCard(built, 'lens', assetId, panes, shell)}
+                  render={(panes, shell) => renderCard(built, entry, 'lens', assetId, panes, shell)}
                 />
               )
             }
@@ -4433,6 +6083,7 @@ a.context?.asset_id ?? null,
             // `TargetExpiredCard`, which returned above.
             const priceMarkers: PriceMarker[] = []
 
+            if (lensPlanPane) panes.push(lensPlanPane)
             const priced = pricePane(symbol, { bands: priceBands, markers: priceMarkers })
             if (priced) panes.push(priced)
 
@@ -4739,7 +6390,7 @@ a.context?.asset_id ?? null,
             const targetFirst = l.type === 'untargeted'
 
             return renderCard(
-              built, 'lens', assetId,
+              built, entry, 'lens', assetId,
               // One carousel: the evidence panes and the controls together.
               targetFirst
                 ? [...detailPanes, ...panes]
@@ -4779,8 +6430,31 @@ a.context?.asset_id ?? null,
               lenses?.book ?? null, ins.assetId, ins.issue?.framing,
             )
             const insightBuilt = buildInsightCard(ins, insightCapital)
-            /** Narrowed once: the shell argument sits outside the `ok` guard. */
-            const insightCard = insightBuilt.ok ? insightBuilt.card : null
+            /**
+             * Narrowed once: the shell argument sits outside the `ok` guard.
+             *
+             * Seam 3 of 4. Both halves of the Research producer are adopted
+             * now — `no_thesis` and `stale_research` — and the insight's own
+             * kind chooses between them.
+             */
+            const insightAdopted = insightBuilt.ok
+              ? adoptTile(insightBuilt.card, { insight: ins })
+              : null
+            const insightCard = insightAdopted?.card ?? null
+            /**
+             * "Last reviewed here, and the market moved this much since."
+             *
+             * `last_look` states that relationship in one strip. The anchored
+             * chart below states it too, and states it better for a reader who
+             * wants the path — but it states it in a full plot with axes, and
+             * the reader has to find the marker before the sentence arrives.
+             * Lead with the relationship; keep the path as context.
+             *
+             * Only the measured framing resolves here. A long silence has no
+             * move to draw and new evidence is a count rather than a distance,
+             * so both fall through to the chart they already had.
+             */
+            const insightPlanPane = planPane(insightAdopted?.visual ?? null)
 
             /**
              * The tape, with the case's own date marked on it.
@@ -4992,6 +6666,7 @@ a.context?.asset_id ?? null,
                 ]
 
             return renderCard(insightBuilt,
+              entry,
               'insight',
               ins.assetId ?? null,
               /**
@@ -5035,6 +6710,22 @@ a.context?.asset_id ?? null,
                  * what keeps the plan honest about eligibility rather than
                  * pretending it is a guarantee.
                  */
+                /**
+                 * The engine's picture leads, and production's order follows.
+                 *
+                 * Prepended rather than threaded through `insightPanePlan`
+                 * because the two describe different things: that plan is the
+                 * producer's own pane order and the gallery mounts it to
+                 * measure the card, while this is the resolver's answer to
+                 * "what is the picture for this claim". Adding an id to the
+                 * producer's plan would make the geometry contract depend on
+                 * whether a situation had been adopted yet.
+                 *
+                 * Height is unaffected: the evidence band is sized to the
+                 * TALLEST pane, the price pane already reserves an interactive
+                 * plot, and every visual in this vocabulary is a strip.
+                 */
+                ...(insightPlanPane ? [insightPlanPane] : []),
                 ...insightPanePlan({
                   framing,
                   hasCapital: !!insightCapital,
@@ -5142,6 +6833,7 @@ a.context?.asset_id ?? null,
             const signalQuestion = 'Is the desk looking at the right thing?'
             return renderCard(
               sigBuilt,
+              entry,
               'signal',
               sigAsset?.id ?? null,
               // Team focus, a coverage gap and a thesis conflict are all
@@ -5228,6 +6920,7 @@ a.context?.asset_id ?? null,
                 return (
                   <div key={c.id} className="h-full w-full" ref={track({ assetId: c.assetId ?? null, kind: 'template' })}>
                     <SignalCardSection
+                      onFilterKind={pillFilterFor(entry)}
                       card={card}
                       // The peer ranking, which the builder has always declared
                       // as `evidence: peer_bar` and the feed has never passed a
@@ -5360,6 +7053,7 @@ a.context?.asset_id ?? null,
             /** Named once, so the footer submits the question the pane asked. */
             const tplQuestion = `Does this change anything for ${c.symbol}?`
             return renderCard(tplBuilt,
+entry,
 'template',
 c.assetId ?? null,
 [
@@ -5461,6 +7155,7 @@ c.assetId ?? null,
               return (
                 <div key={n.id} className="h-full w-full" ref={track({ assetId: linked?.id ?? null, kind: 'news' })}>
                   <SignalCardSection
+                    onFilterKind={pillFilterFor(entry)}
                     card={built.card}
                     /* The commit is the footer's, on every family. See
                        `verdictPane` for why an in-pane one cannot be last. */
@@ -6081,6 +7776,7 @@ c.assetId ?? null,
               ref={track({ assetId: itemAssetId, authorId: itemAuthorId, kind: 'idea' })}
             >
               <SignalCardSection
+                onFilterKind={pillFilterFor(entry)}
                 card={built.card}
                 /**
                  * One carousel: the tape, the post and the response.
@@ -6224,10 +7920,53 @@ c.assetId ?? null,
             </span>
           )}
         </button>
+        {/*
+          * The active family, in the bar rather than in a band of its own.
+          *
+          * ── Why it moved ──────────────────────────────────────────────────
+          *
+          * It was a full-width row under the mode switch: a second bar, in
+          * inverted colours, permanently between the reader and the feed. On a
+          * 390px screen that is a whole tile's worth of chrome to say one word,
+          * and it pushed the first card down every time a filter was on —
+          * reported as the band taking up too much space.
+          *
+          * It belongs here because this row already IS the feed's control
+          * strip: the mode switch, Curate and Reset. The active filter is the
+          * state those controls produce, so showing it beside them costs no
+          * height at all and puts the thing and its undo in one place.
+          *
+          * Still `data-testid="active-filter-banner"` — same role, same tests,
+          * a different position.
+          */}
+        {(tileFamily || kindFilter) && (
+          <button
+            type="button"
+            data-testid="active-filter-banner"
+            onClick={() => { clearTileFamily(); setKindFilter(null) }}
+            className="flex min-w-0 items-center gap-1 h-8 px-2.5 rounded-full bg-gray-900 text-white dark:bg-gray-700 text-[12px] font-bold no-touch-target"
+          >
+            <span className="truncate">
+              {tileFamily
+                ? familyLabel(tileFamily) ?? tileFamily
+                : CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter}
+            </span>
+            <X className="h-3 w-3 shrink-0" strokeWidth={2.5} />
+          </button>
+        )}
         {filterCount(feedFilter) > 0 && (
           <button
             type="button"
-            onClick={() => setFeedFilter(EMPTY_FILTER)}
+            data-testid="feed-filter-reset"
+            /**
+             * Through `clearTileFamily`, not a bare `setTileFamily(null)`.
+             *
+             * A React-state-only clear leaves `family` in the continuity record,
+             * so the filter the reader just reset came back on the next mount
+             * with no pill lit and no band to say why. Every visible way out of
+             * a family goes through the one canonical clear.
+             */
+            onClick={() => { setFeedFilter(EMPTY_FILTER); clearTileFamily() }}
             className="text-[12px] font-semibold text-gray-500 dark:text-gray-400 underline underline-offset-2 no-touch-target"
           >
             Reset
@@ -6235,26 +7974,6 @@ c.assetId ?? null,
         )}
 
       </div>
-
-      {kindFilter && (
-        // pt-safe alone collapses to zero on a phone with no notch, which is
-        // why the band read as cramped against the top edge. A real 10px floor
-        // plus the inset, and more room below it, gives the row a band rather
-        // than a stripe.
-        <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800">
-          <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
-            {CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
-          </span>
-          <button
-            type="button"
-            onClick={() => setKindFilter(null)}
-            className="ml-auto flex items-center gap-1 h-7 px-2.5 rounded-full bg-white/15 text-[11px] font-semibold active:bg-white/25 no-touch-target"
-          >
-            <X className="h-3 w-3" strokeWidth={2.5} />
-            Clear
-          </button>
-        </div>
-      )}
 
       {/* The focused Explore tile, over Explore.
           ── Why an overlay and not a route ──────────────────────────────────
@@ -6424,6 +8143,11 @@ c.assetId ?? null,
           a phone user lands on, the feed is what coverage changes, and a setup
           prompt filed under a menu is a setup prompt nobody opens. No
           `onGoToIdeas`: they are already here. */}
+      {/* Coverage only. The pilot mission is NOT here: while it is unfinished
+          this dashboard does not render at all, and `MobilePilotHome` is the
+          phone's home instead. Stacking guidance on top of a full feed was the
+          arrangement that put three unrelated invitations on one phone
+          screen. */}
       <div className="flex-shrink-0 px-3 pb-1.5 empty:hidden">
         <FirstSessionCoveragePrompt variant="sheet" />
       </div>
@@ -6499,7 +8223,7 @@ c.assetId ?? null,
           inside are full-height by definition. Without it the scroller has no
           bounded height and every tile spills. */}
       <div
-        ref={setScroller}
+        ref={attachScroller}
         // Mandatory snapping stays.
         //
         // It was briefly relaxed to `proximity` on the theory that mandatory
@@ -6554,7 +8278,9 @@ c.assetId ?? null,
             <button
               type="button"
               data-testid="feed-filter-clear"
-              onClick={() => { setFeedFilter(EMPTY_FILTER); setKindFilter(null) }}
+              // Same canonical clear as the band's, for the same reason: the
+              // family has to leave the remembered record, not just the render.
+              onClick={() => { setFeedFilter(EMPTY_FILTER); setKindFilter(null); clearTileFamily() }}
               className="mt-4 h-11 rounded-xl border border-gray-300 px-4 text-[14px] font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200"
             >
               Clear filters
@@ -6593,6 +8319,9 @@ c.assetId ?? null,
              */
             requirement={tileRequirementFor(entry)}
             container={feedContainer}
+            // The identity the continuity store speaks, published where it can
+            // be measured. See `currentAnchorKey`.
+            slotKey={feedKeys[i]}
             render={() => renderEntry(entry)}
           />
         ))}

@@ -23,9 +23,11 @@ import { useAttentionState } from '../../hooks/useAttentionState'
 import { feedItemAttentionKey } from '../../lib/attention-state'
 import {
   adaptDecisionItem, selectToday, expandToObjects, diversify, applyEnrichment,
-  compareTodayItems, TODAY_LIMIT,
+  compareTodayItems, coverageTodayItems, TODAY_LIMIT,
 } from '../../lib/today'
 import { useTodayEnrichment } from '../../hooks/useTodayEnrichment'
+import { useCoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
+import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoveragePrompt'
 import type { TodayItem, AggregateNote } from '../../lib/today'
 import type { FocusSource } from '../../lib/dashboard/focus'
 import { TodayTile } from './TodayTile'
@@ -82,12 +84,44 @@ export function TodayPage() {
     }
   }, [engineSlice.action, engineSlice.intel, attention.suppressedKeys])
 
+  /*
+   * Coverage work, for a thin morning only (lib/today/coverage-items).
+   *
+   * Real findings above are computed and painted without waiting for this: the
+   * coverage scan is its own cached query, and its items append after the real
+   * ones when it answers. They are ordinary Today items -- adapted, enriched and
+   * drawn by the same tile -- and they drop out on their own as real findings
+   * take the slots. A name any real finding concerns is never raised again.
+   */
+  const gaps = useCoverageResearchGaps()
+  const generated = useMemo(() => {
+    const todayAssetIds = new Set(
+      [...surfaced, ...alsoWatching]
+        .map(i => i.source.context.assetId)
+        .filter((id): id is string => !!id),
+    )
+    return coverageTodayItems(gaps.candidates, {
+      realCount: surfaced.length,
+      todayAssetIds,
+      isSuppressed: id => {
+        const key = feedItemAttentionKey(id)
+        return !!key && attention.suppressedKeys.has(key)
+      },
+    }).map(adaptDecisionItem)
+  }, [gaps.candidates, surfaced, alsoWatching, attention.suppressedKeys])
+
   // Enrich ONLY what surfaced. Also-watching draws nothing, so it fetches
   // nothing -- four symbols of history rather than the whole candidate pool.
+  // Coverage items enrich on their own key, so their arrival never refetches
+  // (and blanks) the enrichment real findings already have.
+  const coverageEnrichment = useTodayEnrichment(generated)
   const enrichment = useTodayEnrichment(surfaced)
   const enriched = useMemo(
-    () => surfaced.map(i => applyEnrichment(i, enrichment[i.source.context.assetId ?? ''])),
-    [surfaced, enrichment],
+    () => [
+      ...surfaced.map(i => applyEnrichment(i, enrichment[i.source.context.assetId ?? ''])),
+      ...generated.map(i => applyEnrichment(i, coverageEnrichment[i.source.context.assetId ?? ''])),
+    ],
+    [surfaced, enrichment, generated, coverageEnrichment],
   )
 
   const handlePrimary = (item: TodayItem, source?: FocusSource) => {
@@ -216,6 +250,28 @@ function toRailCard(item: TodayItem): RailCard {
 
   const [featured, ...supporting] = enriched
 
+  /*
+   * The width every supporting tile is going to end up at, decided once.
+   *
+   * `supportingSpan` branches on how many supporting items there are: one takes
+   * the full width, two take six columns each, three or more take four. The
+   * coverage backfill appends items, so the count used to change AFTER the real
+   * findings had painted -- and every already-rendered tile re-columned
+   * underneath the reader, twelve to six to four.
+   *
+   * Real findings still render immediately; what waits is nothing. Instead the
+   * field reserves the geometry of a full row while the coverage scan is still
+   * out, so appended items drop into columns that were already the right size.
+   *
+   * Residual, stated rather than hidden: a desk with fewer than three
+   * supporting findings whose coverage scan then returns NOTHING relaxes from
+   * the four-column layout to the wide one. That is the thin-account case, it
+   * happens once, and it is the only remaining width change on this lens.
+   */
+  const layoutTotal = gaps.status === 'loading'
+    ? Math.max(supporting.length, 4)
+    : supporting.length
+
   return (
     <div className="h-full overflow-y-auto bg-gray-50/60 pb-12 dark:bg-[#0b0f16]">{/* Layout gives full-width tabs `overflow-hidden` on an h-full box, so a
           full-width surface must own its own scrolling. min-h-full clipped
@@ -240,7 +296,7 @@ function toRailCard(item: TodayItem): RailCard {
         <Summary
           isLoading={isLoading}
           surfaced={enriched.length}
-          evaluated={evaluated}
+          more={evaluated - surfaced.length}
           suppressed={suppressedCount}
         />
       </header>
@@ -248,7 +304,29 @@ function toRailCard(item: TodayItem): RailCard {
       {isLoading ? (
         <Loading />
       ) : enriched.length === 0 ? (
-        <Cleared evaluated={evaluated} suppressed={suppressedCount} />
+        /*
+         * Nothing real to show. Wait for the coverage scan rather than saying
+         * "You're current" a moment before coverage work arrives; with no
+         * coverage at all, the next step is choosing some.
+         */
+        gaps.status === 'loading' ? (
+          <Loading />
+        ) : gaps.status === 'error' || gaps.status === 'no_org' ? (
+          /*
+           * "You're current" is a claim that the desk has been checked and
+           * nothing needs attention. A failed or org-less coverage scan means
+           * we could not check. Falling through to `Cleared` reported the
+           * best possible state on the evidence of a broken read, which is
+           * how a scan can stay broken without anyone noticing.
+           */
+          <ScanUnavailable />
+        ) : gaps.status === 'ready' && gaps.coveredCount === 0 ? (
+          <div data-testid="today-choose-coverage" className="px-6 pt-4">
+            <FirstSessionCoveragePrompt variant="page" dismissible={false} />
+          </div>
+        ) : (
+          <Cleared evaluated={evaluated} suppressed={suppressedCount} />
+        )
       ) : (
         <>
           {/*
@@ -304,7 +382,7 @@ function toRailCard(item: TodayItem): RailCard {
               />
             </div>
             {supporting.map((item, i) => {
-              const { span, wide } = supportingSpan(i, supporting.length)
+              const { span, wide } = supportingSpan(i, layoutTotal)
               return (
               <div key={item.id} className={clsx(span, 'h-full')}>
                 <TodayTile
@@ -330,17 +408,18 @@ function toRailCard(item: TodayItem): RailCard {
 /* -------------------------------------------------------------- summary -- */
 
 function Summary({
-  isLoading, surfaced, evaluated, suppressed,
-}: { isLoading: boolean; surfaced: number; evaluated: number; suppressed: number }) {
+  isLoading, surfaced, more, suppressed,
+}: { isLoading: boolean; surfaced: number; more: number; suppressed: number }) {
   return (
     <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1 text-[11px] text-gray-500 dark:text-gray-500">
       <strong className="font-semibold text-gray-700 dark:text-gray-300">
         {isLoading ? 'Evaluating…' : `${surfaced} item${surfaced === 1 ? '' : 's'}`}
       </strong>
-      {!isLoading && evaluated > surfaced && (
+      {/* Real findings below the cut. Coverage work is not counted as "more". */}
+      {!isLoading && more > 0 && (
         <>
           <span className="text-gray-300 dark:text-gray-700">·</span>
-          <span>{evaluated - surfaced} more, lower priority</span>
+          <span>{more} more, lower priority</span>
         </>
       )}
       {!isLoading && suppressed > 0 && (
@@ -460,6 +539,26 @@ function AlsoWatching({
  * It says what was evaluated and what is still being watched, so a quiet
  * morning reads as a finished one rather than as a broken feed.
  */
+/**
+ * The scan could not be read.
+ *
+ * The counterpart to `Cleared` below, and deliberately not it: "You're current"
+ * asserts the desk was checked and is clean, which is a claim we cannot make on
+ * the evidence of a read that failed.
+ */
+function ScanUnavailable() {
+  return (
+    <div className="mx-6 mt-4 rounded-xl border border-amber-200 bg-amber-50/60 px-6 py-16 text-center dark:border-amber-900/40 dark:bg-amber-950/20">
+      <h2 className="text-[18px] font-semibold tracking-tight text-gray-900 dark:text-gray-50">
+        Today could not be loaded
+      </h2>
+      <p className="mx-auto mt-1.5 max-w-[48ch] text-[12px] text-gray-600 dark:text-gray-400">
+        This is a failed read, not a clear desk. Reload to try again.
+      </p>
+    </div>
+  )
+}
+
 function Cleared({ evaluated, suppressed }: { evaluated: number; suppressed: number }) {
   return (
     <div className="mx-6 mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">

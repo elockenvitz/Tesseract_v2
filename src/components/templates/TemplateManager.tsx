@@ -216,7 +216,7 @@ export function TemplateManager() {
       {/* Preview Modal */}
       {previewTemplate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60">
-          <div className="bg-gray-100 rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col dark:bg-gray-800">
+          <div className="bg-gray-100 rounded-xl shadow-2xl max-w-3xl w-full max-h-viewport-85 overflow-hidden flex flex-col dark:bg-gray-800">
             {/* Minimal Header */}
             <div className="flex items-center justify-between px-4 py-2 bg-gray-200/80">
               <span className="text-sm text-gray-600 dark:text-gray-400">Preview: {previewTemplate.name}</span>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun, Microscope, Scale, Landmark } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun, Microscope, Scale, Landmark } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -62,7 +62,22 @@ export function Header({
   const orgSwitcherRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
   const { hasUnreadNotifications, unreadCount } = useNotifications()
-  const { currentOrg, userOrgs, switchOrg, isLoading } = useOrganization()
+  const { currentOrg, currentOrgId, userOrgs, switchOrg, isLoading } = useOrganization()
+  /*
+   * A workspace is named, and the list has not placed it yet.
+   *
+   * Only happens while the durable org is being verified against the
+   * database, which is the one moment it is absent from the cached list
+   * without being gone. Saying "Choose workspace" there claims something
+   * not yet known, so the label waits instead.
+   */
+  const orgUnresolved = !currentOrg && !!currentOrgId
+  /*
+   * Openable when there is a choice to make, or when no workspace is
+   * active. One organization that is already current has nothing to
+   * switch to; one that nobody is in still has to be enterable.
+   */
+  const canOpenOrgSwitcher = userOrgs.length > 1 || !currentOrg
 
   // Preload every org logo as soon as the user-orgs query resolves, so the
   // first time the dropdown opens the browser already has the images in
@@ -299,7 +314,27 @@ export function Header({
   }
 
   return (
-    <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
+    /*
+      `flex-shrink-0`, and that is the whole bug.
+
+      ── Why the app bar disappeared ─────────────────────────────────────────
+      `Layout` is `h-viewport flex flex-col overflow-hidden`. This header is a
+      flex child of that column and had no shrink rule, so it defaulted to
+      `flex: 0 1 auto` — shrinkable. Its sibling `<main>` is `flex-1`, which
+      shrinks first, but once the column itself gets shorter than its content
+      the header gives way too and collapses toward zero height.
+
+      `h-viewport` is `100dvh`, which shrinks when the keyboard opens and when
+      the URL bar appears. That is why the bar vanished "sometimes" rather than
+      on any particular screen: it tracks the keyboard, not the route. Nothing
+      conditionally hides it — `Layout` renders it unconditionally — so the
+      cause was never a visibility branch.
+
+      `sticky top-0 z-40` stays for the stacking context its dropdowns rely on,
+      though the sticky itself is inert here: the scrollport is inside `main`,
+      not around the shell.
+    */
+    <header className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16 min-w-0 gap-1">
           {/* Logo, Org Switcher, and Search */}
@@ -367,21 +402,6 @@ export function Header({
                       </div>
                     </button>
 
-                    <button
-                      onClick={() => {
-                        setShowAppMenu(false)
-                        onSearchResult({ id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', data: null })
-                      }}
-                      className="mt-1 w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    >
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-100 shrink-0 dark:bg-gray-800">
-                        <Activity className="h-5 w-5 text-gray-500" />
-                      </div>
-                      <div className="flex-1 text-left">
-                        <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Dashboard (legacy)</div>
-                        <div className="text-[11px] text-gray-500 dark:text-gray-400">The pre-Today overview</div>
-                      </div>
-                    </button>
                   </div>
 
                   {/* Secondary tiles — the pilot decision loop. Idea
@@ -456,6 +476,30 @@ export function Header({
                     })}
                   </div>
 
+                  {/*
+                    Coverage — the pilot's own setup, still reachable.
+
+                    It opens once they have declared any, through the same
+                    access map every other tile here reads; nothing routes
+                    around the gate. Editing it has no bearing on the mission
+                    or on graduation, which is why it sits down here with
+                    Organization rather than among the decision-loop tiles.
+                  */}
+                  {pilotMode.canUse('coverage') && (
+                    <div className="border-t border-gray-100 dark:border-gray-700 pt-2 px-2 pb-1">
+                      <button
+                        onClick={() => {
+                          setShowAppMenu(false)
+                          onSearchResult({ id: 'coverage', title: 'Coverage', type: 'coverage', data: null })
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <Users className="h-4 w-4 text-gray-400" />
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Coverage</span>
+                      </button>
+                    </div>
+                  )}
+
                   {/* Organization (always allowed so pilots can manage members) */}
                   {pilotMode.canSee('organization') && (
                     <div className="border-t border-gray-100 dark:border-gray-700 pt-2 px-2 pb-1">
@@ -490,7 +534,7 @@ export function Header({
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
                       { id: 'today', title: 'Dashboard', type: 'today', icon: Sun, color: 'text-blue-600', bg: 'bg-blue-50' },
-                      { id: 'ideas-v2', title: 'Ideas', type: 'ideas-v2', icon: Lightbulb, color: 'text-purple-600', bg: 'bg-purple-50' },
+                      { id: 'ideas', title: 'Ideas', type: 'ideas', icon: Lightbulb, color: 'text-purple-600', bg: 'bg-purple-50' },
                       { id: 'research-v2', title: 'Research', type: 'research-v2', icon: Microscope, color: 'text-sky-600', bg: 'bg-sky-50' },
                       { id: 'portfolio-v2', title: 'Portfolio', type: 'portfolio-v2', icon: Scale, color: 'text-emerald-600', bg: 'bg-emerald-50' },
                       { id: 'decisions-v2', title: 'Decisions', type: 'decisions-v2', icon: Landmark, color: 'text-slate-600', bg: 'bg-slate-100' },
@@ -519,13 +563,7 @@ export function Header({
                   </div>
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
-                      // Reachable, and only from here. It stopped being
-                      // injected into every session when the canonical
-                      // Dashboard became the landing surface, so this is now
-                      // the way back to it.
-                      { id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', icon: Activity, color: 'text-gray-500', bg: 'bg-gray-100' },
                       { id: 'priorities', title: 'Priorities', type: 'priorities', icon: Flag, color: 'text-rose-500', bg: 'bg-rose-50' },
-                      { id: 'idea-generator', title: 'Idea Generator', type: 'idea-generator', icon: Lightbulb, color: 'text-purple-500', bg: 'bg-purple-50' },
                       { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', icon: ListTodo, color: 'text-amber-500', bg: 'bg-amber-50' },
                       { id: 'assets-list', title: 'Assets', type: 'assets-list', icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50' },
                       { id: 'portfolios-list', title: 'Portfolios', type: 'portfolios-list', icon: Briefcase, color: 'text-emerald-500', bg: 'bg-emerald-50' },
@@ -616,48 +654,80 @@ export function Header({
             <div className="md:hidden h-5 w-px bg-gray-200 dark:bg-gray-700 mx-2 flex-shrink-0" />
             <button
               onClick={() => setShowMobileSearch(true)}
-              className="md:hidden flex items-center gap-1.5 min-w-0 h-9 -ml-0.5 pr-2 rounded-lg no-touch-target text-gray-400 dark:text-gray-500 active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
+              className="md:hidden inline-flex items-center justify-center h-9 w-9 rounded-full no-touch-target text-gray-400 dark:text-gray-500 active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
               aria-label="Search"
+              title="Search"
             >
+              {/* The word went. Eight controls were competing across a 390px
+                  bar and this one spent ~50px restating a magnifier that every
+                  phone user already reads. `aria-label` keeps it named for
+                  assistive tech, and it still opens the same full overlay.
+                  Desktop is unaffected — it has a real search FIELD, not this. */}
               <Search className="h-[18px] w-[18px] shrink-0" />
-              <span className="text-sm truncate">Search</span>
             </button>
 
             {/* Divider + Org Switcher. Hidden on phones: the drawer carries
                 the org name and switcher, which frees the top bar for the
                 controls that have to be one tap away. */}
-            {currentOrg && (
+            {/*
+              Shown whenever the reader belongs to an organization — NOT only
+              when the current one resolves.
+
+              This was gated on `currentOrg`, which is `userOrgs.find(o => o.id
+              === currentOrgId)`. So the moment the durable current org stopped
+              naming a workspace in the list — it was deleted, the membership
+              list is a beat behind, or the heal decision handed back null
+              because several remain and the reader must pick — the entire
+              switcher disappeared. The one control that can fix a bad current
+              org vanished exactly when it was the only thing needed, and a
+              newly provisioned org had nowhere to be selected from.
+
+              The dropdown also required two or more organizations, which is
+              right when one of them is already active and wrong when none is:
+              a single workspace nobody is in still has to be enterable.
+            */}
+            {userOrgs.length > 0 && (
               <>
               <div className="hidden md:block h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1.5 md:mx-3 flex-shrink-0" />
               <div className="hidden md:block relative" ref={orgSwitcherRef}>
                 <button
-                  onClick={() => { if (userOrgs.length > 1) setShowOrgSwitcher(!showOrgSwitcher) }}
+                  data-slot="org-switcher-trigger"
+                  onClick={() => { if (canOpenOrgSwitcher) setShowOrgSwitcher(!showOrgSwitcher) }}
                   className={clsx(
                     'flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors',
-                    userOrgs.length > 1
+                    canOpenOrgSwitcher
                       ? 'hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer'
                       : 'cursor-default'
                   )}
-                  aria-label="Switch organization"
-                  title={userOrgs.length > 1 ? 'Switch organization' : currentOrg.name}
+                  aria-label={currentOrg ? 'Switch organization' : 'Choose organization'}
+                  title={canOpenOrgSwitcher ? 'Switch organization' : currentOrg?.name}
                 >
-                  <span className="font-semibold text-sm md:text-base text-gray-800 dark:text-gray-200 max-w-[104px] md:max-w-[200px] truncate">
-                    {currentOrg.name}
+                  <span className={clsx(
+                    'font-semibold text-sm md:text-base max-w-[104px] md:max-w-[200px] truncate',
+                    currentOrg
+                      ? 'text-gray-800 dark:text-gray-200'
+                      : 'text-amber-700 dark:text-amber-400',
+                  )}>
+                    {/* Says what is true. A reader whose workspace is gone is
+                        not in an unnamed one; they are in none. */}
+                    {currentOrg?.name ?? (orgUnresolved ? '…' : 'Choose workspace')}
                   </span>
-                  {!!currentOrg.settings?.pilot_mode && (
+                  {!!currentOrg?.settings?.pilot_mode && (
                     <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded">
                       Pilot
                     </span>
                   )}
-                  {userOrgs.length > 1 && (
+                  {canOpenOrgSwitcher && (
                     <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                   )}
                 </button>
 
-                {showOrgSwitcher && userOrgs.length > 1 && (
+                {showOrgSwitcher && canOpenOrgSwitcher && (
                   <div className="absolute left-0 top-full mt-1 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-50">
                     <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Switch Organization</p>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                        {currentOrg ? 'Switch Organization' : 'Choose Organization'}
+                      </p>
                     </div>
                     {userOrgs.map((org) => (
                       <button
@@ -672,7 +742,7 @@ export function Header({
                         }}
                         className={clsx(
                           'w-full flex items-center space-x-3 px-3 py-2.5 text-sm transition-colors text-left',
-                          org.id === currentOrg.id
+                          org.id === currentOrg?.id
                             ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
                             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                         )}
@@ -691,7 +761,7 @@ export function Header({
                           </div>
                         )}
                         <span className="font-medium truncate">{org.name}</span>
-                        {org.id === currentOrg.id && (
+                        {org.id === currentOrg?.id && (
                           <span className="ml-auto text-indigo-500 text-xs">Active</span>
                         )}
                       </button>
@@ -768,9 +838,18 @@ export function Header({
               )}
               title="AI Assistant"
             >
-              <div className="w-5 h-5 bg-gradient-to-r from-blue-500 to-purple-500 rounded flex items-center justify-center">
-                <span className="text-white text-xs font-bold">AI</span>
-              </div>
+              {/* One glyph on every surface.
+                  The gradient chip was a filled brand mark sitting among flat
+                  grey glyphs, and — being its own coloured box — it ignored the
+                  button's hover and active colours entirely, so AI was the one
+                  control in the bar that never looked pressed. `Sparkles` takes
+                  `currentColor`, so it picks up the grey, the hover grey and the
+                  primary-600 active state the other four already use.
+
+                  Distinct from capture on purpose: amber lightbulb is Quick
+                  Ideas, sparkles is AI. Same button, same `onShowAI()`, same
+                  route — only the mark changed. */}
+              <Sparkles className="h-5 w-5" />
             </button>
             
             {/* Direct Messages Button */}
@@ -952,10 +1031,15 @@ export function Header({
             className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
             onClick={() => setShowSettings(false)}
           />
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] mx-auto transform transition-all flex flex-col overflow-hidden">
+          <div className="flex min-h-full items-center justify-center p-2 sm:p-4">
+            {/* dvh, not vh: on a phone `90vh` is measured against a viewport
+                that includes the area behind the URL bar, so the bottom tenth
+                of the dialog — where the actions are — sat off-screen and
+                could not be scrolled to. `p-8` on a 320px screen also left
+                256px of content inside a 320px dialog. */}
+            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-4xl w-full max-h-viewport-90 mx-auto transform transition-all flex flex-col overflow-hidden">
               {/* Inner scroll container so the scrollbar respects the rounded corners */}
-              <div className="overflow-y-auto p-8">
+              <div className="overflow-y-auto overscroll-contain p-4 sm:p-8">
                 <SettingsPage onClose={() => setShowSettings(false)} />
               </div>
             </div>
@@ -968,8 +1052,11 @@ export function Header({
           menu so it's always discoverable, not just from the
           dashboard prompt card. */}
       {showCustomization && (
-        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center">
-          <div className="w-full max-w-3xl h-[90vh] overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-2 sm:p-4">
+          {/* Same URL-bar problem as the settings dialog above: a hard 90vh
+              wizard put its Next button below the visible viewport on a phone,
+              which is a dead end in a flow that has no other way forward. */}
+          <div className="w-full max-w-3xl h-viewport-90 overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
             <SetupWizard
               mode="workspace_customization"
               onComplete={() => setShowCustomization(false)}

@@ -109,7 +109,7 @@ export function KeyboardShortcutsHelp({ onClose }: KeyboardShortcutsHelpProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
       <div
         ref={modalRef}
-        className="bg-white dark:bg-dark-card rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-200"
+        className="bg-white dark:bg-dark-card rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-viewport-80 overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-200"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -131,7 +131,7 @@ export function KeyboardShortcutsHelp({ onClose }: KeyboardShortcutsHelpProps) {
         </div>
 
         {/* Content */}
-        <div className="px-6 py-5 overflow-y-auto max-h-[60vh]">
+        <div className="px-6 py-5 overflow-y-auto max-h-viewport-60">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {SHORTCUT_CATEGORIES.map((category) => (
               <div key={category.title}>

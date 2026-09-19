@@ -35,3 +35,25 @@
 *.mjs   text eol=lf
 *.cjs   text eol=lf
 *.sh    text eol=lf
+
+# TypeScript, for the same reason one layer up: 87 test suites read their own
+# source and anchor on multi-line string literals containing `\n` -- 1122 such
+# anchors. Checked out CRLF, every one of them silently misses, `indexOf`
+# returns -1, and the slice under assertion is empty. That is how
+# `pilot-executed-trade.test.tsx` began failing: not because the test or the
+# code changed, but because Git rewrote `SimulationPage.tsx` on checkout.
+#
+# Nothing here expects CRLF, and no tracked blob contains one, so this is the
+# same no-content-diff change as the block above -- it only settles what lands
+# in the working tree, identically on every machine and in CI.
+
+*.ts    text eol=lf
+*.tsx   text eol=lf
+
+# `.sql` for the same reason, found the moment the checkout above was
+# rematerialized: `holdings-apply-rpc.test.ts` reads a migration and anchors on
+# `IF NOT EXISTS (\n    SELECT 1 FROM ...`. Those files had been LF only by
+# accident -- nothing had made Git rewrite them -- so the suite was resting on
+# the same luck the TypeScript anchors were.
+
+*.sql   text eol=lf

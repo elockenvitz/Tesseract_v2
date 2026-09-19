@@ -650,7 +650,7 @@ export function WorkflowManager({
 
   return (
     <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-      <div className={`bg-white rounded-xl shadow-xl w-full max-h-[90vh] overflow-hidden ${
+      <div className={`bg-white rounded-xl shadow-xl w-full max-h-viewport-90 overflow-hidden ${
         mode === 'selection' ? 'max-w-5xl' : 'max-w-6xl'
       }`}>
         {/* Header */}

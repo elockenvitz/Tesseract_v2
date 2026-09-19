@@ -97,7 +97,20 @@ export function SuggestionReviewPanel({
       currentPosition,
       price: {
         asset_id: suggestion.asset_id,
-        price: priceMap[suggestion.asset_id] || holding?.price || 100,
+        /*
+          Zero, never 100, where no price is known.
+
+          This object is sized against: `normalize-sizing` divides the
+          portfolio value by it to get shares, and the result is persisted as
+          `accepted_trades.price_at_acceptance` and applied to
+          `portfolio_holdings` and cash. A plausible-looking 100 sized and
+          booked real trades at a price nobody paid -- META, V, PLTR and LLY
+          all carry it against real closes of 682.31, 369.93, 176.24 and
+          1152.44. Zero is rejected by the sizing guard and by the
+          `apply_trade_to_holdings` RPC, so the trade is blocked and the desk
+          is told, rather than booked wrong and discovered later.
+        */
+        price: priceMap[suggestion.asset_id] || holding?.price || 0,
         timestamp: new Date().toISOString(),
         source: 'realtime' as const,
       },

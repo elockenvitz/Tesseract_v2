@@ -64,6 +64,15 @@ import {
 } from '../desktop/DesktopModule'
 import { FrameworkScale, WeightBar, money, bigMoney } from '../portfolio-v2/PortfolioVisual'
 import { anchoredWindow, PriceSinceReview } from '../research-v2/ResearchVisual'
+/*
+ * The same review map the Research lens joins in.
+ *
+ * Not a second read of the same truth in a different shape: `useThesisReviews`
+ * is one org-scoped query with its own cache key, so the tile and the page
+ * share a cache entry as well as a rule. `useDesktopResearch` calls exactly
+ * this hook, and the "latest valid holds" filtering happens inside it.
+ */
+import { useThesisReviews } from '../../hooks/useThesisReview'
 import { ThesisContainer } from '../contributions'
 import { useState } from 'react'
 
@@ -102,13 +111,38 @@ export function AssetWorkspacePane({
   const others = otherPositions(data.positions, position)
   const maxWeight = data.positions.reduce((m, p) => Math.max(m, p.weightPct ?? 0), 0)
 
-  // The review clocks, on the same model Research's lens uses, so the tile a
-  // reader clicked and the page they land on cannot disagree.
+  /*
+   * The review clocks, on the same model AND the same facts Research uses.
+   *
+   * ── The disagreement this closes ────────────────────────────────────────
+   *
+   * The comment below used to say the tile and the page "cannot disagree",
+   * and it was false. `stateOf` decides staleness from the LATER of when the
+   * thesis was written and when it was last confirmed still to hold, so that
+   * recording "Reviewed — no change" clears the flag without anyone editing a
+   * document that did not need editing. Research joins that confirmation in
+   * (`useDesktopResearch`: `lastReviewedAt: reviews.get(s.assetId)`). This
+   * subject never set the field at all, so it was permanently undefined here
+   * and the age fell back to the written date alone.
+   *
+   * The result: a reader records "Reviewed — no change", the Research tile
+   * reads Current, they click it, and the page they land on reads Review due
+   * — the one thing the original comment promised could not happen.
+   *
+   * Fed from the same hook rather than recomputed. `useThesisReviews` counts
+   * only `holds`, so the durable `changed` and `needs_work` conclusions stay
+   * on the record without falsely validating a thesis nobody has fixed.
+   */
+  const reviews = useThesisReviews()
   const subject = useMemo<ResearchSubject>(() => ({
     assetId: asset.id,
     symbol,
     companyName: asset.company_name ?? null,
     thesisUpdatedAt: data.caseWrittenAt,
+    lastReviewedAt: reviews.get(asset.id) ?? null,
+    /* Unchanged, and deliberately: this is the date the page DISPLAYS — when
+       the case was written — which is a different question from the clock
+       that decides whether it needs attention. */
     daysSinceReview: data.caseWrittenAt ? daysSince(data.caseWrittenAt) : null,
     sectionCount: data.sections.length,
     coreSectionCount: core.length,
@@ -117,7 +151,7 @@ export function AssetWorkspacePane({
     newestEvidenceAt: data.evidence[0]?.createdAt ?? null,
     newSinceReview: newEvidence.length,
     weightPct: position?.weightPct ?? undefined,
-  }), [asset.id, symbol, asset.company_name, data, core.length, newEvidence.length, position])
+  }), [asset.id, symbol, asset.company_name, data, core.length, newEvidence.length, position, reviews])
 
   const state = stateOf(subject)
   const gap = gapFor(data, position)
@@ -247,7 +281,7 @@ export function AssetWorkspacePane({
 
   const priceSince = window ? (
     <DesktopModule key="price" title="Price">
-      <PriceSinceReview w={window} />
+      <PriceSinceReview w={window} since="written" />
     </DesktopModule>
   ) : null
 

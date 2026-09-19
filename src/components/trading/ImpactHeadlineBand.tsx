@@ -28,7 +28,7 @@ function KpiPill({ label, before, after, format = 'number', invertColor = false 
   const improving = invertColor ? delta < 0 : delta > 0
 
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700/50 text-sm whitespace-nowrap">
+    <div className="shrink-0 flex items-center gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700/50 text-sm whitespace-nowrap">
       <span className="text-gray-500 dark:text-gray-400 text-xs font-medium">{label}</span>
       {changed ? (
         <>
@@ -98,12 +98,15 @@ export function ImpactHeadlineBand({ metrics, simulationRows }: ImpactHeadlineBa
   )
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-5 py-3">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-2.5 md:px-5 md:py-3">
       {/* Headline */}
-      <p className="text-sm font-medium text-gray-900 dark:text-white mb-2">{headline}</p>
+      <p className="text-sm font-medium text-gray-900 dark:text-white mb-1.5 md:mb-2">{headline}</p>
 
-      {/* KPI pills row */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* KPI pills row.
+          Three pills at 12px of horizontal padding each wrap to two rows on a
+          390px screen. They are one scrolling row there instead, which keeps
+          the band the same height whatever the numbers say. */}
+      <div className="flex items-center gap-1.5 md:gap-2 overflow-x-auto scrollbar-hide md:flex-wrap md:overflow-visible">
         <KpiPill
           label="Positions"
           before={metrics.position_count_before}

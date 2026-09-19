@@ -10,6 +10,7 @@ import {
   type MobileSurface,
 } from '../../lib/mobile/mobile-surfaces'
 import { CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID } from '../../lib/tabStateManager'
+import { useDismissOnBack } from '../../hooks/useDismissOnBack'
 import type { Tab } from '../layout/TabManager'
 
 interface MobileNavDrawerProps {
@@ -41,7 +42,18 @@ export function MobileNavDrawer({
   onTabChange,
   onTabClose,
 }: MobileNavDrawerProps) {
-  const { currentOrg, userOrgs, switchOrg } = useOrganization()
+  const { currentOrg, currentOrgId, userOrgs, switchOrg } = useOrganization()
+  /* See the note on `orgUnresolved` in Header: a named workspace the
+     list has not placed yet is not a workspace to choose. */
+  const orgUnresolved = !currentOrg && !!currentOrgId
+  /*
+   * Openable when there is a choice to make, or when no workspace is
+   * active. One organization that is already current has nothing to switch
+   * to; one that nobody is in still has to be enterable — which is the
+   * case after the workspace you were in is deleted, and the case where a
+   * newly provisioned one is the only way forward.
+   */
+  const canOpenOrgs = userOrgs.length > 1 || (userOrgs.length > 0 && !currentOrg)
   const [showOrgs, setShowOrgs] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -67,6 +79,11 @@ export function MobileNavDrawer({
     if (open) panelRef.current?.focus({ preventScroll: true })
   }, [open])
 
+  // The drawer is phone-only, so back always means "close this", never "leave
+  // Tesseract". Without this the Android back gesture walked out of the app
+  // from behind a drawer the user had just opened.
+  useDismissOnBack(open, onClose)
+
   const openSurface = (surface: MobileSurface) => {
     onClose()
     onSearchResult?.({ id: surface.type, title: surface.title, type: surface.type, data: null })
@@ -86,6 +103,16 @@ export function MobileNavDrawer({
     tabs.find(tab => tab.id === CANONICAL_HOME_TAB.id) ??
     tabs.find(tab => tab.id === LEGACY_DASHBOARD_ID) ??
     null
+
+  /**
+   * Whether the reader is looking at home right now.
+   *
+   * Read from the ACTIVE id rather than from `ideasTab`, because the row is
+   * drawn whether or not a home tab exists and its highlight has to be right
+   * in both cases.
+   */
+  const isHomeActive =
+    activeTabId === CANONICAL_HOME_TAB.id || activeTabId === LEGACY_DASHBOARD_ID
 
   // Everything else, newest first and capped. DashboardPage closes tabs past
   // this cap on a phone, so the list and the tab set stay in agreement rather
@@ -133,16 +160,24 @@ export function MobileNavDrawer({
           <TesseractLogo size={32} />
           <button
             type="button"
-            onClick={() => userOrgs.length > 1 && setShowOrgs(v => !v)}
+            onClick={() => canOpenOrgs && setShowOrgs(v => !v)}
             className="flex-1 min-w-0 flex items-center gap-1 text-left no-touch-target"
             aria-expanded={showOrgs}
-            aria-haspopup={userOrgs.length > 1}
-            disabled={userOrgs.length <= 1}
+            aria-haspopup={canOpenOrgs}
+            disabled={!canOpenOrgs}
           >
-            <span className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-              {currentOrg?.name ?? 'Tesseract'}
+            {/* Says what is true. A reader whose workspace is gone is not
+                in one called Tesseract; they are in none. */}
+            <span className={clsx(
+              'text-sm font-semibold truncate',
+              currentOrg
+                ? 'text-gray-900 dark:text-white'
+                : 'text-amber-700 dark:text-amber-400',
+            )}>
+              {currentOrg?.name
+                ?? (orgUnresolved ? '…' : userOrgs.length > 0 ? 'Choose workspace' : 'Tesseract')}
             </span>
-            {userOrgs.length > 1 && (
+            {canOpenOrgs && (
               <ChevronRight
                 className={clsx(
                   'h-4 w-4 shrink-0 text-gray-400 transition-transform',
@@ -161,81 +196,143 @@ export function MobileNavDrawer({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain pb-safe">
-          {/* Switching workspace reloads, so it sits above navigation rather
-              than among it — it changes what every destination below means. */}
-          {showOrgs && userOrgs.length > 1 && (
-            <div className="border-b border-gray-200 dark:border-gray-700 py-1">
-              {userOrgs.map(org => {
-                const isCurrent = org.id === currentOrg?.id
-                return (
-                  <button
-                    key={org.id}
-                    type="button"
-                    onClick={async () => {
-                      if (isCurrent) { setShowOrgs(false); return }
-                      onClose()
-                      await switchOrg(org.id)
-                    }}
+        {/*
+          Home is PERMANENT navigation, so it sits outside the scroller.
+
+          ── The defect this closes ──────────────────────────────────────────
+          It rendered as `{ideasTab && …}` — a reflection of an open tab rather
+          than a fixed destination — inside the same scroll region as every
+          other section. Two things followed. The phone tab cap closed the home
+          tab once a sixth opened (it names the oldest tab, and home is the
+          first of a session), and the whole Home section disappeared with it.
+          And even while present it scrolled away under a long Recent list.
+
+          Fixed here, and permanent means unconditional: the row is always
+          drawn, whether or not a home tab is currently open.
+        */}
+        {/*
+          Everything above the scroller is permanent navigation.
+
+          Search and Home are utilities, not destinations among destinations.
+          Both were inside the scroll region — search under the org switcher,
+          Home under that — so a long Recent list pushed the two controls a
+          reader reaches for most off the top of the drawer. They are the
+          reason to open it.
+
+          Order is deliberate: search finds anything, Home returns to the one
+          place, and the lists below are for browsing. Fixed with flex-shrink-0
+          above a `flex-1 min-h-0` scroller rather than absolutely positioned,
+          so the panel stays one flex column and nothing overlaps at any height.
+        */}
+        {/* Switching workspace reloads, so it sits above navigation rather
+            than among it — it changes what every destination below means. */}
+        {showOrgs && canOpenOrgs && (
+          // Bounded and scrollable: it is fixed chrome now, and a long list of
+          // workspaces must not push search and Home off a short screen.
+          <div className="flex-shrink-0 max-h-viewport-30 overflow-y-auto overscroll-contain border-b border-gray-200 dark:border-gray-700 py-1">
+            {userOrgs.map(org => {
+              const isCurrent = org.id === currentOrg?.id
+              return (
+                <button
+                  key={org.id}
+                  type="button"
+                  onClick={async () => {
+                    if (isCurrent) { setShowOrgs(false); return }
+                    onClose()
+                    await switchOrg(org.id)
+                  }}
+                  className={clsx(
+                    'w-full flex items-center gap-3 min-h-[52px] px-4 text-left',
+                    'hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors',
+                    isCurrent && 'bg-primary-50 dark:bg-primary-900/20'
+                  )}
+                >
+                  <span
                     className={clsx(
-                      'w-full flex items-center gap-3 min-h-[52px] px-4 text-left',
-                      'hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors',
-                      isCurrent && 'bg-primary-50 dark:bg-primary-900/20'
+                      'flex-1 min-w-0 truncate text-sm',
+                      isCurrent
+                        ? 'font-semibold text-primary-700 dark:text-primary-300'
+                        : 'text-gray-700 dark:text-gray-200'
                     )}
                   >
-                    <span
-                      className={clsx(
-                        'flex-1 min-w-0 truncate text-sm',
-                        isCurrent
-                          ? 'font-semibold text-primary-700 dark:text-primary-300'
-                          : 'text-gray-700 dark:text-gray-200'
-                      )}
-                    >
-                      {org.name}
-                    </span>
-                    {isCurrent && <Check className="h-4 w-4 text-primary-600 shrink-0" />}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-          {onOpenSearch && (
-            <div className="p-3">
-              <button
-                type="button"
-                onClick={() => {
-                  onClose()
-                  // Header owns the full-screen search overlay.
-                  window.dispatchEvent(new CustomEvent('open-mobile-search'))
-                }}
-                className="w-full flex items-center gap-3 h-12 px-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
-              >
-                <Search className="h-5 w-5" />
-                <span className="text-sm">Search assets, notes, people…</span>
-              </button>
-            </div>
-          )}
+                    {org.name}
+                  </span>
+                  {isCurrent && <Check className="h-4 w-4 text-primary-600 shrink-0" />}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
-          {ideasTab && (
-            <NavSection title="Home">
-              <button
-                type="button"
-                onClick={() => { onClose(); onTabChange(ideasTab.id) }}
-                className={clsx(
-                  'w-full flex items-center gap-3 h-12 px-3 rounded-xl text-left',
-                  ideasTab.id === activeTabId
-                    ? 'bg-primary-50 dark:bg-primary-900/20 font-semibold text-primary-700 dark:text-primary-300'
-                    : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
-                )}
-              >
-                <Lightbulb className="h-5 w-5 text-amber-500 shrink-0" />
-                {/* The home tab renders the ideas feed on phones, so it is
-                    labelled for what it shows rather than "Dashboard". */}
-                <span className="text-sm">Ideas</span>
-              </button>
-            </NavSection>
-          )}
+        {onOpenSearch && (
+          // `px-3 py-2` around an h-11 control rather than `p-3` around an
+          // h-12 one: 12px of the drawer back, and 44px is still a target you
+          // can hit without looking.
+          <div className="flex-shrink-0 px-3 py-2">
+            <button
+              type="button"
+              data-testid="drawer-search"
+              onClick={() => {
+                onClose()
+                // Header owns the full-screen search overlay.
+                window.dispatchEvent(new CustomEvent('open-mobile-search'))
+              }}
+              className="w-full flex items-center gap-3 h-11 px-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+            >
+              <Search className="h-5 w-5 shrink-0" />
+              <span className="text-sm truncate">Search assets, notes, people…</span>
+            </button>
+          </div>
+        )}
 
+        <div
+          data-testid="drawer-home"
+          className="flex-shrink-0 border-b border-gray-100 dark:border-gray-800"
+        >
+          <NavSection title="Home" dense>
+          <button
+            type="button"
+            onClick={() => {
+              onClose()
+              // Activate the home tab if the session still has one. If the cap
+              // or a restore took it, ask the shell to open the canonical home
+              // — `handleSearchResult` matches on id, so this activates an
+              // existing tab and never adds a second.
+              if (ideasTab) onTabChange(ideasTab.id)
+              else onSearchResult?.({
+                id: CANONICAL_HOME_TAB.id,
+                title: CANONICAL_HOME_TAB.title,
+                type: CANONICAL_HOME_TAB.type,
+                data: null,
+              })
+            }}
+            className={clsx(
+              'w-full flex items-center gap-3 h-12 px-3 rounded-xl text-left',
+              isHomeActive
+                ? 'bg-primary-50 dark:bg-primary-900/20 font-semibold text-primary-700 dark:text-primary-300'
+                : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+            )}
+          >
+            <Lightbulb className="h-5 w-5 text-amber-500 shrink-0" />
+            {/* The home tab renders the ideas feed on phones, so it is
+                labelled for what it shows rather than "Dashboard". */}
+            <span className="text-sm">Ideas</span>
+          </button>
+          </NavSection>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-safe">
+
+          {/*
+            Recent leads, and Core follows it.
+
+            Recent is contextual navigation — the workspaces this reader is
+            actually in — and Core is the application catalogue. Directly under
+            a pinned Home, the useful next thing is where you already were, not
+            an alphabet of everything the product contains. With nothing open
+            the section renders nothing at all and Core becomes the first thing
+            in the scroller, which is the right answer for a fresh session.
+          */}
           {recentTabs.length > 0 && (
             <NavSection title="Recent">
               {recentTabs.map(tab => {
@@ -299,6 +396,19 @@ export function MobileNavDrawer({
             ))}
           </NavSection>
 
+          {/* The registry's third group. Organization, Allocation, Charting,
+              Audit and Target Date are all registered `inNav: true` with a
+              read-only phone treatment, and the drawer rendered `core` and
+              `work` only — so five surfaces the registry said were reachable
+              had no route to them on a phone at all. The registry is meant to
+              be the one place that decision is made; a section missing here
+              quietly overrode it. */}
+          <NavSection title="Analysis">
+            {getMobileNavSurfaces('admin').map(surface => (
+              <NavRow key={surface.type} surface={surface} onSelect={openSurface} />
+            ))}
+          </NavSection>
+
           {/* The only way to report anything from a phone.
               FeedbackWidget's trigger is a labelled pill in the header, which
               is desktop-only for want of room, so until this existed a phone
@@ -334,10 +444,22 @@ export function MobileNavDrawer({
   )
 }
 
-function NavSection({ title, children }: { title: string; children: React.ReactNode }) {
+/**
+ * `dense` is for the pinned block above the scroller.
+ *
+ * A section label costs about 34px, which is right once per scrolling group and
+ * wasteful above a single permanent row the reader is looking straight at. The
+ * label stays — "Home > Ideas" is the name of the thing — and only its padding
+ * shrinks, so the visual language is unchanged.
+ */
+function NavSection({ title, children, dense = false }: {
+  title: string
+  children: React.ReactNode
+  dense?: boolean
+}) {
   return (
-    <div className="pb-2">
-      <div className="px-4 pt-4 pb-1">
+    <div className={dense ? 'pb-1' : 'pb-2'}>
+      <div className={dense ? 'px-4 pt-2 pb-0.5' : 'px-4 pt-4 pb-1'}>
         <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
           {title}
         </span>

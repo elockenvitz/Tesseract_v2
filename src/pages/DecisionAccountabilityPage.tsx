@@ -17,7 +17,7 @@
  * - Rationale content from trade_event_rationales
  */
 
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import {
   Target, Search, ChevronDown, ChevronRight, Clock,
   CheckCircle2, TrendingUp, TrendingDown, Briefcase,
@@ -26,11 +26,19 @@ import {
   DollarSign, Activity, ArrowUpRight, ArrowDownRight,
   Percent, Zap, Camera, Timer, Scale,
   Lightbulb, MessageSquare, BookOpen, Pencil, User,
-  Award, Users, Link2, Unlink, Sparkles,
+  Award, Users, Link2, Unlink, Sparkles, LineChart,
 } from 'lucide-react'
-import { format, subDays, parseISO } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { clsx } from 'clsx'
 import { useIsMobile } from '../hooks/useMediaQuery'
+import { useDismissOnBack } from '../hooks/useDismissOnBack'
+import { DATE_PRESET_BUTTONS, activePresetFor, customRange, presetRange, type DatePreset } from '../lib/outcomes/date-presets'
+import { OutcomesRangeControl } from '../components/mobile/OutcomesRangeControl'
+import { OutcomesReviewStatusCard } from '../components/mobile/OutcomesReviewStatusCard'
+import { MobileBatchList, MobileBatchView } from '../components/mobile/MobileBatchList'
+import { DecisionsViewControls, type DecisionsView } from '../components/outcomes/DecisionsViewControls'
+import { DesktopBatchRows } from '../components/outcomes/DesktopBatchRows'
+import { groupByBatch, rowMatchesSearch } from '../lib/outcomes/batch-groups'
 import { MobileDecisionLedger } from '../components/mobile/MobileDecisionLedger'
 import {
   useDecisionAccountability,
@@ -53,7 +61,9 @@ import {
 } from '../hooks/useDecisionReview'
 import type { CandidateTradeEvent, Reflection } from '../hooks/useDecisionAccountability'
 import { PositionChart } from '../components/outcomes/PositionChart'
-import { OptionPicker } from '../components/ui/OptionPicker'
+import { PositionChartMobile } from '../components/outcomes/PositionChartMobile'
+import { PLOT_HEIGHT as MOBILE_PLOT_HEIGHT, type ChartRange, type OverlayField } from '../components/outcomes/position-chart-model'
+import { fetchBenchmarkWeight, knownBenchmarkWeightPct, type BenchmarkQueryClient } from '../lib/holdings/benchmark-membership'
 import {
   inferDecisionIntelligence, buildProcessHealth, buildSmartChips,
   VERDICT_DISPLAY, VERDICT_EXPLANATIONS, HEALTH_DISPLAY,
@@ -71,7 +81,7 @@ import { useOrganization } from '../contexts/OrganizationContext'
 import { useToast } from '../components/common/Toast'
 import { PilotOutcomesGetStarted } from '../components/pilot/PilotOutcomesGetStarted'
 import { usePilotMode } from '../hooks/usePilotMode'
-import { usePilotProgress } from '../hooks/usePilotProgress'
+import { usePilotMission } from '../hooks/usePilotMission'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { MultiSelectFilter } from '../components/ui/MultiSelectFilter'
@@ -90,14 +100,19 @@ type OutcomesSubTab = 'decisions' | 'scorecards'
 
 // Outcomes is rendered via switch-on-active-tab in DashboardPage, so
 // switching to another tab unmounts this page and resets local state.
-// Persist the user-visible "place" (selection, filters, sort, sub-tab)
-// to sessionStorage so returning to the tab restores the same view.
+// Persist the user-visible "place" (filters, sort, sub-tab) to
+// sessionStorage so returning to the tab restores the same view.
 // SessionStorage (not localStorage) — we want it to live for the
 // session, not bleed across browser restarts.
+//
+// The SELECTED DECISION is deliberately not part of it. It is transient view
+// state: on a phone it is a full-screen detail, and restoring it meant
+// returning to Outcomes from any other app reopened the last decision instead
+// of the page. Snapshots written before this change may still carry a
+// `selectedId`; it is never read.
 interface PersistedOutcomesState {
   activeTab: OutcomesSubTab
   selectedPortfolioId: string | null
-  selectedId: string | null
   activeChipKey: string
   typeFilter: string | null
   tickerSearch: string
@@ -109,6 +124,8 @@ interface PersistedOutcomesState {
   sortBy: string
   sortDesc: boolean
   filters: Partial<AccountabilityFilters>
+  /** Batches | Trades as last chosen; absent = the device default. */
+  decisionsView?: DecisionsView | null
 }
 function outcomesStateKey(userId: string | undefined, orgId: string | null) {
   return `outcomes_page_state_${userId || 'anon'}_${orgId || 'no-org'}`
@@ -231,6 +248,17 @@ const UNMATCHED_GRID = 'grid-cols-[88px_1fr_72px_110px_80px_80px]'
 
 interface DecisionAccountabilityPageProps {
   onItemSelect?: (item: any) => void
+  /**
+   * A decision to land on, by `trade_queue_item_id`.
+   *
+   * Supplied by the pilot mission's "Review outcome", which routes here with
+   * the tutorial idea. Absent for every ordinary visit, and nothing below
+   * behaves differently when it is.
+   */
+  focusDecisionId?: string | null
+  /** Called once the focus has been honoured, so the caller can drop it and a
+   *  later ordinary visit lands on the page rather than that decision. */
+  onFocusConsumed?: () => void
 }
 
 // ============================================================
@@ -250,70 +278,20 @@ function FilterBar({
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
 
-  type DatePreset = '7d' | '30d' | '90d' | 'QTD' | 'YTD' | '1Y' | '2Y' | 'ALL' | 'custom'
-
   const handlePreset = (preset: DatePreset) => {
-    const now = new Date()
-    let start: Date | null = null
-
-    switch (preset) {
-      case '7d': start = subDays(now, 7); break
-      case '30d': start = subDays(now, 30); break
-      case '90d': start = subDays(now, 90); break
-      case 'QTD': {
-        const qMonth = Math.floor(now.getMonth() / 3) * 3
-        start = new Date(now.getFullYear(), qMonth, 1)
-        break
-      }
-      case 'YTD': start = new Date(now.getFullYear(), 0, 1); break
-      case '1Y': start = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()); break
-      case '2Y': start = new Date(now.getFullYear() - 2, now.getMonth(), now.getDate()); break
-      case 'ALL': start = null; break
-      case 'custom': setShowCustom(true); return
-    }
-
+    if (preset === 'custom') { setShowCustom(true); return }
     setShowCustom(false)
-    onChange({
-      ...filters,
-      dateRange: {
-        start: start ? start.toISOString() : null,
-        end: now.toISOString(),
-      },
-    })
+    onChange({ ...filters, dateRange: presetRange(preset) })
   }
 
   const applyCustomRange = () => {
     if (customStart) {
-      onChange({
-        ...filters,
-        dateRange: {
-          start: new Date(customStart).toISOString(),
-          end: customEnd ? new Date(customEnd + 'T23:59:59').toISOString() : new Date().toISOString(),
-        },
-      })
+      onChange({ ...filters, dateRange: customRange(customStart, customEnd) })
       setShowCustom(false)
     }
   }
 
-  const activePreset = useMemo((): DatePreset => {
-    if (!filters.dateRange?.start) return 'ALL'
-    const startDate = new Date(filters.dateRange.start)
-    const diff = (Date.now() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-    const now = new Date()
-    // Check QTD
-    const qMonth = Math.floor(now.getMonth() / 3) * 3
-    const qtdStart = new Date(now.getFullYear(), qMonth, 1)
-    if (Math.abs(startDate.getTime() - qtdStart.getTime()) < 86400000) return 'QTD'
-    // Check YTD
-    const ytdStart = new Date(now.getFullYear(), 0, 1)
-    if (Math.abs(startDate.getTime() - ytdStart.getTime()) < 86400000) return 'YTD'
-    if (diff < 10) return '7d'
-    if (diff < 40) return '30d'
-    if (diff < 100) return '90d'
-    if (diff < 400) return '1Y'
-    if (diff < 800) return '2Y'
-    return 'custom'
-  }, [filters.dateRange?.start])
+  const activePreset = useMemo(() => activePresetFor(filters.dateRange?.start), [filters.dateRange?.start])
 
   const toggleExecStatus = (status: ExecutionMatchStatus) => {
     const current = filters.executionStatus || []
@@ -328,7 +306,7 @@ function FilterBar({
       {/* Date range */}
       <div className="relative min-w-0 max-w-full">
         <div className="flex sm:inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg dark:bg-gray-800 max-w-full overflow-x-auto no-scrollbar">
-          {(['7d', '30d', '90d', 'QTD', 'YTD', '1Y', 'ALL'] as DatePreset[]).map(p => (
+          {DATE_PRESET_BUTTONS.map(p => (
             <button
               key={p}
               onClick={() => handlePreset(p)}
@@ -845,6 +823,7 @@ function StorySection({ icon: Icon, title, children, defaultOpen = false, badge,
    *  collapsed section (open it + scroll into view). */
   sectionId?: string
 }) {
+  const isPhone = useIsMobile()
   const [open, setOpen] = useState(defaultOpen)
   const wrapperRef = React.useRef<HTMLDivElement>(null)
 
@@ -876,6 +855,49 @@ function StorySection({ icon: Icon, title, children, defaultOpen = false, badge,
       }))
     } catch { /* ignore */ }
   }, [open, sectionId])
+
+  /*
+   * Phone: one card per section. The desktop header is an 11px uppercase label
+   * on a 40px row, which on a phone is both hard to read and a small target.
+   * Here the title is a real heading, the whole row is at least 52px, and
+   * "Needs info" sits under the title instead of competing with the badge for
+   * the same line. The body gets `outcomes-phone-body`, which lifts the
+   * desktop-sized type and gives its buttons a 44px target (index.css).
+   */
+  if (isPhone) {
+    return (
+      <div
+        ref={wrapperRef}
+        data-section-id={sectionId}
+        className="mx-3 mt-3 rounded-xl border border-gray-200 bg-white overflow-hidden dark:border-gray-700 dark:bg-gray-800"
+      >
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          className="w-full min-h-[52px] px-4 py-3 flex items-center gap-3 text-left active:bg-gray-50 dark:active:bg-gray-700/50"
+        >
+          <Icon className={`w-4 h-4 shrink-0 ${needsAttention ? 'text-amber-500' : 'text-gray-400'}`} />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-semibold leading-snug text-gray-900 dark:text-white">{title}</span>
+            {needsAttention && (
+              <span className="mt-0.5 flex items-center gap-1.5 text-[12px] text-amber-700 dark:text-amber-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                Needs info
+              </span>
+            )}
+          </span>
+          {badge && <span className="outcomes-phone-badge shrink-0 max-w-[40%] truncate">{badge}</span>}
+          <ChevronDown className={clsx('w-4 h-4 shrink-0 text-gray-400 transition-transform', open && 'rotate-180')} />
+        </button>
+        {open && (
+          <div className="outcomes-phone-body px-4 pt-3 pb-4 border-t border-gray-100 dark:border-gray-700/60">
+            {children}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div
@@ -1096,11 +1118,11 @@ function InsightBanner({ row }: { row: AccountabilityRow }) {
  *  Rendered as a quiet bulleted list, no card chrome, so it reads
  *  as a follow-up to the System Insight rail above rather than a
  *  separate section. */
-function ConsiderationsSection({ row }: { row: AccountabilityRow }) {
+function ConsiderationsSection({ row, embedded = false }: { row: AccountabilityRow; embedded?: boolean }) {
   const items = useMemo(() => buildConsiderations(row), [row])
   if (items.length === 0) return null
   return (
-    <div className="mx-4 mt-4 mb-1.5 px-2.5 pt-3 border-t border-gray-100 dark:border-gray-800">
+    <div className={embedded ? 'pt-3 border-t border-gray-100 dark:border-gray-800' : 'mx-4 mt-4 mb-1.5 px-2.5 pt-3 border-t border-gray-100 dark:border-gray-800'}>
       <div className="flex items-center gap-1.5 mb-1.5">
         <HelpCircle className="w-3 h-3 text-gray-400" />
         <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Things to consider</span>
@@ -1175,6 +1197,9 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
   const needsReflection =
     !hasReflected && (intel.verdict === 'evaluate' || intel.verdict === 'needs_review' || intel.verdict === 'hurting')
 
+  // Scopes the memory event to the org, which its RLS policy requires.
+  const { currentOrgId } = useOrganization()
+
   const persist = (patch: { thesis_played_out?: ThesisOutcome | null; process_note?: string | null }) => {
     if (!user?.id) return
     upsert.mutate(
@@ -1187,6 +1212,18 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
           thesis_played_out: patch.thesis_played_out !== undefined ? patch.thesis_played_out : (review?.thesis_played_out ?? null),
           process_note: patch.process_note !== undefined ? patch.process_note : (review?.process_note ?? null),
         },
+        /*
+         * Which table `decision_id` points at.
+         *
+         * It is polymorphic, and (source, category) is what disambiguates it:
+         * a discretionary row's id is a `portfolio_trade_events` id, an acted
+         * row's is a `trade_queue_items` id, and a passed row's is a
+         * `decision_requests` id. The row knows; the writer must not guess.
+         */
+        subjectType: row.source === 'discretionary' ? 'trade'
+          : row.category === 'passed' ? 'decision'
+          : 'idea',
+        organizationId: currentOrgId,
       },
     )
   }
@@ -1367,7 +1404,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
                     className="w-full text-[11px] px-2.5 py-1.5 rounded-md border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 leading-relaxed resize-none dark:border-gray-700 dark:text-white dark:bg-gray-800"
                   />
                   {threadDraft.trim() && (
-                    <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
                       <button
                         onClick={handleAddThreadEntry}
                         disabled={addReflection.isPending}
@@ -1376,7 +1413,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
                         {addReflection.isPending ? 'Saving…' : 'Post note'}
                       </button>
                       <button onClick={() => setThreadDraft('')} className="text-[10px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400">Cancel</button>
-                      <span className="text-[9px] text-gray-300 ml-auto">Enter to save, Shift+Enter for new line</span>
+                      <span className="text-[9px] text-gray-300 ml-auto max-md:hidden">Enter to save, Shift+Enter for new line</span>
                     </div>
                   )}
                 </div>
@@ -1415,7 +1452,7 @@ const ACTION_FALLBACK_SECTION: Partial<Record<SuggestedAction['key'], string>> =
   'update-thesis': 'thesis',
 }
 
-function PrimaryNextActionCTA({ row }: { row: AccountabilityRow }) {
+function PrimaryNextActionCTA({ row, embedded = false }: { row: AccountabilityRow; embedded?: boolean }) {
   const actions = useMemo(() => buildSuggestedActions(row), [row])
   const primary = actions.find(a => a.primary) ?? actions[0]
   if (!primary) return null
@@ -1439,7 +1476,7 @@ function PrimaryNextActionCTA({ row }: { row: AccountabilityRow }) {
     }
   }
   return (
-    <div className="px-4 pb-3">
+    <div className={embedded ? undefined : 'px-4 pb-3'}>
       <button
         type="button"
         onClick={handleClick}
@@ -1463,7 +1500,7 @@ function PrimaryNextActionCTA({ row }: { row: AccountabilityRow }) {
  *  ("Re-enter META on weakness", "Take partial gains on AAPL")
  *  instead of generic. Each click dispatches a CustomEvent on
  *  `window` so the dashboard shell can wire downstream flows. */
-function SuggestedActionsSection({ row }: { row: AccountabilityRow }) {
+function SuggestedActionsSection({ row, embedded = false }: { row: AccountabilityRow; embedded?: boolean }) {
   const actions = useMemo(() => buildSuggestedActions(row), [row])
   if (actions.length === 0) return null
 
@@ -1479,7 +1516,7 @@ function SuggestedActionsSection({ row }: { row: AccountabilityRow }) {
   }
 
   return (
-    <div className="mx-4 my-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2 dark:border-gray-800">
+    <div className={embedded ? 'pt-3 border-t border-gray-100 dark:border-gray-800' : 'mx-4 my-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2 dark:border-gray-800'}>
       <div className="flex items-center gap-1.5 mb-1">
         <Zap className="w-3 h-3 text-primary-500" />
         <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Suggested next action</span>
@@ -1570,13 +1607,29 @@ function LoopFooter({ row }: { row: AccountabilityRow }) {
   )
 }
 
-function DetailPanel({
+/** Exported for the phone layout test only; the page is its one caller. */
+export function DetailPanel({
   row,
   onClose,
+  onSelectDecision,
 }: {
   row: AccountabilityRow
   onClose: () => void
+  /** Phone only: the chart renders inside the panel there, and a tap on a
+   *  decision marker selects that decision. */
+  onSelectDecision?: (decisionId: string) => void
 }) {
+  const isPhone = useIsMobile()
+  // Phone: the chart is opt-in. It used to be pinned under the panel at
+  // ~270px, which on a 844px screen left the story less than half of it.
+  // Kept across decision changes (a marker tap should not hide the chart it
+  // came from); the panel unmounting on close resets it.
+  const [chartOpen, setChartOpen] = useState(false)
+  // The chart's metric and range live here, not in the chart, so hiding and
+  // re-showing the chart keeps them. null range = the data's default.
+  const [chartMetric, setChartMetric] = useState<OverlayField>('shares')
+  const [chartRange, setChartRange] = useState<ChartRange | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const dirCfg = DIRECTION_CONFIG[row.direction] || { color: 'text-gray-600 dark:text-gray-400', bgColor: 'bg-gray-100 dark:bg-gray-800' }
   const baseIntel = inferDecisionIntelligence(row)
 
@@ -1626,6 +1679,63 @@ function DetailPanel({
           it doing, what's next" without scanning through card chrome.
           Each element renders only when it carries information —
           blank fields don't reserve space. */}
+      {isPhone ? (
+        /* Phone header: identity on two wrapping lines instead of one
+           truncating one (the asset name and portfolio were cut to a few
+           letters at 390px), a 44px close, and the chart toggle. The state
+           summary moves into the Summary card below. */
+        <div className={`px-4 pt-2 pb-3 border-b shrink-0 ${headerTone}`}>
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1 pt-2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className={`text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded ${dirCfg.color} ${dirCfg.bgColor}`}>
+                  {row.direction}
+                </span>
+                <span className="text-[20px] font-semibold leading-tight text-gray-900 break-all dark:text-white">{row.asset_symbol}</span>
+                {intel.resultLabel && (
+                  <span className={`text-[18px] font-black tabular-nums leading-tight ${resultColor}`}>{intel.resultLabel}</span>
+                )}
+              </div>
+              <p className="mt-1 text-[13px] leading-snug text-gray-500 break-words dark:text-gray-400">
+                {[row.asset_name, ageDays <= 0 ? 'Decided today' : `Decided ${ageDays}d ago`, row.portfolio_name].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+            {/* Compact chart control: a 32px pill inside a 44px tap area,
+                pressed while the chart is showing. */}
+            <button
+              type="button"
+              data-slot="outcomes-chart-toggle"
+              aria-expanded={chartOpen}
+              aria-label={chartOpen ? 'Hide chart' : 'Show chart'}
+              onClick={() => {
+                const next = !chartOpen
+                setChartOpen(next)
+                // The chart opens at the top of the story, so bring it into view.
+                if (next) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+              className="h-11 shrink-0 flex items-center"
+            >
+              <span className={clsx(
+                'inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-[13px] font-medium',
+                chartOpen
+                  ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-950/40 dark:text-primary-300'
+                  : 'border-gray-200 bg-white text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200',
+              )}>
+                <LineChart className="w-4 h-4" />
+                Chart
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="-mr-2 w-11 h-11 shrink-0 flex items-center justify-center rounded-full text-gray-500 active:bg-gray-100 dark:text-gray-400 dark:active:bg-gray-700"
+              aria-label="Close detail"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      ) : (
       <div className={`px-4 pt-3 pb-3 border-b shrink-0 ${headerTone}`}>
         {/* Row 1 — identity + meta + result + close, all on one line.
             Age and portfolio now ride inline next to the asset name
@@ -1694,18 +1804,67 @@ function DetailPanel({
             Next-Action CTA below the System Insight handles this so
             the header doesn't say "Add context" three times.) */}
       </div>
+      )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className={clsx('flex-1 overflow-y-auto', isPhone && 'overscroll-contain pb-6')}>
         {/* ════════════════════════════════════════════════════════════
             PROGRESSIVE DISCLOSURE LAYOUT
             ────────────────────────────────────────────────────────────
             PRIMARY (always visible): System Insight + single Next Action
             SECONDARY (collapsed): Why made / Recommendation / Decision /
-                                    What happened / How it's performing
+                                    What happened / Performance so far
             TERTIARY (conditional): Reflection + Learnings only on rows
                                     with a meaningful outcome
             ════════════════════════════════════════════════════════════ */}
 
+        {isPhone ? (
+          <>
+            {/* Phone: the chart, when asked for, leads the story. */}
+            {chartOpen && (
+              // Full pane width: a rule above and below, no inset card.
+              <div data-slot="outcomes-phone-chart" className="border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+                <DeferredChartPanel
+                  row={row}
+                  onSelectDecision={onSelectDecision}
+                  metric={chartMetric}
+                  onMetricChange={setChartMetric}
+                  range={chartRange}
+                  onRangeChange={setChartRange}
+                />
+              </div>
+            )}
+
+            {/* Phone: Summary is the one section that is always open —
+                where this decision stands, what the system reads into it,
+                and the single next action. Everything else is a
+                collapsed card below it. */}
+            {(() => {
+              const summary = buildStateSummary(row, intel.verdict)
+              return (
+                <section
+                  data-section-id="summary"
+                  className="outcomes-phone-body mx-3 mt-3 rounded-xl border border-gray-200 bg-white px-4 py-4 space-y-3 dark:border-gray-700 dark:bg-gray-800"
+                >
+                  <h2 className="text-[15px] font-semibold leading-snug text-gray-900 dark:text-white">Summary</h2>
+                  <div className="space-y-1">
+                    <div className={`text-[12px] font-bold uppercase tracking-wider ${
+                      intel.urgency === 'critical' ? 'text-red-700'
+                      : intel.urgency === 'high' ? 'text-amber-700'
+                      : intel.verdict === 'resolved' ? 'text-emerald-700'
+                      : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      {summary.category}
+                    </div>
+                    <p className="text-[14px] leading-relaxed text-gray-700 dark:text-gray-300">{summary.explanation}</p>
+                  </div>
+                  <InsightBanner row={row} />
+                  <PrimaryNextActionCTA row={row} embedded />
+                </section>
+              )
+            })()}
+          </>
+        ) : (
+          <>
         {/* ── PRIMARY 1 — System Insight (always visible, top of stack) */}
         <div className="px-4 pt-3 pb-1">
           <InsightBanner row={row} />
@@ -1717,6 +1876,8 @@ function DetailPanel({
             The full SuggestedActions tertiary list still surfaces
             additional CTAs further down. */}
         <PrimaryNextActionCTA row={row} />
+          </>
+        )}
 
         {/* ── 1. Why this decision was made ──
             Cleaner layout — lead with the rationale (the answer the
@@ -1926,7 +2087,14 @@ function DetailPanel({
             deltas, and any rationale rendered as a quiet quote
             instead of an outlined card. The empty / pending states
             stay simple text + actions. */}
-        <StorySection icon={ArrowRight} title="Execution" badge={<ExecStatusPill status={row.execution_status} interactive row={row} />}>
+        {/* On a phone the status pill is plain: its tap-for-explanation
+            popover is 288px wide from the pill's left edge, which at the
+            right of a 390px header ran off the screen. The explanation is
+            written at the top of the section instead. */}
+        <StorySection icon={ArrowRight} title="Execution" badge={<ExecStatusPill status={row.execution_status} interactive={!isPhone} row={row} />}>
+          {isPhone && row.execution_status !== 'not_applicable' && getExecStatusExplanation(row) && (
+            <p className="text-[11px] text-gray-500 leading-snug mb-3 dark:text-gray-400">{getExecStatusExplanation(row)}</p>
+          )}
           {row.execution_status === 'not_applicable' ? (
             <EmptyField text={row.stage === 'rejected'
               ? `This idea was rejected — no trade was made.${row.move_since_decision_pct != null ? ` The stock has moved ${row.move_since_decision_pct > 0 ? '+' : ''}${row.move_since_decision_pct.toFixed(1)}% since then.` : ''}`
@@ -1939,7 +2107,7 @@ function DetailPanel({
                   ? `Not executed${row.days_since_decision !== null ? ` · ${row.days_since_decision}d since decision` : ''}`
                   : 'No matching execution found.'}
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <ManualMatchPanel row={row} />
                 <SkipDecisionButton decisionId={row.decision_id} />
               </div>
@@ -1979,7 +2147,9 @@ function DetailPanel({
           const tier = magnitudeTier(row)
           const hasMeaningfulOutcome =
             row.execution_status === 'executed' && tier !== 'noise' && tier !== 'no_data'
-          if (!hasMeaningfulOutcome) return null
+          // Phone: these move inside Next actions, so the story is exactly
+          // the seven sections and nothing floats between the cards.
+          if (!hasMeaningfulOutcome || isPhone) return null
           return (
             <>
               <ConsiderationsSection row={row} />
@@ -2000,7 +2170,15 @@ function DetailPanel({
             `sectionId="reflection"` so the "Add a reflection" CTA
             in NextStepsSection can pop it open. */}
         <ReflectionsSection row={row} intel={intel} />
-        <NextStepsSection row={row} />
+        <NextStepsSection
+          row={row}
+          extras={isPhone && row.execution_status === 'executed' && !['noise', 'no_data'].includes(magnitudeTier(row)) ? (
+            <>
+              <ConsiderationsSection row={row} embedded />
+              <SuggestedActionsSection row={row} embedded />
+            </>
+          ) : null}
+        />
 
         {/* (Execution lag moved into the Execution section above so
             it sits with the other execution facts. The loop-footer
@@ -2026,7 +2204,7 @@ function PriceJourney({ row }: { row: AccountabilityRow }) {
   if (prices.length === 0) return null
 
   return (
-    <div className="flex items-center gap-1 py-1.5">
+    <div className="flex flex-wrap items-center gap-1 py-1.5">
       {prices.map((p, i) => (
         <div key={p.label} className="flex items-center gap-1">
           {i > 0 && <ArrowRight className="w-3 h-3 text-gray-300 shrink-0" />}
@@ -2189,7 +2367,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
   // ── Not applicable (rejected/cancelled) ──
   if (isNotApplicable) {
     return (
-      <StorySection icon={TrendingUp} title="How it's performing" sectionId="performance" defaultOpen={false} badge={
+      <StorySection icon={TrendingUp} title="Performance so far" sectionId="performance" defaultOpen={false} badge={
         rawMove != null ? (
           <span className={`text-[8px] font-bold uppercase px-1.5 py-[2px] rounded ${
             directionalMove != null && directionalMove >= 0 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'
@@ -2232,7 +2410,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
   // ── Pending / Unmatched — approved but no trade yet ──
   if (isPending) {
     return (
-      <StorySection icon={TrendingUp} title="How it's performing" sectionId="performance" defaultOpen={false} badge={
+      <StorySection icon={TrendingUp} title="Performance so far" sectionId="performance" defaultOpen={false} badge={
         rawMove != null ? (
           <span className={`text-[8px] font-bold uppercase px-1.5 py-[2px] rounded bg-amber-50 text-amber-700`}>
             {fmtPct(rawMove)} missed
@@ -2278,7 +2456,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
 
   // ── Executed — has matched trade ──
   return (
-    <StorySection icon={TrendingUp} title="How it's performing" sectionId="performance" defaultOpen={false} badge={
+    <StorySection icon={TrendingUp} title="Performance so far" sectionId="performance" defaultOpen={false} badge={
       badgeLabel ? (
         <span className={`text-[8px] font-bold uppercase px-1.5 py-[2px] rounded ${
           (badgeValue || 0) >= 0 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'
@@ -2306,7 +2484,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                 visceral P&L stat for a single trade; the percent
                 gives the move that produced it. */}
             {(row.impact_proxy != null || row.move_since_decision_pct !== null) && (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
                 {row.impact_proxy != null && (
                   <DetailRow
                     label={<span title="Approximate dollar impact: trade size × directionalized price move. Not exact P&L.">P&amp;L (approx)</span>}
@@ -2368,7 +2546,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                   lifecycle.isOpen ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                 }`}>{lifecycle.isOpen ? 'Open' : 'Closed'}</span>
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
                 {lifecycle.avgEntryPrice != null && (
                   <DetailRow label="Avg entry" value={`$${lifecycle.avgEntryPrice.toFixed(2)}`} />
                 )}
@@ -2384,7 +2562,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                   } />
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 border-t border-gray-100 pt-1 mt-1 dark:border-gray-800">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 border-t border-gray-100 pt-1 mt-1 dark:border-gray-800">
                 {lifecycle.realizedPnl != null && (
                   <DetailRow label="Realized" value={
                     <span className={`text-[11px] font-semibold tabular-nums ${pnlColor(lifecycle.realizedPnl)}`}>
@@ -2428,13 +2606,13 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                 const isThis = ds.decisionId === row.decision_id
                 return (
                   <div key={ds.decisionId} className={`flex items-center justify-between text-[10px] py-0.5 px-1 rounded ${isThis ? 'bg-blue-50' : ''}`}>
-                    <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-1.5 min-w-0">
                       <span className="font-bold" style={{ color: cfg.color }}>{cfg.symbol}</span>
                       <span className="text-gray-600 capitalize dark:text-gray-400">{ds.action}</span>
                       <span className="text-gray-400">@ ${ds.decisionPrice?.toFixed(2) || '—'}</span>
                       <span className="text-gray-300">{format(parseISO(ds.decisionDate), 'MMM d')}</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <span className={`font-semibold tabular-nums ${pnlColor(ds.movePct)}`}>
                         {ds.movePct != null ? fmtPct(ds.movePct) : '—'}
                       </span>
@@ -2460,15 +2638,18 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
   )
 }
 
-// ─── Where to next — its OWN StorySection sibling to the
-// "How it's performing" block. Splitting it out keeps the
+// ─── Next actions — its OWN StorySection sibling to the
+// "Performance so far" block. Splitting it out keeps the
 // performance numbers focused on data and elevates the next-step
 // CTAs to peer status with the other story blocks. The Reflection
 // CTA dispatches `outcomes:open-section { sectionId: 'reflection' }`
 // which the Your Reflection StorySection's listener catches —
 // expanding that section and scrolling it into view.
 
-function NextStepsSection({ row }: { row: AccountabilityRow }) {
+function NextStepsSection({ row, extras }: { row: AccountabilityRow; extras?: React.ReactNode }) {
+  // Open on desktop, as it always was; collapsed on a phone like every
+  // section but Summary.
+  const isPhone = useIsMobile()
   // Banner step 2 = "Capture a reflection" (look BACKWARD).
   // Banner step 3 = "Start your next research thread" (look FORWARD).
   // Each CTA fires only the event that matches its loop-half so the
@@ -2509,7 +2690,7 @@ function NextStepsSection({ row }: { row: AccountabilityRow }) {
   }
 
   return (
-    <StorySection icon={ArrowUpRight} title="Where to next" defaultOpen={true}>
+    <StorySection icon={ArrowUpRight} title="Next actions" defaultOpen={!isPhone}>
       <div className="space-y-2">
         <p className="text-[10px] text-gray-500 leading-snug dark:text-gray-400">
           The loop runs continuously — pick the next move on this thesis.
@@ -2551,6 +2732,7 @@ function NextStepsSection({ row }: { row: AccountabilityRow }) {
             <ArrowRight className="w-3 h-3" />
           </button>
         </div>
+        {extras}
       </div>
     </StorySection>
   )
@@ -2567,10 +2749,7 @@ type PositionOverlay = 'none' | 'shares' | 'weight' | 'active_weight'
 // the brief delay so the layout doesn't reflow when the real chart
 // drops in. The chart bundle is already prefetched at page level,
 // so once mounted the panel reads warm cache.
-function DeferredChartPanel(props: {
-  row: AccountabilityRow
-  onSelectDecision?: (decisionId: string) => void
-}) {
+function DeferredChartPanel(props: ChartPanelProps) {
   const isMobileViewport = useIsMobile()
   const [ready, setReady] = useState(false)
   useEffect(() => {
@@ -2594,19 +2773,29 @@ function DeferredChartPanel(props: {
     // not shift the layout under the user's thumb one frame later.
     return (
       <div
-        className="shrink-0 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
-        style={{ height: isMobileViewport ? 268 : 260 }}
+        className={clsx('shrink-0 bg-white dark:bg-gray-800', !isMobileViewport && 'border-t border-gray-200 dark:border-gray-700')}
+        style={{ height: isMobileViewport ? MOBILE_PLOT_HEIGHT + 140 : 260 }}
       />
     )
   }
   return <BottomChartPanel {...props} />
 }
 
-function BottomChartPanel({ row, onSelectDecision }: {
+interface ChartPanelProps {
   row: AccountabilityRow
   onSelectDecision?: (decisionId: string) => void
-}) {
+  /** Phone only: metric and range owned by the detail panel so they survive
+   *  the chart being hidden. Uncontrolled when omitted. */
+  metric?: OverlayField
+  onMetricChange?: (metric: OverlayField) => void
+  range?: ChartRange | null
+  onRangeChange?: (range: ChartRange) => void
+}
+
+function BottomChartPanel({ row, onSelectDecision, metric, onMetricChange, range, onRangeChange }: ChartPanelProps) {
   const [overlay, setOverlay] = useState<PositionOverlay>('shares')
+  const [localMetric, setLocalMetric] = useState<OverlayField>('shares')
+  const [localRange, setLocalRange] = useState<ChartRange | null>(null)
 
   const { data: lifecycle, isLoading: lcLoading } = usePositionLifecycle({
     assetId: row.asset_id,
@@ -2621,31 +2810,23 @@ function BottomChartPanel({ row, onSelectDecision }: {
   const { data: holdingsHistory = [] } = useHoldingsTimeSeries(row.portfolio_id, row.asset_symbol, row.asset_id)
 
   // Per-asset benchmark weight, used for the active-weight overlay.
-  // Missing row → null → chart treats as 0 (off-benchmark asset).
-  const { data: benchmarkWeightPct } = useQuery({
+  //
+  // Member → its weight; read the file and the asset is absent → a real 0%;
+  // no benchmark file → unavailable. A failed lookup THROWS, so it is neither
+  // cached nor passed off as 0% — `benchmark` stays undefined, Active weight
+  // is disabled, and a retry or refetch can still fill it in. See
+  // lib/holdings/benchmark-membership.
+  const {
+    data: benchmark,
+    isLoading: benchmarkLoading,
+    refetch: refetchBenchmark,
+  } = useQuery({
     queryKey: ['position-chart-benchmark-weight', row.portfolio_id, row.asset_id],
-    queryFn: async () => {
-      if (!row.portfolio_id || !row.asset_id) return null
-      // Ordered and limited, NOT `.maybeSingle()` on the bare pair.
-      //
-      // This site fails harder than the others once benchmark history exists.
-      // `maybeSingle()` returns an error when more than one row matches, and
-      // the line below swallows it into `null` — so every asset in the book
-      // would read as off-benchmark, on a chart whose whole subject is active
-      // weight, with no error surfaced anywhere.
-      //
-      // Newest file wins, same rule as latestBenchmarkRows applies in bulk.
-      const { data, error } = await supabase
-        .from('portfolio_benchmark_weights')
-        .select('weight, as_of_date')
-        .eq('portfolio_id', row.portfolio_id)
-        .eq('asset_id', row.asset_id)
-        .order('as_of_date', { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle()
-      if (error) return null
-      return data?.weight != null ? Number(data.weight) : null
-    },
+    queryFn: () => fetchBenchmarkWeight(
+      supabase as unknown as BenchmarkQueryClient,
+      row.portfolio_id as string,
+      row.asset_id as string,
+    ),
     enabled: !!row.portfolio_id && !!row.asset_id,
     staleTime: 5 * 60 * 1000,
   })
@@ -2658,7 +2839,11 @@ function BottomChartPanel({ row, onSelectDecision }: {
   const isLoading = phLoading && lcLoading
   const hasHoldings = holdingsHistory.length > 0
   const isMobileViewport = useIsMobile()
-  const chartHeight = isMobileViewport ? 180 : 240
+  const chartHeight = 240
+  const benchmarkPct = knownBenchmarkWeightPct(benchmark)
+  // An Active Wt overlay chosen before the benchmark failed draws price only
+  // rather than an empty area.
+  const desktopOverlay: PositionOverlay = overlay === 'active_weight' && benchmarkPct == null ? 'none' : overlay
   // PositionChart requires a non-null lifecycle. While the real
   // lifecycle loads, supply a minimal stub so the chart renders the
   // price line without markers; the markers fill in once the live
@@ -2675,54 +2860,53 @@ function BottomChartPanel({ row, onSelectDecision }: {
     currentShares: 0,
   } as any
 
+  const selectFromChart = (sourceId: string, sourceType: 'trade_queue_item' | 'portfolio_trade_event') => {
+    if (!onSelectDecision) return
+    // Only decisions map to rows in the accountability list —
+    // execution events aren't first-class rows yet, so clicks
+    // on fuzzy-match dots are a no-op for now.
+    if (sourceType === 'trade_queue_item') onSelectDecision(sourceId)
+  }
+
+  /*
+   * Phone: its own chart, full pane width, with scrub, range and a metric
+   * switch built in. The phone header this replaced carried the metric as an
+   * OptionPicker whose bottom sheet portals to <body> at z-60 — underneath
+   * this z-85 overlay — so tapping "Shares" opened a menu nobody could see.
+   */
+  if (isMobileViewport) {
+    return (
+      <div className="bg-white dark:bg-gray-800">
+        {isLoading ? (
+          <div className="flex items-center justify-center" style={{ height: MOBILE_PLOT_HEIGHT + 140 }}>
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600" />
+          </div>
+        ) : priceHistory.length > 0 ? (
+          <PositionChartMobile
+            lifecycle={effectiveLifecycle}
+            priceHistory={priceHistory}
+            holdingsHistory={holdingsHistory}
+            benchmark={benchmark ?? null}
+            benchmarkLoading={benchmarkLoading}
+            onRetryBenchmark={() => { void refetchBenchmark() }}
+            symbol={row.asset_symbol}
+            onSelectEvent={selectFromChart}
+            metric={metric ?? localMetric}
+            onMetricChange={onMetricChange ?? setLocalMetric}
+            range={range !== undefined ? range : localRange}
+            onRangeChange={onRangeChange ?? setLocalRange}
+          />
+        ) : (
+          <div className="flex items-center justify-center px-4 py-10 text-[13px] text-gray-500 text-center dark:text-gray-400">
+            No price history available for {row.asset_symbol || 'this asset'}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
-    <div className="shrink-0 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-      {/* Symbol, prices and the overlay toggle came to well over 390px on one
-          row — "Price Only / Shares / Weight / Active Wt" alone is most of a
-          phone's width, and a fixed overlay is not clipped by the shell, so
-          the excess panned the entire screen. On a phone the identity and
-          price share the first line and the toggle becomes a picker on the
-          second. Desktop keeps the single row it always had. */}
-      {isMobileViewport ? (
-        <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex items-center justify-between gap-2 min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <TrendingUp className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-              <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300 shrink-0">
-                {row.asset_symbol || 'Price'}
-              </span>
-              {row.portfolio_name && (
-                <span className="text-[10px] text-gray-400 truncate">in {row.portfolio_name}</span>
-              )}
-            </div>
-            {lifecycle && (
-              <div className="flex items-center gap-2 text-[10px] shrink-0">
-                {lifecycle.currentPrice != null && (
-                  <span className="text-gray-500 dark:text-gray-400">Now <span className="font-medium text-gray-700 dark:text-gray-300">${lifecycle.currentPrice.toFixed(2)}</span></span>
-                )}
-                {lifecycle.totalReturnPct != null && (
-                  <span className={`font-semibold ${lifecycle.totalReturnPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {lifecycle.totalReturnPct >= 0 ? '+' : ''}{lifecycle.totalReturnPct.toFixed(1)}%
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="mt-1.5">
-            <OptionPicker
-              label="Overlay"
-              value={overlay}
-              onChange={setOverlay}
-              options={[
-                { value: 'none',          label: 'Price only' },
-                { value: 'shares',        label: 'Shares' },
-                { value: 'weight',        label: 'Weight' },
-                { value: 'active_weight', label: 'Active weight' },
-              ]}
-            />
-          </div>
-        </div>
-      ) : (
+    <div className="shrink-0 bg-white border-t border-gray-200 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -2742,19 +2926,26 @@ function BottomChartPanel({ row, onSelectDecision }: {
                 { value: 'shares' as PositionOverlay, label: 'Shares' },
                 { value: 'weight' as PositionOverlay, label: 'Weight' },
                 { value: 'active_weight' as PositionOverlay, label: 'Active Wt' },
-              ]).map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => setOverlay(opt.value)}
-                  className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${
-                    overlay === opt.value
-                      ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
-                      : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+              ]).map(opt => {
+                // Active weight needs a known benchmark weight; an unknown one
+                // is not 0%.
+                const blocked = opt.value === 'active_weight' && benchmarkPct == null
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setOverlay(opt.value)}
+                    disabled={blocked}
+                    title={blocked ? (benchmarkLoading ? 'Loading benchmark data…' : 'Benchmark data unavailable') : undefined}
+                    className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                      overlay === opt.value
+                        ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -2774,10 +2965,6 @@ function BottomChartPanel({ row, onSelectDecision }: {
             </div>
           )}
         </div>
-      )}
-      {/* Shorter on a phone: the chart is pinned above the detail panel's own
-          scroll region there, so its height is taken directly out of the space
-          the story below it has to work with. */}
       <div className="px-2 py-1">
         {isLoading ? (
           <div className="flex items-center justify-center" style={{ height: chartHeight }}>
@@ -2787,17 +2974,11 @@ function BottomChartPanel({ row, onSelectDecision }: {
           <PositionChart
             lifecycle={effectiveLifecycle}
             priceHistory={priceHistory}
-            holdingsHistory={hasHoldings && overlay !== 'none' ? holdingsHistory : undefined}
-            overlayField={overlay !== 'none' ? overlay : undefined}
-            benchmarkWeightPct={benchmarkWeightPct ?? null}
+            holdingsHistory={hasHoldings && desktopOverlay !== 'none' ? holdingsHistory : undefined}
+            overlayField={desktopOverlay !== 'none' ? desktopOverlay : undefined}
+            benchmarkWeightPct={benchmarkPct}
             symbol={row.asset_symbol}
-            onSelectEvent={(sourceId, sourceType) => {
-              if (!onSelectDecision) return
-              // Only decisions map to rows in the accountability list —
-              // execution events aren't first-class rows yet, so clicks
-              // on fuzzy-match dots are a no-op for now.
-              if (sourceType === 'trade_queue_item') onSelectDecision(sourceId)
-            }}
+            onSelectEvent={selectFromChart}
             height={chartHeight}
           />
         ) : (
@@ -2978,6 +3159,34 @@ type ScorecardSection = 'analysts' | 'pms'
 
 function ScorecardsView({ portfolioId }: { portfolioId: string | null }) {
   const [section, setSection] = useState<ScorecardSection>('analysts')
+  const isPhone = useIsMobile()
+
+  if (isPhone) {
+    // Phone: a compact Analyst / PM switch and no horizontal scroll; the cards
+    // below have their own phone layout (ScorecardViews).
+    return (
+      <div data-slot="scorecards-phone" className="flex-1 overflow-y-auto overflow-x-hidden px-3 pt-3 pb-6">
+        <div role="tablist" aria-label="Scorecard" className="inline-flex items-center p-0.5 rounded-lg bg-gray-100 mb-3 dark:bg-gray-900">
+          {(['analysts', 'pms'] as const).map(s => (
+            <button
+              key={s}
+              type="button"
+              role="tab"
+              aria-selected={section === s}
+              onClick={() => setSection(s)}
+              className={clsx(
+                'no-touch-target tap-pad h-8 min-w-[72px] px-3 rounded-md text-[13px] font-medium transition-colors',
+                section === s ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white' : 'text-gray-500 dark:text-gray-400',
+              )}
+            >
+              {s === 'analysts' ? 'Analyst' : 'PM'}
+            </button>
+          ))}
+        </div>
+        {section === 'analysts' ? <AnalystScorecardsView portfolioId={portfolioId} /> : <PMScorecardsView portfolioId={portfolioId} />}
+      </div>
+    )
+  }
 
   return (
     <div className="flex-1 overflow-auto p-3 sm:p-4">
@@ -3016,7 +3225,7 @@ function ScorecardsView({ portfolioId }: { portfolioId: string | null }) {
 // Main Page
 // ============================================================
 
-export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabilityPageProps) {
+export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = null, onFocusConsumed }: DecisionAccountabilityPageProps) {
   // Hoisted above state so the lazy initializers can hydrate from the
   // sessionStorage snapshot keyed per (user, org).
   const { user: pilotBannerUser } = useAuth()
@@ -3039,7 +3248,8 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     resultFilter: 'all',
     directionFilter: [],
   })
-  const [selectedId, setSelectedId] = useState<string | null>(() => persisted?.selectedId ?? null)
+  // Transient: never hydrated from the snapshot. See PersistedOutcomesState.
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeChipKey, setActiveChipKey] = useState<string>(() => persisted?.activeChipKey ?? 'all')
   const [colFilterOpen, setColFilterOpen] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState<string | null>(() => persisted?.typeFilter ?? null)
@@ -3051,15 +3261,37 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
   const [ownerFilter, setOwnerFilter] = useState<string | null>(() => persisted?.ownerFilter ?? null)
   const [sortBy, setSortBy] = useState<string>(() => persisted?.sortBy ?? 'date')
   const [sortDesc, setSortDesc] = useState(() => persisted?.sortDesc ?? true)
+  // Batches | Trades. null = this device's default (phone Batches, desktop
+  // Trades), resolved where the viewport is known below.
+  const [decisionsViewChoice, setDecisionsViewChoice] = useState<DecisionsView | null>(() => persisted?.decisionsView ?? null)
+  // Transient, like the selected decision: an ordinary return lands unsearched
+  // on the batch list, not inside a batch.
+  const [decisionSearch, setDecisionSearch] = useState('')
+  const [openBatchId, setOpenBatchId] = useState<string | null>(null)
+  const [openBatchShowAll, setOpenBatchShowAll] = useState(false)
+
+  /* Declared above the writer that reads it, so the guard against persisting a
+     focused view is never evaluating a binding defined further down. */
+  const focusRef = useRef<string | null>(null)
 
   // Persist the user-visible "place" so leaving and returning to this
   // tab restores the same selection / filters / sort. Keyed per user+org
   // so each pilot client (and each user) tracks independently.
   useEffect(() => {
+    /*
+     * A focused arrival is not a place the reader chose.
+     *
+     * Landing here from the pilot mission widens the local filters so the one
+     * decision being reviewed is actually on screen. Writing that widened view
+     * to the snapshot would replace the portfolio, dates and searches the
+     * reader had set, and they would find them gone on their next ordinary
+     * visit. So while a focus is being honoured nothing is persisted; the
+     * moment they touch a control the focus is released and this resumes.
+     */
+    if (focusRef.current) return
     writeOutcomesState(pilotBannerUser?.id, pilotBannerOrgId, {
       activeTab,
       selectedPortfolioId,
-      selectedId,
       activeChipKey,
       typeFilter,
       tickerSearch,
@@ -3071,39 +3303,95 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
       sortBy,
       sortDesc,
       filters,
+      decisionsView: decisionsViewChoice,
     })
   }, [
     pilotBannerUser?.id, pilotBannerOrgId,
-    activeTab, selectedPortfolioId, selectedId, activeChipKey,
+    activeTab, selectedPortfolioId, activeChipKey,
     typeFilter, tickerSearch, nameSearch, portfolioFilter,
     issueSearch, actionFilter, ownerFilter, sortBy, sortDesc, filters,
+    decisionsViewChoice,
   ])
 
-  // Reaching Outcomes is the graduation moment — the user has walked
-  // the full pilot loop (capture → develop → decide → review → analyze)
-  // and now gets the full app: full dashboard, all tabs, no banners.
-  // Mark once, then `usePilotMode.effectiveIsPilot` flips to false on
-  // the next render and the rest of the app reconfigures itself.
-  const pilotMode = usePilotMode()
-  const { mark: markPilotStage, hasGraduated, hasUnlockedOutcomes } = usePilotProgress()
-  // True only on the very first time the user lands here (before
-  // graduation has been marked). After graduation, the org-pilot
-  // gate flips off and `pilotMode.isPilot` may still be true (org
-  // flag) but we no longer want to show this banner.
-  const showPilotOutcomesBanner = pilotMode.isPilot && !pilotMode.isLoading
-  // Graduation requires the user to have walked the full Get Started
-  // chain — `hasUnlockedOutcomes` flips only after the explicit
-  // "Open Outcomes" click on the Trade Book Get Started banner, which
-  // itself only appears once Trade Lab was actually executed (which
-  // sets `hasUnlockedTradeBook`). Without this guard a pilot who lands
-  // on Outcomes via a teaser or direct URL — but never completed the
-  // Trade Lab/Trade Book onboarding — would auto-graduate on mount.
+  /*
+   * Land on the decision the mission sent them to see.
+   *
+   * `selectedId` is the page's own focus semantics, keyed on `decision_id`,
+   * and it is reused rather than replaced. The rest is the minimum widening
+   * that makes a specific decision reachable: this page scopes by portfolio,
+   * by date range and by several local searches, so a pilot could arrive at
+   * exactly the right screen and find their decision filtered out of it —
+   * correct page, invisible row, step stuck.
+   *
+   * Once only, per arrival. Nothing is written to the persisted snapshot
+   * while it holds, so the reader's own portfolio, dates and searches survive
+   * untouched — see the writer above. The filters are widened, never
+   * narrowed, so this can only ever reveal rows.
+   *
+   * Consumed, not remembered. The id arrives on the Outcomes tab's data, which
+   * DashboardPage keeps (and persists) for the life of the tab — so honouring
+   * it on every mount reopened the same decision each time the reader came
+   * back to Outcomes. Having opened it, the page reports `onFocusConsumed` and
+   * the shell strips the id from the tab. The effect runs when the id
+   * changes, so a later "View in Outcomes" puts one back and is honoured
+   * again, even for the same decision.
+   */
   useEffect(() => {
-    if (hasGraduated) return
-    if (!pilotMode.isPilot || pilotMode.isLoading) return
-    if (!hasUnlockedOutcomes) return
-    markPilotStage('graduated')
-  }, [pilotMode.isPilot, pilotMode.isLoading, hasGraduated, hasUnlockedOutcomes, markPilotStage])
+    if (!focusDecisionId) return
+    focusRef.current = focusDecisionId
+    setSelectedPortfolioId(null)
+    setPortfolioFilter(null)
+    setTypeFilter(null)
+    setTickerSearch('')
+    setNameSearch('')
+    setIssueSearch('')
+    setActiveChipKey('all')
+    setFilters(prev => ({
+      ...prev,
+      showApproved: true,
+      showRejected: true,
+      showCancelled: true,
+      resultFilter: 'all',
+      // The one that silently hides an old decision. Cleared rather than
+      // widened to a guessed window, because the tutorial idea may be any age.
+      dateRange: undefined,
+    }))
+    setSelectedId(focusDecisionId)
+    onFocusConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusDecisionId])
+
+  const pilotMode = usePilotMode()
+  /*
+   * `effectiveIsPilot`, not `isPilot`.
+   *
+   * `isPilot` is only "this org is flagged as a pilot", which stays true after
+   * graduation — the flag is kept for audit. `effectiveIsPilot` is the same
+   * value minus graduation, and it is what every other pilot surface reads to
+   * decide whether the reader is still being taught. Reading the raw flag here
+   * meant graduation did not retire the "Finish the loop" banner; it survived
+   * only because the banner sets its own local dismissal on the way out, so a
+   * graduated pilot whose browser storage was cleared, or who opened Outcomes
+   * on another machine, was invited to finish a loop they had already
+   * finished. The durable stage mark added in 7fa357f also retires it, so this
+   * is the second of two guards rather than the only one — but a surface that
+   * asks the wrong question is worth fixing even when something downstream
+   * happens to catch it.
+   */
+  const showPilotOutcomesBanner = pilotMode.effectiveIsPilot && !pilotMode.isLoading
+  /*
+   * Arriving here is not graduating.
+   *
+   * This page used to write `graduated` on mount once `outcomes_unlocked` was
+   * set — and that is set by Trade Book basics step 3, "Open Outcomes". So
+   * finishing Trade Book basics and landing here graduated the pilot before
+   * Close the loop, and graduation is what opens the whole app, the standalone
+   * Ideas app included.
+   *
+   * The mission is the one writer now (`usePilotMission`, mounted below). It
+   * writes `graduated` when all five steps are done, and step 5 is marked by
+   * this page only once it has loaded the tutorial decision.
+   */
 
   // Merge portfolio selection into filters
   const effectiveFilters = useMemo(() => ({
@@ -3119,6 +3407,21 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
   // been set on the corresponding decision_reviews row.
   const decisionIds = useMemo(() => rows.map(r => r.decision_id), [rows])
   const { data: reviewsById } = useDecisionReviewsByIds(decisionIds)
+
+  /*
+   * Pilot mission stage 5 is NOT marked here any more.
+   *
+   * It was marked as soon as this page loaded one of the pilot's decisions,
+   * which completed "Close the loop" on arrival — before the reader had done
+   * anything on Outcomes. Each stage now completes when its app's Getting
+   * Started is finished, so the mark is written by PilotOutcomesGetStarted
+   * once "Finish the loop" is done.
+   *
+   * The mission stays mounted here: it is the one graduation writer, and
+   * finishing Outcomes is what completes the mission, so graduation happens
+   * on this page rather than on the next visit home.
+   */
+  const pilotMission = usePilotMission()
 
   /** Promote a row's intel from `evaluate` → `resolved` once the user
    *  has captured a reflection (thesis call OR reflection note). The
@@ -3227,6 +3530,66 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     () => sortedRows.find(r => r.decision_id === selectedId) || null,
     [sortedRows, selectedId],
   )
+
+  // One search, both views: Trades by ticker / company / batch name; Batches
+  // by batch name, or by a trade inside the batch (lib/outcomes/batch-groups).
+  const searchedTrades = useMemo(
+    () => (decisionSearch.trim() ? displayRows.filter(({ row }) => rowMatchesSearch(row, decisionSearch)) : displayRows),
+    [displayRows, decisionSearch],
+  )
+  const batchGrouping = useMemo(() => groupByBatch(displayRows, decisionSearch), [displayRows, decisionSearch])
+  const openBatch = openBatchId ? batchGrouping.groups.find(g => g.batch.id === openBatchId) ?? null : null
+  const selectTrade = (row: AccountabilityRow) => {
+    setSelectedId(row.decision_id === selectedId ? null : row.decision_id)
+    // Tick step 1 of the pilot Outcomes Get Started banner — selecting a
+    // decision counts as inspecting the result.
+    try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
+  }
+
+  /*
+   * A section asked for while no decision is open.
+   *
+   * "Finish the loop" steps 2 and 3 send `outcomes:open-section` (thesis /
+   * performance). Only an open detail's StorySections listen for it, so from
+   * the page itself — where Open Outcomes now lands — the arrows did nothing.
+   *
+   * With no detail open, the page opens the decision the mission is reviewing
+   * (the first visible decision when that one is not on the list), then
+   * repeats the request once the detail has mounted, so its section opens and
+   * scrolls into view exactly as it does when the detail was already open.
+   * With a detail open the page stays out of it.
+   */
+  const selectedRowRef = useRef(selectedRow)
+  selectedRowRef.current = selectedRow
+  const sectionTargetRef = useRef({ displayRows, sortedRows, reviewId: pilotMission.reviewIdeaId })
+  sectionTargetRef.current = { displayRows, sortedRows, reviewId: pilotMission.reviewIdeaId }
+  const pendingSectionRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const onOpenSection = (e: Event) => {
+      const sectionId = (e as CustomEvent).detail?.sectionId as string | undefined
+      if (!sectionId || selectedRowRef.current) return
+      const { displayRows: visible, sortedRows: all, reviewId } = sectionTargetRef.current
+      const target = (reviewId && (visible.find(d => d.row.decision_id === reviewId)?.row ?? all.find(r => r.decision_id === reviewId)))
+        || visible[0]?.row
+      if (!target) return
+      pendingSectionRef.current = sectionId
+      setSelectedId(target.decision_id)
+      try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
+    }
+    window.addEventListener('outcomes:open-section', onOpenSection)
+    return () => window.removeEventListener('outcomes:open-section', onOpenSection)
+  }, [])
+
+  useEffect(() => {
+    const sectionId = pendingSectionRef.current
+    if (!selectedRow || !sectionId) return
+    pendingSectionRef.current = null
+    // After the detail's own effects have registered its section listeners.
+    setTimeout(() => {
+      try { window.dispatchEvent(new CustomEvent('outcomes:open-section', { detail: { sectionId } })) } catch { /* ignore */ }
+    }, 0)
+  }, [selectedRow])
 
   // Prefetch chart + reflection data for the top visible rows so
   // clicking a row paints with warm cache. Without this, the user
@@ -3390,6 +3753,13 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
   // desktop-shaped; the phone gets a list and a full-screen detail.
   const isMobileViewport = useIsMobile()
   const MAIN_GRID = selectedPortfolioId ? GRID_WITHOUT_PORTFOLIO : GRID_WITH_PORTFOLIO
+  // Phone: the detail is a full-screen layer over the list, so Back closes it
+  // and leaves the reader on Outcomes rather than taking them out of the app.
+  useDismissOnBack(isMobileViewport && !!selectedRow, () => setSelectedId(null), { enabled: isMobileViewport })
+  const decisionsView: DecisionsView = decisionsViewChoice ?? (isMobileViewport ? 'batches' : 'trades')
+  // An opened batch is a level of the list: Back returns to the batches.
+  useDismissOnBack(isMobileViewport && decisionsView === 'batches' && !!openBatch, () => setOpenBatchId(null), { enabled: isMobileViewport })
+  const openBatchOnPhone = (batchId: string) => { setOpenBatchId(batchId); setOpenBatchShowAll(false) }
 
   // Unique values for dropdown filters
   const uniquePortfolios = useMemo(() => [...new Set(rows.map(r => r.portfolio_name).filter(Boolean))].sort() as string[], [rows])
@@ -3399,6 +3769,62 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     <div className="h-full flex flex-col bg-white dark:bg-gray-800">
       {/* ── HEADER ─────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-3 sm:px-5 shrink-0 dark:border-gray-700 dark:bg-gray-800">
+        {isMobileViewport ? (
+          /* Phone header: title and the Decisions / Scorecards switch on one
+             line, the portfolio as a full-width compact select, and on
+             Decisions the range control. The desktop "ATTENTION" strip
+             becomes the review-status card at the top of the list. */
+          <div data-slot="outcomes-phone-header" className="pt-2 pb-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Target className="w-4 h-4 text-teal-600 shrink-0" />
+                <h1 className="text-[17px] font-semibold text-gray-900 dark:text-white">Outcomes</h1>
+              </div>
+              <div role="tablist" aria-label="Outcomes view" className="inline-flex shrink-0 items-center p-0.5 rounded-lg bg-gray-100 dark:bg-gray-900">
+                {(['decisions', 'scorecards'] as const).map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === t}
+                    onClick={() => setActiveTab(t)}
+                    className={clsx(
+                      'no-touch-target tap-pad h-8 px-3 rounded-md text-[13px] font-medium transition-colors',
+                      activeTab === t
+                        ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+                        : 'text-gray-500 dark:text-gray-400',
+                    )}
+                  >
+                    {t === 'decisions' ? 'Decisions' : 'Scorecards'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <select
+              aria-label="Portfolio"
+              value={selectedPortfolioId || ''}
+              onChange={e => setSelectedPortfolioId(e.target.value || null)}
+              className="no-touch-target block w-full h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-[14px] text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+            >
+              <option value="">All portfolios</option>
+              {allPortfolios.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            {activeTab === 'decisions' && (
+              <>
+                <DecisionsViewControls
+                  view={decisionsView}
+                  onViewChange={(v) => { setDecisionsViewChoice(v); setOpenBatchId(null) }}
+                  query={decisionSearch}
+                  onQueryChange={setDecisionSearch}
+                />
+                <OutcomesRangeControl filters={filters} onChange={setFilters} />
+              </>
+            )}
+          </div>
+        ) : (
+        <>
         {/* Row 1: Title + Tabs */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-2 pb-1.5">
           <div className="flex items-center gap-2 shrink-0">
@@ -3444,6 +3870,18 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
             </select>
           </div>
 
+          {activeTab === 'decisions' && (
+            <div className="min-w-0 sm:ml-2">
+              <DecisionsViewControls
+                compact
+                view={decisionsView}
+                onViewChange={setDecisionsViewChoice}
+                query={decisionSearch}
+                onQueryChange={setDecisionSearch}
+              />
+            </div>
+          )}
+
           <div className="hidden sm:block flex-1" />
         </div>
 
@@ -3486,6 +3924,8 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
             </div>
           )
         })()}
+        </>
+        )}
       </div>
 
       {/* Pilot Outcomes Get Started — 3-step "Finish the loop" strip.
@@ -3494,7 +3934,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
           the relevant section. When all 3 steps fire the strip
           auto-retires and the global PilotGraduationModal pops in
           place over Outcomes. */}
-      {showPilotOutcomesBanner && (
+      {showPilotOutcomesBanner && !isMobileViewport && (
         <PilotOutcomesGetStarted
           userId={pilotBannerUser?.id}
           orgId={pilotBannerOrgId}
@@ -3535,6 +3975,14 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
 
               {/* Rows */}
               <div className="flex-1 overflow-y-auto">
+                {/* Phone: the pilot's "Finish the loop" is an inset card at
+                    the top of the list it is about, not a full-bleed strip
+                    between the controls and the list. */}
+                {isMobileViewport && showPilotOutcomesBanner && (
+                  <div data-slot="outcomes-phone-pilot" className="pt-2 -mb-2">
+                    <PilotOutcomesGetStarted userId={pilotBannerUser?.id} orgId={pilotBannerOrgId} variant="inset" />
+                  </div>
+                )}
                 {isLoading ? (
                   <div className="flex items-center justify-center h-48">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-teal-600" />
@@ -3557,27 +4005,60 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                 ) : isMobileViewport ? (
                   /* The desktop row is a twelve-track pixel grid over 1000px
                      wide; it does not compress, it overflows. */
-                  <MobileDecisionLedger
-                    rows={displayRows.map(d => d.row)}
-                    selectedId={selectedId}
-                    onSelect={(row) => {
-                      setSelectedId(row.decision_id === selectedId ? null : row.decision_id)
-                      try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
-                    }}
+                  <div className="px-3 pt-2 pb-6 space-y-2">
+                    {decisionsView === 'batches' && openBatch ? (
+                      <MobileBatchView
+                        group={openBatch}
+                        showAll={openBatchShowAll}
+                        onShowAll={() => setOpenBatchShowAll(true)}
+                        onBack={() => setOpenBatchId(null)}
+                        selectedId={selectedId}
+                        onSelectTrade={selectTrade}
+                      />
+                    ) : (
+                      <>
+                        {processHealth.counts.total > 0 && <OutcomesReviewStatusCard health={processHealth} />}
+                        {decisionsView === 'batches' ? (
+                          <MobileBatchList
+                            groups={batchGrouping.groups}
+                            standalone={batchGrouping.standalone}
+                            searching={!!decisionSearch.trim()}
+                            onOpenBatch={openBatchOnPhone}
+                            selectedId={selectedId}
+                            onSelectTrade={selectTrade}
+                          />
+                        ) : (
+                          <MobileDecisionLedger items={searchedTrades} selectedId={selectedId} onSelect={selectTrade} showBatch />
+                        )}
+                      </>
+                    )}
+                  </div>
+                ) : decisionsView === 'batches' ? (
+                  <DesktopBatchRows
+                    groups={batchGrouping.groups}
+                    standalone={batchGrouping.standalone}
+                    searching={!!decisionSearch.trim()}
+                    renderRow={({ row, intel }) => (
+                      <DecisionRow
+                        row={row}
+                        intel={intel}
+                        isSelected={row.decision_id === selectedId}
+                        onSelect={() => selectTrade(row)}
+                        gridClass={MAIN_GRID}
+                        showPortfolio={!selectedPortfolioId}
+                      />
+                    )}
                   />
+                ) : searchedTrades.length === 0 ? (
+                  <div className="flex items-center justify-center h-32 text-[12px] text-gray-400">No batch, ticker or company matches.</div>
                 ) : (
-                  displayRows.map(({ row, intel }) => (
+                  searchedTrades.map(({ row, intel }) => (
                     <DecisionRow
                       key={row.decision_id}
                       row={row}
                       intel={intel}
                       isSelected={row.decision_id === selectedId}
-                      onSelect={() => {
-                        setSelectedId(row.decision_id === selectedId ? null : row.decision_id)
-                        // Tick step 1 of the pilot Outcomes Get Started banner —
-                        // selecting a decision row counts as inspecting the result.
-                        try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
-                      }}
+                      onSelect={() => selectTrade(row)}
                       gridClass={MAIN_GRID}
                       showPortfolio={!selectedPortfolioId}
                     />
@@ -3611,8 +4092,10 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                  trade appeared to show no chart at all.
 
                  Now the panel takes the flexible region (its `h-full` resolves
-                 against the wrapper, not the viewport) and the chart is pinned
-                 under it, so it is on screen the moment a trade is opened.
+                 against the wrapper, not the viewport). The chart is no longer
+                 pinned under it — that took ~270px from every decision — but
+                 sits behind the panel's own Show chart toggle, at the top of
+                 its scroll.
                  `overflow-hidden` clips both axes: a `position: fixed` element
                  is not clipped by the app shell's `overflow-x: clip`, because
                  its containing block is the viewport — which is what let the
@@ -3626,14 +4109,9 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                   <DetailPanel
                     row={selectedRow}
                     onClose={() => setSelectedId(null)}
-                  />
-                </div>
-                {isMobileViewport && (
-                  <DeferredChartPanel
-                    row={selectedRow}
                     onSelectDecision={(decisionId) => setSelectedId(decisionId)}
                   />
-                )}
+                </div>
               </div>
             )}
           </div>

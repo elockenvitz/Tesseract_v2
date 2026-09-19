@@ -78,8 +78,26 @@ export type ExploreVisual =
    *
    * Used where the trigger is an elapsed clock: a horizon that ran out, research
    * nobody has touched, a review past its date.
+   *
+   * ── Two shapes, one primitive ───────────────────────────────────────────
+   *
+   * `dueAt` present   an interval somebody COMMITTED to, and how far past it we
+   *                   are. Two segments: honoured, then overdue.
+   * `dueAt` absent    an interval nobody committed to, and how long it has run.
+   *                   One segment, and the elapsed time is the whole claim.
+   *
+   * The second was added for coverage neglect, where the finding is that
+   * nothing has happened since a date and there is no deadline to have missed —
+   * drawing an amber "due" cap on it would assert a commitment nobody made. It
+   * is deliberately the same primitive rather than a second one: an aging strip
+   * and a deadline strip differ by whether a marker exists, which is a property
+   * of the data, not a different picture. Overdue work, a lapsed horizon, a
+   * quiet name and an unreviewed move all resolve here.
+   *
+   * `overdueLabel` names the trailing sentence where the default does not fit —
+   * "since your last contribution" rather than "overdue".
    */
-  | { kind: 'timeline'; statedAt: string; dueAt: string; overdueLabel?: string }
+  | { kind: 'timeline'; statedAt: string; dueAt?: string | null; overdueLabel?: string }
   /** How much of a book rides on this, when the finding is about exposure. */
   | { kind: 'exposure'; weightPct: number; portfolioName?: string }
   /**
@@ -99,6 +117,28 @@ export type ExploreVisual =
   | { kind: 'workflow'; stages: string[]; activeIndex: number; direction?: 'buy' | 'sell' }
   /** Somebody's words, as the hero. */
   | { kind: 'quote'; text: string; author?: string }
+  /**
+   * The question the producer already wrote, as the object.
+   *
+   * ── Why this is not decoration ──────────────────────────────────────────
+   *
+   * Every signal builder and every derived insight carries a `prompt` — "Is
+   * this target still your view?", "What best describes this position?" — and
+   * mobile puts it in front of the reader as the thing to answer. Explore
+   * threw it away at the adapter, so a card whose whole purpose is to ask
+   * something arrived as a headline with no question and, having nothing else
+   * to draw, fell through to `none`.
+   *
+   * It is the producer's own sentence, not a generated one, and it is the
+   * single most actionable thing on those cards: the reader is being asked,
+   * and the answer is a judgment the ontology already knows how to store.
+   *
+   * Placed LAST in the resolver on purpose. It never takes a card away from a
+   * picture that argues the finding — a breached range, an elapsed clock, an
+   * exposure bar all still win. It claims only the cards that were drawing
+   * nothing at all, which is exactly where the page reads as a wall of text.
+   */
+  | { kind: 'question'; text: string }
   /** The trajectory itself is the story. The sparkline, used deliberately. */
   | { kind: 'price_trend' }
   /** Typography carries it. The honest answer far more often than it was used. */
@@ -130,6 +170,8 @@ export interface ExploreVisualData {
   direction?: 'buy' | 'sell'
   /** A thought's own words. */
   quote?: string
+  /** The producer's own prompt, where the card exists to ask something. */
+  question?: string
 }
 
 /** Types whose entire claim is that time has passed. */
@@ -269,7 +311,23 @@ export function exploreVisualFor(
       kind: 'timeline',
       statedAt: v.statedAt,
       dueAt: v.dueAt,
-      overdueLabel: item.metric?.label,
+      /*
+       * No `overdueLabel` here, and that is the fix rather than an omission.
+       *
+       * This read `item.metric?.label`, which is a category error: a metric
+       * label describes the metric's VALUE -- "stated target" beside "$420" --
+       * and `overdueLabel` names the elapsed time. Fed the one to the other,
+       * an expired MSFT target rendered "+8mo stated target", which says
+       * nothing, and the word a reader needs to see ("overdue") disappeared
+       * because the label had replaced it.
+       *
+       * The field still exists and is still honoured. Its producer is
+       * `tile-engine/adopt/mobile`, where `timelineLabelFor(situation)`
+       * returns an actual overdue phrase -- "since your last contribution" for
+       * coverage neglect, where "overdue" would assert a deadline nobody set.
+       * A producer that has no such phrase should say nothing and let the
+       * component's default stand, which is what leaving this off does.
+       */
     }
   }
 
@@ -372,6 +430,22 @@ export function exploreVisualFor(
    * it is genuinely relevant to a claim about a security.
    */
   if (item.symbol && TAPE_FALLBACK.has(item.subtype)) return { kind: 'price_trend' }
+
+  /**
+   * The question, last — and only where the card would otherwise draw nothing.
+   *
+   * Every branch above argues the finding with a picture; this one does not
+   * pretend to. It puts the producer's own prompt where the picture would have
+   * gone, because a card that has nothing to draw and something to ask is
+   * better as the question than as a headline over white space.
+   *
+   * Guarded on `restatesQuote` for the same reason the quote branch is: several
+   * builders write the prompt AS the headline on cards with no other copy, and
+   * printing one sentence twice on a 130px tile is not a picture.
+   */
+  if (v.question && !restatesQuote(item.title, v.question)) {
+    return { kind: 'question', text: v.question }
+  }
 
   return { kind: 'none' }
 }

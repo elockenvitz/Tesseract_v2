@@ -16,5 +16,13 @@ export {
   tierOf, scoreOf, compareSubjects,
 } from './model'
 
+export { dateWords, ageKindOf, thesisDateKindOf } from './anchor-words'
+export type { ResearchDateKind, ResearchDateWords } from './anchor-words'
+
+export {
+  withCoverageSubjects, subjectFromCoverage,
+  RESEARCH_FEED_CAPACITY, RESEARCH_STRUCTURAL_CAPS,
+} from './coverage-subjects'
+
 export { openResearch, subscribeToOpenResearch, researchTabFor, OPEN_RESEARCH_EVENT } from './navigate'
 export type { OpenResearchRequest, ResearchFocus } from './navigate'

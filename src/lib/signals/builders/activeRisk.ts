@@ -97,7 +97,7 @@ export interface ActiveRiskInput {
  */
 export const MIN_ACTIVE_PCT = 1.5
 /** A bet this size is the portfolio's identity, not a tilt. */
-const CRITICAL_ACTIVE_PCT = 5
+export const CRITICAL_ACTIVE_PCT = 5
 
 /** "14 Aug" in UTC — the date belongs to the issuer file, not the reader. */
 function shortUtc(iso: string): string {

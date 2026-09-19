@@ -67,6 +67,8 @@ export interface BaseIdeaItem {
 }
 
 export interface QuickThoughtItem extends BaseIdeaItem {
+  /** Set once this thought has been promoted into a trade idea. */
+  promoted_to_trade_idea_id?: string | null
   type: 'quick_thought'
   sentiment?: Sentiment
   source_url?: string

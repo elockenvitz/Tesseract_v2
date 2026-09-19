@@ -27,7 +27,12 @@
  *   priceWindow       what the price did between the two
  *
  * "Evidence arrived after the case was last written" is the whole product.
+ *
+ * None of these is a review: nothing in the schema records one for the scan.
+ * What each date may be called is `anchor-words`' decision.
  */
+import { ageKindOf, dateWords } from './anchor-words'
+import { thesisAgeDays } from '../memory/thesis-review'
 
 import type { EngagementTarget } from '../engagement'
 
@@ -78,6 +83,15 @@ export interface ResearchSubject {
   /** Newest updated_at across the CORE sections. Null when no case is written. */
   thesisUpdatedAt: string | null
   daysSinceReview: number | null
+  /**
+   * Newest `thesis.reviewed` event for this asset, where one exists.
+   *
+   * Deliberately separate from `thesisUpdatedAt` and `daysSinceReview`, which
+   * stay the real written/edited date and drive every line of copy. A review
+   * is not an edit and must not be displayed as one. This moves the ATTENTION
+   * clock only: see `stateOf`.
+   */
+  lastReviewedAt?: string | null
   sectionCount: number
   /**
    * Sections among CORE only.
@@ -110,7 +124,56 @@ export interface ResearchSubject {
   newestEvidenceTitle?: string | null
   /** Evidence created after `thesisUpdatedAt`. */
   newSinceReview: number
+  /**
+   * When each piece of evidence arrived. Dates only -- the scan already reads
+   * them to compute `newSinceReview`, so keeping them costs one array per name
+   * and nothing extra at the database.
+   *
+   * Present so a caller can count arrivals against ITS OWN cutoff rather than
+   * the thesis date. "Since you last looked" and "since the case was last
+   * written" are different questions, and `newSinceReview` only answers one.
+   */
+  evidenceDates?: string[]
   weightPct?: number
+  /**
+   * Present only on a subject Tesseract generated from the reader's coverage
+   * (lib/desktop-research/coverage-subjects), never on one the scan read.
+   *
+   * The scan cannot see a covered name with nothing written, a thesis with a
+   * section missing, or a price move since review; the shared research rules
+   * can. A generated subject carries the rule's verdict so `stateOf` states it
+   * exactly, and renders through the same tile, rail and detail as any other.
+   */
+  generated?: {
+    source: 'coverage'
+    framing: 'new_evidence' | 'price_move' | 'no_case' | 'incomplete_case' | 'long_silence'
+    coverage: 'own' | 'assigned'
+    /** Signed move since the case's anchor; `price_move` only. */
+    movePct: number | null
+    /**
+     * What the case's anchor is: a recorded review, or the case being written.
+     * Null when nothing is written. Decides wording only (anchor-words).
+     */
+    anchoredOn: 'reviewed' | 'written' | null
+    /** Why the gap matters on this name: an open idea, a position, or coverage alone. */
+    context: 'idea' | 'held' | 'unheld'
+    /** The label and the one-sentence reason, from `lib/research/coverage-work`. */
+    label: string
+    claim: string
+    liveIdeaCount: number
+    portfolioName: string | null
+    /**
+     * The book the weight is in, so a surface can load its position detail
+     * rather than showing a weight with nothing behind it.
+     */
+    portfolioId: string | null
+    /**
+     * How many books hold the name. A weight belongs to ONE book, so a tile
+     * that names a single book when three hold the position is stating the
+     * wrong thing -- above one, the corner says "in N portfolios" instead.
+     */
+    portfolioCount: number
+  }
 }
 
 /**
@@ -122,17 +185,40 @@ export interface ResearchSubject {
  */
 export type ResearchState =
   | 'evidence-since-review'   // new material arrived after the case was written
-  | 'no-thesis'               // evidence exists, no case has been written
+  | 'moved-since-review'      // the price moved materially and the case has not (generated)
+  | 'no-thesis'               // no case has been written
+  | 'incomplete-thesis'       // part of the case is written (generated)
   | 'stale'                   // nothing new, but the case is old
   | 'thin'                    // a case with almost no evidence behind it
   | 'current'                 // reviewed recently, nothing outstanding
 
 const STALE_DAYS = 90
 
+/** A generated subject's framing, in this model's states. One to one. */
+const GENERATED_STATE: Record<NonNullable<ResearchSubject['generated']>['framing'], ResearchState> = {
+  new_evidence: 'evidence-since-review',
+  price_move: 'moved-since-review',
+  no_case: 'no-thesis',
+  incomplete_case: 'incomplete-thesis',
+  long_silence: 'stale',
+}
+
 export function stateOf(s: ResearchSubject): ResearchState {
+  // Generated subjects state the shared rule's verdict. Scan subjects keep the
+  // scan's own rule below, unchanged.
+  if (s.generated) return GENERATED_STATE[s.generated.framing]
   if (!s.thesisUpdatedAt) return s.evidenceCount > 0 ? 'no-thesis' : 'thin'
   if (s.newSinceReview > 0) return 'evidence-since-review'
-  if ((s.daysSinceReview ?? 0) >= STALE_DAYS) return 'stale'
+  /*
+   * Stale means nobody has looked, not merely that nobody has typed.
+   *
+   * The age here is the later of when the case was written and when somebody
+   * last confirmed it still holds, so "reviewed today, unchanged" clears the
+   * flag without anyone editing a thesis that did not need editing. Every
+   * other use of `daysSinceReview` -- the chips, the sentences, the AI prompt
+   * -- still reads the real written date.
+   */
+  if ((thesisAgeDays(s.thesisUpdatedAt, s.lastReviewedAt, new Date()) ?? 0) >= STALE_DAYS) return 'stale'
   if (s.evidenceCount === 0) return 'thin'
   return 'current'
 }
@@ -150,6 +236,10 @@ export const STATE_LABEL: Record<ResearchState, string> = {
   // Not "no research": supporting sections and notes may well exist. What is
   // missing is the thesis the review clock is measured from.
   'no-thesis': 'No thesis on file',
+  // Only a generated subject reaches this state, and it carries its own label
+  // naming whether the move is since a review or since the thesis was written.
+  'moved-since-review': 'Moved since thesis',
+  'incomplete-thesis': 'Incomplete thesis',
   stale: 'Review due',
   thin: 'Thin evidence',
   current: 'Current',
@@ -162,10 +252,15 @@ export const STATE_LABEL: Record<ResearchState, string> = {
  * known the caller passes it in; it is never assumed.
  */
 export function whyItMatters(s: ResearchSubject, movePct?: number | null): string {
+  // A generated subject says why the gap matters on THIS name -- an open idea,
+  // a position, or coverage alone -- in the words Today uses for it too.
+  if (s.generated) return s.generated.claim
   const t = s.symbol ?? 'this name'
+  // What the subject's clock actually is: for the scan, the last save.
+  const w = dateWords(ageKindOf(s))
   switch (stateOf(s)) {
     case 'evidence-since-review':
-      return `${s.newSinceReview} new research note${s.newSinceReview === 1 ? '' : 's'} since the thesis was written`
+      return `${s.newSinceReview} new research note${s.newSinceReview === 1 ? '' : 's'} ${w.sinceThe}`
         + (movePct != null ? `, and the stock has moved ${fmtPct(movePct)} since.` : '.')
     case 'no-thesis': {
       // Name what IS on record first, so the sentence never reads as "we hold
@@ -174,16 +269,26 @@ export function whyItMatters(s: ResearchSubject, movePct?: number | null): strin
       if (s.evidenceCount) held.push(`${s.evidenceCount} research item${s.evidenceCount === 1 ? '' : 's'}`)
       const peripheral = s.sectionCount - s.coreSectionCount
       if (peripheral > 0) held.push(`${peripheral} supporting section${peripheral === 1 ? '' : 's'}`)
-      const have = held.length ? held.join(' and ') : 'material'
-      return `${have} on file for ${t}, but no thesis has been written.`
+      // Nothing at all on record: say that, rather than "material on file".
+      if (!held.length) return `No thesis has been written for ${t} yet.`
+      return `${held.join(' and ')} on file for ${t}, but no thesis has been written.`
+    }
+    // Only a generated subject reaches this state, and it returned above.
+    case 'moved-since-review':
+      return movePct != null
+        ? `${t} has moved ${fmtPct(movePct)} ${w.sinceThe}.`
+        : `${t} has moved materially ${w.sinceThe}.`
+    case 'incomplete-thesis': {
+      const missing = CORE_SECTIONS.filter(k => !s.coreSections.includes(k)).map(k => SECTION_LABEL[k].toLowerCase())
+      return `The ${t} case is missing ${missing.join(' and ')}.`
     }
     case 'stale':
-      return `Thesis last reviewed ${s.daysSinceReview} days ago`
+      return `Thesis last ${w.verb} ${s.daysSinceReview} days ago`
         + (movePct != null ? `; the stock has moved ${fmtPct(movePct)} since.` : '.')
     case 'thin':
       return `Almost no research on file behind the ${t} thesis.`
     case 'current':
-      return `Reviewed ${s.daysSinceReview} days ago, nothing outstanding since.`
+      return `${w.verb.charAt(0).toUpperCase()}${w.verb.slice(1)} ${s.daysSinceReview} days ago, nothing outstanding since.`
   }
 }
 
@@ -213,6 +318,8 @@ export function primaryActionFor(s: ResearchSubject): string {
   switch (stateOf(s)) {
     case 'evidence-since-review': return 'Review new evidence'
     case 'no-thesis': return 'Write the case'
+    case 'moved-since-review': return 'Revisit the case'
+    case 'incomplete-thesis': return 'Finish the case'
     case 'stale': return 'Review thesis'
     case 'thin': return 'Add evidence'
     case 'current': return 'Read the case'
@@ -222,18 +329,26 @@ export function primaryActionFor(s: ResearchSubject): string {
 /* -------------------------------------------------------------------------- */
 
 export function issueFor(s: ResearchSubject): string {
-  return STATE_LABEL[stateOf(s)]
+  return s.generated?.label ?? STATE_LABEL[stateOf(s)]
 }
 
 export function seedPromptFor(s: ResearchSubject): string {
   const t = s.symbol ?? 'this name'
+  // The verb is the event the subject's clock really is.
+  const verb = dateWords(ageKindOf(s)).verb
   switch (stateOf(s)) {
     case 'evidence-since-review':
-      return `${s.newSinceReview} research items arrived on ${t} after our case was last written. Summarise them against the existing view and say which most challenges it.`
+      return `${s.newSinceReview} research items arrived on ${t} after our case was last ${verb}. Summarise them against the existing view and say which most challenges it.`
     case 'no-thesis':
-      return `We hold research on ${t} but no written case. From the evidence on record, what would a defensible thesis claim, and what would it hinge on?`
+      return s.evidenceCount > 0
+        ? `We hold research on ${t} but no written case. From the evidence on record, what would a defensible thesis claim, and what would it hinge on?`
+        : `We cover ${t} but have written no case. What would a defensible thesis claim, where would we differ from consensus, and what would break it?`
+    case 'moved-since-review':
+      return `${t} has moved materially since our case was last ${verb}. Which of its claims does the move test, and does the case still hold?`
+    case 'incomplete-thesis':
+      return `Our case for ${t} is only partly written. What belongs in the missing sections, and does writing them change the view?`
     case 'stale':
-      return `Our case for ${t} has not been revisited in ${s.daysSinceReview} days. Which of its claims are most likely to be stale, and what would you check first?`
+      return `Our case for ${t} was last ${verb} ${s.daysSinceReview} days ago. Which of its claims are most likely to be stale, and what would you check first?`
     case 'thin':
       return `The case for ${t} rests on very little recorded evidence. What would you want to see before relying on it?`
     case 'current':
@@ -244,10 +359,12 @@ export function seedPromptFor(s: ResearchSubject): string {
 export function targetFor(s: ResearchSubject): EngagementTarget | null {
   if (!s.assetId) return null
   const chips: { label: string; value: string }[] = []
-  if (s.daysSinceReview != null) chips.push({ label: 'Last review', value: `${s.daysSinceReview}d` })
+  // The detail pane's own labels for the same numbers.
+  const w = dateWords(ageKindOf(s))
+  if (s.daysSinceReview != null) chips.push({ label: w.last, value: `${s.daysSinceReview}d` })
   if (s.sectionCount) chips.push({ label: 'Case sections', value: String(s.sectionCount) })
   if (s.evidenceCount) chips.push({ label: 'Research', value: `${s.evidenceCount} item${s.evidenceCount === 1 ? '' : 's'}` })
-  if (s.newSinceReview) chips.push({ label: 'New since review', value: String(s.newSinceReview) })
+  if (s.newSinceReview) chips.push({ label: w.newSince, value: String(s.newSinceReview) })
   if (s.weightPct != null) chips.push({ label: 'Weight', value: `${s.weightPct.toFixed(1)}%` })
 
   return {
@@ -283,7 +400,9 @@ export function targetFor(s: ResearchSubject): EngagementTarget | null {
 export function tierOf(s: ResearchSubject): 0 | 1 | 2 | 3 {
   switch (stateOf(s)) {
     case 'evidence-since-review': return 0
+    case 'moved-since-review': return 0
     case 'no-thesis': return 1
+    case 'incomplete-thesis': return 2
     case 'stale': return 2
     default: return 3
   }

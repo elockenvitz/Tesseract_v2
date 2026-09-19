@@ -30,6 +30,20 @@ export type FlagName =
   | 'signal-cards'
 
   /**
+   * Desktop Ideas reads the canonical mixed feed instead of `useIdeaScan`.
+   *
+   * Staged deliberately: the candidate set is the substance of the desktop
+   * Ideas convergence, and it changes what the surface CONTAINS — quick
+   * thoughts and notes appear beside trade ideas, and the bounded 200-row scan
+   * becomes a paged feed. Behind a flag so the widened source can be verified
+   * against the live workspace before it becomes what everyone opens.
+   *
+   * Exit: on by default once the Explore composition and the type-aware
+   * workspace land, then removed with `useIdeaScan`'s candidate role.
+   */
+  | 'desktop-ideas-feed'
+
+  /**
    * Show a count per feed stage, above the first card.
    *
    * A phone has no console and no network tab, so "the query returned
@@ -43,6 +57,26 @@ export type FlagName =
    * mounts. A latch inside the feed ran too late, twice.
    */
   | 'feed-debug'
+
+  /**
+   * Render Target Expired and Case vs Price through the tile engine.
+   *
+   * The two families are adapted into semantic findings, composed, resolved by
+   * the Presentation Resolver for the mobile briefing, and projected back onto
+   * the card contract — so `SignalCardView` and the shared panes render them
+   * exactly as they render everything else. Nothing about ranking, composition,
+   * filtering or continuity is on this path: the projection preserves every
+   * field the feed is keyed by, which is what makes the flag safe to toggle
+   * mid-session.
+   *
+   * Off is the shipping behaviour, byte for byte — the seam is a pass-through,
+   * and a card the engine declines to adopt renders as production built it.
+   *
+   * Temporary, with an exit and not a resting place: the exit is the remaining
+   * four canonical situations, after which the adapters become the only path
+   * and this flag is deleted with the comparison harness that justifies it.
+   */
+  | 'tile-engine-v2'
 
 function read(): Set<string> {
   if (typeof localStorage === 'undefined') return new Set()

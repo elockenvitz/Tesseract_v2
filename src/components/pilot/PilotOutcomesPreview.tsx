@@ -3,17 +3,20 @@
  * the Outcomes tab. Shows what the real surface will do once enabled.
  *
  * Self-heal: if the user lands here having already completed Trade Book
- * (committed a trade + Trade Book unlocked), they've earned Outcomes —
+ * (a committed trade in this org + Trade Book unlocked), they've earned
+ * Outcomes —
  * mark outcomes_unlocked so the next render swaps in the real surface.
  * Catches the case where the event-based unlock from Trade Book's
  * "Open Outcomes" button missed silently (pilot tester hit this).
  */
 
 import { useEffect } from 'react'
-import { Target, CheckCircle2, Sparkles, ArrowRight, Lock } from 'lucide-react'
+import { Target, CheckCircle2, Sparkles, ArrowRight, Lock, BookmarkCheck, Crosshair, RotateCcw } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { usePilotMode } from '../../hooks/usePilotMode'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { PilotLockedStatePhone } from './PilotLockedStatePhone'
 
 interface PilotOutcomesPreviewProps {
   onGoToTradeLab?: () => void
@@ -22,6 +25,7 @@ interface PilotOutcomesPreviewProps {
 export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewProps) {
   const pilotMode = usePilotMode()
   const { hasUnlockedTradeBook, hasUnlockedOutcomes, mark } = usePilotProgress()
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     // If we're rendering this preview but the user has already
@@ -30,7 +34,7 @@ export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewPro
     if (
       !pilotMode.isLoading &&
       pilotMode.isPilot &&
-      pilotMode.hasCommittedTradeInOrg &&
+      pilotMode.hasCommittedPilotTrade &&
       hasUnlockedTradeBook &&
       !hasUnlockedOutcomes
     ) {
@@ -39,14 +43,36 @@ export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewPro
   }, [
     pilotMode.isLoading,
     pilotMode.isPilot,
-    pilotMode.hasCommittedTradeInOrg,
+    pilotMode.hasCommittedPilotTrade,
     hasUnlockedTradeBook,
     hasUnlockedOutcomes,
     mark,
   ])
 
+  // A phone gets a compact locked state; the preview below is desktop's.
+  if (isMobile) {
+    return (
+      <PilotLockedStatePhone
+        icon={Target}
+        tone="teal"
+        surface="Outcomes"
+        description="Where decisions are checked against their thesis."
+        lockTitle="Opens once a trade you execute reaches Trade Book"
+        lockBody="Execute a trade in Trade Lab first. Then come back to see whether the thesis played out."
+        ctaLabel="Go to Trade Lab"
+        onCta={onGoToTradeLab}
+        itemsLabel="What it tracks"
+        items={[
+          { icon: BookmarkCheck, title: 'Thesis preservation', line: 'Your reasoning, frozen at commit.' },
+          { icon: Crosshair, title: 'Price targets', line: 'Bull, base and bear scored as prices move.' },
+          { icon: RotateCcw, title: 'Post-mortems', line: 'What changed when a thesis breaks.' },
+        ]}
+      />
+    )
+  }
+
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-6">
+    <div data-slot="pilot-locked-preview" className="p-8 max-w-4xl mx-auto space-y-6">
       <div>
         <div className="flex items-center gap-2 mb-1">
           <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-600 flex items-center justify-center">
@@ -69,12 +95,13 @@ export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewPro
           </div>
           <div>
             <h2 className="text-base font-semibold text-gray-900 mb-1 dark:text-white">
-              Outcomes unlocks with your first committed trade
+              This opens once a trade you execute reaches Trade Book
             </h2>
             <p className="text-sm text-gray-700 leading-relaxed mb-4 dark:text-gray-300">
-              For the pilot we're focused on the decision loop. Outcomes is where you'll come
-              back later to see whether the thesis played out — scorecards per analyst, hit
-              rate on price targets, and post-mortem reviews when a thesis is invalidated.
+              Execute a trade in Trade Lab first. Once that decision is in Trade Book, Outcomes
+              is where you come back to see whether the thesis played out — scorecards per
+              analyst, hit rate on price targets, and post-mortem reviews when a thesis is
+              invalidated.
             </p>
             <Button size="sm" onClick={onGoToTradeLab}>
               <ArrowRight className="w-3.5 h-3.5 mr-1" />
@@ -86,7 +113,7 @@ export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewPro
 
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-2 dark:text-white">What Outcomes tracks</h3>
-        <div className="grid grid-cols-3 gap-3">
+        <div data-slot="pilot-preview-cards" className="grid grid-cols-3 gap-3">
           {[
             { title: 'Thesis preservation', body: 'The decision rationale is frozen at commit time, so later reviews are grounded in what you actually knew.' },
             { title: 'Price-target evaluation', body: 'Bull / base / bear targets are scored automatically as prices evolve.' },

@@ -385,11 +385,16 @@ function OverviewSection({
   ].filter(d => d.value > 0)
 
   return (
-    <div className="grid grid-cols-3 gap-6">
+    /* Two panes, 2:1, side by side on a wide screen. On a phone they stack —
+       the allocation chart, then the stats — which is the same reading order,
+       not a different one. */
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
       {/* Current Allocation */}
-      <Card className="p-4 col-span-2">
+      <Card className="p-4 sm:col-span-2">
         <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Current Allocation</h3>
-        <div className="flex items-center gap-8">
+        {/* A fixed 192px donut beside its legend needs ~380px. Below `sm` the
+            legend moves under the chart instead of being squeezed against it. */}
+        <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8">
           <div className="w-48 h-48">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -411,7 +416,7 @@ function OverviewSection({
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex-1 space-y-3">
+          <div className="w-full sm:flex-1 space-y-3">
             {pieData.map((item) => (
               <div key={item.name} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -638,7 +643,13 @@ function ComparisonSection({
 
       {/* Comparison Table */}
       <Card className="overflow-hidden">
-        <table className="w-full">
+        {/* Four columns at 32px of cell padding each do not compress to a phone,
+            and the shell clips horizontal overflow rather than scrolling it, so
+            without this the right-hand columns are unreachable. Same opt-in the
+            Trade Book's committed-trades table uses. `sm:min-w-0` hands the
+            table back to the container from 640px up, so desktop is unchanged. */}
+        <div className="mobile-scroll-x show-scrollbar">
+        <table className="w-full min-w-[520px] sm:min-w-0">
           <thead className="bg-gray-50 dark:bg-gray-800">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fund</th>
@@ -685,6 +696,7 @@ function ComparisonSection({
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
     </div>
   )
@@ -987,7 +999,9 @@ function TradesSection({
         </div>
       ) : (
         <Card className="overflow-hidden">
-          <table className="w-full">
+          {/* Six columns; see the comparison table above for the reasoning. */}
+          <div className="mobile-scroll-x show-scrollbar">
+          <table className="w-full min-w-[720px] sm:min-w-0">
             <thead className="bg-gray-50 dark:bg-gray-800">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Date</th>
@@ -1042,6 +1056,7 @@ function TradesSection({
               ))}
             </tbody>
           </table>
+          </div>
           {executedTrades.length === 0 && (
             <div className="p-8 text-center">
               <p className="text-gray-500 dark:text-gray-400">No executed trades</p>

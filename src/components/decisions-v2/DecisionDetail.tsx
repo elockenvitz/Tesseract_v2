@@ -62,6 +62,16 @@ export function DecisionDetailPane({
   const teamable = !!target && canDiscuss(target)
   const can = provable(d, detail?.priceAtDecision)
   const prov = provenanceOf(d.decisionNote)
+  /*
+   * The batch's "Why this decision?" (`trade_batches.description`), for a
+   * decision whose own note is not a human reason. Trade Book writes the
+   * rationale there, once for the batch, and a Trade Lab decision's note is
+   * always system provenance -- so without this the one reason the desk wrote
+   * never reached the record. Labelled as the batch's, never as this note.
+   */
+  const batchReason = prov !== 'human' && provenanceOf(d.batch?.description) === 'human'
+    ? d.batch!.description
+    : null
 
   // Where execution landed inside the since-decision window, as a fraction.
   const execOffset = (() => {
@@ -185,6 +195,19 @@ export function DecisionDetailPane({
             <div className="mt-3 pl-5 text-[11px] text-gray-500">
               {d.decidedByName ?? 'Decision maker'}
               {d.decidedAt && ` · ${new Date(d.decidedAt).toLocaleDateString()}`}
+            </div>
+            {d.contextNote?.trim() && <ProposalNote decision={d} />}
+          </DesktopSection>
+        ) : batchReason ? (
+          <DesktopSection title="Why this decision?" lead>
+            <blockquote
+              data-testid="decision-batch-reason"
+              className="max-w-[62ch] border-l-[3px] border-gray-300 pl-5 text-[21px] font-medium leading-[1.5] tracking-[-0.01em] text-gray-900 dark:border-white/20 dark:text-gray-100"
+            >
+              “{batchReason}”
+            </blockquote>
+            <div className="mt-3 pl-5 text-[11px] text-gray-500">
+              Written for the batch{d.batch?.name ? ` · ${d.batch.name}` : ''}
             </div>
             {d.contextNote?.trim() && <ProposalNote decision={d} />}
           </DesktopSection>

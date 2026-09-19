@@ -135,11 +135,276 @@
     height: 100dvh;
   }
 
+  /* Dialog and panel sizing against the VISIBLE viewport.
+
+     Same reasoning as `.h-viewport` above and the same one-block form: a
+     `max-h-[80vh]` dialog on a phone is measured against a viewport that
+     includes the strip behind the URL bar, so its bottom fifth — where the
+     actions are — cannot be reached. Two Tailwind arbitrary classes cannot
+     express the fallback, because the winner would be decided by stylesheet
+     order rather than by support.
+
+     One utility per size actually used in the product. `viewport-sizing.test`
+     fails the build if a bare `vh` class appears anywhere in src, so the
+     thirty-seventh dialog cannot reintroduce the trap. Add a size here rather
+     than reaching for an arbitrary value. */
+
+  .max-h-viewport-30 {
+    max-height: 30vh;
+    max-height: 30dvh;
+  }
+
+  .h-viewport-50 {
+    height: 50vh;
+    height: 50dvh;
+  }
+
+  .max-h-viewport-50 {
+    max-height: 50vh;
+    max-height: 50dvh;
+  }
+
+  .min-h-viewport-50 {
+    min-height: 50vh;
+    min-height: 50dvh;
+  }
+
+  .h-viewport-60 {
+    height: 60vh;
+    height: 60dvh;
+  }
+
+  .max-h-viewport-60 {
+    max-height: 60vh;
+    max-height: 60dvh;
+  }
+
+  .min-h-viewport-60 {
+    min-height: 60vh;
+    min-height: 60dvh;
+  }
+
+  .h-viewport-70 {
+    height: 70vh;
+    height: 70dvh;
+  }
+
+  .max-h-viewport-70 {
+    max-height: 70vh;
+    max-height: 70dvh;
+  }
+
+  .min-h-viewport-70 {
+    min-height: 70vh;
+    min-height: 70dvh;
+  }
+
+  .h-viewport-75 {
+    height: 75vh;
+    height: 75dvh;
+  }
+
+  .max-h-viewport-75 {
+    max-height: 75vh;
+    max-height: 75dvh;
+  }
+
+  .min-h-viewport-75 {
+    min-height: 75vh;
+    min-height: 75dvh;
+  }
+
+  .h-viewport-80 {
+    height: 80vh;
+    height: 80dvh;
+  }
+
+  .max-h-viewport-80 {
+    max-height: 80vh;
+    max-height: 80dvh;
+  }
+
+  .min-h-viewport-80 {
+    min-height: 80vh;
+    min-height: 80dvh;
+  }
+
+  .h-viewport-85 {
+    height: 85vh;
+    height: 85dvh;
+  }
+
+  .max-h-viewport-85 {
+    max-height: 85vh;
+    max-height: 85dvh;
+  }
+
+  .min-h-viewport-85 {
+    min-height: 85vh;
+    min-height: 85dvh;
+  }
+
+  .h-viewport-90 {
+    height: 90vh;
+    height: 90dvh;
+  }
+
+  .max-h-viewport-90 {
+    max-height: 90vh;
+    max-height: 90dvh;
+  }
+
+  .min-h-viewport-90 {
+    min-height: 90vh;
+    min-height: 90dvh;
+  }
+
+  .h-viewport-92 {
+    height: 92vh;
+    height: 92dvh;
+  }
+
+  .max-h-viewport-92 {
+    max-height: 92vh;
+    max-height: 92dvh;
+  }
+
+  .min-h-viewport-92 {
+    min-height: 92vh;
+    min-height: 92dvh;
+  }
+
+  .h-viewport-95 {
+    height: 95vh;
+    height: 95dvh;
+  }
+
+  .max-h-viewport-95 {
+    max-height: 95vh;
+    max-height: 95dvh;
+  }
+
+  .min-h-viewport-95 {
+    min-height: 95vh;
+    min-height: 95dvh;
+  }
+
+  .h-viewport-100 {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .max-h-viewport-100 {
+    max-height: 100vh;
+    max-height: 100dvh;
+  }
+
+  .min-h-viewport-100 {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
   /* Safe-area insets — notch and home-indicator padding. Zero on desktop. */
   .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
   .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
   .pl-safe { padding-left: env(safe-area-inset-left, 0px); }
   .pr-safe { padding-right: env(safe-area-inset-right, 0px); }
+
+  /* ── Desktop Explore grid: columns from the REGION, not the window ──────
+     Explore keeps its broad arrangement at full width and has to survive the
+     workspace opening beside it, which leaves it ~40rem. A media query cannot
+     tell those apart — the window is 1920px in both — so it would go on
+     packing three columns into a pane where a tile would be 12rem wide. The
+     region is the container and the region's own width decides.
+
+     Only the class changes when the pane narrows, so the grid re-flows in
+     place: Explore is not remounted, and its scroll does not move. */
+  .explore-host {
+    container-type: inline-size;
+  }
+  .explore-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* 34rem is two tiles at the ~16rem a preview needs to stay a preview. */
+  @container (min-width: 34rem) {
+    .explore-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @container (min-width: 62rem) {
+    .explore-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    /* A feature tile earns two columns only where there are three to spend.
+       At two columns it would be the whole row, which is not emphasis. */
+    .explore-feature {
+      grid-column: span 2 / span 2;
+    }
+  }
+
+  /* ── Desktop feed tile: side-by-side when the TILE is wide enough ────────
+     A container query, not a media query, because the same viewport shows the
+     feed at full width and at ~40% beside an open workspace. Only the tile's
+     own width can say whether a narrative and an analytical object fit next to
+     each other. Native CSS — Tailwind 3.4 ships no container-query utilities
+     and this needs no plugin, no JS and no resize listener. */
+  .feed-tile {
+    container-type: inline-size;
+  }
+  .feed-tile-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* 46rem is the measured floor: below it the narrative column drops under
+     ~26rem and the claim starts wrapping every two or three words. */
+  @container (min-width: 46rem) {
+    /* Proportional, not a capped right column. The 26rem ceiling was fine at a
+       72rem measure and wrong at 96rem: every pixel of the extra width went to
+       prose, which is the one thing that does not benefit from it. 1.1fr to 1fr
+       is ~52/48 — the narrative still leads, and the chart, ladder or
+       distribution gets a usable object width instead of a strip. The 19rem
+       floor on the right is what keeps the boundary case honest. */
+    .feed-tile-cols {
+      grid-template-columns: minmax(0, 1.1fr) minmax(19rem, 1fr);
+      /* Each column is its own height. A grid row stretches its items by
+         default, and that default was the whole defect: the taller column set
+         the row, the shorter one was inflated to match, and the inflation had
+         to go somewhere. On the preview side it went under the chart as an
+         empty stage; on the narrative side the card's own `grow` spacer
+         absorbed it and pushed the disclosure to the floor. Neither region was
+         asked how tall it wanted to be. Variable heights between the two
+         columns are the correct outcome, not a defect to equalise. */
+      align-items: start;
+    }
+    /* No analytical object, so nothing is sharing the tile. The card may sit in
+       the wider shell but its text stops at a measure a person can read — this
+       lands within ~20px of the narrative column's own width on an analytical
+       card, so the feed reads at one measure rather than two. */
+    .feed-tile-prose {
+      grid-template-columns: minmax(0, 50rem);
+    }
+    /* The preview becomes a neighbour rather than a band underneath. */
+    .feed-tile-aside {
+      border-top: 0;
+      /* The divider runs the height of the preview, not of the card, because
+         the preview no longer stretches. A rule that ends where its content
+         ends is telling the truth about how much object there is. */
+      border-left: 1px solid rgb(243 244 246);
+    }
+    .dark .feed-tile-aside {
+      border-left-color: rgb(31 41 55);
+    }
+    /* The object gets a little more of the width it earned — 11rem rather than
+       8rem, which is a chart rather than a strip at ~700px wide. A height, not
+       a fill: it does not chase the narrative column, so a tall card still
+       ends with the chart at the top of its own column. */
+    /* Two classes deep on purpose: `h-32` is the component's own floor and a
+       single-class rule here would be a coin toss on emission order. */
+    .feed-tile-aside .feed-chart-plot {
+      height: 11rem;
+    }
+  }
 
   /* Opt in where a row genuinely must scroll sideways (a wide table kept as a
      table). Adds momentum scrolling and stops the scroll chaining to the page. */
@@ -154,6 +419,26 @@
   .no-touch-target {
     min-height: 0;
     min-width: 0;
+  }
+
+  /* Opting out of the 44px box does not have to mean opting out of a 44px
+     thumb. This keeps the drawn control whatever height its classes say and
+     grows only the touch region around it, so a dense toolbar can be dense
+     and still be hittable. Vertical only: neighbours in a toolbar sit side by
+     side, and overlapping hit regions horizontally would steal each other's
+     taps. Pairs with `.no-touch-target`, which is what frees the height. */
+  .tap-pad {
+    position: relative;
+  }
+  @media (max-width: 767px) and (pointer: coarse) {
+    .tap-pad::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: -6px;
+      bottom: -6px;
+    }
   }
 
   /* Hide the scrollbar on a strip that scrolls sideways by design — the
@@ -542,4 +827,86 @@
 @keyframes deck-expand {
   from { opacity: 0; transform: scale(0.985); }
   to   { opacity: 1; transform: none; }
+}
+
+/*
+ * The phone note editor filling its pane exactly.
+ *
+ * ── The defect this closes ────────────────────────────────────────────────
+ *
+ * The writing surface had a minimum height computed as "the viewport minus an
+ * estimate of the chrome around it". The estimate was 190px. The chrome is not
+ * 190px, and every number in it moved during this pass, so the surface ended up
+ * TALLER than the pane holding it: an empty note scrolled roughly 130px, and a
+ * note with text in it never appeared to end, because the blank region below
+ * the last line was part of the editable canvas rather than the end of it.
+ *
+ * The fix is to stop predicting. These rules make the editor a flex column that
+ * grows to whatever space the pane actually has, so the browser does the
+ * measuring — including when the keyboard opens and the pane halves.
+ *
+ * `flex-grow: 1; flex-shrink: 0` and NOT `flex: 1` is the part that matters. A
+ * shrinkable child inside a scrollport is compressed to fit instead of
+ * overflowing it, which would mean a long note that cannot scroll. Growing
+ * without shrinking fills the pane when the note is short and pushes past it
+ * when the note is long.
+ *
+ * Phone only, and opt-in: the class is applied by `UniversalNoteEditor` at
+ * phone width, so the desktop editor keeps its `calc()` minimum untouched.
+ */
+@media (max-width: 639px) {
+  .rich-text-editor.editor-fill {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 0;
+  }
+  .rich-text-editor.editor-fill > .editor-container {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 0;
+  }
+  .rich-text-editor.editor-fill .editor-content {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 0;
+  }
+  /*
+   * The trailing writing room is set inline by `RichTextEditor` rather than
+   * here, because ProseMirror owns that element's style attribute and an inline
+   * padding beats a stylesheet one.
+   */
+  .rich-text-editor.editor-fill .editor-content > .ProseMirror {
+    flex-grow: 1;
+    flex-shrink: 0;
+  }
+}
+
+/*
+ * Outcomes decision detail on a phone: readable type, reachable buttons.
+ *
+ * The detail's sections are written at desktop sizes — 9px labels, 11px body,
+ * 20px-tall buttons — for a 440px side panel read at arm's length. On a phone
+ * that is unreadable and untappable. Rather than fork every class string in
+ * the page, the phone cards opt in with `outcomes-phone-body` (and badges with
+ * `outcomes-phone-badge`) and these rules lift the arbitrary pixel sizes one
+ * step. Desktop never gets the class, so it is untouched.
+ *
+ * `overflow-wrap: anywhere` is what stops a long thesis URL or ticker list from
+ * widening the card past the screen. 16px textareas stop iOS zooming on focus.
+ */
+@media (max-width: 767px) {
+  .outcomes-phone-body { overflow-wrap: anywhere; }
+  .outcomes-phone-body .text-\[7px\],
+  .outcomes-phone-body .text-\[8px\] { font-size: 11px; }
+  .outcomes-phone-body .text-\[9px\] { font-size: 11px; }
+  .outcomes-phone-body .text-\[10px\] { font-size: 13px; }
+  .outcomes-phone-body .text-\[11px\] { font-size: 14px; }
+  .outcomes-phone-body .text-\[12px\] { font-size: 15px; }
+  .outcomes-phone-body button { min-height: 44px; }
+  .outcomes-phone-body textarea { font-size: 16px; }
+  .outcomes-phone-badge .text-\[8px\],
+  .outcomes-phone-badge .text-\[9px\] { font-size: 11px; }
 }

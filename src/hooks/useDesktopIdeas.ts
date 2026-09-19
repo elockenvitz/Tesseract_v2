@@ -24,6 +24,7 @@ import {
 } from '../lib/portfolio/holdings'
 import { maturityOf, type IdeaEnrichment, type IdeaRow } from '../lib/desktop-ideas'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { useHoldingsForAssets } from './useHoldingsForAssets'
 
 /**
  * What "finished" actually means on a trade idea.
@@ -44,10 +45,26 @@ function isTerminal(row: { outcome?: string | null; status?: string | null }): b
 
 export function useIdeaScan() {
   /*
-   * The scan reads `trade_queue_items` with no asset filter, so this is the
-   * only thing separating workspaces: RLS on that table is not organisation-
-   * aware, and without the filter the Ideas list was every organisation's
-   * queue.
+   * The scan reads `trade_queue_items` with no asset filter, so it is filtered
+   * to the current organisation here.
+   *
+   * This comment used to say RLS on the table "is not organisation-aware".
+   * That is no longer true and was corrected on inspection: the SELECT policy
+   * `Trade queue: org-scoped access` is granted TO authenticated and has two
+   * branches — a portfolio-less row is visible only to its creator or
+   * assignee, and a row with a portfolio goes through
+   * `portfolio_in_current_org`, a SECURITY DEFINER function with a pinned
+   * search_path that compares the portfolio's organisation to
+   * `current_org_id()`. RLS is the boundary and it holds.
+   *
+   * The filter stays as defence in depth, and because `useIdeasFeed` filters
+   * the same table the same way — one behaviour for one table.
+   *
+   * Follow-up, deliberately not chased here: the policy scopes by the
+   * PORTFOLIO's organisation while these queries filter
+   * `trade_queue_items.organization_id`. Two different columns. A row where
+   * they disagree would be judged differently by each layer. Not a leak, since
+   * RLS is the narrower of the two, but worth reconciling on its own.
    */
   const { currentOrgId } = useOrganization()
 
@@ -61,6 +78,7 @@ export function useIdeaScan() {
         .select(`
           id, asset_id, portfolio_id, action, stage, status, outcome, rationale, conviction, urgency,
           proposed_weight, decision_outcome, visibility_tier, created_by, created_at, updated_at,
+          origin_metadata,
           assets(id, symbol, company_name),
           portfolios(id, name),
           users!trade_queue_items_created_by_fkey(id, first_name, last_name, email)
@@ -93,6 +111,9 @@ export function useIdeaScan() {
           createdAt: r.created_at,
           updatedAt: r.updated_at ?? null,
           decisionOutcome: r.decision_outcome ?? null,
+          // Provenance, read and carried -- never written, never filtered away
+          // here. What an operational surface does with it is its decision.
+          isPilotSeed: (r.origin_metadata as Record<string, unknown> | null)?.pilot_seed === true,
         }))
     },
   })
@@ -119,33 +140,19 @@ export function useScanExposure(ideas: IdeaRow[]) {
     [ideas],
   )
 
-  const { data } = useQuery<Record<string, ScanExposure>>({
-    queryKey: ['desktop-ideas', 'exposure', ids.join('|')],
-    enabled: ids.length > 0,
-    staleTime: 5 * 60_000,
-    queryFn: async () => {
-      // There is no weight column on `portfolio_holdings`; weight is derived
-      // against the book's own market value, in lib/portfolio/holdings. Two
-      // queries because the denominator is the whole book: which books hold
-      // these names, then every line in those books.
-      const { data: mine, error } = await supabase
-        .from('portfolio_holdings')
-        .select('portfolio_id')
-        .in('asset_id', ids)
-      if (error) throw new Error(error.message)
+  /*
+   * The rows come from the canonical holdings read, shared with Research,
+   * which asked the identical two-step question under a lens-namespaced key.
+   * What stays here is the derivation: Ideas wants the stake, its rank in the
+   * book, and the book's own distribution.
+   */
+  const { rows, settled } = useHoldingsForAssets(ids)
 
-      const books = [...new Set(((mine ?? []) as any[]).map(r => r.portfolio_id))]
-      if (!books.length) return {}
-
-      const { data, error: e2 } = await supabase
-        .from('portfolio_holdings')
-        .select('portfolio_id, asset_id, shares, price, cost, date')
-        .in('portfolio_id', books)
-      if (e2) throw new Error(e2.message)
-
+  const exposure = useMemo<Record<string, ScanExposure>>(() => {
+    if (!rows.length) return {}
+    {
       // The largest single-book stake, not a sum: an idea's exposure question
       // is "how much does this matter in the book it matters most in".
-      const rows = (data ?? []) as unknown as HoldingRow[]
       const byAsset = weightsByAsset(rows)
 
       // Rank needs the book the stake sits in, so each book is built once and
@@ -187,10 +194,13 @@ export function useScanExposure(ideas: IdeaRow[]) {
         }
       }
       return out
-    },
-  })
+    }
+  }, [rows, ids])
 
-  return data ?? {}
+  /** `settled` is false until the first real answer for the CURRENT id list has
+   *  landed. The lens uses it to hold final geometry, because this map feeds
+   *  `scoreIdea` and therefore the rank that decides every tile's span. */
+  return { exposure, settled }
 }
 
 /**
@@ -228,6 +238,22 @@ export function useScanFramework(ideas: IdeaRow[]) {
     queryKey: ['desktop-ideas', 'framework', ids.join('|'), currentOrgId],
     enabled: ids.length > 0 && !!currentOrgId,
     staleTime: 5 * 60_000,
+    /*
+     * The single worst visual event on this lens, and the reason for it.
+     *
+     * This key contains the joined ids of the RANKED list, and that list grows
+     * when coverage prompts append. A new key has no data, so `data` went
+     * `undefined` and the hook returned `{}` -- for EVERY tile at once. Each
+     * one lost its `frame`, so each one lost its visual kind, so every chart in
+     * the gallery unmounted, every tile collapsed to text, and the whole field
+     * sprang back a moment later when the refetch answered.
+     *
+     * A frame is per-asset and does not change because another asset joined the
+     * list. Keeping the previous map is therefore not stale data: it is the
+     * same answer for every name it covers, and names it does not cover simply
+     * have no frame yet -- which is exactly the state a new tile starts in.
+     */
+    placeholderData: prev => prev,
     queryFn: async () => {
       // The price floor is no longer "the last few sessions". A card wants to
       // say what the market has done SINCE THE IDEA WAS WRITTEN, so the window
@@ -360,6 +386,9 @@ export function useScanOpenPrice(ideas: IdeaRow[]) {
     queryKey: ['desktop-ideas', 'open-price', ids.join('|')],
     enabled: ids.length > 0,
     staleTime: 5 * 60_000,
+    // Same per-asset argument as exposure and framework above: a re-keyed list
+    // must not blank the prices every tile is already drawing.
+    placeholderData: prev => prev,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('decision_price_snapshots')

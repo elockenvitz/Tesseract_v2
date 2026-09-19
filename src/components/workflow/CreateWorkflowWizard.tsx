@@ -49,6 +49,7 @@ import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { supabase } from '../../lib/supabase'
+import { assetAccess } from '../../lib/market-data/supabase-asset-source'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import type { CadenceTimeframe, WorkflowScopeType } from '../../types/workflow'
@@ -964,10 +965,15 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         break
     }
 
-    // Handle excludes by getting all assets and removing the matched ones
+    /**
+     * Handle excludes by taking every asset and removing the matched ones.
+     *
+     * Paged. An unpaged select returns the first 1,000 rows and HTTP 200 past
+     * the cap, which would silently scope a workflow to a fraction of the
+     * universe while reporting success.
+     */
     if (isExclude) {
-      const { data: allAssets } = await supabase.from('assets').select('id')
-      const allIds = new Set(allAssets?.map(a => a.id) || [])
+      const allIds = await assetAccess.allIds()
       filterAssetIds.forEach(id => allIds.delete(id))
       return allIds
     }
@@ -2029,7 +2035,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       {/* Filter Modal */}
       {showFilterModal && filterType && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col dark:bg-gray-800">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-viewport-80 overflow-hidden flex flex-col dark:bg-gray-800">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {editingFilter ? 'Edit Filter' : 'Add Filter'}: {getFilterDefinition(filterType)?.name}
@@ -2198,7 +2204,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       {/* Preview Modal */}
       {showPreviewModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col dark:bg-gray-800">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-viewport-80 overflow-hidden flex flex-col dark:bg-gray-800">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Next run snapshot (preview)</h3>

@@ -4,11 +4,9 @@
  * without exposing the operational workflow.
  *
  * Self-heal: if the user lands here having already committed a trade in
- * this org, they've earned Trade Book — mark trade_book_unlocked so the
- * next render swaps in the real surface. Catches the case where the
- * event-based unlock from SimulationPage's `pilot-tradelab:executed`
- * listener missed (e.g., SimulationPage unmounted mid-dispatch on the
- * post-execute navigation). Mirrors the same pattern used by
+ * this org — any trade — they've earned Trade Book; mark trade_book_unlocked
+ * so the next render swaps in the real surface. See
+ * `lib/pilot/pilot-unlocks`. Mirrors the same pattern used by
  * PilotOutcomesPreview.
  *
  * This replaces the older unbounded self-heal that lived in
@@ -21,10 +19,12 @@
  */
 
 import { useEffect } from 'react'
-import { BookOpen, CheckCircle2, Sparkles, ArrowRight, Lock } from 'lucide-react'
+import { BookOpen, CheckCircle2, Sparkles, ArrowRight, Lock, FileText, Scale, Briefcase } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { usePilotMode } from '../../hooks/usePilotMode'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { PilotLockedStatePhone } from './PilotLockedStatePhone'
 
 interface PilotTradeBookPreviewProps {
   onGoToTradeLab?: () => void
@@ -33,15 +33,16 @@ interface PilotTradeBookPreviewProps {
 export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewProps) {
   const pilotMode = usePilotMode()
   const { hasUnlockedTradeBook, mark } = usePilotProgress()
+  const isMobile = useIsMobile()
 
   useEffect(() => {
-    // If we're rendering this preview but the user has already
-    // committed a trade in this org, mark trade_book_unlocked now.
+    // If we're rendering this preview but the pilot has already committed
+    // a trade in this org, mark trade_book_unlocked now.
     // The mutation is idempotent so re-firing is a no-op.
     if (
       !pilotMode.isLoading &&
       pilotMode.isPilot &&
-      pilotMode.hasCommittedTradeInOrg &&
+      pilotMode.hasCommittedPilotTrade &&
       !hasUnlockedTradeBook
     ) {
       mark('trade_book_unlocked')
@@ -49,13 +50,35 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
   }, [
     pilotMode.isLoading,
     pilotMode.isPilot,
-    pilotMode.hasCommittedTradeInOrg,
+    pilotMode.hasCommittedPilotTrade,
     hasUnlockedTradeBook,
     mark,
   ])
 
+  // A phone gets a compact locked state; the preview below is desktop's.
+  if (isMobile) {
+    return (
+      <PilotLockedStatePhone
+        icon={BookOpen}
+        tone="indigo"
+        surface="Trade Book"
+        description="Where committed decisions are recorded."
+        lockTitle="Opens after you execute a trade"
+        lockBody="Add any idea to Trade Lab, size it and execute it. That decision lands here."
+        ctaLabel="Go to Trade Lab"
+        onCta={onGoToTradeLab}
+        itemsLabel="What it keeps"
+        items={[
+          { icon: FileText, title: 'Decision rationale', line: 'The thesis and why-now behind the trade.' },
+          { icon: Scale, title: 'Sizing', line: 'What you sized and the shares it became.' },
+          { icon: Briefcase, title: 'Portfolio context', line: 'Holdings and weights at the moment of commit.' },
+        ]}
+      />
+    )
+  }
+
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-6">
+    <div data-slot="pilot-locked-preview" className="p-8 max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-1">
@@ -80,13 +103,12 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
           </div>
           <div>
             <h2 className="text-base font-semibold text-gray-900 mb-1 dark:text-white">
-              This opens after your first accepted simulation
+              This opens after you execute a trade in Trade Lab
             </h2>
             <p className="text-sm text-gray-700 leading-relaxed mb-4 dark:text-gray-300">
-              For the pilot we're starting with the decision simulation workflow in Trade Lab.
-              Once you accept a simulated decision, it lands here with full provenance: the
-              thesis that drove it, the sizing chosen, the portfolio context at the moment of
-              commit, and every decision-request it answered.
+              Add any idea or recommendation to Trade Lab, size it and execute it. That decision
+              lands here with full provenance: the thesis that drove it, the sizing chosen, and
+              the portfolio context at the moment of commit.
             </p>
             <Button size="sm" onClick={onGoToTradeLab}>
               <ArrowRight className="w-3.5 h-3.5 mr-1" />
@@ -99,7 +121,7 @@ export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewP
       {/* Preview: what metadata gets preserved */}
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-2 dark:text-white">What the Trade Book preserves</h3>
-        <div className="grid grid-cols-3 gap-3">
+        <div data-slot="pilot-preview-cards" className="grid grid-cols-3 gap-3">
           {[
             { title: 'Decision rationale', body: 'The thesis and why-now that drove the trade, linked for future review.' },
             { title: 'Sizing derivation', body: 'Sizing input (weight / shares / active-weight), computed deltas, and final shares.' },

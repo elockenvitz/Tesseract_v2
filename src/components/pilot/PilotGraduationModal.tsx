@@ -12,16 +12,30 @@
  * Mounting this at the Dashboard level (above TabManager) keeps the
  * modal alive regardless of which tab the user lands on.
  *
- * Trigger: PilotOutcomesGetStarted writes a `pending_graduation_modal`
- * localStorage flag the moment all 3 step events have fired. This
- * component reads that flag on mount + listens for a
- * `pilot-graduation:trigger` window event and shows the modal.
- * Dismiss writes a `graduation_dismissed` flag so the modal only
- * pops once per (user, org).
+ * Trigger: graduation itself. `hasGraduated` is the durable, per-org,
+ * server-backed answer to whether the pilot finished the loop, and it
+ * is the same value that widens access and retires Pilot Home — so the
+ * celebration and the thing it celebrates can no longer disagree.
+ *
+ * It used to open on a `pending_graduation_modal` localStorage flag
+ * that PilotOutcomesGetStarted wrote the moment its three LOCAL step
+ * flags were set, without ever consulting graduation. That flag is
+ * written before the durable `graduated` write is reflected, so the
+ * modal could announce "the full app is unlocked" to a reader whose
+ * every tab was still gated and whose "Open the Dashboard" button
+ * dropped them back on the pilot mission home. It was also per-browser,
+ * so clearing site data re-congratulated someone who graduated weeks
+ * ago and a second device congratulated nobody at all.
+ *
+ * Acknowledgement is durable too — `graduation_celebrated` in
+ * pilot_progress — for the same reasons. The legacy localStorage
+ * dismissal is still READ once, so a pilot who already saw this does
+ * not see it again, and acknowledging migrates them forward.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowRight, Trophy, LayoutDashboard, Grid3x3 } from 'lucide-react'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
 
 interface PilotGraduationModalProps {
   userId: string | undefined
@@ -30,20 +44,19 @@ interface PilotGraduationModalProps {
   onOpenAppLauncher?: () => void
 }
 
-const PENDING = 'pending_graduation_modal'
-const DISMISS = 'graduation_dismissed'
+/** The pre-durable dismissal. Read so an already-congratulated pilot is not
+ *  congratulated again; written alongside the durable one so a browser that
+ *  has not yet synced still behaves. Never consulted about graduation. */
+const LEGACY_DISMISS = 'graduation_dismissed'
 
-function flagKey(userId: string, orgId: string | null | undefined, suffix: string) {
-  return `pilot_outcomes_intro_${suffix}_${userId || 'anon'}_${orgId || 'no-org'}`
+function legacyKey(userId: string, orgId: string | null | undefined) {
+  return `pilot_outcomes_intro_${LEGACY_DISMISS}_${userId || 'anon'}_${orgId || 'no-org'}`
 }
-function readFlag(userId: string, orgId: string | null | undefined, suffix: string): boolean {
-  try { return localStorage.getItem(flagKey(userId, orgId, suffix)) === '1' } catch { return false }
+function readLegacyDismiss(userId: string, orgId: string | null | undefined): boolean {
+  try { return localStorage.getItem(legacyKey(userId, orgId)) === '1' } catch { return false }
 }
-function writeFlag(userId: string, orgId: string | null | undefined, suffix: string) {
-  try { localStorage.setItem(flagKey(userId, orgId, suffix), '1') } catch { /* ignore */ }
-}
-function clearFlag(userId: string, orgId: string | null | undefined, suffix: string) {
-  try { localStorage.removeItem(flagKey(userId, orgId, suffix)) } catch { /* ignore */ }
+function writeLegacyDismiss(userId: string, orgId: string | null | undefined) {
+  try { localStorage.setItem(legacyKey(userId, orgId), '1') } catch { /* ignore */ }
 }
 
 export function PilotGraduationModal({
@@ -52,37 +65,34 @@ export function PilotGraduationModal({
   onOpenDashboard,
   onOpenAppLauncher,
 }: PilotGraduationModalProps) {
-  const recompute = useCallback(() => {
-    if (!userId) return false
-    if (readFlag(userId, orgId, DISMISS)) return false
-    return readFlag(userId, orgId, PENDING)
-  }, [userId, orgId])
+  const { hasGraduated, hasCelebratedGraduation, mark } = usePilotProgress()
 
-  const [open, setOpen] = useState<boolean>(() => recompute())
+  // Acknowledged in this browser before the durable flag existed. Snapshot it
+  // per (user, org) rather than reading on every render, so dismissing does not
+  // depend on a storage read landing before the next paint.
+  const seenLegacy = useCallback(
+    () => (userId ? readLegacyDismiss(userId, orgId) : false),
+    [userId, orgId],
+  )
+  const [acknowledged, setAcknowledged] = useState<boolean>(seenLegacy)
+  useEffect(() => { setAcknowledged(seenLegacy()) }, [seenLegacy])
 
-  // Re-read on user/org change (analyst switching pilot clients).
-  useEffect(() => {
-    setOpen(recompute())
-  }, [recompute])
+  /*
+   * Graduation is the trigger, and it is durable. `hasGraduated` flips in the
+   * cache the moment the mark is made and rolls back if the write fails, so
+   * there is no frame where this claims the app is open while the gate that
+   * opens it disagrees.
+   */
+  const open = !!userId && hasGraduated && !hasCelebratedGraduation && !acknowledged
 
-  // Listen for the trigger event so PilotOutcomesGetStarted (or any
-  // other surface) can pop the modal without prop wiring.
-  useEffect(() => {
-    const handler = () => setOpen(recompute())
-    window.addEventListener('pilot-graduation:trigger', handler)
-    return () => window.removeEventListener('pilot-graduation:trigger', handler)
-  }, [recompute])
-
-  if (!userId || !open) return null
+  if (!open) return null
 
   const dismiss = () => {
-    if (userId) {
-      writeFlag(userId, orgId, DISMISS)
-      // Clear the pending flag so it doesn't re-trigger on the next
-      // page load if the user dismisses without graduating again.
-      clearFlag(userId, orgId, PENDING)
-    }
-    setOpen(false)
+    // Optimistic locally so the modal closes on the click, durable so it stays
+    // closed on the next device.
+    setAcknowledged(true)
+    if (userId) writeLegacyDismiss(userId, orgId)
+    mark('graduation_celebrated')
   }
 
   return (

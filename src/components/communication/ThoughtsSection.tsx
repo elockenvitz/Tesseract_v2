@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText, MessageCircleQuestion, CheckCircle2, Clock, ChevronRight, Scale, Briefcase, ArrowUpRight, Check, X as XIcon, MessageCircle, Loader2, Sparkles } from 'lucide-react'
+import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText, MessageCircleQuestion, ChevronRight, Scale, Briefcase, ArrowUpRight, Check, X as XIcon, MessageCircle, Loader2, Sparkles } from 'lucide-react'
 import { usePilotMode } from '../../hooks/usePilotMode'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
@@ -9,6 +9,8 @@ import { clsx } from 'clsx'
 import { QuickThoughtCapture } from '../thoughts/QuickThoughtCapture'
 import { QuickTradeIdeaCapture } from '../thoughts/QuickTradeIdeaCapture'
 import { RecentQuickIdeas } from '../thoughts/RecentQuickIdeas'
+import { CaptureActionBands } from '../thoughts/CaptureActionBands'
+import { RecentListView } from '../thoughts/RecentListView'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
 import { PromptDetailView } from '../thoughts/PromptDetailView'
 import { PromptModal } from '../thoughts/PromptModal'
@@ -16,6 +18,8 @@ import { RecommendationQuickModal } from '../thoughts/RecommendationQuickModal'
 import { useRecentQuickIdeas } from '../../hooks/useRecentQuickIdeas'
 import { useDirectCounts } from '../../hooks/useDirectCounts'
 import { useUpdateDecisionRequest, useAcceptFromInbox } from '../../hooks/useDecisionRequests'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { isPilotExampleRequest } from '../../lib/pilot/pilot-inbox'
 import { useToast } from '../common/Toast'
 import { buildQuickThoughtsFilters } from '../../hooks/useIdeasRouting'
 import type { CapturedContext } from '../thoughts/ContextSelector'
@@ -24,6 +28,8 @@ import { useSidebarStore } from '../../stores/sidebarStore'
 import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
 import { type RequestType, REQUEST_TYPE_META } from '../ui/checklist/types'
+import { captureTypeForMode, type LegacyCaptureMode } from '../../lib/capture/capture-types'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 
 interface ThoughtsSectionProps {
   onClose?: () => void
@@ -37,6 +43,17 @@ interface ThoughtsSectionProps {
   sidebarMode?: SidebarMode
   selectedItem?: SelectedItem | null
   onBackToCapture?: () => void
+  /**
+   * Tells the pane's header what "back" means here, or that there is nowhere
+   * to go.
+   *
+   * On a phone the capture form drew its own full-width Back row directly
+   * under that header, so two of the rows above the form were chrome: one
+   * naming where you are, one offering the way out. The pane owns the header
+   * and this component owns the mode that decides whether back exists, so
+   * they meet here.
+   */
+  onBackActionChange?: (action: (() => void) | null) => void
   onOpenInspector?: (type: InspectableItemType, id: string) => void
 }
 
@@ -52,8 +69,11 @@ export function ThoughtsSection({
   sidebarMode = 'capture',
   selectedItem,
   onBackToCapture,
+  onBackActionChange,
   onOpenInspector,
 }: ThoughtsSectionProps) {
+  /** No keyboard on open for a phone; desktop keeps its focus. */
+  const isMobileViewport = useIsMobile()
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const pilotMode = usePilotMode()
@@ -98,12 +118,20 @@ export function ThoughtsSection({
   const writeCaptureStep = (n: 1 | 2 | 3) => {
     try { localStorage.setItem(captureStepKey(n), '1') } catch { /* ignore */ }
   }
-  const [captureStep1Done, setCaptureStep1Done] = useState(() => readCaptureStep(1))
+  /*
+   * Step 1 of the row is flag 2, not flag 1.
+   *
+   * Flag 1 is "a ticker was picked", which fires on the FIRST leg of a pair —
+   * true, and not yet enough to submit. Flag 2 is "the form is ready to
+   * send": one asset for a single idea, both legs for a pair. That is the
+   * condition the row is describing for either shape, so it is the one it
+   * reads. Flag 1 is still written, because it is durable state a pilot may
+   * already carry and renaming or dropping it would reset them.
+   */
   const [captureStep2Done, setCaptureStep2Done] = useState(() => readCaptureStep(2))
   const [captureStep3Done, setCaptureStep3Done] = useState(() => readCaptureStep(3))
   // Reload from localStorage when user/org changes.
   useEffect(() => {
-    setCaptureStep1Done(readCaptureStep(1))
     setCaptureStep2Done(readCaptureStep(2))
     setCaptureStep3Done(readCaptureStep(3))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,7 +144,8 @@ export function ThoughtsSection({
   // render.
   useEffect(() => {
     const defer = (fn: () => void) => () => queueMicrotask(fn)
-    const onStep1 = defer(() => { writeCaptureStep(1); setCaptureStep1Done(true) })
+    // Still recorded, still under its own key; simply not drawn any more.
+    const onStep1 = defer(() => { writeCaptureStep(1) })
     const onStep2 = defer(() => { writeCaptureStep(2); setCaptureStep2Done(true) })
     const onStep3 = defer(() => { writeCaptureStep(3); setCaptureStep3Done(true) })
     window.addEventListener('pilot-capture:ticker-picked', onStep1)
@@ -137,6 +166,7 @@ export function ThoughtsSection({
   const [currentIdeaType, setCurrentIdeaType] = useState<IdeaType>('thought')
   const [showPromptList, setShowPromptList] = useState(false)
   const [showPendingReview, setShowPendingReview] = useState(false)
+  const [showRecentList, setShowRecentList] = useState(false)
   const { success } = useToast()
   const { openPromptCount, pendingRecommendationCount } = useDirectCounts()
 
@@ -240,7 +270,23 @@ export function ThoughtsSection({
       dismissPilotCaptureBanner()
     }
 
-    setCaptureMode('collapsed')
+    /*
+     * Close FIRST, and do not swap the visible view on the way out.
+     *
+     * This set `captureMode` to `collapsed` and then closed the pane on a
+     * 100ms timer. The pane slides out over 300ms
+     * (`transition-transform duration-300` in `CommunicationPane`), so the
+     * reader watched the form vanish, the collapsed base view appear in its
+     * place, sit there for the timer, and only then slide away — about four
+     * hundred milliseconds of a surface they had finished with. That is the
+     * hitch, and the timer was half of it.
+     *
+     * The reset is not needed at all: `openCapture` sets the mode on every
+     * open, so the next capture chooses its own. Leaving the form on screen
+     * means what slides away is the thing the reader just used.
+     */
+    onClose?.()
+
     setCapturedContext(null)
 
     // Refresh recent ideas list
@@ -257,18 +303,32 @@ export function ThoughtsSection({
     try {
       window.dispatchEvent(new CustomEvent('pilot-loop:refresh', { detail: { reason: 'trade-idea-submitted' } }))
     } catch { /* ignore */ }
-
-    // Close the pane after a brief delay
-    setTimeout(() => {
-      onClose?.()
-    }, 100)
   }
 
-  const handleCaptureCancel = () => {
+  /* Stable, because the pane's header holds on to it: a new function every
+     render would report a new back action every render, and the pane storing
+     it would re-render this component to produce the next one. */
+  const handleCaptureCancel = useCallback(() => {
     setCaptureMode('collapsed')
     setCapturedContext(null)
     usePendingResearchLinksStore.getState().clear()
-  }
+  }, [])
+
+  /*
+   * Hand the pane's header our back action while the form is open on a phone,
+   * and take it away again on the way out — a stale handler in the chrome is
+   * a chevron that closes a form nobody is looking at.
+ *
+ * Declared here, above the branches that return early: a hook after one of
+ * those runs in some renders and not others, which React ends the render
+ * with rather than tolerates.
+   */
+  useEffect(() => {
+    if (!onBackActionChange) return
+    const active = isMobileViewport && captureMode !== 'collapsed'
+    onBackActionChange(active ? handleCaptureCancel : null)
+    return () => onBackActionChange(null)
+  }, [onBackActionChange, isMobileViewport, captureMode, handleCaptureCancel])
 
   // Allow user to change context
   const handleContextChange = (newContext: CapturedContext | null) => {
@@ -289,21 +349,25 @@ export function ThoughtsSection({
     }
   }, [onOpenInspector])
 
-  // Handle viewing all ideas - opens Ideas tab without pre-filtering
+  /**
+   * "See the rest of these recent items" is not "open another application".
+   *
+   * This used to dispatch `openIdeasTab` and close the pane, so the answer to
+   * a five-item preview was the legacy Ideas app, the reader's place in the
+   * pane thrown away, and a mixed list of thoughts and prompts flattened into
+   * that app's single taxonomy. It now opens a subview here, the same way Open
+   * Prompts and Pending Review already do.
+   *
+   * `onViewAllIdeas` is kept as an escape hatch for a host that wants
+   * somewhere else. Nothing passes it today.
+   */
   const handleViewAllIdeas = useCallback(() => {
     if (onViewAllIdeas) {
-      // Custom handler provided
       onViewAllIdeas()
-    } else {
-      // Open Ideas tab unfiltered so the user sees everything, not just recent
-      window.dispatchEvent(new CustomEvent('openIdeasTab', {
-        detail: {}
-      }))
-
-      // Close the sidebar
-      onClose?.()
+      return
     }
-  }, [onViewAllIdeas, onClose])
+    setShowRecentList(true)
+  }, [onViewAllIdeas])
 
   // ESC key handler - in inspect mode, go back to capture
   useEffect(() => {
@@ -363,6 +427,34 @@ export function ThoughtsSection({
               <p>Detail view for {selectedItem.type} coming soon</p>
             </div>
           )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Recent list view ──
+  if (showRecentList) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+          <button
+            onClick={() => setShowRecentList(false)}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors dark:text-gray-400"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span>Back to Quick Ideas</span>
+          </button>
+        </div>
+        <div className="px-3 py-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Recent</h3>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 pb-3">
+          <RecentListView
+            onOpen={(id, kind) => {
+              setShowRecentList(false)
+              handleOpenIdea(id, kind)
+            }}
+          />
         </div>
       </div>
     )
@@ -436,8 +528,12 @@ export function ThoughtsSection({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Back button header - show when in capture mode (not collapsed) */}
-      {captureMode !== 'collapsed' && (
+      {/* Back, on the surfaces that have the room for a row of their own.
+
+          A phone does not: the pane header is directly above this, so the
+          chevron goes there instead and these two rows become one. The
+          desktop rail keeps the row it had. */}
+      {captureMode !== 'collapsed' && !isMobileViewport && (
         <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
           <button
             onClick={handleCaptureCancel}
@@ -449,8 +545,11 @@ export function ThoughtsSection({
         </div>
       )}
 
-      {/* Purpose statement - only show when no mode selected */}
-      {captureMode === 'collapsed' && (
+      {/* Purpose statement - only show when no mode selected.
+          Desktop only: on a phone the four actions below say what this is, and
+          a line of grey 12px above them is the first thing to cut when the
+          screen is 390px wide. */}
+      {captureMode === 'collapsed' && !isMobileViewport && (
         <div className="px-3 pt-1 pb-2">
           <p className="text-xs text-gray-400">
             Capture ideas the moment they occur.
@@ -460,134 +559,86 @@ export function ThoughtsSection({
 
       {/* Capture Section */}
       <div className="flex-1 px-3 pb-3 overflow-y-auto">
-        {/* Mode selector — four actions in two groups */}
+        {/* The four actions. One component, both surfaces — see
+            CaptureActionBands for why the pane and the phone stopped having
+            separate implementations of the same four things. `dense` is the
+            only thing that differs: stacked and taller on a phone, two-up and
+            shorter in the pane, which has the width. */}
         {captureMode === 'collapsed' && (
-          <>
-            {/* CAPTURE group */}
-            <div className="mb-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                Capture
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <button
-                  onClick={() => handleOpenCapture('idea')}
-                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-indigo-500 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-indigo-600 hover:to-blue-700 transition-all shadow-sm"
-                >
-                  <Lightbulb className="h-4 w-4" />
-                  <span>Thought</span>
-                </button>
-                {recentIdeas.filter(i => i.kind === 'thought').length > 0 && (
-                  <button
-                    onClick={handleViewAllIdeas}
-                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-colors"
-                  >
-                    <span className="font-semibold text-gray-600 dark:text-gray-300">{recentIdeas.filter(i => i.kind === 'thought').length}</span> recent thoughts
-                  </button>
-                )}
-              </div>
-              <div className="flex-1">
-                <button
-                  onClick={() => handleOpenCapture('trade_idea')}
-                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all shadow-sm"
-                >
-                  <TrendingUp className="h-4 w-4" />
-                  <span>Trade Idea</span>
-                </button>
-                {pipelineCount > 0 && (
-                  <button
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('openTradeQueue', { detail: {} }))
-                      onClose?.()
-                    }}
-                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-green-600 dark:hover:text-green-400 hover:underline transition-colors"
-                  >
-                    <span className="font-semibold text-gray-600 dark:text-gray-300">{pipelineCount}</span> in pipeline
-                  </button>
-                )}
-              </div>
-            </div>
+          <CaptureActionBands
+            dense={isMobileViewport}
+            directNote={isMobileViewport ? undefined : 'Request insight or formalize a recommendation.'}
+            primary={[
+              {
+                key: 'idea', label: 'Quick thought', icon: Lightbulb, tone: 'amber', weight: 'primary',
+                onOpen: () => handleOpenCapture('idea'),
+                // Suppressed, not removed. This was
+                // `recentIdeas.filter(kind === 'thought').length` over a list
+                // capped at five — so it counted rows already rendered
+                // immediately below it, and could never exceed 5. It described
+                // neither the archive nor anything needing attention. The route
+                // to the full list is worth keeping; the digit was not.
+                count: null, countLabel: 'all thoughts',
+                onTrailing: handleViewAllIdeas,
+              },
+              {
+                key: 'trade_idea', label: 'Trade idea', icon: TrendingUp, tone: 'emerald', weight: 'primary',
+                onOpen: () => handleOpenCapture('trade_idea'),
+                // Kept: trade ideas I raised that are still moving — anything
+                // not approved, rejected, executed or deleted. Work in flight.
+                count: pipelineCount, countLabel: 'in the pipeline',
+                onTrailing: () => {
+                  window.dispatchEvent(new CustomEvent('openTradeQueue', { detail: {} }))
+                  onClose?.()
+                },
+              },
+            ]}
+            secondary={[
+              {
+                key: 'prompt', label: 'Prompt', icon: HelpCircle, tone: 'violet', weight: 'secondary',
+                onOpen: () => handleOpenCapture('prompt'),
+                // Kept: prompts I raised or was assigned, still unarchived and
+                // not closed. An open question with my name on it.
+                count: openPromptCount, countLabel: 'open prompts',
+                onTrailing: () => setShowPromptList(true),
+              },
+              {
+                key: 'proposal', label: 'Recommend', icon: FileText, tone: 'blue', weight: 'secondary',
+                onOpen: () => handleOpenCapture('proposal'),
+                // Kept: my decision requests still pending, under review or in
+                // discussion. Waiting on a PM.
+                count: pendingRecommendationCount, countLabel: 'awaiting a decision',
+                onTrailing: () => setShowPendingReview(true),
+              },
+            ]}
+          />
+        )}
 
-            {/* Divider */}
-            <div className="my-3 border-t border-gray-100 dark:border-gray-700" />
+        {captureMode === 'collapsed' && (
+          <div className="my-3 border-t border-gray-100 dark:border-gray-700" />
+        )}
 
-            {/* DIRECT group */}
-            <div className="mb-0.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                Direct
-              </span>
-            </div>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-1.5 leading-tight">
-              Request insight or formalize a recommendation.
-            </p>
-            <div className="flex gap-2">
-              {/* Prompt column */}
-              <div className="flex-1">
-                <button
-                  onClick={() => handleOpenCapture('prompt')}
-                  title="Ask someone for input on the current context (assigned + tracked)"
-                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 border border-violet-300 dark:border-violet-600 text-violet-700 dark:text-violet-300 text-sm font-medium rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all"
-                >
-                  <HelpCircle className="h-4 w-4" />
-                  <span>Prompt</span>
-                </button>
-                {openPromptCount > 0 && (
-                  <button
-                    onClick={() => setShowPromptList(true)}
-                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 hover:underline transition-colors"
-                  >
-                    <span className="font-semibold text-gray-600 dark:text-gray-300">{openPromptCount}</span> open prompts
-                  </button>
-                )}
-              </div>
-
-              {/* Proposal column */}
-              <div className="flex-1">
-                <button
-                  onClick={() => handleOpenCapture('proposal')}
-                  title="Create a formal recommendation from a trade idea"
-                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 border-2 border-amber-300 dark:border-amber-500 text-amber-700 dark:text-amber-300 text-sm font-medium rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-all"
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>Recommend</span>
-                </button>
-                {pendingRecommendationCount > 0 && (
-                  <button
-                    onClick={() => setShowPendingReview(true)}
-                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-amber-600 dark:hover:text-amber-400 hover:underline transition-colors"
-                  >
-                    <span className="font-semibold text-gray-600 dark:text-gray-300">{pendingRecommendationCount}</span> pending review
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Divider — closes the DIRECT group before RECENT */}
-            <div className="my-3 border-t border-gray-100 dark:border-gray-700" />
-
-            {/* Recent Quick Ideas (personal only, no trade ideas) */}
-            <RecentQuickIdeas
-              items={recentIdeas}
-              onOpen={handleOpenIdea}
-              onViewAll={handleViewAllIdeas}
-              hasMore={hasMore}
-            />
-
-          </>
+        {/* Recent Quick Ideas (personal only, no trade ideas).
+            Outside the two branches above so both shells show it — it is the
+            same list either way, and only its own internal density differs. */}
+        {captureMode === 'collapsed' && (
+          <RecentQuickIdeas
+            items={recentIdeas}
+            onOpen={handleOpenIdea}
+            onViewAll={handleViewAllIdeas}
+            hasMore={hasMore}
+          />
         )}
 
         {/* Capture form for quick ideas (Thought / Research / Thesis) */}
         {captureMode === 'idea' && (
           <div className="pt-3">
             {/* Mode-specific guidance */}
-            <p className="mb-3 text-xs text-gray-400">
-              Jot down an observation, question, or thesis — no structure required.
-            </p>
+            <CaptureGuidance mode="idea" />
 
             <QuickThoughtCapture
               compact={true}
-              autoFocus={true}
+              autoFocus={!isMobileViewport}
               placeholder="Capture a quick thought..."
               onSuccess={handleCaptureSuccess}
               onCancel={handleCaptureCancel}
@@ -608,34 +659,14 @@ export function ThoughtsSection({
                 dismiss. Same visual family as the Trade Lab + Idea
                 Pipeline banners for cross-surface consistency. */}
             {showPilotCaptureBanner && (
-              <div className="mb-3 rounded-md bg-gradient-to-b from-amber-50 to-amber-100/30 dark:from-amber-900/25 dark:to-amber-900/5 border border-amber-200 dark:border-amber-800/60">
-                <div className="px-3 pt-2.5 pb-2 flex items-start gap-2">
-                  <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span className="text-[11px] uppercase tracking-wider">Get started</span>
-                  </div>
-                  <button
-                    onClick={dismissPilotCaptureBanner}
-                    className="ml-auto -my-1 p-1 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
-                    title="Dismiss"
-                    aria-label="Dismiss capture intro"
-                  >
-                    <XIcon className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="px-3 pb-2.5">
-                  <ol className="space-y-1">
-                    <PilotCaptureStep n={1} title="Pick a ticker" done={captureStep1Done} />
-                    <PilotCaptureStep n={2} title="Add a thesis and portfolio" done={captureStep2Done} />
-                    <PilotCaptureStep n={3} title="Submit" done={captureStep3Done} />
-                  </ol>
-                </div>
-              </div>
+              <PilotCaptureTracker done={[captureStep2Done, captureStep3Done]} />
             )}
+
+            <CaptureGuidance mode="trade_idea" />
 
             <QuickTradeIdeaCapture
               compact={true}
-              autoFocus={true}
+              autoFocus={!isMobileViewport}
               onSuccess={handleTradeIdeaSuccess}
               onCancel={handleCaptureCancel}
               // Provenance is now auto-captured from location.pathname
@@ -649,9 +680,7 @@ export function ThoughtsSection({
         {/* Inline prompt form */}
         {captureMode === 'prompt' && (
           <div className="pt-3">
-            <p className="mb-3 text-xs text-gray-400">
-              Assign a question to a team member and choose who can see it.
-            </p>
+            <CaptureGuidance mode="prompt" />
 
             <PromptModal
               isOpen={true}
@@ -669,9 +698,7 @@ export function ThoughtsSection({
         {/* Inline proposal form */}
         {captureMode === 'proposal' && (
           <div className="pt-3">
-            <p className="mb-3 text-xs text-gray-400">
-              Select a trade idea to submit a recommendation.
-            </p>
+            <CaptureGuidance mode="proposal" />
 
             <RecommendationQuickModal
               isOpen={true}
@@ -687,6 +714,21 @@ export function ThoughtsSection({
       </div>
     </div>
   )
+}
+
+/**
+ * What to do now that you have chosen a capture type.
+ *
+ * Each of these was a hand-written sentence beside its own form, and one of
+ * the four had none at all. They now come from `lib/capture/capture-types`,
+ * which the phone's capture sheet reads too — so the two surfaces cannot
+ * describe the same four things differently, and a fifth type cannot be added
+ * to one and forgotten in the other.
+ */
+function CaptureGuidance({ mode }: { mode: LegacyCaptureMode }) {
+  const type = captureTypeForMode(mode)
+  if (!type) return null
+  return <p className="mb-3 text-xs text-gray-400">{type.guidance}</p>
 }
 
 // ─── Inline Open Prompts List ──────────────────────────────────────────────
@@ -878,6 +920,12 @@ function PendingReviewList() {
   const queryClient = useQueryClient()
   const updateDecision = useUpdateDecisionRequest()
   const acceptFromInbox = useAcceptFromInbox()
+  // Same pilot rule as the Decision Inbox: a request that is not for the
+  // tutorial idea is an example and cannot be decided here either.
+  const { effectiveIsPilot } = usePilotMode()
+  const { tutorialIdeaId } = usePilotProgress()
+  const isExample = (r: { trade_queue_item_id?: string | null }) =>
+    isPilotExampleRequest(r, { effectiveIsPilot, tutorialIdeaId })
 
   // Fetch portfolios where current user is PM/admin
   const { data: pmPortfolioIds = [] } = useQuery({
@@ -952,6 +1000,7 @@ function PendingReviewList() {
   const [actionNote, setActionNote] = useState('')
 
   const handleAccept = async (req: any) => {
+    if (isExample(req)) return
     const sizingInput = req.sizing_weight != null ? String(req.sizing_weight) : '0'
     await acceptFromInbox.mutateAsync({
       decisionRequest: req as any,
@@ -971,6 +1020,7 @@ function PendingReviewList() {
   }
 
   const handleReject = async (req: any) => {
+    if (isExample(req)) return
     await updateDecision.mutateAsync({
       requestId: req.id,
       input: {
@@ -1023,7 +1073,8 @@ function PendingReviewList() {
         const isBuy = action === 'buy' || action === 'add'
         const isMyRequest = req.requested_by === user?.id
         const isPMForPortfolio = pmPortfolioSet.has(req.portfolio_id)
-        const canDecide = isPMForPortfolio
+        const reqIsExample = isExample(req)
+        const canDecide = isPMForPortfolio && !reqIsExample
 
         // Who submitted this
         const requesterName = req.requester?.first_name
@@ -1079,7 +1130,11 @@ function PendingReviewList() {
                   {portfolioName}
                 </button>
               )}
-              {canDecide ? (
+              {reqIsExample ? (
+                <span data-slot="pilot-example-badge" className="text-[10px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200 bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded">
+                  Example
+                </span>
+              ) : canDecide ? (
                 // I'm the PM — show who submitted it
                 isMyRequest ? (
                   <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/30 px-1.5 py-0.5 rounded">
@@ -1207,28 +1262,90 @@ function PendingReviewList() {
   )
 }
 
-// Numbered step pill used in the pilot Get Started banner inside
-// the capture sidebar. Mirrors the pattern from the Trade Lab and
-// Idea Pipeline banners for visual consistency across surfaces.
-function PilotCaptureStep({ n, title, done }: { n: number; title: string; done?: boolean }) {
+/*
+ * ── Why there are two steps and not three ────────────────────────────────
+ *
+ * The middle one asked for a thesis and a portfolio, and the form requires
+ * neither — submit is enabled by an asset, or by both legs of a pair, and the
+ * thesis field is labelled optional in that same form. Rewriting it as "the
+ * form is ready to send" made it truthful and made it redundant: for an
+ * ordinary single-name idea, picking the ticker is what makes the form ready,
+ * so the tracker ticked two steps on one action and jumped from one to three.
+ *
+ * Inventing a third required action to keep the shape would be the tracker
+ * teaching a chore the product does not have. Two steps is the journey:
+ * choose what you are trading, then send it. Rationale, portfolio and context
+ * tags are all still there, and all still optional.
+ *
+ * Nothing durable moved. The three progress keys and the three events keep
+ * their names and keep being written; this is which of them the row draws.
+ */
+const CAPTURE_STEPS = ['Pick a ticker', 'Submit the idea'] as const
+
+/**
+ * The three capture steps, in one row that never leaves the screen.
+ *
+ * ── Why it is not three rows any more ────────────────────────────────────
+ *
+ * It was a header, three stacked labelled rows and a dismiss — about a
+ * hundred pixels, above a form that had four rows of chrome over it already.
+ * Two of the three steps are not the one you are on, and a step you are not
+ * on needs a pip, not a sentence. So the row names the step you ARE on, and
+ * three pips say where that sits.
+ *
+ * ── Why sticky rather than collapsing ────────────────────────────────────
+ *
+ * Because it is already the size a collapsed tracker would be. A card that
+ * shrinks when you scroll is a card that moves everything under it at the
+ * moment you start reading, and there is no second, larger state here for it
+ * to shrink from. One row, pinned, all the way down the form.
+ *
+ * Completion is unchanged: the same three flags, written by the same three
+ * events, retiring the same way.
+ */
+export function PilotCaptureTracker({ done }: { done: boolean[] }) {
+  const current = done.findIndex(d => !d)
+  const allDone = current === -1
+  const index = allDone ? done.length - 1 : current
+
   return (
-    <li className="flex items-center gap-2">
-      <span
-        className={clsx(
-          "shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold tabular-nums",
-          done ? "bg-emerald-500 text-white" : "bg-amber-500 text-white",
-        )}
-      >
-        {done ? <Check className="h-2.5 w-2.5" /> : n}
-      </span>
-      <span
-        className={clsx(
-          "text-[11px] font-medium leading-tight",
-          done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-800 dark:text-gray-100",
-        )}
-      >
-        {title}
-      </span>
-    </li>
+    <div
+      data-slot="pilot-capture-tracker"
+      /* Bleeds to the scroller's edges so the pinned row covers the form
+         scrolling under it, and sits above that form rather than beside it. */
+      className="sticky top-0 z-10 -mx-3 mb-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-800/60 dark:bg-amber-950/40"
+    >
+      {/* No dismiss.
+
+          These three steps are how a first-time pilot learns what this form
+          is for, so a control that hides them is a control that removes the
+          instructions. It retires itself when the third step is done, which
+          is the only moment hiding it is the right answer. The row reclaims
+          the space the X was taking rather than leaving a gap where it was. */}
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+        <p className="min-w-0 flex-1 truncate text-[11px] leading-tight">
+          <span className="font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+            {allDone ? 'Get started \u00b7 done' : `Step ${index + 1} of ${done.length}`}
+          </span>
+          <span className="ml-1.5 font-medium text-gray-700 dark:text-gray-200">
+            {CAPTURE_STEPS[index]}
+          </span>
+        </p>
+        {/* Where you are in three marks, for the two steps the line does not
+            name. */}
+        <span className="flex shrink-0 items-center gap-1" aria-hidden="true">
+          {done.map((d, i) => (
+            <span
+              key={i}
+              className={clsx(
+                'h-1.5 w-1.5 rounded-full',
+                d ? 'bg-emerald-500' : i === index ? 'bg-amber-500' : 'bg-amber-200 dark:bg-amber-800',
+              )}
+            />
+          ))}
+        </span>
+      </div>
+    </div>
   )
 }

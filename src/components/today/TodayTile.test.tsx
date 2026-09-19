@@ -60,7 +60,7 @@ describe('TodayTile', () => {
     expect(screen.getByText('AMZN')).toBeInTheDocument()
     expect(screen.getByText('Thesis May Be Stale')).toBeInTheDocument()
     expect(screen.getByText('210d')).toBeInTheDocument()
-    expect(screen.getByText(/has not been revisited in over six months/)).toBeInTheDocument()
+    expect(screen.getByText(/has not been updated in over six months/)).toBeInTheDocument()
   })
 
   it('gives the primary action the dominant treatment', () => {

@@ -25,6 +25,30 @@ type AnyEntry = Record<string, any>
 
 /** The natural key for one entry, before collisions are considered. */
 function naturalKey(e: AnyEntry): string {
+  /**
+   * A composed situation keys on the SITUATION, not on whichever finding leads.
+   *
+   * ── The failure this prevents ─────────────────────────────────────────────
+   *
+   * Target Hit and Target Expired ask one question, so a name carrying both is
+   * one tile. Which of the two leads is decided by severity, and severity moves
+   * on its own: a target crosses six months overdue and the expired finding
+   * becomes critical, so the lead flips from the breach row to the stale row.
+   *
+   * Keyed to the lead, that tile's identity would change from
+   * `lens:breach:MSFT` to `lens:stale:MSFT` at that moment. The continuity
+   * snapshot would see the old key vanish and a brand-new one arrive, and
+   * append it after everything it already knows — so a card the reader has been
+   * looking at all week would jump to the bottom of the feed because a clock
+   * ticked over. Nothing about the finding changed; only which half of it spoke
+   * first.
+   *
+   * `composedKey` is `<subjectKind>:<subjectId>:<question>` — the situation's
+   * own identity, deterministic, derived from what the tile is ABOUT rather
+   * than from what it currently says. No randomness, no lead.
+   */
+  if (typeof e?.composedKey === 'string' && e.composedKey) return `situation:${e.composedKey}`
+
   switch (e?.kind) {
     case 'attention': return `attention:${e.attention?.attention_id ?? ''}`
     case 'idea':      return `idea:${e.idea?.id ?? ''}`

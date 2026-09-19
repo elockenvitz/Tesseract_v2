@@ -146,10 +146,21 @@ describe('mobile surface registry', () => {
     expect(reachable.filter(s => isDesktopOnly(s.type))).toEqual([])
   })
 
-  it('lists the Ideas home once in the drawer', () => {
-    // `today` and `dashboard` are both the ideas feed on a phone; only one of
-    // them carries the drawer row.
-    const ideasRows = getMobileNavSurfaces('core').filter(s => s.title === 'Ideas')
-    expect(ideasRows).toHaveLength(1)
+  it('offers the Ideas home from the pinned row, not from the Core list', () => {
+    /*
+      This asserted the opposite, and was right when it was written: the
+      drawer's Home section only rendered when a home tab happened to be open,
+      so the Core row was the reliable way back and exactly one of `today` and
+      `dashboard` had to carry it.
+
+      Home is permanent now — drawn whether or not a tab exists, pinned above
+      the scroller, opening the canonical home by id — so a Core row doing the
+      same thing was a second control for one destination. See
+      `nav-drawer-home.test`, which pins the single route.
+    */
+    expect(getMobileNavSurfaces('core').filter(s => s.title === 'Ideas')).toHaveLength(0)
+
+    // The entry itself stays, or `today` would default to desktop-only.
+    expect(isDesktopOnly(CANONICAL_HOME_TAB.type)).toBe(false)
   })
 })

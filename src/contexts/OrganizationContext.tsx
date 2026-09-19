@@ -7,9 +7,10 @@
  */
 
 import React, { createContext, useContext, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { effectiveOrgId, healDecision } from '../lib/org/current-org-heal'
 
 interface OrgSummary {
   id: string
@@ -38,6 +39,7 @@ const OrganizationContext = createContext<OrganizationContextType | undefined>(u
 
 export function OrganizationProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
 
   // Read current_organization_id from the user profile (set by useAuth)
   const rawCurrentOrgId: string | null = (user as any)?.current_organization_id ?? null
@@ -107,38 +109,97 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
       return orgs
     },
     enabled: !!effectiveUserId,
-    staleTime: 10 * 60 * 1000, // 10 min — org list rarely changes
+    /*
+     * "Org list rarely changes" was a ten-minute staleTime, and it is true
+     * right up until somebody provisions one. The Ops portal invalidates this
+     * key, which covers creating an org in the same tab — and not creating it
+     * in another one, or in another window, which is how it is actually done.
+     * Coming back to the tab is the moment to ask again.
+     */
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
   })
 
-  // Self-heal a stale current_organization_id. If the cached value points
-  // to an org the user is no longer an active member of (e.g., membership
-  // was revoked without resetting users.current_organization_id), fall
-  // back to the first active membership so the header selector and every
-  // org-scoped query keep working instead of resolving to a phantom org.
-  // The set_current_org() RPC validates membership, so the only way to
-  // land in this state is direct DB writes or a membership-cleanup path
-  // that forgot to reset the user row.
-  const lookedUpOrg = rawCurrentOrgId
-    ? userOrgs.find((o) => o.id === rawCurrentOrgId) ?? null
-    : null
-  const needsHeal =
-    !isLoading && lookedUpOrg == null && userOrgs.length > 0
-  const currentOrg: OrgSummary | null =
-    lookedUpOrg ?? (needsHeal ? userOrgs[0] : null)
-  // Once memberships have loaded, only expose an id the user actually
-  // belongs to. While loading we keep the raw cached id so the first
-  // paint doesn't flicker to "no org" before the membership query
-  // resolves.
-  const currentOrgId: string | null = isLoading ? rawCurrentOrgId : currentOrg?.id ?? null
+  /*
+   * A cached absence is a question, not an answer.
+   *
+   * This used to heal a "stale" current org by writing `userOrgs[0]` back
+   * through `set_current_org`. `userOrgs` is a React Query cache with a
+   * ten-minute `staleTime` over a membership read, so a membership created
+   * moments earlier — ops provisioning a pilot org, say — is simply not in it
+   * yet. Absence was read as revocation and the heal moved the reader into an
+   * unrelated workspace, permanently, because the write is durable.
+   *
+   * Found in live data on two pilot workspaces: the seeded portfolio and rows
+   * carried the pilot org, the reader's durable column named a different one,
+   * and every org-scoped query returned nothing. Nothing was wrong with the
+   * rows or the policy; the column had been moved out from under them.
+   *
+   * So the cache decides what to RENDER and never what to WRITE. See
+   * `lib/org/current-org-heal.ts` for the decision itself.
+   */
+  const [authoritativeIsActive, setAuthoritativeIsActive] = React.useState<boolean | undefined>(undefined)
+  const verifiedForRef = React.useRef<string | null>(null)
 
-  // Persist the heal so it sticks across reloads. We do not reload here —
-  // the in-memory fallback already gives the user a usable session, and a
-  // forced reload at sign-in time would be jarring.
+  const cachedOrgIds = React.useMemo(() => userOrgs.map(o => o.id), [userOrgs])
+  const decision = healDecision({
+    rawCurrentOrgId,
+    cachedOrgIds,
+    isLoading,
+    authoritativeIsActive,
+  })
+
+  const currentOrgId: string | null = effectiveOrgId(decision, rawCurrentOrgId)
+  const currentOrg: OrgSummary | null =
+    userOrgs.find(o => o.id === currentOrgId) ?? null
+
+  // A different org to check means the previous answer is not about it.
+  React.useEffect(() => {
+    if (decision.kind !== 'verify') return
+    if (verifiedForRef.current === decision.orgId) return
+    verifiedForRef.current = decision.orgId
+    let cancelled = false
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('organization_memberships')
+          .select('organization_id')
+          .eq('user_id', effectiveUserId!)
+          .eq('organization_id', decision.orgId)
+          .eq('status', 'active')
+          .maybeSingle()
+        if (cancelled) return
+        // An errored read is not proof of absence. Leave the answer unset so
+        // nothing heals and a later render can ask again.
+        if (error) { verifiedForRef.current = null; return }
+        setAuthoritativeIsActive(!!data)
+      } catch {
+        if (!cancelled) verifiedForRef.current = null
+      }
+    })()
+    return () => { cancelled = true }
+  }, [decision, effectiveUserId])
+
+  /*
+   * The membership is alive and the cache was simply behind. Refresh it, and
+   * write nothing: the durable column was right all along.
+   */
+  React.useEffect(() => {
+    if (decision.kind !== 'keep') return
+    void queryClient.invalidateQueries({ queryKey: ['user-organizations', effectiveUserId] })
+  }, [decision.kind, queryClient, effectiveUserId])
+
+  /*
+   * A genuine heal, and only where there is nothing to decide.
+   *
+   * With several orgs left this deliberately does nothing: `currentOrgId` is
+   * null, which is the org selector's cue, and the reader picks. Choosing
+   * alphabetically was not a guess about intent, it was no guess at all.
+   */
   const healPersistedRef = React.useRef<string | null>(null)
   React.useEffect(() => {
-    if (!needsHeal) return
-    const target = userOrgs[0]?.id
-    if (!target) return
+    if (decision.kind !== 'heal') return
+    const target = decision.target
     const key = `${user?.id ?? ''}:${target}`
     if (healPersistedRef.current === key) return
     healPersistedRef.current = key
@@ -146,13 +207,10 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
       try {
         const { error } = await supabase.rpc('set_current_org', { p_org_id: target })
         if (error) {
-          // Don't latch the ref so a future render can retry.
           healPersistedRef.current = null
           console.error('Failed to self-heal current_organization_id:', error)
           return
         }
-        // Keep the auth cache in sync so a hard reload picks up the new org
-        // on the first paint instead of flashing the stale id.
         const cachedRaw = localStorage.getItem('auth-user-cache')
         if (cachedRaw) {
           try {
@@ -170,7 +228,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
         console.error('Failed to self-heal current_organization_id:', err)
       }
     })()
-  }, [needsHeal, userOrgs, user?.id])
+  }, [decision, user?.id])
 
   // Check if current org is archived
   const { data: isOrgArchived = false } = useQuery({
