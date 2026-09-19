@@ -55,6 +55,24 @@ vi.mock('../contributions', () => ({
   },
 }))
 
+/*
+ * The review map the page now joins in, which reads org context this suite
+ * does not stand up.
+ *
+ * Empty is the honest default here: every case below is about what the page
+ * SAYS about a case and its evidence, and no review recorded means the state
+ * falls back to the written date -- exactly what these cases already assumed
+ * when the field was simply never set.
+ *
+ * The parity that field exists for is asserted where it can fail for one
+ * reason: `src/lib/memory/__tests__/review-state-parity.test.ts`, which also
+ * pins that this file keeps reading the canonical map rather than a second
+ * calculation of its own.
+ */
+vi.mock('../../hooks/useThesisReview', () => ({
+  useThesisReviews: () => new Map<string, string>(),
+}))
+
 const openEngagement = vi.fn()
 vi.mock('../../lib/engagement', async importOriginal => {
   const actual = await importOriginal<typeof import('../../lib/engagement')>()
