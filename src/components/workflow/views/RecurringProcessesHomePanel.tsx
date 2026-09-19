@@ -28,6 +28,7 @@ import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
 import { Badge } from '../../ui/Badge'
 import { supabase } from '../../../lib/supabase'
+import { useIsMobile } from '../../../hooks/useMediaQuery'
 import { useActiveRuns, type ActiveRun } from '../../../hooks/workflow/useActiveRuns'
 import { ActiveRunsTable } from './ActiveRunsTable'
 import {
@@ -40,6 +41,50 @@ import {
   getScopeBadgeLabel,
   getScopeColor,
 } from '../../../utils/workflow/runHelpers'
+
+/**
+ * One count in the phone status strip.
+ *
+ * The same fact the desktop tile carries, at the size a glanceable count
+ * deserves: a number and a word, no card chrome, no progress bar. Three of
+ * these fit one row at 390px with room to spare.
+ */
+function MobileStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone: 'green' | 'blue' | 'amber' | 'default' | 'muted'
+}) {
+  const valueTone = {
+    green: 'text-green-600 dark:text-green-400',
+    blue: 'text-blue-600 dark:text-blue-400',
+    amber: 'text-amber-600 dark:text-amber-400',
+    default: 'text-gray-800 dark:text-gray-200',
+    muted: 'text-gray-300 dark:text-gray-600',
+  }[tone]
+
+  return (
+    <div className="min-w-0 flex-1 px-2 py-1.5">
+      <div className={`text-base font-bold leading-tight tabular-nums ${valueTone}`}>{value}</div>
+      <div className="truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">{label}</div>
+    </div>
+  )
+}
+
+/**
+ * Section containment, minus the elevation, on a phone.
+ *
+ * `Card` is `rounded-xl border shadow-sm` plus `p-4 sm:p-6`, and each section
+ * here adds its own `px-5 py-3` header and `p-4` body on top. Stacked three
+ * deep on a pale background that reads as card, gap, card, gap — a lot of
+ * chrome for a screen whose job is to show work. Below `sm` the outer padding
+ * and the shadow come off and the sections keep only their border, so they
+ * read as sections rather than as floating objects. Desktop is untouched.
+ */
+const MOBILE_FLAT_SECTION = 'max-sm:p-0 max-sm:shadow-none max-sm:hover:shadow-none'
 
 // Minimal type matching WorkflowWithStats shape from WorkflowsPage
 interface WorkflowItem {
@@ -64,6 +109,8 @@ export interface RecurringProcessesHomePanelProps {
   onSelectWorkflow: (workflow: WorkflowItem) => void
   onSelectRun: (run: ActiveRun) => void
   onCreateWorkflow: () => void
+  /** Phone only: opens the full-screen Processes destination. */
+  onOpenProcessList?: () => void
   onEndRun?: (run: ActiveRun) => void
   onArchiveRun?: (run: ActiveRun) => void
 }
@@ -104,10 +151,12 @@ export function RecurringProcessesHomePanel({
   onSelectWorkflow,
   onSelectRun,
   onCreateWorkflow,
+  onOpenProcessList,
   onEndRun,
   onArchiveRun,
 }: RecurringProcessesHomePanelProps) {
   const { data: allRuns = [], isLoading: isLoadingRuns } = useActiveRuns(userId)
+  const isMobile = useIsMobile()
   const [viewFilter, setViewFilter] = useState<RunViewFilter>('active')
   const [showArchived, setShowArchived] = useState(false)
 
@@ -252,7 +301,64 @@ export function RecurringProcessesHomePanel({
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden animate-in fade-in duration-200">
-      {/* ═══ HOME HERO — completely different from process detail ═══ */}
+      {/* ═══ MOBILE HOME HEADER ═══
+
+          The desktop hero is a band of four stat tiles, each `px-5 py-4` with
+          a 3xl numeral. On a phone that lands as a 2x2 grid of ~220px reading
+          three zeros and a button, which is most of the first viewport spent
+          before any work appears — and "New Process" was the fourth tile, so
+          the primary action was wearing a metric's clothes.
+
+          Mobile gets page chrome instead: identity and the primary action on
+          one row, the same three counts as a single glanceable strip, and a
+          plain row into the full list. Same numbers, same semantics, roughly
+          a third of the height. Desktop keeps its hero below, untouched. */}
+      {isMobile ? (
+        <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <h1 className="min-w-0 flex-1 truncate text-lg font-bold leading-tight text-gray-900 dark:text-white">
+              Processes
+            </h1>
+            <Button size="sm" onClick={onCreateWorkflow} className="shrink-0 min-h-[36px]">
+              <Plus className="w-4 h-4 mr-1" />
+              New
+            </Button>
+          </div>
+
+          {/* One strip, three cells — not three cards.
+
+              A single bordered rail divided by hairlines, so the counts read
+              as one subordinate status line rather than as content competing
+              with the work below. Same values, same labels. */}
+          <div className="mx-3 mb-2 flex items-stretch divide-x divide-gray-200 overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:divide-gray-700 dark:border-gray-700 dark:bg-gray-800/60">
+            <MobileStat label="Active" value={activeCount} tone={activeCount > 0 ? 'green' : 'muted'} />
+            <MobileStat label="Processes" value={workflows.length} tone="default" />
+            <MobileStat label="Upcoming" value={upcomingCycles.length} tone={upcomingCycles.length > 0 ? 'blue' : 'muted'} />
+            {hasAttention && (
+              <MobileStat
+                label="Attention"
+                value={notStartedCount + multipleRunsCount + orphanActiveRuns.length}
+                tone="amber"
+              />
+            )}
+          </div>
+
+          {/* Into the full list. A plain navigation row in the hierarchy,
+              rather than a full-width toolbar floating above the page. */}
+          {onOpenProcessList && (
+            <button
+              type="button"
+              onClick={onOpenProcessList}
+              className="flex w-full items-center gap-2 border-t border-gray-100 px-3 min-h-[44px] text-left text-sm font-medium text-gray-600 active:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:active:bg-gray-800"
+            >
+              <List className="w-4 h-4 shrink-0 text-gray-400" />
+              <span className="flex-1">All processes</span>
+              <span className="tabular-nums text-xs text-gray-400">{workflows.length}</span>
+              <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
+            </button>
+          )}
+        </div>
+      ) : (
       <div className="bg-gray-100 dark:bg-gray-900 px-3 sm:px-6 py-4 sm:py-6 border-b border-gray-200 dark:border-gray-700">
         {/* Large stat tiles — the dominant visual that says "you're at the hub".
             Four across is ~85px each at 390px, and these carry a 3xl numeral
@@ -286,8 +392,9 @@ export function RecurringProcessesHomePanel({
           )}
         </div>
       </div>
+      )}
 
-      <div className="flex-1 p-6 bg-gray-100 dark:bg-gray-900 overflow-y-auto space-y-6">
+      <div className="flex-1 p-3 sm:p-6 bg-gray-100 dark:bg-gray-900 overflow-y-auto space-y-3 sm:space-y-6">
         {/* ─── Data integrity banner: orphan active runs ─── */}
         {orphanActiveRuns.length > 0 && (
           <div className="flex items-start space-x-2 text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
@@ -323,8 +430,8 @@ export function RecurringProcessesHomePanel({
         )}
 
         {/* ─── A) Active Runs — dominant section ─── */}
-        <Card>
-          <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
+        <Card className={MOBILE_FLAT_SECTION}>
+          <div className="px-3 sm:px-5 py-2.5 sm:py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
             <div className="flex items-center space-x-2">
               <Activity className="w-4 h-4 text-blue-500" />
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Active Runs</h3>
@@ -335,12 +442,12 @@ export function RecurringProcessesHomePanel({
           </div>
 
           {/* View filter pills */}
-          <div className="px-5 pt-3 pb-1 flex items-center space-x-1">
+          <div className="px-3 sm:px-5 pt-2 sm:pt-3 pb-1 flex items-center space-x-1">
             {filterTabs.map(tab => (
               <button
                 key={tab.key}
                 onClick={() => setViewFilter(tab.key)}
-                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                className={`no-touch-target tap-pad px-2.5 py-1 text-xs rounded-md transition-colors ${
                   viewFilter === tab.key
                     ? 'bg-blue-100 text-blue-800 font-medium'
                     : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
@@ -356,7 +463,7 @@ export function RecurringProcessesHomePanel({
             ))}
           </div>
 
-          <div className="p-4">
+          <div className="p-2 sm:p-4">
             <ActiveRunsTable
               runs={filteredRuns}
               isLoading={isLoadingRuns}
@@ -369,16 +476,18 @@ export function RecurringProcessesHomePanel({
         </Card>
 
         {/* ─── B + C: Two-column layout ─── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
           {/* C) Upcoming Cycles */}
-          <Card>
-            <div className="px-5 py-3 border-b border-gray-200 flex items-center space-x-2 dark:border-gray-700">
+          <Card className={MOBILE_FLAT_SECTION}>
+            <div className="px-3 sm:px-5 py-2.5 sm:py-3 border-b border-gray-200 flex items-center space-x-2 dark:border-gray-700">
               <Calendar className="w-4 h-4 text-indigo-500" />
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Upcoming Cycles</h3>
             </div>
-            <div className="p-4">
+            <div className="p-2 sm:p-4">
               {upcomingCycles.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">No upcoming cycles scheduled.</p>
+                /* One line of copy does not need a 150px card. Left-aligned
+                   and unpadded on a phone; the desktop centred block stays. */
+                <p className="px-1 py-1.5 text-sm text-gray-400 sm:text-center sm:py-4">No upcoming cycles scheduled.</p>
               ) : (
                 <div className="space-y-1">
                   {upcomingCycles.map((rule: any) => {
@@ -418,8 +527,8 @@ export function RecurringProcessesHomePanel({
           </Card>
 
           {/* D) Processes (catalog) */}
-          <Card>
-            <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
+          <Card className={MOBILE_FLAT_SECTION}>
+            <div className="px-3 sm:px-5 py-2.5 sm:py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
               <div className="flex items-center space-x-2">
                 <List className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 <div>
@@ -444,7 +553,7 @@ export function RecurringProcessesHomePanel({
                 </button>
               )}
             </div>
-            <div className="p-4">
+            <div className="p-2 sm:p-4">
               {isLoadingWorkflows ? (
                 <div className="space-y-2 opacity-40">
                   {[1, 2, 3].map(i => (

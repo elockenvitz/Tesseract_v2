@@ -375,10 +375,19 @@ export function ActiveRunsTable({
 
   if (runs.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-        <Activity className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-        <p className="text-sm font-medium text-gray-600 dark:text-gray-400">No active runs</p>
-        <p className="text-xs text-gray-400 mt-1">Start a run from a process to begin a new cycle.</p>
+      /*
+        Compact on a phone: one row of icon + copy rather than a stacked,
+        centred block. An empty section should say it is empty and then get
+        out of the way — at `py-8` with a centred 32px icon this was ~130px of
+        a 844px screen saying nothing. Same words, same icon; desktop keeps
+        the centred treatment.
+      */
+      <div className="flex items-center gap-2.5 py-2.5 text-left sm:block sm:text-center sm:py-8 text-gray-500 dark:text-gray-400">
+        <Activity className="w-5 h-5 shrink-0 text-gray-300 sm:w-8 sm:h-8 sm:mx-auto sm:mb-2" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">No active runs</p>
+          <p className="text-xs text-gray-400 sm:mt-1">Start a run from a process to begin a new cycle.</p>
+        </div>
       </div>
     )
   }

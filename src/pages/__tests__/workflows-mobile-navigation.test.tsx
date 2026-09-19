@@ -107,7 +107,17 @@ vi.mock('../../components/workflow/views', () => ({
   AdminsView: () => <div data-testid="view-admins" />,
   CadenceView: () => <div data-testid="view-cadence" />,
   BranchesView: () => <div data-testid="view-branches" />,
-  RecurringProcessesHomePanel: () => <div data-testid="home-panel" />,
+  // The real panel renders an "All processes" row when handed
+  // `onOpenProcessList` — on the home screen that row, not a shell toolbar,
+  // is the way into the destination. The stand-in has to offer it too or the
+  // entry path under test does not exist.
+  RecurringProcessesHomePanel: ({ onOpenProcessList }: any) => (
+    <div data-testid="home-panel">
+      {onOpenProcessList && (
+        <button type="button" onClick={onOpenProcessList}>All processes</button>
+      )}
+    </div>
+  ),
   RunDetailPanel: () => null,
   RunHistoryTable: () => null,
   RunStatusStrip: () => null,
@@ -147,7 +157,18 @@ function setViewport(width: number, height: number) {
   Object.defineProperty(window, 'innerHeight', { value: height, configurable: true })
 }
 
-const processList = () => screen.queryByRole('dialog', { name: 'Processes' })
+/*
+  The list is a destination, not an overlay: a full-width column filling the
+  area below the app header, with no fixed positioning and no z-index. It was
+  `fixed inset-0 z-[80]`, which put its own top bar into the same 64px band
+  the app header paints in — so the Back control was drawn underneath the
+  header and the first visible row was the search field.
+*/
+const processList = () =>
+  document.querySelector('[data-slot="process-list"]') as HTMLElement | null
+/** Present only in the phone destination; the desktop rail has no back bar. */
+const backButton = () =>
+  processList() ? within(processList()!).queryByRole('button', { name: 'Back' }) : null
 const openListButton = () => screen.queryByRole('button', { name: /All processes/ })
 const configTrigger = () => screen.getByRole('button', { name: /Configure|Scope|Stages|Scheduling|Files|Access/ })
 
@@ -177,11 +198,15 @@ describe('Process on a phone — the process list overlay', () => {
     expect(processList()).not.toBeNull()
   })
 
-  it('closes again from its own close button — the fix for the dead end', () => {
+  it('closes again from the back control in its top bar — the fix for the dead end', () => {
     render(<WorkflowsPage />)
     fireEvent.click(openListButton()!)
-    const close = within(processList()!).getByRole('button', { name: 'Close process list' })
-    fireEvent.click(close)
+    // The destination carries a top bar whose FIRST control is Back, so no
+    // amount of content beside it can push the exit off the screen. The
+    // previous close button sat last in an overflowing row and did exactly
+    // that — present in the DOM, absent on the phone.
+    const bar = within(processList()!).getByRole('button', { name: 'Back' })
+    fireEvent.click(bar)
     expect(processList()).toBeNull()
     // And the way back in is offered again.
     expect(openListButton()).not.toBeNull()
@@ -201,18 +226,36 @@ describe('Process on a phone — the process list overlay', () => {
     expect(processList()).toBeNull()
   })
 
-  it('gives the overlay a labelled modal role so it is not an anonymous layer', () => {
+  it('names itself and leads with Back, so the exit is the first control', () => {
     render(<WorkflowsPage />)
     fireEvent.click(openListButton()!)
-    expect(processList()).toHaveAttribute('aria-modal', 'true')
+
+    const list = processList()!
+    expect(list).toHaveAttribute('aria-label', 'Processes')
+    expect(within(list).getByText('All Processes')).toBeTruthy()
+
+    // Back is the first focusable control in the destination. That ordering is
+    // the fix: whatever sits beside it — a long org name, extra actions — can
+    // never push the way out past the right edge.
+    const firstButton = list.querySelector('button')
+    expect(firstButton).toHaveAttribute('aria-label', 'Back')
   })
 
-  it('is a column rather than an overlay on desktop, with no open button', () => {
+  it('does not float above the app header — no fixed positioning, no z-index', () => {
+    render(<WorkflowsPage />)
+    fireEvent.click(openListButton()!)
+    const cls = processList()!.className
+    expect(cls).not.toContain('fixed')
+    expect(cls).not.toMatch(/\bz-\[/)
+    expect(cls).toContain('w-full')
+  })
+
+  it('is a plain rail on desktop, with no back bar and no open button', () => {
     env.isMobile = false
     render(<WorkflowsPage />)
     expect(openListButton()).toBeNull()
-    // Rendered, but not as a dialog — it is part of the layout.
-    expect(screen.queryByRole('dialog', { name: 'Processes' })).toBeNull()
+    expect(backButton()).toBeNull()
+    expect(processList()!.className).toContain('w-80')
     expect(screen.getByText('Quarterly Review')).toBeTruthy()
   })
 })

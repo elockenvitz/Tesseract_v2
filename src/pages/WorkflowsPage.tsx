@@ -5474,25 +5474,93 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   }
 
   return (
-    <div className="fixed inset-0 top-28 sm:top-32 flex bg-gray-50 dark:bg-gray-900">
+    /*
+      `top-28` (112px) was reserving room for the desktop header *and* the tab
+      strip. On a phone `Layout` renders `TabManager` only when `!isMobile`
+      (Layout.tsx:493), and the header is `h-16` — 64px (Header.tsx:337-339).
+      So 48px of that offset was held for chrome that is not on the screen,
+      which is the white band under the header. `top-16` matches the real
+      header; `sm:top-32` is unchanged, so desktop does not move.
+    */
+    <div className="fixed inset-0 top-16 sm:top-32 flex bg-gray-50 dark:bg-gray-900">
       {/* Left Sidebar.
 
           w-80 beside the content leaves roughly 70px for the workflow at
           390px. On a phone it is the whole screen when open and out of the
           layout when closed, with a button in the process header to bring it
           back. */}
+      {/* On a phone this is a destination, not an overlay.
+
+          It used to be `fixed inset-0 z-[80]`, which puts its own top edge at
+          viewport y=0 — underneath the global app header, which is `sticky
+          top-0 z-40` and paints there too. Whatever the two z-indexes resolve
+          to, the top bar was being drawn into the same 64px band the app
+          header occupies, so the first thing visible below the header was the
+          search field and the Back control was nowhere.
+
+          Stacking it higher would only trade one guess for another. The
+          parent is already `fixed inset-0 top-16`, i.e. exactly the area
+          below the header, so the list simply fills that: a full-width column
+          in normal flow, no fixed positioning and no z-index at all. Its top
+          bar is then the first row under the app header by construction.
+          Desktop keeps the `w-80` rail. */}
       {(!isMobileViewport || processListOpen) && <div
-        role={isMobileViewport ? 'dialog' : undefined}
-        aria-modal={isMobileViewport ? true : undefined}
+        data-slot="process-list"
         aria-label={isMobileViewport ? 'Processes' : undefined}
         className={clsx(
         'bg-white border-r border-gray-200 flex flex-col h-full dark:border-gray-700 dark:bg-gray-800',
-        isMobileViewport ? 'fixed inset-0 z-[80] w-full border-r-0 pt-safe pb-safe' : 'w-80'
+        isMobileViewport ? 'w-full border-r-0 pb-safe' : 'w-80'
       )}>
+        {/* Mobile top bar — this destination's own chrome.
+
+            The close control used to be the last item in the title row's
+            action cluster below. That row is `justify-between` with no wrap
+            and no `min-w-0`: on the left "Process" plus an OrgBadge that
+            prints the full organisation name untruncated (~215px for this
+            org), on the right three buttons the global coarse-pointer rule in
+            index.css inflates to 44px each. Roughly 451px of content in 358px
+            of width, so the row overflowed to the right and the close button,
+            being last, sat off-screen entirely.
+
+            It was in the DOM the whole time, which is exactly why a jsdom
+            test saw it and a phone never did.
+
+            A destination gets a real top bar instead: back first, so nothing
+            can push the exit away, then the title, then the actions. */}
+        {isMobileViewport && (
+          <div className="flex-shrink-0 flex items-center gap-1 px-1 h-14 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+            <button
+              type="button"
+              onClick={() => setProcessListOpen(false)}
+              aria-label="Back"
+              className="flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg text-gray-700 active:bg-gray-100 dark:text-gray-200 dark:active:bg-gray-700"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 dark:text-white">
+              All Processes
+            </h1>
+            {/* No Home button here: Back already returns to Process home, so
+                a second control doing the same thing is just a question the
+                reader has to answer. Desktop keeps its Home button, where it
+                clears the selection without leaving the rail. */}
+            <button
+              type="button"
+              onClick={handleCreateWorkflow}
+              aria-label="New process"
+              className="flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg bg-primary-600 text-white active:bg-primary-700"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
         {/* Header */}
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
+        <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700">
+          {/* Desktop only — the mobile top bar above carries this identity,
+              and this row is the one that could not fit a phone. */}
+          <div className="hidden sm:flex items-center justify-between mb-4">
+            <div className="min-w-0 flex items-center gap-2">
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">Process</h1>
               <OrgBadge />
             </div>
@@ -5510,20 +5578,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               <Button onClick={handleCreateWorkflow} size="sm">
                 <Plus className="w-4 h-4" />
               </Button>
-              {/* The overlay is full-screen, so this is the only way out of it.
-                  Sized explicitly rather than leaning on the global 44px
-                  coarse-pointer rule in index.css, which does not apply to a
-                  narrow window on a mouse machine. */}
-              {isMobileViewport && (
-                <button
-                  type="button"
-                  onClick={() => setProcessListOpen(false)}
-                  aria-label="Close process list"
-                  className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 dark:border-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-300"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              )}
             </div>
           </div>
 
@@ -5689,11 +5743,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         </div>
       </div>}
 
-      {/* Main Content */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      {/* Main Content.
+
+          Unmounted on a phone while the list is open: the two are alternative
+          destinations there, not two panes. This is what makes the list a
+          real full-width screen without needing to float above anything. */}
+      {(!isMobileViewport || !processListOpen) && <div className="flex-1 min-w-0 flex flex-col">
         {/* The list no longer occupies the layout on a phone, so this is the
-            only way back to it. */}
-        {isMobileViewport && !processListOpen && (
+            way back to it *from an open process*. On the home panel it was an
+            orphan toolbar sitting above the page's own identity; the panel
+            carries its own "All processes" row inside the hierarchy instead. */}
+        {isMobileViewport && !processListOpen && selectedWorkflow && (
           <button
             onClick={() => setProcessListOpen(true)}
             className="flex-shrink-0 flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
@@ -6707,6 +6767,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             isLoadingWorkflows={isLoading}
             userId={user?.id}
             onSelectWorkflow={handleSelectWorkflow}
+            onOpenProcessList={isMobileViewport ? () => setProcessListOpen(true) : undefined}
             onSelectRun={(run) => {
               const parent = workflows?.find(w => w.id === run.parent_workflow_id)
               if (parent) {
@@ -6732,7 +6793,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             }}
           />
         )}
-      </div>
+      </div>}
 
       {/* Add Stage Modal */}
       {showAddStage && selectedWorkflow && (

@@ -51,6 +51,7 @@ import { Badge } from '../ui/Badge'
 import { supabase } from '../../lib/supabase'
 import { assetAccess } from '../../lib/market-data/supabase-asset-source'
 import { useAuth } from '../../hooks/useAuth'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import type { CadenceTimeframe, WorkflowScopeType } from '../../types/workflow'
 import { getScopeColor } from '../../utils/workflow/runHelpers'
@@ -163,6 +164,10 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
+  /* Role Permissions is reference copy. Collapsed by default on a phone,
+     always rendered from `sm` up. */
+  const [rolePermsOpen, setRolePermsOpen] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -1395,10 +1400,13 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       : 'border-gray-300 dark:border-gray-600'
 
     return (
-      <div className="space-y-5">
+      <div className="space-y-2.5 sm:space-y-5">
         {/* ─── Identity ─────────────────────────────────────── */}
         <section>
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2.5 dark:text-gray-400">Identity</h3>
+          {/* The eyebrow sits tight to the field it labels on a phone: the
+              first task on this screen is typing a name, and 10px of gap
+              under a one-word heading was pushing it down for nothing. */}
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1.5 sm:mb-2.5 dark:text-gray-400">Identity</h3>
 
           {/* Process Name */}
           <div className="mb-3">
@@ -1455,16 +1463,20 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               )}
             </button>
             {descExpanded && (
-              <div className="mt-2">
+              /* Tight to its disclosure, and shorter on a phone. Expanded, a
+                 `py-2.5` two-row textarea with an 8px gap read as the main
+                 event on the screen; it is the optional field. Still
+                 expandable, still comfortable to type in. */
+              <div className="mt-1 sm:mt-2">
                 <textarea
                   value={basicInfo.description}
                   onChange={(e) => setBasicInfo({ ...basicInfo, description: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
+                  className="w-full px-3 py-1.5 sm:px-4 sm:py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
                   rows={2}
                   placeholder="What is the purpose of this process? Who should use it?"
                 />
                 {!basicInfo.description && (
-                  <p className="mt-1 text-xs text-gray-400">
+                  <p className="mt-0.5 sm:mt-1 text-[11px] sm:text-xs leading-snug text-gray-400">
                     One sentence is enough. This helps others understand why this exists.
                   </p>
                 )}
@@ -1475,8 +1487,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
         {/* ─── Applies To ───────────────────────────────────── */}
         <section>
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1 dark:text-gray-400">Applies To</h3>
-          <p className="text-xs text-gray-400 mb-2.5">Determines where runs appear and how work is tracked.</p>
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-0.5 sm:mb-1 dark:text-gray-400">Applies To</h3>
+          <p className="text-xs text-gray-400 mb-1.5 sm:mb-2.5">Determines where runs appear and how work is tracked.</p>
           {/* One per row on a phone: each option carries a full sentence of
               description, which at a third of ~310px wrapped to one word per
               line. Three across from `sm` up, as before. */}
@@ -1555,17 +1567,22 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
     const stakeholderCount = team.filter(t => t.role === 'stakeholder').length
 
     return (
-      <div className="space-y-4">
-        {/* Header */}
+      <div className="space-y-3 sm:space-y-4">
+        {/* Header. The step caption already says "Access", so on a phone the
+            heading is the sentence that explains it, not a second title. */}
         <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Process Governance</h3>
-          <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">Define who can manage this process and who can follow its progress.</p>
+          <h3 className="hidden sm:block text-lg font-medium text-gray-900 dark:text-white">Process Governance</h3>
+          <p className="text-xs sm:text-sm text-gray-500 sm:mt-0.5 dark:text-gray-400">Define who can manage this process and who can follow its progress.</p>
         </div>
 
         {/* ─── Owner ────────────────────────────────────────── */}
         <section>
-          <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">Owner</h4>
-          <div className="flex items-center justify-between px-3 py-2 bg-blue-50/30 rounded-lg border border-blue-100/80">
+          <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 sm:mb-1.5 dark:text-gray-400">Owner</h4>
+          {/* A fact, not a control: the creator is fixed as Admin and nothing
+              here is editable. On a phone it reads as a plain row — no tinted
+              panel, no border — so the assignment UI below is the thing that
+              looks interactive. Desktop keeps the card. */}
+          <div className="flex items-center justify-between py-1 sm:px-3 sm:py-2 sm:bg-blue-50/30 sm:rounded-lg sm:border sm:border-blue-100/80">
             <div className="flex items-center space-x-2.5 min-w-0">
               <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                 <span className="font-semibold text-xs text-blue-700">
@@ -1590,7 +1607,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         </section>
 
         {/* ─── Two-Panel Team Selector ─────────────────────── */}
-        <section className="space-y-3">
+        <section className="space-y-2 sm:space-y-3">
           <div>
             <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Team Members</h4>
             <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">Add people who can manage this process or follow its progress.</p>
@@ -1608,7 +1625,15 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 </span>
               )}
             </div>
-            <div className="h-[132px] overflow-y-auto">
+            {/* Height only when there is something to scroll.
+
+                A flat 132px viewport meant an empty roster reserved a blank
+                panel taller than the control that fills it. Empty, it is one
+                line; populated, it grows to the same bounded viewport it had
+                before so a long roster still scrolls rather than pushing the
+                search box off the screen. Desktop keeps the fixed height at
+                both states, where the reserved space is not the problem. */}
+            <div className={team.length > 0 ? 'max-h-[132px] overflow-y-auto sm:h-[132px]' : 'sm:h-[132px]'}>
               {team.length > 0 ? (
                 <div className="p-1.5 space-y-px">
                   {team.map((member) => (
@@ -1661,8 +1686,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                   ))}
                 </div>
               ) : (
-                <div className="h-full flex items-center justify-center">
-                  <p className="text-[11px] text-gray-400">No team members added yet.</p>
+                <div className="flex items-center px-3 py-2 sm:h-full sm:justify-center sm:py-0">
+                  <p className="text-[11px] text-gray-400">No team members added</p>
                 </div>
               )}
             </div>
@@ -1670,17 +1695,20 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
           {/* ── Available Users Panel (fixed height) ────────── */}
           <div className="rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700">
-            {/* Search bar — always visible at top */}
-            <div className="flex items-center border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-              {/* `min-w-0` is what lets this actually shrink.
+            {/* Search + role.
 
-                  A flex item defaults to `min-width: auto`, and an <input>'s
-                  auto minimum is its intrinsic size (~170px), so `flex-1`
-                  alone could not take it below that. Against ~150px of fixed
-                  chrome to the right — the divider, "Add as:" and the role
-                  select, all `flex-shrink-0` — the row could not fit 326px and
-                  overflowed horizontally. Desktop is unaffected: the row has
-                  slack there, so the minimum never binds. */}
+                One row on desktop — the transfer-list header it was written
+                as. On a phone that row put a full-width-wanting input, a
+                divider, "Add as:" and a select into ~326px, so the select
+                read as something embedded in the search field and neither
+                control had room. Stacked, the search gets the width and the
+                role is a plainly labelled field of its own.
+
+                `min-w-0` on the search wrapper stays and still matters at
+                `sm`, where the single row returns: a flex item defaults to
+                `min-width: auto` and an <input>'s auto minimum is its
+                intrinsic ~170px, so `flex-1` alone could not shrink it. */}
+            <div className="flex flex-col sm:flex-row sm:items-center border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
               <div data-slot="wizard-user-search" className="relative min-w-0 flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                 <input
@@ -1691,14 +1719,18 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                   placeholder="Search by name or email..."
                 />
               </div>
-              <div className="border-l border-gray-200 dark:border-gray-700" />
-              <div className="flex items-center space-x-1.5 px-2.5 flex-shrink-0">
-                <span className="text-[11px] text-gray-400 whitespace-nowrap">Add as:</span>
+              <div className="hidden sm:block border-l border-gray-200 dark:border-gray-700" />
+              <div className="flex items-center gap-2 border-t px-2.5 py-1.5 border-gray-100 sm:border-t-0 sm:space-x-1.5 sm:py-0 sm:flex-shrink-0 dark:border-gray-800">
+                <label htmlFor="wizard-default-role" className="text-[11px] text-gray-400 whitespace-nowrap">
+                  <span className="sm:hidden">Role</span>
+                  <span className="hidden sm:inline">Add as:</span>
+                </label>
                 <select
+                  id="wizard-default-role"
                   value={selectedRole}
                   onChange={(e) => setSelectedRole(e.target.value as 'admin' | 'stakeholder')}
                   aria-label="Default role for new members"
-                  className="px-1.5 py-1 border border-gray-200 rounded text-[11px] focus:ring-2 focus:ring-blue-500 bg-white dark:border-gray-700 dark:bg-gray-800"
+                  className="no-touch-target min-w-0 flex-1 px-1.5 py-1 border border-gray-200 rounded text-[11px] focus:ring-2 focus:ring-blue-500 bg-white sm:flex-none dark:border-gray-700 dark:bg-gray-800"
                 >
                   <option value="admin">Admin</option>
                   <option value="stakeholder">Stakeholder</option>
@@ -1706,8 +1738,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               </div>
             </div>
 
-            {/* Scrollable user list — fixed height */}
-            <div className="h-[168px] overflow-y-auto">
+            {/* Scrollable user list. Shorter on a phone: 168px of candidate
+                list under an already-tall step pushed the role selector and
+                the footer apart for no gain. Still a bounded scroller. */}
+            <div className={availableUsers.length > 0
+              ? 'max-h-[132px] overflow-y-auto sm:h-[168px]'
+              : 'sm:h-[168px]'}>
               {availableUsers.length > 0 ? (
                 availableUsers.map(u => (
                   <button
@@ -1729,8 +1765,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                   </button>
                 ))
               ) : (
-                <div className="h-full flex items-center justify-center">
-                  <span className="text-sm text-gray-400">
+                <div className="flex items-center px-3 py-2 sm:h-full sm:justify-center sm:py-0">
+                  <span className="text-[11px] sm:text-sm text-gray-400">
                     {userSearchTerm.trim() ? 'No matching users' : 'All users have been added'}
                   </span>
                 </div>
@@ -1740,8 +1776,26 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         </section>
 
         {/* ─── Role Permissions ──────────────────────────────── */}
-        <div className="rounded-lg border border-gray-100/80 bg-gray-50/20 px-4 py-2.5">
-          <h4 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Role Permissions</h4>
+        {/* Reference, not a task. Flat on a phone — no panel, no fill — so it
+            reads as explanation under the assignment UI rather than as a
+            third card competing with it. */}
+        <div className="border-t border-gray-100 pt-2 sm:rounded-lg sm:border sm:border-gray-100/80 sm:bg-gray-50/20 sm:px-4 sm:py-2.5 dark:border-gray-800">
+          {/* A disclosure on a phone: reference the reader can open when they
+              want it, rather than a block of copy sitting at the same weight
+              as the assignment controls above. Always open from `sm` up, so
+              desktop is unchanged. `<summary>` is the native pattern — no new
+              component, and it is keyboard- and screen-reader-correct. */}
+          <button
+            type="button"
+            onClick={() => setRolePermsOpen(v => !v)}
+            aria-expanded={isMobile ? rolePermsOpen : undefined}
+            className="no-touch-target tap-pad flex w-full items-center gap-1 text-left sm:cursor-default"
+          >
+            <ChevronDown className={`w-3 h-3 text-gray-300 transition-transform sm:hidden ${rolePermsOpen ? '' : '-rotate-90'}`} />
+            <h4 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Role Permissions</h4>
+          </button>
+          {(rolePermsOpen || !isMobile) && (
+            <div className="mt-1.5 sm:mt-2">
           {/* Two prose lists at ~145px each with a 32px gutter wrapped to two
               or three lines per item. Stacked on a phone, side by side at
               `sm` with the original gutter. */}
@@ -1764,6 +1818,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           </div>
           {team.length > 0 && (
             <p className="text-[10px] text-gray-300 mt-2">Tip: Click role badges to reassign after adding.</p>
+          )}
+            </div>
           )}
         </div>
 
@@ -2433,19 +2489,27 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               return (
                 <div key={stage.stage_key}>
                   {/* Insert-between button */}
+                  {/* Insert-between.
+
+                      Kept, because inserting at a position is a real thing to
+                      want. Made small: on a phone the connector stubs go and
+                      the node sits in a 1.5-unit band rather than a ~28px
+                      one. Across five stages the diagram was spending well
+                      over 100px on ornament between the cards that carry the
+                      actual work. The tap target survives via `tap-pad`. */}
                   {index > 0 && (
-                    <div className="flex justify-center py-1.5">
+                    <div className="flex justify-center py-0 sm:py-1.5">
                       <div className="flex flex-col items-center">
-                        <div className="w-px h-2.5 bg-gray-200" />
+                        <div className="hidden sm:block w-px h-2.5 bg-gray-200" />
                         <button
                           type="button"
                           onClick={() => handleAddStageAt(index)}
-                          className="w-5 h-5 rounded-full border border-gray-200 bg-white flex items-center justify-center text-gray-300 hover:text-blue-500 hover:border-blue-300 transition-colors dark:border-gray-700 dark:bg-gray-800"
+                          className="no-touch-target tap-pad w-4 h-4 sm:w-5 sm:h-5 rounded-full border-0 sm:border sm:border-gray-200 sm:bg-white flex items-center justify-center text-gray-300 hover:text-blue-500 sm:hover:border-blue-300 transition-colors dark:border-gray-700 dark:sm:bg-gray-800"
                           title="Insert stage here"
                         >
-                          <Plus className="w-3 h-3" />
+                          <Plus className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                         </button>
-                        <div className="w-px h-2.5 bg-gray-200" />
+                        <div className="hidden sm:block w-px h-2.5 bg-gray-200" />
                       </div>
                     </div>
                   )}
@@ -2454,11 +2518,16 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                   <div className="bg-white border border-gray-150 rounded-lg hover:border-gray-250 transition-colors dark:bg-gray-800">
                     {/* ── Header row (always visible) ──────────── */}
                     <div
-                      className="flex items-center px-3.5 py-2.5 cursor-pointer select-none"
+                      className="flex items-center px-2.5 py-1.5 sm:px-3.5 sm:py-2.5 cursor-pointer select-none"
                       onClick={() => toggleStageExpansion(stage.stage_key)}
                     >
-                      <GripVertical className="w-3.5 h-3.5 text-gray-300 flex-shrink-0 mr-2 cursor-grab" />
-                      <div className="flex items-center justify-center w-7 h-7 rounded-full bg-blue-50 text-blue-600 font-semibold text-xs flex-shrink-0 mr-3">
+                      {/* Drag is a pointer gesture; on a phone the handle is
+                          an inert 14px glyph taking a column. */}
+                      <GripVertical className="hidden sm:block w-3.5 h-3.5 text-gray-300 flex-shrink-0 mr-2 cursor-grab" />
+                      {/* The index is a marker, not a badge: no fill on a
+                          phone, so four stages read as a list rather than as
+                          four decorated nodes. */}
+                      <div className="flex items-center justify-center w-4 h-4 sm:w-7 sm:h-7 rounded-full text-gray-400 sm:bg-blue-50 sm:text-blue-600 font-semibold text-[11px] sm:text-xs flex-shrink-0 mr-2 sm:mr-3">
                         {index + 1}
                       </div>
                       <div className="flex-1 min-w-0 flex items-center space-x-2">
@@ -2498,7 +2567,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
                     {/* ── Expanded body ────────────────────────── */}
                     {isExpanded && (
-                      <div className="px-3.5 pb-3.5 pt-0 ml-[52px] space-y-3 border-t border-gray-100 dark:border-gray-800">
+                      /* The 52px indent aligns the body under the stage
+                         title on desktop. On a 390px screen it spends a
+                         seventh of the width on alignment and makes every
+                         field inside narrower than it needs to be, so the
+                         phone body starts at the card edge instead. */
+                      <div className="px-2.5 pb-2.5 pt-0 space-y-2 sm:px-3.5 sm:pb-3.5 sm:ml-[52px] sm:space-y-3 border-t border-gray-100 dark:border-gray-800">
                         {/* Description */}
                         <div className="pt-3">
                           <label className="block text-[11px] font-medium text-gray-400 mb-1">Description</label>
@@ -2567,7 +2641,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                         {/* Completion criteria */}
                         <div>
                           <label className="block text-[11px] font-medium text-gray-400 mb-0.5">Completion Criteria</label>
-                          <p className="text-[10px] text-gray-300 mb-1.5">Requirements to advance</p>
+                          {/* Desktop-only gloss: the label already says it. */}
+                          <p className="hidden sm:block text-[10px] text-gray-300 mb-1.5">Requirements to advance</p>
                           {stage.checklist_items.length > 0 && (
                             <div className="space-y-1 mb-1.5">
                               {stage.checklist_items.map((item, itemIdx) => (
@@ -2687,10 +2762,10 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           </div>
         ) : (
           /* ─── Template / custom selection ─────────────────── */
-          <div className="rounded-lg border border-gray-100 bg-gray-50/20 px-5 py-4 dark:border-gray-800">
+          <div className="rounded-lg border border-gray-100 bg-gray-50/20 px-3 py-3 sm:px-5 sm:py-4 dark:border-gray-800">
             {/* Templates section — recommended path */}
-            <div className="mb-4">
-              <div className="flex items-center space-x-2 mb-2.5">
+            <div className="mb-3 sm:mb-4">
+              <div className="flex items-center space-x-2 mb-2 sm:mb-2.5">
                 <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Templates</h4>
                 <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 uppercase tracking-wide">Recommended</span>
               </div>
@@ -2698,14 +2773,17 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 {TEMPLATE_OPTIONS.map(t => (
                   <div
                     key={t.id}
-                    className="flex items-center justify-between px-3.5 py-3 rounded-lg border border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm transition-all group dark:border-gray-700 dark:bg-gray-800"
+                    className="flex items-center justify-between gap-2 px-3 py-2.5 sm:px-3.5 sm:py-3 rounded-lg border border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm transition-all group dark:border-gray-700 dark:bg-gray-800"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center space-x-2">
                         <span className="text-sm font-semibold text-gray-800 group-hover:text-blue-700 transition-colors dark:text-gray-100">{t.label}</span>
-                        <span className="text-[10px] text-gray-400">{t.count} stages</span>
+                        <span className="text-[10px] text-gray-400 whitespace-nowrap">{t.count} stages</span>
                       </div>
-                      <div className="flex items-center space-x-1 mt-1">
+                      {/* The stage chain wraps rather than running past the
+                          card edge — four names plus arrows do not fit one
+                          line beside a button at 390px. */}
+                      <div className="flex flex-wrap items-center gap-x-1 mt-0.5 sm:mt-1">
                         {t.stages.map((s, i) => (
                           <React.Fragment key={s}>
                             <span className="text-[10px] text-gray-400">{s}</span>
@@ -2717,9 +2795,11 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                     <button
                       type="button"
                       onClick={() => handleApplyTemplate(t.id)}
-                      className="text-[11px] font-medium text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-md hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all flex-shrink-0 ml-3"
+                      aria-label={`Use ${t.label} template`}
+                      className="no-touch-target tap-pad text-[11px] font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1.5 sm:px-3 rounded-md hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all flex-shrink-0 sm:ml-3"
                     >
-                      Use template
+                      <span className="sm:hidden">Use</span>
+                      <span className="hidden sm:inline">Use template</span>
                     </button>
                   </div>
                 ))}
@@ -2910,21 +2990,28 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       }[ruleBuilderMode]
 
       return (
-        <div className="space-y-4">
-          {/* Back navigation */}
-          <button
-            type="button"
-            onClick={handleExitRuleBuilder}
-            className="flex items-center space-x-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors -mb-1 dark:hover:text-gray-200 dark:text-gray-400"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Automation</span>
-          </button>
+        <div className="space-y-2.5 sm:space-y-4">
+          {/* Back navigation and the rule's identity, one row on a phone.
 
-          {/* Context badge */}
-          <div className="flex items-center space-x-2">
-            <categoryMeta.Icon className={`w-4 h-4 text-${categoryMeta.color}-500`} />
-            <span className="text-[13px] font-semibold text-gray-900 dark:text-white">New {categoryMeta.label} Rule</span>
+              Stacked they were two lines of chrome above a long form; the
+              back control reads as the leading element of the title rather
+              than as a separate band. */}
+          <div className="flex items-center gap-2 sm:block">
+            <button
+              type="button"
+              onClick={handleExitRuleBuilder}
+              className="no-touch-target tap-pad flex shrink-0 items-center space-x-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors sm:-mb-1 dark:hover:text-gray-200 dark:text-gray-400"
+            >
+              <ArrowLeft className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+              <span className="hidden sm:inline">Back to Automation</span>
+              <span className="sm:hidden sr-only">Back to Automation</span>
+            </button>
+
+            {/* Context badge */}
+            <div className="flex min-w-0 items-center space-x-2 sm:mt-4">
+              <categoryMeta.Icon className={`w-4 h-4 shrink-0 text-${categoryMeta.color}-500`} />
+              <span className="truncate text-[13px] font-semibold text-gray-900 dark:text-white">New {categoryMeta.label} Rule</span>
+            </div>
           </div>
 
           {/* Embedded form */}
@@ -2967,11 +3054,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
     // ─── Rules Overview ─────────────────────────────────────
     return (
-      <div className="space-y-6">
-        {/* Header */}
+      <div className="space-y-3 sm:space-y-6">
+        {/* Header. The step caption already names this stage on a phone, so
+            the title is desktop-only and the sentence carries it. */}
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Automation & Triggers</h3>
-          <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">
+          <h3 className="hidden sm:block text-lg font-semibold text-gray-900 dark:text-white">Automation &amp; Triggers</h3>
+          <p className="text-xs sm:text-sm text-gray-500 sm:mt-0.5 dark:text-gray-400">
             {scopeType === 'asset'
               ? 'Define when runs start, how assets are added, and when runs complete.'
               : 'Define when runs start and when they complete.'}
@@ -2981,12 +3069,15 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         {/* ─── Run Creation Rules ───────────────────────────── */}
         <div className="rounded-lg border border-gray-200/80 bg-white overflow-hidden dark:bg-gray-800">
           <div className="border-l-[3px] border-l-purple-400">
-            <div className="flex items-center justify-between px-5 py-3.5">
+            <div className="flex items-center justify-between px-3 py-2 sm:px-5 sm:py-3.5">
               <div className="flex items-center space-x-2.5">
                 <GitBranch className="w-4 h-4 text-purple-500" />
                 <div>
                   <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Run Creation</h4>
-                  <p className="text-[11px] text-gray-400">Controls how new runs are created.</p>
+                  {/* Desktop-only gloss. On a phone the state line below
+                      ("Runs will only be created manually.") says what this
+                      category does in the terms that matter. */}
+                  <p className="hidden sm:block text-[11px] text-gray-400">Controls how new runs are created.</p>
                 </div>
               </div>
               <button
@@ -3000,7 +3091,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             </div>
 
             {branchRules.length > 0 ? (
-              <div className="px-5 pb-3.5 space-y-1">
+              <div className="px-3 pb-2 sm:px-5 sm:pb-3.5 space-y-1">
                 {branchRules.map((rule) => (
                   <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
                     <div className="min-w-0">
@@ -3024,8 +3115,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 ))}
               </div>
             ) : (
-              <div className="px-5 pb-3.5">
-                <p className="text-[11px] text-gray-400 py-2">Runs will only be created manually.</p>
+              <div className="px-3 pb-2 sm:px-5 sm:pb-3.5">
+                <p className="text-[11px] text-gray-400 pb-0.5 sm:py-2">Runs will only be created manually.</p>
               </div>
             )}
           </div>
@@ -3035,12 +3126,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         {scopeType === 'asset' && (
           <div className="rounded-lg border border-gray-200/80 bg-white overflow-hidden dark:bg-gray-800">
             <div className="border-l-[3px] border-l-blue-400">
-              <div className="flex items-center justify-between px-5 py-3.5">
+              <div className="flex items-center justify-between px-3 py-2 sm:px-5 sm:py-3.5">
                 <div className="flex items-center space-x-2.5">
                   <Users className="w-4 h-4 text-blue-500" />
                   <div>
                     <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Asset Population</h4>
-                    <p className="text-[11px] text-gray-400">Controls how assets enter each run.</p>
+                    <p className="hidden sm:block text-[11px] text-gray-400">Controls how assets enter each run.</p>
                   </div>
                 </div>
                 <button
@@ -3054,7 +3145,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               </div>
 
               {assetRules.length > 0 ? (
-                <div className="px-5 pb-3.5 space-y-1">
+                <div className="px-3 pb-2 sm:px-5 sm:pb-3.5 space-y-1">
                   {assetRules.map((rule) => (
                     <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
                       <div className="min-w-0">
@@ -3089,12 +3180,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         {/* ─── Run Ending Rules ────────────────────────────── */}
         <div className="rounded-lg border border-gray-200/80 bg-white overflow-hidden dark:bg-gray-800">
           <div className="border-l-[3px] border-l-rose-400">
-            <div className="flex items-center justify-between px-5 py-3.5">
+            <div className="flex items-center justify-between px-3 py-2 sm:px-5 sm:py-3.5">
               <div className="flex items-center space-x-2.5">
                 <XCircle className="w-4 h-4 text-rose-500" />
                 <div>
                   <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Run Ending</h4>
-                  <p className="text-[11px] text-gray-400">Controls how and when runs close.</p>
+                  <p className="hidden sm:block text-[11px] text-gray-400">Controls how and when runs close.</p>
                 </div>
               </div>
               <button
@@ -3108,7 +3199,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             </div>
 
             {endingRules.length > 0 ? (
-              <div className="px-5 pb-3.5 space-y-1">
+              <div className="px-3 pb-2 sm:px-5 sm:pb-3.5 space-y-1">
                 {endingRules.map((rule) => (
                   <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
                     <div className="min-w-0">
@@ -3132,8 +3223,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 ))}
               </div>
             ) : (
-              <div className="px-5 pb-3.5">
-                <p className="text-[11px] text-gray-400 py-2">Runs must be closed manually.</p>
+              <div className="px-3 pb-2 sm:px-5 sm:pb-3.5">
+                <p className="text-[11px] text-gray-400 pb-0.5 sm:py-2">Runs must be closed manually.</p>
               </div>
             )}
           </div>
@@ -3150,15 +3241,34 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
   }
 
   return (
-    /* `p-2` below `sm` gives the wizard back 16px of the 390px viewport —
-       the cheapest width in the component, and it costs desktop nothing. */
-    <div className="fixed inset-x-0 top-24 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[calc(100vh-10rem)] overflow-hidden flex flex-col dark:bg-gray-800">
+    /*
+      A sheet on a phone, a centred modal on desktop.
+
+      `top-24` (96px) cleared the desktop header and tab strip; on a phone the
+      shell is only the 64px header, so the scrim started 32px low. Worse, the
+      panel inside was `h-[calc(100vh-10rem)]` inside a container that is
+      already `top-24 bottom-0` — shorter than its own parent and vertically
+      centred, which is what made it read as a small card floating in a dark
+      page rather than as the screen you are on.
+
+      Below `sm` it now starts at the header, fills the height, drops its
+      radius and takes the full width. Desktop keeps the floating card.
+    */
+    <div className="fixed inset-x-0 top-16 sm:top-24 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden h-full rounded-none sm:rounded-xl sm:h-[calc(100vh-10rem)] dark:bg-gray-800">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0 dark:border-gray-700">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Define New Process</h2>
-            <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">
+        <div className="px-3 py-1 sm:px-6 sm:py-4 border-b border-gray-200 flex items-center justify-between gap-2 flex-shrink-0 dark:border-gray-700">
+          <div className="min-w-0">
+            {/* Shorter on a phone: the sheet already is the flow, so the verb
+                is redundant there. Same words the product already uses. */}
+            <h2 className="truncate text-sm sm:text-xl font-semibold leading-tight text-gray-900 dark:text-white">
+              <span className="sm:hidden">New Process</span>
+              <span className="hidden sm:inline">Define New Process</span>
+            </h2>
+            {/* The sentence is desktop-only. On a phone the step caption
+                below already says which stage this is, and two lines of
+                chrome saying the same thing pushed the form down. */}
+            <p className="hidden sm:block text-sm text-gray-500 mt-0.5 dark:text-gray-400">
               {currentStep === 0
                 ? 'Define the structural foundation of this process.'
                 : `Step ${currentStep + 1} of ${STEPS.length}`}
@@ -3166,9 +3276,14 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
+            aria-label="Close"
+            /* `no-touch-target` + `tap-pad`: the drawn button stays 20px and
+               the hit region grows around it. A 44px *box* here was setting
+               the height of the whole header, which is the one thing the
+               header could least afford. */
+            className="no-touch-target tap-pad flex shrink-0 items-center justify-center rounded-lg p-0.5 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-300"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         </div>
 
@@ -3181,14 +3296,50 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             circles stay 32px and the buttons stay a 48px tap target; the room
             comes from the gutters, which are the only thing here that was
             spending width without saying anything. */}
-        <div className="px-3 py-3 sm:px-6 sm:py-4 border-b border-gray-100 bg-gray-50 flex-shrink-0 dark:border-gray-800 dark:bg-gray-900">
-          <p data-slot="wizard-step-caption" className="sm:hidden mb-2 text-xs">
-            <span className="font-semibold text-gray-700 dark:text-gray-200">
-              Step {currentStep + 1} of {STEPS.length}
-            </span>
-            <span className="text-gray-400"> &middot; {STEPS[currentStep].label}</span>
-          </p>
-          <div data-slot="wizard-stepper" className="flex items-center justify-between">
+        <div className="px-3 py-1 sm:px-6 sm:py-4 border-b border-gray-100 bg-gray-50 flex-shrink-0 dark:border-gray-800 dark:bg-gray-900">
+          {/* Caption and progress share one row on a phone.
+
+              Stacked, they were two bands of chrome for one fact. Side by
+              side this is a single status line: which step you are on, and
+              how far through you are. */}
+          <div className="sm:hidden flex items-center gap-2">
+            <p data-slot="wizard-step-caption" className="shrink-0 text-[11px] leading-tight">
+              <span className="font-semibold text-gray-700 dark:text-gray-200">
+                Step {currentStep + 1} of {STEPS.length}
+              </span>
+              <span className="text-gray-400"> &middot; {STEPS[currentStep].label}</span>
+            </p>
+
+            {/* Five segments, not five icon buttons. The rail below carries a
+                32px circle and an icon per step, and at 390px its labels are
+                hidden anyway — so it spent a band of height saying less than
+                this line does. A completed segment still jumps back. */}
+            <div data-slot="wizard-progress-segments" className="flex min-w-0 flex-1 items-center gap-1">
+            {STEPS.map((step, index) => {
+              const isActive = index === currentStep
+              const isCompleted = index < currentStep
+              return (
+                <button
+                  key={step.id}
+                  type="button"
+                  aria-label={`Step ${index + 1}: ${step.label}`}
+                  aria-current={isActive ? 'step' : undefined}
+                  disabled={index > currentStep}
+                  onClick={() => { if (index < currentStep) setCurrentStep(index) }}
+                  className="no-touch-target tap-pad h-1 flex-1 rounded-full disabled:cursor-default"
+                >
+                  <span
+                    className={`block h-1 rounded-full ${
+                      isActive ? 'bg-blue-600' : isCompleted ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-700'
+                    }`}
+                  />
+                </button>
+              )
+            })}
+            </div>
+          </div>
+
+          <div data-slot="wizard-stepper" className="hidden sm:flex items-center justify-between">
             {STEPS.map((step, index) => {
               const Icon = step.icon
               const isActive = index === currentStep
@@ -3244,8 +3395,21 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           {renderStepContent()}
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+        {/* Footer.
+
+            `pb-safe` was wrong here and is why the buttons looked clipped:
+            it sets `padding-bottom: env(safe-area-inset-bottom)` outright,
+            which resolves to 0px on any screen without a home indicator — so
+            it *replaced* the 10px from `py-2.5` instead of adding to it, and
+            the row sat flush on the bottom edge. The inset has to be added to
+            the padding, not substituted for it.
+
+            The panel is a flex column and this is a `flex-shrink-0` sibling
+            of the scrolling body, so content can never slide underneath. */}
+        <div
+          data-slot="wizard-footer"
+          className="px-3 pt-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] sm:px-6 sm:pt-4 sm:pb-[calc(1rem+env(safe-area-inset-bottom,0px))] border-t border-gray-200 flex-shrink-0 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
+        >
           {/* Error Message */}
           {submitError && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2">
@@ -3294,23 +3458,42 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             </div>
           ) : (
             /* ─── Standard wizard footer ─────────────────────── */
-            <div className="flex items-center justify-between">
+            <>
+            {/* The final-step helper as quiet body text above the buttons,
+                where it does not compete with them for the row. */}
+            {STEPS[currentStep]?.id === 'automation' && (
+              <p className="sm:hidden mb-1.5 text-[11px] text-gray-400">You can edit automation rules after creation.</p>
+            )}
+            <div className="flex items-center justify-between gap-2">
+              {/* On step 0 this button is Cancel, which calls `onClose()` —
+                  exactly what the header X does, with no state difference and
+                  no unsaved-change prompt on either. Two equally prominent
+                  ways to do one thing. The phone keeps the X (the sheet's
+                  dismiss) and drops the duplicate; from step 1 the control is
+                  Back, which is a different action, so it appears everywhere.
+                  Desktop is unchanged. */}
               <Button
                 variant="outline"
                 onClick={() => currentStep > 0 ? setCurrentStep(currentStep - 1) : onClose()}
+                className={currentStep === 0 ? 'max-sm:hidden' : undefined}
               >
                 <ChevronLeft className="w-4 h-4 mr-1" />
                 {currentStep === 0 ? 'Cancel' : 'Back'}
               </Button>
 
-              <div className="flex items-center space-x-3">
+              {/* `ml-auto` keeps this at the trailing edge on step 0, where
+                  the phone has no left-hand control to push against. */}
+              <div className="ml-auto flex items-center gap-2 sm:space-x-3">
                 {/* Inline hint when stages step is blocked */}
                 {STEPS[currentStep]?.id === 'stages' && !isStepValid(currentStep) && (
-                  <p className="text-[11px] text-gray-400 mr-1">Define at least one stage to continue.</p>
+                  <p className="hidden sm:block text-[11px] text-gray-400 mr-1">Define at least one stage to continue.</p>
                 )}
-                {/* CTA helper on final step */}
+                {/* CTA helper on final step — desktop only here. On a phone
+                    it sits above the button row instead (see below), so it
+                    cannot squeeze Back and Create Process into a taller,
+                    three-column footer. */}
                 {STEPS[currentStep]?.id === 'automation' && (
-                  <p className="text-[11px] text-gray-400 mr-1">You can edit automation rules after creation.</p>
+                  <p className="hidden sm:block text-[11px] text-gray-400 mr-1">You can edit automation rules after creation.</p>
                 )}
                 {currentStep < STEPS.length - 1 ? (
                   <Button
@@ -3332,7 +3515,11 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                         : 'Next'
                       return (
                         <>
-                          {label}
+                          {/* The caption above already names the next stage,
+                              so the phone says "Continue" and desktop keeps
+                              the fuller label it was written with. */}
+                          <span className="sm:hidden">Continue</span>
+                          <span className="hidden sm:inline">{label}</span>
                           <ChevronRight className="w-4 h-4 ml-1" />
                         </>
                       )
@@ -3358,6 +3545,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 )}
               </div>
             </div>
+            </>
           )}
         </div>
       </div>

@@ -45,6 +45,13 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => QUERY_CLIENT,
 }))
 
+// This file is about the phone rendering, so the branch under test is the
+// phone one. jsdom has no matchMedia, which would otherwise silently make
+// every `isMobile` branch take its desktop path.
+vi.mock('../../../hooks/useMediaQuery', () => ({
+  useIsMobile: () => true,
+  useMediaQuery: () => true,
+}))
 vi.mock('../../../lib/supabase', () => ({
   supabase: { from: () => ({}), rpc: async () => ({ data: null, error: null }) },
 }))
@@ -112,6 +119,8 @@ describe('wizard form grids', () => {
 
   it('stacks the role permission columns', () => {
     goToAccessStep()
+    // Collapsed by default on a phone now — open it to inspect the grid.
+    fireEvent.click(screen.getByRole('button', { name: /Role Permissions/ }))
     const cls = slot('wizard-role-permissions')!.className
     expect(cls).toContain('grid-cols-1')
     expect(cls).toContain('sm:grid-cols-2')
@@ -129,7 +138,9 @@ describe('wizard progress stepper', () => {
   it('names the current step on a phone, where the rail labels are hidden', () => {
     open()
     const caption = slot('wizard-step-caption')!
-    expect(caption.className).toContain('sm:hidden')
+    // Caption and segments now share one status row, so `sm:hidden` lives on
+    // that row rather than on each of them.
+    expect(caption.parentElement!.className).toContain('sm:hidden')
     expect(caption.textContent).toContain('Step 1 of 5')
     expect(caption.textContent).toContain('Foundation')
   })
@@ -165,11 +176,40 @@ describe('wizard progress stepper', () => {
     expect(stepper.innerHTML).toContain('bg-blue-600')
   })
 
-  it('reclaims width from the modal shell without changing desktop', () => {
+  it('fills the phone viewport as a sheet, and still floats as a card on desktop', () => {
     open()
     expect(slot('wizard-content')!.className).toContain('p-4')
     expect(slot('wizard-content')!.className).toContain('sm:p-6')
-    expect(SOURCE).toContain('z-50 p-2 sm:p-4')
+
+    /*
+      The scrim starts at the app header rather than 32px below it, and the
+      panel fills it instead of being a shorter, vertically centred card. The
+      `sm:` half of each pair is what keeps the desktop modal identical.
+    */
+    expect(SOURCE).toContain('top-16 sm:top-24')
+    expect(SOURCE).toContain('z-50 p-0 sm:p-4')
+    expect(SOURCE).toContain('h-full rounded-none sm:rounded-xl sm:h-[calc(100vh-10rem)]')
+  })
+
+  it('shows light segments on a phone and keeps the icon rail for desktop', () => {
+    open()
+    const segments = slot('wizard-progress-segments')!
+    expect(segments.parentElement!.className).toContain('sm:hidden')
+    expect(segments.querySelectorAll('button')).toHaveLength(5)
+    // The icon rail is the desktop treatment only.
+    expect(slot('wizard-stepper')!.className).toContain('hidden sm:flex')
+  })
+
+  it('marks the current segment and lets a completed one go back', () => {
+    goToAccessStep()
+    const buttons = Array.from(slot('wizard-progress-segments')!.querySelectorAll('button'))
+
+    expect(buttons[1]).toHaveAttribute('aria-current', 'step')
+    expect(buttons[0]).not.toBeDisabled()   // completed — tappable
+    expect(buttons[2]).toBeDisabled()       // not reached yet
+
+    fireEvent.click(buttons[0])
+    expect(slot('wizard-step-caption')!.textContent).toContain('Step 1 of 5')
   })
 })
 
@@ -177,19 +217,58 @@ describe('wizard content panes', () => {
   beforeEach(() => queryResults.clear())
   afterEach(cleanup)
 
-  it('keeps the fixed-height team panes scrollable, so content is reachable rather than clipped', () => {
+  it('does not reserve a blank viewport for an empty roster', () => {
     goToAccessStep()
-    /*
-      These two heights are list viewports, not content boxes: every row is a
-      single line with `truncate`, so nothing inside can grow by wrapping and
-      the height cannot clip text. What matters is that overflow is reachable
-      — bounded scrolling, which the panes must keep.
-    */
-    for (const height of ['h-[132px]', 'h-[168px]']) {
-      const pane = document.querySelector(`.${CSS.escape(height)}`)
-      expect(pane, `${height} pane should exist`).not.toBeNull()
-      expect(pane!.className).toContain('overflow-y-auto')
-    }
+    // Nobody assigned yet: the assigned pane is one line, not 132px of
+    // nothing. The fixed height applies from `sm` up only.
+    const empty = screen.getByText('No team members added')
+    const pane = empty.closest('div')!.parentElement!
+    expect(pane.className).not.toMatch(/(^|\s)h-\[132px\]/)
+    expect(pane.className).toContain('sm:h-[132px]')
+  })
+
+  it('bounds the roster once it has rows, so a long one still scrolls', () => {
+    goToAccessStep()
+    fireEvent.click(screen.getByText('Rosa Klebb'))
+
+    const pane = screen
+      .getByRole('button', { name: 'Remove Rosa Klebb' })
+      .closest('[class*="max-h-"]')
+    expect(pane, 'a populated roster should be a bounded scroller').not.toBeNull()
+    expect(pane!.className).toContain('overflow-y-auto')
+  })
+
+  it('keeps the candidate list a bounded scroller when it has rows', () => {
+    goToAccessStep()
+    const pane = screen.getByText('Rosa Klebb').closest('[class*="max-h-"]')
+    expect(pane, 'candidate list should be a bounded scroller').not.toBeNull()
+    expect(pane!.className).toContain('overflow-y-auto')
+    // Its rows are single-line and truncated, which is why bounding the
+    // height here cannot clip text.
+    expect(pane!.querySelectorAll('span.truncate').length).toBeGreaterThan(0)
+  })
+
+  it('gives the role selector its own labelled row on a phone', () => {
+    goToAccessStep()
+    const select = screen.getByLabelText('Default role for new members')
+    const row = select.parentElement!
+    // Stacked under the search, not wedged beside it — the select used to
+    // read as something embedded inside the search field.
+    expect(row.parentElement!.className).toContain('flex-col')
+    expect(row.parentElement!.className).toContain('sm:flex-row')
+    expect(within(row).getByText('Role')).toBeTruthy()
+  })
+
+  it('collapses Role Permissions on a phone and opens it on tap', () => {
+    goToAccessStep()
+    const toggle = screen.getByRole('button', { name: /Role Permissions/ })
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(slot('wizard-role-permissions')).toBeNull()
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(slot('wizard-role-permissions')).not.toBeNull()
   })
 
   it('lets the available-users search shrink instead of widening the row', () => {
@@ -207,12 +286,6 @@ describe('wizard content panes', () => {
     expect(role.parentElement!.className).toContain('flex-shrink-0')
   })
 
-  it('keeps pane rows single-line, which is why a fixed height is safe here', () => {
-    goToAccessStep()
-    const pane = document.querySelector('.h-\\[168px\\]')!
-    const names = pane.querySelectorAll('span.truncate')
-    expect(names.length).toBeGreaterThan(0)
-  })
 })
 
 describe('wizard destructive controls without hover', () => {

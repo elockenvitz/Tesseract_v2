@@ -113,12 +113,18 @@ export function AddRuleModal({ workflowId, workflowName, workflowStages, cadence
             <label className="block text-[13px] font-medium text-gray-700 dark:text-gray-300">
               Rule Name
             </label>
-            <div className="flex items-center gap-4">
+            {/* The name gets the row on a phone; Active moves under it.
+
+                Side by side, a full-width-wanting input and a switch with a
+                text label left the input around half the width, and the blue
+                switch read as the loud thing on the screen when the name is
+                the field that matters. */}
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-4">
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
+                className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
                 placeholder="e.g., Weekly Review Reset"
                 required
               />
@@ -152,7 +158,10 @@ export function AddRuleModal({ workflowId, workflowName, workflowStages, cadence
               <p className="text-[11px] text-gray-400 mt-0.5">When should a new run be created?</p>
             </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
+              {/* One per row on a phone. Each option is a label plus a full
+                  sentence; at half of ~326px the sentence wrapped to four
+                  lines and made four equal-height blocks of text. */}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5">
                 {[
                   { value: 'time', label: 'On a schedule', icon: Clock, desc: 'Daily, weekly, monthly, or custom cadence' },
                   { value: 'event', label: 'On a market event', icon: Zap, desc: 'Earnings, price changes, or volume spikes' },
@@ -204,10 +213,20 @@ export function AddRuleModal({ workflowId, workflowName, workflowStages, cadence
                 <div className="space-y-3 pt-1">
                   {/* Recurrence Pattern */}
                   <div>
-                    <h5 className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-2.5 dark:text-gray-400">Recurrence</h5>
-                    <div className="flex space-x-6">
-                      {/* Left Column - Radio Buttons */}
-                      <div className="flex flex-col space-y-2 min-w-[100px]">
+                    <h5 className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 sm:mb-2.5 dark:text-gray-400">Recurrence</h5>
+                    {/* Two columns on desktop; stacked on a phone.
+
+                        The pattern list was pinned at `min-w-[100px]` beside a
+                        bordered configuration column. At 390px that left the
+                        options column narrow and, for patterns whose config is
+                        a single control, mostly empty — a rule of desktop
+                        two-column thinking rather than anything the choices
+                        need. Stacked, the five patterns wrap across the width
+                        and the configuration for the selected one sits under
+                        them. */}
+                    <div className="flex flex-col gap-2 sm:flex-row sm:space-x-6 sm:gap-0">
+                      {/* Pattern choices */}
+                      <div className="flex flex-row flex-wrap gap-x-4 gap-y-1.5 sm:flex-col sm:space-y-2 sm:gap-0 sm:min-w-[100px]">
                         {(['daily', 'weekly', 'monthly', 'quarterly', 'yearly'] as const).map((pattern) => (
                           <label key={pattern} htmlFor={`pattern-${pattern}`} className="flex items-center space-x-2 cursor-pointer">
                             <input
@@ -230,8 +249,10 @@ export function AddRuleModal({ workflowId, workflowName, workflowStages, cadence
                         ))}
                       </div>
 
-                      {/* Right Column - Configuration Options */}
-                      <div className="flex-1 border-l border-gray-200 pl-5 dark:border-gray-700">
+                      {/* Configuration for the selected pattern. The divider
+                          is a column separator, so it only exists when there
+                          are columns. */}
+                      <div className="flex-1 min-w-0 border-t pt-2 border-gray-100 sm:border-t-0 sm:pt-0 sm:border-l sm:border-gray-200 sm:pl-5 dark:border-gray-700">
                         {/* Daily Options */}
                         {formData.conditionValue.pattern_type === 'daily' && (
                           <div className="flex flex-col space-y-2">
@@ -291,7 +312,10 @@ export function AddRuleModal({ workflowId, workflowName, workflowStages, cadence
                               />
                               <span className="text-sm text-gray-700 dark:text-gray-300">week(s) on:</span>
                             </div>
-                            <div className="grid grid-cols-4 gap-1.5">
+                            {/* Day-of-week picker: two per row on a phone,
+                                four on desktop. "Wednesday" beside a checkbox
+                                does not fit ~78px. */}
+                            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                               {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
                                 <label key={day} className="flex items-center space-x-1.5 text-sm">
                                   <input
@@ -987,7 +1011,7 @@ export function AddRuleModal({ workflowId, workflowName, workflowStages, cadence
             {(formData.actionType === 'branch_copy' || formData.actionType === 'branch_nocopy') && (
               <div className="space-y-2">
                 <label className="block text-[13px] font-medium text-gray-700 dark:text-gray-300">Run mode</label>
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5">
                   <button
                     type="button"
                     className={`rounded-lg px-3.5 py-3 text-left transition-all ${
@@ -1071,8 +1095,10 @@ export function AddRuleModal({ workflowId, workflowName, workflowStages, cadence
               </p>
             </div>
 
-            {/* Quick Insert Templates */}
-            <div className="grid grid-cols-4 gap-1.5">
+            {/* Quick Insert Templates. Four naming options: 2x2 on a phone,
+                one row on desktop. At ~78px each the sample suffix and its
+                cadence label were unreadable. */}
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               <button
                 type="button"
                 onClick={() => setFormData({
@@ -1152,7 +1178,7 @@ export function AddRuleModal({ workflowId, workflowName, workflowStages, cadence
                 <span>Available dynamic codes</span>
               </summary>
               <div className="mt-2 ml-4 text-gray-500 dark:text-gray-400">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                <div className="grid grid-cols-1 gap-y-0.5 sm:grid-cols-2 sm:gap-x-4">
                   <span><code className="bg-gray-100 px-1 py-0.5 rounded text-blue-600 text-[10px] dark:bg-gray-800">{'{QUARTER}'}</code> = Q{getCurrentQuarter()}</span>
                   <span><code className="bg-gray-100 px-1 py-0.5 rounded text-blue-600 text-[10px] dark:bg-gray-800">{'{Q}'}</code> = {getCurrentQuarter()}</span>
                   <span><code className="bg-gray-100 px-1 py-0.5 rounded text-blue-600 text-[10px] dark:bg-gray-800">{'{YEAR}'}</code> = {getCurrentYear()}</span>
