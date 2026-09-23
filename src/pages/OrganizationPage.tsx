@@ -14,6 +14,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useIsMobile } from '../hooks/useMediaQuery'
 import {
   Building2,
   Users,
@@ -25,6 +26,7 @@ import {
   Edit3,
   Trash2,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   Crown,
   Search,
@@ -36,7 +38,6 @@ import {
   Clock,
   FolderOpen,
   Folder,
-  MoreHorizontal,
   GripVertical,
   UserX,
   AlertTriangle,
@@ -88,9 +89,12 @@ import { ROLE_OPTIONS, getFocusOptionsForRole, TEAM_ROLE_OPTIONS, TEAM_FUNCTION_
 import { OrganizationGovernanceHeader } from '../components/organization/OrganizationGovernanceHeader'
 import { HealthPill } from '../components/organization/HealthPill'
 import { OrgChartNodeCard } from '../components/organization/OrgChartNodeCard'
+import { OrgStructureTree } from '../components/organization/OrgStructureTree'
+import { OrgPortfolioList } from '../components/organization/OrgPortfolioList'
 import { resolveOrgPermissions } from '../lib/permissions/orgGovernance'
 import { RiskFlagBadge } from '../components/organization/RiskBadge'
 import { OrgNodeDetailsModal } from '../components/organization/OrgNodeDetailsModal'
+import type { ManageTab } from '../components/organization/OrgNodeDetailsModal'
 import { OrgAuthorityMap } from '../components/organization/OrgAuthorityMap'
 import { buildAuthorityRows, computeAuthoritySummary } from '../lib/authority-map'
 import { AssignPortfolioRolesModal } from '../components/organization/AssignPortfolioRolesModal'
@@ -348,13 +352,31 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
   // Org-scoped localStorage key helper
   const orgKey = (key: string) => currentOrgId ? `${key}:${currentOrgId}` : key
 
+  const isMobile = useIsMobile()
+
+  /*
+    Where Organization opens.
+
+    Precedence is unchanged at the top: an `initialTab` from the route (the
+    `team` tab passes `access`) wins, then an explicit stored choice. Only the
+    final fallback is viewport-aware.
+
+    Desktop still lands on Teams. A phone lands on People, because the Teams
+    default is the org chart — a pan-and-zoom canvas with mouse-only handlers
+    — and People is a search over a list, which is a shape a phone can
+    actually render. Teams stays one tap away; this is about where the app
+    opens, not about what it offers.
+  */
+  const MOBILE_DEFAULT_TAB: TabType = 'people'
+  const tabWasDefaulted = useRef(false)
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     if (initialTab) return initialTab
     const savedTab = localStorage.getItem(currentOrgId ? `organization-active-tab:${currentOrgId}` : 'organization-active-tab')
     if (savedTab && ['teams', 'people', 'portfolios', 'requests', 'access', 'activity', 'settings'].includes(savedTab)) {
       return savedTab as TabType
     }
-    return 'teams'
+    tabWasDefaulted.current = true
+    return isMobile ? MOBILE_DEFAULT_TAB : 'teams'
   })
   const [searchTerm, setSearchTerm] = useState('')
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set())
@@ -383,11 +405,39 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
   const [viewingNodeDetails, setViewingNodeDetails] = useState<OrgChartNode | null>(null)
   const [modalNodeId, setModalNodeId] = useState<string | null>(null)
   const [modalInitialPage, setModalInitialPage] = useState<'profile' | 'manage'>('profile')
+  /*
+    Which manage tab a team opens on, and where Back should say it returns to.
+
+    This is the thin routing layer that makes one destination serve both
+    entries: Structure opens the profile, Coverage opens the same modal on its
+    Coverage tab. No second component, no duplicated team truth.
+  */
+  const [modalManageTab, setModalManageTab] = useState<ManageTab>('details')
+  const [cameFromCoverage, setCameFromCoverage] = useState(false)
+  /** Phone only: the governance status strip above the tree, collapsed by default. */
+  const [governanceStripOpen, setGovernanceStripOpen] = useState(false)
+  /** Phone only: the tree-actions panel (expand / collapse / hide empty). */
+  const [treeOptionsOpen, setTreeOptionsOpen] = useState(false)
+  /** Phone only: which severity's findings the health sheet is listing. */
+  const [riskDrilldown, setRiskDrilldown] = useState<'low' | 'medium' | 'high' | null>(null)
+  /** Phone only: the portfolio whose lifecycle-action sheet is open. */
+  const [portfolioActionTarget, setPortfolioActionTarget] = useState<Portfolio | null>(null)
+  /** Phone only: the assigned member whose action sheet is open. */
+  const [portfolioMemberActionTarget, setPortfolioMemberActionTarget] =
+    useState<{ portfolio: Portfolio; member: PortfolioTeamMember } | null>(null)
   const [viewingTeamCoverage, setViewingTeamCoverage] = useState<{ teamId: string; teamName: string } | null>(null)
   const [deleteNodeConfirm, setDeleteNodeConfirm] = useState<{ isOpen: boolean; node: OrgChartNode | null }>({ isOpen: false, node: null })
 
   // Org chart panning state
   const orgChartContainerRef = useRef<HTMLDivElement>(null)
+  /*
+    The canvas owns horizontal scrolling now; the container outside it still
+    owns vertical. Grab-panning therefore drives two elements — X here, Y on
+    the container — which is the cost of containing the overflow locally, and
+    cheaper than the alternative of letting the chart set the page width.
+  */
+  const orgChartCanvasRef = useRef<HTMLDivElement>(null)
+  const orgTabRailRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
   const [panStart, setPanStart] = useState({ x: 0, y: 0 })
   const [scrollStart, setScrollStart] = useState({ x: 0, y: 0 })
@@ -502,10 +552,55 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
   // (Permissions view state moved into Access Matrix component)
 
-  // Persist active tab to localStorage (org-scoped)
+  /*
+    Persist active tab to localStorage (org-scoped).
+
+    This effect runs on mount, so without a guard the phone's People default
+    would be written as a preference and then apply on desktop too — a
+    presentation choice leaking into stored state. It is suppressed only
+    while the tab still *is* that computed default; the moment the user
+    navigates anywhere, their choice is recorded as before.
+
+    Written as a value comparison rather than a "skip the first run" flag so
+    that StrictMode's double-invoked effects cannot defeat it.
+  */
   useEffect(() => {
+    if (tabWasDefaulted.current && activeTab === (isMobile ? MOBILE_DEFAULT_TAB : 'teams')) return
     localStorage.setItem(orgKey('organization-active-tab'), activeTab)
-  }, [activeTab, currentOrgId])
+  }, [activeTab, currentOrgId, isMobile])
+
+  /*
+    Keep the selected tab visible in the scrolling rail.
+
+    Without this, choosing a tab that is partly off-screen leaves the rail
+    where it was, so the thing you just selected can stay out of sight and
+    the rail looks like it ignored you. `nearest` so an already-visible tab
+    does not move.
+  */
+  /*
+    No outside-tap handler for the tree options.
+
+    It is an inline disclosure now, not a popover: its own button toggles it
+    and choosing an action closes it. A `mousedown` listener would also have
+    been actively wrong here — the panel is a sibling of the button, not a
+    child of it, so every tap inside the panel would have read as "outside"
+    and closed it before the click landed.
+  */
+  useEffect(() => {
+    const rail = orgTabRailRef.current
+    if (!rail) return
+    /*
+      `nearest` with `scroll-px-3`, not `center`.
+
+      Centring looked right in the middle of the rail and wrong at its ends:
+      the first and last tabs cannot centre, so selecting one snapped the
+      rail to a stop that left its neighbour sliced. `nearest` moves the rail
+      only as far as it must, and the scroll padding means "as far as it
+      must" now includes a gutter rather than stopping flush.
+    */
+    const tab = rail.querySelector(`[data-org-tab="${activeTab}"]`)
+    tab?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+  }, [activeTab])
 
   // Persist teams view mode (org-scoped, only for permitted users)
   useEffect(() => {
@@ -905,15 +1000,25 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
   const { data: accessRequests = [] } = useQuery({
     queryKey: ['access-requests', currentOrgId],
     queryFn: async () => {
+      /*
+        The requester is fetched separately, not embedded.
+
+        This used to `select('*, requester:requester_id(id, email,
+        raw_user_meta_data), ...')`. But `requester_id` references
+        **auth.users**, and PostgREST only exposes `public` — so it could not
+        resolve that relationship, the select errored, and this query threw on
+        every run. `accessRequests` was therefore always `[]` and the Requests
+        tab could never show a request, on any screen size. The
+        `raw_user_meta_data` unwrapping below the query was the tell: that
+        column exists only on the auth table.
+
+        `public.users` holds the identity this UI actually renders and is the
+        same table the People tab reads, so the join happens here instead.
+      */
       const { data, error } = await supabase
         .from('access_requests')
         .select(`
           *,
-          requester:requester_id (
-            id,
-            email,
-            raw_user_meta_data
-          ),
           target_team:target_team_id (*),
           target_portfolio:target_portfolio_id (*)
         `)
@@ -921,15 +1026,35 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      return data.map((r: any) => ({
-        ...r,
-        requester: {
-          id: r.requester?.id,
-          email: r.requester?.email,
-          full_name: r.requester?.raw_user_meta_data?.full_name || r.requester?.email?.split('@')[0],
-          avatar_url: r.requester?.raw_user_meta_data?.avatar_url
+
+      const requesterIds = [...new Set((data ?? []).map((r: any) => r.requester_id).filter(Boolean))]
+      const requesterById = new Map<string, any>()
+      if (requesterIds.length > 0) {
+        const { data: requesters, error: requesterError } = await supabase
+          .from('users')
+          .select('id, email, full_name, first_name, last_name')
+          .in('id', requesterIds)
+        if (requesterError) throw requesterError
+        // The generated row type resolves to `never` here, as it does at most
+        // supabase call sites in this file; annotate rather than add to that.
+        for (const u of (requesters ?? []) as any[]) requesterById.set(u.id, u)
+      }
+
+      return (data ?? []).map((r: any) => {
+        const u = requesterById.get(r.requester_id)
+        const composed = [u?.first_name, u?.last_name].filter(Boolean).join(' ')
+        return {
+          ...r,
+          requester: {
+            id: r.requester_id,
+            email: u?.email,
+            // Same fallback ladder the old code intended: a real name, else
+            // the local part of the address, else nothing to show.
+            full_name: u?.full_name || composed || u?.email?.split('@')[0],
+            avatar_url: undefined,
+          },
         }
-      })) as AccessRequest[]
+      }) as AccessRequest[]
     },
     enabled: isOrgAdmin
   })
@@ -2894,7 +3019,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
     setIsPanning(true)
     setPanStart({ x: e.clientX, y: e.clientY })
-    setScrollStart({ x: container.scrollLeft, y: container.scrollTop })
+    setScrollStart({
+      x: orgChartCanvasRef.current?.scrollLeft ?? 0,
+      y: container.scrollTop,
+    })
     e.preventDefault()
   }
 
@@ -2906,7 +3034,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
     const deltaX = e.clientX - panStart.x
     const deltaY = e.clientY - panStart.y
 
-    container.scrollLeft = scrollStart.x - deltaX
+    // X on the canvas, Y on the container — see `orgChartCanvasRef`.
+    if (orgChartCanvasRef.current) {
+      orgChartCanvasRef.current.scrollLeft = scrollStart.x - deltaX
+    }
     container.scrollTop = scrollStart.y - deltaY
   }
 
@@ -3007,22 +3138,26 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       )}
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-4 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center">
-              <Building2 className="w-6 h-6 text-indigo-600" />
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2 sm:space-x-4">
+            <div className="w-9 h-9 sm:w-12 sm:h-12 shrink-0 rounded-xl bg-indigo-100 flex items-center justify-center">
+              <Building2 className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600" />
             </div>
-            <div className="flex items-center space-x-3">
-              <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+            <div className="flex min-w-0 items-center gap-2 sm:space-x-3">
+              <h1 className="truncate text-base sm:text-xl font-semibold text-gray-900 dark:text-white">
                 {organization?.name || 'Organization'}
               </h1>
-              <OrgBadge />
+              {/* OrgBadge prints the organisation's name, which is the text
+                  immediately to its left. One of them is enough on a phone;
+                  desktop keeps both, where the badge also signals that more
+                  than one org exists. */}
+              <span className="hidden sm:contents"><OrgBadge /></span>
               {/* Admin Badge */}
-              <div className="relative" ref={adminBadgeRef}>
+              <div className="relative shrink-0" ref={adminBadgeRef}>
                 <button
                   onClick={() => isAdminBadgeReady && setShowAdminBadgeDropdown(!showAdminBadgeDropdown)}
                   disabled={!isAdminBadgeReady}
-                  className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                  className={`no-touch-target tap-pad inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
                     !isAdminBadgeReady
                       ? 'blur-sm opacity-50 bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                       : isOrgAdmin || isCoverageAdmin
@@ -3046,7 +3181,21 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
                 {/* Dropdown */}
                 {showAdminBadgeDropdown && (
-                  <div className="absolute left-0 top-full mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-white rounded-lg shadow-lg border border-gray-200 z-50 dark:border-gray-700 dark:bg-gray-800">
+                  /*
+                    `max-w` alone did not contain this. The popover is
+                    `left-0` against the badge, which sits partway across the
+                    header row, so clamping its *width* still let it start at
+                    the badge and run off the right edge — the permission
+                    descriptions were the part that fell off.
+
+                    On a phone it is pinned to the viewport gutters instead,
+                    which is the only anchor that cannot overhang. The top
+                    offset clears the app header plus this page's own header
+                    row; it is a measured constant rather than a derived one,
+                    which is the one thing here worth revisiting if that
+                    header ever changes height.
+                  */
+                  <div className="absolute left-0 top-full mt-2 w-80 max-w-[calc(100vw-1.5rem)] max-sm:fixed max-sm:inset-x-3 max-sm:top-[7.5rem] max-sm:mt-0 max-sm:w-auto max-sm:max-w-none bg-white rounded-lg shadow-lg border border-gray-200 z-50 dark:border-gray-700 dark:bg-gray-800">
                     <div className="p-3 border-b border-gray-100 dark:border-gray-800">
                       <h3 className="text-sm font-medium text-gray-900 dark:text-white">Your Permissions</h3>
                     </div>
@@ -3178,14 +3327,35 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 px-3 sm:px-6 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
-        <div className="flex space-x-1">
+      {/* Tabs.
+
+          Seven of these at `px-4 py-3` is roughly 700px on one line, and the
+          row had no scroller — so on a phone the labels ran into each other
+          and Settings, Activity and Governance were simply not there. It is a
+          scrolling rail now: nothing shrinks, nothing overlaps, and the
+          active tab is scrolled into view when it changes so selecting one
+          off-screen does not leave the rail looking unmoved. */}
+      {/* The rail bleeds to the screen edges and carries its own inset, so the
+          first and last tabs are never flush against the viewport. */}
+      <div className="bg-white border-b border-gray-200 px-0 sm:px-6 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
+        {/* The rail fades at both edges.
+
+            A scrolling rail always has a partly-visible tab at one end; the
+            question is whether that reads as "there is more" or as broken
+            text. `scroll-px-3` makes `scrollIntoView` stop with a gutter
+            rather than flush, and the mask fades the overflow out instead of
+            slicing it mid-letter. Desktop has no scroller, so no mask. */}
+        <div
+          ref={orgTabRailRef}
+          data-slot="org-tab-rail"
+          className="flex space-x-1 overflow-x-auto no-scrollbar px-3 scroll-px-3 [mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)] sm:px-0 sm:overflow-x-visible sm:[mask-image:none]"
+        >
           {visibleTabs.map(tab => (
             <button
               key={tab.id}
+              data-org-tab={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center space-x-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`flex shrink-0 items-center space-x-2 whitespace-nowrap px-3 sm:px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.id
                   ? 'border-indigo-600 text-indigo-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
@@ -3267,19 +3437,41 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       {/* Content */}
       <div
         ref={activeTab === 'teams' ? orgChartContainerRef : undefined}
-        className={`flex-1 overflow-auto ${activeTab === 'teams' ? 'p-0 bg-white scrollbar-hide select-none dark:bg-gray-800' : 'p-6'}`}
-        style={activeTab === 'teams' && teamsViewMode === 'structure' ? { cursor: isPanning ? 'grabbing' : 'grab' } : undefined}
-        onMouseDown={activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanStart : undefined}
-        onMouseMove={activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanMove : undefined}
-        onMouseUp={activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanEnd : undefined}
-        onMouseLeave={activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanEnd : undefined}
+        /* Grab-pan belongs to the canvas, so it is desktop-only now: on a
+           phone there is a tree here, and a grab cursor plus `select-none`
+           over a list only takes away text selection and gives nothing. */
+        className={`flex-1 overflow-auto ${activeTab === 'teams' ? `p-0 bg-white dark:bg-gray-800 ${isMobile ? '' : 'scrollbar-hide select-none'}` : 'p-6'}`}
+        style={!isMobile && activeTab === 'teams' && teamsViewMode === 'structure' ? { cursor: isPanning ? 'grabbing' : 'grab' } : undefined}
+        onMouseDown={!isMobile && activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanStart : undefined}
+        onMouseMove={!isMobile && activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanMove : undefined}
+        onMouseUp={!isMobile && activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanEnd : undefined}
+        onMouseLeave={!isMobile && activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanEnd : undefined}
       >
-        <div className={activeTab === 'people' ? '' : activeTab === 'teams' && teamsViewMode === 'structure' ? 'min-w-max p-6' : activeTab === 'teams' ? 'p-6' : activeTab === 'portfolios' ? 'max-w-7xl mx-auto' : 'max-w-5xl mx-auto'}>
+        {/*
+          `min-w-max` used to be here, for the structure view.
+
+          It forced this wrapper — which holds the whole Teams tab, the
+          Structure/Coverage switcher included — to max-content width. The
+          chart was not what set that width; the filter toolbar below is, at
+          roughly 700px unwrapped. So the page dragged sideways and the
+          control you would use to leave the chart travelled with it. The
+          escape was inside the thing being escaped.
+
+          The chart now carries its own scroller (see below), so this wrapper
+          stays at the width of the screen and everything outside the canvas
+          is reachable where it was drawn.
+        */}
+        <div className={activeTab === 'people' ? '' : activeTab === 'teams' ? 'p-3 sm:p-6' : activeTab === 'portfolios' ? 'max-w-7xl mx-auto' : 'max-w-5xl mx-auto'}>
           {/* Teams Tab - Interactive Org Chart */}
           {activeTab === 'teams' && (
             <div>
-              {/* ── View Switcher Toolbar + Org Summary ── */}
-              <div className="flex items-center justify-between mb-5" data-no-pan>
+              {/* ── View Switcher Toolbar + Org Summary ──
+
+                  Now outside any horizontally scrolling region, so Coverage
+                  is reachable from Structure no matter how far the canvas has
+                  been panned. This is the control that makes Structure safe
+                  to enter on a phone. */}
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-5" data-no-pan>
                 {/* View switcher */}
                 <div className="inline-flex items-center bg-gray-100 rounded p-0.5 dark:bg-gray-800">
                   {([
@@ -3300,10 +3492,13 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                     </button>
                   ))}
                 </div>
+                {/* Governance is navigation to a different Organization tab,
+                    not a third view of what is on screen. Quieter on a phone
+                    so it stops reading as a peer of Structure / Coverage. */}
                 {orgPerms.canViewAccessSection && (
                   <button
                     onClick={() => { setActiveTab('access'); setAccessSubTab('manage') }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded transition-colors border border-indigo-200"
+                    className="no-touch-target tap-pad inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1 py-1.5 text-xs font-medium text-indigo-600 transition-colors hover:text-indigo-700 sm:border sm:border-indigo-200 sm:px-3 sm:hover:bg-indigo-50"
                   >
                     <Shield className="w-3.5 h-3.5" />
                     Governance
@@ -3313,8 +3508,37 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
               {/* (Permissions redirect notice removed — merged into Access tab) */}
 
-              {/* Governance Header — only for admin/ops/compliance */}
-              {orgPerms.canViewGovernance && (
+              {/* Governance Header — only for admin/ops/compliance.
+
+                  Phone: one labelled line that opens a sheet.
+
+                  The disclosure this replaces had three problems, all of them
+                  real. "78%" alone does not say what is 78% — a health score
+                  needs its noun. Expanding repeated the same figure, because
+                  the strip inside prints it too. And the counts were a
+                  horizontally scrolling line, so "17 nodes · 4 teams · …" ran
+                  off the right with no sign it continued. A sheet has room to
+                  say all of it in one readable block. */}
+              {orgPerms.canViewGovernance && isMobile && (
+                <button
+                  type="button"
+                  onClick={() => setGovernanceStripOpen(true)}
+                  className="mt-2 flex w-full items-center gap-2 rounded-md border border-gray-200 px-2.5 py-2 text-left dark:border-gray-700"
+                >
+                  <Shield className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                  <span className="flex-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                    Org health
+                  </span>
+                  {riskCounts.total > 0 && (
+                    <span className="text-[11px] tabular-nums text-amber-600">
+                      {riskCounts.total} {riskCounts.total === 1 ? 'risk' : 'risks'}
+                    </span>
+                  )}
+                  <HealthPill score={orgGraph.overallHealth} size="sm" />
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-300" />
+                </button>
+              )}
+              {orgPerms.canViewGovernance && !isMobile && (
                 <OrganizationGovernanceHeader
                   orgGraph={orgGraph}
                   riskCounts={riskCounts}
@@ -3331,17 +3555,22 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
               {/* ── Structure View (Org Chart) ── */}
               {teamsViewMode === 'structure' && (
               <div>
-              {/* Search + Filters + Controls bar */}
-              <div className="flex items-center gap-3 mb-4" data-no-pan>
+              {/* Search + Filters + Controls bar.
+
+                  This row is what forced the page to max-content width: a
+                  fixed `w-48` search plus five chips plus three controls, all
+                  on one unwrapping line, is around 700px. It wraps now, and
+                  the search takes the row it is on rather than a fixed 192px. */}
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 sm:mb-4" data-no-pan>
                 {/* Search */}
-                <div className="relative">
+                <div className="relative w-full sm:w-auto">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                   <input
                     type="text"
                     placeholder="Search nodes..."
                     value={orgChartSearch}
                     onChange={(e) => setOrgChartSearch(e.target.value)}
-                    className="w-48 pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:border-gray-700 dark:bg-gray-800"
+                    className="w-full sm:w-48 pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:border-gray-700 dark:bg-gray-800"
                   />
                   {orgChartSearch && (
                     <button
@@ -3353,8 +3582,9 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   )}
                 </div>
 
-                {/* Type filter chips */}
-                <div className="flex items-center gap-1">
+                {/* Type filter chips — a swipeable rail on a phone, where
+                    five chips do not fit a row alongside anything else. */}
+                <div className="flex items-center gap-1 -mx-3 px-3 overflow-x-auto no-scrollbar sm:mx-0 sm:px-0 sm:overflow-visible">
                   {([
                     { type: 'all' as const, label: 'All' },
                     { type: 'division' as const, label: 'Divisions' },
@@ -3365,7 +3595,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                     <button
                       key={chip.type}
                       onClick={() => setOrgChartTypeFilter(chip.type)}
-                      className={`px-2 py-0.5 text-[11px] rounded transition-colors ${
+                      className={`no-touch-target tap-pad shrink-0 whitespace-nowrap px-2 py-0.5 text-[11px] rounded transition-colors ${
                         orgChartTypeFilter === chip.type
                           ? 'bg-indigo-50 text-indigo-700 font-medium border border-indigo-200'
                           : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
@@ -3376,38 +3606,97 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   ))}
                 </div>
 
-                <div className="flex-1" />
+                <div className="hidden sm:block flex-1" />
 
-                {/* Collapse / Expand all */}
-                <div className="flex items-center gap-1">
+                {/* Tree options.
+
+                    These were three loose controls under the filter chips:
+                    two icon-only buttons whose meaning lived in a `title`
+                    attribute a phone never shows, and a toggle whose label
+                    flipped between "Hide empty" and "Show empty" so it read
+                    as an action rather than a state. Named, grouped, and out
+                    of the way on a phone; unchanged on desktop. */}
+                <div className="sm:contents">
                   <button
-                    onClick={collapseAll}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
-                    title="Collapse all"
+                    type="button"
+                    onClick={() => setTreeOptionsOpen(v => !v)}
+                    aria-expanded={treeOptionsOpen}
+                    className="no-touch-target tap-pad sm:hidden inline-flex items-center gap-1 whitespace-nowrap rounded px-2 py-1 text-[11px] font-medium text-gray-500 dark:text-gray-400"
                   >
-                    <Minimize2 className="w-3.5 h-3.5" />
+                    Tree options
+                    <ChevronDown className={`h-3 w-3 transition-transform ${treeOptionsOpen ? 'rotate-180' : ''}`} />
                   </button>
+
+                  {/* Desktop keeps the original three controls inline. */}
+                  <div className="hidden sm:flex items-center gap-1">
+                    <button
+                      onClick={collapseAll}
+                      className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
+                      title="Collapse all"
+                    >
+                      <Minimize2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={expandAll}
+                      className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
+                      title="Expand all"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                   <button
-                    onClick={expandAll}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
-                    title="Expand all"
+                    onClick={() => setShowEmptyBranches(prev => !prev)}
+                    className={`hidden sm:inline-block whitespace-nowrap px-2 py-0.5 text-[11px] rounded border transition-colors ${
+                      showEmptyBranches
+                        ? 'bg-gray-100 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800'
+                        : 'text-gray-400 border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'
+                    }`}
+                    title={showEmptyBranches ? 'Showing empty branches' : 'Empty branches hidden'}
                   >
-                    <Maximize2 className="w-3.5 h-3.5" />
+                    {showEmptyBranches ? 'Hide empty' : 'Show empty'}
                   </button>
                 </div>
 
-                {/* Show empty branches toggle */}
-                <button
-                  onClick={() => setShowEmptyBranches(prev => !prev)}
-                  className={`px-2 py-0.5 text-[11px] rounded border transition-colors ${
-                    showEmptyBranches
-                      ? 'bg-gray-100 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800'
-                      : 'text-gray-400 border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'
-                  }`}
-                  title={showEmptyBranches ? 'Showing empty branches' : 'Empty branches hidden'}
-                >
-                  {showEmptyBranches ? 'Hide empty' : 'Show empty'}
-                </button>
+                {/* Tree options panel.
+
+                    Inline and full width rather than a popover. As a dropdown
+                    it was `right-0` on a narrow button inside a wrapping
+                    toolbar, so the 208px menu extended from wherever that
+                    button happened to land — off the edge whenever it landed
+                    near one. A panel that spans the row has no anchor to get
+                    wrong, and there is nothing here a popover was buying. */}
+                {treeOptionsOpen && (
+                  <div
+                    data-slot="tree-options-panel"
+                    className="w-full basis-full rounded-lg border border-gray-200 bg-white py-1 sm:hidden dark:border-gray-700 dark:bg-gray-800"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => { expandAll(); setTreeOptionsOpen(false) }}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-700 active:bg-gray-50 dark:text-gray-300 dark:active:bg-gray-700"
+                    >
+                      <Maximize2 className="h-4 w-4 text-gray-400" />
+                      Expand all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { collapseAll(); setTreeOptionsOpen(false) }}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-700 active:bg-gray-50 dark:text-gray-300 dark:active:bg-gray-700"
+                    >
+                      <Minimize2 className="h-4 w-4 text-gray-400" />
+                      Collapse all
+                    </button>
+                    <label className="flex w-full items-center gap-2 border-t border-gray-100 px-3 py-2.5 text-sm text-gray-700 dark:border-gray-800 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={!showEmptyBranches}
+                        onChange={() => setShowEmptyBranches(prev => !prev)}
+                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600"
+                      />
+                      Hide empty branches
+                    </label>
+                  </div>
+                )}
 
                 {/* Search result count */}
                 {orgChartSearch && (
@@ -3475,6 +3764,71 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                 </div>
               )}
 
+              {/* ── The canvas, and only the canvas, scrolls sideways ──
+
+                  `min-w-max` lives on the inner element so the chart can be
+                  as wide as it needs to be, while this box stays the width of
+                  the screen. Native `overflow-x-auto` is what pans it on a
+                  phone — a touch drag scrolls this element directly, so no
+                  touch handlers were needed; the existing mouse handlers on
+                  the outer container still drive the desktop grab-pan.
+
+                  `.mobile-scroll-x` adds the momentum and overscroll
+                  containment the rest of the app uses for this; the visible
+                  scrollbar is the only thing telling a phone user there is
+                  more chart to the right. */}
+              {/* The phone renders the hierarchy as a tree instead of the
+                  canvas — same `displayTree`, same `collapsedNodes`, same
+                  search matches, same filters. A pan-and-zoom diagram whose
+                  width is set by its widest generation is a surface you
+                  navigate before you can read it; a tree is a column, which
+                  is what a phone already scrolls. Desktop is unchanged. */}
+              {isMobile ? (
+                <OrgStructureTree
+                  tree={displayTree}
+                  collapsedNodes={collapsedNodes}
+                  onToggleCollapsed={toggleNodeCollapsed}
+                  onOpenNode={(n) => {
+                    /*
+                      A team tap lands on the team page, not on a profile you
+                      then have to press Manage inside. The profile view is a
+                      read-only summary of a thing whose real content — its
+                      members, its coverage, its settings — is one layer
+                      further in; on a phone that layer was pure toll.
+
+                      Only for teams. A division, department or portfolio node
+                      keeps the profile, where the summary IS the useful view
+                      and the manage page is mostly empty.
+                    */
+                    const isTeam = n.node_type === 'team'
+                    setCameFromCoverage(false)
+                    setModalInitialPage(isTeam ? 'manage' : 'profile')
+                    setModalManageTab('details')
+                    setModalNodeId(n.id)
+                  }}
+                  searchMatchIds={searchMatchIds}
+                  /*
+                    The same precedence the canvas uses for its highlight set
+                    — search, then type, then risk — handed to the tree to
+                    prune by. Without this the type chips and the risk filter
+                    computed their node sets and nothing consumed them, so
+                    tapping "Divisions" changed precisely nothing.
+                  */
+                  filterIds={
+                    searchMatchIds.size > 0 ? searchMatchIds
+                    : typeFilterIds.size > 0 ? typeFilterIds
+                    : riskFilterIds.size > 0 ? riskFilterIds
+                    : undefined
+                  }
+                  getMemberCount={(id) => getNodeMembers(id).length}
+                />
+              ) : (
+              <div
+                ref={orgChartCanvasRef}
+                data-slot="org-chart-canvas"
+                className="mobile-scroll-x show-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0"
+              >
+                <div className="min-w-max">
               {/* Org Chart Header - Organization Root Node (hidden when focused on subtree) */}
               {!focusedNodeId && (
               <div className="flex flex-col items-center">
@@ -3578,7 +3932,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                           <OrgChartNodeCard
                             node={node}
                             isOrgAdmin={isOrgAdmin}
-                            onEdit={(n) => { setModalInitialPage('manage'); setModalNodeId(n.id) }}
+                            onEdit={(n) => { setCameFromCoverage(false); setModalInitialPage('manage'); setModalManageTab('details'); setModalNodeId(n.id) }}
                             onAddChild={(parentId) => {
                               setAddNodeParentId(parentId)
                               setShowAddNodeModal(true)
@@ -3641,7 +3995,15 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                               setInsertBetweenChildIds(childIds)
                               setShowAddNodeModal(true)
                             }}
-                            onViewDetails={(n) => { setModalInitialPage('profile'); setModalNodeId(n.id) }}
+                            onViewDetails={(n) => {
+                              // Reset the entry flag here too: it decides what
+                              // Back says, and a stale one would point at the
+                              // wrong parent.
+                              setCameFromCoverage(false)
+                              setModalInitialPage('profile')
+                              setModalManageTab('details')
+                              setModalNodeId(n.id)
+                            }}
                             getCoverageStats={(teamId) => coverageStatsByTeam[teamId]}
                             onViewTeamCoverage={(teamId, teamName) => setViewingTeamCoverage({ teamId, teamName })}
                             parentId={null}
@@ -3686,6 +4048,9 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   </div>
                 </div>
               )}
+                </div>
+              </div>
+              )}
             </div>
               )}
 
@@ -3694,16 +4059,69 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
               {/* ── Coverage View ── */}
               {teamsViewMode === 'coverage' && (
                 <div className="max-w-5xl mx-auto" data-no-pan>
-                  <Card className="p-5">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-9 h-9 rounded-md bg-emerald-50 border border-emerald-200 flex items-center justify-center">
+                  <Card className="p-3 sm:p-5 max-sm:shadow-none">
+                    <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+                      <div className="hidden sm:flex w-9 h-9 rounded-md bg-emerald-50 border border-emerald-200 items-center justify-center">
                         <Eye className="w-4 h-4 text-emerald-600" />
                       </div>
                       <div>
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Coverage Overview</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Asset coverage by team and portfolio</p>
+                        <p className="hidden sm:block text-xs text-gray-500 dark:text-gray-400">Asset coverage by team and portfolio</p>
                       </div>
                     </div>
+
+                    {/* A list on a phone, the table on desktop.
+
+                        Four numeric columns beside a wrapping team name is
+                        table grammar: the name — the thing you are choosing
+                        between — got the least room, and nothing about a row
+                        said it was tappable. Same rows, same counts, same
+                        destination; the name leads and the counts become the
+                        line under it. */}
+                    {isMobile ? (
+                      <div data-slot="coverage-team-list" className="divide-y divide-gray-100 border-y border-gray-100 dark:divide-gray-800 dark:border-gray-800">
+                        {Array.from(orgGraph.nodes.values())
+                          .filter(n => n.nodeType === 'team')
+                          .map(teamNode => {
+                            const stats = coverageStatsByTeam[teamNode.id]
+                            const portfolios = getPortfolioIdsForTeam(teamNode.id).length
+                            return (
+                              <button
+                                key={teamNode.id}
+                                type="button"
+                                data-slot="coverage-team-row"
+                                onClick={() => {
+                                  setCameFromCoverage(true)
+                                  setModalInitialPage('manage')
+                                  setModalManageTab('coverage')
+                                  setModalNodeId(teamNode.id)
+                                }}
+                                className="flex w-full min-h-[44px] items-center gap-2 py-2.5 text-left active:bg-gray-50 dark:active:bg-gray-900"
+                              >
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                  style={{ backgroundColor: teamNode.color }}
+                                />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-medium text-gray-900 dark:text-white">
+                                    {teamNode.name}
+                                    {teamNode.isNonInvestment && (
+                                      <span className="ml-1.5 text-[10px] text-gray-400">Non-Inv</span>
+                                    )}
+                                  </span>
+                                  <span className="block truncate text-[11px] text-gray-400">
+                                    {teamNode.totalMemberCount || 0} {teamNode.totalMemberCount === 1 ? 'member' : 'members'}
+                                    {' · '}
+                                    {portfolios || '—'} {portfolios === 1 ? 'portfolio' : 'portfolios'}
+                                    {stats?.assetCount ? ` · ${stats.assetCount} assets` : ''}
+                                  </span>
+                                </span>
+                                <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+                              </button>
+                            )
+                          })}
+                      </div>
+                    ) : (
                     <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
                       {/* The phone shell clips horizontal overflow, so a table this wide is unreachable without its own scroller. `sm:min-w-0` returns it to the container from 640px up, leaving desktop unchanged. */}
                       <div className="mobile-scroll-x show-scrollbar">
@@ -3727,7 +4145,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                               <tr
                                 key={teamNode.id}
                                 className="hover:bg-gray-50/50 cursor-pointer"
-                                onClick={() => { setModalInitialPage('profile'); setModalNodeId(teamNode.id) }}
+                                onClick={() => { setCameFromCoverage(true); setModalInitialPage('profile'); setModalManageTab('details'); setModalNodeId(teamNode.id) }}
                                 title="Click to view team details"
                               >
                                 <td className="px-4 py-2.5">
@@ -3738,7 +4156,33 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                                     />
                                     <div>
                                       <button
-                                        onClick={() => {
+                                        data-slot="coverage-team-name"
+                                        onClick={(e) => {
+                                          /*
+                                            The row this sits in opens node
+                                            detail. Without this, one tap ran
+                                            both handlers: coverage detail
+                                            opened on top, node detail opened
+                                            underneath, and closing the first
+                                            revealed the second. Two live
+                                            detail states from a single tap.
+                                          */
+                                          e.stopPropagation()
+                                          /*
+                                            One destination on a phone: the
+                                            same node modal the tree opens,
+                                            with its Coverage tab active,
+                                            rather than a parallel panel that
+                                            shows the same team's coverage.
+                                            Desktop keeps TeamCoveragePanel.
+                                          */
+                                          if (isMobile) {
+                                            setCameFromCoverage(true)
+                                            setModalInitialPage('manage')
+                                            setModalManageTab('coverage')
+                                            setModalNodeId(teamNode.id)
+                                            return
+                                          }
                                           setViewingTeamCoverage({ teamId: teamNode.id, teamName: teamNode.name })
                                         }}
                                         className="text-sm font-medium text-gray-900 hover:text-indigo-600 hover:underline dark:text-white"
@@ -3814,6 +4258,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                       </table>
                       </div>
                     </div>
+                    )}
                   </Card>
                 </div>
               )}
@@ -3884,11 +4329,30 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
               )}
 
               {filteredPortfolios.length === 0 ? (
-                <div className="text-center py-12">
-                  <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No portfolios found</h3>
+                <div className="text-center py-8 sm:py-12">
+                  <Briefcase className="w-10 h-10 sm:w-12 sm:h-12 text-gray-300 mx-auto mb-3 sm:mb-4" />
+                  <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-1 sm:mb-2 dark:text-white">No portfolios found</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">No portfolios match your search</p>
                 </div>
+              ) : isMobile ? (
+                /* A list on a phone, cards on desktop. One card filled the
+                   viewport at 390px, so comparing two portfolios meant
+                   scrolling past a description and a roster to reach the next
+                   name — and comparing is what this screen is for. */
+                <OrgPortfolioList
+                  portfolios={filteredPortfolios}
+                  getMembers={getPortfolioTeamMembers}
+                  getTeamName={(teamId) => teams.find(t => t.id === teamId)?.name ?? null}
+                  getMemberDisplayName={getTeamMemberDisplayName}
+                  isOrgAdmin={isOrgAdmin}
+                  onAddMember={(p) => {
+                    setSelectedPortfolioForTeam(p)
+                    setEditingPortfolioTeamMember(null)
+                    setShowAddPortfolioTeamMemberModal(true)
+                  }}
+                  onMemberActions={(p, m) => setPortfolioMemberActionTarget({ portfolio: p, member: m })}
+                  onPortfolioActions={setPortfolioActionTarget}
+                />
               ) : (
                 filteredPortfolios.map(portfolio => {
                   const teamMembers = getPortfolioTeamMembers(portfolio.id)
@@ -3918,20 +4382,21 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                             }
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <h3 className={`font-medium ${isInactive ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>{portfolio.name}</h3>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <h3 className={`min-w-0 break-words font-medium ${isInactive ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>{portfolio.name}</h3>
                                 {isDiscarded && (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 rounded">
+                                  <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 rounded">
                                     Discarded
                                   </span>
                                 )}
                                 {isArchived && (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
+                                  <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
                                     Archived
                                   </span>
                                 )}
                               </div>
+
                               <div className="flex items-center gap-1">
                                 {/* Add Member — blocked for non-active portfolios */}
                                 {isOrgAdmin && !isInactive && (
@@ -4036,6 +4501,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                                                 }}
                                                 className="p-0.5 hover:bg-gray-200 rounded"
                                                 title="Edit"
+                                                aria-label={`Edit ${getTeamMemberDisplayName(m)}`}
                                               >
                                                 <Edit3 className="w-3 h-3 text-gray-500 dark:text-gray-400" />
                                               </button>
@@ -4043,6 +4509,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                                                 onClick={() => setDeletePortfolioTeamConfirm({ isOpen: true, member: m })}
                                                 className="p-0.5 hover:bg-red-100 rounded"
                                                 title="Remove"
+                                                aria-label={`Remove ${getTeamMemberDisplayName(m)}`}
                                               >
                                                 <X className="w-3 h-3 text-red-500" />
                                               </button>
@@ -4059,6 +4526,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                             {teamMembers.length === 0 && (
                               <p className="mt-2 text-xs text-gray-400 italic">No team members assigned</p>
                             )}
+
                           </div>
                         </div>
                       </div>
@@ -4079,7 +4547,11 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Governance</h2>
-                  <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Manage roles, access scope, and governance risk</p>
+                  {/* The explanatory line is orientation for a first visit and
+                      pure vertical cost on every later one. A phone pays that
+                      cost before it can show a single person, so it keeps the
+                      title and the switch and drops the sentence. */}
+                  <p className="hidden text-xs text-gray-500 mt-0.5 sm:block dark:text-gray-400">Manage roles, access scope, and governance risk</p>
                 </div>
                 <div className="inline-flex items-center bg-gray-100 rounded p-0.5 dark:bg-gray-800">
                   {([
@@ -4120,6 +4592,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   } : undefined}
                   isMutating={toggleOrgAdminMutation.isPending || toggleGlobalCoverageAdminMutation.isPending || toggleNodeMemberCoverageAdminMutation.isPending}
                   onOpenNodeModal={(nodeId) => {
+                    setCameFromCoverage(false)
+                    setModalManageTab('details')
                     setModalInitialPage('profile')
                     setModalNodeId(nodeId)
                   }}
@@ -4805,6 +5279,246 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         </div>
       </div>
 
+      {/* Assigned-member action sheet (phone). Both actions the desktop chip
+          reveals on hover, named, each routing to the flow it already used. */}
+      {portfolioMemberActionTarget && isMobile && (() => {
+        const { portfolio: p, member: m } = portfolioMemberActionTarget
+        const close = () => setPortfolioMemberActionTarget(null)
+        return (
+          <div className="fixed inset-0 z-[70] flex items-end" role="dialog" aria-modal="true" aria-label="Member actions">
+            <div className="absolute inset-0 bg-black/40" onClick={close} />
+            <div className="relative w-full rounded-t-xl bg-white pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] shadow-2xl dark:bg-gray-800">
+              <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-800">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-gray-900 dark:text-white">
+                    {getTeamMemberDisplayName(m)}
+                  </span>
+                  <span className="block truncate text-[11px] text-gray-400">
+                    {m.role}{m.focus ? ` · ${m.focus}` : ''}
+                  </span>
+                </span>
+                <button type="button" onClick={close} aria-label="Close" className="no-touch-target tap-pad rounded p-1 text-gray-400">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="py-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    close()
+                    setSelectedPortfolioForTeam(p)
+                    setEditingPortfolioTeamMember(m)
+                    setShowAddPortfolioTeamMemberModal(true)
+                  }}
+                  className="flex w-full min-h-[48px] items-center gap-2.5 px-4 text-left text-sm text-gray-700 active:bg-gray-50 dark:text-gray-200 dark:active:bg-gray-700"
+                >
+                  <Edit3 className="h-4 w-4 shrink-0 text-gray-400" />
+                  Edit role &amp; focus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { close(); setDeletePortfolioTeamConfirm({ isOpen: true, member: m }) }}
+                  className="flex w-full min-h-[48px] items-center gap-2.5 px-4 text-left text-sm text-red-600 active:bg-red-50"
+                >
+                  <X className="h-4 w-4 shrink-0" />
+                  Remove from portfolio
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Portfolio lifecycle sheet (phone).
+
+          The same actions the desktop card's icon buttons carry, named
+          rather than left to a `title` a phone never shows, and each still
+          routing to its existing confirmation. Discard keeps its destructive
+          styling here, where it is read rather than brushed. */}
+      {portfolioActionTarget && isMobile && (() => {
+        const p = portfolioActionTarget
+        const s = p.status || (p.archived_at ? 'archived' : 'active')
+        const close = () => setPortfolioActionTarget(null)
+        return (
+          <div className="fixed inset-0 z-[70] flex items-end" role="dialog" aria-modal="true" aria-label="Portfolio actions">
+            <div className="absolute inset-0 bg-black/40" onClick={close} />
+            <div className="relative w-full rounded-t-xl bg-white pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] shadow-2xl dark:bg-gray-800">
+              <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-800">
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900 dark:text-white">{p.name}</span>
+                <button type="button" onClick={close} aria-label="Close" className="no-touch-target tap-pad rounded p-1 text-gray-400">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="py-1">
+                {s === 'discarded' ? (
+                  <button
+                    type="button"
+                    onClick={() => { close(); restorePortfolioMutation.mutate(p.id) }}
+                    className="flex w-full min-h-[48px] items-center gap-2.5 px-4 text-left text-sm text-emerald-700 active:bg-emerald-50"
+                  >
+                    <RotateCcw className="h-4 w-4 shrink-0" />
+                    Restore portfolio
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { close(); setPortfolioArchiveConfirm({ isOpen: true, portfolio: p, action: s === 'archived' ? 'unarchive' : 'archive' }) }}
+                      className="flex w-full min-h-[48px] items-center gap-2.5 px-4 text-left text-sm text-gray-700 active:bg-gray-50 dark:text-gray-200 dark:active:bg-gray-700"
+                    >
+                      {s === 'archived'
+                        ? <><ArchiveRestore className="h-4 w-4 shrink-0 text-gray-400" />Unarchive portfolio</>
+                        : <><Archive className="h-4 w-4 shrink-0 text-gray-400" />Archive portfolio</>}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { close(); setPortfolioDiscardTarget({ id: p.id, name: p.name }) }}
+                      className="flex w-full min-h-[48px] items-center gap-2.5 px-4 text-left text-sm text-red-600 active:bg-red-50"
+                    >
+                      <Ban className="h-4 w-4 shrink-0" />
+                      Discard portfolio
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Org health sheet (phone).
+
+          Everything the desktop strip carries, laid out so it can be read:
+          the score with its noun, risks as full-width rows that are also the
+          severity filters, and the counts as a two-column grid instead of a
+          line that scrolls off the right. Choosing a risk filter closes the
+          sheet, because the result of that choice is in the tree behind it. */}
+      {governanceStripOpen && isMobile && (
+        <div className="fixed inset-0 z-[70] flex items-end" role="dialog" aria-modal="true" aria-label="Org health">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setGovernanceStripOpen(false)} />
+          <div className="relative max-h-[85dvh] w-full overflow-y-auto rounded-t-xl bg-white pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] shadow-2xl dark:bg-gray-800">
+            <div className="sticky top-0 flex items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-800">
+              {riskDrilldown ? (
+                <button
+                  type="button"
+                  onClick={() => setRiskDrilldown(null)}
+                  className="no-touch-target tap-pad -ml-1 flex items-center gap-1 text-sm font-medium text-gray-600 dark:text-gray-300"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                  <span className="capitalize">{riskDrilldown} risks</span>
+                </button>
+              ) : (
+                <h3 className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">Org health</h3>
+              )}
+              <button
+                type="button"
+                onClick={() => { setRiskDrilldown(null); setGovernanceStripOpen(false) }}
+                aria-label="Close"
+                className="no-touch-target tap-pad ml-auto rounded p-1 text-gray-400"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {riskDrilldown ? (
+              /* What is at risk, and where.
+
+                 One row per finding — the flag's own label plus the node it
+                 belongs to — and tapping it opens that node, which is where
+                 the fix happens. A severity count on its own tells you a
+                 number; this tells you the work. */
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                {Array.from(orgGraph.nodes.values())
+                  .flatMap(n =>
+                    n.riskFlags
+                      .filter(f => f.severity === riskDrilldown)
+                      .map(f => ({ node: n, flag: f })))
+                  .map(({ node, flag }) => (
+                    <button
+                      key={`${node.id}:${flag.type}`}
+                      type="button"
+                      onClick={() => {
+                        setRiskDrilldown(null)
+                        setGovernanceStripOpen(false)
+                        setCameFromCoverage(false)
+                        setModalInitialPage(node.nodeType === 'team' ? 'manage' : 'profile')
+                        setModalManageTab('details')
+                        setModalNodeId(node.id)
+                      }}
+                      className="flex w-full min-h-[44px] items-start gap-2.5 px-4 py-2.5 text-left active:bg-gray-50 dark:active:bg-gray-900"
+                    >
+                      <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${riskDrilldown === 'high' ? 'text-red-500' : riskDrilldown === 'medium' ? 'text-amber-500' : 'text-gray-400'}`} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm text-gray-900 dark:text-white">{flag.label}</span>
+                        <span className="block truncate text-[11px] text-gray-400">{node.name}</span>
+                      </span>
+                      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-gray-300" />
+                    </button>
+                  ))}
+              </div>
+            ) : (
+            <div className="px-4 py-3 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500 dark:text-gray-400">Overall health</span>
+                <HealthPill score={orgGraph.overallHealth} size="lg" showLabel />
+              </div>
+
+              <div>
+                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                  Risk flags
+                </div>
+                <div className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-700">
+                  {(['high', 'medium', 'low'] as const).map(sev => {
+                    const count = riskCounts[sev]
+                    const tone = sev === 'high' ? 'bg-red-500' : sev === 'medium' ? 'bg-amber-500' : 'bg-gray-400'
+                    return (
+                      <button
+                        key={sev}
+                        type="button"
+                        disabled={count === 0}
+                        /* Drills into what is at risk, rather than filtering
+                           the tree behind the sheet. "3 high" is a number you
+                           cannot act on; the finding and the node it belongs
+                           to is the thing you came to fix. */
+                        onClick={() => setRiskDrilldown(sev)}
+                        className={`flex w-full min-h-[44px] items-center gap-2.5 px-3 text-left text-sm disabled:opacity-40 ${count > 0 ? 'active:bg-gray-50 dark:active:bg-gray-900' : ''}`}
+                      >
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${tone}`} />
+                        <span className="flex-1 capitalize text-gray-700 dark:text-gray-300">{sev}</span>
+                        <span className="tabular-nums font-semibold text-gray-900 dark:text-white">{count}</span>
+                        {count > 0 && <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                  Organization
+                </div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                  {([
+                    ['Nodes', orgGraph.totalNodes],
+                    ['Teams', orgGraph.totalTeams],
+                    ['Members', orgGraph.totalMembers],
+                    ['Portfolios', orgGraph.totalPortfolios],
+                    [adminCount === 1 ? 'Admin' : 'Admins', adminCount],
+                    ['Coverage admins', coverageAdminCount],
+                  ] as const).map(([label, value]) => (
+                    <div key={label} className="flex items-baseline justify-between gap-2">
+                      <dt className="min-w-0 truncate text-gray-500 dark:text-gray-400">{label}</dt>
+                      <dd className="tabular-nums font-semibold text-gray-900 dark:text-white">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Edit Team Modal */}
       {editingTeam && (
         <AddTeamModal
@@ -5268,6 +5982,19 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
         return (
           <OrgNodeDetailsModal
+            /*
+              Keyed by the entry intent, not just the node.
+
+              `initialPage` / `initialManageTab` are read in `useState`
+              initialisers, and the modal's own reset effect forces
+              profile/details whenever the node id changes. So opening the
+              same node with a different intent — from Coverage rather than
+              from Structure — would have been silently ignored. Keying on
+              the intent remounts it, which is what makes the prop mean
+              anything. Breadcrumb navigation inside the modal keeps its
+              existing reset behaviour, because the key does not change.
+            */
+            key={`${modalNodeId}:${modalInitialPage}:${modalManageTab}`}
             node={graphNode}
             members={modalMembers}
             breadcrumb={modalBreadcrumb}
@@ -5276,6 +6003,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
             canManageOrgStructure={orgPerms.canManageOrgStructure}
             showGovernanceSignals={orgPerms.canViewGovernance}
             initialPage={modalInitialPage}
+            initialManageTab={modalManageTab}
+            backLabel={isMobile ? (cameFromCoverage ? 'Coverage' : 'Structure') : undefined}
             availableUsers={orgMembers}
             availablePortfolios={portfolios.map(p => ({ id: p.id, portfolio_id: p.portfolio_id, name: p.name }))}
             onSaveNode={(data) => updateNodeMutation.mutate(data)}

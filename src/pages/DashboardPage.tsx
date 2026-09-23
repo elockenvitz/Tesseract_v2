@@ -1531,7 +1531,17 @@ export function DashboardPage() {
       case 'admin-console':
         return <AdminConsolePage />
       case 'user':
-        return activeTab.data ? <UserTab user={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading user...</div>
+        /* A person opens as its own tab, and the tab strip is desktop-only —
+           so on a phone this was a dead end. `handleTabClose` already closes
+           the tab and activates the one before it, which is where the person
+           was opened from, so Back is exactly that. */
+        return activeTab.data ? (
+          <UserTab
+            user={activeTab.data}
+            onNavigate={handleSearchResult}
+            onBack={isMobile ? () => handleTabClose(activeTab.id) : undefined}
+          />
+        ) : <div>Loading user...</div>
       case 'templates':
         return <TemplatesTab />
       case 'workflow':

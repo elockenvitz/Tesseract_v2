@@ -20,6 +20,9 @@ import {
   Pencil,
   X,
 } from 'lucide-react'
+import { FilterSelect } from './FilterSelect'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { GovernanceListRow } from './OrgGovernanceList'
 import type { OrgGraph } from '../../lib/org-graph'
 import type { OrgPermissions } from '../../lib/permissions/orgGovernance'
 import {
@@ -186,6 +189,86 @@ function SeverityIcon({ severity, className = 'w-3 h-3' }: { severity: string; c
   return <Info className={`${className} text-gray-400`} />
 }
 
+// ─── Compact governance summary (phone) ─────────────────────────────────
+
+/**
+ * The seat counts and the four role chips, as two quiet lines.
+ *
+ * Desktop affords a title block, a seat bar and four pill buttons before the
+ * list begins. At 390px that same furniture filled most of the first screen,
+ * so the people — what the screen is actually for — started below the fold.
+ * The information is unchanged and every role segment still drives the same
+ * filter; it is simply stated rather than displayed.
+ */
+function GovernanceSummaryCompact({
+  seats,
+  orgAdminCount,
+  coverageAdminCount,
+  pmCount,
+  riskFlagCount,
+  activeFilter,
+  onFilterClick,
+}: {
+  seats: SeatCounts
+  orgAdminCount: number
+  coverageAdminCount: number
+  pmCount: number
+  riskFlagCount: number
+  activeFilter: string
+  onFilterClick: (filter: string) => void
+}) {
+  const segments = [
+    { key: 'org-admin', count: orgAdminCount, label: orgAdminCount === 1 ? 'Org Admin' : 'Org Admins' },
+    { key: 'coverage-admin', count: coverageAdminCount, label: coverageAdminCount === 1 ? 'Coverage Admin' : 'Coverage Admins' },
+    { key: 'pm', count: pmCount, label: pmCount === 1 ? 'PM' : 'PMs' },
+  ]
+
+  return (
+    <div data-slot="governance-summary-compact" className="space-y-1">
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        <span className="font-semibold text-gray-900 dark:text-white">{seats.active}</span> active
+        {seats.invited > 0 && <> &middot; <span className="font-semibold text-gray-900 dark:text-white">{seats.invited}</span> invited</>}
+        {seats.suspended > 0 && <> &middot; <span className="font-semibold text-gray-900 dark:text-white">{seats.suspended}</span> suspended</>}
+      </p>
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs">
+        {segments.map((s, i) => (
+          <React.Fragment key={s.key}>
+            {i > 0 && <span className="text-gray-300">&middot;</span>}
+            <button
+              type="button"
+              onClick={() => onFilterClick(activeFilter === s.key ? 'all' : s.key)}
+              className={`no-touch-target tap-pad rounded px-0.5 ${
+                activeFilter === s.key
+                  ? 'font-semibold text-indigo-700 underline underline-offset-2 dark:text-indigo-300'
+                  : 'text-gray-500 dark:text-gray-400'
+              }`}
+            >
+              <span className="font-semibold text-gray-900 dark:text-white">{s.count}</span> {s.label}
+            </button>
+          </React.Fragment>
+        ))}
+        {/* Risk stays visually distinct — it is the one segment that means
+            something is wrong, and it should not read as another count. */}
+        {riskFlagCount > 0 && (
+          <>
+            <span className="text-gray-300">&middot;</span>
+            <button
+              type="button"
+              onClick={() => onFilterClick(activeFilter === 'flagged' ? 'all' : 'flagged')}
+              className={`no-touch-target tap-pad inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-600 ${
+                activeFilter === 'flagged' ? 'ring-1 ring-red-400' : ''
+              }`}
+            >
+              <AlertTriangle className="h-3 w-3" />
+              {riskFlagCount} {riskFlagCount === 1 ? 'risk' : 'risks'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Filter Bar ──────────────────────────────────────────────────────────
 
 const FILTER_OPTIONS: { key: AuthorityFilter; label: string }[] = [
@@ -229,8 +312,11 @@ function AuthorityFilterBar({
 }) {
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-xs">
+      {/* Search owns the full width on a phone. Sharing a row with five role
+          filters collapsed it to roughly its own magnifier, which is not a
+          search field — and search is how you find a person in a long list. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="relative w-full sm:flex-1 sm:max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
           <input
             type="text"
@@ -240,12 +326,16 @@ function AuthorityFilterBar({
             className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:border-gray-700 dark:bg-gray-800"
           />
         </div>
-        <div className="flex items-center gap-1">
+        {/* A deliberate rail on a phone rather than a squeezed row: the
+            negative margin lets it scroll edge to edge while the inset keeps
+            the first and last label clear of the screen edge, so no label is
+            ever half-cut. `sm:` returns it to a plain inline group. */}
+        <div className="mobile-scroll-x -mx-3 flex items-center gap-1 px-3 sm:mx-0 sm:overflow-visible sm:px-0">
           {FILTER_OPTIONS.map(f => (
             <button
               key={f.key}
               onClick={() => onFilterChange(filter === f.key ? 'all' : f.key)}
-              className={`px-2.5 py-1 text-[11px] font-medium rounded-md cursor-pointer transition-all ${
+              className={`shrink-0 whitespace-nowrap px-2.5 py-1 text-[11px] font-medium rounded-md cursor-pointer transition-all ${
                 filter === f.key
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-gray-500 bg-white border border-gray-200 hover:text-gray-700 hover:bg-gray-50 hover:shadow-sm dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
@@ -255,44 +345,51 @@ function AuthorityFilterBar({
             </button>
           ))}
         </div>
-        <span className="text-xs text-gray-400 ml-auto">
+        {/* One element, repositioned — its own quiet line under the filters
+            on a phone, the right edge of the row on desktop. A second copy
+            behind `hidden` would read the count twice to a screen reader. */}
+        <span className="text-[11px] text-gray-400 sm:ml-auto sm:text-xs">
           {filteredCount} of {totalCount} members
         </span>
       </div>
-      {/* Dropdown filters row */}
-      <div className="flex items-center gap-2">
-        <select
+      {/* Dropdown filters. Two columns on a phone with status spanning both —
+          three of these never fit one line, and the third was pushed past the
+          right edge. `sm:` restores the original inline row. */}
+      <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+        <FilterSelect
           value={statusFilter}
-          onChange={(e) => onStatusFilterChange(e.target.value as 'all' | 'active' | 'suspended')}
+          onChange={(v) => onStatusFilterChange(v as 'all' | 'active' | 'suspended')}
+          ariaLabel="Filter by status"
+          sheetTitle="Filter by status"
+          options={[
+            { value: 'all', label: 'All statuses' },
+            { value: 'active', label: 'Active' },
+            { value: 'suspended', label: 'Suspended' },
+          ]}
           className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
-        >
-          <option value="all">All statuses</option>
-          <option value="active">Active</option>
-          <option value="suspended">Suspended</option>
-        </select>
+          buttonClassName="col-span-2 w-full justify-between sm:col-auto sm:w-auto"
+        />
         {teamOptions.length > 0 && (
-          <select
+          <FilterSelect
             value={teamFilter}
-            onChange={(e) => onTeamFilterChange(e.target.value)}
+            onChange={onTeamFilterChange}
+            ariaLabel="Filter by team"
+            sheetTitle="Filter by team"
+            options={[{ value: '', label: 'All teams' }, ...teamOptions.map(t => ({ value: t.id, label: t.name }))]}
             className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent max-w-[180px] dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
-          >
-            <option value="">All teams</option>
-            {teamOptions.map(t => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
+            buttonClassName="w-full justify-between sm:w-auto sm:max-w-[180px]"
+          />
         )}
         {portfolioOptions.length > 0 && (
-          <select
+          <FilterSelect
             value={portfolioFilter}
-            onChange={(e) => onPortfolioFilterChange(e.target.value)}
+            onChange={onPortfolioFilterChange}
+            ariaLabel="Filter by portfolio"
+            sheetTitle="Filter by portfolio"
+            options={[{ value: '', label: 'All portfolios' }, ...portfolioOptions.map(p => ({ value: p.id, label: p.name }))]}
             className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent max-w-[180px] dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
-          >
-            <option value="">All portfolios</option>
-            {portfolioOptions.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+            buttonClassName="w-full justify-between sm:w-auto sm:max-w-[180px]"
+          />
         )}
       </div>
     </div>
@@ -398,10 +495,10 @@ function AccessSummaryPanel({
   }, [])
 
   return (
-    <div className="bg-indigo-50/30 border-l-2 border-indigo-400 px-5 py-2 space-y-2">
+    <div className="bg-indigo-50/30 border-l-2 border-indigo-400 px-3 py-2 space-y-2 sm:px-5">
       {/* ── Header ── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-y-1">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider dark:text-gray-400">
             Access Summary
           </span>
@@ -450,7 +547,10 @@ function AccessSummaryPanel({
         <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wider dark:text-gray-400">
           Firm-Level Permissions
         </div>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+        {/* One column on a phone. Two label/value pairs side by side at 390px
+            left neither enough width, and the Grant/Remove control beside the
+            value pushed the value out of its own cell. */}
+        <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
           <div className="flex items-center justify-between">
             <span className="text-gray-500 dark:text-gray-400">Org Admin</span>
             <span className="flex items-center gap-1.5">
@@ -542,7 +642,7 @@ function AccessSummaryPanel({
               {nodeScopes.map((scope, i) => (
                 <span
                   key={i}
-                  className={`text-[11px] text-gray-600 ${
+                  className={`text-[11px] text-gray-600 break-words ${
                     onOpenNodeModal && scope.nodeId ? 'cursor-pointer hover:text-indigo-600' : ''
                   }`}
                   onClick={() => scope.nodeId && onOpenNodeModal?.(scope.nodeId)}
@@ -583,13 +683,13 @@ function AccessSummaryPanel({
                 return (
                   <div
                     key={team.nodeId}
-                    className={`flex items-center gap-2 text-xs py-px rounded ${
+                    className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs py-px rounded ${
                       hasRisk ? 'bg-red-50/60 -mx-1 px-1' : ''
                     } ${onOpenNodeModal ? 'cursor-pointer hover:text-indigo-600' : 'text-gray-600 dark:text-gray-400'}`}
                     onClick={() => onOpenNodeModal?.(team.nodeId)}
                   >
                     {hasRisk && <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0" />}
-                    <span className="font-medium">{team.nodeName}</span>
+                    <span className="font-medium break-words">{team.nodeName}</span>
                     {team.role !== 'Member' && (
                       <span className={`px-1.5 py-0.5 text-[10px] rounded ${getChipColor(team.role)}`}>
                         {team.role}
@@ -636,12 +736,12 @@ function AccessSummaryPanel({
                       return (
                         <div
                           key={port.nodeId}
-                          className={`flex items-center gap-2 text-xs py-px rounded ${
+                          className={`flex items-start gap-2 text-xs py-px rounded ${
                             hasRisk ? 'bg-red-50/60 -mx-1 px-1' : ''
                           } text-gray-600`}
                         >
-                          {hasRisk && <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0" />}
-                          <span className="font-medium">{port.nodeName}</span>
+                          {hasRisk && <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0 mt-0.5" />}
+                          <span className="font-medium break-words">{port.nodeName}</span>
                         </div>
                       )
                     })}
@@ -716,22 +816,38 @@ function RiskFlagRow({
 }) {
   const actionLabel = RISK_ACTION_MAP[flag.type]
   return (
+    /*
+      The risk copy wraps rather than truncating.
+
+      Laid out as a single centred row, the label and its detail ran on one
+      line with a `whitespace-nowrap` action button holding the end, so at
+      390px the sentence was cut mid-word — "Single point of coverage on The
+      BEST Team Eric Loc…". A governance risk that cannot be read in full is
+      not a warning, and this is the text someone reads before deciding
+      whether the access is safe. So: top-aligned, detail on its own line,
+      and the action drops below the copy on a phone instead of competing
+      with it for the same line.
+    */
     <div
-      className={`flex items-center gap-2 px-2.5 py-1 rounded text-xs text-gray-700 ${
+      className={`flex flex-wrap items-start gap-x-2 gap-y-0.5 px-2.5 py-1 rounded text-xs text-gray-700 ${
         flag.anchorNodeId && onOpenNodeModal ? 'cursor-pointer hover:bg-amber-100/50' : ''
       }`}
       onClick={() => flag.anchorNodeId && onOpenNodeModal?.(flag.anchorNodeId)}
     >
-      <SeverityIcon severity={flag.severity} className="w-3 h-3 flex-shrink-0" />
-      <div className="min-w-0 flex-1">
-        <span className="font-medium">{flag.label}</span>
-        <span className="text-[11px] text-gray-500 ml-1 dark:text-gray-400">{flag.detail}</span>
+      <SeverityIcon severity={flag.severity} className="w-3 h-3 flex-shrink-0 mt-0.5" />
+      {/* `max-sm:basis-[calc(100%-1.25rem)]` makes the copy claim the rest of
+          the line, so the action wraps beneath it rather than squeezing it.
+          One button, repositioned — not a second copy hidden at the other
+          breakpoint. */}
+      <div className="min-w-0 flex-1 max-sm:basis-[calc(100%-1.25rem)]">
+        <div className="font-medium break-words">{flag.label}</div>
+        <div className="text-[11px] text-gray-500 break-words dark:text-gray-400">{flag.detail}</div>
       </div>
       {actionLabel && flag.anchorNodeId && onOpenNodeModal && (
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onOpenNodeModal(flag.anchorNodeId!) }}
-          className="flex-shrink-0 text-[10px] font-medium text-indigo-600 hover:text-indigo-700 whitespace-nowrap"
+          className="no-touch-target tap-pad flex-shrink-0 text-[10px] font-medium text-indigo-600 hover:text-indigo-700 whitespace-nowrap max-sm:ml-5"
         >
           {actionLabel} &rarr;
         </button>
@@ -874,6 +990,74 @@ function AuthorityRowComponent({
   )
 }
 
+// ─── Mobile person row ───────────────────────────────────────────────────
+
+/**
+ * One person as a governance row rather than six table cells.
+ *
+ * The collapsed row answers "who is this and what can they do": name, status,
+ * risk, and the roles. Teams and portfolios become counts here — their names
+ * are in the expansion, where there is width to read them.
+ */
+function AuthorityPersonRow({
+  row,
+  isExpanded,
+  onToggle,
+  rowRef,
+  children,
+}: {
+  row: AuthorityRow
+  isExpanded: boolean
+  onToggle: () => void
+  rowRef?: React.Ref<HTMLDivElement>
+  children: React.ReactNode
+}) {
+  const adminChips = row.roleChips.filter(c => ADMIN_ROLES.has(c))
+  const portfolioRoles = Array.from(
+    new Set(row.portfolios.map(p => p.role).filter(r => !HIDDEN_FUNCTIONAL_ROLES.has(r)))
+  ).sort(sortFunctionalRoles)
+  const roleChips = [...adminChips, ...portfolioRoles]
+
+  const counts: string[] = []
+  if (row.teams.length > 0) counts.push(`${row.teams.length} ${row.teams.length === 1 ? 'team' : 'teams'}`)
+  if (row.portfolios.length > 0) counts.push(`${row.portfolios.length} ${row.portfolios.length === 1 ? 'portfolio' : 'portfolios'}`)
+
+  return (
+    <GovernanceListRow
+      rowRef={rowRef}
+      name={row.fullName}
+      email={row.email}
+      dimmed={row.status === 'suspended'}
+      status={
+        row.status === 'suspended' ? (
+          <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+            Suspended
+          </span>
+        ) : (
+          <span className="shrink-0 text-[10px] font-medium text-emerald-600">Active</span>
+        )
+      }
+      badge={<RiskCountBadge flags={row.riskFlags} />}
+      meta={
+        roleChips.length > 0 ? (
+          roleChips.map(chip => (
+            <span key={chip} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${getChipColor(chip)}`}>
+              {chip}
+            </span>
+          ))
+        ) : (
+          <span className="text-[11px] text-gray-400">No admin or portfolio roles</span>
+        )
+      }
+      secondaryMeta={counts.length > 0 ? counts.join(' · ') : undefined}
+      expanded={isExpanded}
+      onToggle={onToggle}
+    >
+      {children}
+    </GovernanceListRow>
+  )
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────
 
 export function OrgAuthorityMap({
@@ -896,6 +1080,7 @@ export function OrgAuthorityMap({
   focusFilter,
   onFocusUserHandled,
 }: OrgAuthorityMapProps) {
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState(initialSearch || '')
   const [filter, setFilter] = useState<AuthorityFilter>(initialFilter || 'all')
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
@@ -943,8 +1128,10 @@ export function OrgAuthorityMap({
     setExpandedUserId(prev => prev === userId ? null : userId)
   }, [])
 
-  // Cross-navigation: auto-expand focused user from Members tab
-  const focusRowRef = React.useRef<HTMLTableRowElement>(null)
+  // Cross-navigation: auto-expand focused user from Members tab.
+  // Typed as the shared base so the same ref can hold the desktop `<tr>` or
+  // the mobile row `<div>` — only one of the two is mounted at a time.
+  const focusRowRef = React.useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (!focusUserId) return
     // Apply optional filter (e.g. 'flagged') or clear filters
@@ -1001,29 +1188,46 @@ export function OrgAuthorityMap({
 
   return (
     <div className="space-y-4">
-      {/* Header row: title + seat counts */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-md bg-indigo-50 border border-indigo-200 flex items-center justify-center">
-            <Shield className="w-4 h-4 text-indigo-600" />
+      {/* On a phone the title block, the seat bar and the four role pills
+          collapse into one compact summary — the page already says
+          "Governance" directly above. Desktop keeps all three. */}
+      {isMobile ? (
+        <GovernanceSummaryCompact
+          seats={seatCounts}
+          orgAdminCount={summary.orgAdminCount}
+          coverageAdminCount={summary.globalCoverageAdminCount + summary.nodeCoverageAdminCount}
+          pmCount={summary.pmCount}
+          riskFlagCount={summary.flaggedUserCount}
+          activeFilter={summaryActiveFilter}
+          onFilterClick={handleSummaryFilter}
+        />
+      ) : (
+        <>
+          {/* Header row: title + seat counts */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-md bg-indigo-50 border border-indigo-200 flex items-center justify-center">
+                <Shield className="w-4 h-4 text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Access & Roles</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Role assignments, access scope, and governance risk</p>
+              </div>
+            </div>
+            {showSeatMeter && <SeatSummaryBar seats={seatCounts} />}
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Access & Roles</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Role assignments, access scope, and governance risk</p>
-          </div>
-        </div>
-        {showSeatMeter && <SeatSummaryBar seats={seatCounts} />}
-      </div>
 
-      {/* Governance Summary — clickable chips drive the filter */}
-      <GovernanceSummaryStrip
-        orgAdminCount={summary.orgAdminCount}
-        coverageAdminCount={summary.globalCoverageAdminCount + summary.nodeCoverageAdminCount}
-        pmCount={summary.pmCount}
-        riskFlagCount={summary.flaggedUserCount}
-        activeFilter={summaryActiveFilter}
-        onFilterClick={handleSummaryFilter}
-      />
+          {/* Governance Summary — clickable chips drive the filter */}
+          <GovernanceSummaryStrip
+            orgAdminCount={summary.orgAdminCount}
+            coverageAdminCount={summary.globalCoverageAdminCount + summary.nodeCoverageAdminCount}
+            pmCount={summary.pmCount}
+            riskFlagCount={summary.flaggedUserCount}
+            activeFilter={summaryActiveFilter}
+            onFilterClick={handleSummaryFilter}
+          />
+        </>
+      )}
 
       {/* Filter Bar */}
       <AuthorityFilterBar
@@ -1043,7 +1247,45 @@ export function OrgAuthorityMap({
         portfolioOptions={portfolioOptions}
       />
 
-      {/* Table */}
+      {/* People.
+
+          A phone gets rows, not a 720px table behind a sideways scroller —
+          and the expansion then sits in a full-width div instead of a
+          `colSpan` cell, which is what was clipping the governance detail.
+          One branch or the other renders, never both: duplicating the list
+          behind `hidden`/`sm:hidden` would announce every person twice. */}
+      {isMobile ? (
+        <div
+          data-slot="governance-people"
+          className="divide-y divide-gray-100 rounded border border-gray-200 bg-white dark:divide-gray-800 dark:border-gray-700 dark:bg-gray-800"
+        >
+          {filtered.map(row => (
+            <AuthorityPersonRow
+              key={row.userId}
+              row={row}
+              isExpanded={expandedUserId === row.userId}
+              onToggle={() => handleToggleExpand(row.userId)}
+              rowRef={expandedUserId === row.userId ? (el => { focusRowRef.current = el }) : undefined}
+            >
+              <AccessSummaryPanel
+                row={row}
+                orgPerms={orgPerms}
+                orgMembers={orgMembers}
+                onToggleOrgAdmin={onToggleOrgAdmin}
+                onToggleGlobalCoverageAdmin={onToggleGlobalCoverageAdmin}
+                onToggleNodeCoverageAdmin={onToggleNodeCoverageAdmin}
+                isMutating={isMutating}
+                onOpenNodeModal={onOpenNodeModal}
+              />
+            </AuthorityPersonRow>
+          ))}
+          {filtered.length === 0 && (
+            <p className="px-4 py-8 text-center text-sm text-gray-400">
+              {search ? 'No members match your search' : 'No members found'}
+            </p>
+          )}
+        </div>
+      ) : (
       <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
         {/* The phone shell clips horizontal overflow, so a table this wide is unreachable without its own scroller. `sm:min-w-0` returns it to the container from 640px up, leaving desktop unchanged. */}
         <div className="mobile-scroll-x show-scrollbar">
@@ -1065,7 +1307,7 @@ export function OrgAuthorityMap({
                   row={row}
                   isExpanded={expandedUserId === row.userId}
                   onToggle={() => handleToggleExpand(row.userId)}
-                  rowRef={expandedUserId === row.userId ? focusRowRef : undefined}
+                  rowRef={expandedUserId === row.userId ? (el => { focusRowRef.current = el }) : undefined}
                 />
                 {expandedUserId === row.userId && (
                   <tr>
@@ -1096,6 +1338,7 @@ export function OrgAuthorityMap({
         </table>
         </div>
       </div>
+      )}
     </div>
   )
 }

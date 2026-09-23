@@ -39,7 +39,34 @@ import {
   AlertTriangle,
   AlertCircle,
   Info,
+  MoreHorizontal,
+  X,
 } from 'lucide-react'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { FilterSelect } from './FilterSelect'
+
+/*
+  The status filter's options, in one place.
+
+  The phone renders them as a sheet and the desktop as a native `<select>`;
+  defining the labels once means the two cannot drift into saying different
+  things for the same filter.
+*/
+type StatusFilter = 'all' | 'active' | 'invited' | 'suspended'
+const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
+  all: 'All statuses',
+  active: 'Active',
+  invited: 'Invited',
+  suspended: 'Suspended',
+}
+/*
+  Only these three are offered, on both form factors.
+
+  `invited` is a valid filter value the type allows but the control has never
+  offered — adding it here because the map happened to contain it would be a
+  behaviour change smuggled in behind a styling fix.
+*/
+const STATUS_FILTER_OPTIONS: StatusFilter[] = ['all', 'active', 'suspended']
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { useToast } from '../common/Toast'
@@ -129,7 +156,7 @@ export function OrgPeopleTab({
 
   const [searchTerm, setSearchTerm] = useState('')
   const [peopleView, setPeopleView] = useState<'users' | 'contacts'>('users')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'invited' | 'suspended'>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const { canInvite } = useCanInviteMembers()
@@ -138,6 +165,9 @@ export function OrgPeopleTab({
   const [inviteSelectedPortfolios, setInviteSelectedPortfolios] = useState<string[]>([])
   const [reactivateTarget, setReactivateTarget] = useState<OrganizationMembership | null>(null)
   const [reactivateReason, setReactivateReason] = useState('')
+  const isMobile = useIsMobile()
+  /** Phone only: the member whose action sheet is open. */
+  const [actionMenuMember, setActionMenuMember] = useState<OrganizationMembership | null>(null)
   const [suspendTarget, setSuspendTarget] = useState<OrganizationMembership | null>(null)
   const [suspendReason, setSuspendReason] = useState('')
 
@@ -348,18 +378,32 @@ export function OrgPeopleTab({
 
   // ─── Render ───────────────────────────────────────────────────
   return (
-    <div className="max-w-5xl mx-auto space-y-4">
+    <div className="max-w-5xl mx-auto space-y-2.5 sm:space-y-4">
       {/* ── Header: subtitle + search + seats + invite ── */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Members</h2>
-            <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Invite, suspend, and manage organization membership</p>
+      <div className="space-y-2 sm:space-y-3">
+        {/* Title and the one primary action share the top row; the seat
+            counts drop below it on a phone, where they were competing with
+            Invite for a width neither could have. */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-base sm:text-lg font-semibold leading-tight text-gray-900 dark:text-white">Members</h2>
+            <p className="hidden sm:block text-xs text-gray-500 mt-0.5 dark:text-gray-400">Invite, suspend, and manage organization membership</p>
           </div>
           <div className="flex items-center gap-3">
-            <SeatSummaryBar seats={{ active: activeCount, invited: invitedCount, suspended: suspendedCount }} />
+            <span className="hidden sm:contents">
+              <SeatSummaryBar seats={{ active: activeCount, invited: invitedCount, suspended: suspendedCount }} />
+            </span>
             {canInvite && (
-              <Button size="sm" onClick={() => setShowInviteModal(true)}>
+              /* `no-touch-target tap-pad`: the global coarse-pointer rule in
+                 index.css gives every button a 44px *box*, which is what made
+                 this read as a thick slab and set the height of the whole
+                 title row. The drawn button goes back to its own size; the
+                 44px stays as an invisible hit region around it. */
+              <Button
+                size="sm"
+                onClick={() => setShowInviteModal(true)}
+                className="no-touch-target tap-pad shrink-0 max-sm:py-1"
+              >
                 <Send className="w-3.5 h-3.5 mr-1.5" />
                 Invite
               </Button>
@@ -367,35 +411,54 @@ export function OrgPeopleTab({
           </div>
         </div>
 
-        {/* Search + filters */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 max-w-sm">
+        {/* Seat counts, on their own quiet line below the title. */}
+        <div className="sm:hidden">
+          <SeatSummaryBar seats={{ active: activeCount, invited: invitedCount, suspended: suspendedCount }} />
+        </div>
+
+        {/* Search + filters.
+
+            One row put a search input, a status select and a two-button mode
+            switch into ~326px, which is how the search ended up a square.
+            Search takes its own row on a phone; the filter and the mode
+            switch share the next one. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full sm:flex-1 sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               placeholder="Search members..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
+              className="w-full pl-10 pr-4 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
             />
           </div>
 
-          {/* Status filter */}
-          <select
+          {/* Status filter.
+
+              A button on a phone rather than a native `select`, so it can
+              match the Members/Contacts pills beside it. It cannot as a
+              select: index.css forces every select to `16px !important`
+              below 768px to stop iOS zooming the page on focus, and that
+              guard is worth more than the typography. A button is outside
+              that rule, opens our own sheet, and never triggers the zoom.
+
+              Desktop keeps the native select, where the rule does not apply
+              and a select is the right control. */}
+          <FilterSelect
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
-          >
-            <option value="all">All statuses</option>
-            <option value="active">Active</option>
-            <option value="suspended">Suspended</option>
-          </select>
+            onChange={(v) => setStatusFilter(v as StatusFilter)}
+            options={STATUS_FILTER_OPTIONS.map(key => ({ value: key, label: STATUS_FILTER_LABELS[key] }))}
+            ariaLabel="Filter members by status"
+            sheetTitle="Filter by status"
+            className="min-w-0 shrink rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
+          />
 
           {/* View toggle: Members / Contacts */}
-          <div className="inline-flex items-center bg-gray-100 rounded p-0.5 ml-auto dark:bg-gray-800">
+          <div className="inline-flex shrink-0 items-center bg-gray-100 rounded p-0.5 ml-auto dark:bg-gray-800">
             <button
               onClick={() => setPeopleView('users')}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+              className={`no-touch-target tap-pad whitespace-nowrap px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded transition-colors ${
                 peopleView === 'users'
                   ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
                   : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
@@ -406,7 +469,7 @@ export function OrgPeopleTab({
             </button>
             <button
               onClick={() => setPeopleView('contacts')}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+              className={`no-touch-target tap-pad whitespace-nowrap px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded transition-colors ${
                 peopleView === 'contacts'
                   ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
                   : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
@@ -459,17 +522,80 @@ export function OrgPeopleTab({
           {/* Member rows */}
           {displayMembers.length > 0 ? (
             <div className="bg-white rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
-              {/* The phone shell clips horizontal overflow, so a table this wide is unreachable without its own scroller. `sm:min-w-0` returns it to the container from 640px up, leaving desktop unchanged. */}
-              <div className="mobile-scroll-x show-scrollbar">
-              <table className="w-full min-w-[720px] sm:min-w-0">
+              {/* One person, one row.
+
+                  Collapsing columns got the table to fit, but it was still a
+                  table: the actions cell sat past the right edge, so Manage
+                  roles and Suspend were reachable only by expanding a row
+                  into a full-width band that detached them from the person
+                  they belonged to. A list row carries the same data and puts
+                  the actions behind one ⋯ beside the name. Desktop keeps the
+                  table, where the analytical columns earn their place. */}
+              {isMobile ? (
+                <div data-slot="member-list" className="divide-y divide-gray-100 dark:divide-gray-800">
+                  {displayMembers.map((member) => {
+                    const isSuspended = member.status === 'suspended'
+                    const canAct = isOrgAdmin && member.user_id !== user?.id
+                    return (
+                      <div key={member.id} className="flex items-center gap-2 px-3">
+                        <button
+                          type="button"
+                          onClick={() => member.user_id && onUserClick?.({
+                            id: member.user_id,
+                            full_name: member.user?.full_name || 'Unknown',
+                          })}
+                          disabled={!onUserClick || !member.user_id}
+                          className="flex min-h-[56px] min-w-0 flex-1 items-center gap-2.5 py-2 text-left active:bg-gray-50 disabled:active:bg-transparent dark:active:bg-gray-900"
+                        >
+                          <span
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                              isSuspended ? 'bg-gray-400' : member.is_org_admin ? 'bg-indigo-600' : 'bg-gray-500'
+                            }`}
+                          >
+                            <span className="text-[11px] font-semibold text-white">
+                              {(member.user?.full_name || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                            </span>
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-1.5">
+                              <span className="truncate text-sm font-medium text-gray-900 dark:text-white">
+                                {member.user?.full_name}
+                              </span>
+                              <StatusPill status={isSuspended ? 'suspended' : 'active'} />
+                            </span>
+                            <span className="block truncate text-[11px] text-gray-400">{member.user?.email}</span>
+                          </span>
+                        </button>
+
+                        {/* Actions live beside the person, not in a band
+                            below them. Opening the menu is a different
+                            intent from opening the person, so it is its own
+                            control rather than part of the row. */}
+                        {canAct && (
+                          <button
+                            type="button"
+                            onClick={() => setActionMenuMember(member)}
+                            aria-label={`Actions for ${member.user?.full_name || 'member'}`}
+                            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg text-gray-400 active:bg-gray-100 dark:active:bg-gray-700"
+                          >
+                            <MoreHorizontal className="h-5 w-5" />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+              <div className="sm:mobile-scroll-x sm:show-scrollbar">
+              <table className="w-full min-w-0">
                 <thead>
                   <tr className="bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
-                    <th className="px-4 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-[40%]">Name</th>
-                    <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Status</th>
-                    <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Org Role</th>
-                    <th className="px-3 py-1.5 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Teams</th>
-                    <th className="px-3 py-1.5 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Portfolios</th>
-                    <th className="px-3 py-1.5 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Risk</th>
+                    <th className="px-3 sm:px-4 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider sm:w-[40%]">Name</th>
+                    <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Status</th>
+                    <th className="hidden sm:table-cell px-3 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Org Role</th>
+                    <th className="hidden sm:table-cell px-3 py-1.5 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Teams</th>
+                    <th className="hidden sm:table-cell px-3 py-1.5 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Portfolios</th>
+                    <th className="hidden sm:table-cell px-3 py-1.5 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Risk</th>
                     <th className="px-4 py-1.5 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wider"><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
@@ -499,6 +625,7 @@ export function OrgPeopleTab({
                 </tbody>
               </table>
               </div>
+              )}
 
               {hasNextPage && (
                 <button
@@ -616,6 +743,73 @@ export function OrgPeopleTab({
           )}
         </div>
       )}
+
+      {/* ── Member action sheet (phone) ──
+
+          The same actions the desktop row carries, as a sheet rather than a
+          full-width band inserted under the person. Nothing new is offered
+          here; the destructive one keeps its own styling and still routes to
+          the existing confirmation rather than acting on tap. */}
+      {actionMenuMember && isMobile && (() => {
+        const target = actionMenuMember
+        const isSuspended = target.status === 'suspended'
+        const close = () => setActionMenuMember(null)
+        return (
+          <div className="fixed inset-0 z-[70] flex items-end" role="dialog" aria-modal="true" aria-label="Member actions">
+            <div className="absolute inset-0 bg-black/40" onClick={close} />
+            <div className="relative w-full rounded-t-xl bg-white pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] shadow-2xl dark:bg-gray-800">
+              <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-800">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-gray-900 dark:text-white">
+                    {target.user?.full_name}
+                  </span>
+                  <span className="block truncate text-[11px] text-gray-400">{target.user?.email}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={close}
+                  aria-label="Close"
+                  className="no-touch-target tap-pad rounded p-1 text-gray-400"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="py-1">
+                {onNavigateToGovernance && !isSuspended && (
+                  <button
+                    type="button"
+                    onClick={() => { close(); onNavigateToGovernance(target.user_id) }}
+                    className="flex w-full min-h-[48px] items-center gap-2.5 px-4 text-left text-sm text-gray-700 active:bg-gray-50 dark:text-gray-200 dark:active:bg-gray-700"
+                  >
+                    <UserCircle className="h-4 w-4 shrink-0 text-gray-400" />
+                    Manage roles
+                  </button>
+                )}
+                {isSuspended ? (
+                  <button
+                    type="button"
+                    onClick={() => { close(); setReactivateTarget(target) }}
+                    className="flex w-full min-h-[48px] items-center gap-2.5 px-4 text-left text-sm text-emerald-700 active:bg-emerald-50"
+                  >
+                    <Check className="h-4 w-4 shrink-0" />
+                    Reactivate access
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { close(); setSuspendTarget(target) }}
+                    className="flex w-full min-h-[48px] items-center gap-2.5 px-4 text-left text-sm text-amber-700 active:bg-amber-50"
+                  >
+                    <UserX className="h-4 w-4 shrink-0" />
+                    Suspend access
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── Suspend Access Confirmation ── */}
       {suspendTarget && (() => {
@@ -735,7 +929,7 @@ export function OrgPeopleTab({
 
 // ─── InviteModal — enhanced invite with org node + portfolio preassignment ──
 
-import { Building2, Users, Briefcase, ChevronDown, ChevronRight as ChevronRightIcon, Check } from 'lucide-react'
+import { Building2, Briefcase, Check } from 'lucide-react'
 
 function InviteModal({ orgName, orgId, email, setEmail, selectedNodes, setSelectedNodes, selectedPortfolios, setSelectedPortfolios, isPending, onSubmit, onClose }: {
   orgName: string; orgId: string
@@ -992,7 +1186,7 @@ function MemberRow({
         onClick={onToggleExpand}
       >
         {/* Name + avatar */}
-        <td className="px-4 py-2.5">
+        <td className="px-3 sm:px-4 py-2.5">
           <div className="flex items-center gap-2.5">
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
@@ -1029,8 +1223,8 @@ function MemberRow({
           <StatusPill status={isSuspended ? 'suspended' : 'active'} />
         </td>
 
-        {/* Org Role */}
-        <td className="px-3 py-2.5">
+        {/* Org Role. These four columns are desktop-only — see the header. */}
+        <td className="hidden sm:table-cell px-3 py-2.5">
           {member.is_org_admin ? (
             <RoleBadge role="org-admin" compact />
           ) : member.user?.coverage_admin ? (
@@ -1041,17 +1235,17 @@ function MemberRow({
         </td>
 
         {/* Teams */}
-        <td className="px-3 py-2.5 text-center">
+        <td className="hidden sm:table-cell px-3 py-2.5 text-center">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{teamCount}</span>
         </td>
 
         {/* Portfolios */}
-        <td className="px-3 py-2.5 text-center">
+        <td className="hidden sm:table-cell px-3 py-2.5 text-center">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{portfolioCount}</span>
         </td>
 
         {/* Risk */}
-        <td className="px-3 py-2.5 text-center">
+        <td className="hidden sm:table-cell px-3 py-2.5 text-center">
           {riskFlags.length > 0 ? (
             <RiskPill flags={riskFlags} onClick={onRiskClick} />
           ) : (

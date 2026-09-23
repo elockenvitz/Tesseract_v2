@@ -102,6 +102,12 @@ export const GATED_DIRS = [
   // The current-org heal decides whether a durable tenant pointer may be
   // rewritten. Getting it wrong stranded two live workspaces in another org.
   'src/lib/org',
+  // The Process creation wizard's mobile layout. It arrived with the mobile
+  // fringe lane and was left unlisted, which is precisely the silent
+  // disappearance this accounting exists to catch — the guard caught it. It
+  // holds the only assertions that the wizard's steps, footer and panes
+  // survive a phone, so it arrives gated rather than deferred.
+  'src/components/workflow/__tests__',
   // The shared pilot banner shell — four surfaces now render through it.
   'src/components/pilot',
   'src/lib/notifications',

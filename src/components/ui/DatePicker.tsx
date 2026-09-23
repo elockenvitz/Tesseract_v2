@@ -30,7 +30,13 @@ interface DatePickerProps {
   className?: string
   showClear?: boolean
   compact?: boolean
-  variant?: 'default' | 'inline'
+  /**
+   * `filter` renders the trigger to match the app's filter controls — same
+   * height, type scale, radius and padding as a `FilterSelect` — so a date
+   * sitting in a filter row stops looking like a browser-native field.
+   * Additive: `default` and `inline` are untouched.
+   */
+  variant?: 'default' | 'inline' | 'filter'
   showOverdue?: boolean
   isCompleted?: boolean
   maxDate?: string | null
@@ -254,7 +260,13 @@ export function DatePicker({
         }}
         className={clsx(
           'flex items-center gap-1 transition-colors',
-          compact
+          variant === 'filter'
+            /* `no-touch-target tap-pad` for the same reason FilterSelect uses
+               it: index.css forces every button to a 44px min-height on a
+               coarse pointer, which would leave this control a third taller
+               than the selects beside it. The pad keeps the hit region. */
+            ? 'no-touch-target tap-pad w-full gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800'
+            : compact
             ? 'text-xs hover:text-primary-600 dark:hover:text-primary-400'
             : variant === 'inline'
             ? 'text-sm hover:text-primary-600 dark:hover:text-primary-400'
@@ -268,8 +280,13 @@ export function DatePicker({
             : 'text-gray-400 dark:text-gray-500'
         )}
       >
-        <Calendar className={compact ? 'w-3 h-3' : 'w-4 h-4'} />
-        <span>
+        <Calendar
+          className={clsx(
+            'shrink-0',
+            variant === 'filter' ? 'w-3.5 h-3.5 text-gray-400' : compact ? 'w-3 h-3' : 'w-4 h-4',
+          )}
+        />
+        <span className={variant === 'filter' ? 'min-w-0 truncate' : undefined}>
           {isOverdue
             ? `${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue`
             : selectedDate
@@ -278,7 +295,10 @@ export function DatePicker({
         </span>
         {showClear && selectedDate && !compact && variant !== 'inline' && (
           <X
-            className="w-3 h-3 ml-1 text-gray-400 hover:text-red-500"
+            className={clsx(
+              'w-3 h-3 text-gray-400 hover:text-red-500',
+              variant === 'filter' ? 'ml-auto shrink-0' : 'ml-1',
+            )}
             onClick={handleClear}
           />
         )}

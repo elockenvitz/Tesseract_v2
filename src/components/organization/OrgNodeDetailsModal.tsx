@@ -13,6 +13,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { clsx } from 'clsx'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import {
   X,
   ChevronRight,
@@ -75,6 +76,12 @@ export interface OrgNodeDetailsModalProps {
   initialPage?: 'profile' | 'manage'
   /** Which manage tab to show initially (default: 'details') */
   initialManageTab?: ManageTab
+  /**
+   * Phone only: the surface this sheet was opened from, e.g. "Structure" or
+   * "Coverage". Renders a labelled Back so a destination says where it
+   * returns to. Omitted on desktop, where this is a modal and the X is right.
+   */
+  backLabel?: string
 
   // ── Manage page callbacks (optional — only needed when canManageOrgStructure) ──
   /** All org members (for the add-member dropdown) */
@@ -169,6 +176,7 @@ export function OrgNodeDetailsModal({
   showGovernanceSignals = false,
   initialPage = 'profile',
   initialManageTab = 'details',
+  backLabel,
   availableUsers = [],
   availablePortfolios = [],
   onSaveNode,
@@ -190,6 +198,8 @@ export function OrgNodeDetailsModal({
   const manageCloseRef = useRef<HTMLButtonElement>(null)
   const lastActiveElementRef = useRef<Element | null>(null)
   const prevNodeId = useRef(node.id)
+
+  const isMobile = useIsMobile()
 
   // ── Page & tab state ──
   const [modalPage, setModalPage] = useState<'profile' | 'manage'>(initialPage)
@@ -231,6 +241,9 @@ export function OrgNodeDetailsModal({
     if (prevNodeId.current !== node.id) {
       prevNodeId.current = node.id
       setModalPage('profile')
+      // Breadcrumb navigation lands on a profile, so a later Manage slide is
+      // what puts the profile behind — same as a fresh profile entry.
+      setProfileIsBehind(true)
       setManageTab('details')
       setGovernanceOpen(false)
       setShowScoringDetails(false)
@@ -334,8 +347,20 @@ export function OrgNodeDetailsModal({
 
   // ── Navigation helpers ──
 
+  /*
+    Whether the profile is behind the manage page right now.
+
+    Back must undo one step, and there are two ways onto manage: a team opens
+    directly onto it (nothing behind), or any node slides here from its
+    profile via Manage (the profile is behind). Tracking the slide itself
+    rather than inferring from `initialPage` keeps this right in both
+    directions — including a team that visits its profile and comes back.
+  */
+  const [profileIsBehind, setProfileIsBehind] = useState(initialPage !== 'manage')
+
   const slideToManage = useCallback((tab?: ManageTab) => {
     if (tab) setManageTab(tab)
+    setProfileIsBehind(true)
     setModalPage('manage')
   }, [])
 
@@ -522,13 +547,22 @@ export function OrgNodeDetailsModal({
       />
 
       {/* Modal positioning */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+      {/* A near-full-height sheet on a phone, the centred card on desktop.
+
+          `p-4` around a `max-w-[640px]` panel is right for a wide screen and
+          wrong for 390px, where it spent 32px of width and left the node's
+          members — the reason you opened this — in a narrow column inside an
+          inset floating card. */}
+      <div className="fixed inset-0 z-50 flex items-stretch sm:items-center justify-center p-0 sm:p-4 pointer-events-none">
         <div
           ref={modalRef}
           role="dialog"
           aria-label={`Details for ${node.name}`}
           tabIndex={-1}
-          className="pointer-events-auto w-full max-w-[640px] h-viewport-85 bg-white rounded-lg shadow-2xl overflow-hidden outline-none animate-in fade-in zoom-in-95 duration-150 dark:bg-gray-800"
+          /* A destination on a phone: full width, full height, square top
+             corners against the app rather than a rounded card floating in a
+             dim. Desktop keeps the centred modal. */
+          className="pointer-events-auto w-full max-w-[640px] h-dvh sm:h-viewport-85 bg-white rounded-none sm:rounded-lg shadow-2xl overflow-hidden outline-none animate-in fade-in sm:zoom-in-95 duration-150 dark:bg-gray-800"
         >
           {/* ── Sliding container ── */}
           <div
@@ -549,56 +583,110 @@ export function OrgNodeDetailsModal({
               aria-hidden={modalPage !== 'profile'}
             >
               {/* Profile header */}
-              <div className="px-6 pt-4 pb-3 border-b border-gray-200 shrink-0 dark:border-gray-700">
+              <div className="px-3 pt-3 pb-2 sm:px-6 sm:pt-4 sm:pb-3 border-b border-gray-200 shrink-0 dark:border-gray-700">
+                {/* Mobile return path.
+
+                    On a phone this sheet is a destination reached from either
+                    Structure or Coverage, and it says which. The X in the row
+                    below is the same action; it stays for desktop, where the
+                    modal is a modal and a labelled Back would be wrong. */}
+                {backLabel && (
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    data-slot="node-sheet-back"
+                    className="sm:hidden -ml-1 mb-1 flex min-h-[44px] items-center gap-1 pr-2 text-sm font-medium text-gray-600 dark:text-gray-300"
+                  >
+                    <ChevronLeft className="w-5 h-5 shrink-0" />
+                    <span>{backLabel}</span>
+                  </button>
+                )}
+
                 {/* Breadcrumb */}
                 {breadcrumb.length > 0 && (
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-1 overflow-hidden">
+                  /* Context, kept quiet. It scrolls sideways on a phone
+                     rather than wrapping into several lines above the title,
+                     and each crumb truncates so one long ancestor name cannot
+                     push the rest out of reach. */
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-1 overflow-x-auto no-scrollbar sm:overflow-hidden">
                     {breadcrumb.map((ancestor, i) => (
                       <span key={ancestor.id} className="flex items-center gap-1 shrink-0">
-                        {i > 0 && <ChevronRight className="w-2.5 h-2.5" />}
+                        {i > 0 && <ChevronRight className="w-2.5 h-2.5 shrink-0" />}
                         {onNavigateNode ? (
                           <button
                             onClick={() => onNavigateNode(ancestor.id)}
-                            className="hover:text-indigo-600 hover:underline truncate max-w-[120px]"
+                            className="hover:text-indigo-600 hover:underline truncate max-w-[90px] sm:max-w-[120px]"
                           >
                             {ancestor.name}
                           </button>
                         ) : (
-                          <span className="truncate max-w-[120px]">{ancestor.name}</span>
+                          <span className="truncate max-w-[90px] sm:max-w-[120px]">{ancestor.name}</span>
                         )}
                       </span>
                     ))}
                   </div>
                 )}
 
-                {/* Name row + actions */}
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <h2 className="text-lg font-semibold text-gray-900 truncate dark:text-white">{node.name}</h2>
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${typeBadgeColor}`}>
-                      {node.customTypeLabel || NODE_TYPE_LABELS[node.nodeType] || node.nodeType}
-                    </span>
+                {/*
+                  Identity first, metadata under it.
+
+                  This was one row holding the name, a type badge, a health
+                  pill, Manage and a close button. Everything except the name
+                  was `shrink-0`, so the name was the only thing that could
+                  give — and at 390px it gave until "Large Cap Core" stacked
+                  one word per line. The node's own name had the least room on
+                  its own page.
+
+                  On a phone the name now owns its line and the rest becomes a
+                  metadata row beneath it. Desktop keeps the single row, where
+                  there is width for it.
+                */}
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <h2 className="min-w-0 text-lg font-semibold text-gray-900 break-words sm:truncate dark:text-white">{node.name}</h2>
+                    {/* One badge, placed by viewport rather than rendered
+                        twice behind CSS visibility — a duplicate would be
+                        announced twice and would make "the type badge"
+                        ambiguous to anything querying by text. */}
+                    {!isMobile && (
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${typeBadgeColor}`}>
+                        {node.customTypeLabel || NODE_TYPE_LABELS[node.nodeType] || node.nodeType}
+                      </span>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 sm:shrink-0">
+                    {/* Type reads as metadata on a phone, beside health,
+                        rather than as a badge competing with the name. */}
+                    {isMobile && (
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${typeBadgeColor}`}>
+                        {node.customTypeLabel || NODE_TYPE_LABELS[node.nodeType] || node.nodeType}
+                      </span>
+                    )}
                     {showGovernanceSignals && (
                       <HealthPill score={node.healthScore} size="md" showLabel showTooltip />
                     )}
                     {canManageOrgStructure && (
                       <button
                         onClick={() => slideToManage()}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors dark:hover:bg-gray-700 dark:text-gray-400"
+                        className="no-touch-target tap-pad ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-800 sm:ml-0 dark:hover:bg-gray-700 dark:text-gray-400"
                         title="Manage node"
                       >
                         <Settings className="w-3.5 h-3.5" />
                         Manage
                       </button>
                     )}
+                    {/* Back is the mobile navigation model; a second exit
+                        beside it is a question, not a convenience. */}
                     <button
                       ref={profileCloseRef}
                       onClick={onClose}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
+                      className={clsx(
+                        'p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700',
+                        backLabel && 'hidden sm:block',
+                      )}
                       title="Close (Esc)"
+                      aria-label="Close"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -612,7 +700,7 @@ export function OrgNodeDetailsModal({
               </div>
 
               {/* Profile body */}
-              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5 min-h-0">
+              <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 sm:px-6 sm:py-4 sm:space-y-5 min-h-0">
                 {/* KPI Row */}
                 <KpiRow
                   totalMembers={Math.max(node.totalMemberCount, uniqueMemberCount)}
@@ -667,13 +755,43 @@ export function OrgNodeDetailsModal({
               aria-hidden={modalPage !== 'manage'}
             >
               {/* Manage header */}
-              <div className="px-5 pt-4 pb-3 border-b border-gray-200 shrink-0 dark:border-gray-700">
-                <div className="flex items-center justify-between mb-2">
+              <div className="px-3 pt-3 pb-2 sm:px-5 sm:pt-4 sm:pb-3 border-b border-gray-200 shrink-0 dark:border-gray-700">
+                {/* Mobile return path — one step, whichever step that is.
+
+                    Back has to undo the last move, and there are two ways to
+                    arrive here. A team opens *directly* onto this page, so
+                    its last move was leaving Structure or Coverage and Back
+                    closes the sheet. Every other node type opens on the
+                    profile and slides here via Manage, so its last move was
+                    that slide and Back must return to the profile — closing
+                    would skip a screen the reader was just on, which is
+                    exactly what it did.
+
+                    `initialPage` is the record of which entry happened.
+                    Desktop keeps the chevron and X below. */}
+                {backLabel && (
+                  <button
+                    type="button"
+                    onClick={profileIsBehind ? slideToProfile : onClose}
+                    data-slot="node-sheet-back"
+                    className="sm:hidden -ml-1 mb-1 flex min-h-[44px] items-center gap-1 pr-2 text-sm font-medium text-gray-600 dark:text-gray-300"
+                  >
+                    <ChevronLeft className="w-5 h-5 shrink-0" />
+                    <span className="truncate">{profileIsBehind ? node.name : backLabel}</span>
+                  </button>
+                )}
+
+                <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <button
                       onClick={slideToProfile}
-                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors shrink-0 dark:hover:text-gray-300 dark:hover:bg-gray-700"
+                      className={clsx(
+                        'no-touch-target tap-pad p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors shrink-0 dark:hover:text-gray-300 dark:hover:bg-gray-700',
+                        // Redundant on a phone that arrived here directly.
+                        backLabel && 'hidden sm:block',
+                      )}
                       title="Back to profile"
+                      aria-label="Back to profile"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
@@ -681,27 +799,35 @@ export function OrgNodeDetailsModal({
                       <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                         {node.customTypeLabel || NODE_TYPE_LABELS[node.nodeType] || node.nodeType}
                       </div>
-                      <h2 className="text-base font-semibold text-gray-900 truncate dark:text-white">{node.name}</h2>
+                      {/* The team's name wraps rather than truncating: on a
+                          phone "Growt…" is not an identity, and this sheet is
+                          the one place the full name has to be readable. */}
+                      <h2 className="text-base font-semibold text-gray-900 break-words sm:truncate dark:text-white">{node.name}</h2>
                     </div>
                   </div>
                   <button
                     ref={manageCloseRef}
                     onClick={onClose}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors shrink-0 dark:hover:text-gray-300 dark:hover:bg-gray-700"
+                    className={clsx(
+                      'no-touch-target tap-pad p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors shrink-0 dark:hover:text-gray-300 dark:hover:bg-gray-700',
+                      backLabel && 'hidden sm:block',
+                    )}
                     title="Close (Esc)"
+                    aria-label="Close"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
 
-                {/* Tab bar */}
-                <div className="flex gap-1">
+                {/* Tab bar — a scrolling rail on a phone, where four tabs plus
+                    their padding do not fit a row inside the sheet's gutters. */}
+                <div className="flex gap-1 -mx-3 px-3 overflow-x-auto no-scrollbar sm:mx-0 sm:px-0 sm:overflow-visible">
                   {(['details', 'members', 'coverage', 'settings'] as ManageTab[]).map(tab => (
                     <button
                       key={tab}
                       onClick={() => setManageTab(tab)}
                       className={clsx(
-                        'px-3 py-1.5 text-xs font-medium rounded-md transition-colors capitalize',
+                        'no-touch-target tap-pad shrink-0 whitespace-nowrap px-3 py-1.5 text-xs font-medium rounded-md transition-colors capitalize',
                         manageTab === tab
                           ? 'bg-indigo-50 text-indigo-700'
                           : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400',
@@ -714,7 +840,7 @@ export function OrgNodeDetailsModal({
               </div>
 
               {/* Manage body */}
-              <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-4 min-h-0">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-5 sm:py-4 min-h-0">
                 {manageTab === 'details' && (
                   <ManageDetailsTab
                     node={node}
@@ -778,17 +904,21 @@ export function OrgNodeDetailsModal({
 
               {/* Manage footer (save button, details/settings tabs only) */}
               {(manageTab === 'details' || manageTab === 'settings') && (
-                <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 shrink-0 dark:border-gray-700 dark:bg-gray-900">
+                /* The inset is *added* to the padding, not substituted for
+                   it — `pb-safe` sets `padding-bottom` outright and resolves
+                   to 0 without a home indicator, which is how a footer ends
+                   up flush against the edge. */
+                <div className="px-3 pt-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] sm:px-5 sm:pt-3 sm:pb-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 shrink-0 dark:border-gray-700 dark:bg-gray-900">
                   <button
                     onClick={slideToProfile}
-                    className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-md transition-colors dark:text-gray-400"
+                    className="min-h-[40px] px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-md transition-colors dark:text-gray-400"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveDetails}
                     disabled={!canSaveDetails || isSaving}
-                    className="px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="min-h-[40px] px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {isSaving ? 'Saving...' : 'Save changes'}
                   </button>
@@ -856,8 +986,11 @@ function KpiRow({
 }
 
 function KpiChip({ label, value }: { label: string; value: string | number }) {
+  /* Label and value on one line on a phone — stacked, three of these become
+     a row of little cards for two words each. They are supporting counts,
+     not the content. */
   return (
-    <div className="bg-gray-50 rounded-md px-3 py-1.5 dark:bg-gray-900">
+    <div className="flex items-baseline gap-1.5 rounded-md bg-gray-50 px-2 py-1 sm:block sm:px-3 sm:py-1.5 dark:bg-gray-900">
       <div className="text-[10px] text-gray-400">{label}</div>
       <div className="text-sm font-semibold text-gray-900 tabular-nums dark:text-white">{value}</div>
     </div>
@@ -931,16 +1064,19 @@ function MembersCard({
     return `${role}${sourcePart}${focusPart}`
   }
 
+  /* Flatter on a phone: these sections sit inside a sheet that already has an
+     edge, so a rounded bordered card around each is a second boundary saying
+     the same thing. */
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden dark:border-gray-700">
-      <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+    <div className="border-t border-gray-100 sm:border sm:border-gray-200 sm:rounded-xl sm:overflow-hidden dark:border-gray-800 dark:sm:border-gray-700">
+      <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
         <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">Members</span>
         <span className="text-[10px] text-gray-400 font-medium">{groups.length}</span>
       </div>
 
-      <div className="px-4 py-3">
+      <div className="px-0 py-2 sm:px-4 sm:py-3">
         {showSearch && (
-          <div className="relative mb-3">
+          <div className="relative mb-2 px-3 sm:mb-3 sm:px-0">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input
               type="text"
@@ -953,10 +1089,13 @@ function MembersCard({
         )}
 
         {filteredGroups.length > 0 ? (
-          <div className="max-h-64 overflow-y-auto -mr-2 pr-2 custom-scrollbar">
-            <div className="space-y-1">
+          <div className="max-h-64 overflow-y-auto sm:-mr-2 sm:pr-2 custom-scrollbar">
+            {/* Plain rows separated by hairlines on a phone; the rounded
+                hover cards are a pointer affordance and read as a stack of
+                little boxes on touch. */}
+            <div className="divide-y divide-gray-100 sm:divide-y-0 sm:space-y-1 dark:divide-gray-800">
               {filteredGroups.map(g => (
-                  <div key={g.userId} className="rounded-lg hover:bg-gray-50 transition-colors px-1.5 py-1.5 dark:hover:bg-gray-800">
+                  <div key={g.userId} className="px-3 py-2 sm:rounded-lg sm:hover:bg-gray-50 transition-colors sm:px-1.5 sm:py-1.5 dark:sm:hover:bg-gray-800">
                     {/* Person row */}
                     <div className="flex items-center gap-2.5">
                       <div
@@ -1010,9 +1149,9 @@ function CoverageAdminsSection({
 }) {
   return (
     <div>
-      <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Coverage Admins</div>
+      <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 sm:mb-2">Coverage Admins</div>
       {admins.length > 0 ? (
-        <div className="space-y-1.5">
+        <div className="space-y-1 sm:space-y-1.5">
           {admins.map(m => {
             const adminInfo = adminStatusMap.get(m.id)
             const statusLabel = adminInfo?.status === 'global'
@@ -1078,14 +1217,16 @@ function GovernanceRiskCollapsible({
   showScoringDetails: boolean
   onToggleScoringDetails: () => void
 }) {
+  /* Same flattening as the Members section above. */
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden dark:border-gray-700">
+    <div className="border-t border-gray-100 sm:border sm:border-gray-200 sm:rounded-xl sm:overflow-hidden dark:border-gray-800 dark:sm:border-gray-700">
+      {/* The whole row is the control, at a real tap height. */}
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors text-left dark:hover:bg-gray-700 dark:bg-gray-900"
+        className="w-full min-h-[44px] flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors text-left dark:hover:bg-gray-700 dark:bg-gray-900"
         aria-expanded={isOpen}
       >
-        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">Governance & Risk</span>
+        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">Governance &amp; Risk</span>
         <div className="flex items-center gap-2">
           {!isOpen && (highCount + medCount + lowCount > 0) && (
             <span className="text-[10px] text-gray-400">{highCount + medCount + lowCount} flags</span>
@@ -1410,7 +1551,7 @@ function ManageMembersTab({
 
       {/* Add member form */}
       {showAddMember && (
-        <div className="bg-indigo-50 rounded-lg p-3 space-y-3">
+        <div className="border-l-2 border-indigo-300 bg-indigo-50/50 rounded-r-lg py-2.5 pl-3 pr-1 space-y-2.5 sm:border-l-0 sm:bg-indigo-50 sm:rounded-lg sm:p-3 sm:space-y-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Select User</label>
             <select
@@ -1523,7 +1664,7 @@ function ManageMembersTab({
       {groups.length > 0 ? (
         <div className="divide-y divide-gray-100 dark:divide-gray-800">
           {groups.map(group => (
-            <div key={group.userId} className="py-2">
+            <div key={group.userId} className="py-1.5 sm:py-2">
               <div className="flex items-center gap-2">
                 <div
                   className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium text-white shrink-0"
@@ -1532,12 +1673,23 @@ function ManageMembersTab({
                   {group.initial}
                 </div>
                 <span className="text-sm font-medium text-gray-900 truncate flex-1 min-w-0 dark:text-white">{group.displayName}</span>
-                <span className="text-[10px] text-gray-400 whitespace-nowrap shrink-0">
-                  {group.entries.length} {group.entries.length === 1 ? 'role' : 'roles'}
-                </span>
+                {/* The role count only earns its place once there is more than
+                    one — "1 role" beside a name that already shows its role
+                    below is a word doing nothing. */}
+                {group.entries.length > 1 && (
+                  <span className="text-[10px] text-gray-400 whitespace-nowrap shrink-0">
+                    {group.entries.length} roles
+                  </span>
+                )}
               </div>
-              {/* Membership entries */}
-              <div className="mt-1 space-y-1 ml-9">
+              {/* Membership entries.
+
+                  The indent aligns these under the name, not the avatar, so
+                  the role reads as part of the person rather than a separate
+                  item. What was loose was the vertical gap: 4px above and
+                  4px between, on rows only ~16px tall, made the role look
+                  detached from the name it belongs to. */}
+              <div className="mt-0 space-y-0 ml-9 sm:mt-1 sm:space-y-1">
                 {group.entries.map(entry => {
                   const isFromChild = entry.node_id !== node.id
                   const isEditing = editingEntryId === entry.id
@@ -1546,7 +1698,12 @@ function ManageMembersTab({
                     const focusOpts = getFocusOptionsForRole(editRole)
                     const currentFocuses = editFocus ? editFocus.split(', ').filter(Boolean) : []
                     return (
-                      <div key={entry.id} className="bg-indigo-50 rounded-lg p-2.5 space-y-2">
+                      /* Editing one member is a state of that row, not a new
+                         object on the page. A solid indigo block reads as the
+                         latter on a phone, where it is most of the viewport;
+                         a left rule and a tint say "this row is open" without
+                         becoming a nested panel. */
+                      <div key={entry.id} className="border-l-2 border-indigo-300 bg-indigo-50/50 rounded-r-lg py-2 pl-2.5 pr-1 space-y-2 sm:border-l-0 sm:bg-indigo-50 sm:rounded-lg sm:p-2.5">
                         {isTeamLike ? (
                           <>
                             <div>
@@ -1649,9 +1806,14 @@ function ManageMembersTab({
                   }
 
                   return (
-                    <div key={entry.id} className="flex items-center gap-1.5">
-                      <span className="w-1 h-1 rounded-full bg-gray-300 shrink-0" />
-                      <span className="text-xs text-gray-500 truncate flex-1 min-w-0 dark:text-gray-400">{getMembershipLabel(entry)}</span>
+                    <div key={entry.id} className="flex items-center gap-1.5 min-h-[20px]">
+                      {/* The bullet is only meaningful when there is a list
+                          to bullet. With one role it is a mark beside a
+                          single line, adding an indent and saying nothing. */}
+                      {group.entries.length > 1 && (
+                        <span className="w-1 h-1 rounded-full bg-gray-300 shrink-0" />
+                      )}
+                      <span className="text-xs text-gray-500 truncate flex-1 min-w-0 leading-tight dark:text-gray-400">{getMembershipLabel(entry)}</span>
                       {!isFromChild && onUpdateMember && (
                         <button
                           onClick={() => startEditing(entry)}
@@ -1867,20 +2029,23 @@ function ManageSettingsTab({
   onNonInvestmentChange: (v: boolean) => void
 }) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       {/* Color */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+        <label className="block text-sm font-medium text-gray-700 mb-1.5 sm:mb-2 dark:text-gray-300">
           <Palette className="w-3.5 h-3.5 inline mr-1.5" />
           Color
         </label>
+        {/* Swatches are already a 32px target and wrap; `tap-pad` gives the
+            thumb the rest without growing the drawn circle. */}
         <div className="flex flex-wrap gap-2">
           {NODE_COLORS.map(c => (
             <button
               key={c}
               onClick={() => onColorChange(c)}
+              aria-label={`Set colour ${c}`}
               className={clsx(
-                'w-8 h-8 rounded-full border-2 transition-all',
+                'no-touch-target tap-pad w-8 h-8 rounded-full border-2 transition-all',
                 editColor === c ? 'border-gray-800 scale-110 shadow-sm' : 'border-transparent hover:scale-105',
               )}
               style={{ backgroundColor: c }}

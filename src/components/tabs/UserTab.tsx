@@ -10,7 +10,8 @@ import {
   CheckSquare,
   Target,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  ArrowLeft
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Card } from '../ui/Card'
@@ -18,6 +19,17 @@ import { Badge } from '../ui/Badge'
 import { AnalystPerformanceCard } from '../outcomes/AnalystPerformanceCard'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
+
+/*
+  The four section empty states, which are identical apart from icon and copy.
+
+  On a phone: a single left-aligned line, no panel, no dashed border. From
+  `sm` up: the original centred dashed panel. Four of these stacked were the
+  bulk of an empty profile.
+*/
+const EMPTY_SECTION_CLASS =
+  'flex items-center gap-2.5 py-2 text-left sm:block sm:text-center sm:py-8 sm:bg-gray-50 sm:rounded-lg sm:border-2 sm:border-dashed sm:border-gray-300 dark:sm:border-gray-600 dark:sm:bg-gray-900'
+const EMPTY_ICON_CLASS = 'h-5 w-5 shrink-0 text-gray-400 sm:h-8 sm:w-8 sm:mx-auto sm:mb-2'
 
 interface UserTabProps {
   user: {
@@ -28,9 +40,18 @@ interface UserTabProps {
     [key: string]: any
   }
   onNavigate?: (result: { id: string; title: string; type: string; data: any }) => void
+  /**
+   * Leave this person and return to where they were opened from.
+   *
+   * A person opens as its own tab, and `TabManager` is desktop-only — so on a
+   * phone there is no tab strip to go back with and this surface was a dead
+   * end. Supplied only on mobile; desktop closes the tab from the strip as
+   * before.
+   */
+  onBack?: () => void
 }
 
-export function UserTab({ user, onNavigate }: UserTabProps) {
+export function UserTab({ user, onNavigate, onBack }: UserTabProps) {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
 
   const toggleSection = (section: string) => {
@@ -147,12 +168,26 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
   const displayName = profile.full_name || profile.email || 'Unknown User'
 
   return (
-    <div className="h-full overflow-auto p-6 space-y-6">
+    <div className="h-full overflow-auto p-3 sm:p-6 space-y-3 sm:space-y-6">
+      {/* Back to where this person was opened from. Mobile only: on desktop
+          the tab strip is the way back and this would be a second one. */}
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          data-slot="user-back"
+          className="sm:hidden -mt-1 flex items-center gap-1.5 min-h-[44px] pr-2 text-sm font-medium text-gray-600 dark:text-gray-300"
+        >
+          <ArrowLeft className="w-5 h-5 shrink-0" />
+          <span>Back</span>
+        </button>
+      )}
+
       {/* User Header */}
-      <Card>
-        <div className="flex items-start gap-6">
+      <Card className="max-sm:p-3 max-sm:shadow-none">
+        <div className="flex items-start gap-3 sm:gap-6">
           {/* Avatar */}
-          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
+          <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-lg sm:text-2xl font-bold flex-shrink-0">
             {profile.avatar_url ? (
               <img src={profile.avatar_url} alt={displayName} className="w-full h-full rounded-full object-cover" />
             ) : (
@@ -161,10 +196,10 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
           </div>
 
           {/* User Info */}
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{displayName}</h1>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white break-words">{displayName}</h1>
 
-            <div className="mt-2 space-y-1">
+            <div className="mt-1 sm:mt-2 space-y-1">
               {profile.email && (
                 <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                   <Mail className="w-4 h-4" />
@@ -185,31 +220,34 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
               )}
             </div>
 
-            {/* Quick Stats */}
-            <div className="mt-4 flex gap-6">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">{coveredAssets?.length || 0}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Assets Covered</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">{priceTargets?.length || 0}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Price Targets</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">{recentNotes?.length || 0}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Notes</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">{assignedTasks?.length || 0}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Open Tasks</div>
-              </div>
+            {/* Quick Stats.
+
+                Four `text-2xl` numerals spread across a row is a desktop
+                stat band; on a phone it was four zeros dominating the first
+                screen of a person's profile. Same four facts, same order, as
+                a compact strip — the person's identity should be the largest
+                thing here, not the absence of their data. */}
+            <div className="mt-2 sm:mt-4 grid grid-cols-4 gap-1 sm:flex sm:gap-6">
+              {([
+                ['Assets Covered', coveredAssets?.length || 0],
+                ['Price Targets', priceTargets?.length || 0],
+                ['Notes', recentNotes?.length || 0],
+                ['Open Tasks', assignedTasks?.length || 0],
+              ] as const).map(([label, value]) => (
+                <div key={label} className="min-w-0 sm:text-center">
+                  <div className={`text-base sm:text-2xl font-bold tabular-nums ${value > 0 ? 'text-gray-900 dark:text-white' : 'text-gray-300 dark:text-gray-600'}`}>
+                    {value}
+                  </div>
+                  <div className="text-[10px] sm:text-xs leading-tight text-gray-500 dark:text-gray-400">{label}</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </Card>
 
       {/* Track Record Section */}
-      <Card padding="none">
+      <Card padding="none" className="max-sm:shadow-none">
         <button
           onClick={() => toggleSection('trackRecord')}
           className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
@@ -235,7 +273,7 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
       </Card>
 
       {/* Covered Assets Section */}
-      <Card padding="none">
+      <Card padding="none" className="max-sm:shadow-none">
         <button
           onClick={() => toggleSection('coveredAssets')}
           className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
@@ -283,8 +321,12 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
-                <Target className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              /* Compact on a phone: one line of icon + copy. A dashed panel
+                 with a centred 32px icon and `py-8` is ~130px of a 844px
+                 screen saying nothing — four of them, stacked, were most of
+                 this profile. Desktop keeps the panel. */
+              <div className={EMPTY_SECTION_CLASS}>
+                <Target className={EMPTY_ICON_CLASS} />
                 <p className="text-sm text-gray-500 dark:text-gray-400">No coverage assignments</p>
               </div>
             )}
@@ -293,7 +335,7 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
       </Card>
 
       {/* Price Targets Section */}
-      <Card padding="none">
+      <Card padding="none" className="max-sm:shadow-none">
         <button
           onClick={() => toggleSection('priceTargets')}
           className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
@@ -346,8 +388,8 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
-                <TrendingUp className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <div className={EMPTY_SECTION_CLASS}>
+                <TrendingUp className={EMPTY_ICON_CLASS} />
                 <p className="text-sm text-gray-500 dark:text-gray-400">No price targets set</p>
               </div>
             )}
@@ -356,7 +398,7 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
       </Card>
 
       {/* Open Tasks Section */}
-      <Card padding="none">
+      <Card padding="none" className="max-sm:shadow-none">
         <button
           onClick={() => toggleSection('openTasks')}
           className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
@@ -400,8 +442,8 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
-                <CheckSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <div className={EMPTY_SECTION_CLASS}>
+                <CheckSquare className={EMPTY_ICON_CLASS} />
                 <p className="text-sm text-gray-500 dark:text-gray-400">No open tasks assigned</p>
               </div>
             )}
@@ -410,7 +452,7 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
       </Card>
 
       {/* Recent Notes Section */}
-      <Card padding="none">
+      <Card padding="none" className="max-sm:shadow-none">
         <button
           onClick={() => toggleSection('recentNotes')}
           className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
@@ -457,8 +499,8 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
-                <FileText className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <div className={EMPTY_SECTION_CLASS}>
+                <FileText className={EMPTY_ICON_CLASS} />
                 <p className="text-sm text-gray-500 dark:text-gray-400">No notes yet</p>
               </div>
             )}

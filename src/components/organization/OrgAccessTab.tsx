@@ -9,6 +9,9 @@
 import React, { useState, useMemo, useCallback } from 'react'
 import { clsx } from 'clsx'
 import { FileText, Search, Download, UserCircle, AlertTriangle } from 'lucide-react'
+import { FilterSelect } from './FilterSelect'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { GovernanceListRow, GovernanceDetailSection, GovernanceNameList } from './OrgGovernanceList'
 import { Button } from '../ui/Button'
 import { format } from 'date-fns'
 import { csvSanitizeCell } from '../../lib/csv-sanitize'
@@ -123,9 +126,11 @@ export function OrgAccessTab({
   portfolioMemberships,
   authorityRows,
 }: OrgAccessTabProps) {
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all')
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'member' | 'flagged'>('all')
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
 
   const generatedAt = useMemo(() => format(new Date(), 'MMM d, yyyy h:mm a'), [])
 
@@ -267,9 +272,9 @@ export function OrgAccessTab({
   return (
     <div className="space-y-4">
       {/* Report Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center dark:border-gray-700 dark:bg-gray-800">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <div className="hidden sm:flex w-9 h-9 rounded-md bg-gray-100 border border-gray-200 items-center justify-center dark:border-gray-700 dark:bg-gray-800">
             <FileText className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           </div>
           <div>
@@ -281,15 +286,29 @@ export function OrgAccessTab({
             </p>
           </div>
         </div>
-        <Button size="sm" variant="outline" onClick={handleExport} disabled={!filtered.length}>
-          <Download className="w-3.5 h-3.5 mr-1" />
-          Export CSV
+        {/* Icon-only on a phone so it does not compete with the report title,
+            but named either way. The label is written once and hidden
+            visually when there is no room — two copies behind `hidden` and
+            `sr-only` put the words in the accessible name twice. */}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleExport}
+          disabled={!filtered.length}
+          className="shrink-0"
+        >
+          <Download className="w-3.5 h-3.5 sm:mr-1" />
+          <span className={isMobile ? 'sr-only' : ''}>Export CSV</span>
         </Button>
       </div>
 
-      {/* Filter Bar */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-xs">
+      {/* Filter Bar.
+
+          Search takes its own row on a phone — squeezed beside two selects
+          it collapsed to barely more than its magnifier — and the two
+          selects share the row below it. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:flex-1 sm:max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
           <input
             type="text"
@@ -299,25 +318,35 @@ export function OrgAccessTab({
             className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:border-gray-700 dark:bg-gray-800"
           />
         </div>
-        <select
+        <FilterSelect
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'suspended')}
-          className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
-        >
-          <option value="all">All statuses</option>
-          <option value="active">Active</option>
-          <option value="suspended">Suspended</option>
-        </select>
-        <select
+          onChange={(v) => setStatusFilter(v as 'all' | 'active' | 'suspended')}
+          ariaLabel="Filter by status"
+          sheetTitle="Filter by status"
+          options={[
+            { value: 'all', label: 'All statuses' },
+            { value: 'active', label: 'Active' },
+            { value: 'suspended', label: 'Suspended' },
+          ]}
+          className="min-w-0 flex-1 sm:flex-none text-xs border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
+          buttonClassName="flex-1"
+        />
+        <FilterSelect
           value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value as 'all' | 'admin' | 'member' | 'flagged')}
-          className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
-        >
-          <option value="all">All roles</option>
-          <option value="admin">Admins only</option>
-          <option value="member">Members only</option>
-          {authorityRows && <option value="flagged">Flagged only</option>}
-        </select>
+          onChange={(v) => setRoleFilter(v as 'all' | 'admin' | 'member' | 'flagged')}
+          ariaLabel="Filter by role"
+          sheetTitle="Filter by role"
+          /* "Flagged only" exists only when authority data is loaded, exactly
+             as the option did. */
+          options={[
+            { value: 'all', label: 'All roles' },
+            { value: 'admin', label: 'Admins only' },
+            { value: 'member', label: 'Members only' },
+            ...(authorityRows ? [{ value: 'flagged', label: 'Flagged only' }] : []),
+          ]}
+          className="min-w-0 flex-1 sm:flex-none text-xs border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
+          buttonClassName="flex-1"
+        />
       </div>
 
       {/* Table */}
@@ -332,44 +361,107 @@ export function OrgAccessTab({
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
-          {/* The phone shell clips horizontal overflow, so a table this wide is unreachable without its own scroller. `sm:min-w-0` returns it to the container from 640px up, leaving desktop unchanged. */}
-          <div className="mobile-scroll-x show-scrollbar">
-          <table className="w-full text-sm min-w-[720px] sm:min-w-0">
+          {/* On a phone the report is a list, not three surviving columns of a
+              seven-column table.
+
+              Hiding Teams, Portfolios, Admin Roles and Risk Flags below `sm`
+              kept the layout honest but quietly removed governance data from
+              a governance report — someone reading it on a phone could not
+              see which teams a person actually has. Here those four become a
+              tap: the row stays scannable and nothing is dropped. */}
+          {isMobile ? (
+            <div data-slot="report-people" className="divide-y divide-gray-100 dark:divide-gray-800">
+              {filtered.map(row => (
+                <GovernanceListRow
+                  key={row.userId}
+                  name={row.name}
+                  email={row.email}
+                  dimmed={row.status === 'suspended'}
+                  status={<StatusPill status={row.status} />}
+                  badge={
+                    row.riskFlags.length > 0 ? (
+                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                        {row.riskFlags.length}
+                      </span>
+                    ) : null
+                  }
+                  meta={<RoleBadge role={row.orgRole === 'Admin' ? 'org-admin' : 'member'} compact />}
+                  secondaryMeta={
+                    [
+                      row.teamNames.length > 0 && `${row.teamNames.length} ${row.teamNames.length === 1 ? 'team' : 'teams'}`,
+                      row.portfolioNames.length > 0 && `${row.portfolioNames.length} ${row.portfolioNames.length === 1 ? 'portfolio' : 'portfolios'}`,
+                    ].filter(Boolean).join(' · ') || undefined
+                  }
+                  expanded={expandedUserId === row.userId}
+                  onToggle={() => setExpandedUserId(prev => prev === row.userId ? null : row.userId)}
+                >
+                  <div className="space-y-2.5 bg-gray-50/60 px-3 py-2.5 dark:bg-gray-900/30">
+                    {row.adminRoles.length > 0 && (
+                      <GovernanceDetailSection title="Admin roles">
+                        <GovernanceNameList items={row.adminRoles} />
+                      </GovernanceDetailSection>
+                    )}
+                    <GovernanceDetailSection title="Teams" count={row.teamNames.length}>
+                      <GovernanceNameList items={row.teamNames} empty="No teams" />
+                    </GovernanceDetailSection>
+                    <GovernanceDetailSection title="Portfolios" count={row.portfolioNames.length}>
+                      <GovernanceNameList items={row.portfolioNames} empty="No portfolios" />
+                    </GovernanceDetailSection>
+                    {row.riskFlags.length > 0 && (
+                      <GovernanceDetailSection title="Risk flags" count={row.riskFlags.length} tone="risk">
+                        <ul className="space-y-1">
+                          {row.riskFlags.map(flag => (
+                            <li key={flag} className="flex items-start gap-1.5 break-words text-xs text-red-700">
+                              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-red-500" />
+                              <span className="break-words">{flag}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </GovernanceDetailSection>
+                    )}
+                  </div>
+                </GovernanceListRow>
+              ))}
+            </div>
+          ) : (
+          <div className="sm:mobile-scroll-x sm:show-scrollbar">
+          <table className="w-full text-sm min-w-0">
             <thead>
               <tr className="bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
-                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Person</th>
-                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Status</th>
-                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Org Role</th>
+                <th className="text-left px-3 sm:px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Person</th>
+                <th className="text-left px-2 sm:px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Status</th>
+                <th className="text-left px-2 sm:px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Org Role</th>
                 {authorityRows && (
-                  <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Admin Roles</th>
+                  <th className="hidden sm:table-cell text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Admin Roles</th>
                 )}
-                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Teams</th>
-                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Portfolios</th>
+                <th className="hidden sm:table-cell text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Teams</th>
+                <th className="hidden sm:table-cell text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Portfolios</th>
                 {authorityRows && (
-                  <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Risk Flags</th>
+                  <th className="hidden sm:table-cell text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Risk Flags</th>
                 )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {filtered.map((row) => (
                 <tr key={row.userId} className={`hover:bg-gray-50/50 ${row.status === 'suspended' ? 'opacity-60' : ''}`}>
-                  <td className="px-4 py-2.5">
+                  <td className="px-3 sm:px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <UserCircle className="w-4 h-4 text-gray-400 flex-shrink-0" />
                       <div className="min-w-0">
-                        <div className="font-medium text-gray-900 truncate max-w-[180px] dark:text-white">{row.name}</div>
+                        <div className="font-medium text-gray-900 truncate sm:max-w-[180px] dark:text-white">{row.name}</div>
                         <div className="text-[11px] text-gray-400 truncate">{row.email}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-2 sm:px-4 py-2.5">
                     <StatusPill status={row.status} />
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-2 sm:px-4 py-2.5">
                     <RoleBadge role={row.orgRole === 'Admin' ? 'org-admin' : 'member'} compact />
                   </td>
                   {authorityRows && (
-                    <td className="px-4 py-2.5">
+                    <td className="hidden sm:table-cell px-4 py-2.5">
                       {row.adminRoles.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
                           {row.adminRoles.map((r) => (
@@ -386,14 +478,14 @@ export function OrgAccessTab({
                       )}
                     </td>
                   )}
-                  <td className="px-4 py-2.5">
+                  <td className="hidden sm:table-cell px-4 py-2.5">
                     <TruncatedBadges items={row.teamNames} maxVisible={3} style="bg-blue-50 text-blue-700" />
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td className="hidden sm:table-cell px-4 py-2.5">
                     <TruncatedBadges items={row.portfolioNames} maxVisible={3} style="bg-emerald-50 text-emerald-700" />
                   </td>
                   {authorityRows && (
-                    <td className="px-4 py-2.5">
+                    <td className="hidden sm:table-cell px-4 py-2.5">
                       <TruncatedBadges
                         items={row.riskFlags}
                         maxVisible={2}
@@ -407,6 +499,7 @@ export function OrgAccessTab({
             </tbody>
           </table>
           </div>
+          )}
         </div>
       )}
     </div>
