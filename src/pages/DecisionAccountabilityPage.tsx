@@ -85,6 +85,7 @@ import { usePilotMission } from '../hooks/usePilotMission'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { MultiSelectFilter } from '../components/ui/MultiSelectFilter'
+import { resolvePortfolioFilter, applyColumnFilters } from '../lib/outcomes/outcomesFilterScope'
 import type {
   AccountabilityFilters,
   AccountabilityRow,
@@ -930,7 +931,10 @@ function StorySection({ icon: Icon, title, children, defaultOpen = false, badge,
 
 /** Empty state for missing data */
 function EmptyField({ text }: { text: string }) {
-  return <p className="text-[10px] text-gray-300 italic">{text}</p>
+  /* gray-300 on white is about 1.6:1 — legible on a desk, not outdoors on a
+     phone, which is where this copy is read. gray-400 clears the same bar
+     every other empty state in the panel already uses. */
+  return <p className="text-[10px] text-gray-400 italic dark:text-gray-500">{text}</p>
 }
 
 /** Inline composer for attaching a thesis to an idea after the fact.
@@ -1295,7 +1299,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
       badge={badge}
     >
       {isLoading ? (
-        <p className="text-[10px] text-gray-300">Loading…</p>
+        <p className="text-[10px] text-gray-400 dark:text-gray-500">Loading…</p>
       ) : (
         <div className="space-y-4">
           {/* ── Structured review (decision_reviews) ───────────── */}
@@ -1608,6 +1612,27 @@ function LoopFooter({ row }: { row: AccountabilityRow }) {
 }
 
 /** Exported for the phone layout test only; the page is its one caller. */
+/**
+ * A placeholder for a story field that has not arrived yet.
+ *
+ * The alternative — which is what shipped — was to render "No thesis
+ * recorded." while the fetch was still in flight, because `story` is
+ * undefined until it lands. That is a false statement about the user's own
+ * decision, and on a phone the window is seconds rather than a frame.
+ * Skeleton bars say "not yet" where the sentence said "never".
+ */
+function StoryLoadingLine() {
+  return (
+    <div data-slot="story-loading" className="space-y-1.5 py-0.5">
+      {/* aria-hidden on the bars only — a sibling carries the announcement,
+          since aria-hidden would suppress a child too. */}
+      <div aria-hidden className="h-2.5 w-3/4 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+      <div aria-hidden className="h-2.5 w-1/2 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+      <span className="sr-only">Loading…</span>
+    </div>
+  )
+}
+
 export function DetailPanel({
   row,
   onClose,
@@ -1891,7 +1916,11 @@ export function DetailPanel({
           sectionId="thesis"
           icon={Lightbulb}
           title="Why this decision was made"
-          needsAttention={!row.rationale_text && !(story?.theses && story.theses.length > 0) && !story?.ideaExtras?.thesis_text}
+          /* Not while the story is still loading. `story` is undefined until
+             the fetch lands, so this read as "Needs info" on a decision that
+             does have a thesis — a wrong claim, not just an early one, and on
+             a phone the window is seconds rather than a frame. */
+          needsAttention={!storyLoading && !row.rationale_text && !(story?.theses && story.theses.length > 0) && !story?.ideaExtras?.thesis_text}
         >
           {/* Compact metadata line — owner, date, conviction, horizon
               all on one row separated by middle dots. Sits at the top
@@ -1912,7 +1941,9 @@ export function DetailPanel({
           {/* ── 1. THESIS ── the long-form view of the trade. */}
           <div className="border-l-2 border-gray-300 pl-2.5 dark:border-gray-600">
             <div className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-1 dark:text-gray-400">Thesis</div>
-            {story?.ideaExtras?.thesis_text ? (
+            {storyLoading ? (
+              <StoryLoadingLine />
+            ) : story?.ideaExtras?.thesis_text ? (
               <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">
                 {story.ideaExtras.thesis_text}
               </p>
@@ -2015,6 +2046,8 @@ export function DetailPanel({
                       <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap mt-1 dark:text-gray-300">{snapNotes}</p>
                     )}
                   </>
+                ) : storyLoading ? (
+                  <StoryLoadingLine />
                 ) : (
                   <p className="text-[11px] text-gray-400 italic">No recommendation submitted.</p>
                 )}
@@ -2278,13 +2311,19 @@ function ExecutionCard({ exec, decisionId }: { exec: MatchedExecution; decisionI
           {exec.match_method === 'explicit_link' ? 'Linked' : 'Fuzzy match'}
         </span>
         {exec.match_method === 'explicit_link' && decisionId && (
+          /* A bare glyph whose only name was a `title` — on touch that never
+             fires, so this was an unlabelled 12px icon that breaks a match.
+             An aria-label names it, and the word rides alongside on a phone
+             where there is no tooltip to fall back on. */
           <button
             onClick={() => unlinkM.mutate({ eventId: exec.event_id })}
             disabled={unlinkM.isPending}
-            className="ml-auto text-[10px] text-gray-400 hover:text-red-500 transition-colors"
+            aria-label="Unlink this match"
+            className="ml-auto inline-flex items-center gap-1 text-[10px] text-gray-400 hover:text-red-500 transition-colors"
             title="Unlink this match"
           >
-            <Unlink className="w-3 h-3" />
+            <Unlink aria-hidden className="w-3 h-3" />
+            <span className="sm:hidden">Unlink</span>
           </button>
         )}
       </div>
@@ -2486,6 +2525,11 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
             {(row.impact_proxy != null || row.move_since_decision_pct !== null) && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
                 {row.impact_proxy != null && (
+                  /* The caveat was a `title` only, so on a phone there was no
+                     way to learn that this dollar figure is a proxy rather
+                     than realised P&L. A qualification on a financial number
+                     cannot be hover-only; it is stated in the panel now, and
+                     the tooltip stays for the pointer. */
                   <DetailRow
                     label={<span title="Approximate dollar impact: trade size × directionalized price move. Not exact P&L.">P&amp;L (approx)</span>}
                     value={
@@ -2494,6 +2538,14 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                       </span>
                     }
                   />
+                )}
+                {row.impact_proxy != null && (
+                  <p
+                    data-slot="pnl-approx-note"
+                    className="col-span-full text-[10px] leading-snug text-gray-400 dark:text-gray-500"
+                  >
+                    Trade size × directionalized price move — not exact P&amp;L.
+                  </p>
                 )}
                 {row.move_since_decision_pct !== null && (
                   <DetailRow label="Since decision" value={
@@ -3112,13 +3164,21 @@ function ManualMatchPanel({ row }: { row: AccountabilityRow }) {
           <p className="text-[10px] text-gray-400 mt-1">Trade events are detected from portfolio holdings changes</p>
         </div>
       ) : (
-        <div className="space-y-1.5 max-h-48 overflow-auto">
+        /* `overflow-auto` scrolled both axes. Phone scrollbars are hidden
+           globally, and the overlay clips horizontally, so a row that
+           overran its ~310px card scrolled sideways with nothing to show it
+           — invisible and undiscoverable. The rows wrap now, so there is
+           nothing to scroll horizontally, and only the list scrolls. */
+        <div className="space-y-1.5 max-h-48 overflow-y-auto overflow-x-hidden">
           {available.map(evt => (
             <div
               key={evt.id}
               className="flex items-center justify-between p-2 rounded border border-gray-100 hover:border-teal-300 hover:bg-teal-50/30 transition-colors dark:border-gray-800"
             >
-              <div className="flex items-center gap-2 min-w-0">
+              {/* Wraps rather than overflowing: the phone type-lift renders
+                  these ~30% wider than they were laid out for, and the
+                  "linked elsewhere" chip is what tipped the row over. */}
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded bg-gray-100 text-gray-600 shrink-0 dark:text-gray-400 dark:bg-gray-800">
                   {evt.action_type}
                 </span>
@@ -3240,7 +3300,39 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
 
   const [activeTab, setActiveTab] = useState<OutcomesSubTab>(() => persisted?.activeTab ?? 'decisions')
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(() => persisted?.selectedPortfolioId ?? null)
-  const { data: allPortfolios = [] } = usePortfoliosForFilter()
+  const { data: allPortfolios = [], isSuccess: portfoliosLoaded } = usePortfoliosForFilter()
+
+  // The ledger, its column headers and the 440px detail column are all
+  // desktop-shaped; the phone gets a list and a full-screen detail.
+  const isMobileViewport = useIsMobile()
+
+  /*
+   * The portfolio filter that is actually applied.
+   *
+   * `selectedPortfolioId` is restored from sessionStorage without being
+   * checked against the portfolios that exist now, so a snapshot naming a
+   * portfolio that has since been deleted or moved out of reach kept
+   * filtering the data while the `<select>` — finding no matching option —
+   * displayed "All portfolios". The control and the dataset disagreed, and
+   * the control was the one telling the truth about nothing.
+   *
+   * So an id that is not in the current list resolves to "no filter". Only
+   * once the list has actually loaded: an empty array during the fetch is
+   * not evidence that the id is stale, and treating it as such would drop a
+   * valid filter for a frame and refetch the wrong rows.
+   */
+  const effectivePortfolioId = useMemo(
+    () => resolvePortfolioFilter(selectedPortfolioId, allPortfolios, portfoliosLoaded),
+    [selectedPortfolioId, allPortfolios, portfoliosLoaded],
+  )
+
+  // Clear the stale value at the source too, so it stops being persisted and
+  // the selector, the dataset and the snapshot all say the same thing.
+  useEffect(() => {
+    if (selectedPortfolioId && portfoliosLoaded && effectivePortfolioId === null) {
+      setSelectedPortfolioId(null)
+    }
+  }, [selectedPortfolioId, portfoliosLoaded, effectivePortfolioId])
   const [filters, setFilters] = useState<Partial<AccountabilityFilters>>(() => persisted?.filters ?? {
     showApproved: true,
     showRejected: true,
@@ -3393,11 +3485,12 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
    * this page only once it has loaded the tutorial decision.
    */
 
-  // Merge portfolio selection into filters
+  // Merge portfolio selection into filters. `effectivePortfolioId`, not the
+  // raw persisted one, so a stale id can never reach the query.
   const effectiveFilters = useMemo(() => ({
     ...filters,
-    portfolioIds: selectedPortfolioId ? [selectedPortfolioId] : [],
-  }), [filters, selectedPortfolioId])
+    portfolioIds: effectivePortfolioId ? [effectivePortfolioId] : [],
+  }), [filters, effectivePortfolioId])
 
   const { rows, unmatchedExecutions, summary, isLoading, isError, refetch } = useDecisionAccountability({ filters: effectiveFilters })
 
@@ -3493,29 +3586,23 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
       const match = rowIntels.find(ri => ri.row.decision_id === row.decision_id)
       return { row, intel: match?.intel ?? inferDecisionIntelligence(row) }
     })
-    // Column filters
+    /*
+     * The smart-chip selection is shared Outcomes state, not a table-view
+     * preference — it is the same "what needs attention" idea the phone
+     * shows as the review-status card — so it applies on both.
+     */
     if (activeChip && activeChip.key !== 'all') mapped = mapped.filter(({ intel }) => activeChip.filterFn(intel))
-    if (typeFilter) mapped = mapped.filter(({ row }) => row.direction === typeFilter)
-    if (tickerSearch) { const q = tickerSearch.toLowerCase(); mapped = mapped.filter(({ row }) => row.asset_symbol?.toLowerCase().includes(q)) }
-    if (nameSearch) { const q = nameSearch.toLowerCase(); mapped = mapped.filter(({ row }) => row.asset_name?.toLowerCase().includes(q)) }
-    if (portfolioFilter) mapped = mapped.filter(({ row }) => row.portfolio_name === portfolioFilter)
-    if (issueSearch) {
-      const q = issueSearch.toLowerCase()
-      mapped = mapped.filter(({ row, intel }) => {
-        if (intel.primaryIssue.toLowerCase().includes(q)) return true
-        // Also match against the system insight so searches behave
-        // consistently with what's actually rendered in the column.
-        if (row.execution_status === 'executed') {
-          return buildSystemInsight(row).text.toLowerCase().includes(q)
-        }
-        return false
-      })
-    }
-    if (actionFilter) {
-      if (actionFilter === 'has_action') mapped = mapped.filter(({ intel }) => intel.actionNeeded != null)
-      else if (actionFilter === 'no_action') mapped = mapped.filter(({ intel }) => intel.actionNeeded == null)
-    }
-    if (ownerFilter) mapped = mapped.filter(({ row }) => row.owner_name === ownerFilter)
+
+    /*
+     * The desktop column filters, applied only where their controls exist.
+     * See `outcomesFilterScope` — the rule and the reasoning live with the
+     * function so the tests exercise the shipped code rather than a copy.
+     */
+    mapped = applyColumnFilters(
+      mapped,
+      { typeFilter, tickerSearch, nameSearch, portfolioFilter, issueSearch, actionFilter, ownerFilter },
+      { isMobileViewport },
+    )
     // Sort by urgency (critical first) then by existing sort
     mapped.sort((a, b) => {
       const ua = URGENCY_RANK[a.intel.urgency] ?? 4
@@ -3524,7 +3611,7 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
       return 0
     })
     return mapped
-  }, [sortedRows, rowIntels, activeChipKey, smartChips, typeFilter, tickerSearch, nameSearch, portfolioFilter, issueSearch, actionFilter, ownerFilter])
+  }, [sortedRows, rowIntels, activeChipKey, smartChips, typeFilter, tickerSearch, nameSearch, portfolioFilter, issueSearch, actionFilter, ownerFilter, isMobileViewport])
 
   const selectedRow = useMemo(
     () => sortedRows.find(r => r.decision_id === selectedId) || null,
@@ -3735,7 +3822,7 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
       { id: 'ticker', label: 'Ticker', sortKey: 'ticker', filterType: 'search' },
       { id: 'name', label: 'Name', sortKey: 'name', filterType: 'search' },
     ]
-    if (!selectedPortfolioId) {
+    if (!effectivePortfolioId) {
       cols.push({ id: 'portfolio', label: 'Portfolio', sortKey: 'portfolio', filterType: 'dropdown' })
     }
     cols.push(
@@ -3747,12 +3834,9 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
       { id: 'date', label: 'Date', sortKey: 'date', filterType: 'dropdown' },
     )
     return cols
-  }, [selectedPortfolioId])
+  }, [effectivePortfolioId])
 
-  // The ledger, its column headers and the 440px detail column are all
-  // desktop-shaped; the phone gets a list and a full-screen detail.
-  const isMobileViewport = useIsMobile()
-  const MAIN_GRID = selectedPortfolioId ? GRID_WITHOUT_PORTFOLIO : GRID_WITH_PORTFOLIO
+  const MAIN_GRID = effectivePortfolioId ? GRID_WITHOUT_PORTFOLIO : GRID_WITH_PORTFOLIO
   // Phone: the detail is a full-screen layer over the list, so Back closes it
   // and leaves the reader on Outcomes rather than taking them out of the app.
   useDismissOnBack(isMobileViewport && !!selectedRow, () => setSelectedId(null), { enabled: isMobileViewport })
@@ -3802,7 +3886,10 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
             </div>
             <select
               aria-label="Portfolio"
-              value={selectedPortfolioId || ''}
+              /* The validated id, so the control shows the filter that is
+                 actually applied rather than falling back to "All
+                 portfolios" while a stale id still constrains the rows. */
+              value={effectivePortfolioId || ''}
               onChange={e => setSelectedPortfolioId(e.target.value || null)}
               className="no-touch-target block w-full h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-[14px] text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
             >
@@ -3859,7 +3946,7 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
           {/* Portfolio selector — shared across Decisions + Scorecards */}
           <div className="flex items-center gap-1.5 min-w-0 sm:shrink-0 sm:ml-2">
             <select
-              value={selectedPortfolioId || ''}
+              value={effectivePortfolioId || ''}
               onChange={e => setSelectedPortfolioId(e.target.value || null)}
               className="min-w-0 max-w-[55vw] sm:max-w-none text-[12px] font-semibold border border-gray-300 rounded-md px-3 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 cursor-pointer dark:border-gray-600 dark:text-white dark:bg-gray-800"
             >
@@ -3942,7 +4029,7 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
       )}
 
       {activeTab === 'scorecards' ? (
-        <ScorecardsView portfolioId={selectedPortfolioId} />
+        <ScorecardsView portfolioId={effectivePortfolioId} />
       ) : (
       <>
 
@@ -3988,16 +4075,29 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-teal-600" />
                   </div>
                 ) : isError ? (
-                  <div className="flex items-center justify-center h-48 gap-2 text-red-500">
-                    <AlertCircle className="w-4 h-4" />
-                    <span className="text-[11px]">Failed to load. </span>
-                    <button onClick={refetch} className="text-[11px] underline">Retry</button>
+                  /* Retry is the only way out of this state, so on a phone it
+                     is a real button rather than an underlined word sharing a
+                     line with the message. */
+                  <div className="flex flex-col items-center justify-center h-48 gap-2 px-6 text-center text-red-500 sm:flex-row sm:gap-2 sm:px-0">
+                    <span className="inline-flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span className="text-[13px] sm:text-[11px]">Failed to load.</span>
+                    </span>
+                    <button
+                      onClick={refetch}
+                      className="no-touch-target tap-pad rounded-md border border-red-200 px-3 py-1 text-[13px] font-medium sm:border-0 sm:px-0 sm:py-0 sm:text-[11px] sm:underline"
+                    >
+                      Retry
+                    </button>
                   </div>
                 ) : sortedRows.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-48 text-center">
+                  /* 10px was below the size anything readable should be on a
+                     phone, and this paragraph is the only explanation of why
+                     the page is empty. */
+                  <div className="flex flex-col items-center justify-center h-48 px-6 text-center">
                     <Target className="w-7 h-7 text-gray-300 mb-2" />
-                    <p className="text-[12px] font-medium text-gray-600 mb-0.5 dark:text-gray-400">No decisions yet</p>
-                    <p className="text-[10px] text-gray-400 max-w-xs">
+                    <p className="text-[14px] font-medium text-gray-600 mb-1 sm:text-[12px] sm:mb-0.5 dark:text-gray-400">No decisions yet</p>
+                    <p className="text-[12px] leading-relaxed text-gray-400 max-w-xs sm:text-[10px] sm:leading-normal">
                       When trade ideas reach a terminal stage (approved, rejected, cancelled),
                       they will appear here with execution matching and result tracking.
                     </p>
@@ -4045,7 +4145,7 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
                         isSelected={row.decision_id === selectedId}
                         onSelect={() => selectTrade(row)}
                         gridClass={MAIN_GRID}
-                        showPortfolio={!selectedPortfolioId}
+                        showPortfolio={!effectivePortfolioId}
                       />
                     )}
                   />
@@ -4060,7 +4160,7 @@ export function DecisionAccountabilityPage({ onItemSelect, focusDecisionId = nul
                       isSelected={row.decision_id === selectedId}
                       onSelect={() => selectTrade(row)}
                       gridClass={MAIN_GRID}
-                      showPortfolio={!selectedPortfolioId}
+                      showPortfolio={!effectivePortfolioId}
                     />
                   ))
                 )}
