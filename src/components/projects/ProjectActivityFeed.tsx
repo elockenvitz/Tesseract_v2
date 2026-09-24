@@ -249,7 +249,7 @@ export function ProjectActivityFeed({
 
       {/* Filters */}
       {showFilters && activities && activities.length > 5 && (
-        <div className="grid grid-cols-2 gap-2 mb-2 flex-shrink-0">
+        <div className="grid grid-cols-1 gap-2 mb-2 flex-shrink-0 sm:grid-cols-2">
           <Select
             value={activityTypeFilter}
             onChange={(e) => setActivityTypeFilter(e.target.value as 'all' | ProjectActivityType)}

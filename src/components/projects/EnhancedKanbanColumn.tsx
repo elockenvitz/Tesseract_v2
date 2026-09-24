@@ -83,7 +83,16 @@ export function EnhancedKanbanColumn({
     <div
       ref={setNodeRef}
       className={clsx(
-        'flex-1 min-w-0 bg-white dark:bg-gray-800 rounded-lg flex flex-col transition-all duration-200',
+        /* `flex-1 min-w-0` divides the width five ways, which is right on a
+           desktop and meaningless on a phone: 390px less the board's padding
+           and four gaps leaves ~58px a column, narrower than the word
+           "Planning". `min-w-0` is also what stops the parent's
+           `overflow-x-auto` from ever engaging — the columns shrink instead
+           of overflowing. On a phone each column takes a real width and the
+           board scrolls sideways within itself, so the next column is visibly
+           half-on-screen. Desktop keeps the five-way split. */
+        'w-[272px] shrink-0 sm:w-auto sm:flex-1 sm:shrink sm:min-w-0',
+        'bg-white dark:bg-gray-800 rounded-lg flex flex-col transition-all duration-200',
         isOver && 'ring-2 ring-primary-500 bg-primary-50 dark:bg-primary-900/20'
       )}
     >

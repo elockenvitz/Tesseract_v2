@@ -111,6 +111,18 @@ export const GATED_DIRS = [
   // unsigned. Getting that wrong shows a sale as money coming in, so it
   // arrives gated.
   'src/lib/trade-book/__tests__',
+  // Where a Projects row menu opens. The status, priority and tag menus are
+  // `position: fixed` and were placed straight from the anchor's rect, so on a
+  // phone a menu opened from a card low in the list ran off the bottom edge —
+  // and a fixed element off-screen cannot be scrolled to, which made changing
+  // a project's status from the list impossible rather than merely awkward.
+  // Gated on arrival; it also holds the only assertion that desktop placement
+  // is unmoved.
+  'src/lib/projects',
+  // The Projects phone layout. Source-level, because jsdom computes no widths
+  // and so cannot see that five kanban columns across 390px are 58px each. It
+  // holds the class decisions that fix is made of.
+  'src/components/projects/__tests__',
   // The Process creation wizard's mobile layout. It arrived with the mobile
   // fringe lane and was left unlisted, which is precisely the silent
   // disappearance this accounting exists to catch — the guard caught it. It

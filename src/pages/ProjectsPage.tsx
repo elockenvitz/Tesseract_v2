@@ -29,7 +29,8 @@ import {
   ArrowUp,
   Minus,
   Square,
-  CheckSquare
+  CheckSquare,
+  AlertTriangle
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -45,6 +46,7 @@ import { EmptyState } from '../components/common/EmptyState'
 import { formatDistanceToNow, format, differenceInDays } from 'date-fns'
 import { clsx } from 'clsx'
 import { useIsMobile } from '../hooks/useMediaQuery'
+import { menuPositionStyle } from '../lib/projects/menuPosition'
 import type { ProjectWithAssignments, ProjectStatus, ProjectPriority } from '../types/project'
 import { CreateProjectModal } from '../components/projects/CreateProjectModal'
 import { DeleteProjectModal } from '../components/projects/DeleteProjectModal'
@@ -98,7 +100,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
   const [draggedOverStatus, setDraggedOverStatus] = useState<ProjectStatus | null>(null)
 
   // Fetch projects user has access to (created or assigned)
-  const { data: projects, isLoading } = useQuery({
+  const { data: projects, isLoading, isError, refetch } = useQuery({
     queryKey: buildOrgQueryKey(['projects', user?.id, viewFilter], currentOrgId),
     queryFn: async () => {
       if (!user?.id) return []
@@ -1045,7 +1047,21 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
 
       {/* Project List/Board View */}
       <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-        {isLoading || !projects ? (
+        {/* `isLoading || !projects` alone renders the skeleton forever when the
+            query fails: the error leaves `projects` undefined, `isLoading`
+            goes false, and the branch below never gets reached. A phone on a
+            dropped connection sat on a loading list with no way to retry. */}
+        {isError && !projects ? (
+          <div className="p-4">
+            <EmptyState
+              compact
+              icon={AlertTriangle}
+              title="Couldn't load projects"
+              description="Something went wrong fetching this list."
+              action={{ label: 'Try again', onClick: () => { void refetch() } }}
+            />
+          </div>
+        ) : isLoading || !projects ? (
           <div className="p-4">
             <ListSkeleton count={5} />
           </div>
@@ -1133,10 +1149,11 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                               />
                               <div
                                 className="fixed bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[140px] z-20"
-                                style={{
-                                  left: `${openDropdown.rect.left}px`,
-                                  top: `${openDropdown.rect.bottom + 4}px`
-                                }}
+                                style={menuPositionStyle(
+                                  openDropdown.rect,
+                                  { width: 140, height: 4 * 44 + 8 },
+                                  { width: window.innerWidth, height: window.innerHeight }
+                                )}
                               >
                                 {(['planning', 'in_progress', 'blocked', 'completed'] as ProjectStatus[]).map((status) => (
                                   <button
@@ -1192,10 +1209,11 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                               />
                               <div
                                 className="fixed bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[120px] z-20"
-                                style={{
-                                  left: `${openDropdown.rect.left}px`,
-                                  top: `${openDropdown.rect.bottom + 4}px`
-                                }}
+                                style={menuPositionStyle(
+                                  openDropdown.rect,
+                                  { width: 120, height: 4 * 44 + 8 },
+                                  { width: window.innerWidth, height: window.innerHeight }
+                                )}
                               >
                                 {(['urgent', 'high', 'medium', 'low'] as ProjectPriority[]).map((priority) => (
                                   <button
@@ -1275,11 +1293,12 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                               onClick={() => setOpenDropdown(null)}
                             />
                             <div
-                              className="fixed bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3 w-64 z-20"
-                              style={{
-                                left: `${openDropdown.rect.left}px`,
-                                top: `${openDropdown.rect.bottom + 4}px`
-                              }}
+                              className="fixed bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3 w-64 max-w-[calc(100vw-1rem)] z-20"
+                              style={menuPositionStyle(
+                                openDropdown.rect,
+                                { width: 256, height: 280 },
+                                { width: window.innerWidth, height: window.innerHeight }
+                              )}
                             >
                               <div className="space-y-3">
                                 <div className="relative">

@@ -597,7 +597,11 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess, initialContext 
               <div className="border-t border-gray-100 dark:border-gray-700 pt-3">
                 <p className="text-[10px] font-medium text-gray-400/80 uppercase tracking-wider mb-2">Execution</p>
 
-                <div className="grid grid-cols-3 gap-3">
+                {/* Three selects across a 390px modal leaves ~95px each, and
+                    the phone layer forces every select to 16px to stop iOS
+                    zooming on focus — so "In Progress" and a date both clip.
+                    Stacked on a phone, three across from sm: up. */}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
                     <label className="block text-[12px] font-medium text-gray-600 dark:text-gray-400 mb-1">
                       Status

@@ -599,6 +599,24 @@
   .opacity-0.group-hover\:opacity-100 {
     opacity: 1;
   }
+
+  /* A board card is the drag handle — dnd-kit's listeners sit on the whole
+     card — and it carries `touch-none` so a drag is never stolen by the
+     scroller. On a mouse that costs nothing, because `touch-action` only
+     governs touch input. On a phone it means the card cannot be swiped to
+     scroll the column it is in, and once the columns have a real width the
+     cards cover nearly all of that column: the only scrollable strip left is
+     the 8px of column padding.
+
+     `pan-y` hands vertical gestures back to the scroller and keeps horizontal
+     ones for the drag. The meaningful board action is moving a card to
+     another column — a status change — and that is horizontal. Reordering
+     within a column is vertical and is therefore not draggable on touch; it
+     writes `board_position`, which orders cards and means nothing else.
+     Desktop is untouched. */
+  .kanban-card.touch-none {
+    touch-action: pan-y;
+  }
 }
 
 @layer components {
