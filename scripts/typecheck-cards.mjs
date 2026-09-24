@@ -120,7 +120,15 @@ const MAX_ERRORS = 0
 // → 8730 with PilotActionDashboard and the twelve-step checklist, then
 // → 8727 when four pilot banners collapsed onto one shell. The
 // errors went with the files; the ground is not lost by leaving the slack here.
-const MAX_REPO_ERRORS = 8725
+//
+// → 8694, closing that slack. The mobile fringe lane removed the standalone
+// Priorities app and used several previously-unused symbols, and the leftover
+// 31 points stopped being harmless: two new type errors were introduced during
+// that work and this gate still said PASS, because the count rose into slack
+// rather than through a ceiling. They were caught by diffing the number by
+// hand, which is not a gate. A ceiling above the real count is a ceiling that
+// does not bind, so this now sits exactly on the committed baseline.
+const MAX_REPO_ERRORS = 8694
 
 /**
  * A floor on real source files, now that they are counted as source files.
