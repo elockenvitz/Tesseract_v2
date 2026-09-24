@@ -31,6 +31,15 @@
 -- why inserts work today with no INSERT policy, and why adding one would open
 -- a direct write path to an audit trail rather than fix anything.
 
+-- Wrapped in an explicit transaction, and this one matters most of the three.
+-- The catalog sweep below drops every policy in the domain before recreating
+-- the hardened set, so a runner that autocommits per statement would, on a
+-- mid-file failure, leave ten tables with RLS enabled and no policies at all.
+-- That denies everyone rather than leaking to anyone — but a firm's allocation
+-- data being unreadable is not an acceptable resting state either.
+
+BEGIN;
+
 -- ── Helpers ────────────────────────────────────────────────────────────────
 --
 -- SECURITY DEFINER for one reason only: a policy on `allocation_team_members`
@@ -386,3 +395,5 @@ CREATE POLICY "alloc: org admin removes team"
   ON allocation_team_members FOR DELETE TO authenticated
   USING (organization_id = current_org_id()
          AND is_org_admin_of(organization_id));
+
+COMMIT;

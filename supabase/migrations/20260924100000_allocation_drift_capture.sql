@@ -29,6 +29,14 @@
 -- invisible in the file that performs it. The hardening is the next migration.
 --
 -- Note `CREATE POLICY IF NOT EXISTS` is not valid Postgres, hence the guards.
+--
+-- Wrapped in an explicit transaction. Three tables, two indexes and seven
+-- policies are one baseline, not eleven independent facts, and a runner that
+-- autocommits per statement — `psql -f` does — would leave a partial one
+-- behind on failure. The migrations that follow are written against the whole
+-- of it. Postgres does DDL transactionally; this only says so.
+
+BEGIN;
 
 -- ── allocation_cell_notes ──────────────────────────────────────────────────
 
@@ -172,3 +180,5 @@ DO $$ BEGIN
       );
   END IF;
 END $$;
+
+COMMIT;
