@@ -49,7 +49,6 @@ import { TDFTab } from '../components/tabs/TDFTab'
 import { UserTab } from '../components/tabs/UserTab'
 import { TemplatesTab } from '../components/tabs/TemplatesTab'
 const CalendarPage = lazy(() => import('./CalendarPage').then(m => ({ default: m.CalendarPage })))
-import { PrioritizerPage } from './PrioritizerPage'
 const CoveragePage = lazy(() => import('./CoveragePage').then(m => ({ default: m.CoveragePage })))
 import { OrganizationPage } from './OrganizationPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
@@ -204,7 +203,6 @@ export function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab
         isActive: tab.id === activeTabId,
         // Migrate old tab titles
         ...(tab.type === 'workflows' && tab.title !== 'Process' ? { title: 'Process' } : {}),
-        ...(tab.type === 'priorities' && tab.title !== 'My Priorities' ? { title: 'My Priorities' } : {}),
       })),
       activeTabId
     }
@@ -510,7 +508,6 @@ export function DashboardPage() {
       if (result.type === 'trade-queue' && tab.type === 'trade-queue') return true
       if (result.type === 'trade-book' && tab.type === 'trade-book') return true
       if (result.type === 'workflows' && tab.type === 'workflows') return true
-      if (result.type === 'priorities' && tab.type === 'priorities') return true
       return false
     })
     const precomputedExisting = findExistingTab(tabs)
@@ -1296,9 +1293,6 @@ export function DashboardPage() {
         return <PortfolioTab portfolio={activeTab.data} onNavigate={handleSearchResult} />
       case 'calendar':
         return <CalendarPage onItemSelect={handleSearchResult} />
-      case 'prioritizer':
-      case 'priorities':
-        return <PrioritizerPage onItemSelect={handleSearchResult} />
       /*
         The Dashboard, and its five lenses.
 

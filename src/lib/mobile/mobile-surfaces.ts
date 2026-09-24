@@ -1,5 +1,5 @@
 import {
-  Beaker, BookOpen, Briefcase, Building2, Calendar, FileText, Flag,
+  Beaker, BookOpen, Briefcase, Building2, Calendar, FileText,
   FolderKanban, FolderOpen, LineChart, Lightbulb, List, ListTodo, Repeat,
   Shield, StickyNote, Tag, Target, TrendingUp, Users,
 } from 'lucide-react'
@@ -168,19 +168,12 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     support: 'full', group: 'core',
   },
   { type: 'note', title: 'Note', icon: StickyNote, color: 'text-yellow-600', bg: 'bg-yellow-50', support: 'full', group: 'core' },
-  {
-    type: 'priorities', title: 'Priorities', icon: Flag,
-    color: 'text-rose-500', bg: 'bg-rose-50',
-    support: 'read-only', group: 'core', inNav: true,
-  },
-  {
-    // Same tab, older id. DashboardPage renders `prioritizer` and `priorities`
-    // through one `case`, so leaving this unregistered meant a restored
-    // session served a "desktop only" card for the page sitting one id away.
-    type: 'prioritizer', title: 'Priorities', icon: Flag,
-    color: 'text-rose-500', bg: 'bg-rose-50',
-    support: 'read-only', group: 'core',
-  },
+  /*
+   * `priorities` and `prioritizer` are gone: the standalone app is retired and
+   * both types now alias to `today` in `legacy-tab-aliases`, so a restored
+   * session never reaches this registry under either id. Registering them
+   * again would put a nav row back for a surface that no longer exists.
+   */
   {
     type: 'outcomes', title: 'Outcomes', icon: Target,
     color: 'text-teal-500', bg: 'bg-teal-50',

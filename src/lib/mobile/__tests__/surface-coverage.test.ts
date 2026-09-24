@@ -9,7 +9,7 @@
  * DETAIL type is easy to forget, and several were.
  *
  * DashboardPage renders `workflow`, `workflow-template`, `notebook`,
- * `calendar-event`, `allocation-period`, `prioritizer`, `model-template` and
+ * `calendar-event`, `allocation-period`, `model-template` and
  * `text-template` through the SAME component as a list type that is already
  * registered as usable on a phone. So the list opened, you tapped a row, and
  * the identical page came back as "this is desktop only" — the registry
@@ -32,7 +32,8 @@ import {
 
 /** detail type → the registered list type it renders the same page as. */
 const SAME_SURFACE_AS: Array<[detail: string, list: string]> = [
-  ['prioritizer', 'priorities'],
+  // `prioritizer`/`priorities` are gone: the standalone app is retired and
+  // both types alias to `today` before they reach this registry.
   ['notebook', 'notes-list'],
   ['calendar-event', 'calendar'],
   ['workflow', 'workflows'],
