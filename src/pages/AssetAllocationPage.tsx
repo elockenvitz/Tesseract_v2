@@ -15,6 +15,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { useAllocationAuthority } from '../hooks/useAllocationAuthority'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -120,6 +121,10 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
+  /* Investment authority, mirrored from the DB contract. UX only — the
+     policies in 20260924100200_allocation_authority.sql are what enforce it. */
+  const allocationAuthority = useAllocationAuthority(currentOrgId)
+  const canPublish = allocationAuthority.isTeamAdmin
 
   const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(initialPeriodId || null)
   const [showCreatePeriodModal, setShowCreatePeriodModal] = useState(false)
@@ -480,21 +485,33 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
                                the one write this page has. `role="button"`
                                plus a tabIndex earns both without changing the
                                grid geometry a `<button>` would disturb. */
+                            /* Publishing the house view is investment
+                               authority: only an active allocation-team admin
+                               gets the control. Everyone else reads the same
+                               matrix — the official view is never hidden, it
+                               simply is not a button. RLS refuses the write
+                               either way; this only avoids offering an
+                               affordance the database will reject. */
                             <div
                               key={col.key}
-                              role="button"
-                              tabIndex={0}
-                              aria-pressed={isCurrentView}
-                              aria-label={`${assetClass.name}: ${col.label}`}
-                              onClick={() => setSelectedCell({ assetClassId: assetClass.id, viewType: col.key })}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  setSelectedCell({ assetClassId: assetClass.id, viewType: col.key })
-                                }
-                              }}
+                              role={canPublish ? 'button' : undefined}
+                              tabIndex={canPublish ? 0 : undefined}
+                              aria-pressed={canPublish ? isCurrentView : undefined}
+                              aria-label={canPublish ? `${assetClass.name}: ${col.label}` : undefined}
+                              onClick={canPublish
+                                ? () => setSelectedCell({ assetClassId: assetClass.id, viewType: col.key })
+                                : undefined}
+                              onKeyDown={canPublish
+                                ? (e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault()
+                                      setSelectedCell({ assetClassId: assetClass.id, viewType: col.key })
+                                    }
+                                  }
+                                : undefined}
                               className={clsx(
-                                "p-3 flex items-center justify-center border-r border-gray-100 dark:border-gray-800 transition-all cursor-pointer group relative",
+                                "p-3 flex items-center justify-center border-r border-gray-100 dark:border-gray-800 transition-all group relative",
+                                canPublish ? "cursor-pointer" : "cursor-default",
                                 isCurrentView
                                   ? "bg-gray-100 dark:bg-gray-800"
                                   : "bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50"
@@ -532,7 +549,14 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
                                   out. A row must say which view is official
                                   at a glance. */}
                               {!isCurrentView && (
-                                <div className="hidden sm:block opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className={clsx(
+                                  "opacity-0 group-hover:opacity-100 transition-opacity",
+                                  // Hidden on a phone (index.css forces these
+                                  // visible on a coarse pointer), and hidden
+                                  // entirely for readers who cannot publish —
+                                  // a "+" that does nothing is worse than none.
+                                  canPublish ? "hidden sm:block" : "hidden",
+                                )}>
                                   <div className="w-8 h-8 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center">
                                     <Plus className="h-3 w-3 text-gray-400" />
                                   </div>
@@ -613,6 +637,7 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
           assetClassName={assetClasses?.find(ac => ac.id === selectedCell.assetClassId)?.name || ''}
           isCurrentView={getOfficialView(selectedCell.assetClassId)?.view === selectedCell.viewType}
           existingNote={getCellNote(selectedCell.assetClassId, selectedCell.viewType)}
+          canPublish={canPublish}
           onClose={() => setSelectedCell(null)}
           onSetAsView={() => {
             updateOfficialViewMutation.mutate({
@@ -634,12 +659,15 @@ function CellDetailModal({
   assetClassName,
   isCurrentView,
   existingNote,
+  canPublish,
   onClose,
   onSetAsView
 }: {
   periodId: string
   assetClassId: string
   viewType: AllocationView
+  /** Investment authority — mirrors the DB policy; RLS is authoritative. */
+  canPublish: boolean
   assetClassName: string
   isCurrentView: boolean
   existingNote: AllocationCellNote | undefined
@@ -743,7 +771,10 @@ function CellDetailModal({
             <Button variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            {!isCurrentView && (
+            {/* Publishing is investment authority. The modal is still
+                reachable for its notes, so the button is gated rather than
+                the whole surface. */}
+            {!isCurrentView && canPublish && (
               <Button onClick={handleSetAsView}>
                 <Check className="h-4 w-4 mr-2" />
                 Set as Current View

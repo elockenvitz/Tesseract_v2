@@ -74,13 +74,15 @@ describe('the chrome around the matrix fits 390px', () => {
 })
 
 describe('the one write on the page is reachable and honest', () => {
-  it('makes a cell a real control, not a div with a click handler', () => {
+  it('makes a cell a real control for whoever may publish', () => {
     // The 44px coarse-pointer floor is scoped to buttons and roles, so a bare
     // div got none of it — and there was no keyboard path to the only write.
-    expect(src).toMatch(/role="button"/)
-    expect(src).toMatch(/tabIndex=\{0\}/)
-    expect(src).toMatch(/onKeyDown/)
-    expect(src).toMatch(/aria-pressed=\{isCurrentView\}/)
+    // The role is now conditional on investment authority: a reader who
+    // cannot publish gets the same matrix without a control that would be
+    // refused by RLS anyway.
+    expect(src).toMatch(/role=\{canPublish \? 'button' : undefined\}/)
+    expect(src).toMatch(/tabIndex=\{canPublish \? 0 : undefined\}/)
+    expect(src).toMatch(/onKeyDown=\{canPublish/)
   })
 
   it('keeps the write writable on a phone', () => {
@@ -93,7 +95,23 @@ describe('the one write on the page is reachable and honest', () => {
   it('does not draw a plus in every unselected cell on touch', () => {
     // index.css reveals opacity-0/group-hover on a coarse pointer, which drew
     // a dashed "+" in four cells per row and buried the one solid check.
-    expect(src).toMatch(classesWith('hidden sm:block opacity-0', 'group-hover:opacity-100'))
+    // Hidden on a phone, and hidden entirely for a reader who cannot publish.
+    expect(src).toMatch(/canPublish \? "hidden sm:block" : "hidden"/)
+  })
+
+  it('keeps the official view readable for everyone', () => {
+    // Authority gates the write affordance, never the data: the current view
+    // and its check mark render regardless of who is looking.
+    expect(src).toMatch(/isCurrentView && \(/)
+    expect(src).not.toMatch(/canPublish && isCurrentView/)
+  })
+
+  it('does not derive investment authority from a generic role', () => {
+    // Publishing a house view is not implied by isPM, INVESTMENT membership,
+    // or the ability to administer org structure.
+    expect(src).toMatch(/useAllocationAuthority/)
+    expect(src).toMatch(/canPublish = allocationAuthority\.isTeamAdmin/)
+    expect(src).not.toMatch(/isPM|canManageOrgStructure/)
   })
 
   it('tells a phone reader to tap rather than click', () => {
