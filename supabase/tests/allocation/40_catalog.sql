@@ -19,6 +19,32 @@ SELECT unnest(ARRAY[
   'allocation_team_members'
 ]) AS t;
 
+-- ── The domain is ten tables, and the inventory is taken from the catalog ──
+--
+-- Not from a name prefix. `allocation_team_members` holds neither `period_id`
+-- nor `asset_class_id` and has no foreign key into either root, so a
+-- relationship walk misses it; `official_allocation_views` and
+-- `individual_allocation_views` do not start with "allocation", so a prefix
+-- search misses them. Both mistakes were made while tracing this domain, and
+-- each hid a table with an open policy on it.
+--
+-- This asserts the count so that a new allocation table arriving without being
+-- classified fails here rather than being discovered later.
+
+SELECT alloc_test.eq('domain is exactly the ten known tables',
+  (SELECT count(*) FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname='public' AND c.relkind='r'
+      AND (
+        c.oid IN (SELECT DISTINCT conrelid FROM pg_constraint
+                   WHERE confrelid IN ('public.allocation_periods'::regclass,
+                                       'public.asset_classes'::regclass))
+        OR c.relname IN ('allocation_periods','asset_classes','allocation_team_members')
+        OR EXISTS (SELECT 1 FROM information_schema.columns col
+                    WHERE col.table_schema='public' AND col.table_name=c.relname
+                      AND col.column_name IN ('period_id','asset_class_id'))
+      )), 10::bigint);
+
 -- ── RLS is on, everywhere ──────────────────────────────────────────────────
 
 SELECT alloc_test.eq('RLS enabled on all ten domain tables',

@@ -12,11 +12,56 @@
 \set ON_ERROR_STOP on
 \i 00_harness.sql
 
--- ═══ Mode A: fresh migration ═══════════════════════════════════════════════
+-- ═══ Mode A0: fresh database, after M1 only ════════════════════════════════
+--
+-- Run this with the database reset to 20260924100000 and no further. It proves
+-- M1 leaves a fresh database in the same PRE-hardening state production was
+-- in — permissive policies included — because that is the state M2 and M3 are
+-- written against. A drift capture that quietly created the hardened shape
+-- would make the hardening migration untestable.
+
+BEGIN;
+
+SELECT alloc_test.eq('A0 legacy attachment policies present after M1',
+  (SELECT count(*) FROM pg_policies
+    WHERE schemaname='public' AND tablename='allocation_attachments'
+      AND policyname IN ('Users can view allocation attachments',
+                         'Team members can manage allocation attachments')), 2::bigint);
+
+SELECT alloc_test.eq('A0 attachment read is still wide open after M1',
+  (SELECT qual FROM pg_policies
+    WHERE schemaname='public' AND tablename='allocation_attachments'
+      AND policyname='Users can view allocation attachments'), 'true');
+
+SELECT alloc_test.eq('A0 legacy cell-note policies present after M1',
+  (SELECT count(*) FROM pg_policies
+    WHERE schemaname='public' AND tablename='allocation_cell_notes'), 3::bigint);
+
+SELECT alloc_test.eq('A0 legacy team policies present after M1',
+  (SELECT count(*) FROM pg_policies
+    WHERE schemaname='public' AND tablename='allocation_team_members'), 2::bigint);
+
+ROLLBACK;
+
+-- ─── apply 20260924100100 (M2) and 20260924100200 (M3) ─────────────────────
+
+-- ═══ Mode A: fresh migration, all three applied ════════════════════════════
 -- Precondition: the three allocation migrations have been applied to an
 -- otherwise empty database.
 
 BEGIN;
+
+-- M3 replaced what M1 laid down: none of the legacy names survive.
+SELECT alloc_test.eq('A  M3 replaced the legacy attachment policies',
+  (SELECT count(*) FROM pg_policies
+    WHERE schemaname='public' AND tablename='allocation_attachments'
+      AND policyname IN ('Users can view allocation attachments',
+                         'Team members can manage allocation attachments')), 0::bigint);
+
+SELECT alloc_test.eq('A  attachments now have per-command policies',
+  (SELECT count(*) FROM pg_policies
+    WHERE schemaname='public' AND tablename='allocation_attachments'
+      AND cmd IN ('SELECT','INSERT','UPDATE','DELETE')), 4::bigint);
 
 SELECT alloc_test.eq('A  M1 created allocation_cell_notes',
   (SELECT count(*) FROM information_schema.tables
@@ -25,6 +70,38 @@ SELECT alloc_test.eq('A  M1 created allocation_cell_notes',
 SELECT alloc_test.eq('A  M1 created allocation_team_members',
   (SELECT count(*) FROM information_schema.tables
     WHERE table_schema='public' AND table_name='allocation_team_members'), 1::bigint);
+
+-- Without this, M3 fails on a fresh database: it writes policies on a
+-- relation nothing creates. That is the defect this file caught.
+SELECT alloc_test.eq('A  M1 created allocation_attachments',
+  (SELECT count(*) FROM information_schema.tables
+    WHERE table_schema='public' AND table_name='allocation_attachments'), 1::bigint);
+
+SELECT alloc_test.eq('A  attachments shape',
+  (SELECT string_agg(column_name, ',' ORDER BY ordinal_position)
+     FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='allocation_attachments'),
+  'id,period_id,asset_class_id,file_name,file_path,file_size,file_type,'
+  || 'attachment_type,description,uploaded_by,created_at,updated_at');
+
+SELECT alloc_test.eq('A  attachments constraints reproduced',
+  (SELECT count(*) FROM pg_constraint
+    WHERE conrelid='public.allocation_attachments'::regclass
+      AND conname IN ('allocation_attachments_pkey',
+                      'allocation_attachments_period_id_fkey',
+                      'allocation_attachments_asset_class_id_fkey',
+                      'allocation_attachments_uploaded_by_fkey',
+                      'allocation_attachments_attachment_type_check')), 5::bigint);
+
+SELECT alloc_test.eq('A  attachments indexes reproduced',
+  (SELECT count(*) FROM pg_indexes
+    WHERE schemaname='public' AND tablename='allocation_attachments'
+      AND indexname IN ('idx_allocation_attachments_period',
+                        'idx_allocation_attachments_asset_class')), 2::bigint);
+
+SELECT alloc_test.eq('A  attachments RLS enabled',
+  (SELECT relrowsecurity FROM pg_class
+    WHERE oid='public.allocation_attachments'::regclass), true);
 
 -- The shape M1 claims to reproduce, column for column.
 SELECT alloc_test.eq('A  cell notes shape',
@@ -101,9 +178,44 @@ BEGIN
   );
   ALTER TABLE allocation_team_members ENABLE ROW LEVEL SECURITY;
 
+  -- Attachments, as production has them: nullable references, the check
+  -- constraint, both indexes, and the two permissive policies.
+  CREATE TABLE IF NOT EXISTS allocation_attachments (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    period_id uuid REFERENCES allocation_periods(id) ON DELETE CASCADE,
+    asset_class_id uuid REFERENCES asset_classes(id) ON DELETE CASCADE,
+    file_name text NOT NULL,
+    file_path text NOT NULL,
+    file_size bigint,
+    file_type text,
+    attachment_type text DEFAULT 'document'
+      CHECK (attachment_type = ANY (ARRAY['document','model','presentation','spreadsheet','other'])),
+    description text,
+    uploaded_by uuid REFERENCES users(id),
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now()
+  );
+  ALTER TABLE allocation_attachments ENABLE ROW LEVEL SECURITY;
+  CREATE INDEX IF NOT EXISTS idx_allocation_attachments_period
+    ON allocation_attachments USING btree (period_id);
+  CREATE INDEX IF NOT EXISTS idx_allocation_attachments_asset_class
+    ON allocation_attachments USING btree (asset_class_id);
+
   BEGIN
     CREATE POLICY "Users can view allocation cell notes"
       ON allocation_cell_notes FOR SELECT TO authenticated USING (true);
+  EXCEPTION WHEN duplicate_object THEN NULL; END;
+
+  BEGIN
+    CREATE POLICY "Users can view allocation attachments"
+      ON allocation_attachments FOR SELECT TO authenticated USING (true);
+  EXCEPTION WHEN duplicate_object THEN NULL; END;
+
+  BEGIN
+    CREATE POLICY "Team members can manage allocation attachments"
+      ON allocation_attachments FOR ALL TO authenticated
+      USING (EXISTS (SELECT 1 FROM allocation_team_members m
+                      WHERE m.user_id = auth.uid() AND m.is_active = true));
   EXCEPTION WHEN duplicate_object THEN NULL; END;
 
   INSERT INTO allocation_periods (id, name, start_date, end_date, organization_id)
@@ -147,8 +259,21 @@ SELECT alloc_test.eq('B  M1 did not duplicate a policy',
   (SELECT count(*) FROM (
      SELECT tablename, policyname FROM pg_policies
       WHERE schemaname='public'
-        AND tablename IN ('allocation_cell_notes','allocation_team_members')
+        AND tablename IN ('allocation_cell_notes','allocation_team_members',
+                          'allocation_attachments')
       GROUP BY tablename, policyname HAVING count(*) > 1) d), 0::bigint);
+
+-- M1 must not have touched an attachments table that was already there: same
+-- policy count, same constraints, same indexes.
+SELECT alloc_test.eq('B  M1 left attachment policies alone',
+  (SELECT count(*) FROM pg_policies
+    WHERE schemaname='public' AND tablename='allocation_attachments'), 2::bigint);
+SELECT alloc_test.eq('B  M1 left attachment constraints alone',
+  (SELECT count(*) FROM pg_constraint
+    WHERE conrelid='public.allocation_attachments'::regclass), 5::bigint);
+SELECT alloc_test.eq('B  M1 left attachment indexes alone',
+  (SELECT count(*) FROM pg_indexes
+    WHERE schemaname='public' AND tablename='allocation_attachments'), 3::bigint);
 
 -- ─── apply 20260924100100 (M2) here ────────────────────────────────────────
 

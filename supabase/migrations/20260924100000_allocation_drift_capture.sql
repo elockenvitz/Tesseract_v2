@@ -1,10 +1,19 @@
--- Allocation: capture two tables that reached production without a migration.
+-- Allocation: capture three tables that reached production without a migration.
 --
--- `allocation_cell_notes` and `allocation_team_members` exist in production
--- with RLS enabled and policies attached, but no migration in this repository
--- creates them. They were verified by reading the live catalog on 2026-09-24:
--- the column lists and policy predicates below are transcriptions of what is
--- actually there, not a redesign.
+-- `allocation_cell_notes`, `allocation_team_members` and
+-- `allocation_attachments` exist in production with RLS enabled and policies
+-- attached, but no migration in this repository creates them. They were
+-- verified by reading the live catalog on 2026-09-24: the column lists,
+-- constraints, indexes and policy predicates below are transcriptions of what
+-- is actually there, not a redesign.
+--
+-- The inventory was taken from the catalog rather than by name. The domain is
+-- ten tables: everything holding a `period_id` or `asset_class_id`, everything
+-- with a foreign key into `allocation_periods` or `asset_classes`, those two
+-- themselves, and `allocation_team_members` — which has neither and is
+-- reachable by neither, which is precisely why a prefix search is not an
+-- inventory. Seven come from 20251127000001_add_allocation_framework.sql;
+-- these three come from nowhere, and are captured here.
 --
 -- This migration therefore does two different jobs depending on where it runs:
 --
@@ -102,6 +111,63 @@ DO $$ BEGIN
         )
         OR auth.uid() = (
           SELECT u.id FROM users u WHERE allocation_team_members.role = 'admin' LIMIT 1
+        )
+      );
+  END IF;
+END $$;
+
+-- ── allocation_attachments ─────────────────────────────────────────────────
+--
+-- Files hung off a period or an asset class. Both references are nullable in
+-- production, so an attachment may belong to a period, to an asset class, or
+-- to neither — which is why the hardening migration's policies key off
+-- `period_id` and tolerate the rest.
+--
+-- The legacy write policy below is the worst shape in the domain: membership
+-- of the allocation team with no organisation on it at all, so one firm's team
+-- member could attach to another firm's period. Reproduced verbatim, because
+-- the next migration's job is to replace it and a diff needs two sides.
+
+CREATE TABLE IF NOT EXISTS allocation_attachments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  period_id uuid REFERENCES allocation_periods(id) ON DELETE CASCADE,
+  asset_class_id uuid REFERENCES asset_classes(id) ON DELETE CASCADE,
+  file_name text NOT NULL,
+  file_path text NOT NULL,
+  file_size bigint,
+  file_type text,
+  attachment_type text DEFAULT 'document'
+    CHECK (attachment_type = ANY (ARRAY['document', 'model', 'presentation', 'spreadsheet', 'other'])),
+  description text,
+  uploaded_by uuid REFERENCES users(id),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE allocation_attachments ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS idx_allocation_attachments_period
+  ON allocation_attachments USING btree (period_id);
+CREATE INDEX IF NOT EXISTS idx_allocation_attachments_asset_class
+  ON allocation_attachments USING btree (asset_class_id);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
+                   AND tablename = 'allocation_attachments'
+                   AND policyname = 'Users can view allocation attachments') THEN
+    CREATE POLICY "Users can view allocation attachments"
+      ON allocation_attachments FOR SELECT TO authenticated USING (true);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
+                   AND tablename = 'allocation_attachments'
+                   AND policyname = 'Team members can manage allocation attachments') THEN
+    CREATE POLICY "Team members can manage allocation attachments"
+      ON allocation_attachments FOR ALL TO authenticated
+      USING (
+        EXISTS (
+          SELECT 1 FROM allocation_team_members m
+          WHERE m.user_id = auth.uid() AND m.is_active = true
         )
       );
   END IF;
