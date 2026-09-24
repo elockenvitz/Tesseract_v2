@@ -34,11 +34,17 @@ SELECT alloc_test.ok('A1 forged organization_id on insert refused',
   $q$), true);
 
 -- A1b ── And the same on update: relabelling an owned row into another org.
-SELECT alloc_test.eq('A1b cannot move an asset class into another org',
-  alloc_test.affected($q$
+SELECT alloc_test.ok('A1b cannot move an asset class into another org',
+  alloc_test.blocked($q$
     UPDATE asset_classes SET organization_id = (SELECT org_b FROM alloc_test.ids)
     WHERE id = (SELECT ac_a1 FROM alloc_test.ids)
-  $q$), 0::bigint);
+  $q$), true);
+-- And prove it by state, not only by the verb the database used to say no.
+SELECT alloc_test.become_service();
+SELECT alloc_test.eq('A1b the asset class still belongs to org A',
+  (SELECT organization_id FROM asset_classes WHERE id = (SELECT ac_a1 FROM alloc_test.ids)),
+  (SELECT org_a FROM alloc_test.ids));
+SELECT alloc_test.become((SELECT u_teamadmin_a FROM alloc_test.ids));
 
 -- A2 ── Caller supplies another org's period_id.
 --       Tenancy for official views is derived from the period, so pointing at
@@ -85,11 +91,11 @@ SELECT alloc_test.ok('A4b same pairing refused on a cell note',
 SELECT alloc_test.grant_team((SELECT u_teamadmin_a FROM alloc_test.ids),
                              (SELECT org_a FROM alloc_test.ids), 'admin', false);
 SELECT alloc_test.become((SELECT u_teamadmin_a FROM alloc_test.ids));
-SELECT alloc_test.eq('A5 deactivated team admin loses publish authority',
-  alloc_test.affected($q$
+SELECT alloc_test.ok('A5 deactivated team admin loses publish authority',
+  alloc_test.blocked($q$
     UPDATE official_allocation_views SET view = 'underweight'
     WHERE period_id = (SELECT period_a FROM alloc_test.ids)
-  $q$), 0::bigint);
+  $q$), true);
 SELECT alloc_test.grant_team((SELECT u_teamadmin_a FROM alloc_test.ids),
                              (SELECT org_a FROM alloc_test.ids), 'admin', true);
 
@@ -97,11 +103,11 @@ SELECT alloc_test.grant_team((SELECT u_teamadmin_a FROM alloc_test.ids),
 --       Authority is per-organisation. Before the tenant column existed,
 --       membership was global and this succeeded.
 SELECT alloc_test.become((SELECT u_teamadmin_a FROM alloc_test.ids));
-SELECT alloc_test.eq('A6 org A team admin cannot publish in org B',
-  alloc_test.affected($q$
+SELECT alloc_test.ok('A6 org A team admin cannot publish in org B',
+  alloc_test.blocked($q$
     UPDATE official_allocation_views SET view = 'overweight'
     WHERE period_id = (SELECT period_b FROM alloc_test.ids)
-  $q$), 0::bigint);
+  $q$), true);
 SELECT alloc_test.eq('A6b nor can they even see org B official views',
   (SELECT count(*) FROM official_allocation_views
     WHERE period_id = (SELECT period_b FROM alloc_test.ids)),

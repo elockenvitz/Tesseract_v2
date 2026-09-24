@@ -28,6 +28,14 @@
 
 -- ── asset_classes ──────────────────────────────────────────────────────────
 
+-- Wrapped in an explicit transaction. Without it, a runner that autocommits
+-- per statement — `psql -f` does — leaves the added column behind when the
+-- backfill guard aborts, so a migration that refuses to run has still changed
+-- the schema. Postgres does DDL transactionally; the only thing missing was
+-- saying so. Demonstrated by the zero-org abort case, which left a stray
+-- nullable `organization_id` on `asset_classes` before this was added.
+BEGIN;
+
 ALTER TABLE asset_classes ADD COLUMN IF NOT EXISTS organization_id uuid;
 
 DO $$
@@ -48,9 +56,13 @@ BEGIN
     UNION ALL SELECT asset_class_id, period_id FROM allocation_comments
                 WHERE asset_class_id IS NOT NULL
   )
+  -- `min()` has no uuid overload, so the single resolved organisation is
+  -- taken out of the distinct set instead. Safe precisely because the guard
+  -- below refuses to continue unless that set has exactly one member; an
+  -- orphan aggregates to {NULL} and is caught by the same guard.
   SELECT ac.id AS asset_class_id,
-         count(DISTINCT p.organization_id) AS org_count,
-         min(p.organization_id)            AS organization_id
+         count(DISTINCT p.organization_id)        AS org_count,
+         (array_agg(DISTINCT p.organization_id))[1] AS organization_id
   FROM asset_classes ac
   LEFT JOIN refs r         ON r.asset_class_id = ac.id
   LEFT JOIN allocation_periods p ON p.id = r.period_id
@@ -145,3 +157,5 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS idx_allocation_team_members_org_user
   ON allocation_team_members(organization_id, user_id) WHERE is_active;
+
+COMMIT;

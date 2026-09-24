@@ -12,6 +12,14 @@
 
 CREATE SCHEMA IF NOT EXISTS alloc_test;
 
+-- Cases call these helpers *while impersonating* `authenticated`, so that role
+-- needs to reach them. The helpers are assertions and fixtures only; nothing
+-- here grants any access to the tables under test, which remain governed by
+-- their own policies.
+GRANT USAGE ON SCHEMA alloc_test TO authenticated, anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA alloc_test
+  GRANT EXECUTE ON FUNCTIONS TO authenticated;
+
 -- ── Assertions ─────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION alloc_test.ok(p_label text, p_actual boolean, p_expected boolean)
@@ -61,6 +69,21 @@ BEGIN
   RETURN n;
 EXCEPTION
   WHEN insufficient_privilege OR check_violation THEN RETURN -1;  -- refused outright
+END $$;
+
+/**
+ * The write did not land — by either route.
+ *
+ * RLS says no in two ways and which one you get depends on the statement, not
+ * on how firmly it was refused. A WITH CHECK rejection raises; a USING filter
+ * matches zero rows and returns quietly. Asserting one specific route makes a
+ * test brittle against a policy that is equally correct, so this asks the
+ * question that actually matters: did anything change?
+ */
+CREATE OR REPLACE FUNCTION alloc_test.blocked(p_sql text)
+RETURNS boolean LANGUAGE plpgsql AS $$
+BEGIN
+  RETURN alloc_test.affected(p_sql) <= 0;
 END $$;
 
 /** How many rows of a table this principal can actually see. */
@@ -161,6 +184,32 @@ END $$;
 CREATE OR REPLACE FUNCTION alloc_test.seed_fresh()
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
+  PERFORM alloc_test.become_service();
+
+  /*
+   * The suite owns its fixture.
+   *
+   * These files have to give the same answer on a database built from
+   * migrations and on one carrying the production-shaped fixture, and the
+   * second already holds eight official views against the same period. Cases
+   * that count rows then read eight where they seeded one — a failure about
+   * arithmetic, not about authority, which is the worst kind because it looks
+   * like a security result.
+   *
+   * Everything is inside a transaction that rolls back, so this clears the
+   * fixture's own working set and leaves the database as it found it.
+   */
+  DELETE FROM allocation_history;
+  DELETE FROM allocation_cell_notes;
+  DELETE FROM allocation_attachments;
+  DELETE FROM allocation_comments;
+  DELETE FROM allocation_votes;
+  DELETE FROM individual_allocation_views;
+  DELETE FROM official_allocation_views;
+  DELETE FROM allocation_team_members;
+  DELETE FROM allocation_periods;
+  DELETE FROM asset_classes;
+
   PERFORM alloc_test.seed_tenants();
   PERFORM alloc_test.become_service();
 
@@ -201,3 +250,9 @@ BEGIN
   PERFORM alloc_test.become_service();
   DELETE FROM allocation_team_members;
 END $$;
+
+-- `ALTER DEFAULT PRIVILEGES` only covers functions created after it, and the
+-- ones above were created in this same file, so grant explicitly too.
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA alloc_test TO authenticated;
+-- `alloc_test.ids` is read inside cases that are impersonating a principal.
+GRANT SELECT ON ALL TABLES IN SCHEMA alloc_test TO authenticated;
