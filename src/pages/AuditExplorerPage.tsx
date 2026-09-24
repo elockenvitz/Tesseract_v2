@@ -406,12 +406,29 @@ function fmtVal(val: unknown): string {
   return JSON.stringify(val).slice(0, 28)
 }
 
+/**
+ * A before/after value, in full.
+ *
+ * This feeds the diff table, which is the evidence view: it is the record of
+ * what a field actually changed from and to. It used to cut at 120 characters
+ * and append an ellipsis, so a long value — a rationale, a pasted thesis, a
+ * serialised object — was reported as something it was not, with no way to
+ * see the rest. A record that silently shortens what it is recording is worse
+ * than a tall row.
+ *
+ * The cell wraps (`break-all` on a monospace column), so the cost of a long
+ * value is height, which is the right currency here.
+ *
+ * `fmtVal` still truncates at 28 characters, and should: it composes the
+ * one-line summary sentence on a list row, where the full value is a preview
+ * and the drawer beside it holds the record.
+ */
 function formatDiffValue(val: unknown): string {
   if (val === null || val === undefined) return '—'
   if (typeof val === 'boolean') return val ? 'true' : 'false'
   if (typeof val === 'number') return String(val)
-  if (typeof val === 'string') return val.length > 120 ? val.slice(0, 120) + '...' : val
-  return JSON.stringify(val).slice(0, 120)
+  if (typeof val === 'string') return val
+  return JSON.stringify(val)
 }
 
 function getFieldDiff(from: any, to: any): string[] {
@@ -579,7 +596,12 @@ function EventRow({ event, tier, isSelected, onClick }: {
     <button
       onClick={() => onClick(event)}
       className={clsx(
-        'w-full text-left grid grid-cols-[36px_1fr_120px] gap-x-2.5 py-2 px-3 border-l-2 transition-colors group',
+        /* The meta column is a fixed 120px. With the 36px icon track and the
+           gutters that left the event itself about 190px at 390px — the
+           narrowest thing on the row is the thing you are reading. The
+           timestamp needs far less than 120px, so it gets 62px on a phone
+           and its desktop width back from `sm`. */
+        'w-full text-left grid grid-cols-[28px_1fr_62px] sm:grid-cols-[36px_1fr_120px] gap-x-2 sm:gap-x-2.5 py-2 px-3 border-l-2 transition-colors group',
         isSelected
           ? 'bg-primary-50 dark:bg-primary-900/20 border-l-primary-500'
           : tier === 'core'
@@ -595,15 +617,22 @@ function EventRow({ event, tier, isSelected, onClick }: {
 
       {/* Content */}
       <div className="min-w-0">
+        {/* An unmapped action arrives as its raw name, and `actionVerb` only
+            replaces underscores — a dotted one like
+            `organization.member.role_changed` stays a single token no browser
+            will break, so it widened the row instead of wrapping in it. */}
         <p className={clsx(
-          'text-[13px] leading-5',
+          'text-[13px] leading-5 [overflow-wrap:anywhere]',
           isDebug || isFieldEdit ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-gray-100',
         )}>
           <span className="font-medium">{actor}</span>
           {' '}<span className={isDebug || isFieldEdit ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500 dark:text-gray-400'}>{verb}</span>{' '}
           <span className="font-medium">{entity}</span>
         </p>
-        <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
+        {/* Wraps rather than clipping. Three `flex-shrink-0` badges inside
+            `overflow-hidden` meant the third — the action category — was cut
+            off at narrow widths with nothing to indicate it existed. */}
+        <div className="flex flex-wrap items-center gap-1 mt-0.5">
           {event.asset_symbol && (
             <span className="inline-flex px-1.5 py-px rounded text-[10px] font-semibold bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 flex-shrink-0">
               {event.asset_symbol}
@@ -1061,18 +1090,27 @@ function EventDrawerContent({ event, onNavigate }: {
 
 function MetaField({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-gray-500 dark:text-gray-400">{label}</dt>
-      <dd className="text-gray-900 dark:text-gray-100 font-medium">{value}</dd>
+      {/* Action names like `organization.member.role_changed` are one long
+          token; without a break rule they widen the drawer instead of
+          wrapping in it. */}
+      <dd className="text-gray-900 dark:text-gray-100 font-medium [overflow-wrap:anywhere]">{value}</dd>
     </div>
   )
 }
 
 function IdRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center gap-2">
+    /* The id wraps rather than truncating.
+
+       `truncate` cut a 36-character UUID to whatever fitted, which in an
+       audit record is the one thing that must not happen: a partial id
+       identifies nothing, and there was no tooltip or copy affordance to
+       recover the rest. It costs a second line and keeps the evidence. */
+    <div className="flex items-start gap-2">
       <span className="text-gray-500 dark:text-gray-400 w-12 flex-shrink-0">{label}</span>
-      <code className="text-gray-700 dark:text-gray-300 font-mono text-[10px] truncate">{value}</code>
+      <code className="min-w-0 flex-1 text-gray-700 dark:text-gray-300 font-mono text-[10px] [overflow-wrap:anywhere]">{value}</code>
     </div>
   )
 }
@@ -1122,8 +1160,14 @@ function CollapsibleJSON({ label, data }: { label: string; data: any }) {
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         {label}
       </button>
+      {/* The payload wraps rather than scrolling sideways. `overflow-x-auto`
+          alone put it behind a horizontal scrollbar that phones do not draw,
+          so a long line was invisible and undiscoverable. The indentation
+          survives — `whitespace-pre-wrap` keeps it — and
+          `[overflow-wrap:anywhere]` breaks the unbroken tokens JSON is full
+          of: UUIDs, tokens, URLs. Nothing is truncated. */}
       {open && (
-        <pre className="mt-1 p-2 bg-gray-50 dark:bg-gray-800 rounded text-[10px] font-mono text-gray-600 dark:text-gray-400 overflow-x-auto max-h-40 overflow-y-auto">
+        <pre className="mt-1 p-2 bg-gray-50 dark:bg-gray-800 rounded text-[10px] font-mono text-gray-600 dark:text-gray-400 max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] max-h-40 overflow-y-auto">
           {JSON.stringify(data, null, 2)}
         </pre>
       )}
@@ -1443,7 +1487,11 @@ export function AuditExplorerPage({ onNavigate }: AuditExplorerPageProps = {}) {
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-600" />
 
           {/* Search */}
-          <div className="relative flex-1 max-w-[200px] min-w-[140px]">
+          {/* The registry's promise for Audit on a phone is "search and read
+              the trail", and a 200px cap in a wrapping filter bar is not a
+              search field. Full width on its own line here; the desktop cap
+              is unchanged from `sm` up. */}
+          <div className="relative w-full min-w-0 sm:w-auto sm:flex-1 sm:max-w-[200px] sm:min-w-[140px]">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
             <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
               placeholder="Search..."
@@ -1485,11 +1533,17 @@ export function AuditExplorerPage({ onNavigate }: AuditExplorerPageProps = {}) {
         </div>
 
         {/* Segment row */}
-        <div className="max-w-[1100px] mx-auto px-4 pb-2 flex items-center gap-1.5">
+        {/* Seven segment pills come to roughly 470px with no wrap and no
+            scroller, in a box of about 358px — the widest thing on the
+            surface and the one that pushed the page sideways. An intentional
+            rail instead: it scrolls edge to edge, `scroll-px-4` matches the
+            inset so neither end stops half-cut, and each pill keeps its
+            width. Unchanged from `sm` up, where all seven fit. */}
+        <div className="mobile-scroll-x max-w-[1100px] mx-auto px-4 scroll-px-4 pb-2 flex items-center gap-1.5 sm:overflow-visible">
           {SEGMENT_OPTIONS.map(s => (
             <button key={s.value} onClick={() => setSegment(s.value)}
               className={clsx(
-                'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors',
+                'shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors',
                 segment === s.value
                   ? 'bg-gray-800 text-white dark:bg-gray-200 dark:text-gray-900'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600',
@@ -1508,9 +1562,12 @@ export function AuditExplorerPage({ onNavigate }: AuditExplorerPageProps = {}) {
           )}
         </div>
 
-        {/* Secondary filters (entity type + category) */}
+        {/* Secondary filters (entity type + category).
+
+            Two selects and a label on one non-wrapping line ran past the edge
+            at 390px. They wrap here; desktop still fits one row. */}
         {showSecondaryFilters && (
-          <div className="max-w-[1100px] mx-auto px-4 pb-2 flex items-center gap-2 border-t border-gray-100 dark:border-gray-700 pt-2">
+          <div className="max-w-[1100px] mx-auto px-4 pb-2 flex flex-wrap items-center gap-2 border-t border-gray-100 dark:border-gray-700 pt-2">
             <span className="text-[11px] text-gray-400 dark:text-gray-500 mr-1">Filter by:</span>
             <select value={entityTypeFilter} onChange={e => setEntityTypeFilter(e.target.value)}
               className="appearance-none bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1 pr-6 text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500">
@@ -1614,8 +1671,13 @@ export function AuditExplorerPage({ onNavigate }: AuditExplorerPageProps = {}) {
               className="absolute inset-0 z-10"
               onClick={() => setInspectorTarget(null)}
             />
-            {/* Drawer panel */}
-            <div className="absolute inset-y-0 right-0 w-[400px] z-20">
+            {/* Drawer panel.
+
+                A fixed 400px panel is wider than a 390px phone, so the event
+                record — the thing the reader opened — was cut off at the right
+                edge with no way to reach it. On a phone it takes the screen;
+                from `sm` up it is the 400px column it has always been. */}
+            <div className="absolute inset-y-0 right-0 left-0 z-20 sm:left-auto sm:w-[400px]">
               {inspectorTarget.kind === 'cluster'
                 ? <ClusterDrawer cluster={inspectorTarget.cluster} focusedEvent={inspectorTarget.focusedEvent} onClose={() => setInspectorTarget(null)} onNavigate={onNavigate} />
                 : <EventDrawer event={inspectorTarget.event} onClose={() => setInspectorTarget(null)} onNavigate={onNavigate} />
