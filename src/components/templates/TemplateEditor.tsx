@@ -141,18 +141,25 @@ export function TemplateEditor({
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-800">
-      {/* Compact Header with Name, Category, Shortcut */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+      {/* Compact Header with Name, Category, Shortcut.
+
+          Six controls in one non-wrapping row need about 504px. At 390px that
+          overflowed a parent with `overflow-hidden`, so it did not scroll — it
+          clipped, and the control it clipped was the close button. The row
+          wraps on a phone and the close button leads it, so the way out is the
+          first thing on screen rather than the casualty. `sm:` keeps desktop
+          on one line exactly as before. */}
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 sm:flex-nowrap sm:px-4 dark:border-gray-700 dark:bg-gray-900">
         <input
           type="text"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           placeholder="Template name..."
-          className="flex-1 min-w-0 px-3 py-1.5 text-base font-medium bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800"
+          className="min-w-0 flex-1 basis-40 px-3 py-1.5 text-base font-medium bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800"
         />
 
         {/* Shortcut */}
-        <div className="relative">
+        <div className="relative shrink-0">
           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">.t.</span>
           <input
             type="text"
@@ -220,10 +227,16 @@ export function TemplateEditor({
           {showSettings ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </button>
 
+        {/* One close button, repositioned rather than duplicated: `order-first`
+            puts it at the head of the wrapped phone row, where the way out
+            should be, and `sm:order-none` returns it to the end of the desktop
+            row. A second copy behind `hidden`/`sm:block` would announce the
+            control twice to a screen reader. */}
         <button
           type="button"
           onClick={onCancel}
-          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
+          aria-label="Close editor"
+          className="order-first shrink-0 p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg sm:order-none dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
         >
           <X className="w-5 h-5" />
         </button>

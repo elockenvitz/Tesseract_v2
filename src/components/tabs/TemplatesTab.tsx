@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { clsx } from 'clsx'
 import { Zap, Target, Plus, Edit2, Trash2, Copy, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2, FileSpreadsheet, LayoutGrid, FileText } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -8,6 +8,8 @@ import { TemplateManager } from '../templates/TemplateManager'
 import { ExcelModelTemplateManager } from '../templates/ExcelModelTemplateManager'
 import { ResearchFieldsManager } from '../templates/ResearchFieldsManager'
 import { InvestmentCaseTemplateManager } from '../investment-case-templates'
+import { DesktopAuthoringNotice } from '../templates/DesktopAuthoringNotice'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
@@ -539,6 +541,8 @@ const TEMPLATES_TAB_STORAGE_KEY = 'tesseract-templates-active-section'
 
 export function TemplatesTab() {
   // Initialize from localStorage, defaulting to 'text'
+  const isMobile = useIsMobile()
+
   const [activeSection, setActiveSection] = useState<TabSection>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(TEMPLATES_TAB_STORAGE_KEY)
@@ -549,10 +553,32 @@ export function TemplatesTab() {
     return 'text'
   })
 
-  // Persist to localStorage when activeSection changes
+  /*
+   * A phone opens on Quick Text, whatever was last used.
+   *
+   * The other three sections are desktop authoring, so restoring one of them
+   * put a phone straight into a spreadsheet mapper with no indication of how
+   * it got there. The section can still be reached by tapping its tab — the
+   * reader is then choosing it, and gets an explanation rather than the
+   * mapper — but it is never where a phone lands.
+   *
+   * Only the landing is normalised. The stored value is untouched, so the
+   * desktop session this reader left comes back to exactly where it was.
+   */
+  const didNormalise = useRef(false)
   useEffect(() => {
+    if (!isMobile || didNormalise.current) return
+    didNormalise.current = true
+    if (activeSection !== 'text') setActiveSection('text')
+  }, [isMobile, activeSection])
+
+  // Persist to localStorage when activeSection changes. Not on a phone: a
+  // phone's visit is a detour, and writing 'text' back would silently retire
+  // the section the reader had chosen on their desktop.
+  useEffect(() => {
+    if (isMobile) return
     localStorage.setItem(TEMPLATES_TAB_STORAGE_KEY, activeSection)
-  }, [activeSection])
+  }, [activeSection, isMobile])
 
   return (
     <div className="h-full flex flex-col">
@@ -624,9 +650,33 @@ export function TemplatesTab() {
       {/* Content */}
       <div className="flex-1 overflow-auto px-3 sm:px-6 pt-2 pb-4 bg-gray-50 dark:bg-gray-900">
         {activeSection === 'text' && <TemplateManager />}
-        {activeSection === 'excel' && <ExcelModelTemplateManager />}
-        {activeSection === 'research' && <ResearchFieldsManager />}
-        {activeSection === 'pdf' && <InvestmentCaseTemplateManager />}
+
+        {/* The three authoring sections. On a phone each states why it is
+            desktop work instead of rendering an interface built on drag,
+            hover and side-by-side panes — see DesktopAuthoringNotice. */}
+        {activeSection === 'excel' && (isMobile ? (
+          <DesktopAuthoringNotice
+            title="Excel Extraction"
+            reason="Mapping a workbook means dragging across a spreadsheet to name cell ranges. That needs a pointer and a wide screen, so it is done on desktop."
+            onBack={() => setActiveSection('text')}
+          />
+        ) : <ExcelModelTemplateManager />)}
+
+        {activeSection === 'research' && (isMobile ? (
+          <DesktopAuthoringNotice
+            title="Research Layout"
+            reason="The layout is built by dragging and resizing widgets on a twelve-column grid — precision work that belongs on a desktop."
+            onBack={() => setActiveSection('text')}
+          />
+        ) : <ResearchFieldsManager />)}
+
+        {activeSection === 'pdf' && (isMobile ? (
+          <DesktopAuthoringNotice
+            title="Investment Case PDF"
+            reason="The case editor puts an outline, an editor and a live preview side by side. There is no room for three panes on a phone."
+            onBack={() => setActiveSection('text')}
+          />
+        ) : <InvestmentCaseTemplateManager />)}
       </div>
     </div>
   )

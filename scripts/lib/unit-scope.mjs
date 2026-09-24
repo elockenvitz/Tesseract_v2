@@ -102,6 +102,10 @@ export const GATED_DIRS = [
   // The current-org heal decides whether a durable tenant pointer may be
   // rewritten. Getting it wrong stranded two live workspaces in another org.
   'src/lib/org',
+  // Which Templates sections a phone may open. Three of the four are desktop
+  // authoring built on drag and hover; the guard here is that a phone never
+  // lands in one and that choosing one explains itself.
+  'src/components/templates/__tests__',
   // How a committed trade's numbers are written — in particular that the
   // notional sign comes from the action, because `notional_value` is stored
   // unsigned. Getting that wrong shows a sale as money coming in, so it

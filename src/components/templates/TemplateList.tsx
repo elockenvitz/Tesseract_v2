@@ -218,7 +218,9 @@ export function TemplateList({
             )}
           </div>
 
-          <div className="grid grid-cols-4 gap-4">
+          {/* One column on a phone. Four unqualified columns gave the category
+              select about 82px — narrower than the shortest label in it. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:gap-4">
             {/* Category */}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Category</label>
@@ -234,7 +236,7 @@ export function TemplateList({
             </div>
 
             {/* Quick Filters */}
-            <div className="col-span-3 flex items-end gap-2 flex-wrap">
+            <div className="flex items-end gap-2 flex-wrap sm:col-span-3">
               <button
                 onClick={() => setFilters(prev => ({ ...prev, showOnlyMine: !prev.showOnlyMine, showOnlyShared: false }))}
                 className={clsx(
@@ -333,7 +335,10 @@ export function TemplateList({
             <Star className="w-4 h-4 text-yellow-500" />
             Favorites
           </h4>
-          <div className="grid grid-cols-2 gap-2">
+          {/* One column on a phone: two cards at ~175px each left the template
+              name, its description and a four-button action cluster fighting
+              over half a screen. */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {favorites.slice(0, 4).map(template => (
               <TemplateCard
                 key={template.id}
