@@ -102,6 +102,11 @@ export const GATED_DIRS = [
   // The current-org heal decides whether a durable tenant pointer may be
   // rewritten. Getting it wrong stranded two live workspaces in another org.
   'src/lib/org',
+  // How a committed trade's numbers are written — in particular that the
+  // notional sign comes from the action, because `notional_value` is stored
+  // unsigned. Getting that wrong shows a sale as money coming in, so it
+  // arrives gated.
+  'src/lib/trade-book/__tests__',
   // The Process creation wizard's mobile layout. It arrived with the mobile
   // fringe lane and was left unlisted, which is precisely the silent
   // disappearance this accounting exists to catch — the guard caught it. It

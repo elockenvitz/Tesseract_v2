@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo, useCallback } from 'react'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow, format } from 'date-fns'
 import {
   ChevronRight,
   MessageSquare,
@@ -27,6 +27,12 @@ import { CreateCorrectionModal } from './CreateCorrectionModal'
 import { buildPairInfoByAsset } from '../../lib/trade-lab/pair-info'
 import { useAcceptedTradeComments } from '../../hooks/useAcceptedTrades'
 import { useIsMobile } from '../../hooks/useMediaQuery'
+import {
+  signedNotional, fmtSignedNotional, fmtSignedNotionalFull,
+  fmtTargetWeight, fmtDeltaWeight, fmtDeltaShares, directionalToneClass,
+  fmtTotalNotional,
+} from '../../lib/trade-book/format'
+import { MobileTradeRows } from './MobileTradeRows'
 import { MobileNoteField } from '../mobile/MobileNoteField'
 import { useAuth } from '../../hooks/useAuth'
 import {
@@ -79,41 +85,9 @@ type SortDir = 'asc' | 'desc'
  * PM skimming the Trade Book can tell at a glance which rows are adds
  * and which are reductions without reading the action column.
  */
-function signedNotional(
-  notional: number | null | undefined,
-  action: string,
-): number | null {
-  if (notional == null) return null
-  const mag = Math.abs(notional)
-  return action === 'sell' || action === 'trim' ? -mag : mag
-}
-
-/**
- * Format a signed notional for the column.
- *
- * Fully written out, an eight-figure trade is "$34,173,518" — thirteen
- * characters that no sane column width accommodates, so the cell either
- * wrapped or pushed the table wider. Millions and above are abbreviated to
- * three significant figures; below that the exact number is short enough to
- * print. The unabbreviated value is always available via `fmtSignedNotionalFull`
- * on the cell's `title`, so precision is never actually lost.
- */
-function fmtSignedNotional(val: number | null): string {
-  if (val == null) return '—'
-  const sign = val < 0 ? '-' : ''
-  const abs = Math.abs(val)
-  if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(2)}B`
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`
-  if (abs >= 100_000) return `${sign}$${Math.round(abs / 1_000)}K`
-  return `${sign}$${abs.toLocaleString()}`
-}
-
-/** The exact figure, for the cell tooltip. */
-function fmtSignedNotionalFull(val: number | null): string {
-  if (val == null) return ''
-  const abs = Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 0 })
-  return val < 0 ? `-$${abs}` : `$${abs}`
-}
+/* Lifted to `lib/trade-book/format` so the phone row, the batch card and this
+   table format one trade the same way — and, more importantly, apply the
+   sign-from-action rule from one place. See that file. */
 
 // ---------------------------------------------------------------------------
 // Props
@@ -498,6 +472,8 @@ export function AcceptedTradesTable({
   // comment thread together — previously both lived in an inline
   // expanded row underneath the trade which crowded the table and
   // pushed other trades out of view.
+  // The twelve-column table is desktop grammar; a phone gets rows.
+  const isMobileViewport = useIsMobile()
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null)
   const [correctionTradeId, setCorrectionTradeId] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('created_at')
@@ -779,11 +755,18 @@ export function AcceptedTradesTable({
           )}
         </div>
         <div className="hidden sm:block flex-1" />
-        <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto sm:ml-0 shrink-0">
+        {/* Count and total as one quiet line. The desktop footer printed the
+            exact sum — eight figures and three decimals — which is most of a
+            phone line and a number nobody reads at a glance. Same value,
+            abbreviated by the same rule as every other figure here; the exact
+            total is still on the `title`. */}
+        <span
+          data-slot="trades-total"
+          className="text-xs text-gray-500 dark:text-gray-400 ml-auto sm:ml-0 shrink-0"
+          title={totalNotional !== 0 ? `${fmtSignedNotionalFull(Math.abs(totalNotional))} total notional` : undefined}
+        >
           {filtered.length} trade{filtered.length !== 1 ? 's' : ''}
-          <span className="hidden sm:inline">
-            {totalNotional !== 0 && ` · $${Math.abs(totalNotional).toLocaleString()} total notional`}
-          </span>
+          {totalNotional !== 0 && ` · ${fmtTotalNotional(totalNotional)} total notional`}
         </span>
       </div>
 
@@ -794,6 +777,39 @@ export function AcceptedTradesTable({
           scroller the right-hand columns would be both invisible and
           unreachable. `.mobile-scroll-x` is the project's opt-in for exactly
           this: a wide table that scrolls independently of the page. */}
+      {/* A phone gets rows, not a 720px table behind a sideways drag — and the
+          execution-status control comes with them instead of sitting in the
+          twelfth column. One branch or the other renders, never both. */}
+      {isMobileViewport ? (
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-none">
+          <MobileTradeRows
+            trades={sorted}
+            selectedTradeId={selectedTradeId}
+            onSelect={id => setSelectedTradeId(selectedTradeId === id ? null : id)}
+            renderState={trade => {
+              // Same PHASE_META the table's State cell reads, so a trade's
+              // state is named and coloured identically on both.
+              const meta = PHASE_META[phaseByTradeId.get(trade.id)?.phase ?? 'queued']
+              return (
+                <span className={clsx(
+                  'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-semibold',
+                  meta.pillClass,
+                )}>
+                  <span className={clsx('w-1 h-1 rounded-full', meta.dotClass)} />
+                  {meta.label}
+                </span>
+              )
+            }}
+            canUpdateExecution={holdingsSource !== 'paper' && canUpdateExecution}
+            onUpdateExecutionStatus={(tradeId, status) =>
+              onUpdateExecutionStatus(tradeId, status, null, getContext())}
+            isTerminalPhase={trade => {
+              const phase = phaseByTradeId.get(trade.id)?.phase
+              return phase === 'settled' || phase === 'cancelled'
+            }}
+          />
+        </div>
+      ) : (
       <div className="flex-1 min-h-0 overflow-auto overscroll-none">
       <table className="w-full min-w-[720px] sm:min-w-0">
         <thead className="border-b border-gray-200 dark:border-gray-700">
@@ -918,9 +934,7 @@ export function AcceptedTradesTable({
                   </td>
                   <td className="py-2 px-3 text-sm font-mono text-right text-gray-600 dark:text-gray-300">
                     <div className="flex flex-col items-end leading-tight">
-                      <span>
-                        {trade.target_weight != null ? `${trade.target_weight.toFixed(2)}%` : '—'}
-                      </span>
+                      <span>{fmtTargetWeight(trade.target_weight)}</span>
                       {(() => {
                         // Show the raw sizing_input as a muted secondary
                         // line only when the PM's framework wasn't a plain
@@ -947,42 +961,15 @@ export function AcceptedTradesTable({
                   </td>
                   {/* Δ Wt — directional color. */}
                   <td className="py-2 px-3 text-sm font-mono text-right">
-                    {trade.delta_weight != null ? (
-                      <span
-                        className={clsx(
-                          'font-semibold',
-                          trade.delta_weight > 0
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : trade.delta_weight < 0
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-gray-500 dark:text-gray-400',
-                        )}
-                      >
-                        {trade.delta_weight > 0 ? '+' : ''}
-                        {trade.delta_weight.toFixed(2)}%
-                      </span>
-                    ) : (
-                      <span className="text-gray-400 dark:text-gray-500">—</span>
-                    )}
+                    <span className={clsx('font-semibold', directionalToneClass(trade.delta_weight))}>
+                      {fmtDeltaWeight(trade.delta_weight)}
+                    </span>
                   </td>
                   {/* Δ Shrs — directional color. */}
                   <td className="py-2 px-3 text-sm font-mono text-right">
-                    {trade.delta_shares != null ? (
-                      <span
-                        className={clsx(
-                          trade.delta_shares > 0
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : trade.delta_shares < 0
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-gray-500 dark:text-gray-400',
-                        )}
-                      >
-                        {trade.delta_shares > 0 ? '+' : ''}
-                        {trade.delta_shares.toLocaleString()}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400 dark:text-gray-500">—</span>
-                    )}
+                    <span className={directionalToneClass(trade.delta_shares)}>
+                      {fmtDeltaShares(trade.delta_shares)}
+                    </span>
                   </td>
                   {/* Notional — signed by action. Sells/trims render
                       with a leading minus so reductions are visually
@@ -1166,6 +1153,7 @@ export function AcceptedTradesTable({
         </tbody>
       </table>
       </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between gap-3 px-3 sm:px-4 py-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 shrink-0">
@@ -1183,6 +1171,7 @@ export function AcceptedTradesTable({
         <TradeDetailPane
           trade={selectedTrade}
           batchDescription={selectedTrade.batch_id ? batchMap.get(selectedTrade.batch_id)?.description : null}
+          batchName={selectedTrade.batch_id ? batchMap.get(selectedTrade.batch_id)?.name : null}
           onClose={() => setSelectedTradeId(null)}
           onAddComment={onAddComment}
         />
@@ -1222,14 +1211,89 @@ export function AcceptedTradesTable({
  * expand-row pattern which crowded the table and pushed other trades
  * out of view.
  */
+/**
+ * What this trade actually was, in one block.
+ *
+ * Deliberately not every column: the source, the next action and the
+ * correction chain stay where they are. This is the set a reader needs to
+ * recognise the trade they tapped and to judge the rationale underneath it —
+ * how big, what it did to the weight, how many shares, and where it stands.
+ *
+ * Symbol and action are absent on purpose. The pane header names both
+ * immediately above; repeating them here would put the same fact on screen
+ * twice and read it twice to a screen reader.
+ */
+function TradeSummary({
+  trade,
+  batchName,
+}: {
+  trade: AcceptedTradeWithJoins
+  batchName?: string | null
+}) {
+  const signed = signedNotional(trade.notional_value, trade.action)
+  const company = trade.asset?.company_name
+
+  return (
+    <dl data-slot="trade-summary" className="mb-3 space-y-2 border-b border-gray-100 pb-3 dark:border-gray-800">
+      {company && (
+        <div className="text-[12px] text-gray-500 dark:text-gray-400">{company}</div>
+      )}
+
+      {/* Notional leads: it is the first thing asked of a committed trade. */}
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className="text-[11px] uppercase tracking-wide text-gray-400">Notional</dt>
+        <dd
+          className={clsx('text-[15px] font-semibold tabular-nums', directionalToneClass(signed))}
+          title={fmtSignedNotionalFull(signed)}
+        >
+          {fmtSignedNotional(signed)}
+        </dd>
+      </div>
+
+      <div className="grid grid-cols-3 gap-x-3">
+        <div>
+          <dt className="text-[10px] uppercase tracking-wide text-gray-400">Tgt Wt</dt>
+          <dd className="text-[13px] font-medium tabular-nums text-gray-800 dark:text-gray-200">
+            {fmtTargetWeight(trade.target_weight)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[10px] uppercase tracking-wide text-gray-400">Δ Wt</dt>
+          <dd className={clsx('text-[13px] font-medium tabular-nums', directionalToneClass(trade.delta_weight))}>
+            {fmtDeltaWeight(trade.delta_weight)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[10px] uppercase tracking-wide text-gray-400">Δ Shrs</dt>
+          <dd className={clsx('text-[13px] font-medium tabular-nums', directionalToneClass(trade.delta_shares))}>
+            {fmtDeltaShares(trade.delta_shares)}
+          </dd>
+        </div>
+      </div>
+
+      {/* Provenance, only where the trade actually carries it. */}
+      {(batchName || trade.created_at) && (
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+          {batchName && <span className="truncate">{batchName}</span>}
+          {batchName && trade.created_at && <span className="text-gray-300">·</span>}
+          {trade.created_at && <span>{format(new Date(trade.created_at), 'MMM d, yyyy')}</span>}
+          {trade.source && <><span className="text-gray-300">·</span><span className="capitalize">{trade.source}</span></>}
+        </div>
+      )}
+    </dl>
+  )
+}
+
 function TradeDetailPane({
   trade,
   batchDescription,
+  batchName,
   onClose,
   onAddComment,
 }: {
   trade: AcceptedTradeWithJoins
   batchDescription?: string | null
+  batchName?: string | null
   onClose: () => void
   onAddComment?: (tradeId: string, content: string) => void
 }) {
@@ -1267,10 +1331,18 @@ function TradeDetailPane({
         </button>
       </div>
 
-      {/* Body — unified rationale log. The initial commit reason plus
-          any follow-on rationale notes all live in one place so the
-          PM sees the trade's full "why" story at a glance. */}
+      {/* Body — the trade, then why it was made.
+
+          This pane used to open straight onto "Trade-specific notes": the
+          header named the symbol and the action, and every number stayed
+          behind in the row. On a phone the row is no longer on screen when
+          the pane is open, so the reader was being asked to judge a
+          rationale with no idea of the trade's size, its weight change or
+          its state. The summary comes first for that reason, and it does not
+          repeat the symbol or the action, which the header directly above
+          already carries. */}
       <div className="flex-1 overflow-auto px-4 py-3">
+        <TradeSummary trade={trade} batchName={batchName} />
         <TradeRationaleLog
           tradeId={trade.id}
           acceptanceNote={trade.acceptance_note}
