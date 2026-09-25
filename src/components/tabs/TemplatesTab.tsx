@@ -9,6 +9,7 @@ import { ExcelModelTemplateManager } from '../templates/ExcelModelTemplateManage
 import { ResearchFieldsManager } from '../templates/ResearchFieldsManager'
 import { InvestmentCaseTemplateManager } from '../investment-case-templates'
 import { DesktopAuthoringNotice } from '../templates/DesktopAuthoringNotice'
+import { MobileResearchLayoutEditor } from '../templates/mobile/MobileResearchLayoutEditor'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -651,9 +652,13 @@ export function TemplatesTab() {
       <div className="flex-1 overflow-auto px-3 sm:px-6 pt-2 pb-4 bg-gray-50 dark:bg-gray-900">
         {activeSection === 'text' && <TemplateManager />}
 
-        {/* The three authoring sections. On a phone each states why it is
-            desktop work instead of rendering an interface built on drag,
-            hover and side-by-side panes — see DesktopAuthoringNotice. */}
+        {/* The remaining authoring sections. Each still states why it is
+            desktop work rather than rendering an interface built on drag,
+            hover and side-by-side panes — see DesktopAuthoringNotice. Research
+            Layout has graduated: its notice described a twelve-column grid,
+            but that grid is research_fields.config (the inside of one
+            composite field), not the layout. A layout is an ordered list of
+            fields grouped into sections, which a phone edits directly. */}
         {activeSection === 'excel' && (isMobile ? (
           <DesktopAuthoringNotice
             title="Excel Extraction"
@@ -663,11 +668,7 @@ export function TemplatesTab() {
         ) : <ExcelModelTemplateManager />)}
 
         {activeSection === 'research' && (isMobile ? (
-          <DesktopAuthoringNotice
-            title="Research Layout"
-            reason="The layout is built by dragging and resizing widgets on a twelve-column grid — precision work that belongs on a desktop."
-            onBack={() => setActiveSection('text')}
-          />
+          <MobileResearchLayoutEditor onBack={() => setActiveSection('text')} />
         ) : <ResearchFieldsManager />)}
 
         {activeSection === 'pdf' && (isMobile ? (
