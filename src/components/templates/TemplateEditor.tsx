@@ -6,6 +6,8 @@ import { Template } from '../../hooks/useTemplates'
 import { RichTextEditor, RichTextEditorRef } from '../rich-text-editor/RichTextEditor'
 import { Button } from '../ui/Button'
 import { TemplateTagPicker } from './TemplateTagPicker'
+import { MobileTemplateShell } from './mobile/MobileTemplateShell'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import {
   extractVariables,
   validateTemplate,
@@ -49,6 +51,7 @@ export function TemplateEditor({
   onShare,
   isSaving = false
 }: TemplateEditorProps) {
+  const isMobile = useIsMobile()
   const editorRef = useRef<RichTextEditorRef>(null)
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
   const [showTagPicker, setShowTagPicker] = useState(false)
@@ -104,8 +107,16 @@ export function TemplateEditor({
     }
   }, [template])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  /**
+   * Validate and save.
+   *
+   * Split out of the submit handler so the phone's Save button — which is in
+   * the shell's action bar, outside this <form> — reaches exactly the same
+   * validation and the same `onSave(formData)`. Two save paths with two
+   * validations is how a phone starts writing rows a desktop would have
+   * rejected.
+   */
+  const submitForm = async () => {
     setError(null)
 
     if (!formData.name.trim()) {
@@ -126,6 +137,11 @@ export function TemplateEditor({
     }
   }
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await submitForm()
+  }
+
   const handleTagsChange = (tagIds: string[]) => {
     setFormData(prev => ({ ...prev, tag_ids: tagIds }))
     setShowTagPicker(false)
@@ -138,6 +154,115 @@ export function TemplateEditor({
   }
 
   const getCategoryLabel = (id: string) => CATEGORIES.find(c => c.id === id)?.label || id
+
+  /*
+    A phone wears different chrome around the same editor.
+
+    Not a second editor: the form state, the validation, the variable
+    extraction and `onSave(TemplateFormData)` are the ones above, unchanged.
+    Only the frame differs — back, name, Save and Preview move into
+    MobileTemplateShell where a thumb can reach them and the keyboard cannot
+    bury them, and the six-control desktop header and its footer are simply
+    not rendered rather than hidden with CSS. Rendering both and hiding one
+    would put two name inputs and two Save buttons in the DOM: two values to
+    keep in sync, and two announcements to a screen reader.
+  */
+  if (isMobile) {
+    return (
+      <>
+        <MobileTemplateShell
+          typeLabel="Quick Text"
+          name={formData.name}
+          onNameChange={(name) => setFormData(prev => ({ ...prev, name }))}
+          namePlaceholder="Template name…"
+          meta={getCategoryLabel(formData.category)}
+          onBack={onCancel}
+          onSave={() => { void submitForm() }}
+          saveLabel={template ? 'Update' : 'Create'}
+          saving={isSaving}
+          onPreview={() => setMode(mode === 'preview' ? 'edit' : 'preview')}
+          onMore={() => setShowSettings(!showSettings)}
+        >
+          {error && (
+            <div className="mb-2 flex items-start gap-1.5 rounded-md bg-red-50 px-2.5 py-2 text-[13px] text-red-700 dark:bg-red-900/20 dark:text-red-300">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Shortcut, category and tags — what the desktop header spreads
+              across its row. Disclosed rather than permanent: they are set
+              once, and the body is edited many times. */}
+          {showSettings && (
+            <div className="mb-3 space-y-2 rounded-lg border border-gray-200 p-2.5 dark:border-gray-700">
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-gray-400">Shortcut</span>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[13px] text-gray-400">.t.</span>
+                  <input
+                    value={formData.shortcut}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      shortcut: e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''),
+                    })}
+                    placeholder="shortcut"
+                    className="h-9 w-full rounded-lg border border-gray-300 pl-8 pr-2 text-[13px] dark:border-gray-600 dark:bg-gray-800"
+                  />
+                </div>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-gray-400">Category</span>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="h-9 w-full rounded-lg border border-gray-300 px-2 text-[13px] dark:border-gray-600 dark:bg-gray-800"
+                >
+                  {CATEGORIES.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.label}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowTagPicker(true)}
+                className="no-touch-target inline-flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-2.5 text-[13px] text-gray-600 dark:border-gray-600 dark:text-gray-300"
+              >
+                <Tag className="h-3.5 w-3.5" />
+                {formData.tag_ids.length > 0
+                  ? `${formData.tag_ids.length} tag${formData.tag_ids.length === 1 ? '' : 's'}`
+                  : 'Add tags'}
+              </button>
+            </div>
+          )}
+
+          {mode === 'preview' ? (
+            <div
+              className="prose prose-sm max-w-none rounded-lg border border-gray-200 p-3 dark:prose-invert dark:border-gray-700"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(getStyledPreview()) }}
+            />
+          ) : (
+            <div className="template-editor-scroll">
+              <RichTextEditor
+                ref={editorRef}
+                value={template?.content_html || template?.content || ''}
+                onChange={handleContentChange}
+                placeholder="Write the template. Use {{name}} for a placeholder."
+                minHeight="220px"
+              />
+            </div>
+          )}
+        </MobileTemplateShell>
+
+        {showTagPicker && (
+          <TemplateTagPicker
+            selectedTagIds={formData.tag_ids}
+            onSave={handleTagsChange}
+            onClose={() => setShowTagPicker(false)}
+          />
+        )}
+      </>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-800">
