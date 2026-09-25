@@ -79,7 +79,12 @@ export function FileDetail({ file, onClose, onArchived, variant }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="no-touch-target -ml-1 mb-1 flex items-center gap-0.5 py-0 text-[12px] font-medium leading-none text-primary-600 dark:text-primary-400"
+            /* `tap-pad` is safe here specifically because nothing sits above
+               this: its hit region extends 6px up into the panel's top
+               padding, not into text. That is the distinction the Projects
+               header had to learn — a padded control UNDER a heading steals
+               taps meant for the heading. */
+            className="no-touch-target tap-pad -ml-1 mb-1 flex h-7 items-center gap-0.5 text-[12px] font-medium leading-none text-primary-600 dark:text-primary-400"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
             Files
@@ -111,7 +116,11 @@ export function FileDetail({ file, onClose, onArchived, variant }: Props) {
                       onClick={() => { setDraftName(file.name); setEditing(true) }}
                       aria-label="Rename file"
                       title="Rename"
-                      className="no-touch-target ml-1.5 -mb-0.5 inline-flex text-gray-400 hover:text-primary-600"
+                      /* `tap-pad` overlaps the filename, which is a heading
+                         and not itself tappable — so there is no tap to
+                         steal, only text selection, which is the cheaper
+                         thing to trade for a reachable control. */
+                      className="no-touch-target tap-pad ml-1.5 -mb-0.5 inline-flex p-0.5 text-gray-400 hover:text-primary-600"
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
@@ -272,7 +281,10 @@ export function FileDetail({ file, onClose, onArchived, variant }: Props) {
                     type="button"
                     onClick={() => unlink.mutate(link.id)}
                     aria-label="Remove link"
-                    className="no-touch-target shrink-0 p-1 text-gray-400 hover:text-red-500"
+                    /* Real height, not `tap-pad`: these stack, so a pad
+                       would reach into the row above and steal its remove
+                       button. */
+                    className="no-touch-target shrink-0 flex h-7 w-7 items-center justify-center text-gray-400 hover:text-red-500"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
