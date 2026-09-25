@@ -136,7 +136,10 @@ export const MOBILE_SURFACES: MobileSurface[] = [
   {
     type: 'files', title: 'Files', icon: FolderOpen,
     color: 'text-slate-500', bg: 'bg-slate-100',
-    support: 'read-only', group: 'work', inNav: true,
+    // `full`, not `read-only`. Files V1 uploads, renames, archives and links
+    // from a phone through the same mutations the desktop uses. It was
+    // marked read-only when the surface had no data source at all.
+    support: 'full', group: 'work', inNav: true,
   },
   {
     type: 'workflows', title: 'Process', icon: Repeat,
