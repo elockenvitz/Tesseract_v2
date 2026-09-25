@@ -111,6 +111,10 @@ export const GATED_DIRS = [
   // unsigned. Getting that wrong shows a sale as money coming in, so it
   // arrives gated.
   'src/lib/trade-book/__tests__',
+  // What a file type means, what a size reads as, and what the repository
+  // refuses to store. Desktop and mobile both import these, so a drift here
+  // is two surfaces disagreeing about the same file. Gated on arrival.
+  'src/lib/files',
   // Where a Projects row menu opens. The status, priority and tag menus are
   // `position: fixed` and were placed straight from the anchor's rect, so on a
   // phone a menu opened from a card low in the list ran off the bottom edge —

@@ -9,6 +9,93 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      /**
+       * The Files V1 repository. Bytes live in the private `assets` bucket
+       * under `<organization_id>/files/<file_id>/<name>`; this row is the
+       * metadata, and the thing RLS actually guards.
+       *
+       * `organization_id` and `uploaded_by` are required on Insert and absent
+       * from Update deliberately: the policies and the trigger refuse to let
+       * either change, so the type refuses before the database has to.
+       */
+      files: {
+        Row: {
+          id: string
+          organization_id: string
+          name: string
+          original_name: string
+          storage_bucket: string
+          storage_path: string
+          mime_type: string | null
+          size_bytes: number | null
+          uploaded_by: string
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          name: string
+          original_name: string
+          storage_bucket?: string
+          storage_path: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          uploaded_by: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          // Rename and archive are the only mutations V1 has. Every other
+          // column is forced back to its old value by
+          // `files_enforce_admin_archive_only`, so offering it here would be
+          // offering something that silently does nothing.
+          name?: string
+          deleted_at?: string | null
+          updated_at?: string
+        }
+        /**
+         * `Relationships` is required by supabase-js v2's type resolution.
+         * Without it the generic collapses and every Insert/Update on the
+         * table resolves to `never` — which is exactly why every write in
+         * this application currently produces a TS2769 or TS2345: no table
+         * in this hand-maintained file declares it. The Files tables do, so
+         * their writes type correctly; the rest of the file is pre-existing
+         * debt this lane is not rewriting.
+         */
+        Relationships: []
+      }
+      /**
+       * A link from a repository file to an asset or a project. `research` is
+       * deliberately absent — see 20260925090300_file_links.sql.
+       */
+      file_links: {
+        Row: {
+          id: string
+          organization_id: string
+          file_id: string
+          target_type: 'asset' | 'project'
+          target_id: string
+          created_by: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          file_id: string
+          target_type: 'asset' | 'project'
+          target_id: string
+          created_by: string
+          created_at?: string
+        }
+        // A link has no mutable field, and the table has no UPDATE policy.
+        // Repointing one is delete-then-create, which keeps `created_by` and
+        // `created_at` honest.
+        Update: Record<string, never>
+        Relationships: []
+      }
       asset_notes: {
         Row: {
           id: string

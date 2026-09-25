@@ -44,9 +44,11 @@ const SAME_SURFACE_AS: Array<[detail: string, list: string]> = [
   // Reached from search, and from tapping a team or a person inside
   // Organization, which is itself a phone destination.
   ['team', 'organization'],
-  // On a phone DashboardPage sends this to Files rather than to the desktop
-  // asset workspace, so it carries the Files support level.
-  ['model-file', 'files'],
+  // A model file renders its OWNING ASSET — MobileAssetPage on a phone,
+  // AssetTab on a desktop — so it carries the asset support level. It was
+  // briefly pointed at Files, back when Files had no data source at all and
+  // a model search result dead-ended on an empty state.
+  ['model-file', 'asset'],
 ]
 
 describe('detail types inherit the support level of the page they render', () => {

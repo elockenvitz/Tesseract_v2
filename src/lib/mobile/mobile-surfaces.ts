@@ -219,7 +219,10 @@ export const MOBILE_SURFACES: MobileSurface[] = [
   {
     type: 'files', title: 'Files', icon: FolderOpen,
     color: 'text-slate-500', bg: 'bg-slate-100',
-    support: 'read-only', group: 'work', inNav: true,
+    // `full`, not `read-only`. Files V1 uploads, renames, archives and links
+    // from a phone through the same mutations the desktop uses. It was
+    // marked read-only when the surface had no data source at all.
+    support: 'full', group: 'work', inNav: true,
     // `h-full flex flex-col bg-gray-50`, its own header padding and its own
     // scroller. The shell's wrapper inset that grey off the screen edges.
     ownsViewportOnMobile: true,
@@ -233,7 +236,8 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     // `asset` type uses: MobileAssetPage on a phone, AssetTab on a desktop.
     type: 'model-file', title: 'Model', icon: FolderOpen,
     color: 'text-slate-500', bg: 'bg-slate-100',
-    support: 'read-only', group: 'work',
+    // Matches `asset`, because that is the page it renders.
+    support: 'full', group: 'work',
     // No `ownsViewportOnMobile`: it renders MobileAssetPage, which relies on
     // the shell for its horizontal padding exactly as `asset` does. The two
     // must agree, or one page gets two layouts.
