@@ -102,10 +102,15 @@ export const GATED_DIRS = [
   // The current-org heal decides whether a durable tenant pointer may be
   // rewritten. Getting it wrong stranded two live workspaces in another org.
   'src/lib/org',
-  // Which Templates sections a phone may open. Three of the four are desktop
-  // authoring built on drag and hover; the guard here is that a phone never
-  // lands in one and that choosing one explains itself.
+  // Which Templates sections a phone may open, and — as each type graduates
+  // to real mobile authoring — that a phone writes what a desktop writes.
   'src/components/templates/__tests__',
+  // The Investment Case PDF save payload. It holds the regression test for a
+  // product decision that lives in an ABSENCE: mobile omits `section_config`
+  // and `is_default` exactly as the desktop does. A decision recorded only by
+  // a missing line is the kind the next person undoes while adding a field,
+  // so the assertion that names both columns is gated rather than deferred.
+  'src/lib/templates/__tests__',
   // How a committed trade's numbers are written — in particular that the
   // notional sign comes from the action, because `notional_value` is stored
   // unsigned. Getting that wrong shows a sale as money coming in, so it

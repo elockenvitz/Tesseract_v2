@@ -10,6 +10,7 @@ import { ResearchFieldsManager } from '../templates/ResearchFieldsManager'
 import { InvestmentCaseTemplateManager } from '../investment-case-templates'
 import { DesktopAuthoringNotice } from '../templates/DesktopAuthoringNotice'
 import { MobileResearchLayoutEditor } from '../templates/mobile/MobileResearchLayoutEditor'
+import { MobileInvestmentCaseEditor } from '../templates/mobile/MobileInvestmentCaseEditor'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -672,11 +673,7 @@ export function TemplatesTab() {
         ) : <ResearchFieldsManager />)}
 
         {activeSection === 'pdf' && (isMobile ? (
-          <DesktopAuthoringNotice
-            title="Investment Case PDF"
-            reason="The case editor puts an outline, an editor and a live preview side by side. There is no room for three panes on a phone."
-            onBack={() => setActiveSection('text')}
-          />
+          <MobileInvestmentCaseEditor onBack={() => setActiveSection('text')} />
         ) : <InvestmentCaseTemplateManager />)}
       </div>
     </div>
