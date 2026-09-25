@@ -225,16 +225,18 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     ownsViewportOnMobile: true,
   },
   {
-    // A model attached to an asset. Search returns these, so a phone could
-    // reach one; it rendered the desktop AssetTab, which is the 4,300-line
-    // wide-screen workspace the `asset` case deliberately avoids on a phone.
-    // DashboardPage now sends it to Files focused on the file instead, which
-    // is the surface registered just above and the exact thing searched for.
+    // A model attached to an asset. Search returns these, so a phone can
+    // reach one. It was briefly routed to Files, on the reading that Files
+    // was the same content on a surface with a mobile treatment — but Files
+    // has no data source, so a model search result dead-ended on an empty
+    // state. It now renders the OWNING ASSET, through the same pair the
+    // `asset` type uses: MobileAssetPage on a phone, AssetTab on a desktop.
     type: 'model-file', title: 'Model', icon: FolderOpen,
     color: 'text-slate-500', bg: 'bg-slate-100',
     support: 'read-only', group: 'work',
-    // Renders FilesPage focused on one file — the same surface as `files`.
-    ownsViewportOnMobile: true,
+    // No `ownsViewportOnMobile`: it renders MobileAssetPage, which relies on
+    // the shell for its horizontal padding exactly as `asset` does. The two
+    // must agree, or one page gets two layouts.
   },
   {
     type: 'workflows', title: 'Process', icon: Repeat,

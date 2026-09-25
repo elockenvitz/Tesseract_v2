@@ -1555,23 +1555,39 @@ export function DashboardPage() {
       case 'model-template':
         // Model template - go to templates tab focused on models
         return <TemplatesTab initialTab="models" initialTemplateId={activeTab.data?.id} />
-      case 'model-file':
-        // Model file - navigate to the asset's files or to files page.
+      case 'model-file': {
+        // A model file belongs to an asset, and the owning asset is where one
+        // is actually readable: `ModelFilesViewer` renders it inside the
+        // asset's estimates section, off `model_files`.
         //
-        // Not on a phone. AssetTab is the wide-screen workspace the `asset`
-        // case above refuses to render on mobile for exactly this reason, and
-        // routing here through search put a phone inside it anyway. Files
-        // focused on the model is the same content on a surface that already
-        // has a mobile treatment. Desktop keeps the asset workspace.
-        if (activeTab.data?.assetId && !isMobile) {
-          // Navigate to the asset tab focused on models/files
-          return <AssetTab
-            asset={{ id: activeTab.data.assetId, symbol: activeTab.data?.assets?.symbol }}
-            onNavigate={handleSearchResult}
-            initialSection="models"
-          />
+        // The phone branch used to send this to Files instead, on the reading
+        // that Files was "the same content on a surface that already has a
+        // mobile treatment". Files has no data source at all — no `files`
+        // table exists anywhere — so every model a phone found in search
+        // dead-ended on an empty state. It also passed `initialFileId`, a
+        // prop FilesPage does not accept and silently dropped.
+        //
+        // Both viewports now go to the owning asset through the shell the
+        // `asset` case already uses: MobileAssetPage on a phone, AssetTab on
+        // a desktop, where `initialSection` opens the models section.
+        //
+        // `model_files.asset_id` is NOT NULL, so a search result always
+        // carries the identity this needs; the guard is for a tab restored
+        // from an older shape.
+        const modelAssetId = activeTab.data?.assetId
+        if (!modelAssetId) return <AssetLoadingState />
+        const modelAsset = {
+          id: modelAssetId,
+          // `useObjectSearch` spreads the search row flat, so the symbol is on
+          // `data` — this previously read `data.assets.symbol`, which never
+          // existed, and handed AssetTab an undefined symbol every time.
+          symbol: activeTab.data?.symbol ?? activeTab.data?.assets?.symbol ?? '',
+          company_name: activeTab.data?.company_name ?? null,
         }
-        return <FilesPage onItemSelect={handleSearchResult} initialFileId={activeTab.data?.id} />
+        return isMobile
+          ? <MobileAssetPage asset={modelAsset} onNavigate={handleSearchResult} />
+          : <AssetTab asset={modelAsset} onNavigate={handleSearchResult} initialSection="models" />
+      }
       case 'text-template':
         // Text template - go to templates tab
         return <TemplatesTab initialTab="text" initialTemplateId={activeTab.data?.id} />

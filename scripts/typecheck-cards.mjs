@@ -128,7 +128,12 @@ const MAX_ERRORS = 0
 // rather than through a ceiling. They were caught by diffing the number by
 // hand, which is not a gate. A ceiling above the real count is a ceiling that
 // does not bind, so this now sits exactly on the committed baseline.
-const MAX_REPO_ERRORS = 8694
+//
+// → 8681 when the Files truthfulness pass removed thirteen: one TS2322 for an
+// `initialFileId` prop FilesPage never declared — the type system had been
+// reporting that dead-end route the whole time, from inside the ceiling — and
+// twelve unused imports left behind by the file-manager markup that came out.
+const MAX_REPO_ERRORS = 8681
 
 /**
  * A floor on real source files, now that they are counted as source files.
