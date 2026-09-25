@@ -97,9 +97,7 @@ describe('the phone saves the same shape the desktop saves', () => {
     const mobile = render(
       <TemplateEditor template={DESKTOP_FIXTURE} onSave={mobileSave} onCancel={vi.fn()} />,
     )
-    fireEvent.change(mobile.getByTestId ? screen.getByTestId('rte') : screen.getByTestId('rte'), {
-      target: { value: 'Edited body' },
-    })
+    fireEvent.change(screen.getByTestId('rte'), { target: { value: 'Edited body' } })
     fireEvent.click(screen.getByRole('button', { name: /update/i }))
     await waitFor(() => expect(mobileSave).toHaveBeenCalled())
     mobile.unmount()

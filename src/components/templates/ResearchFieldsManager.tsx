@@ -109,6 +109,10 @@ import {
   type CompositeWidget,
   type CompositeFieldConfig,
 } from '../../lib/research/field-types'
+import {
+  getDefaultWidgetSize,
+  recomputeAutoLayout,
+} from '../../lib/research/composite-layout'
 import { supabase } from '../../lib/supabase'
 import { ResponsiveGridLayout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
@@ -2691,29 +2695,14 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
     setCreateStep(3)
   }
 
-  /** Recompute auto layout positions from widget list + column count */
-  const recomputeAutoLayout = (widgets: CompositeWidget[], cols: 1 | 2) => {
-    const newLayout: CompositeFieldConfig['layout'] = []
-    let y = 0
-    for (let i = 0; i < widgets.length; i++) {
-      const w = widgets[i]
-      const defaultH = getDefaultWidgetSize(w.type).h
-      if (cols === 1) {
-        newLayout.push({ i: w.id, x: 0, y, w: 12, h: defaultH })
-        y += defaultH
-      } else {
-        const col = i % 2
-        if (col === 0) {
-          newLayout.push({ i: w.id, x: 0, y, w: 6, h: defaultH })
-        } else {
-          const prevH = newLayout[newLayout.length - 1]?.h ?? defaultH
-          newLayout.push({ i: w.id, x: 6, y, w: 6, h: defaultH })
-          y += Math.max(prevH, defaultH)
-        }
-      }
-    }
-    return newLayout
-  }
+  /*
+    `recomputeAutoLayout` and `getDefaultWidgetSize` now live in
+    src/lib/research/composite-layout.ts and are imported at the top of this
+    file, verbatim, so the mobile editor uses these exact generators rather
+    than a copy. Two copies is how two devices begin emitting subtly
+    different `layout` arrays for the same widgets — the one failure the
+    mobile authoring work exists to avoid. Desktop behaviour is unchanged.
+  */
 
   /** Duplicate a widget */
   const handleDuplicateWidget = (widgetId: string) => {
@@ -2760,19 +2749,6 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
     })
   }
 
-  /** Default grid size by widget type */
-  const getDefaultWidgetSize = (widgetType: string): { w: number; h: number } => {
-    switch (widgetType) {
-      case 'rich_text': case 'checklist': case 'chart':
-        return { w: 6, h: 3 }
-      case 'table': case 'scenario':
-        return { w: 12, h: 4 }
-      case 'numeric': case 'percentage': case 'currency': case 'boolean': case 'rating':
-        return { w: 3, h: 2 }
-      default:
-        return { w: 6, h: 2 }
-    }
-  }
 
   /** Try to auto-place a widget; returns layout item or null if no space */
   const autoPlaceWidget = (id: string, widgetType: string, currentLayout: CompositeFieldConfig['layout']): CompositeFieldConfig['layout'][number] | null => {
