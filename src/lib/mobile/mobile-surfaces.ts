@@ -263,19 +263,26 @@ export const MOBILE_SURFACES: MobileSurface[] = [
   {
     type: 'templates', title: 'Templates', icon: FileText,
     color: 'text-amber-600', bg: 'bg-amber-50',
-    support: 'read-only', group: 'work', inNav: true,
-    mobileNote: 'Browse templates; authoring stays on desktop',
+    support: 'full', group: 'work', inNav: true,
+    // All four types author on a phone. Two things still need the desktop and
+    // both need a file or a live grid rather than a wider screen: uploading a
+    // base workbook, and the auto-detection and dynamic mappings built by
+    // reading one. Neither is reachable without the .xlsx open.
+    mobileNote: 'Author all four types; base workbooks and auto-detect need desktop',
   },
   {
-    // Both open TemplatesTab on one template — the surface above.
+    // Both open TemplatesTab on one template — the surface above — so they
+    // move with it. It is now 'full', and a detail type left behind at
+    // 'read-only' would tell a reader the page they are about to open is
+    // something it is not.
     type: 'model-template', title: 'Model Template', icon: FileText,
     color: 'text-amber-600', bg: 'bg-amber-50',
-    support: 'read-only', group: 'work',
+    support: 'full', group: 'work',
   },
   {
     type: 'text-template', title: 'Text Template', icon: FileText,
     color: 'text-amber-600', bg: 'bg-amber-50',
-    support: 'read-only', group: 'work',
+    support: 'full', group: 'work',
   },
   {
     type: 'coverage', title: 'Coverage', icon: Users,

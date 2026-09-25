@@ -111,6 +111,11 @@ export const GATED_DIRS = [
   // a missing line is the kind the next person undoes while adding a field,
   // so the assertion that names both columns is gated rather than deferred.
   'src/lib/templates/__tests__',
+  // The Excel reference grammar. `FieldMapping.cell` is one flat string with
+  // the sheet embedded in it, so this grammar IS the contract between the
+  // desktop grid and a phone that types the same reference. A drift here
+  // points a mapping at the wrong sheet, which reads as a data problem.
+  'src/lib/excel/__tests__',
   // How a committed trade's numbers are written — in particular that the
   // notional sign comes from the action, because `notional_value` is stored
   // unsigned. Getting that wrong shows a sale as money coming in, so it

@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx'
 import type { FieldMapping, DetectionRules, ModelTemplate, DynamicFieldMapping } from '../hooks/useModelTemplates'
+import { parseCellReference } from '../lib/excel/cell-reference'
 
 // ============================================================================
 // TYPES
@@ -31,26 +32,15 @@ export interface ParseResult {
 // CELL REFERENCE PARSING
 // ============================================================================
 
-/**
- * Parse an Excel cell reference like "Summary!B5" or "B5"
- * Returns { sheet: string | null, cell: string }
- */
-function parseCellReference(ref: string): { sheet: string | null; cell: string } {
-  // Trim whitespace and handle edge cases
-  const trimmed = ref.trim()
-  if (!trimmed) {
-    return { sheet: null, cell: '' }
-  }
+/*
+  `parseCellReference` now lives in src/lib/excel/cell-reference.ts and is
+  imported at the top of this file, verbatim, so the mobile editor parses
+  references with this exact function rather than a copy. Two copies is how
+  two clients begin disagreeing about what "Summary!B5" means.
 
-  const match = trimmed.match(/^(?:(.+)!)?([A-Z]+[0-9]+)$/i)
-  if (!match) {
-    return { sheet: null, cell: trimmed }
-  }
-  return {
-    sheet: match[1]?.trim() || null,
-    cell: match[2].toUpperCase()
-  }
-}
+  Everything else exported here takes an XLSX.WorkBook, which a phone does
+  not have. The reference grammar was the one part it needed.
+*/
 
 /**
  * Get cell value from a workbook given a cell reference

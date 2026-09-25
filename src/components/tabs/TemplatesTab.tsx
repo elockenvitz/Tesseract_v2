@@ -8,9 +8,9 @@ import { TemplateManager } from '../templates/TemplateManager'
 import { ExcelModelTemplateManager } from '../templates/ExcelModelTemplateManager'
 import { ResearchFieldsManager } from '../templates/ResearchFieldsManager'
 import { InvestmentCaseTemplateManager } from '../investment-case-templates'
-import { DesktopAuthoringNotice } from '../templates/DesktopAuthoringNotice'
 import { MobileResearchLayoutEditor } from '../templates/mobile/MobileResearchLayoutEditor'
 import { MobileInvestmentCaseEditor } from '../templates/mobile/MobileInvestmentCaseEditor'
+import { MobileModelTemplateEditor } from '../templates/mobile/MobileModelTemplateEditor'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -653,19 +653,17 @@ export function TemplatesTab() {
       <div className="flex-1 overflow-auto px-3 sm:px-6 pt-2 pb-4 bg-gray-50 dark:bg-gray-900">
         {activeSection === 'text' && <TemplateManager />}
 
-        {/* The remaining authoring sections. Each still states why it is
-            desktop work rather than rendering an interface built on drag,
-            hover and side-by-side panes — see DesktopAuthoringNotice. Research
-            Layout has graduated: its notice described a twelve-column grid,
-            but that grid is research_fields.config (the inside of one
-            composite field), not the layout. A layout is an ordered list of
-            fields grouped into sections, which a phone edits directly. */}
+        {/* All four types now author on a phone, each through its own editor
+            rather than a shared one: they have nothing in common as editors —
+            a rich-text box, an ordered list, a stepped form and a cell
+            mapper — and everything in common around the editor, which is what
+            MobileTemplateShell owns.
+
+            Each desktop component is still rendered untouched on desktop. The
+            mobile branches do not render it hidden; two chromes in one DOM is
+            two values to keep in sync and two announcements to a reader. */}
         {activeSection === 'excel' && (isMobile ? (
-          <DesktopAuthoringNotice
-            title="Excel Extraction"
-            reason="Mapping a workbook means dragging across a spreadsheet to name cell ranges. That needs a pointer and a wide screen, so it is done on desktop."
-            onBack={() => setActiveSection('text')}
-          />
+          <MobileModelTemplateEditor onBack={() => setActiveSection('text')} />
         ) : <ExcelModelTemplateManager />)}
 
         {activeSection === 'research' && (isMobile ? (
