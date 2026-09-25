@@ -88,17 +88,30 @@ export function EnhancedKanbanColumn({
            and four gaps leaves ~58px a column, narrower than the word
            "Planning". `min-w-0` is also what stops the parent's
            `overflow-x-auto` from ever engaging — the columns shrink instead
-           of overflowing. On a phone each column takes a real width and the
-           board scrolls sideways within itself, so the next column is visibly
-           half-on-screen. Desktop keeps the five-way split. */
-        'w-[272px] shrink-0 sm:w-auto sm:flex-1 sm:shrink sm:min-w-0',
+           of overflowing.
+
+           84vw is chosen rather than a fixed pixel width so the column is
+           phone-sized by construction: one status is the thing you are
+           reading, and the ~16vw left over shows the edge of the next one, so
+           the board reads as a row of columns rather than as a page that
+           happens to be cut off. Desktop keeps the five-way split.
+
+           No scroll-snap. dnd-kit auto-scrolls this same container while a
+           card is being dragged, and `scroll-snap-type: x mandatory` would be
+           fighting it for the scroll position — a defect that only shows up
+           under a real finger, which is not something this pass can verify.
+           The peek is the affordance instead. */
+        'w-[84vw] max-w-[320px] shrink-0 sm:w-auto sm:max-w-none sm:flex-1 sm:shrink sm:min-w-0',
         'bg-white dark:bg-gray-800 rounded-lg flex flex-col transition-all duration-200',
         isOver && 'ring-2 ring-primary-500 bg-primary-50 dark:bg-primary-900/20'
       )}
     >
       {/* Column Header */}
+      {/* Sticky so the status a column belongs to stays on screen while its
+          cards scroll — on a phone the header is otherwise the first thing
+          to leave, and then the column has no label. */}
       <div className={clsx(
-        'px-3 py-3 rounded-t-lg',
+        'sticky top-0 z-10 px-3 py-2 sm:py-3 rounded-t-lg',
         config.bgColor
       )}>
         <div className="flex items-center justify-between">

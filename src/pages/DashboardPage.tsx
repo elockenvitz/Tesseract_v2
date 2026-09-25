@@ -1572,10 +1572,39 @@ export function DashboardPage() {
         // a desktop, where `initialSection` opens the models section.
         //
         // `model_files.asset_id` is NOT NULL, so a search result always
-        // carries the identity this needs; the guard is for a tab restored
-        // from an older shape.
+        // carries the identity this needs. The guard is for a tab restored
+        // from an older shape — one opened before this route changed, which
+        // is sitting in somebody's sessionStorage right now.
+        //
+        // It must not be a spinner. `AssetLoadingState` is `<PageLoader
+        // loading />`, which never resolves, so returning it here turned a
+        // dead end into a hang: a restored model-file tab held the whole app
+        // on a loading screen with no way forward. Say what happened and
+        // offer the way out instead.
         const modelAssetId = activeTab.data?.assetId
-        if (!modelAssetId) return <AssetLoadingState />
+        if (!modelAssetId) {
+          return (
+            <div className="h-full flex items-center justify-center p-6">
+              <div className="max-w-sm text-center">
+                <h2 className="text-base font-medium text-gray-900 dark:text-white mb-1">
+                  Can't open this model
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  This tab was saved before models opened on their asset, so it
+                  no longer says which asset it belongs to. Search for it again
+                  to open it.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleSearchResult({ id: 'assets-list', title: 'Assets', type: 'assets-list' })}
+                  className="px-3 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium"
+                >
+                  Go to Assets
+                </button>
+              </div>
+            </div>
+          )
+        }
         const modelAsset = {
           id: modelAssetId,
           // `useObjectSearch` spreads the search row flat, so the symbol is on

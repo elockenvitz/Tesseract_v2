@@ -426,7 +426,16 @@
      grows only the touch region around it, so a dense toolbar can be dense
      and still be hittable. Vertical only: neighbours in a toolbar sit side by
      side, and overlapping hit regions horizontally would steal each other's
-     taps. Pairs with `.no-touch-target`, which is what frees the height. */
+     taps. Pairs with `.no-touch-target`, which is what frees the height.
+
+     ── Where this bites ──────────────────────────────────────────────────
+     The pad reaches 6px ABOVE the control as well as below, so it also
+     overlaps whatever sits above it. A row of padded controls under a
+     heading claims 6px of that heading's line: the reported symptom is
+     "there is white space above the buttons, and tapping it selects a
+     button" — the space is the pad, and it is winning taps meant for the
+     text. Do not use this on a control sitting directly under text a user
+     will tap or select. Give that control real height instead. */
   .tap-pad {
     position: relative;
   }
@@ -620,6 +629,50 @@
 }
 
 @layer components {
+  /* ── One mobile control grammar ────────────────────────────────────────
+     Projects had accumulated several: 28px pills with a caret, 32px bordered
+     buttons, 36px selects, chips at 11px, 12px and 13px, three radii and two
+     border colours — so on a phone nothing said which controls were
+     informational and which could be tapped to change something.
+
+     `.m-control` is the editable one: fixed 32px visible height, one radius,
+     one border, 13px medium text. `.m-badge` is the read-only one: no
+     border, no caret, tinted background, 12px. The difference between them
+     is the affordance, and it is now consistent.
+
+     `.m-control` opts out of the 44px block rule so the drawn control stays
+     32px. It does NOT use `.tap-pad` — see the note directly below, which is
+     the reason. Phone only: every rule here is inside the phone layer, so
+     desktop keeps whatever the component already had. */
+  /* NEVER `@apply no-touch-target` (or `tap-pad`) here.
+
+     Doing so made Tailwind emit a SECOND copy of the global hit-area rule
+     with this class substituted for the one being applied:
+
+         button:not(.m-control), [role='button']:not(.m-control) … {
+           min-height: 44px
+         }
+
+     which re-imposed the 44px minimum on every button in the app that had
+     correctly opted out with `.no-touch-target`. Three 20px controls in the
+     project header silently became 44px boxes: they looked like white space
+     above the row and swallowed taps meant for the project title. The
+     opt-out is written out literally instead. */
+  .m-control {
+    min-height: 0;
+    min-width: 0;
+    position: relative;
+    @apply inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-[13px] font-medium text-gray-700 dark:text-gray-200;
+  }
+
+  .m-control-active {
+    @apply border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-900/30 dark:text-primary-300;
+  }
+
+  .m-badge {
+    @apply inline-flex items-center gap-1 h-6 px-2 rounded-md text-[12px] font-medium;
+  }
+
   .sidebar-nav-item {
     @apply flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200;
   }

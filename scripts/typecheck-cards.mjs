@@ -133,7 +133,30 @@ const MAX_ERRORS = 0
 // `initialFileId` prop FilesPage never declared — the type system had been
 // reporting that dead-end route the whole time, from inside the ceiling — and
 // twelve unused imports left behind by the file-manager markup that came out.
-const MAX_REPO_ERRORS = 8681
+//
+// → 8678 during the Projects detail composition pass, and this one is a
+// worked example of why the slack must be closed the moment it appears
+// rather than "at closeout". That pass left 2 points of slack, reported by
+// this gate with the note below. Inside it sat a `ChevronLeft` used in new
+// JSX and never imported — a TS2304 that the gate counted and then passed
+// anyway, because the total stayed under the ceiling. It reached the browser
+// as `ReferenceError: ChevronLeft is not defined`, which took down the whole
+// project detail tab and left the app on a loading screen. The gate had the
+// error in hand and said PASS.
+//
+// → 8676 when the My Tasks project popover was removed with the props that
+// only fed it. Closed in the same change that created it, per the lesson
+// directly above.
+//
+// → 8677 for ONE new error, deliberately. Deliverables had no rename: a
+// typo meant deleting the task and losing its assignees and due date to
+// retype the name. The new `renameDeliverableMutation` calls
+// `supabase.from(...).update(...)`, and every write in ProjectDetailTab
+// produces the same TS2769 because the client is untyped there — so the
+// feature costs exactly one error of an existing kind. Raised knowingly
+// rather than left as slack, which is the failure this ceiling exists to
+// prevent; type the client and this comes back down with its neighbours.
+const MAX_REPO_ERRORS = 8677
 
 /**
  * A floor on real source files, now that they are counted as source files.

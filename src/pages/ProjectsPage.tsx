@@ -47,6 +47,10 @@ import { formatDistanceToNow, format, differenceInDays } from 'date-fns'
 import { clsx } from 'clsx'
 import { useIsMobile } from '../hooks/useMediaQuery'
 import { menuPositionStyle } from '../lib/projects/menuPosition'
+import { MobileProjectRows } from '../components/projects/MobileProjectRows'
+import { MobileProjectBoard } from '../components/projects/MobileProjectBoard'
+import { ProjectsFilterSheet } from '../components/projects/ProjectsFilterSheet'
+import { ProjectActionsSheet } from '../components/projects/ProjectActionsSheet'
 import type { ProjectWithAssignments, ProjectStatus, ProjectPriority } from '../types/project'
 import { CreateProjectModal } from '../components/projects/CreateProjectModal'
 import { DeleteProjectModal } from '../components/projects/DeleteProjectModal'
@@ -80,6 +84,10 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
     projectTitle: ''
   })
   const [openDropdown, setOpenDropdown] = useState<{ projectId: string; type: 'status' | 'priority' | 'tags'; rect: DOMRect } | null>(null)
+  // Phone-only composition state: the two filter rails collapse into one
+  // sheet, and the per-row editors collapse into another.
+  const [showMobileFilters, setShowMobileFilters] = useState(false)
+  const [actionsProject, setActionsProject] = useState<ProjectWithAssignments | null>(null)
   const [tagSearchQuery, setTagSearchQuery] = useState('')
   const [newTagName, setNewTagName] = useState('')
   // Open on desktop, closed on a phone — there it covers the page rather than
@@ -563,6 +571,19 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
     return filtered
   }, [projects, searchQuery, statusFilter, priorityFilter, assignmentFilter, sortBy, sortOrder, user?.id, collectionFilters, quickStatusFilter])
 
+  /**
+   * What the phone's `Filters (N)` trigger counts.
+   *
+   * Only the two the sheet owns, and status only where the sheet shows it —
+   * board view represents status as columns, so the rail is already hidden
+   * there on every viewport and counting it would claim a filter the user
+   * cannot see or clear.
+   */
+  const mobileFilterShowsStatus = viewMode !== 'board'
+  const mobileActiveFilterCount =
+    (mobileFilterShowsStatus && quickStatusFilter !== null ? 1 : 0) +
+    (priorityFilter !== 'all' ? 1 : 0)
+
   const clearFilters = () => {
     setSearchQuery('')
     setStatusFilter('all')
@@ -664,32 +685,23 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
           projects themselves, and it defaults to open — so a phone landed on
           a sliver of content. On mobile it is a drawer over the page instead,
           closed by default, opened by the same chevron in the header. */}
-      {showCollectionsSidebar && isMobileViewport && (
-        <div
-          className="sm:hidden fixed inset-0 z-[70] bg-gray-900/40"
-          onClick={() => setShowCollectionsSidebar(false)}
-          aria-hidden="true"
+      {/* Desktop only. On a phone this was the same 256px rail behind a
+          chevron, opening as a drawer over the page — a desktop paradigm
+          moved sideways rather than a mobile one, and a second navigation
+          model competing with the filter row. The component itself is not
+          dropped: it renders inside the Filters sheet, which is where a
+          phone already goes to narrow the list. Same component, same
+          queries, same handlers. */}
+      {showCollectionsSidebar && !isMobileViewport && (
+        <ProjectCollectionsSidebar
+          activeCollectionId={activeCollectionId}
+          onSelectCollection={(collectionId, filters) => {
+            setActiveCollectionId(collectionId)
+            setCollectionFilters(filters || null)
+          }}
+          onSelectView={setViewFilter}
+          activeView={viewFilter}
         />
-      )}
-      {showCollectionsSidebar && (
-        <div className={clsx(
-          isMobileViewport &&
-            'fixed inset-y-0 left-0 z-[71] w-72 max-w-[85vw] shadow-2xl pt-safe pb-safe',
-        )}>
-          <ProjectCollectionsSidebar
-            activeCollectionId={activeCollectionId}
-            onSelectCollection={(collectionId, filters) => {
-              setActiveCollectionId(collectionId)
-              setCollectionFilters(filters || null)
-              if (isMobileViewport) setShowCollectionsSidebar(false)
-            }}
-            onSelectView={(v) => {
-              setViewFilter(v)
-              if (isMobileViewport) setShowCollectionsSidebar(false)
-            }}
-            activeView={viewFilter}
-          />
-        </div>
       )}
 
       {/* Main Content */}
@@ -702,9 +714,10 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               switch and New Project do not fit 390px. */}
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2 sm:mb-3">
             <div className="flex items-center gap-2 min-w-0">
+              {/* Desktop only — a phone reaches collections through Filters. */}
               <button
                 onClick={() => setShowCollectionsSidebar(!showCollectionsSidebar)}
-                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors shrink-0"
+                className="hidden sm:block p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors shrink-0"
                 title={showCollectionsSidebar ? "Hide collections" : "Show collections"}
               >
                 {showCollectionsSidebar ? (
@@ -715,14 +728,17 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               </button>
               <FolderKanban className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600 dark:text-primary-400 shrink-0" />
               <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">Projects</h1>
-              <OrgBadge />
+              {/* The org badge is ambient context, not page identity. Beside a
+                  phone-sized title it reads as part of the heading and pushes
+                  the actions onto a second line. Desktop keeps it. */}
+              <span className="hidden sm:inline-flex"><OrgBadge /></span>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               {/* My Tasks Toggle */}
               <button
                 onClick={() => setAssignmentFilter(assignmentFilter === 'assigned' ? 'all' : 'assigned')}
                 className={clsx(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                  'no-touch-target tap-pad flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 h-8 sm:h-auto sm:py-1.5 rounded-lg text-[13px] sm:text-sm font-medium transition-all',
                   assignmentFilter === 'assigned'
                     ? 'bg-primary-600 text-white shadow-sm'
                     : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
@@ -734,7 +750,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               </button>
 
               {/* View Mode Toggle */}
-              <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+              <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 sm:p-1">
                 <button
                   onClick={() => setViewMode('list')}
                   className={clsx(
@@ -767,22 +783,37 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                 </button>
               </div>
 
-              <Button onClick={() => setShowCreateForm(true)} size="sm">
-                <Plus className="w-4 h-4 mr-2" />
-                New Project
+              {/* Create stays visible on a phone, but as an icon rather than
+                  a labelled button: "New Project" plus its padding took about
+                  a third of the action row, which is a lot of the screen to
+                  spend on the one action you take least often. */}
+              <Button
+                onClick={() => setShowCreateForm(true)}
+                size="sm"
+                /* `!` is load-bearing: Button's `size="sm"` always emits
+                   `px-3 py-1.5`, and this project has clsx without
+                   tailwind-merge, so a plain `p-0` loses to it on stylesheet
+                   order rather than on class order. */
+                className="no-touch-target h-8 w-8 !p-0 sm:h-auto sm:w-auto sm:!px-3 sm:!py-1.5"
+                aria-label="New project"
+                title="New project"
+              >
+                <Plus className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">New Project</span>
               </Button>
             </div>
           </div>
 
           {/* Status Quick Filters - Hide in board view since columns represent status.
 
-              Six chips plus a label plus a rule plus two more chips is roughly
-              double a phone's width. The row scrolls sideways within itself
-              rather than widening the page — the same treatment the pipeline's
-              stage chips get, and legitimate here because a partly-visible
-              chip is its own affordance. */}
+              Desktop only. The row scrolls sideways within itself rather than
+              widening the page, which kept it legal at 390px but not usable:
+              "Blocked" sat half off the screen, and this band plus the
+              priority band below it spent two full rows of a phone before any
+              project appeared. Both now collapse into ProjectsFilterSheet,
+              which writes this same state. */}
           {viewMode !== 'board' && (
-          <div className="flex items-center gap-2 mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
+          <div className="hidden sm:flex items-center gap-2 mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">Status:</span>
               <button
                 onClick={() => {
@@ -877,8 +908,9 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
             </div>
           )}
 
-          {/* Priority Quick Filters - Show in all views */}
-          <div className="flex items-center gap-2 mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
+          {/* Priority Quick Filters - Show in all views. Desktop only; the
+              phone reaches these through ProjectsFilterSheet. */}
+          <div className="hidden sm:flex items-center gap-2 mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">Priority:</span>
               <button
                 onClick={() => setPriorityFilter('all')}
@@ -957,6 +989,47 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                 className="pl-10"
               />
             </div>
+
+            {/* The phone's whole filter surface: one trigger carrying the
+                active count, and sort beside it. Replaces two full-width
+                chip bands. */}
+            <div className="flex sm:hidden items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowMobileFilters(true)}
+                className={clsx('m-control shrink-0', mobileActiveFilterCount > 0 && 'm-control-active')}
+              >
+                <Filter className="h-4 w-4" />
+                Filters
+                {mobileActiveFilterCount > 0 && ` (${mobileActiveFilterCount})`}
+              </button>
+              {/* Select puts `className` on the inner <select>, inside two
+                  wrappers — so the flex sizing has to go on a wrapper here,
+                  not through the component. */}
+              <div className="min-w-0 flex-1">
+              <Select
+                value={`${sortBy}-${sortOrder}`}
+                onChange={(e) => {
+                  const [field, order] = e.target.value.split('-')
+                  setSortBy(field as any)
+                  setSortOrder(order as 'asc' | 'desc')
+                }}
+                className="m-control !w-full !h-8 !text-[13px]"
+                options={[
+                  { value: 'created_at-desc', label: 'Newest First' },
+                  { value: 'created_at-asc', label: 'Oldest First' },
+                  { value: 'due_date-asc', label: 'Due Soonest' },
+                  { value: 'due_date-desc', label: 'Due Latest' },
+                  { value: 'priority-desc', label: 'Priority High' },
+                  { value: 'priority-asc', label: 'Priority Low' },
+                  { value: 'title-asc', label: 'Title A-Z' },
+                  { value: 'title-desc', label: 'Title Z-A' }
+                ]}
+              />
+              </div>
+            </div>
+
+            <div className="hidden sm:block">
             <Select
               value={`${sortBy}-${sortOrder}`}
               onChange={(e) => {
@@ -975,6 +1048,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                 { value: 'title-desc', label: 'Title (Z to A)' }
               ]}
             />
+            </div>
           </div>
 
           {/* Filter Panel */}
@@ -1076,19 +1150,37 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               updateDeliverableDueDateMutation.mutate({ deliverableId, dueDate })
             }
             onProjectSelect={onProjectSelect}
-            getStatusIcon={getStatusIcon}
-            getStatusColor={getStatusColor}
-            getPriorityColor={getPriorityColor}
           />
         ) : filteredProjects.length > 0 ? (
           viewMode === 'board' ? (
-            // Enhanced Board View with dnd-kit
+            // The board is a different shape on a phone, not the same board
+            // scaled down: four columns side by side is the one thing 390px
+            // cannot do. MobileProjectBoard shows every stage and its count
+            // at once, and one stage's projects at a time. Desktop keeps the
+            // dnd-kit board untouched.
+            isMobileViewport ? (
+              <MobileProjectBoard
+                projects={filteredProjects}
+                onProjectSelect={onProjectSelect}
+                onOpenActions={setActionsProject}
+              />
+            ) : (
             <EnhancedKanbanBoard
               projects={filteredProjects}
               onProjectSelect={onProjectSelect}
             />
+            )
           ) : (
-            // List View
+            // List View. A phone gets MobileProjectRows instead — the desktop
+            // card is an editing panel, and thirteen controls stacked at 390px
+            // is 220-250px a project. See that component for the reasoning.
+            isMobileViewport ? (
+              <MobileProjectRows
+                projects={filteredProjects}
+                onProjectSelect={onProjectSelect}
+                onOpenActions={setActionsProject}
+              />
+            ) : (
             <div className="p-4 space-y-3">
             {filteredProjects.map((project) => {
               const totalDeliverables = project.project_deliverables?.length || 0
@@ -1470,6 +1562,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
             })}
           </div>
           )
+          )
         ) : projects?.length === 0 ? (
           viewFilter === 'active' ? (
             <EmptyState
@@ -1516,6 +1609,75 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
         projectTitle={deleteModal.projectTitle}
         isDeleting={deleteProjectMutation.isPending}
       />
+
+      {/* Phone-only. Both write the state the desktop rails and pills write. */}
+      {isMobileViewport && (
+        <>
+          <ProjectsFilterSheet
+            open={showMobileFilters}
+            onClose={() => setShowMobileFilters(false)}
+            showStatus={mobileFilterShowsStatus}
+            quickStatus={quickStatusFilter}
+            onQuickStatusChange={(status) => {
+              setQuickStatusFilter(status)
+              if (status !== null) setViewFilter('active')
+            }}
+            priority={priorityFilter}
+            onPriorityChange={setPriorityFilter}
+            matchCount={filteredProjects.length}
+            activeCount={mobileActiveFilterCount}
+            onClearAll={() => {
+              setQuickStatusFilter(null)
+              setPriorityFilter('all')
+            }}
+            collections={
+              /* The rail is `w-64 h-full` for the desktop column it normally
+                 sits in. Inside a sheet its parent has no fixed height, so
+                 the child overrides are applied here rather than changing the
+                 component's own classes and moving the desktop layout. */
+              <div className="[&>*]:h-auto [&>*]:w-full [&>*]:border-0 [&>*]:bg-transparent">
+              <ProjectCollectionsSidebar
+                activeCollectionId={activeCollectionId}
+                onSelectCollection={(collectionId, filters) => {
+                  setActiveCollectionId(collectionId)
+                  setCollectionFilters(filters || null)
+                  setShowMobileFilters(false)
+                }}
+                onSelectView={(v) => {
+                  setViewFilter(v)
+                  setShowMobileFilters(false)
+                }}
+                activeView={viewFilter}
+              />
+              </div>
+            }
+          />
+
+          <ProjectActionsSheet
+            project={actionsProject}
+            onClose={() => setActionsProject(null)}
+            onStatusChange={(status) =>
+              actionsProject &&
+              updateStatusMutation.mutate({ projectId: actionsProject.id, status })
+            }
+            onPriorityChange={(priority) =>
+              actionsProject &&
+              updatePriorityMutation.mutate({ projectId: actionsProject.id, priority })
+            }
+            onCancelProject={
+              actionsProject?.created_by === user?.id && viewFilter === 'active'
+                ? () =>
+                    actionsProject &&
+                    setDeleteModal({
+                      isOpen: true,
+                      projectId: actionsProject.id,
+                      projectTitle: actionsProject.title,
+                    })
+                : undefined
+            }
+          />
+        </>
+      )}
       </div>
     </div>
   )

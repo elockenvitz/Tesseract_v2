@@ -183,15 +183,22 @@ describe('a model-file result never lands on Files', () => {
     expect(screen.getByTestId('asset-tab')).toHaveAttribute('data-symbol', 'NVDA')
   })
 
-  it('still does not fall back to Files when a restored tab has no asset id', () => {
-    // `model_files.asset_id` is NOT NULL so this should be unreachable, but
-    // the point of the change is that Files is never the answer.
+  it('explains itself rather than hanging when a restored tab has no asset id', () => {
+    // A tab saved before this route changed has no `assetId`. The first
+    // version of this guard returned `AssetLoadingState`, which is
+    // `<PageLoader loading />` and never resolves — so restoring such a tab
+    // held the entire app on a loading screen. A dead end is bad; a hang is
+    // worse, because there is nothing to tap.
     setViewportWidth(PHONE)
     seedModelFileTab({ id: 'f1', filename: 'orphan.xlsx' })
     render(<DashboardPage />)
 
     expect(screen.queryByTestId('files-page')).not.toBeInTheDocument()
     expect(screen.queryByTestId('mobile-asset')).not.toBeInTheDocument()
+
+    // Something readable, and a way out.
+    expect(screen.getByText(/can't open this model/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /go to assets/i })).toBeInTheDocument()
   })
 })
 

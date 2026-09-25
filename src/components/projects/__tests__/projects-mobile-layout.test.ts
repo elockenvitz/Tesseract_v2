@@ -34,10 +34,11 @@ function stripComments(source: string): string {
 describe('kanban board columns', () => {
   const source = stripComments(sourceOf('src/components/projects/EnhancedKanbanColumn.tsx'))
 
-  it('gives a column a real width on a phone so the board scrolls instead of compressing', () => {
+  it('gives a column a phone-sized width so the board scrolls instead of compressing', () => {
     // `flex-1 min-w-0` is what let five columns divide 390px into 58px each,
-    // and it is also why the parent's `overflow-x-auto` never engaged.
-    expect(source).toMatch(/w-\[272px\]/)
+    // and it is also why the parent's `overflow-x-auto` never engaged. 84vw
+    // leaves a deliberate peek of the next column.
+    expect(source).toMatch(/w-\[84vw\]/)
     expect(source).toMatch(/shrink-0/)
   })
 
@@ -60,7 +61,11 @@ describe('kanban board horizontal scroll', () => {
   const source = stripComments(sourceOf('src/components/projects/EnhancedKanbanBoard.tsx'))
 
   it('keeps the column row scrollable sideways, which is what the column width relies on', () => {
-    expect(source).toMatch(/className="flex gap-4 flex-1 overflow-x-auto pb-4"/)
+    expect(source).toMatch(/className="flex gap-2 sm:gap-4 flex-1 overflow-x-auto pb-2 sm:pb-4"/)
+  })
+
+  it('does not scroll-snap the container dnd-kit auto-scrolls during a drag', () => {
+    expect(source).not.toMatch(/snap-x|snap-mandatory/)
   })
 })
 
@@ -105,7 +110,16 @@ describe('create project form', () => {
 describe('activity feed filters', () => {
   const source = stripComments(sourceOf('src/components/projects/ProjectActivityFeed.tsx'))
 
-  it('stacks the two filter selects on a phone', () => {
-    expect(source).toMatch(/grid-cols-1[^"']*sm:grid-cols-2/)
+  it('keeps the two filter selects two-up rather than stacked', () => {
+    // They were stacked for a pass. That cost a whole row of a phone for two
+    // controls that each need about half the width, and Activity's value is
+    // the event list underneath — so they went back to two-up, with the
+    // select padding tightened instead.
+    expect(source).toMatch(/grid-cols-2/)
+    expect(source).not.toMatch(/grid-cols-1[^"']*sm:grid-cols-2/)
+  })
+
+  it('tightens the selects rather than letting them keep desktop padding', () => {
+    expect(source).toMatch(/\[&_select\]:!px-2/)
   })
 })

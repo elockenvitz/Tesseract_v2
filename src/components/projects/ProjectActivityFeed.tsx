@@ -249,7 +249,10 @@ export function ProjectActivityFeed({
 
       {/* Filters */}
       {showFilters && activities && activities.length > 5 && (
-        <div className="grid grid-cols-1 gap-2 mb-2 flex-shrink-0 sm:grid-cols-2">
+        /* Two up, not stacked. Stacking them cost a whole row of a phone for
+           two controls that each need about half the width, and Activity's
+           value is the event list below. */
+        <div className="grid grid-cols-2 gap-2 mb-2 flex-shrink-0 [&_select]:!px-2 [&_select]:!py-1.5 [&_select]:!text-[13px]">
           <Select
             value={activityTypeFilter}
             onChange={(e) => setActivityTypeFilter(e.target.value as 'all' | ProjectActivityType)}

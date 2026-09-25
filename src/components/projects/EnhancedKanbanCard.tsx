@@ -226,7 +226,9 @@ export function EnhancedKanbanCardOverlay({
   return (
     <Card
       className={clsx(
-        'p-0 shadow-2xl border-l-3 w-[220px] rotate-3 scale-105',
+        // Tracks the column width so the dragged card stays the size of the
+        // card it left: a phone column is 84vw, not the desktop's fifth.
+        'p-0 shadow-2xl border-l-3 w-[76vw] max-w-[300px] sm:w-[220px] rotate-3 scale-105',
         getPriorityBorderColor(project.priority),
         isBlocked && 'ring-1 ring-red-400'
       )}
