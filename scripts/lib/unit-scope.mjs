@@ -188,6 +188,13 @@ export const GATED_DIRS = [
   'src/components/outcomes/__tests__',
   'src/components/trading/__tests__',
   'src/components/ops/__tests__',
+  // What a file type means, what a size reads as, and what the repository
+  // refuses to store. Desktop and mobile both import these, so a drift here
+  // is two surfaces disagreeing about the same file. Gated on arrival.
+  'src/lib/files',
+  // The Files repository surface itself — the list, the detail pane and the
+  // upload path that writes into the org-scoped `assets` namespace.
+  'src/components/files',
   // Research's coverage-gap queue: the work queue a fresh account lands on.
   'src/components/research-v2/__tests__',
   // Today's coverage backfill: what a thin or new account's home shows.
