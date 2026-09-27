@@ -240,12 +240,28 @@ describe('where graduation is written', () => {
     return /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) ? [p] : []
   })
 
+  /*
+    30s, not the default 5s.
+
+    This walks every .ts/.tsx under src/ and reads each one — the cost grows
+    with the tree, not with the assertion, and it is synchronous so it cannot
+    yield while the rest of the suite runs in parallel. On a loaded machine
+    it measured ~4s against the pre-release tree and began timing out once
+    this release added Files' source files: two of three `guard:unit` runs
+    failed on the 5s budget while passing in isolation.
+
+    A gate that fails on tree size rather than on the thing it asserts is
+    worse than no gate — `netlify.toml` runs `guard:unit` before the build,
+    so this would have blocked deploys for a reason unrelated to the code.
+    The same treatment the repo already gave the repo-wide security scans in
+    10e639bb, for the same reason.
+  */
   it('only the mission marks it', () => {
     const writers = walk(root)
       .filter(f => /\bmark\w*\(\s*['"]graduated['"]\s*\)/.test(readFileSync(f, 'utf8')))
       .map(f => path.relative(root, f).replace(/\\/g, '/'))
     expect(writers).toEqual(['hooks/usePilotMission.ts'])
-  })
+  }, 30_000)
 
   it('and only once the mission is complete', () => {
     const hook = readFileSync(path.join(root, 'hooks/usePilotMission.ts'), 'utf8')
