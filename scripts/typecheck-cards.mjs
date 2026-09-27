@@ -120,7 +120,22 @@ const MAX_ERRORS = 0
 // → 8730 with PilotActionDashboard and the twelve-step checklist, then
 // → 8727 when four pilot banners collapsed onto one shell. The
 // errors went with the files; the ground is not lost by leaving the slack here.
-const MAX_REPO_ERRORS = 8725
+//
+// → 8691 with Files V1, and this one is measured rather than inferred.
+// Both counts were taken with this same script in the same worktree:
+//
+//   origin/main @ 46d9a50a   8704 errors, 3442 files loaded
+//   this artifact            8691 errors, 3449 files loaded
+//
+// Δ13, which is exactly what the Files truthfulness pass claimed to remove:
+// one TS2322 for an `initialFileId` prop FilesPage never declared — the type
+// system had been reporting that dead-end route the whole time, from inside
+// the ceiling — plus twelve unused imports left with the file-manager markup.
+//
+// Note this also closes 21 points of pre-existing slack: main's ceiling said
+// 8725 while main actually stood at 8704. A ceiling above the real count does
+// not bind, which is how two type errors once landed here reading as PASS.
+const MAX_REPO_ERRORS = 8691
 
 /**
  * A floor on real source files, now that they are counted as source files.
