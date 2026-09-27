@@ -192,9 +192,12 @@ export const GATED_DIRS = [
   // refuses to store. Desktop and mobile both import these, so a drift here
   // is two surfaces disagreeing about the same file. Gated on arrival.
   'src/lib/files',
-  // The Files repository surface itself — the list, the detail pane and the
-  // upload path that writes into the org-scoped `assets` namespace.
-  'src/components/files',
+  // The Files surface's own tests live in src/pages/__tests__ (already gated
+  // above), not beside the components — so `src/components/files` is
+  // deliberately NOT listed. The accounting guard rejects a gated directory
+  // with no test files in it, because vitest treats these as substring
+  // filters and silently ignores one that matches nothing: the suite would
+  // shrink and still report PASS.
   // Research's coverage-gap queue: the work queue a fresh account lands on.
   'src/components/research-v2/__tests__',
   // Today's coverage backfill: what a thin or new account's home shows.
