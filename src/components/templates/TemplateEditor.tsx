@@ -181,7 +181,9 @@ export function TemplateEditor({
           saveLabel={template ? 'Update' : 'Create'}
           saving={isSaving}
           onPreview={() => setMode(mode === 'preview' ? 'edit' : 'preview')}
-          onMore={() => setShowSettings(!showSettings)}
+          /* No `onMore`: settings are reached from the metadata strip in the
+             body, which also shows their current values. An overflow button
+             that opens the same panel is a second door to one room. */
         >
           {error && (
             <div className="mb-2 flex items-start gap-1.5 rounded-md bg-red-50 px-2.5 py-2 text-[13px] text-red-700 dark:bg-red-900/20 dark:text-red-300">
@@ -192,7 +194,39 @@ export function TemplateEditor({
 
           {/* Shortcut, category and tags — what the desktop header spreads
               across its row. Disclosed rather than permanent: they are set
-              once, and the body is edited many times. */}
+              once, and the body is edited many times.
+
+              The summary below is always visible, though. Hiding metadata
+              behind the overflow "⋯" alone meant a shortcut you had set was
+              invisible until you went looking, and one you had NOT set gave
+              no hint the feature existed. The strip states the current
+              values and is the control that opens them. */}
+          <button
+            type="button"
+            onClick={() => setShowSettings(!showSettings)}
+            aria-expanded={showSettings}
+            className="no-touch-target mb-2 flex w-full items-center gap-2 rounded-lg border border-gray-200 px-2.5 py-1.5 text-left dark:border-gray-700"
+          >
+            <span className="min-w-0 flex-1 truncate text-[12px] text-gray-600 dark:text-gray-300">
+              {formData.shortcut ? (
+                <span className="font-medium text-gray-900 dark:text-white">.t.{formData.shortcut}</span>
+              ) : (
+                <span className="text-gray-400">No shortcut</span>
+              )}
+              <span className="mx-1.5 text-gray-300" aria-hidden="true">·</span>
+              {getCategoryLabel(formData.category)}
+              {formData.tag_ids.length > 0 && (
+                <>
+                  <span className="mx-1.5 text-gray-300" aria-hidden="true">·</span>
+                  {formData.tag_ids.length} tag{formData.tag_ids.length === 1 ? '' : 's'}
+                </>
+              )}
+            </span>
+            <span className="shrink-0 text-[11px] font-medium text-primary-600 dark:text-primary-400">
+              {showSettings ? 'Done' : 'Edit'}
+            </span>
+          </button>
+
           {showSettings && (
             <div className="mb-3 space-y-2 rounded-lg border border-gray-200 p-2.5 dark:border-gray-700">
               <label className="block">

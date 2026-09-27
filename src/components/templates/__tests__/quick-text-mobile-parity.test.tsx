@@ -72,10 +72,14 @@ describe('a desktop-authored template opens on a phone', () => {
 
     expect(screen.getByLabelText(/template name/i)).toHaveValue('Earnings recap')
     // Category is surfaced as the shell's meta line.
-    expect(screen.getByText('Analysis')).toBeInTheDocument()
+    expect(screen.getAllByText('Analysis').length).toBeGreaterThan(0)
 
-    // Shortcut lives behind the settings disclosure, not lost.
-    fireEvent.click(screen.getByRole('button', { name: /more actions/i }))
+    // The shortcut is now READABLE without a tap: it was behind the overflow
+    // menu, which meant a shortcut you had set was invisible until you went
+    // looking for it. The strip states it, and opens the fields to change it.
+    expect(screen.getByText('.t.erec')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
     expect(screen.getByDisplayValue('erec')).toBeInTheDocument()
   })
 
