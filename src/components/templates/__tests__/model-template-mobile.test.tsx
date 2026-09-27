@@ -170,7 +170,10 @@ describe('what a phone writes back', () => {
 
   it('says the dynamic mappings are there rather than hiding them', async () => {
     await openTemplate()
-    expect(screen.getByText(/1 built on desktop/i)).toBeInTheDocument()
+    // One line, not a paragraph: the fact that they exist and survive a
+    // mobile save, without re-explaining why they need a workbook.
+    expect(screen.getByText(/1 dynamic mapping · edited on desktop, kept on save/i))
+      .toBeInTheDocument()
   })
 
   it('never sends a key the hook owns', async () => {

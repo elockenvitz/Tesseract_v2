@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { FileSpreadsheet, FileText, LayoutGrid, Zap } from 'lucide-react'
 import { useIsMobile } from '../../hooks/useMediaQuery'
@@ -51,6 +51,10 @@ interface Props {
 
 export function TemplateTypeNav({ active, onSelect }: Props) {
   const activeRef = useRef<HTMLButtonElement | null>(null)
+  const scrollerRef = useRef<HTMLElement | null>(null)
+  // Which edges actually have more content. A fade that is always on lies
+  // about the last pill: it dims a label the reader has already reached.
+  const [overflow, setOverflow] = useState({ start: false, end: false })
   // One nav is RENDERED, not two hidden by CSS. `sm:hidden` on one and
   // `hidden sm:flex` on the other leaves both in the DOM: eight buttons for
   // four types, every label announced twice, and every query by role
@@ -68,8 +72,35 @@ export function TemplateTypeNav({ active, onSelect }: Props) {
   useEffect(() => {
     const el = activeRef.current
     if (typeof el?.scrollIntoView !== 'function') return
-    el.scrollIntoView({ block: 'nearest', inline: 'center' })
+    // `nearest` with scroll-padding leaves the inset either side, so the
+    // active pill lands clear of the edge rather than flush against it.
+    // `center` would drag the first and last pills into the middle, which
+    // reads as the strip jumping for no reason.
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [active])
+
+  /**
+   * Recompute which edges have more content.
+   *
+   * The 1px tolerance is for fractional scroll positions: a strip scrolled
+   * fully right can report scrollLeft 0.5px short and keep a fade lit over
+   * nothing.
+   */
+  const measure = useCallback(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    const max = el.scrollWidth - el.clientWidth
+    setOverflow({ start: el.scrollLeft > 1, end: el.scrollLeft < max - 1 })
+  }, [])
+
+  useEffect(() => {
+    measure()
+    const el = scrollerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [measure, active])
 
   return (
     <div className="flex-shrink-0 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
@@ -77,8 +108,15 @@ export function TemplateTypeNav({ active, onSelect }: Props) {
       {isMobile ? (
       <div className="relative">
         <nav
+          ref={scrollerRef}
+          onScroll={measure}
           aria-label="Template type"
-          className="no-scrollbar flex snap-x snap-mandatory gap-1.5 overflow-x-auto px-3 py-2"
+          /* `px-3` matches the content below, so the first pill lines up with
+             the cards rather than starting 12px off from them.
+             `scroll-p-3` is the same inset for SCROLLING: without it a
+             snapped or auto-scrolled pill lands flush against the edge, which
+             reads as clipped even though the whole label is there. */
+          className="no-scrollbar flex snap-x snap-mandatory gap-1.5 overflow-x-auto scroll-p-3 px-3 py-2"
         >
           {TYPES.map(({ id, label, Icon }) => {
             const isActive = id === active
@@ -104,17 +142,24 @@ export function TemplateTypeNav({ active, onSelect }: Props) {
               </button>
             )
           })}
-          {/* Trailing spacer so the last pill can clear the fade below. */}
-          <span className="w-4 flex-none" aria-hidden="true" />
         </nav>
 
-        {/* The edge treatment: says "there is more this way" without adding a
-            control. Non-interactive, so it never eats a tap on the pill under
-            it. */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent dark:from-gray-800"
-        />
+        {/* Edge treatment, shown only where there IS more.
+            A permanent fade dims the last pill once you have reached it,
+            which says "there is more" when there is not — and the reader
+            stops trusting it. Non-interactive, so neither ever eats a tap. */}
+        {overflow.start && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-white to-transparent dark:from-gray-800"
+          />
+        )}
+        {overflow.end && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-white to-transparent dark:from-gray-800"
+          />
+        )}
       </div>
       ) : (
       /* ── Desktop: unchanged underline tabs ─────────────────────────── */

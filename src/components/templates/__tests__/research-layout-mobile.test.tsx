@@ -67,6 +67,9 @@ vi.mock('../../../hooks/useResearchFields', () => ({
     sections: [
       { id: 'sec-thesis', name: 'Thesis & Risks', display_order: 0 },
       { id: 'sec-forecast', name: 'Forecasts', display_order: 1 },
+      // Readable, valid, and holds no fields. Hidden from the overview but
+      // still a legitimate Move-to-section destination.
+      { id: 'sec-empty', name: 'Empty Section', display_order: 2 },
     ],
     isLoading: false,
   }),
@@ -105,13 +108,16 @@ const openLayout = async (rowName: RegExp) => {
 }
 
 /** The derived default's row — uniquely identified by its System badge. */
-const SYSTEM_ROW = /System/
+const SYSTEM_ROW = /System default/
 /** A custom layout's row. */
 const customRow = (name: string) => new RegExp(name)
 
 /** Expand a collapsed section by its header. */
 const expandSection = (name: string | RegExp) =>
   fireEvent.click(screen.getByRole('button', { expanded: false, name }))
+
+/** Enter the section's reorder mode, where the arrows live. */
+const enterReorder = () => fireEvent.click(screen.getByRole('button', { name: 'Reorder' }))
 
 // ============================================================================
 
@@ -126,10 +132,11 @@ describe('the canonical default layout is visible on a phone', () => {
     render(<MobileResearchLayoutEditor onBack={vi.fn()} />)
     const row = await screen.findByRole('button', { name: SYSTEM_ROW })
 
-    // Two nodes legitimately read "Default" in this row: the layout's name
-    // and the badge marking it canonically default. Both are wanted.
-    expect(within(row).getAllByText('Default')).toHaveLength(2)
-    expect(within(row).getByText('System')).toBeInTheDocument()
+    // One badge, not two. "Default" + "System" side by side read as two
+    // competing statuses for what is a single thing.
+    expect(within(row).getByText('Default')).toBeInTheDocument()
+    expect(within(row).getByText('System default')).toBeInTheDocument()
+    expect(within(row).queryByText('System')).not.toBeInTheDocument()
     // thesis + risks_to_thesis + rating are curated; my_custom_field is not.
     expect(within(row).getByText(/3 of 3 fields/)).toBeInTheDocument()
   })
@@ -148,7 +155,7 @@ describe('the canonical default layout is visible on a phone', () => {
     render(<MobileResearchLayoutEditor onBack={vi.fn()} />)
 
     await screen.findByText('Deep dive')
-    expect(screen.queryByText('System')).not.toBeInTheDocument()
+    expect(screen.queryByText('System default')).not.toBeInTheDocument()
   })
 
   it('is NOT withdrawn by somebody else’s shared default', async () => {
@@ -246,15 +253,46 @@ describe('Layout → Sections → Fields', () => {
     expect(screen.queryByLabelText(/^Section for /)).not.toBeInTheDocument()
   })
 
-  it('gives reorder arrows only to shown fields', async () => {
+  it('shows no reorder arrows in normal mode', async () => {
+    // Two chevrons on every row made the list read as a queue of controls.
+    // Reordering is the rarest of the three actions here, so it is a mode.
     await openLayout(customRow('Deep dive'))
     await screen.findByText('Thesis & Risks')
     expandSection(/Thesis & Risks/)
 
+    expect(screen.queryByLabelText('Move Risks down')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reorder' })).toBeInTheDocument()
+  })
+
+  it('exposes the arrows only inside reorder mode, and only on shown fields', async () => {
+    await openLayout(customRow('Deep dive'))
+    await screen.findByText('Thesis & Risks')
+    expandSection(/Thesis & Risks/)
+    enterReorder()
+
     expect(screen.getByLabelText('Move Risks down')).toBeInTheDocument()
-    // Business Model is hidden: it has no position, so no arrows at all.
+    // Business Model is hidden: it has no position, so no arrows even here.
     expect(screen.queryByLabelText('Move Business Model up')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Move Business Model down')).not.toBeInTheDocument()
+  })
+
+  it('leaves reorder mode again', async () => {
+    await openLayout(customRow('Deep dive'))
+    await screen.findByText('Thesis & Risks')
+    expandSection(/Thesis & Risks/)
+    enterReorder()
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+
+    expect(screen.queryByLabelText('Move Risks down')).not.toBeInTheDocument()
+  })
+
+  it('hides sections that hold no readable fields', async () => {
+    // Valid, kept in the data, still offered in Move to section — but a row
+    // reading "0 shown · 0 fields" is chrome for something unactionable.
+    await openLayout(customRow('Deep dive'))
+    await screen.findByText('Thesis & Risks')
+
+    expect(screen.queryByText('Empty Section')).not.toBeInTheDocument()
   })
 })
 
@@ -267,6 +305,7 @@ describe('edits reach the canonical config', () => {
     await openLayout(customRow('Deep dive'))
     await screen.findByText('Thesis & Risks')
     expandSection(/Thesis & Risks/)
+    enterReorder()
     fireEvent.click(screen.getByLabelText('Move Risks down'))
     save()
 
@@ -308,6 +347,7 @@ describe('edits reach the canonical config', () => {
     await openLayout(customRow('Deep dive'))
     await screen.findByText('Thesis & Risks')
     expandSection(/Thesis & Risks/)
+    enterReorder()
     fireEvent.click(screen.getByLabelText('Move Risks down'))
     save()
 
@@ -325,6 +365,7 @@ describe('edits reach the canonical config', () => {
     await openLayout(customRow('Deep dive'))
     await screen.findByText('Thesis & Risks')
     expandSection(/Thesis & Risks/)
+    enterReorder()
     fireEvent.click(screen.getByLabelText('Move Risks down'))
     save()
 
@@ -342,6 +383,10 @@ describe('edits reach the canonical config', () => {
     // Expanding is a view change, not an edit.
     expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled()
 
+    enterReorder()
+    // Entering reorder mode is also only a view change.
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled()
+
     fireEvent.click(screen.getByLabelText('Move Risks down'))
     expect(screen.getByRole('button', { name: /^save$/i })).not.toBeDisabled()
   })
@@ -351,6 +396,7 @@ describe('edits reach the canonical config', () => {
     await openLayout(customRow('Deep dive'))
     await screen.findByText('Thesis & Risks')
     expandSection(/Thesis & Risks/)
+    enterReorder()
     fireEvent.click(screen.getByLabelText('Move Risks down'))
     save()
 
@@ -394,6 +440,9 @@ describe('authority', () => {
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
     expandSection(/Thesis & Risks/)
     expect(screen.getByLabelText('Hide Risks')).toBeDisabled()
-    expect(screen.getByLabelText('Move Risks down')).toBeDisabled()
+    // Reorder is not offered at all: there is nothing a view-only reader
+    // could do with the arrows, so the mode itself is withheld rather than
+    // entered to find every control dead.
+    expect(screen.queryByRole('button', { name: 'Reorder' })).not.toBeInTheDocument()
   })
 })

@@ -21,6 +21,7 @@ import {
 import { clsx } from 'clsx'
 import { Template } from '../../hooks/useTemplates'
 import { useTemplateTags } from '../../hooks/useTemplateTags'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { Button } from '../ui/Button'
 
 interface TemplateListProps {
@@ -439,7 +440,21 @@ function TemplateCard({
   compact
 }: TemplateCardProps) {
   const [showMenu, setShowMenu] = useState(false)
+  const isMobile = useIsMobile()
   const categoryLabel = CATEGORIES.find(c => c.id === template.category)?.label || template.category
+
+  /**
+   * What tapping the row does.
+   *
+   * On a phone this list is where you manage templates, so the row opens the
+   * template — editing it if it is yours, previewing it if it is not. It
+   * used to insert the template (`onUse`), which is the right primary on the
+   * desktop picker but wrong here: there is nothing on a Templates screen to
+   * insert INTO, so the commonest tap did the least useful thing.
+   *
+   * Desktop keeps `onUse`. Use Template remains in the overflow on both.
+   */
+  const onRowTap = isMobile ? (isOwner ? onEdit : onPreview) : onUse
 
   if (compact) {
     return (
@@ -448,7 +463,7 @@ function TemplateCard({
           'p-3 border rounded-lg cursor-pointer transition-colors',
           isDeleting ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
         )}
-        onClick={onUse}
+        onClick={onRowTap}
       >
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
@@ -527,6 +542,12 @@ function TemplateCard({
             </>
           ) : (
             <>
+              {/* Preview and Copy are desktop-only here. On a phone four
+                  equally-weighted icons on every row read as a toolbar with
+                  no primary, and none of them is what a reader usually
+                  wants — they came to open the template. Both move into the
+                  overflow below, where their labels say what they do. */}
+              {!isMobile && (
               <button
                 onClick={onPreview}
                 className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
@@ -534,6 +555,7 @@ function TemplateCard({
               >
                 <Eye className="w-4 h-4" />
               </button>
+              )}
               <button
                 onClick={onToggleFavorite}
                 className={clsx(
@@ -546,6 +568,7 @@ function TemplateCard({
               >
                 <Star className={clsx('w-4 h-4', template.is_favorite && 'fill-yellow-500')} />
               </button>
+              {!isMobile && (
               <button
                 onClick={onCopy}
                 className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
@@ -553,6 +576,7 @@ function TemplateCard({
               >
                 <Copy className="w-4 h-4" />
               </button>
+              )}
               <div className="relative">
                 <button
                   onClick={() => setShowMenu(!showMenu)}
@@ -575,6 +599,26 @@ function TemplateCard({
                         <FileText className="w-4 h-4" />
                         Use Template
                       </button>
+                      {/* The two that left the row on a phone. Named, so
+                          "Copy content" is not an ambiguous glyph. */}
+                      {isMobile && (
+                        <>
+                          <button
+                            onClick={() => { onPreview(); setShowMenu(false) }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
+                          >
+                            <Eye className="w-4 h-4" />
+                            Preview
+                          </button>
+                          <button
+                            onClick={() => { onCopy(); setShowMenu(false) }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
+                          >
+                            <Copy className="w-4 h-4" />
+                            Copy content
+                          </button>
+                        </>
+                      )}
                       {isOwner && (
                         <>
                           <button

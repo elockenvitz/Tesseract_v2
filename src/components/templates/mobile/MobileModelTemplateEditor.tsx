@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { FileSpreadsheet, Plus, Trash2, X } from 'lucide-react'
+import { FileSpreadsheet, Lock, Plus, Search, Trash2, X } from 'lucide-react'
 import { MobileTemplateShell } from './MobileTemplateShell'
 import {
   useModelTemplates,
@@ -342,21 +342,19 @@ function DraftEditor({ templateId, onBack }: { templateId: string | null; onBack
           onChange={(detectionRules) => update({ detectionRules })}
         />
 
+        {/* One line, not a paragraph. The fact worth keeping is that these
+            exist and survive a mobile save; the explanation of why they need
+            a workbook was three times the size of the fact. */}
         {draft.dynamicMappings.length > 0 && (
-          <section className="border-t border-gray-200 pt-3 dark:border-gray-700">
-            <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Dynamic mappings
-            </h2>
-            <p className="text-[12px] leading-relaxed text-gray-500 dark:text-gray-400">
-              {draft.dynamicMappings.length} built on desktop. They match rows by label against a
-              live workbook, so they are edited there — saving here keeps them unchanged.
-            </p>
-          </section>
+          <p className="flex items-center gap-1.5 border-t border-gray-200 pt-3 text-[11px] text-gray-500 dark:border-gray-700 dark:text-gray-400">
+            <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
+            {draft.dynamicMappings.length} dynamic mapping
+            {draft.dynamicMappings.length === 1 ? '' : 's'} · edited on desktop, kept on save
+          </p>
         )}
 
         <p className="border-t border-gray-200 pt-3 text-[11px] leading-relaxed text-gray-500 dark:border-gray-700 dark:text-gray-400">
-          Auto-detection and the base workbook need the .xlsx open, so both stay on desktop.
-          References typed here use the same format the grid writes.
+          Auto-detect and the base workbook need the .xlsx open, so both stay on desktop.
         </p>
       </div>
 
@@ -684,6 +682,26 @@ function FieldPicker({
   onClose: () => void
 }) {
   const [metric, setMetric] = useState<MetricDefinition | null>(null)
+  const [q, setQ] = useState('')
+
+  // The catalog is long — every static preset plus every metric across all
+  // categories. Scrolling it to find "Price Target" is the slowest part of
+  // building a template on a phone.
+  const needle = q.trim().toLowerCase()
+  const match = (s: string | undefined) => !needle || (s ?? '').toLowerCase().includes(needle)
+
+  const presetCategories = STATIC_PRESET_CATEGORIES
+    .map((c) => ({
+      ...c,
+      presets: Object.values(c.presets).filter((p) => match(p.label) || match(p.field)),
+    }))
+    .filter((c) => c.presets.length > 0)
+
+  const metricCategories = METRIC_CATEGORIES
+    .map((c) => ({ ...c, metrics: c.metrics.filter((m) => match(m.label) || match(m.id)) }))
+    .filter((c) => c.metrics.length > 0)
+
+  const nothingFound = presetCategories.length === 0 && metricCategories.length === 0
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-gray-900">
@@ -700,6 +718,33 @@ function FieldPicker({
           <X className="h-4 w-4" />
         </button>
       </div>
+
+      {/* Search belongs to the field list, not the period list — once you
+          have picked a metric there are a handful of periods on screen. */}
+      {!metric && (
+        <div className="shrink-0 border-b border-gray-200 px-3 py-2 dark:border-gray-700">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search fields"
+              aria-label="Search fields"
+              className="h-9 w-full rounded-lg border border-gray-300 bg-transparent pl-8 pr-8 text-[13px] text-gray-900 placeholder-gray-400 dark:border-gray-600 dark:text-white"
+            />
+            {q && (
+              <button
+                type="button"
+                onClick={() => setQ('')}
+                aria-label="Clear search"
+                className="no-touch-target absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-gray-400"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {metric ? (
@@ -719,13 +764,18 @@ function FieldPicker({
           </div>
         ) : (
           <div className="space-y-4">
-            {STATIC_PRESET_CATEGORIES.map((category) => (
+            {nothingFound && (
+              <p className="py-8 text-center text-[13px] text-gray-500 dark:text-gray-400">
+                No field matches “{q}”.
+              </p>
+            )}
+            {presetCategories.map((category) => (
               <section key={category.name}>
                 <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
                   {category.name}
                 </h3>
                 <div className="space-y-1">
-                  {Object.values(category.presets).map((preset) => (
+                  {category.presets.map((preset) => (
                     <button
                       key={preset.field}
                       type="button"
@@ -739,7 +789,7 @@ function FieldPicker({
               </section>
             ))}
 
-            {METRIC_CATEGORIES.map((category) => (
+            {metricCategories.map((category) => (
               <section key={category.name}>
                 <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
                   {category.name}

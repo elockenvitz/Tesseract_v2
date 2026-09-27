@@ -188,16 +188,19 @@ function LayoutList({
                     <span className="truncate text-[13px] font-medium text-gray-900 dark:text-white">
                       {layout.name}
                     </span>
-                    {layout.is_default && (
+                    {/* One badge, not two. The derived layout was carrying
+                        "Default" AND "System", which read as two competing
+                        statuses when it is one thing: the standard default.
+                        A user's own default keeps the plain Default badge. */}
+                    {isSystem ? (
+                      <span className="shrink-0 rounded bg-gray-100 px-1.5 py-px text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                        System default
+                      </span>
+                    ) : layout.is_default ? (
                       <span className="shrink-0 rounded bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
                         Default
                       </span>
-                    )}
-                    {isSystem && (
-                      <span className="shrink-0 rounded bg-gray-100 px-1.5 py-px text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                        System
-                      </span>
-                    )}
+                    ) : null}
                   </span>
                   <span className="mt-0.5 block truncate text-[11px] text-gray-500 dark:text-gray-400">
                     {counts.shown} of {counts.total} fields
@@ -245,6 +248,10 @@ function LayoutDraftEditor({ layoutId, onBack }: { layoutId: string | null; onBa
   )
   const [draft, setDraft] = useState<DraftSection[] | null>(null)
   const [open, setOpen] = useState<Set<string>>(new Set())
+  // Which section is in reorder mode, if any. One at a time: arrows in two
+  // sections at once invite dragging a field between them, which these
+  // controls cannot do.
+  const [reordering, setReordering] = useState<string | null>(null)
   const [moving, setMoving] = useState<{ fieldId: string; name: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -354,12 +361,21 @@ function LayoutDraftEditor({ layoutId, onBack }: { layoutId: string | null; onBa
         <p className="py-8 text-center text-[13px] text-gray-500 dark:text-gray-400">Loading…</p>
       ) : (
         <div className="space-y-1.5">
-          {current.map((section) => (
+          {/* Sections with no readable fields are hidden from the overview.
+              They are valid and still offered in "Move to section", but a
+              row reading "0 shown · 0 fields" is a line of chrome for
+              something the reader cannot act on — and the catalog has
+              several. Nothing is removed from the data. */}
+          {current.filter((s) => s.fields.length > 0).map((section) => (
             <SectionGroup
               key={section.section_id}
               section={section}
               expanded={open.has(section.section_id)}
               onToggle={() => toggleSection(section.section_id)}
+              reordering={reordering === section.section_id}
+              onToggleReorder={() =>
+                setReordering((r) => (r === section.section_id ? null : section.section_id))
+              }
               readOnly={readOnly}
               onMove={(fieldId, direction) =>
                 edit(moveVisibleField(current, section.section_id, fieldId, direction))
@@ -402,6 +418,8 @@ function SectionGroup({
   section,
   expanded,
   onToggle,
+  reordering,
+  onToggleReorder,
   readOnly,
   onMove,
   onSetVisible,
@@ -410,6 +428,8 @@ function SectionGroup({
   section: DraftSection
   expanded: boolean
   onToggle: () => void
+  reordering: boolean
+  onToggleReorder: () => void
   readOnly: boolean
   onMove: (fieldId: string, direction: 'up' | 'down') => void
   onSetVisible: (fieldId: string, isVisible: boolean) => void
@@ -448,8 +468,30 @@ function SectionGroup({
 
       {expanded && (
         <div className="border-t border-gray-100 dark:border-gray-800">
-          {total === 0 && (
-            <p className="px-3 py-3 text-[12px] text-gray-400">No fields in this section.</p>
+          {/* Reorder is a MODE, not a permanent pair of arrows on every row.
+              Two chevrons on all 29 rows made the list look like a queue of
+              controls; reordering is also the rarest of the three things
+              done here. Entering the mode surfaces the same touch-safe
+              move-up/down behaviour, unchanged. */}
+          {!readOnly && shownFields.length > 1 && (
+            <div className="flex items-center justify-between border-b border-gray-100 px-3 py-1.5 dark:border-gray-800">
+              <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                {reordering ? 'Move fields with the arrows' : `${shown} shown`}
+              </span>
+              <button
+                type="button"
+                onClick={onToggleReorder}
+                aria-pressed={reordering}
+                className={clsx(
+                  'no-touch-target tap-pad rounded px-1.5 py-0.5 text-[11px] font-medium',
+                  reordering
+                    ? 'bg-primary-600 text-white'
+                    : 'text-primary-600 dark:text-primary-400',
+                )}
+              >
+                {reordering ? 'Done' : 'Reorder'}
+              </button>
+            </div>
           )}
 
           {shownFields.map((field, index) => (
@@ -457,6 +499,7 @@ function SectionGroup({
               key={field.field_id}
               field={field}
               readOnly={readOnly}
+              reordering={reordering}
               canMoveUp={index > 0}
               canMoveDown={index < shownFields.length - 1}
               onMove={(d) => onMove(field.field_id, d)}
@@ -475,6 +518,7 @@ function SectionGroup({
               key={field.field_id}
               field={field}
               readOnly={readOnly}
+              reordering={false}
               canMoveUp={false}
               canMoveDown={false}
               onMove={() => {}}
@@ -491,6 +535,7 @@ function SectionGroup({
 function FieldRow({
   field,
   readOnly,
+  reordering,
   canMoveUp,
   canMoveDown,
   onMove,
@@ -499,6 +544,7 @@ function FieldRow({
 }: {
   field: DraftField
   readOnly: boolean
+  reordering: boolean
   canMoveUp: boolean
   canMoveDown: boolean
   onMove: (direction: 'up' | 'down') => void
@@ -538,43 +584,42 @@ function FieldRow({
         {field.is_visible ? 'Shown' : 'Hidden'}
       </button>
 
-      {/* Only a shown field has a position, so only a shown field gets
-          arrows. Rendering them disabled on a hidden row would be offering a
-          control whose whole job is unavailable. */}
-      {field.is_visible ? (
+      {/* Arrows exist only in reorder mode, and only on a shown field — a
+          hidden field has no position to change. Outside the mode the row
+          carries its name, its state and one overflow, which is what the
+          reader is usually here to read rather than to operate. */}
+      {reordering && field.is_visible ? (
         <span className="flex shrink-0">
           <button
             type="button"
             onClick={() => onMove('up')}
             disabled={readOnly || !canMoveUp}
             aria-label={`Move ${field.name} up`}
-            className="no-touch-target flex h-7 w-6 items-center justify-center rounded text-gray-400 disabled:opacity-20"
+            className="no-touch-target flex h-7 w-7 items-center justify-center rounded text-gray-500 disabled:opacity-20 dark:text-gray-400"
           >
-            <ChevronUp className="h-3.5 w-3.5" />
+            <ChevronUp className="h-4 w-4" />
           </button>
           <button
             type="button"
             onClick={() => onMove('down')}
             disabled={readOnly || !canMoveDown}
             aria-label={`Move ${field.name} down`}
-            className="no-touch-target flex h-7 w-6 items-center justify-center rounded text-gray-400 disabled:opacity-20"
+            className="no-touch-target flex h-7 w-7 items-center justify-center rounded text-gray-500 disabled:opacity-20 dark:text-gray-400"
           >
-            <ChevronDown className="h-3.5 w-3.5" />
+            <ChevronDown className="h-4 w-4" />
           </button>
         </span>
       ) : (
-        <span className="w-12 shrink-0" aria-hidden="true" />
+        <button
+          type="button"
+          onClick={onRequestMove}
+          disabled={readOnly}
+          aria-label={`More actions for ${field.name}`}
+          className="no-touch-target flex h-7 w-6 shrink-0 items-center justify-center rounded text-gray-400 disabled:opacity-20"
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
+        </button>
       )}
-
-      <button
-        type="button"
-        onClick={onRequestMove}
-        disabled={readOnly}
-        aria-label={`More actions for ${field.name}`}
-        className="no-touch-target flex h-7 w-6 shrink-0 items-center justify-center rounded text-gray-400 disabled:opacity-20"
-      >
-        <MoreHorizontal className="h-3.5 w-3.5" />
-      </button>
     </div>
   )
 }

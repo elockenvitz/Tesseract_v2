@@ -109,18 +109,17 @@ export function MobileTemplateShell({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             {onNameChange ? (
-              /* An editable title has to look editable. A borderless input
-                 with placeholder text reads as a heading that happens to be
-                 grey — people retyped the name expecting it to be a label.
-                 A dotted rule under it says "this is a field" without making
-                 the title look like a form control, and it goes solid on
-                 focus so the state is unambiguous. */
+              /* An editable title has to look editable, and a dashed rule
+                 under a heading read as decoration rather than as a field.
+                 A tinted, inset well does the job the way every other text
+                 input on the phone does: a surface you can type into. It
+                 stays quiet — no heavy border — and gains a ring on focus. */
               <input
                 value={name}
                 onChange={(e) => onNameChange(e.target.value)}
                 placeholder={namePlaceholder ?? `Untitled ${typeLabel.toLowerCase()}`}
                 aria-label="Template name"
-                className="w-full border-b border-dashed border-gray-300 bg-transparent pb-0.5 text-[15px] font-semibold leading-tight text-gray-900 placeholder-gray-400 focus:border-solid focus:border-primary-500 focus:outline-none dark:border-gray-600 dark:text-white dark:focus:border-primary-400"
+                className="-ml-1.5 w-full rounded-md bg-gray-50 px-1.5 py-0.5 text-[15px] font-semibold leading-tight text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-gray-800 dark:text-white dark:focus:bg-gray-900"
               />
             ) : (
               <h1 className="truncate text-[15px] font-semibold leading-tight text-gray-900 dark:text-white">
