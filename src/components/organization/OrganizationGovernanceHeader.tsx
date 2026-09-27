@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { HealthPill } from './HealthPill'
 import { RiskCountBadge } from './RiskBadge'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import type { OrgGraph } from '../../lib/org-graph'
 import type { RiskCounts } from '../../lib/org-graph'
 
@@ -41,21 +42,30 @@ export function OrganizationGovernanceHeader({
   activeRiskFilter,
   onRiskFilterClick,
 }: OrganizationGovernanceHeaderProps) {
+  const isMobile = useIsMobile()
   return (
     <div className="bg-slate-50/90 border border-gray-200/80 rounded-md shadow-sm mt-3 mb-3" data-no-pan>
-      {/* ── Top row: Health + Risk breakdown + Action ── */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200/60">
-        <div className="flex items-center gap-4">
+      {/* ── Top row: Health + Risk breakdown + Action ──
+
+          On a phone the label pair and the divider go, the pill drops to
+          `sm`, and the row wraps: this is a status strip above the actual
+          org chart, and it was taking a third of the first screen before any
+          structure appeared. Every number is still here. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-2 py-1.5 sm:px-4 sm:py-2 border-b border-gray-200/60">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:gap-4">
           {/* Health: large and prominent */}
-          <div className="flex items-center gap-2.5">
-            <div className="select-none">
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
+            <div className="hidden sm:block select-none">
               <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest dark:text-gray-400">Governance</span>
               <span className="text-[9px] text-gray-400 ml-1">Org Health</span>
             </div>
-            <HealthPill score={orgGraph.overallHealth} size="lg" showTooltip />
+            {/* One instance, sized by viewport. Rendering both and hiding one
+                with CSS put the score in the DOM twice — announced twice by a
+                screen reader, and ambiguous to anything querying by text. */}
+            <HealthPill score={orgGraph.overallHealth} size={isMobile ? 'sm' : 'lg'} showTooltip />
           </div>
 
-          <div className="w-px h-6 bg-gray-300/60" />
+          <div className="hidden sm:block w-px h-6 bg-gray-300/60" />
 
           {/* Risk severity badges — always visible, zero-state reads "0" */}
           <div className="flex items-center gap-1.5">
@@ -85,8 +95,12 @@ export function OrganizationGovernanceHeader({
 
       </div>
 
-      {/* ── Bottom row: Entity counts ── */}
-      <div className="flex items-center gap-4 px-4 py-1.5 text-[11px]">
+      {/* ── Bottom row: Entity counts ──
+
+          A scrolling line on a phone rather than a wrapping block: six counts
+          at ~70px each is well past 390px, and stacked they became a panel.
+          This keeps them one glanceable line you can swipe. */}
+      <div className="flex items-center gap-3 sm:gap-4 px-2 sm:px-4 py-1.5 text-[11px] overflow-x-auto no-scrollbar sm:overflow-visible sm:flex-wrap">
         <Stat icon={<Building2 className="w-3 h-3" />} value={orgGraph.totalNodes} label="Nodes" />
         <Stat icon={<Users className="w-3 h-3" />} value={orgGraph.totalTeams} label="Teams" />
         <Stat icon={<Users className="w-3 h-3" />} value={orgGraph.totalMembers} label="Members" />
@@ -113,7 +127,7 @@ export function OrganizationGovernanceHeader({
 // ─── Internal helpers ──────────────────────────────────────────────────
 
 function Sep() {
-  return <div className="w-px h-3 bg-gray-200" />
+  return <div className="shrink-0 w-px h-3 bg-gray-200" />
 }
 
 function Stat({
@@ -128,7 +142,7 @@ function Stat({
   warn?: boolean
 }) {
   return (
-    <div className="flex items-center gap-1 text-gray-500 select-none dark:text-gray-400">
+    <div className="flex shrink-0 items-center gap-1 whitespace-nowrap text-gray-500 select-none dark:text-gray-400">
       <span className="text-gray-400">{icon}</span>
       <span className={`font-semibold tabular-nums ${warn ? 'text-amber-700' : 'text-gray-800 dark:text-gray-100'}`}>{value}</span>
       <span>{label}</span>

@@ -27,7 +27,7 @@ import { resolve } from 'node:path'
 import { MOBILE_SURFACES, getMobileSurface, ownsMobileViewport, isDesktopOnly } from '../mobile-surfaces'
 
 /** Surfaces whose page is `h-full`, self-scrolling, self-padding, self-coloured. */
-const OWNS = ['files', 'model-file', 'charting', 'asset-allocation', 'allocation-period']
+const OWNS = ['files', 'charting', 'asset-allocation', 'allocation-period']
 
 /**
  * Surfaces that rely on the shell for their horizontal padding. Their page
@@ -65,7 +65,9 @@ describe('ownsViewportOnMobile', () => {
    * padded wrapper and its sibling does not — the identical page, two layouts.
    */
   it('agrees across types that render one component', () => {
-    for (const [a, b] of [['files', 'model-file'], ['asset-allocation', 'allocation-period']]) {
+    // `model-file` renders the owning asset, so it must agree with `asset` —
+    // it used to render FilesPage and agreed with `files` instead.
+    for (const [a, b] of [['asset', 'model-file'], ['asset-allocation', 'allocation-period']]) {
       expect(ownsMobileViewport(a), `${a} vs ${b}`).toBe(ownsMobileViewport(b))
     }
   })

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { CalendarRange } from 'lucide-react'
+import { DatePicker } from '../ui/DatePicker'
 import type { AccountabilityFilters } from '../../types/decision-accountability'
 import { DATE_PRESET_BUTTONS, activePresetFor, customRange, presetRange } from '../../lib/outcomes/date-presets'
 
@@ -73,21 +74,34 @@ export function OutcomesRangeControl({
       </div>
 
       {showCustom && (
+        /* The app's own date control, not two browser-native `mm/dd/yyyy`
+           fields. `index.css` forces every native input to 16px below 768px
+           to stop iOS zooming, so those two rendered taller and in a larger
+           type than the presets directly above them — the one place on this
+           control that did not look like the rest of it. Same values, same
+           `yyyy-MM-dd` strings; `allowPastDates` because a date range over
+           past decisions is the only kind there is. */
         <div data-slot="outcomes-range-custom" className="mt-2 flex flex-wrap items-center gap-2">
-          <input
-            type="date"
-            aria-label="From"
-            value={customStart}
-            onChange={e => setCustomStart(e.target.value)}
-            className="min-w-0 flex-1 basis-[8rem] h-9 rounded-md border border-gray-200 px-2 text-[13px] dark:border-gray-700 dark:bg-gray-800"
-          />
-          <input
-            type="date"
-            aria-label="To"
-            value={customEnd}
-            onChange={e => setCustomEnd(e.target.value)}
-            className="min-w-0 flex-1 basis-[8rem] h-9 rounded-md border border-gray-200 px-2 text-[13px] dark:border-gray-700 dark:bg-gray-800"
-          />
+          <div className="min-w-0 flex-1 basis-[8rem]">
+            <DatePicker
+              value={customStart || null}
+              onChange={v => setCustomStart(v || '')}
+              placeholder="From"
+              variant="filter"
+              allowPastDates
+              className="w-full"
+            />
+          </div>
+          <div className="min-w-0 flex-1 basis-[8rem]">
+            <DatePicker
+              value={customEnd || null}
+              onChange={v => setCustomEnd(v || '')}
+              placeholder="To"
+              variant="filter"
+              allowPastDates
+              className="w-full"
+            />
+          </div>
           <button
             type="button"
             disabled={!customStart}

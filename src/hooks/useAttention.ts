@@ -1253,7 +1253,11 @@ async function collectOverduePersonalTasks(userId: string, orgId: string): Promi
       attention_id: attentionId,
       source_type: 'task',
       source_id: t.id,
-      source_url: '/priorities',
+      // Named for where an overdue task is acted on now that the standalone
+      // Priorities app is gone. Nothing routes on this value — it is carried
+      // on the row as provenance — but leaving it pointing at a retired
+      // surface would be a dangling reference the next reader has to chase.
+      source_url: '/today',
       attention_type: 'action_required',
       reason_code: 'task_overdue',
       reason_text: `${daysOver} day${daysOver !== 1 ? 's' : ''} overdue`,

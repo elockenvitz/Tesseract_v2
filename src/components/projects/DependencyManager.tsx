@@ -44,6 +44,35 @@ type SelectionItem = {
   completed?: boolean
 }
 
+/**
+ * "No dependencies" in one short block.
+ *
+ * Each of the three relationship sections rendered its empty state as a 40px
+ * icon over two centred lines with `py-8`, so a project with no dependencies
+ * at all — the common case — produced roughly 200px of card, three times
+ * over, and a phone scrolled through 600px to learn nothing. The fuller
+ * treatment stays for sections that actually have relationships.
+ */
+function EmptyRelationship({
+  icon: Icon,
+  title,
+  line,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  line: string
+}) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 px-3 py-2.5">
+      <Icon className="w-4 h-4 mt-0.5 shrink-0 text-gray-400 dark:text-gray-500" />
+      <div className="min-w-0">
+        <p className="text-sm text-gray-600 dark:text-gray-300">{title}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">{line}</p>
+      </div>
+    </div>
+  )
+}
+
 export function DependencyManager({ project, onNavigate }: DependencyManagerProps) {
   const { user } = useAuth()
   const {
@@ -385,33 +414,39 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
   return (
     <div className="space-y-6">
       {/* Blocked By Section */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <ArrowLeft className="w-5 h-5 text-red-500" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Blocked By
-            </h3>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              ({blockedBy.length})
-            </span>
-            <span className="text-sm text-gray-400 dark:text-gray-500">
-              — Projects or deliverables that must be completed first
-            </span>
-          </div>
+      <Card className="p-4 sm:p-6">
+        {/* Title, count, helper sentence and the action shared one row, so at
+            390px all four collided. One wrapping row instead, with `order`
+            moving the helper onto its own line on a phone — the same element
+            in both layouts, not a second copy behind `sm:hidden`. */}
+        <div className="mb-3 sm:mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <ArrowLeft className="order-1 w-5 h-5 text-red-500 shrink-0" />
+          <h3 className="order-2 text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
+            Blocked By
+          </h3>
+          <span className="order-3 text-sm text-gray-500 dark:text-gray-400">
+            ({blockedBy.length})
+          </span>
           {isOwner && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setDependencyType('blocks')
-                setShowAddModal(true)
-              }}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Blocker
-            </Button>
+            <div className="order-4 sm:order-5 ml-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setDependencyType('blocks')
+                  setShowAddModal(true)
+                }}
+              >
+                <Plus className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Add Blocker</span>
+                <span className="sr-only sm:hidden">Add blocker</span>
+              </Button>
+            </div>
           )}
+          <span className="order-5 sm:order-4 basis-full sm:basis-auto text-xs sm:text-sm text-gray-400 dark:text-gray-500">
+            <span className="hidden sm:inline">— </span>
+            Projects or deliverables that must be completed first
+          </span>
         </div>
 
         {blockedBy.length > 0 ? (
@@ -419,26 +454,27 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
             {blockedBy.map(dep => renderDependencyItem(dep, true))}
           </div>
         ) : (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            <Lock className="w-10 h-10 mx-auto mb-3 opacity-50" />
-            <p>No blocking dependencies</p>
-            <p className="text-sm">This project can proceed without waiting for others.</p>
-          </div>
+          <EmptyRelationship
+            icon={Lock}
+            title="No blocking dependencies"
+            line="This project can proceed without waiting for others."
+          />
         )}
       </Card>
 
       {/* Blocking Section */}
-      <Card className="p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <ArrowRight className="w-5 h-5 text-yellow-500" />
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+      <Card className="p-4 sm:p-6">
+        <div className="mb-3 sm:mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <ArrowRight className="w-5 h-5 text-yellow-500 shrink-0" />
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
             Blocking
           </h3>
           <span className="text-sm text-gray-500 dark:text-gray-400">
             ({blocking.length})
           </span>
-          <span className="text-sm text-gray-400 dark:text-gray-500">
-            — Projects waiting on this one
+          <span className="basis-full sm:basis-auto text-xs sm:text-sm text-gray-400 dark:text-gray-500">
+            <span className="hidden sm:inline">— </span>
+            Projects waiting on this one
           </span>
         </div>
 
@@ -479,42 +515,44 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
             ))}
           </div>
         ) : (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            <AlertTriangle className="w-10 h-10 mx-auto mb-3 opacity-50" />
-            <p>Not blocking any projects</p>
-            <p className="text-sm">No other projects are waiting on this one.</p>
-          </div>
+          <EmptyRelationship
+            icon={AlertTriangle}
+            title="Not blocking any projects"
+            line="No other projects are waiting on this one."
+          />
         )}
       </Card>
 
       {/* Related Projects Section */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Link2 className="w-5 h-5 text-blue-500" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Related
-            </h3>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              ({related.length})
-            </span>
-            <span className="text-sm text-gray-400 dark:text-gray-500">
-              — Non-blocking links for reference
-            </span>
-          </div>
+      <Card className="p-4 sm:p-6">
+        <div className="mb-3 sm:mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Link2 className="order-1 w-5 h-5 text-blue-500 shrink-0" />
+          <h3 className="order-2 text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
+            Related
+          </h3>
+          <span className="order-3 text-sm text-gray-500 dark:text-gray-400">
+            ({related.length})
+          </span>
           {isOwner && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setDependencyType('related')
-                setShowAddModal(true)
-              }}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Link Item
-            </Button>
+            <div className="order-4 sm:order-5 ml-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setDependencyType('related')
+                  setShowAddModal(true)
+                }}
+              >
+                <Plus className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Link Item</span>
+                <span className="sr-only sm:hidden">Link item</span>
+              </Button>
+            </div>
           )}
+          <span className="order-5 sm:order-4 basis-full sm:basis-auto text-xs sm:text-sm text-gray-400 dark:text-gray-500">
+            <span className="hidden sm:inline">— </span>
+            Non-blocking links for reference
+          </span>
         </div>
 
         {related.length > 0 ? (
@@ -522,11 +560,11 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
             {related.map(dep => renderDependencyItem(dep, false))}
           </div>
         ) : (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            <Link2 className="w-10 h-10 mx-auto mb-3 opacity-50" />
-            <p>No related items</p>
-            <p className="text-sm">Link related projects or deliverables for easy reference.</p>
-          </div>
+          <EmptyRelationship
+            icon={Link2}
+            title="No related items"
+            line="Link related projects or deliverables for easy reference."
+          />
         )}
       </Card>
 
@@ -541,10 +579,16 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
               setExpandedProjects(new Set())
             }}
           />
-          <div className="fixed inset-x-4 top-[10%] max-w-lg mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-2xl z-50 max-h-viewport-80 flex flex-col">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          {/* `top-[10%]` plus `max-h-viewport-80` spent ~84px of a phone on
+              nothing and still let the panel run past the bottom, and the
+              4-padding on every block left the item list — the thing you came
+              here to use — a few rows tall. On a phone it takes the screen
+              less an 8px margin and the padding tightens; desktop keeps the
+              centred dialog. */}
+          <div className="fixed inset-2 sm:inset-x-4 sm:top-[10%] sm:bottom-auto max-w-lg mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-2xl z-50 sm:max-h-viewport-80 flex flex-col">
+            <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between gap-2 mb-2 sm:mb-4">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white min-w-0">
                   {dependencyType === 'blocks' ? 'Add Blocking Dependencies' : 'Link Related Items'}
                 </h3>
                 <Button
@@ -560,7 +604,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
                 </Button>
               </div>
 
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mb-2 sm:mb-4">
                 {dependencyType === 'blocks'
                   ? 'Select projects or deliverables that must be completed before this project can proceed.'
                   : 'Select projects or deliverables to link as related (non-blocking).'}
@@ -579,7 +623,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
 
               {/* Selected Items Summary */}
               {selectedItems.length > 0 && (
-                <div className="mt-4 p-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg">
+                <div className="mt-2 sm:mt-4 p-2 sm:p-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-primary-700 dark:text-primary-300">
                       {selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''} selected

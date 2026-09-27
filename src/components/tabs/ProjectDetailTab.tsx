@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import {
   DndContext,
@@ -42,6 +42,8 @@ import {
   Check,
   UserCheck,
   ChevronDown,
+  ChevronLeft,
+  MoreHorizontal,
   Crown,
   Users2,
   Reply,
@@ -69,6 +71,7 @@ import { Select } from '../ui/Select'
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow, format, differenceInDays, startOfDay, parseISO } from 'date-fns'
 import { clsx } from 'clsx'
+import { getStatusConfig } from '../../lib/project-config'
 import type { ProjectWithAssignments, ProjectStatus, ProjectPriority } from '../../types/project'
 import { useAuth } from '../../hooks/useAuth'
 import { ProjectActivityFeed } from '../projects/ProjectActivityFeed'
@@ -93,6 +96,7 @@ interface SortableDeliverableProps {
   canManageProject: boolean
   canCompleteDeliverables: boolean
   onToggle: () => void
+  onRename: (title: string) => void
   onDelete: () => void
   onAssigneeClick: () => void
   isAssigneeDropdownOpen: boolean
@@ -111,6 +115,7 @@ function SortableDeliverableItem({
   canManageProject,
   canCompleteDeliverables,
   onToggle,
+  onRename,
   onDelete,
   onAssigneeClick,
   isAssigneeDropdownOpen,
@@ -140,6 +145,9 @@ function SortableDeliverableItem({
     opacity: isDragging ? 0 : 1
   }
 
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState(deliverable.title)
+
   const assignments = deliverable.deliverable_assignments || []
   const isOverdue = deliverable.due_date && !deliverable.completed && new Date(deliverable.due_date) < new Date()
 
@@ -148,7 +156,17 @@ function SortableDeliverableItem({
       ref={setNodeRef}
       style={style}
       className={clsx(
-        'flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 group hover:border-gray-300 dark:hover:border-gray-600 shadow-sm',
+        /* One divided list on a phone, not a stack of cards.
+
+           Each row was its own bordered, shadowed, rounded card with 8px of
+           air between them, so four deliverables read as four objects with
+           three gaps rather than as a list — and the borders at that density
+           are visual noise competing with the task text. On a phone the card
+           chrome comes off and a single hairline divides the rows; the list's
+           container carries the one border. Desktop keeps the cards. */
+        'flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2 sm:py-3 bg-white dark:bg-gray-800 group',
+        'max-sm:border-b max-sm:border-gray-100 dark:max-sm:border-gray-700/60 max-sm:last:border-b-0',
+        'sm:rounded-lg sm:border sm:border-gray-200 dark:sm:border-gray-700 sm:hover:border-gray-300 dark:sm:hover:border-gray-600 sm:shadow-sm',
         deliverable.completed && 'bg-gray-50 dark:bg-gray-800/50',
         isJustDropped && 'animate-drop-pop'
       )}
@@ -158,16 +176,22 @@ function SortableDeliverableItem({
         <button
           {...attributes}
           {...listeners}
-          className="flex-shrink-0 p-1 -ml-2 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 touch-none"
+          aria-label={`Reorder "${deliverable.title}"`}
+          /* `no-touch-target` + `tap-pad`: the grip was a 44px block on a
+             phone, which is an eighth of the row spent on a handle. The
+             thumb target stays; the drawn icon is 14px. */
+          className="no-touch-target tap-pad flex-shrink-0 p-0.5 -ml-1 sm:p-1 sm:-ml-2 cursor-grab active:cursor-grabbing text-gray-300 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-300 touch-none"
         >
-          <GripVertical className="w-4 h-4" />
+          <GripVertical className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </button>
       )}
 
       {/* Priority number */}
+      {/* The ordinal restates the row's own position, which a list already
+          shows. Desktop keeps it; a phone spends the width on the task. */}
       {priorityNumber !== null && (
         <span className={clsx(
-          'flex-shrink-0 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center',
+          'hidden sm:flex flex-shrink-0 w-6 h-6 rounded-full text-xs font-bold items-center justify-center',
           deliverable.completed
             ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
             : 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
@@ -177,32 +201,92 @@ function SortableDeliverableItem({
       )}
 
       {/* Completion checkbox */}
+      {/* Completion.
+
+          Two problems, both about the control saying nothing: the
+          coarse-pointer rule inflated it into a 44px circle that dominated
+          the row, and a bare ring with no label does not say it means "done"
+          or that it toggles back. `no-touch-target` + `tap-pad` keeps the
+          44px thumb around an 18px ring, and the label says which way the
+          tap goes — so it reads as a checkbox, which is what it is. */}
       <button
         onClick={onToggle}
         disabled={!canCompleteDeliverables}
+        role="checkbox"
+        aria-checked={deliverable.completed}
+        aria-label={deliverable.completed ? `Mark "${deliverable.title}" not done` : `Mark "${deliverable.title}" done`}
+        title={deliverable.completed ? 'Mark not done' : 'Mark done'}
+        /* `!` on the size: `index.css` gives every button a 44px minimum on
+           a coarse pointer, and `no-touch-target` opts out of that — but the
+           opt-out only removes the minimum, it does not stop anything else
+           from sizing the box. Stating the size as important is what makes
+           the drawn circle 16px on a real phone rather than something that
+           merely should be. `tap-pad` keeps the thumb target. */
+        /* A rounded square with a filled ground and a visible border, not a
+           thin ring.
+
+           Shrinking the circle to 16px with a 1.5px gray-300 outline made it
+           effectively disappear on white — the complaint went from "massive
+           circles" straight to "I don't see how to complete one", which is
+           the same control failing in the opposite direction. A square with
+           a border and a tinted ground reads as a checkbox at a glance, and
+           a faint tick showing on hover/idle says what it will do. 20px
+           drawn, 44px thumb via `tap-pad`. */
         className={clsx(
-          'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors flex-shrink-0',
+          'no-touch-target tap-pad !w-5 !h-5 !min-w-0 !min-h-0 rounded-[6px] border flex items-center justify-center transition-colors flex-shrink-0 p-0',
           deliverable.completed
             ? 'bg-primary-500 border-primary-500'
-            : 'border-gray-300 dark:border-gray-600 hover:border-primary-500',
+            : 'bg-gray-50 dark:bg-gray-700/60 border-gray-300 dark:border-gray-500 hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20',
           !canCompleteDeliverables && 'opacity-50 cursor-not-allowed'
         )}
       >
-        {deliverable.completed && (
-          <CheckCircle className="w-3 h-3 text-white" />
-        )}
+        <Check
+          className={clsx(
+            'w-3.5 h-3.5',
+            deliverable.completed
+              ? 'text-white'
+              : 'text-gray-300 dark:text-gray-500'
+          )}
+        />
       </button>
 
       {/* Title */}
-      <div className="flex items-center gap-2 flex-1 min-w-0">
-        <span className={clsx(
-          'text-sm truncate',
-          deliverable.completed
-            ? 'line-through text-gray-400 dark:text-gray-500'
-            : 'text-gray-900 dark:text-white'
-        )}>
-          {deliverable.title}
-        </span>
+      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={() => {
+              const next = renameValue.trim()
+              if (next && next !== deliverable.title) onRename(next)
+              setIsRenaming(false)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.currentTarget.blur() }
+              if (e.key === 'Escape') { setRenameValue(deliverable.title); setIsRenaming(false) }
+            }}
+            className="flex-1 min-w-0 bg-transparent border-b border-primary-400 text-[13px] sm:text-sm text-gray-900 dark:text-white focus:outline-none"
+          />
+        ) : (
+          <span
+            onClick={() => {
+              if (!canManageProject || deliverable.completed) return
+              setRenameValue(deliverable.title)
+              setIsRenaming(true)
+            }}
+            title={canManageProject && !deliverable.completed ? 'Tap to rename' : undefined}
+            className={clsx(
+              'text-[13px] sm:text-sm truncate',
+              canManageProject && !deliverable.completed && 'cursor-text',
+              deliverable.completed
+                ? 'line-through text-gray-400 dark:text-gray-500'
+                : 'text-gray-900 dark:text-white'
+            )}
+          >
+            {deliverable.title}
+          </span>
+        )}
         {/* Link indicator for deliverables from comments */}
         {deliverable.source_comment_id && (
           <span
@@ -214,7 +298,7 @@ function SortableDeliverableItem({
         )}
       </div>
 
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
         {/* Assignees */}
         {teamMembers && teamMembers.length > 0 && (
           <div className="relative" data-dropdown>
@@ -330,7 +414,7 @@ function SortableDeliverableItem({
           />
         ) : deliverable.due_date ? (
           <span className={clsx(
-            'text-xs px-2 py-1 rounded',
+            'text-[11px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded shrink-0',
             isOverdue
               ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20'
               : 'text-gray-500 dark:text-gray-400'
@@ -339,16 +423,44 @@ function SortableDeliverableItem({
           </span>
         ) : null}
 
-        {/* Delete button */}
+        {/* Delete. Quiet and small: it is the least-used control in the row
+            and was taking the same 44px as the task's own affordances. The
+            phone layer reveals it (there is no hover to reveal it with), so
+            it is deliberately low-contrast rather than hidden. */}
         {canManageProject && (
           <button
             onClick={onDelete}
-            className="p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+            aria-label={`Delete "${deliverable.title}"`}
+            className="no-touch-target tap-pad p-0.5 text-gray-300 dark:text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * An empty section that does not ask for attention.
+ *
+ * "No overdue tasks" was rendering in the same 4-padded card, with the same
+ * icon chip and the same heading weight, as three genuinely overdue tasks —
+ * so a healthy project and a project in trouble looked equally busy, and on a
+ * phone two of these filled the screen before anything real. Good news gets
+ * one line.
+ */
+function QuietEmpty({
+  icon: Icon,
+  label,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 px-3 py-2 text-[13px] text-gray-400 dark:text-gray-500">
+      <Icon className="w-3.5 h-3.5 shrink-0" />
+      {label}
     </div>
   )
 }
@@ -357,6 +469,57 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<'overview' | 'deliverables' | 'team' | 'dependencies' | 'comments' | 'activity'>('overview')
+  const tabRailRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * Whether the phone shows the full project summary or the one-line version.
+   *
+   * The summary is permanent chrome above six reports, and at ~180px it was
+   * taking a fifth of the viewport away from whichever report the user came
+   * to read. Collapsed it is one line — name, state, progress — which is
+   * enough to know where you are, and the report gets the screen.
+   *
+   * Explicit, and remembered per project for the life of the tab. It is one
+   * boolean over ONE rendering of the summary, not a second compact copy:
+   * every field below is the same element either way, shown or hidden. A
+   * duplicate would be two things to keep in sync and two announcements to a
+   * screen reader.
+   *
+   * Desktop never reads this — the summary is always expanded there.
+   */
+  const [summaryCollapsed, setSummaryCollapsed] = useState(false)
+
+  /**
+   * Which comment has its secondary actions showing, on a phone.
+   *
+   * Six actions in a comment's action row do not fit 390px. Wrapping them
+   * stopped the clipping but gave Edit and Delete the same weight as Reply,
+   * on a row that repeats under every comment. Like, Reply and Resolve stay
+   * inline; Edit, Delete and + Task sit behind `⋯`. One id, so opening one
+   * comment's menu closes another's.
+   */
+  const [openCommentActions, setOpenCommentActions] = useState<string | null>(null)
+
+  /**
+   * Keep the selected tab fully on screen, centred where there is room.
+   *
+   * The rail is wider than a phone, so the tab you are on can be the one that
+   * is half cut off — which is the opposite of what a rail is for. This runs
+   * on selection and on mount, so arriving on a tab deep in the strip (a
+   * dependency link lands on `dependencies`) shows it whole rather than
+   * leaving the user to scroll to find where they are.
+   *
+   * `scroll-px-4` on the container is what keeps a centred-by-clamping tab
+   * off the bezel when it is first or last. `inline: 'center'` is a no-op on
+   * a desktop, where the rail does not overflow.
+   */
+  useLayoutEffect(() => {
+    const rail = tabRailRef.current
+    if (!rail || rail.scrollWidth <= rail.clientWidth) return
+    const current = rail.querySelector<HTMLElement>(`[data-tab-id="${activeTab}"]`)
+    current?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
+  }, [activeTab])
+
   const [newDeliverable, setNewDeliverable] = useState('')
   const [newDeliverableDueDate, setNewDeliverableDueDate] = useState<string | null>(null)
   const [newDeliverableAssignees, setNewDeliverableAssignees] = useState<string[]>([])
@@ -1095,6 +1258,29 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
     }
   })
 
+  /**
+   * Rename a deliverable.
+   *
+   * There was no way to do this. A deliverable could be completed, assigned,
+   * dated, reordered and deleted, but its title was fixed at creation — so a
+   * typo meant deleting the task and losing its assignees and due date to
+   * retype the name. Tapping the title opens it for editing; Enter or blur
+   * commits, Escape abandons.
+   */
+  const renameDeliverableMutation = useMutation({
+    mutationFn: async ({ id, title }: { id: string; title: string }) => {
+      const { error } = await supabase
+        .from('project_deliverables')
+        .update({ title })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-deliverables', project.id] })
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+    },
+  })
+
   // Delete deliverable mutation
   const deleteDeliverableMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -1567,10 +1753,15 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
   }
 
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-gray-900">
+    /* The shell wraps a phone tab in `px-3 py-4`, which put ~16px of dead
+       white between the app header and "← Projects" and inset the header's
+       own rule from both edges. The page reclaims it the way ProjectsPage
+       does — cancel the padding, then grow by the same amount so `h-full`
+       still resolves. Desktop keeps the shell's padding untouched. */
+    <div className="h-full max-sm:-mx-3 max-sm:-my-4 max-sm:h-[calc(100%+2rem)] flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
       <div className="flex-shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="px-3 sm:px-6 py-3 sm:py-4">
+        <div className="px-3 sm:px-6 pt-1.5 pb-2 sm:py-4">
           {editingProject ? (
             <div className="space-y-4">
               <Input
@@ -1651,31 +1842,132 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
             </div>
           ) : (
             <>
-              <div className="flex items-start justify-between gap-3 mb-4">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                  <FolderKanban className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600 dark:text-primary-400 shrink-0" />
+              {/* Back to Projects. A project detail tab can be opened from
+                  search, from the feed or from a dependency link, so on a
+                  phone there was no way out of it except the tab bar. Phone
+                  only: on a desktop the tab strip is the way back. */}
+              <button
+                type="button"
+                onClick={() => onNavigate?.({ id: 'projects-list', title: 'Projects', type: 'projects-list' })}
+                className="no-touch-target tap-pad sm:hidden -ml-1 mb-1.5 flex items-center gap-0.5 py-0 leading-none text-[11px] font-medium text-primary-600 dark:text-primary-400"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                Projects
+              </button>
+
+              {/* `items-center` on a phone, not `items-start`.
+
+                  The gap under the title was the row being taller than the
+                  title: the collapse chevron carries `p-1` around a 16px
+                  icon, so the row is 24px while the heading's line box is
+                  ~20px — and `items-start` pinned the heading to the top and
+                  left the difference sitting underneath it, looking like a
+                  margin that no margin rule could remove. Centring shares
+                  that 4px above and below instead. */}
+              <div className="flex items-start justify-between gap-2 sm:gap-3 mb-0 sm:mb-4">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                  <FolderKanban className="hidden sm:block w-5 h-5 sm:w-6 sm:h-6 text-primary-600 dark:text-primary-400 shrink-0" />
                   <div className="min-w-0">
                     {/* A project title is a sentence, not a ticker — it needs
-                        to wrap rather than push the Edit button off the row. */}
-                    <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white break-words">
+                        to wrap rather than push the Edit button off the row.
+                        Collapsed, it stays on one line so the summary holds
+                        its height. */}
+                    {/* The pencil sits with the name it edits, inline, so it
+                        reads as "edit this" rather than as a second action
+                        competing with the title for the row. */}
+                    {/* The size does not change with the state — only whether
+                        it wraps. A title that resized on collapse read as a
+                        different heading for a different thing. */}
+                    {/* `leading-tight`: the gap under the title was not a
+                        margin — `text-base` carries a 1.5 line-height, so a
+                        16px title sits in a 24px line with 4px of dead space
+                        above and below it. Removing margins could not reach
+                        that; the line box had to come down. */}
+                    {/* Measured at 390px: the margin between this and the
+                        chip run below is already 0px. What reads as
+                        whitespace is the line boxes — 16px text in a 20px
+                        line here, 12px text in a 20px line there, so ~10px
+                        of the gap is leading, not spacing. `leading-none`
+                        with a pixel of padding for descenders is the only
+                        thing that actually closes it. */}
+                    <h1 className={clsx(
+                      'text-base sm:text-2xl font-bold text-gray-900 dark:text-white max-sm:leading-none max-sm:pb-px sm:leading-normal',
+                      summaryCollapsed ? 'truncate' : 'break-words'
+                    )}>
                       {projectData.title || 'Loading...'}
+                      {canManageProject && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingProject(true)}
+                          aria-label="Edit project"
+                          title="Edit project"
+                          className="no-touch-target sm:hidden ml-1.5 -mb-0.5 inline-flex text-gray-400 hover:text-primary-600 dark:hover:text-primary-400"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </h1>
-                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
+                    {/* Created-date repeats above all six tabs and answers
+                        none of the three questions the header exists for. It
+                        lives in Overview → Details on a phone. */}
+                    <p className="hidden sm:block text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                       {projectData.created_at ? `Created ${formatDistanceToNow(new Date(projectData.created_at), { addSuffix: true })}` : 'Recently created'}
                     </p>
+                    {/* The collapsed line. Status, priority and progress as
+                        text — enough to know where you are without the three
+                        editable controls that carry the same facts. */}
+                    {summaryCollapsed && (
+                      <p className="sm:hidden mt-0.5 truncate text-[12px] text-gray-500 dark:text-gray-400">
+                        <span className="capitalize">{(localStatus || '').replace('_', ' ')}</span>
+                        {localPriority && <> · <span className="capitalize">{localPriority}</span></>}
+                        {totalDeliverables > 0 && <> · {completedDeliverables}/{totalDeliverables}</>}
+                        {isOverdue && <span className="text-red-600 dark:text-red-400"> · overdue</span>}
+                      </p>
+                    )}
                   </div>
                 </div>
+                <div className="flex items-center gap-1 shrink-0">
+                {/* Desktop keeps the labelled button; the phone's pencil is
+                    inline with the title above. */}
                 {canManageProject && (
-                  <Button variant="outline" onClick={() => setEditingProject(true)} className="shrink-0">
+                  <Button variant="outline" onClick={() => setEditingProject(true)} className="hidden sm:inline-flex shrink-0">
                     <Edit className="w-4 h-4 sm:mr-2" />
                     <span className="hidden sm:inline">Edit Project</span>
                   </Button>
                 )}
+                {/* Collapse handle, pinned to the right edge of the header.
+
+                    No `tap-pad`: `items-start` keeps it on the title's first
+                    line rather than centring against a wrapped block, and a
+                    fixed 20px box means the thing that is drawn is the thing
+                    that is hit — the pad was covering the title's line and
+                    winning taps meant for the name. */}
+                <button
+                  type="button"
+                  onClick={() => setSummaryCollapsed(v => !v)}
+                  aria-expanded={!summaryCollapsed}
+                  aria-label={summaryCollapsed ? 'Expand project summary' : 'Collapse project summary'}
+                  /* `h-4` is not arbitrary: the title is 16px at
+                     `leading-none`, so its line box is exactly 16px. Matching
+                     that height means `items-start` aligns the two tops AND
+                     their centres, so the chevron sits on the title's line
+                     instead of 2px below it. A 20px box missed by exactly
+                     that difference. */
+                  className="no-touch-target sm:hidden shrink-0 flex h-4 w-6 items-center justify-center text-gray-400 dark:text-gray-500"
+                >
+                  <ChevronDown className={clsx('w-4 h-4 transition-transform', !summaryCollapsed && 'rotate-180')} />
+                </button>
+                </div>
               </div>
 
               {/* Status, priority, dates and owner — a chip run that is wider
-                  than a phone, so it wraps rather than overflowing. */}
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
+                  than a phone, so it wraps rather than overflowing. Hidden on
+                  a phone when the summary is collapsed; the same facts are on
+                  the one-line version above. */}
+              <div className={clsx(
+                'flex-wrap items-center gap-x-3 gap-y-1 sm:gap-3 mt-1 sm:mt-0 mb-1 sm:mb-4 max-sm:leading-none',
+                summaryCollapsed ? 'hidden sm:flex' : 'flex'
+              )}>
                 {/* Status - clickable dropdown for managers */}
                 {canManageProject ? (
                   <div className="relative">
@@ -1685,24 +1977,66 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                         setShowPriorityDropdown(false)
                       }}
                       className={clsx(
-                        'flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium transition-colors hover:ring-2 hover:ring-offset-1',
+                        // Status and priority keep their tinted pill: the
+                        // colour IS the information. What separates them
+                        // from a read-only badge is the caret, which only
+                        // these carry. `tap-pad` holds the 44px thumb while
+                        // the drawn pill stays small — without it the
+                        // coarse-pointer rule turns three chips into a band.
+                        /* Phone drops the filled capsule entirely.
+
+                           A capsule is a box: padding on four sides, a
+                           background, a radius and a 16px icon, all to carry
+                           one short word. Three of them across a 390px header
+                           is a band of boxes. A coloured dot says the same
+                           thing in 6px, the label carries itself, and the
+                           caret is the only affordance needed — so the
+                           control is text-height instead of box-height and
+                           the run reads as a line of state rather than as a
+                           toolbar. Desktop keeps the pills. */
+                        /* No `tap-pad` here. Its hit region reaches 6px above
+                           the control, and this row sits directly under the
+                           project title — so the pad covered the bottom of
+                           the title's line, which both looked like stray
+                           white space and ate taps meant for the name. Real
+                           height instead: what is drawn is what is hit. */
+                        'no-touch-target flex items-center transition-colors',
+                        'max-sm:gap-1 max-sm:h-7 max-sm:text-[12px] max-sm:font-medium max-sm:bg-transparent max-sm:px-0 max-sm:[&>svg:first-child]:hidden',
+                        'sm:gap-1 sm:h-8 sm:px-2.5 sm:rounded-full sm:text-sm sm:font-medium sm:hover:ring-2 sm:hover:ring-offset-1',
                         isBlocked
-                          ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 hover:ring-red-300'
-                          : localStatus ? getStatusColor(localStatus) + ' hover:ring-primary-300' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
+                          ? 'max-sm:text-red-600 dark:max-sm:text-red-400 sm:bg-red-100 sm:text-red-700 dark:sm:bg-red-900/30 dark:sm:text-red-300 sm:hover:ring-red-300'
+                          /* `getStatusColor` returns unprefixed classes and
+                             they cannot be rewritten at runtime — Tailwind
+                             only emits class names it finds literally in the
+                             source. So the desktop colours stay as they are
+                             and the `max-sm:` overrides above neutralise them
+                             on a phone, which they win because a media-query
+                             variant is emitted after the base utility. */
+                          : localStatus
+                          ? 'max-sm:text-gray-700 dark:max-sm:text-gray-200 ' + getStatusColor(localStatus)
+                          : 'max-sm:text-gray-400 sm:bg-gray-100 sm:text-gray-500 dark:sm:text-gray-400 dark:sm:bg-gray-800'
                       )}
                     >
+                      {/* The dot is the phone's whole colour cue. */}
+                      <span
+                        aria-hidden="true"
+                        className={clsx(
+                          'sm:hidden h-1.5 w-1.5 rounded-full shrink-0',
+                          isBlocked ? 'bg-red-500' : localStatus ? getStatusConfig(localStatus).dotColor : 'bg-gray-300'
+                        )}
+                      />
                       {isBlocked ? (
                         <>
-                          <Lock className="w-4 h-4" />
+                          <Lock className="w-4 h-4 max-sm:hidden" />
                           <span>Blocked</span>
                         </>
                       ) : (
                         <>
-                          {localStatus && getStatusIcon(localStatus)}
+                          <span className="max-sm:hidden inline-flex">{localStatus && getStatusIcon(localStatus)}</span>
                           <span className="capitalize">{localStatus?.replace('_', ' ') || 'Loading...'}</span>
                         </>
                       )}
-                      <ChevronDown className="w-3 h-3 ml-1" />
+                      <ChevronDown className="w-3 h-3 sm:ml-1 opacity-50 shrink-0" />
                     </button>
                     {showStatusDropdown && (
                       <>
@@ -1755,12 +2089,25 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                         setShowStatusDropdown(false)
                       }}
                       className={clsx(
-                        'flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium transition-colors hover:ring-2 hover:ring-offset-1 hover:ring-primary-300',
+                        // Same flat treatment as status: dot, label, caret.
+                        'no-touch-target flex items-center transition-colors',
+                        'max-sm:gap-1 max-sm:h-7 max-sm:text-[12px] max-sm:font-medium max-sm:bg-transparent max-sm:px-0 max-sm:text-gray-700 dark:max-sm:text-gray-200',
+                        'sm:gap-1 sm:h-8 sm:px-2.5 sm:rounded-full sm:text-sm sm:font-medium sm:hover:ring-2 sm:hover:ring-offset-1 sm:hover:ring-primary-300',
                         getPriorityColor(localPriority)
                       )}
                     >
+                      <span
+                        aria-hidden="true"
+                        className={clsx(
+                          'sm:hidden h-1.5 w-1.5 rounded-full shrink-0',
+                          localPriority === 'urgent' ? 'bg-red-500'
+                            : localPriority === 'high' ? 'bg-orange-500'
+                            : localPriority === 'medium' ? 'bg-amber-400'
+                            : 'bg-gray-300'
+                        )}
+                      />
                       <span className="capitalize">{localPriority}</span>
-                      <ChevronDown className="w-3 h-3 ml-1" />
+                      <ChevronDown className="w-3 h-3 sm:ml-1 opacity-50 shrink-0" />
                     </button>
                     {showPriorityDropdown && (
                       <>
@@ -1794,11 +2141,17 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                   </Badge>
                 )}
                 {canManageProject ? (
+                  /* `showClear` put an × beside "237 days overdue", which
+                     read as "dismiss this warning" — overdue is project
+                     state, not a notice you can close, and the × actually
+                     cleared the due date. Clearing still lives inside the
+                     picker panel, where it is unambiguous. */
                   <DatePicker
                     value={localDueDate}
                     onChange={(date) => updateProjectDueDateMutation.mutate(date)}
                     placeholder="Set due date"
                     showOverdue
+                    showClear={false}
                     isCompleted={project.status === 'completed'}
                     allowPastDates
                   />
@@ -1813,26 +2166,32 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 ) : null}
               </div>
 
+              {/* The description is prose of arbitrary length sitting above
+                  every tab. It belongs to the project, not to the state of
+                  it, so on a phone it reads in Overview → Details. */}
               {projectData.description && (
-                <p className="text-gray-600 dark:text-gray-400 mb-4">
+                <p className="hidden sm:block text-gray-600 dark:text-gray-400 mb-4">
                   {projectData.description}
                 </p>
               )}
 
-              {/* Progress Bar */}
+              {/* Progress Bar. Collapsed, the count rides on the one-line
+                  summary instead. */}
               {totalDeliverables > 0 && (
-                <div>
-                  <div className="flex items-center justify-between text-sm mb-2">
+                <div className={clsx(summaryCollapsed && 'hidden sm:block')}>
+                  <div className="flex items-center justify-between text-[13px] sm:text-sm mb-1 sm:mb-2">
                     <span className="text-gray-600 dark:text-gray-400">
-                      {completedDeliverables} of {totalDeliverables} deliverables completed
+                      {completedDeliverables} of {totalDeliverables}
+                      <span className="hidden sm:inline"> deliverables completed</span>
+                      <span className="sm:hidden"> deliverables</span>
                     </span>
                     <span className="font-medium text-gray-900 dark:text-white">
                       {Math.round(completionPercentage)}%
                     </span>
                   </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 sm:h-2">
                     <div
-                      className="bg-primary-500 h-2 rounded-full transition-all"
+                      className="bg-primary-500 h-full rounded-full transition-all"
                       style={{ width: `${completionPercentage}%` }}
                     />
                   </div>
@@ -1917,9 +2276,19 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
         {/* Tabs */}
         {!editingProject && (
           /* Six tabs at px-6 are ~700px. The strip scrolls sideways on a
-             phone rather than widening the page; a partly-visible tab is its
-             own affordance that more exist. */
-          <div className="flex border-t border-gray-200 dark:border-gray-700 overflow-x-auto no-scrollbar">
+             phone rather than widening the page.
+
+             "A partly-visible tab is its own affordance" was true of the
+             chips it was copied from and false here: the selected tab could
+             itself be the half-cut one. Landing on Activity showed a sliver
+             of Comments on the left and a truncated "Activi" against the
+             right edge — the rail said where you were not. `scroll-px`
+             reserves a gutter so a tab never sits flush to an edge, and the
+             active tab is centred on selection and on arrival. */
+          <div
+            ref={tabRailRef}
+            className="flex border-t border-gray-200 dark:border-gray-700 overflow-x-auto no-scrollbar scroll-smooth scroll-px-3 sm:scroll-px-0 px-3 sm:px-0"
+          >
             {[
               { id: 'overview', label: 'Overview', icon: FolderKanban },
               { id: 'deliverables', label: 'Deliverables', icon: CheckCircle },
@@ -1930,9 +2299,14 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
             ].map((tab) => (
               <button
                 key={tab.id}
+                data-tab-id={tab.id}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
                 onClick={() => setActiveTab(tab.id as any)}
                 className={clsx(
-                  'shrink-0 whitespace-nowrap flex items-center gap-2 px-4 sm:px-6 py-3 border-b-2 transition-colors text-sm',
+                  // Tighter horizontal padding on a phone: six labels at
+                  // px-4 are ~700px, and the icons were the first thing to
+                  // be cut in half at the edges. Labels stay whole.
+                  'shrink-0 whitespace-nowrap flex items-center gap-1.5 sm:gap-2 px-3 sm:px-6 py-2.5 sm:py-3 border-b-2 transition-colors text-[13px] sm:text-sm',
                   activeTab === tab.id
                     ? 'border-primary-500 text-primary-600 dark:text-primary-400'
                     : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
@@ -1948,9 +2322,15 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
 
       {/* Content */}
       {!editingProject && (
+        /* Comments manages its own height on a phone: the composer is pinned
+           to the bottom and the thread scrolls above it, which needs one
+           scroller, not this one nested outside it. */
         <div className={clsx(
-          "flex-1 overflow-y-auto overscroll-contain",
-          activeTab === 'activity' ? 'p-2' : 'p-3 sm:p-6'
+          "flex-1 overscroll-contain",
+          activeTab === 'comments'
+            ? 'max-sm:overflow-hidden max-sm:p-0 overflow-y-auto p-3 sm:p-6'
+            : 'overflow-y-auto',
+          activeTab === 'activity' ? 'p-2' : activeTab !== 'comments' && 'p-3 sm:p-6'
         )}>
           {activeTab === 'overview' && (() => {
             // Calculate upcoming and overdue tasks using startOfDay for consistency
@@ -1975,10 +2355,15 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
               : null
 
             return (
-            <div className="space-y-6">
+            <div className="space-y-3 sm:space-y-6">
               {/* Overdue Tasks, Upcoming Tasks */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {/* Overdue Tasks */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
+                {/* Overdue Tasks. Nothing overdue is good news and should
+                    read as one quiet line, not as a card the same size as
+                    three real overdue tasks. */}
+                {overdueTasks.length === 0 ? (
+                  <QuietEmpty icon={Flag} label="No overdue tasks" />
+                ) : (
                 <Card className="p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <div className="p-1.5 bg-red-100 dark:bg-red-900/30 rounded">
@@ -1987,11 +2372,9 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                       Overdue Tasks
                     </h3>
-                    {overdueTasks.length > 0 && (
-                      <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">
-                        {overdueTasks.length}
-                      </Badge>
-                    )}
+                    <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">
+                      {overdueTasks.length}
+                    </Badge>
                   </div>
                   {overdueTasks.length > 0 ? (
                     <ul className="space-y-2">
@@ -2011,12 +2394,14 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                         </li>
                       )}
                     </ul>
-                  ) : (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">No overdue tasks</p>
-                  )}
+                  ) : null}
                 </Card>
+                )}
 
-                {/* Upcoming Tasks */}
+                {/* Due This Week — same treatment. */}
+                {upcomingTasks.length === 0 ? (
+                  <QuietEmpty icon={Target} label="Nothing due this week" />
+                ) : (
                 <Card className="p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <div className="p-1.5 bg-amber-100 dark:bg-amber-900/30 rounded">
@@ -2025,11 +2410,9 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                       Due This Week
                     </h3>
-                    {upcomingTasks.length > 0 && (
-                      <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 text-xs">
-                        {upcomingTasks.length}
-                      </Badge>
-                    )}
+                    <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 text-xs">
+                      {upcomingTasks.length}
+                    </Badge>
                   </div>
                   {upcomingTasks.length > 0 ? (
                     <ul className="space-y-2">
@@ -2049,14 +2432,13 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                         </li>
                       )}
                     </ul>
-                  ) : (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">No tasks due this week</p>
-                  )}
+                  ) : null}
                 </Card>
+                )}
               </div>
 
               {/* Bottom Row: Team, Dependencies, Org Groups */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 [&>*]:max-sm:!p-3">
                 {/* Team Members */}
                 <Card className="p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -2207,6 +2589,17 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Details</h3>
                   </div>
                   <div className="space-y-3">
+                    {/* Description. The header carries it on a desktop; on a
+                        phone it was prose above all six tabs, so it reads
+                        here instead — the one place it is not repeated. */}
+                    {projectData.description && (
+                      <div className="sm:hidden">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Description</span>
+                        <p className="mt-0.5 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                          {projectData.description}
+                        </p>
+                      </div>
+                    )}
                     {/* Org Groups */}
                     {projectOrgGroups && projectOrgGroups.length > 0 && (
                       <div>
@@ -2223,8 +2616,9 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                         </div>
                       </div>
                     )}
-                    {/* Priority */}
-                    <div>
+                    {/* Priority — the phone header already shows it two
+                        inches above this, so it is desktop-only here. */}
+                    <div className="hidden sm:block">
                       <span className="text-xs text-gray-500 dark:text-gray-400">Priority</span>
                       <div className="mt-1">
                         {projectData.priority ? (
@@ -2263,30 +2657,43 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
 
           {activeTab === 'deliverables' && (
             <div>
-              {/* Add Deliverable Form - only for managers */}
+              {/* Add Deliverable Form - only for managers.
+
+                  Four controls on one 390px row put a text field, two buttons
+                  and a submit into ~90px each. Wrapping them fixed the
+                  cramping and created a new problem: Assign and Due sat
+                  loose under the field, reading as unrelated controls that
+                  happened to be nearby.
+
+                  So the box holds all of it. The field is the top row, the
+                  pickers and Add share a divided row beneath it inside the
+                  same border, and the whole thing is one control that looks
+                  like one control. Desktop keeps the single horizontal row. */}
               {canManageProject && (
-              <div className="inline-flex items-center gap-2 mb-4">
-                <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent">
-                  <Plus className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              <div className="flex flex-col sm:inline-flex sm:flex-row sm:items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+                <div className="flex flex-col sm:flex-row sm:flex-nowrap sm:items-center sm:gap-2 sm:px-3 sm:py-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent overflow-hidden">
+                  <Plus className="hidden sm:block w-4 h-4 text-gray-400 flex-shrink-0" />
                   <input
                     value={newDeliverable}
                     onChange={(e) => setNewDeliverable(e.target.value)}
-                    placeholder="Add deliverable..."
-                    className="w-full sm:w-80 min-w-0 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none cursor-text"
+                    placeholder="Add a deliverable…"
+                    className="w-full sm:w-80 min-w-0 bg-transparent px-2.5 py-2 sm:p-0 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none cursor-text"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && newDeliverable.trim()) {
                         addDeliverableMutation.mutate()
                       }
                     }}
                   />
+                  {/* The pickers-and-submit row, inside the same border. */}
+                  <div className="flex items-center gap-2 px-2.5 py-1.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/30 sm:contents sm:border-0 sm:bg-transparent sm:p-0">
                   {/* Assign button with dropdown - only show if there are team members */}
                   {teamMembers && teamMembers.length > 0 && (
-                    <div className="relative pl-2 border-l border-gray-200 dark:border-gray-600" data-dropdown>
+                    <div className="relative sm:pl-2 sm:border-l border-gray-200 dark:border-gray-600" data-dropdown>
                       <button
                         type="button"
                         onClick={() => setShowNewDeliverableAssignees(!showNewDeliverableAssignees)}
                         className={clsx(
-                          'flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-colors',
+                          'no-touch-target tap-pad flex items-center gap-1.5 h-7 px-2 rounded-md text-[12px] font-medium transition-colors',
                           newDeliverableAssignees.length > 0
                             ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
@@ -2354,11 +2761,20 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     maxDate={project.due_date}
                     projectDueDate={project.due_date}
                   />
+                  <button
+                    onClick={() => addDeliverableMutation.mutate()}
+                    disabled={!newDeliverable.trim()}
+                    className="no-touch-target tap-pad ml-auto sm:ml-0 sm:hidden h-7 px-3 rounded-md bg-primary-600 text-white text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Add
+                  </button>
+                  </div>
                 </div>
+                {/* Desktop's Add sits outside the field, as it did. */}
                 <button
                   onClick={() => addDeliverableMutation.mutate()}
                   disabled={!newDeliverable.trim()}
-                  className="px-3 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="hidden sm:block px-3 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Add
                 </button>
@@ -2367,15 +2783,15 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
 
               {/* Sort Toggle */}
               {sortedDeliverables.length > 0 && (
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <ArrowUpDown className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-500 dark:text-gray-400">Sort by:</span>
+                <div className="flex items-center justify-between gap-2 mb-3 sm:mb-4">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ArrowUpDown className="hidden sm:block w-4 h-4 text-gray-400" />
+                    <span className="hidden sm:inline text-sm text-gray-500 dark:text-gray-400">Sort by:</span>
                     <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                       <button
                         onClick={() => setDeliverableSortMode('priority')}
                         className={clsx(
-                          'px-3 py-1.5 text-xs font-medium transition-colors',
+                          'no-touch-target tap-pad h-7 px-2.5 text-[12px] font-medium transition-colors',
                           deliverableSortMode === 'priority'
                             ? 'bg-primary-600 text-white'
                             : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -2386,7 +2802,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                       <button
                         onClick={() => setDeliverableSortMode('due_date')}
                         className={clsx(
-                          'px-3 py-1.5 text-xs font-medium transition-colors border-l border-gray-200 dark:border-gray-700',
+                          'no-touch-target tap-pad h-7 px-2.5 text-[12px] font-medium transition-colors border-l border-gray-200 dark:border-gray-700',
                           deliverableSortMode === 'due_date'
                             ? 'bg-primary-600 text-white'
                             : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -2396,8 +2812,11 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                       </button>
                     </div>
                   </div>
+                  {/* The grip on each row is the affordance; this is a
+                      desktop hint, and on a phone it was competing with the
+                      sort control for a row that has no width to spare. */}
                   {deliverableSortMode === 'priority' && canManageProject && (
-                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                    <span className="hidden sm:inline text-xs text-gray-400 dark:text-gray-500">
                       Drag to reorder
                     </span>
                   )}
@@ -2416,7 +2835,9 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                   items={sortedDeliverables.map(d => d.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="space-y-2 overflow-x-clip">
+                  {/* The phone list is one bordered container with hairline
+                      dividers; the desktop list stays a stack of cards. */}
+                  <div className="space-y-2 max-sm:space-y-0 max-sm:rounded-lg max-sm:border max-sm:border-gray-200 dark:max-sm:border-gray-700 max-sm:overflow-hidden overflow-x-clip">
                     {sortedDeliverables.map((deliverable, index) => {
                       // Calculate priority number (only for incomplete items)
                       const incompleteItems = sortedDeliverables.filter(d => !d.completed)
@@ -2434,6 +2855,10 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                           onToggle={() => toggleDeliverableMutation.mutate({
                             id: deliverable.id,
                             completed: deliverable.completed
+                          })}
+                          onRename={(title) => renameDeliverableMutation.mutate({
+                            id: deliverable.id,
+                            title
                           })}
                           onDelete={() => {
                             if (window.confirm('Delete this deliverable?')) {
@@ -2657,36 +3082,41 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 </div>
               )}
 
-              {/* Associated Org Groups */}
+              {/* Associated Org Groups. A section label over a chip run —
+                  one or two group names do not need a card of their own. */}
               {projectOrgGroups.length > 0 && (
-                <div className="mb-4">
-                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                    Associated Groups
+                <div className="mb-3 sm:mb-4">
+                  <h4 className="text-[11px] sm:text-sm font-semibold uppercase sm:normal-case tracking-wider sm:tracking-normal text-gray-400 sm:text-gray-700 dark:sm:text-gray-300 mb-1.5 sm:mb-2">
+                    Groups
                     <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
                       ({projectOrgGroups.length})
                     </span>
                   </h4>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1.5 sm:gap-2">
                     {projectOrgGroups.map((assoc: any) => {
                       const isPendingRemove = pendingRemoveGroupId === assoc.id
                       return (
                         <div
                           key={assoc.id}
+                          /* A group name is a chip, not a card: it was
+                             `px-3 py-1.5` with a 16px icon and a 14px label,
+                             so two of them filled a phone row. Sized to sit
+                             beside Add Member rather than dwarf it. */
                           className={clsx(
-                            "flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors",
+                            "flex items-center gap-1.5 h-7 px-2 sm:px-3 sm:py-1.5 sm:h-auto rounded-md sm:rounded-lg border transition-colors",
                             isPendingRemove
                               ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
                               : "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800"
                           )}
                         >
                           <Building2 className={clsx(
-                            "w-4 h-4",
+                            "w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0",
                             isPendingRemove
                               ? "text-red-600 dark:text-red-400"
                               : "text-indigo-600 dark:text-indigo-400"
                           )} />
                           <span className={clsx(
-                            "text-sm font-medium",
+                            "text-[12px] sm:text-sm font-medium truncate max-w-[9rem] sm:max-w-none",
                             isPendingRemove
                               ? "text-red-700 dark:text-red-300"
                               : "text-indigo-700 dark:text-indigo-300"
@@ -2732,11 +3162,12 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
               )}
 
               {/* Team Members List */}
-              <div className="space-y-3">
+              <div className="space-y-1.5 sm:space-y-3">
                 {/* Section Header */}
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Current Team
+                  <h4 className="text-[11px] sm:text-sm font-semibold uppercase sm:normal-case tracking-wider sm:tracking-normal text-gray-400 sm:text-gray-700 dark:sm:text-gray-300">
+                    <span className="sm:hidden">Members</span>
+                    <span className="hidden sm:inline">Current Team</span>
                     <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
                       ({(teamMembers?.filter((m: any) => m.assigned_to !== projectData.created_by).length || 0) + (projectData.creator ? 1 : 0)} member{((teamMembers?.filter((m: any) => m.assigned_to !== projectData.created_by).length || 0) + (projectData.creator ? 1 : 0)) !== 1 ? 's' : ''})
                     </span>
@@ -2745,25 +3176,28 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
 
                 {/* Project Creator (Owner) */}
                 {projectData.creator && (
-                  <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                  /* Member rows scan as a list on a phone: tighter padding
+                     and a smaller avatar, so several fit a viewport instead
+                     of two. Desktop keeps the roomier card. */
+                  <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                      <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
                         <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
                           {projectData.creator.first_name?.[0] || projectData.creator.email?.[0]?.toUpperCase()}
                         </span>
                       </div>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm sm:text-base font-medium text-gray-900 dark:text-white">
                           {projectData.creator.first_name && projectData.creator.last_name
                             ? `${projectData.creator.first_name} ${projectData.creator.last_name}`
                             : projectData.creator.email}
                         </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                        <p className="truncate text-xs text-gray-500 dark:text-gray-400">
                           Project creator
                         </p>
                       </div>
                     </div>
-                    <Badge className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                    <Badge className="shrink-0 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
                       Owner
                     </Badge>
                   </div>
@@ -2778,15 +3212,15 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     <div
                       key={member.id}
                       className={clsx(
-                        "flex items-center justify-between px-4 py-3 rounded-lg border transition-all duration-300",
+                        "flex items-center justify-between gap-2 px-3 sm:px-4 py-2 sm:py-3 rounded-lg border transition-all duration-300",
                         isRecentlyAdded
                           ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
                           : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
                       )}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                         <div className={clsx(
-                          "w-9 h-9 rounded-full flex items-center justify-center transition-colors",
+                          "w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-full flex items-center justify-center transition-colors",
                           isRecentlyAdded
                             ? "bg-green-100 dark:bg-green-900/30"
                             : "bg-primary-100 dark:bg-primary-900"
@@ -2951,9 +3385,16 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
           )}
 
           {activeTab === 'comments' && (
-            <div>
+            /* On a phone the composer sits at the bottom and the thread
+               scrolls above it — the shape every messaging surface uses, and
+               the one that keeps the box reachable without scrolling past the
+               comments to find it. `order` does it with one DOM: the composer
+               stays first in source (it is the primary action, and that is the
+               right reading order) and is painted last. Desktop keeps the
+               composer above the thread. */
+            <div className="max-sm:flex max-sm:flex-col max-sm:h-full">
               {/* New Comment Form */}
-              <div className="mb-3">
+              <div className="mb-3 max-sm:order-last max-sm:mb-0 max-sm:shrink-0 max-sm:border-t max-sm:border-gray-200 dark:max-sm:border-gray-700 max-sm:bg-white dark:max-sm:bg-gray-800 max-sm:px-3 max-sm:py-2 max-sm:pb-safe">
                 <div className="flex gap-2 mb-2">
                   <div className="flex-1">
                     <MentionInput
@@ -3036,9 +3477,17 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 </div>
               </div>
 
-              {/* Filter and sort controls */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1">
+              {/* Filters and thread — the scrolling half on a phone. The
+                  filter row is sticky inside it, so All / Open / Mentions /
+                  Mine stay reachable as the thread scrolls instead of
+                  disappearing after the first two comments. */}
+              <div className="max-sm:order-first max-sm:flex-1 max-sm:min-h-0 max-sm:overflow-y-auto max-sm:overscroll-contain max-sm:px-3 max-sm:pt-1 [&>*:first-of-type]:max-sm:sticky [&>*:first-of-type]:max-sm:top-0 [&>*:first-of-type]:max-sm:z-10 [&>*:first-of-type]:max-sm:bg-white dark:[&>*:first-of-type]:max-sm:bg-gray-900 [&>*:first-of-type]:max-sm:py-1.5">
+              {/* Filter and sort controls. Four filters and a sort toggle on
+                  one 390px row left each filter about 60px. The sort drops to
+                  its own line on a phone rather than competing for width the
+                  filters need to stay readable. */}
+              <div className="flex flex-wrap items-center justify-between gap-y-1 mb-2">
+                <div className="flex items-center gap-1 min-w-0">
                   {[
                     { value: 'all', label: 'All' },
                     { value: 'unresolved', label: 'Open' },
@@ -3061,7 +3510,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 </div>
                 <button
                   onClick={() => setCommentSort(commentSort === 'newest' ? 'oldest' : 'newest')}
-                  className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
+                  className="no-touch-target tap-pad basis-full sm:basis-auto text-left text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                 >
                   {commentSort === 'newest' ? 'Newest first' : 'Oldest first'}
                 </button>
@@ -3196,7 +3645,14 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
 
                               {/* Comment Actions */}
                               {!isEditing && (
-                                <div className={clsx('mt-2 flex items-center gap-3', hasReplies ? 'ml-10' : 'ml-8')}>
+                                /* Up to six actions — Like, Reply, Edit,
+                                   Delete, Resolve, + Task — in a row that did
+                                   not wrap, indented 32-40px, on a 390px
+                                   screen: the last two ran off the right
+                                   edge with nothing to scroll. They wrap
+                                   instead, so every action stays reachable
+                                   and nothing clips. */
+                                <div className={clsx('mt-2 flex flex-wrap items-center gap-x-3 gap-y-1', hasReplies ? 'ml-6 sm:ml-10' : 'ml-5 sm:ml-8')}>
                                   {/* Like */}
                                   <button
                                     onClick={() => toggleReactionMutation.mutate({ commentId: comment.id, reactionType: 'like' })}
@@ -3220,6 +3676,27 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                                     <Reply className="w-3.5 h-3.5" />
                                     Reply
                                   </button>
+
+                                  {/* The `⋯` that gates the three secondary
+                                      actions below on a phone. */}
+                                  <button
+                                    onClick={() => setOpenCommentActions(
+                                      openCommentActions === comment.id ? null : comment.id
+                                    )}
+                                    aria-expanded={openCommentActions === comment.id}
+                                    aria-label="More comment actions"
+                                    className="no-touch-target tap-pad sm:hidden text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                  >
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </button>
+
+                                  {/* Edit, Delete and + Task — inline on a
+                                      desktop, behind the `⋯` on a phone. One
+                                      copy of each, shown or hidden. */}
+                                  <span className={clsx(
+                                    'items-center gap-x-3 gap-y-1 flex-wrap',
+                                    openCommentActions === comment.id ? 'flex' : 'hidden sm:flex'
+                                  )}>
 
                                   {/* Edit (owner only) */}
                                   {isOwner && (
@@ -3284,6 +3761,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                                       + Task
                                     </button>
                                   )}
+                                  </span>
                                 </div>
                               )}
 
@@ -3353,6 +3831,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     </p>
                   </div>
                 )}
+              </div>
               </div>
             </div>
           )}

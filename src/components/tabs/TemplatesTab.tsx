@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { clsx } from 'clsx'
-import { Zap, Target, Plus, Edit2, Trash2, Copy, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2, FileSpreadsheet, LayoutGrid, FileText } from 'lucide-react'
+// Zap / FileSpreadsheet / LayoutGrid / FileText moved with the type nav into
+// TemplateTypeNav; `Copy` was already unused before this pass.
+import { Target, Plus, Edit2, Trash2, Check, X, Loader2, TrendingUp, TrendingDown, Minus, Share2 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -8,6 +10,11 @@ import { TemplateManager } from '../templates/TemplateManager'
 import { ExcelModelTemplateManager } from '../templates/ExcelModelTemplateManager'
 import { ResearchFieldsManager } from '../templates/ResearchFieldsManager'
 import { InvestmentCaseTemplateManager } from '../investment-case-templates'
+import { TemplateTypeNav } from '../templates/TemplateTypeNav'
+import { MobileResearchLayoutEditor } from '../templates/mobile/MobileResearchLayoutEditor'
+import { MobileInvestmentCaseEditor } from '../templates/mobile/MobileInvestmentCaseEditor'
+import { MobileModelTemplateEditor } from '../templates/mobile/MobileModelTemplateEditor'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
@@ -539,6 +546,8 @@ const TEMPLATES_TAB_STORAGE_KEY = 'tesseract-templates-active-section'
 
 export function TemplatesTab() {
   // Initialize from localStorage, defaulting to 'text'
+  const isMobile = useIsMobile()
+
   const [activeSection, setActiveSection] = useState<TabSection>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(TEMPLATES_TAB_STORAGE_KEY)
@@ -549,17 +558,40 @@ export function TemplatesTab() {
     return 'text'
   })
 
-  // Persist to localStorage when activeSection changes
+  /*
+   * A phone opens on Quick Text, whatever was last used.
+   *
+   * The other three sections are desktop authoring, so restoring one of them
+   * put a phone straight into a spreadsheet mapper with no indication of how
+   * it got there. The section can still be reached by tapping its tab — the
+   * reader is then choosing it, and gets an explanation rather than the
+   * mapper — but it is never where a phone lands.
+   *
+   * Only the landing is normalised. The stored value is untouched, so the
+   * desktop session this reader left comes back to exactly where it was.
+   */
+  const didNormalise = useRef(false)
   useEffect(() => {
+    if (!isMobile || didNormalise.current) return
+    didNormalise.current = true
+    if (activeSection !== 'text') setActiveSection('text')
+  }, [isMobile, activeSection])
+
+  // Persist to localStorage when activeSection changes. Not on a phone: a
+  // phone's visit is a detour, and writing 'text' back would silently retire
+  // the section the reader had chosen on their desktop.
+  useEffect(() => {
+    if (isMobile) return
     localStorage.setItem(TEMPLATES_TAB_STORAGE_KEY, activeSection)
-  }, [activeSection])
+  }, [activeSection, isMobile])
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex-shrink-0 px-3 sm:px-6 py-3 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Templates</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+      {/* Header. Compact on a phone: the strapline below costs three lines at
+          390px and says what the four tabs underneath already say. */}
+      <div className="flex-shrink-0 px-3 sm:px-6 py-2 sm:py-3 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+        <h1 className="text-base sm:text-xl font-bold text-gray-900 dark:text-white">Templates</h1>
+        <p className="hidden sm:block text-sm text-gray-500 dark:text-gray-400">
           Manage text snippets, investment cases, Excel templates, and your asset page layout
         </p>
       </div>
@@ -568,65 +600,32 @@ export function TemplatesTab() {
       {/* Four labelled tabs — "Excel Extraction" and "Asset Page Layout" among
           them — are wider than a phone. The strip scrolls sideways rather than
           widening the page. */}
-      <div className="flex-shrink-0 px-3 sm:px-6 bg-white border-b border-gray-200 dark:border-gray-700 dark:bg-gray-800">
-        <nav className="flex gap-4 overflow-x-auto no-scrollbar" aria-label="Tabs">
-          <button
-            onClick={() => setActiveSection('text')}
-            className={clsx(
-              'shrink-0 whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
-              activeSection === 'text'
-                ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
-            )}
-          >
-            <Zap className="w-4 h-4" />
-            Quick Text
-          </button>
-          <button
-            onClick={() => setActiveSection('excel')}
-            className={clsx(
-              'shrink-0 whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
-              activeSection === 'excel'
-                ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
-            )}
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            Excel Extraction
-          </button>
-          <button
-            onClick={() => setActiveSection('research')}
-            className={clsx(
-              'shrink-0 whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
-              activeSection === 'research'
-                ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
-            )}
-          >
-            <LayoutGrid className="w-4 h-4" />
-            Research Layout
-          </button>
-          <button
-            onClick={() => setActiveSection('pdf')}
-            className={clsx(
-              'shrink-0 whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
-              activeSection === 'pdf'
-                ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
-            )}
-          >
-            <FileText className="w-4 h-4" />
-            Investment Case PDF
-          </button>
-        </nav>
-      </div>
+      <TemplateTypeNav active={activeSection} onSelect={setActiveSection} />
 
       {/* Content */}
       <div className="flex-1 overflow-auto px-3 sm:px-6 pt-2 pb-4 bg-gray-50 dark:bg-gray-900">
         {activeSection === 'text' && <TemplateManager />}
-        {activeSection === 'excel' && <ExcelModelTemplateManager />}
-        {activeSection === 'research' && <ResearchFieldsManager />}
-        {activeSection === 'pdf' && <InvestmentCaseTemplateManager />}
+
+        {/* All four types now author on a phone, each through its own editor
+            rather than a shared one: they have nothing in common as editors —
+            a rich-text box, an ordered list, a stepped form and a cell
+            mapper — and everything in common around the editor, which is what
+            MobileTemplateShell owns.
+
+            Each desktop component is still rendered untouched on desktop. The
+            mobile branches do not render it hidden; two chromes in one DOM is
+            two values to keep in sync and two announcements to a reader. */}
+        {activeSection === 'excel' && (isMobile ? (
+          <MobileModelTemplateEditor onBack={() => setActiveSection('text')} />
+        ) : <ExcelModelTemplateManager />)}
+
+        {activeSection === 'research' && (isMobile ? (
+          <MobileResearchLayoutEditor onBack={() => setActiveSection('text')} />
+        ) : <ResearchFieldsManager />)}
+
+        {activeSection === 'pdf' && (isMobile ? (
+          <MobileInvestmentCaseEditor onBack={() => setActiveSection('text')} />
+        ) : <InvestmentCaseTemplateManager />)}
       </div>
     </div>
   )

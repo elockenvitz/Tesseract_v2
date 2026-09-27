@@ -9,7 +9,7 @@
  * DETAIL type is easy to forget, and several were.
  *
  * DashboardPage renders `workflow`, `workflow-template`, `notebook`,
- * `calendar-event`, `allocation-period`, `prioritizer`, `model-template` and
+ * `calendar-event`, `allocation-period`, `model-template` and
  * `text-template` through the SAME component as a list type that is already
  * registered as usable on a phone. So the list opened, you tapped a row, and
  * the identical page came back as "this is desktop only" — the registry
@@ -32,7 +32,8 @@ import {
 
 /** detail type → the registered list type it renders the same page as. */
 const SAME_SURFACE_AS: Array<[detail: string, list: string]> = [
-  ['prioritizer', 'priorities'],
+  // `prioritizer`/`priorities` are gone: the standalone app is retired and
+  // both types alias to `today` before they reach this registry.
   ['notebook', 'notes-list'],
   ['calendar-event', 'calendar'],
   ['workflow', 'workflows'],
@@ -43,9 +44,11 @@ const SAME_SURFACE_AS: Array<[detail: string, list: string]> = [
   // Reached from search, and from tapping a team or a person inside
   // Organization, which is itself a phone destination.
   ['team', 'organization'],
-  // On a phone DashboardPage sends this to Files rather than to the desktop
-  // asset workspace, so it carries the Files support level.
-  ['model-file', 'files'],
+  // A model file renders its OWNING ASSET — MobileAssetPage on a phone,
+  // AssetTab on a desktop — so it carries the asset support level. It was
+  // briefly pointed at Files, back when Files had no data source at all and
+  // a model search result dead-ended on an empty state.
+  ['model-file', 'asset'],
 ]
 
 describe('detail types inherit the support level of the page they render', () => {

@@ -321,9 +321,13 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
     <div className="h-full flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       {/* Header */}
       <div className="flex-shrink-0 px-3 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+        {/* The title block plus a period select plus two buttons do not fit
+            390px on one line, and the row did not wrap — the New Period button
+            ran past the edge. Wrapping costs a line on a phone and nothing on
+            desktop, where it still fits. */}
+        <div className="flex flex-wrap items-center justify-between gap-y-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg shrink-0">
               <PieChart className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
             </div>
             <div>
@@ -397,8 +401,9 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
           <div className="min-w-[900px]">
             {/* Grid Header */}
             <div className="grid grid-cols-[220px_repeat(5,1fr)] border-b border-gray-200 dark:border-gray-700">
-              {/* Empty corner cell */}
-              <div className="p-4 bg-gray-50 dark:bg-gray-800/50 font-semibold text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+              {/* Empty corner cell. Frozen with the name column below it —
+                  see the row cell for why. */}
+              <div className="sticky left-0 z-20 p-4 bg-gray-50 dark:bg-gray-800/50 font-semibold text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wider">
                 Asset Class
               </div>
               {/* Column headers */}
@@ -449,7 +454,13 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
                         )}
                       >
                         {/* Asset Class Name */}
-                        <div className="p-4 flex items-center bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800">
+                        {/* Frozen. Only 43% of a 900px matrix is visible at
+                            390px, so panning right to reach Strong Overweight
+                            scrolled the asset class name off the screen — the
+                            reader was then looking at five cells with nothing
+                            saying which row they belong to. The fill must be
+                            opaque or the scrolling columns show through it. */}
+                        <div className="sticky left-0 z-10 p-4 flex items-center bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800">
                           <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
                             {assetClass.name}
                           </span>
@@ -462,9 +473,26 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
                           const hasNotes = !!cellNote?.thesis_notes
 
                           return (
+                            /* A bare `div` with an onClick is not a control:
+                               the 44px coarse-pointer floor in index.css is
+                               scoped to buttons and roles, so these cells got
+                               none of it, and there was no keyboard path to
+                               the one write this page has. `role="button"`
+                               plus a tabIndex earns both without changing the
+                               grid geometry a `<button>` would disturb. */
                             <div
                               key={col.key}
+                              role="button"
+                              tabIndex={0}
+                              aria-pressed={isCurrentView}
+                              aria-label={`${assetClass.name}: ${col.label}`}
                               onClick={() => setSelectedCell({ assetClassId: assetClass.id, viewType: col.key })}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  setSelectedCell({ assetClassId: assetClass.id, viewType: col.key })
+                                }
+                              }}
                               className={clsx(
                                 "p-3 flex items-center justify-center border-r border-gray-100 dark:border-gray-800 transition-all cursor-pointer group relative",
                                 isCurrentView
@@ -491,9 +519,20 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
                                 </div>
                               )}
 
-                              {/* Hover hint */}
+                              {/* Hover hint.
+
+                                  Hidden on a phone. `index.css` reveals
+                                  `.opacity-0.group-hover:opacity-100` on a
+                                  coarse pointer — right for a control that
+                                  would otherwise be unreachable, wrong here:
+                                  it drew a dashed "+" in all four unselected
+                                  cells of every row, so five cells read as
+                                  equally chosen and the one solid check that
+                                  marks the official view stopped standing
+                                  out. A row must say which view is official
+                                  at a glance. */}
                               {!isCurrentView && (
-                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="hidden sm:block opacity-0 group-hover:opacity-100 transition-opacity">
                                   <div className="w-8 h-8 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center">
                                     <Plus className="h-3 w-3 text-gray-400" />
                                   </div>
@@ -512,24 +551,40 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
           </div>
         </Card>
 
-        {/* Legend */}
-        <div className="mt-6 flex items-center justify-center gap-8">
+        {/* Legend.
+
+            This is the only thing that decodes the column headers, which show
+            their short form below 1024px — so on a phone the reader sees
+            `S-UW UW MW OW S-OW` and the key that explains them was the one
+            element running off the screen. Five full labels with `gap-8` come
+            to roughly 700px, it sits outside the matrix's scroller, and the
+            page's own scrollbar is hidden on a phone, so it was neither
+            visible nor reachable.
+
+            It wraps now, centred, with the gap opened back up from `sm`. */}
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 sm:gap-8">
           {VIEW_COLUMNS.map((col) => (
             <div key={col.key} className="flex items-center gap-2">
               <div
                 className={clsx(
-                  "w-3 h-3 rounded-full",
+                  "w-3 h-3 rounded-full shrink-0",
                   col.lightBg
                 )}
               />
-              <span className="text-xs text-gray-500 dark:text-gray-400">{col.label}</span>
+              {/* The short form is what the column header shows on a phone;
+                  naming both is what makes the key legible there. */}
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                <span className="font-medium lg:hidden">{col.shortLabel}</span>
+                <span className="lg:hidden"> · </span>
+                {col.label}
+              </span>
             </div>
           ))}
         </div>
 
         {/* Instructions */}
         <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
-          Click any cell to add thesis notes or change the current view
+          Tap any cell to add thesis notes or change the current view
         </div>
       </div>
 
@@ -747,7 +802,11 @@ function CreatePeriodModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Two native date fields side by side inside a `max-w-md` modal
+              leave each about 170px at 390px — and `index.css` forces every
+              input to 16px below 768px to stop iOS zooming, so the control is
+              wider there than anywhere else. They stack on a phone. */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Start Date *

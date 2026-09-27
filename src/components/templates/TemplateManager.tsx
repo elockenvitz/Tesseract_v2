@@ -10,6 +10,7 @@ import { TemplateEditor, TemplateFormData } from './TemplateEditor'
 import { TemplateList } from './TemplateList'
 import { TemplateSharingModal } from './TemplateSharingModal'
 import { TemplateImportExport, ImportedTemplate } from './TemplateImportExport'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 
 export function TemplateManager() {
   const { user } = useAuth()
@@ -36,6 +37,7 @@ export function TemplateManager() {
   const [sharingTemplate, setSharingTemplate] = useState<Template | null>(null)
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null)
   const [showImportExport, setShowImportExport] = useState(false)
+  const isMobile = useIsMobile()
 
   const handleCreateNew = () => {
     setEditingTemplate(null)
@@ -153,32 +155,71 @@ export function TemplateManager() {
 
   return (
     <Card padding="sm">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Quick Text Templates</h3>
-          <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
-            Create reusable text snippets. Use <code className="px-1 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">.template</code> or <code className="px-1 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">.t</code> in any text input.
+      {/* ── Header ──────────────────────────────────────────────────────
+          On a phone this was five competing things stacked above the list:
+          a heading, two lines of explanation with inline code, Import/Export,
+          New Template, then search and filters. Creating a template — the
+          reason anyone opens this — was one of four equal-looking controls.
+
+          So the phone gets a hierarchy: what this is, one line of why, then
+          the primary action at full width. Import/Export drops to a text
+          link; it is an occasional bulk operation, not a peer of "New".
+
+          Desktop keeps the row it had. */}
+      {isMobile ? (
+        <div className="mb-3">
+          <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white">Quick Text</h3>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-gray-500 dark:text-gray-400">
+            Reusable snippets. Type{' '}
+            <code className="rounded bg-gray-100 px-1 py-px text-[11px] dark:bg-gray-800">.t</code>{' '}
+            in any text box to insert one.
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowImportExport(true)}
-          >
-            <Download className="w-4 h-4 mr-1" />
-            Import/Export
-          </Button>
-          <Button
+
+          <button
+            type="button"
             onClick={handleCreateNew}
-            size="sm"
+            className="no-touch-target mt-2.5 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-primary-600 text-[13px] font-medium text-white"
           >
-            <Plus className="w-4 h-4 mr-1" />
+            <Plus className="h-4 w-4" />
             New Template
-          </Button>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowImportExport(true)}
+            className="no-touch-target tap-pad mt-2 flex items-center gap-1 text-[12px] font-medium text-gray-500 dark:text-gray-400"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Import / Export
+          </button>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white">Quick Text Templates</h3>
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
+              Create reusable text snippets. Use <code className="px-1 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">.template</code> or <code className="px-1 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">.t</code> in any text input.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowImportExport(true)}
+            >
+              <Download className="w-4 h-4 mr-1" />
+              Import/Export
+            </Button>
+            <Button
+              onClick={handleCreateNew}
+              size="sm"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              New Template
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Template List */}
       <TemplateList

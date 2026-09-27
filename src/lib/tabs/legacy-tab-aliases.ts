@@ -84,6 +84,30 @@ export const LEGACY_TAB_ALIASES: Readonly<Record<string, Alias>> = Object.freeze
    * it.
    */
   'dashboard': { type: 'today', id: 'today', title: 'Dashboard' },
+
+  /*
+   * My Priorities: a standalone list of what had gone stale, what was waiting
+   * on a decision, and what others had changed. It was a shell over
+   * `useAttention` — the same scoring that Today, the feed and the tile engine
+   * read — so retiring it removed a second front door to one system, not a
+   * capability.
+   *
+   * `today` is what it meant. Both asked "what needs me now", and both answer
+   * it from attention; Today answers it beside the work rather than in a page
+   * of its own. That is the same reasoning that sent `dashboard` here.
+   *
+   * ── Why both types ──────────────────────────────────────────────────────
+   *
+   * `prioritizer` was the original id and `priorities` the later one, and
+   * `DashboardPage` rendered them through a single `case`, so both are live in
+   * saved sessions. Aliasing only the newer one would leave the older sessions
+   * resolving to nothing.
+   *
+   * The page held its section filter in local state, never in `data`, so there
+   * is nothing to carry across and nothing being dropped that a reader chose.
+   */
+  'priorities': { type: 'today', id: 'today', title: 'Today' },
+  'prioritizer': { type: 'today', id: 'today', title: 'Today' },
 })
 
 export function isLegacyTabType(type: string | undefined | null): boolean {

@@ -37,7 +37,7 @@ interface AttentionDashboardProps {
   className?: string
   /** Which sections to render (default: all 4) */
   sections?: AttentionType[]
-  /** Override "Priorities" header */
+  /** Override the default "Needs attention" header */
   sectionTitle?: string
   /** Override anchoring question subtitle */
   sectionSubtitle?: string
@@ -81,7 +81,10 @@ export function AttentionDashboard({
     dismissWithReason,
   } = useAttention({ windowHours: 24 })
 
-  const headerTitle = sectionTitle ?? 'My Priorities'
+  /* Named for what the component shows, not for the retired app that used to
+     be its only caller. Every live caller passes `sectionTitle`; this is the
+     fallback, and it should not resurrect a surface that no longer exists. */
+  const headerTitle = sectionTitle ?? 'Needs attention'
   const headerSubtitle = sectionSubtitle ?? ''
 
   // Section order — filtered if prop provided

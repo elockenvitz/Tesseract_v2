@@ -102,6 +102,43 @@ export const GATED_DIRS = [
   // The current-org heal decides whether a durable tenant pointer may be
   // rewritten. Getting it wrong stranded two live workspaces in another org.
   'src/lib/org',
+  // Which Templates sections a phone may open, and — as each type graduates
+  // to real mobile authoring — that a phone writes what a desktop writes.
+  'src/components/templates/__tests__',
+  // The Investment Case PDF save payload. It holds the regression test for a
+  // product decision that lives in an ABSENCE: mobile omits `section_config`
+  // and `is_default` exactly as the desktop does. A decision recorded only by
+  // a missing line is the kind the next person undoes while adding a field,
+  // so the assertion that names both columns is gated rather than deferred.
+  'src/lib/templates/__tests__',
+  // The Excel reference grammar. `FieldMapping.cell` is one flat string with
+  // the sheet embedded in it, so this grammar IS the contract between the
+  // desktop grid and a phone that types the same reference. A drift here
+  // points a mapping at the wrong sheet, which reads as a data problem.
+  'src/lib/excel/__tests__',
+  // How a committed trade's numbers are written — in particular that the
+  // notional sign comes from the action, because `notional_value` is stored
+  // unsigned. Getting that wrong shows a sale as money coming in, so it
+  // arrives gated.
+  'src/lib/trade-book/__tests__',
+  // Where a Projects row menu opens. The status, priority and tag menus are
+  // `position: fixed` and were placed straight from the anchor's rect, so on a
+  // phone a menu opened from a card low in the list ran off the bottom edge —
+  // and a fixed element off-screen cannot be scrolled to, which made changing
+  // a project's status from the list impossible rather than merely awkward.
+  // Gated on arrival; it also holds the only assertion that desktop placement
+  // is unmoved.
+  'src/lib/projects',
+  // The Projects phone layout. Source-level, because jsdom computes no widths
+  // and so cannot see that five kanban columns across 390px are 58px each. It
+  // holds the class decisions that fix is made of.
+  'src/components/projects/__tests__',
+  // The Process creation wizard's mobile layout. It arrived with the mobile
+  // fringe lane and was left unlisted, which is precisely the silent
+  // disappearance this accounting exists to catch — the guard caught it. It
+  // holds the only assertions that the wizard's steps, footer and panes
+  // survive a phone, so it arrives gated rather than deferred.
+  'src/components/workflow/__tests__',
   // The shared pilot banner shell — four surfaces now render through it.
   'src/components/pilot',
   'src/lib/notifications',
@@ -151,6 +188,16 @@ export const GATED_DIRS = [
   'src/components/outcomes/__tests__',
   'src/components/trading/__tests__',
   'src/components/ops/__tests__',
+  // What a file type means, what a size reads as, and what the repository
+  // refuses to store. Desktop and mobile both import these, so a drift here
+  // is two surfaces disagreeing about the same file. Gated on arrival.
+  'src/lib/files',
+  // The Files surface's own tests live in src/pages/__tests__ (already gated
+  // above), not beside the components — so `src/components/files` is
+  // deliberately NOT listed. The accounting guard rejects a gated directory
+  // with no test files in it, because vitest treats these as substring
+  // filters and silently ignores one that matches nothing: the suite would
+  // shrink and still report PASS.
   // Research's coverage-gap queue: the work queue a fresh account lands on.
   'src/components/research-v2/__tests__',
   // Today's coverage backfill: what a thin or new account's home shows.

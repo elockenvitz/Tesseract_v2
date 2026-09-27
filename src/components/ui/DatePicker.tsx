@@ -30,7 +30,13 @@ interface DatePickerProps {
   className?: string
   showClear?: boolean
   compact?: boolean
-  variant?: 'default' | 'inline'
+  /**
+   * `filter` renders the trigger to match the app's filter controls — same
+   * height, type scale, radius and padding as a `FilterSelect` — so a date
+   * sitting in a filter row stops looking like a browser-native field.
+   * Additive: `default` and `inline` are untouched.
+   */
+  variant?: 'default' | 'inline' | 'filter'
   showOverdue?: boolean
   isCompleted?: boolean
   maxDate?: string | null
@@ -56,7 +62,7 @@ export function DatePicker({
   const [currentMonth, setCurrentMonth] = useState(() =>
     value ? parseISO(value) : new Date()
   )
-  const [popoverPosition, setPopoverPosition] = useState<{ top: number; left: number } | null>(null)
+  const [popoverPosition, setPopoverPosition] = useState<{ top: number; left: number; maxHeight: number } | null>(null)
   const [customDateInput, setCustomDateInput] = useState('')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -215,16 +221,30 @@ export function DatePicker({
       const popoverWidth = 288 // w-72 = 18rem = 288px
       const popoverHeight = 380 // approximate height
 
+      /*
+        `window.innerHeight` is not the visible height on a phone.
+
+        It counts the strip behind the browser's own URL bar and toolbar, so
+        on a 390x844 device it reports 844 while roughly 640 is actually on
+        screen. Every calculation below then believed it had ~200px more room
+        than it had, placed the calendar to "fit", and the month grid ended up
+        under the toolbar — which is why this still cut off after the clamp
+        was added. `visualViewport` is the visible rectangle; the same reason
+        BottomSheet reads it through `useViewportHeight`.
+      */
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight
+      const viewportWidth = window.visualViewport?.width ?? window.innerWidth
+
       let top = rect.bottom + 4
       let left = rect.left
 
       // Adjust if would overflow right edge
-      if (left + popoverWidth > window.innerWidth - 16) {
-        left = window.innerWidth - popoverWidth - 16
+      if (left + popoverWidth > viewportWidth - 16) {
+        left = viewportWidth - popoverWidth - 16
       }
 
       // Adjust if would overflow bottom edge - show above instead
-      if (top + popoverHeight > window.innerHeight - 16) {
+      if (top + popoverHeight > viewportHeight - 16) {
         top = rect.top - popoverHeight - 4
       }
 
@@ -233,7 +253,35 @@ export function DatePicker({
         left = 16
       }
 
-      setPopoverPosition({ top, left })
+      /*
+        Neither branch above guarantees the calendar is on screen.
+
+        Flipping above computes `rect.top - 380 - 4`, which is negative for
+        any trigger in the top ~384px of the viewport — the project header's
+        due-date control is exactly there — so the month grid was cut off
+        against the top edge with no way to scroll to it. And on a short
+        viewport (landscape, or a soft keyboard open) 380px does not fit
+        either way, so both branches overflow.
+
+        Clamp to the visible band, then hand the popover the height that is
+        actually left so it scrolls internally instead of being clipped.
+      */
+      /*
+        Clamp into the visible band, then hand the popover the height that is
+        actually left so it scrolls internally rather than being cut.
+
+        `offsetTop` is how far the visible rectangle has been pushed down —
+        non-zero when a soft keyboard is up or the page is pinch-zoomed. A
+        `fixed` element is positioned against the layout viewport, so the
+        band starts there, not at 0.
+      */
+      const margin = 16
+      const bandTop = window.visualViewport?.offsetTop ?? 0
+      const available = viewportHeight - margin * 2
+      const height = Math.min(popoverHeight, available)
+      top = Math.max(bandTop + margin, Math.min(top, bandTop + viewportHeight - margin - height))
+
+      setPopoverPosition({ top, left, maxHeight: available })
     }
     setIsOpen(true)
   }
@@ -254,11 +302,31 @@ export function DatePicker({
         }}
         className={clsx(
           'flex items-center gap-1 transition-colors',
-          compact
+          variant === 'filter'
+            /* `no-touch-target tap-pad` for the same reason FilterSelect uses
+               it: index.css forces every button to a 44px min-height on a
+               coarse pointer, which would leave this control a third taller
+               than the selects beside it. The pad keeps the hit region. */
+            ? 'no-touch-target tap-pad w-full gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800'
+            : compact
             ? 'text-xs hover:text-primary-600 dark:hover:text-primary-400'
             : variant === 'inline'
             ? 'text-sm hover:text-primary-600 dark:hover:text-primary-400'
-            : 'text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:border-primary-500 bg-white dark:bg-gray-800',
+            /* Phone: the same 28px scale as the status and priority pills
+               beside it in the project header. It was `text-sm px-2 py-1`
+               plus the 44px coarse-pointer minimum, so "237 days overdue"
+               rendered taller and heavier than the controls it sits with and
+               read as the loudest thing in the summary. */
+            /* Phone drops the box for the same reason the project header's
+               status and priority controls do: a bordered, padded, filled
+               button to carry "237d overdue" is a box around a fact. Flat
+               text with its icon, at the same 12px as the controls beside
+               it. Desktop keeps the bordered control. */
+            /* No `tap-pad`: this sits in the project header's chip run,
+               directly under the title, and the pad's hit region reaches
+               above the control — covering the title's line and stealing
+               taps from it. Real height on a phone instead. */
+            : 'no-touch-target text-sm max-sm:h-7 max-sm:text-[12px] max-sm:font-medium max-sm:gap-1 max-sm:[&_svg]:w-3 max-sm:[&_svg]:h-3 px-2 py-1 max-sm:p-0 rounded max-sm:rounded-none border max-sm:border-0 border-gray-300 dark:border-gray-600 hover:border-primary-500 bg-white dark:bg-gray-800 max-sm:bg-transparent',
           isOverdue
             ? 'text-red-600 dark:text-red-400'
             : variant === 'inline'
@@ -268,8 +336,22 @@ export function DatePicker({
             : 'text-gray-400 dark:text-gray-500'
         )}
       >
-        <Calendar className={compact ? 'w-3 h-3' : 'w-4 h-4'} />
-        <span>
+        <Calendar
+          className={clsx(
+            'shrink-0',
+            variant === 'filter' ? 'w-3.5 h-3.5 text-gray-400' : compact ? 'w-3 h-3' : 'w-4 h-4',
+          )}
+        />
+        {/* "237 days overdue" is the widest thing in the project header's
+            chip run and says the same as "237d overdue" in two thirds the
+            width. Long form from `sm:` up, where there is room for it. */}
+        {isOverdue && (
+          <span className="sm:hidden whitespace-nowrap">{daysOverdue}d overdue</span>
+        )}
+        <span className={clsx(
+          isOverdue && 'max-sm:hidden',
+          variant === 'filter' && 'min-w-0 truncate',
+        )}>
           {isOverdue
             ? `${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue`
             : selectedDate
@@ -278,7 +360,10 @@ export function DatePicker({
         </span>
         {showClear && selectedDate && !compact && variant !== 'inline' && (
           <X
-            className="w-3 h-3 ml-1 text-gray-400 hover:text-red-500"
+            className={clsx(
+              'w-3 h-3 text-gray-400 hover:text-red-500',
+              variant === 'filter' ? 'ml-auto shrink-0' : 'ml-1',
+            )}
             onClick={handleClear}
           />
         )}
@@ -288,8 +373,8 @@ export function DatePicker({
       {isOpen && popoverPosition && (
         <div
           ref={popoverRef}
-          className="fixed z-50 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-3 w-72"
-          style={{ top: popoverPosition.top, left: popoverPosition.left }}
+          className="fixed z-50 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-3 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain"
+          style={{ top: popoverPosition.top, left: popoverPosition.left, maxHeight: popoverPosition.maxHeight }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Quick Dates */}

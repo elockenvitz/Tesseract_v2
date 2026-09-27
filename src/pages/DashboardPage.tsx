@@ -49,7 +49,6 @@ import { TDFTab } from '../components/tabs/TDFTab'
 import { UserTab } from '../components/tabs/UserTab'
 import { TemplatesTab } from '../components/tabs/TemplatesTab'
 const CalendarPage = lazy(() => import('./CalendarPage').then(m => ({ default: m.CalendarPage })))
-import { PrioritizerPage } from './PrioritizerPage'
 const CoveragePage = lazy(() => import('./CoveragePage').then(m => ({ default: m.CoveragePage })))
 import { OrganizationPage } from './OrganizationPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
@@ -204,7 +203,6 @@ export function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab
         isActive: tab.id === activeTabId,
         // Migrate old tab titles
         ...(tab.type === 'workflows' && tab.title !== 'Process' ? { title: 'Process' } : {}),
-        ...(tab.type === 'priorities' && tab.title !== 'My Priorities' ? { title: 'My Priorities' } : {}),
       })),
       activeTabId
     }
@@ -510,7 +508,6 @@ export function DashboardPage() {
       if (result.type === 'trade-queue' && tab.type === 'trade-queue') return true
       if (result.type === 'trade-book' && tab.type === 'trade-book') return true
       if (result.type === 'workflows' && tab.type === 'workflows') return true
-      if (result.type === 'priorities' && tab.type === 'priorities') return true
       return false
     })
     const precomputedExisting = findExistingTab(tabs)
@@ -1296,9 +1293,6 @@ export function DashboardPage() {
         return <PortfolioTab portfolio={activeTab.data} onNavigate={handleSearchResult} />
       case 'calendar':
         return <CalendarPage onItemSelect={handleSearchResult} />
-      case 'prioritizer':
-      case 'priorities':
-        return <PrioritizerPage onItemSelect={handleSearchResult} />
       /*
         The Dashboard, and its five lenses.
 
@@ -1531,7 +1525,17 @@ export function DashboardPage() {
       case 'admin-console':
         return <AdminConsolePage />
       case 'user':
-        return activeTab.data ? <UserTab user={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading user...</div>
+        /* A person opens as its own tab, and the tab strip is desktop-only —
+           so on a phone this was a dead end. `handleTabClose` already closes
+           the tab and activates the one before it, which is where the person
+           was opened from, so Back is exactly that. */
+        return activeTab.data ? (
+          <UserTab
+            user={activeTab.data}
+            onNavigate={handleSearchResult}
+            onBack={isMobile ? () => handleTabClose(activeTab.id) : undefined}
+          />
+        ) : <div>Loading user...</div>
       case 'templates':
         return <TemplatesTab />
       case 'workflow':
@@ -1551,23 +1555,68 @@ export function DashboardPage() {
       case 'model-template':
         // Model template - go to templates tab focused on models
         return <TemplatesTab initialTab="models" initialTemplateId={activeTab.data?.id} />
-      case 'model-file':
-        // Model file - navigate to the asset's files or to files page.
+      case 'model-file': {
+        // A model file belongs to an asset, and the owning asset is where one
+        // is actually readable: `ModelFilesViewer` renders it inside the
+        // asset's estimates section, off `model_files`.
         //
-        // Not on a phone. AssetTab is the wide-screen workspace the `asset`
-        // case above refuses to render on mobile for exactly this reason, and
-        // routing here through search put a phone inside it anyway. Files
-        // focused on the model is the same content on a surface that already
-        // has a mobile treatment. Desktop keeps the asset workspace.
-        if (activeTab.data?.assetId && !isMobile) {
-          // Navigate to the asset tab focused on models/files
-          return <AssetTab
-            asset={{ id: activeTab.data.assetId, symbol: activeTab.data?.assets?.symbol }}
-            onNavigate={handleSearchResult}
-            initialSection="models"
-          />
+        // The phone branch used to send this to Files instead, on the reading
+        // that Files was "the same content on a surface that already has a
+        // mobile treatment". Files has no data source at all — no `files`
+        // table exists anywhere — so every model a phone found in search
+        // dead-ended on an empty state. It also passed `initialFileId`, a
+        // prop FilesPage does not accept and silently dropped.
+        //
+        // Both viewports now go to the owning asset through the shell the
+        // `asset` case already uses: MobileAssetPage on a phone, AssetTab on
+        // a desktop, where `initialSection` opens the models section.
+        //
+        // `model_files.asset_id` is NOT NULL, so a search result always
+        // carries the identity this needs. The guard is for a tab restored
+        // from an older shape — one opened before this route changed, which
+        // is sitting in somebody's sessionStorage right now.
+        //
+        // It must not be a spinner. `AssetLoadingState` is `<PageLoader
+        // loading />`, which never resolves, so returning it here turned a
+        // dead end into a hang: a restored model-file tab held the whole app
+        // on a loading screen with no way forward. Say what happened and
+        // offer the way out instead.
+        const modelAssetId = activeTab.data?.assetId
+        if (!modelAssetId) {
+          return (
+            <div className="h-full flex items-center justify-center p-6">
+              <div className="max-w-sm text-center">
+                <h2 className="text-base font-medium text-gray-900 dark:text-white mb-1">
+                  Can't open this model
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  This tab was saved before models opened on their asset, so it
+                  no longer says which asset it belongs to. Search for it again
+                  to open it.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleSearchResult({ id: 'assets-list', title: 'Assets', type: 'assets-list' })}
+                  className="px-3 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium"
+                >
+                  Go to Assets
+                </button>
+              </div>
+            </div>
+          )
         }
-        return <FilesPage onItemSelect={handleSearchResult} initialFileId={activeTab.data?.id} />
+        const modelAsset = {
+          id: modelAssetId,
+          // `useObjectSearch` spreads the search row flat, so the symbol is on
+          // `data` — this previously read `data.assets.symbol`, which never
+          // existed, and handed AssetTab an undefined symbol every time.
+          symbol: activeTab.data?.symbol ?? activeTab.data?.assets?.symbol ?? '',
+          company_name: activeTab.data?.company_name ?? null,
+        }
+        return isMobile
+          ? <MobileAssetPage asset={modelAsset} onNavigate={handleSearchResult} />
+          : <AssetTab asset={modelAsset} onNavigate={handleSearchResult} initialSection="models" />
+      }
       case 'text-template':
         // Text template - go to templates tab
         return <TemplatesTab initialTab="text" initialTemplateId={activeTab.data?.id} />

@@ -16,7 +16,6 @@ import {
   Users,
   Calendar,
   Target,
-  Flag,
   FolderOpen,
   FileText as TemplateIcon,
   Activity,
@@ -35,15 +34,6 @@ interface BlankTabProps {
 // Section configuration. Order here drives the order shown in the
 // "Go to" grid on every new tab — keep it intentional.
 const PRIMARY_SURFACES = [
-  {
-    id: 'priorities',
-    title: 'My Priorities',
-    type: 'priorities',
-    description: 'What needs your attention right now',
-    icon: Flag,
-    gradient: 'from-rose-100 to-red-100',
-    iconColor: 'text-rose-600'
-  },
   {
     id: 'ideas',
     title: 'Ideas',

@@ -1,5 +1,5 @@
 import {
-  Beaker, BookOpen, Briefcase, Building2, Calendar, FileText, Flag,
+  Beaker, BookOpen, Briefcase, Building2, Calendar, FileText,
   FolderKanban, FolderOpen, LineChart, Lightbulb, List, ListTodo, Repeat,
   Shield, StickyNote, Tag, Target, TrendingUp, Users,
 } from 'lucide-react'
@@ -168,19 +168,12 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     support: 'full', group: 'core',
   },
   { type: 'note', title: 'Note', icon: StickyNote, color: 'text-yellow-600', bg: 'bg-yellow-50', support: 'full', group: 'core' },
-  {
-    type: 'priorities', title: 'Priorities', icon: Flag,
-    color: 'text-rose-500', bg: 'bg-rose-50',
-    support: 'read-only', group: 'core', inNav: true,
-  },
-  {
-    // Same tab, older id. DashboardPage renders `prioritizer` and `priorities`
-    // through one `case`, so leaving this unregistered meant a restored
-    // session served a "desktop only" card for the page sitting one id away.
-    type: 'prioritizer', title: 'Priorities', icon: Flag,
-    color: 'text-rose-500', bg: 'bg-rose-50',
-    support: 'read-only', group: 'core',
-  },
+  /*
+   * `priorities` and `prioritizer` are gone: the standalone app is retired and
+   * both types now alias to `today` in `legacy-tab-aliases`, so a restored
+   * session never reaches this registry under either id. Registering them
+   * again would put a nav row back for a surface that no longer exists.
+   */
   {
     type: 'outcomes', title: 'Outcomes', icon: Target,
     color: 'text-teal-500', bg: 'bg-teal-50',
@@ -226,22 +219,28 @@ export const MOBILE_SURFACES: MobileSurface[] = [
   {
     type: 'files', title: 'Files', icon: FolderOpen,
     color: 'text-slate-500', bg: 'bg-slate-100',
-    support: 'read-only', group: 'work', inNav: true,
+    // `full`, not `read-only`. Files V1 uploads, renames, archives and links
+    // from a phone through the same mutations the desktop uses. It was
+    // marked read-only when the surface had no data source at all.
+    support: 'full', group: 'work', inNav: true,
     // `h-full flex flex-col bg-gray-50`, its own header padding and its own
     // scroller. The shell's wrapper inset that grey off the screen edges.
     ownsViewportOnMobile: true,
   },
   {
-    // A model attached to an asset. Search returns these, so a phone could
-    // reach one; it rendered the desktop AssetTab, which is the 4,300-line
-    // wide-screen workspace the `asset` case deliberately avoids on a phone.
-    // DashboardPage now sends it to Files focused on the file instead, which
-    // is the surface registered just above and the exact thing searched for.
+    // A model attached to an asset. Search returns these, so a phone can
+    // reach one. It was briefly routed to Files, on the reading that Files
+    // was the same content on a surface with a mobile treatment — but Files
+    // has no data source, so a model search result dead-ended on an empty
+    // state. It now renders the OWNING ASSET, through the same pair the
+    // `asset` type uses: MobileAssetPage on a phone, AssetTab on a desktop.
     type: 'model-file', title: 'Model', icon: FolderOpen,
     color: 'text-slate-500', bg: 'bg-slate-100',
-    support: 'read-only', group: 'work',
-    // Renders FilesPage focused on one file — the same surface as `files`.
-    ownsViewportOnMobile: true,
+    // Matches `asset`, because that is the page it renders.
+    support: 'full', group: 'work',
+    // No `ownsViewportOnMobile`: it renders MobileAssetPage, which relies on
+    // the shell for its horizontal padding exactly as `asset` does. The two
+    // must agree, or one page gets two layouts.
   },
   {
     type: 'workflows', title: 'Process', icon: Repeat,
@@ -268,19 +267,26 @@ export const MOBILE_SURFACES: MobileSurface[] = [
   {
     type: 'templates', title: 'Templates', icon: FileText,
     color: 'text-amber-600', bg: 'bg-amber-50',
-    support: 'read-only', group: 'work', inNav: true,
-    mobileNote: 'Browse templates; authoring stays on desktop',
+    support: 'full', group: 'work', inNav: true,
+    // All four types author on a phone. Two things still need the desktop and
+    // both need a file or a live grid rather than a wider screen: uploading a
+    // base workbook, and the auto-detection and dynamic mappings built by
+    // reading one. Neither is reachable without the .xlsx open.
+    mobileNote: 'Author all four types; base workbooks and auto-detect need desktop',
   },
   {
-    // Both open TemplatesTab on one template — the surface above.
+    // Both open TemplatesTab on one template — the surface above — so they
+    // move with it. It is now 'full', and a detail type left behind at
+    // 'read-only' would tell a reader the page they are about to open is
+    // something it is not.
     type: 'model-template', title: 'Model Template', icon: FileText,
     color: 'text-amber-600', bg: 'bg-amber-50',
-    support: 'read-only', group: 'work',
+    support: 'full', group: 'work',
   },
   {
     type: 'text-template', title: 'Text Template', icon: FileText,
     color: 'text-amber-600', bg: 'bg-amber-50',
-    support: 'read-only', group: 'work',
+    support: 'full', group: 'work',
   },
   {
     type: 'coverage', title: 'Coverage', icon: Users,

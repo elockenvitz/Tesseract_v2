@@ -78,6 +78,36 @@ describe('canonicalTabTarget', () => {
     expect(LEGACY_TAB_ALIASES['dashboard'].type).toBe('today')
     expect(LEGACY_TAB_ALIASES['dashboard'].id).toBe('today')
   })
+
+  /**
+   * My Priorities was a shell over the attention system, which is what Today
+   * reads. Retiring it removed a second front door, not a capability, so the
+   * tab that meant "show me what needs me" resolves to the surface that still
+   * answers that.
+   */
+  it('sends the retired Priorities app to Today', () => {
+    expect(canonicalTabTarget(tab('priorities', 'priorities'))).toEqual({
+      id: 'today', type: 'today', title: 'Today', data: undefined,
+    })
+  })
+
+  /**
+   * `prioritizer` was the original id for the same page — `DashboardPage`
+   * rendered both through one `case` — so both are live in saved sessions.
+   * Aliasing only the newer one would leave older sessions resolving to
+   * nothing.
+   */
+  it('sends the older Priorities id to Today as well', () => {
+    expect(canonicalTabTarget(tab('prioritizer', 'prioritizer'))).toEqual({
+      id: 'today', type: 'today', title: 'Today', data: undefined,
+    })
+    expect(isLegacyTabType('prioritizer')).toBe(true)
+  })
+
+  /** Both ids land on one tab, not two views of a page that is gone. */
+  it('gives both Priorities ids the same target', () => {
+    expect(LEGACY_TAB_ALIASES['priorities']).toEqual(LEGACY_TAB_ALIASES['prioritizer'])
+  })
 })
 
 describe('migrateLegacyTabs', () => {
@@ -148,5 +178,54 @@ describe('migrateLegacyTabs', () => {
     )
     expect(tabs.map(t => t.type)).toEqual(['today', 'ideas'])
     expect(migrated).toEqual(['dashboard', 'idea-generator'])
+  })
+
+  it('restores a saved Priorities tab as Today', () => {
+    const { tabs, migrated } = migrateLegacyTabs(
+      [tab('lab', 'trade-lab'), tab('priorities', 'priorities')],
+      'lab',
+    )
+    expect(tabs.map(t => t.type)).toEqual(['trade-lab', 'today'])
+    expect(migrated).toEqual(['priorities'])
+  })
+
+  /** A reader who was looking at Priorities is still looking at something. */
+  it('follows an active Priorities tab through the rename', () => {
+    const { activeTabId, tabs } = migrateLegacyTabs(
+      [tab('lab', 'trade-lab'), tab('priorities', 'priorities')],
+      'priorities',
+    )
+    expect(activeTabId).toBe('today')
+    expect(tabs.some(t => t.id === 'today')).toBe(true)
+  })
+
+  /** Two doors onto one page must not restore as two tabs. */
+  it('collapses Priorities onto an already-open Today', () => {
+    const { tabs, activeTabId } = migrateLegacyTabs(
+      [tab('today', 'today'), tab('priorities', 'priorities'), tab('asset-1', 'asset')],
+      'priorities',
+    )
+    expect(tabs.filter(t => t.type === 'today')).toHaveLength(1)
+    expect(tabs.map(t => t.id)).toEqual(['today', 'asset-1'])
+    expect(activeTabId).toBe('today')
+  })
+
+  /** The old id and the new one were the same page; they collapse too. */
+  it('collapses a session holding both Priorities ids', () => {
+    const { tabs } = migrateLegacyTabs(
+      [tab('prioritizer', 'prioritizer'), tab('priorities', 'priorities')],
+      'prioritizer',
+    )
+    expect(tabs).toHaveLength(1)
+    expect(tabs[0]).toMatchObject({ id: 'today', type: 'today' })
+  })
+
+  /** Nothing of the retired page's own state survives into Today. */
+  it('drops Priorities view state rather than reinterpreting it', () => {
+    const { tabs } = migrateLegacyTabs(
+      [tab('priorities', 'priorities', { section: 'action_required', filter: 'overdue' })],
+      'priorities',
+    )
+    expect(tabs[0].data).toBeUndefined()
   })
 })

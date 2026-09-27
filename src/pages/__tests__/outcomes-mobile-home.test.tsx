@@ -381,7 +381,14 @@ describe('range control', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Custom range' }))
     const custom = document.querySelector('[data-slot="outcomes-range-custom"]') as HTMLElement
     expect(custom.className).not.toMatch(/\babsolute\b|\bfixed\b/)
-    fireEvent.change(within(custom).getByLabelText('From'), { target: { value: '2026-01-01' } })
+
+    // From/To are the app's DatePicker now, not native date fields — the
+    // control opens and takes a typed date. The range it produces is
+    // unchanged, which is what this test is really for.
+    fireEvent.click(within(custom).getByRole('button', { name: /From/ }))
+    fireEvent.change(screen.getByPlaceholderText('MM/DD/YYYY'), { target: { value: '01/01/2026' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Set' }))
+
     fireEvent.click(within(custom).getByRole('button', { name: 'Apply' }))
     expect(onChange.mock.calls[1][0].dateRange.start).toBe(new Date('2026-01-01').toISOString())
   })

@@ -286,22 +286,32 @@ export function EnhancedKanbanBoard({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="h-full p-4 flex flex-col">
-        {/* WIP Limit Banner */}
+      {/* Tighter gutters on a phone: 16px of padding either side plus a 16px
+          gap is 48px of the 390px spent on nothing, and the board should
+          start as high as the list does. */}
+      <div className="h-full p-2 sm:p-4 flex flex-col">
+        {/* WIP Limit Banner. A paragraph of prose above the board costs a
+            phone several rows before any column, so the sentence is
+            desktop-only and a phone gets the same fact in one line. */}
         {showWipBanner && (
-          <div className="mb-4 flex items-center justify-between gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-              <p className="text-sm text-amber-800 dark:text-amber-200">
-                <span className="font-medium">Work in progress limit exceeded:</span>{' '}
+          <div className="mb-2 sm:mb-4 flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+              <p className="text-xs sm:text-sm text-amber-800 dark:text-amber-200 min-w-0">
+                <span className="font-medium">WIP limit exceeded:</span>{' '}
                 {overLimitColumns.map((col, i) => (
                   <span key={col.status}>
                     {i > 0 && ', '}
                     <span className="font-semibold">{statusLabels[col.status]}</span>
-                    {' '}has {col.count} items (limit: {WIP_LIMIT})
+                    <span className="hidden sm:inline">
+                      {' '}has {col.count} items (limit: {WIP_LIMIT})
+                    </span>
+                    <span className="sm:hidden"> {col.count}/{WIP_LIMIT}</span>
                   </span>
                 ))}
-                . Consider completing some items before starting new ones.
+                <span className="hidden sm:inline">
+                  . Consider completing some items before starting new ones.
+                </span>
               </p>
             </div>
             <button
@@ -314,7 +324,7 @@ export function EnhancedKanbanBoard({
           </div>
         )}
 
-        <div className="flex gap-4 flex-1 overflow-x-auto pb-4">
+        <div className="flex gap-2 sm:gap-4 flex-1 overflow-x-auto pb-2 sm:pb-4">
           {BOARD_STATUSES.map(status => (
             <EnhancedKanbanColumn
               key={status}

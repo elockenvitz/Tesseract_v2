@@ -36,6 +36,7 @@ import {
   availableRanges, defaultRange, metricAvailability, rangeCutoff,
   type ChartRange, type OverlayField, type PositionChartRow,
 } from './position-chart-model'
+import { priceScale, metricScale } from './position-chart-scale'
 
 /** Horizontal travel, in px, after which a touch is a scrub and not a tap. */
 const TAP_SLOP = 8
@@ -44,8 +45,6 @@ const MARGIN = { top: 14, right: 4, bottom: 8, left: 4 }
 const PRICE_AXIS_WIDTH = 46
 const METRIC_AXIS_WIDTH = 42
 const TOOLTIP_WIDTH = 168
-/** Share of the plot height the secondary metric may rise to. */
-const METRIC_BAND = 0.42
 
 /** One segment of the metric / range tracks. */
 const SEGMENT = 'no-touch-target tap-pad h-8 rounded-md text-[12px] font-medium whitespace-nowrap transition-colors'
@@ -55,40 +54,8 @@ const SEGMENT_OFF = 'text-gray-500 active:text-gray-800 dark:text-gray-400 dark:
 const PRICE_COLOR = '#2563eb'
 const ENTRY_COLOR = '#6366f1'
 
-function niceStep(raw: number) {
-  if (!(raw > 0)) return 1
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)))
-  const n = raw / mag
-  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag
-}
-
-/** Price domain padded off the data (entry line included) and 2–4 ticks kept
- *  clear of the plot edges so no label is cut in half. */
-function priceScale(values: number[]) {
-  const lo = Math.min(...values)
-  const hi = Math.max(...values)
-  const span = hi - lo
-  const pad = span > 0 ? span * 0.1 : Math.max(Math.abs(hi) * 0.02, 0.5)
-  const domain: [number, number] = [lo - pad, hi + pad]
-  const step = niceStep((domain[1] - domain[0]) / 3.5)
-  const edge = (domain[1] - domain[0]) * 0.06
-  const ticks: number[] = []
-  for (let t = Math.ceil(domain[0] / step) * step; t <= domain[1]; t += step) {
-    if (t - domain[0] >= edge && domain[1] - t >= edge) ticks.push(Number(t.toFixed(6)))
-  }
-  const decimals = step < 1 ? 2 : 0
-  return { domain, ticks, tick: (v: number) => `$${v.toFixed(decimals)}` }
-}
-
-/** Secondary scale: the metric occupies the lower METRIC_BAND of the plot. */
-function metricScale(values: number[]) {
-  const lo = Math.min(0, ...values)
-  const hi = Math.max(0, ...values)
-  const span = hi - lo || Math.abs(hi) || 1
-  const domain: [number, number] = [lo, lo + span / METRIC_BAND]
-  const ticks = Array.from(new Set([hi, ...(lo < 0 ? [lo] : [])])).filter(v => v !== 0 || lo < 0)
-  return { domain, ticks: ticks.length ? ticks : [hi] }
-}
+/* Scaling rules live in `position-chart-scale` so they can be tested as
+   functions rather than as pixels. */
 
 function useElementWidth<T extends HTMLElement>() {
   const ref = useRef<T>(null)
@@ -158,16 +125,28 @@ export function PositionChartMobile({
   const cfg = METRICS[metric]
   const data = useMemo(() => rows.map((r, idx) => ({ ...r, idx })), [rows])
 
+  /* Only the prices in the selected horizon, so 3M never inherits All's
+     scale. The entry is passed as context and admitted to the domain only if
+     it is close enough to cost nothing — see position-chart-scale. */
   const price = useMemo(() => {
     const values = rows.map(r => r.price).filter((v): v is number => v != null && Number.isFinite(v))
-    if (lifecycle.avgEntryPrice != null) values.push(lifecycle.avgEntryPrice)
-    return values.length ? priceScale(values) : null
+    return priceScale(values, lifecycle.avgEntryPrice ?? null)
   }, [rows, lifecycle.avgEntryPrice])
 
   const secondary = useMemo(() => {
     if (!metricOn) return null
     const values = rows.map(r => r[cfg.key]).filter((v): v is number => v != null && Number.isFinite(v))
-    return values.length ? metricScale(values) : null
+    return metricScale(values, metric)
+  }, [rows, cfg.key, metricOn, metric])
+
+  /** The latest value of the selected metric, named in the legend. */
+  const latestMetricValue = useMemo(() => {
+    if (!metricOn) return null
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const v = rows[i][cfg.key]
+      if (v != null && Number.isFinite(v)) return v
+    }
+    return null
   }, [rows, cfg.key, metricOn])
 
   // ── Recorded geometry ────────────────────────────────────────────────
@@ -294,7 +273,25 @@ export function PositionChartMobile({
             tickLine={false}
           />
         )}
-        {secondary && (
+        {/* A holding that never moved is a level, not a quantity to fill in
+            from a baseline. Drawn as a line, it reads as "unchanged"; drawn
+            as an area it was a solid block across the lower third. Real
+            transitions still get the area, where the fill carries the
+            change. */}
+        {secondary && (secondary.flat ? (
+          <Line
+            yAxisId="metric"
+            type="stepAfter"
+            dataKey={cfg.key}
+            stroke={cfg.color}
+            strokeOpacity={0.7}
+            strokeWidth={1.5}
+            dot={false}
+            activeDot={false}
+            isAnimationActive={false}
+            connectNulls
+          />
+        ) : (
           <Area
             yAxisId="metric"
             type="stepAfter"
@@ -307,8 +304,11 @@ export function PositionChartMobile({
             isAnimationActive={false}
             connectNulls
           />
-        )}
-        {lifecycle.avgEntryPrice != null && (
+        ))}
+        {/* Drawn only when it is in scale. An off-scale entry would clamp to
+            the pane edge and read as a price the asset never traded at; the
+            legend announces it with a direction instead. */}
+        {lifecycle.avgEntryPrice != null && price.entryPlacement === 'in-range' && (
           // No in-plot label: "Entry $…" sat on the line and ran off the
           // edge at this width. The legend names the line and its price.
           <ReferenceLine yAxisId="price" y={lifecycle.avgEntryPrice} stroke={ENTRY_COLOR} strokeDasharray="4 4" strokeWidth={1} />
@@ -503,13 +503,33 @@ export function PositionChartMobile({
           <span className="inline-flex items-center gap-1.5">
             <span className="w-3 h-2.5 rounded-sm" style={{ backgroundColor: `${cfg.color}26`, border: `1px solid ${cfg.color}73` }} />
             {cfg.label}
+            {/* The level itself, in its own unit — a flat series draws as a
+                line with one tick, so the number belongs in words too. */}
+            {latestMetricValue != null && (
+              <span className="font-medium tabular-nums" style={{ color: cfg.color }}>
+                {cfg.format(latestMetricValue)}
+              </span>
+            )}
             {metric === 'active_weight' && benchmark?.status === 'not_member' && <span className="text-gray-400">(not in benchmark)</span>}
           </span>
         )}
-        {lifecycle.avgEntryPrice != null && (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-4 border-t border-dashed" style={{ borderColor: ENTRY_COLOR }} />
+        {lifecycle.avgEntryPrice != null && price && (
+          /* In scale: the dashed key. Off scale: an arrow saying which way
+             it lies, so the number is never silently dropped. */
+          <span className="inline-flex items-center gap-1.5" data-slot="chart-entry-key">
+            {price.entryPlacement === 'in-range' ? (
+              <span className="w-4 border-t border-dashed" style={{ borderColor: ENTRY_COLOR }} />
+            ) : (
+              <span aria-hidden className="font-bold" style={{ color: ENTRY_COLOR }}>
+                {price.entryPlacement === 'below' ? '↓' : '↑'}
+              </span>
+            )}
             Avg entry ${lifecycle.avgEntryPrice.toFixed(2)}
+            {price.entryPlacement !== 'in-range' && (
+              <span className="text-gray-400">
+                (off scale{price.entryPlacement === 'below' ? ' below' : ' above'})
+              </span>
+            )}
           </span>
         )}
         <span className="inline-flex items-center gap-1"><span className="text-green-500 font-bold">▲</span>Buy/Add</span>

@@ -6,6 +6,8 @@ import { Template } from '../../hooks/useTemplates'
 import { RichTextEditor, RichTextEditorRef } from '../rich-text-editor/RichTextEditor'
 import { Button } from '../ui/Button'
 import { TemplateTagPicker } from './TemplateTagPicker'
+import { MobileTemplateShell } from './mobile/MobileTemplateShell'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import {
   extractVariables,
   validateTemplate,
@@ -49,6 +51,7 @@ export function TemplateEditor({
   onShare,
   isSaving = false
 }: TemplateEditorProps) {
+  const isMobile = useIsMobile()
   const editorRef = useRef<RichTextEditorRef>(null)
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
   const [showTagPicker, setShowTagPicker] = useState(false)
@@ -104,8 +107,16 @@ export function TemplateEditor({
     }
   }, [template])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  /**
+   * Validate and save.
+   *
+   * Split out of the submit handler so the phone's Save button — which is in
+   * the shell's action bar, outside this <form> — reaches exactly the same
+   * validation and the same `onSave(formData)`. Two save paths with two
+   * validations is how a phone starts writing rows a desktop would have
+   * rejected.
+   */
+  const submitForm = async () => {
     setError(null)
 
     if (!formData.name.trim()) {
@@ -126,6 +137,11 @@ export function TemplateEditor({
     }
   }
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await submitForm()
+  }
+
   const handleTagsChange = (tagIds: string[]) => {
     setFormData(prev => ({ ...prev, tag_ids: tagIds }))
     setShowTagPicker(false)
@@ -139,20 +155,170 @@ export function TemplateEditor({
 
   const getCategoryLabel = (id: string) => CATEGORIES.find(c => c.id === id)?.label || id
 
+  /*
+    A phone wears different chrome around the same editor.
+
+    Not a second editor: the form state, the validation, the variable
+    extraction and `onSave(TemplateFormData)` are the ones above, unchanged.
+    Only the frame differs — back, name, Save and Preview move into
+    MobileTemplateShell where a thumb can reach them and the keyboard cannot
+    bury them, and the six-control desktop header and its footer are simply
+    not rendered rather than hidden with CSS. Rendering both and hiding one
+    would put two name inputs and two Save buttons in the DOM: two values to
+    keep in sync, and two announcements to a screen reader.
+  */
+  if (isMobile) {
+    return (
+      <>
+        <MobileTemplateShell
+          typeLabel="Quick Text"
+          name={formData.name}
+          onNameChange={(name) => setFormData(prev => ({ ...prev, name }))}
+          namePlaceholder="Template name…"
+          meta={getCategoryLabel(formData.category)}
+          onBack={onCancel}
+          onSave={() => { void submitForm() }}
+          saveLabel={template ? 'Update' : 'Create'}
+          saving={isSaving}
+          onPreview={() => setMode(mode === 'preview' ? 'edit' : 'preview')}
+          /* No `onMore`: settings are reached from the metadata strip in the
+             body, which also shows their current values. An overflow button
+             that opens the same panel is a second door to one room. */
+        >
+          {error && (
+            <div className="mb-2 flex items-start gap-1.5 rounded-md bg-red-50 px-2.5 py-2 text-[13px] text-red-700 dark:bg-red-900/20 dark:text-red-300">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Shortcut, category and tags — what the desktop header spreads
+              across its row. Disclosed rather than permanent: they are set
+              once, and the body is edited many times.
+
+              The summary below is always visible, though. Hiding metadata
+              behind the overflow "⋯" alone meant a shortcut you had set was
+              invisible until you went looking, and one you had NOT set gave
+              no hint the feature existed. The strip states the current
+              values and is the control that opens them. */}
+          <button
+            type="button"
+            onClick={() => setShowSettings(!showSettings)}
+            aria-expanded={showSettings}
+            className="no-touch-target mb-2 flex w-full items-center gap-2 rounded-lg border border-gray-200 px-2.5 py-1.5 text-left dark:border-gray-700"
+          >
+            <span className="min-w-0 flex-1 truncate text-[12px] text-gray-600 dark:text-gray-300">
+              {formData.shortcut ? (
+                <span className="font-medium text-gray-900 dark:text-white">.t.{formData.shortcut}</span>
+              ) : (
+                <span className="text-gray-400">No shortcut</span>
+              )}
+              <span className="mx-1.5 text-gray-300" aria-hidden="true">·</span>
+              {getCategoryLabel(formData.category)}
+              {formData.tag_ids.length > 0 && (
+                <>
+                  <span className="mx-1.5 text-gray-300" aria-hidden="true">·</span>
+                  {formData.tag_ids.length} tag{formData.tag_ids.length === 1 ? '' : 's'}
+                </>
+              )}
+            </span>
+            <span className="shrink-0 text-[11px] font-medium text-primary-600 dark:text-primary-400">
+              {showSettings ? 'Done' : 'Edit'}
+            </span>
+          </button>
+
+          {showSettings && (
+            <div className="mb-3 space-y-2 rounded-lg border border-gray-200 p-2.5 dark:border-gray-700">
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-gray-400">Shortcut</span>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[13px] text-gray-400">.t.</span>
+                  <input
+                    value={formData.shortcut}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      shortcut: e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''),
+                    })}
+                    placeholder="shortcut"
+                    className="h-9 w-full rounded-lg border border-gray-300 pl-8 pr-2 text-[13px] dark:border-gray-600 dark:bg-gray-800"
+                  />
+                </div>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-gray-400">Category</span>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="h-9 w-full rounded-lg border border-gray-300 px-2 text-[13px] dark:border-gray-600 dark:bg-gray-800"
+                >
+                  {CATEGORIES.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.label}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowTagPicker(true)}
+                className="no-touch-target inline-flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-2.5 text-[13px] text-gray-600 dark:border-gray-600 dark:text-gray-300"
+              >
+                <Tag className="h-3.5 w-3.5" />
+                {formData.tag_ids.length > 0
+                  ? `${formData.tag_ids.length} tag${formData.tag_ids.length === 1 ? '' : 's'}`
+                  : 'Add tags'}
+              </button>
+            </div>
+          )}
+
+          {mode === 'preview' ? (
+            <div
+              className="prose prose-sm max-w-none rounded-lg border border-gray-200 p-3 dark:prose-invert dark:border-gray-700"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(getStyledPreview()) }}
+            />
+          ) : (
+            <div className="template-editor-scroll">
+              <RichTextEditor
+                ref={editorRef}
+                value={template?.content_html || template?.content || ''}
+                onChange={handleContentChange}
+                placeholder="Write the template. Use {{name}} for a placeholder."
+                minHeight="220px"
+              />
+            </div>
+          )}
+        </MobileTemplateShell>
+
+        {showTagPicker && (
+          <TemplateTagPicker
+            selectedTagIds={formData.tag_ids}
+            onSave={handleTagsChange}
+            onClose={() => setShowTagPicker(false)}
+          />
+        )}
+      </>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-800">
-      {/* Compact Header with Name, Category, Shortcut */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+      {/* Compact Header with Name, Category, Shortcut.
+
+          Six controls in one non-wrapping row need about 504px. At 390px that
+          overflowed a parent with `overflow-hidden`, so it did not scroll — it
+          clipped, and the control it clipped was the close button. The row
+          wraps on a phone and the close button leads it, so the way out is the
+          first thing on screen rather than the casualty. `sm:` keeps desktop
+          on one line exactly as before. */}
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 sm:flex-nowrap sm:px-4 dark:border-gray-700 dark:bg-gray-900">
         <input
           type="text"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           placeholder="Template name..."
-          className="flex-1 min-w-0 px-3 py-1.5 text-base font-medium bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800"
+          className="min-w-0 flex-1 basis-40 px-3 py-1.5 text-base font-medium bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800"
         />
 
         {/* Shortcut */}
-        <div className="relative">
+        <div className="relative shrink-0">
           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">.t.</span>
           <input
             type="text"
@@ -220,10 +386,16 @@ export function TemplateEditor({
           {showSettings ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </button>
 
+        {/* One close button, repositioned rather than duplicated: `order-first`
+            puts it at the head of the wrapped phone row, where the way out
+            should be, and `sm:order-none` returns it to the end of the desktop
+            row. A second copy behind `hidden`/`sm:block` would announce the
+            control twice to a screen reader. */}
         <button
           type="button"
           onClick={onCancel}
-          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
+          aria-label="Close editor"
+          className="order-first shrink-0 p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg sm:order-none dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
         >
           <X className="w-5 h-5" />
         </button>

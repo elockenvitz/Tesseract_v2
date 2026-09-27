@@ -22,7 +22,6 @@ export interface PilotAccessConfig {
   ideaPipeline: PilotAccessLevel  // upstream (Idea Pipeline) — 'full' so pilots can see where ideas live
   ideas:        PilotAccessLevel  // the standalone Ideas app — 'hidden' until graduation
   dashboard:    PilotAccessLevel  // 'full' — pilot lands here on login as the action dashboard
-  priorities:   PilotAccessLevel  // starts 'hidden'
   projects:     PilotAccessLevel  // starts 'hidden'
   coverage:     PilotAccessLevel  // starts 'hidden'
   workflows:    PilotAccessLevel  // 'full' — Get Started step "Build a workflow" sends users here
@@ -61,7 +60,6 @@ export const PILOT_ACCESS_DEFAULTS: PilotAccessConfig = {
    */
   ideas:        'hidden',
   dashboard:    'full',   // was 'hidden' — pilots now land here on login as a lightweight action dashboard
-  priorities:   'hidden',
   projects:     'hidden',
   coverage:     'hidden',
   workflows:    'full',   // Get Started teaches "Build a workflow"
@@ -99,7 +97,6 @@ export const TAB_TYPE_TO_PILOT_FEATURE: Record<string, keyof PilotAccessConfig |
   'ideas':           'ideas',
   'idea-generator':  'ideas',        // legacy alias of the standalone app, not of the Pipeline
   'trade-queue':     'ideaPipeline',
-  'priorities':      'priorities',
   'project':         'projects',
   'projects-list':   'projects',
   'coverage':        'coverage',

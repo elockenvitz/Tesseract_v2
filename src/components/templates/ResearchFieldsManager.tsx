@@ -109,6 +109,11 @@ import {
   type CompositeWidget,
   type CompositeFieldConfig,
 } from '../../lib/research/field-types'
+import {
+  getDefaultWidgetSize,
+  recomputeAutoLayout,
+} from '../../lib/research/composite-layout'
+import { buildSystemDefaultLayout } from '../../lib/research/default-layout'
 import { supabase } from '../../lib/supabase'
 import { ResponsiveGridLayout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
@@ -2691,29 +2696,14 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
     setCreateStep(3)
   }
 
-  /** Recompute auto layout positions from widget list + column count */
-  const recomputeAutoLayout = (widgets: CompositeWidget[], cols: 1 | 2) => {
-    const newLayout: CompositeFieldConfig['layout'] = []
-    let y = 0
-    for (let i = 0; i < widgets.length; i++) {
-      const w = widgets[i]
-      const defaultH = getDefaultWidgetSize(w.type).h
-      if (cols === 1) {
-        newLayout.push({ i: w.id, x: 0, y, w: 12, h: defaultH })
-        y += defaultH
-      } else {
-        const col = i % 2
-        if (col === 0) {
-          newLayout.push({ i: w.id, x: 0, y, w: 6, h: defaultH })
-        } else {
-          const prevH = newLayout[newLayout.length - 1]?.h ?? defaultH
-          newLayout.push({ i: w.id, x: 6, y, w: 6, h: defaultH })
-          y += Math.max(prevH, defaultH)
-        }
-      }
-    }
-    return newLayout
-  }
+  /*
+    `recomputeAutoLayout` and `getDefaultWidgetSize` now live in
+    src/lib/research/composite-layout.ts and are imported at the top of this
+    file, verbatim, so the mobile editor uses these exact generators rather
+    than a copy. Two copies is how two devices begin emitting subtly
+    different `layout` arrays for the same widgets — the one failure the
+    mobile authoring work exists to avoid. Desktop behaviour is unchanged.
+  */
 
   /** Duplicate a widget */
   const handleDuplicateWidget = (widgetId: string) => {
@@ -2760,19 +2750,6 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
     })
   }
 
-  /** Default grid size by widget type */
-  const getDefaultWidgetSize = (widgetType: string): { w: number; h: number } => {
-    switch (widgetType) {
-      case 'rich_text': case 'checklist': case 'chart':
-        return { w: 6, h: 3 }
-      case 'table': case 'scenario':
-        return { w: 12, h: 4 }
-      case 'numeric': case 'percentage': case 'currency': case 'boolean': case 'rating':
-        return { w: 3, h: 2 }
-      default:
-        return { w: 6, h: 2 }
-    }
-  }
 
   /** Try to auto-place a widget; returns layout item or null if no space */
   const autoPlaceWidget = (id: string, widgetType: string, currentLayout: CompositeFieldConfig['layout']): CompositeFieldConfig['layout'][number] | null => {
@@ -5705,26 +5682,28 @@ function LayoutEditor({
 // VIRTUAL DEFAULT LAYOUT
 // ============================================================================
 
-function createVirtualDefaultLayout(fields: FieldWithPreference[]): SavedLayout {
-  // Only include the curated system default fields
-  const defaultFields = fields.filter(f => SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug))
+/*
+  The construction moved to src/lib/research/default-layout.ts and is
+  imported at the top of this file, so a phone derives the SAME default from
+  the same rule rather than from a copy.
 
-  return {
-    id: 'system-default',
-    user_id: '',
-    name: 'Default',
-    description: 'Standard research layout with thesis, forecasts, catalysts & documents',
-    is_default: true,
-    field_config: defaultFields.map((f, idx) => ({
+  It had to move because the default is not a row: it is computed from
+  SYSTEM_DEFAULT_FIELD_SLUGS at render time, and a surface only sees it if it
+  computes it. The mobile editor listed persisted rows only, so with no
+  custom layouts a phone showed "No saved layouts yet" while this component
+  showed "Default" — same query, same data, different derived state.
+
+  Desktop behaviour is unchanged: same slug filter, same visibility, same
+  display_order by index, same name and description.
+*/
+function createVirtualDefaultLayout(fields: FieldWithPreference[]): SavedLayout {
+  return buildSystemDefaultLayout(
+    fields.map(f => ({
       field_id: f.field_id,
+      field_slug: f.field_slug,
       section_id: f.section_id,
-      is_visible: true,
-      display_order: idx,
-      is_collapsed: false
-    })),
-    created_at: '',
-    updated_at: ''
-  }
+    }))
+  )
 }
 
 // ============================================================================
