@@ -1,67 +1,80 @@
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { ChevronDown, ChevronUp, Eye, EyeOff, LayoutGrid, Lock, Plus } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  LayoutGrid,
+  Lock,
+  MoreHorizontal,
+  Plus,
+  X,
+} from 'lucide-react'
 import { MobileTemplateShell } from './MobileTemplateShell'
 import { useResearchFields, useResearchSections } from '../../../hooks/useResearchFields'
 import { useUserAssetPageLayouts } from '../../../hooks/useUserAssetPagePreferences'
 import { useIsOrgAdmin } from '../../../hooks/useIsOrgAdmin'
 import {
+  buildSystemDefaultLayout,
+  isSystemDefaultLayout,
+  layoutCounts,
+  resolveLayoutList,
+  SYSTEM_DEFAULT_LAYOUT_ID,
+} from '../../../lib/research/default-layout'
+import {
   buildDraft,
   isDraftDirty,
   moveFieldToSection,
-  moveFieldWithinSection,
+  moveVisibleField,
+  sectionCounts,
   serializeDraft,
   setFieldVisibility,
+  type DraftField,
   type DraftSection,
 } from '../../../lib/research/layout-draft'
 import type { FieldConfigItem } from '../../../lib/research/layout-resolver'
 
 /**
- * Research Layout, authored on a phone.
+ * Research Layout on a phone: Layout → Sections → Fields.
  *
- * ── Why this is possible at all ────────────────────────────────────────────
+ * ── Why this is not the flat list it was ───────────────────────────────────
  *
- * The notice this replaces said the layout is "built by dragging and resizing
- * widgets on a twelve-column grid". That described the wrong artefact. The
- * twelve-column grid is `research_fields.config` — the inside of a single
- * composite field. A Research LAYOUT is
- * `user_asset_page_layouts.field_config`: a flat list of
- * `{field_id, section_id, is_visible, display_order, is_collapsed}`.
+ * The first build rendered every readable field as one enormous form — 29
+ * rows, each carrying a section dropdown, an eye toggle and two arrows. Every
+ * control was reachable and the whole thing was unreadable: you could not
+ * answer "what does this layout actually look like?" without scanning a
+ * hundred controls, and the section dropdown repeated on every row implied
+ * that moving a field between sections was the common action. It is not; it
+ * is rare, and it was the most prominent thing on the screen.
  *
- * Which fields show, under which heading, in what order. That is an ordered
- * list, and a phone edits an ordered list perfectly well — one row moving one
- * place at a time, which is a more precise gesture on a touch screen than
- * dragging ever is. So the grid is not reproduced here; it was never what
- * this screen edits.
+ * So the model is now the one the data already has. A layout is sections; a
+ * section holds ordered fields. Sections are COLLAPSED by default and show
+ * "4 shown · 6 fields", so the whole layout fits one screen and the overview
+ * is the default view rather than a thing you assemble in your head.
  *
- * ── Authority ──────────────────────────────────────────────────────────────
+ * Underneath it is still the flat `FieldConfigItem[]`. This is an interaction
+ * model, not a schema — `serializeDraft` writes exactly what the desktop
+ * writes, and the round trip is pinned in layout-draft's tests.
  *
- * Two different tables, two different postures, and conflating them is how a
- * screen offers something the database refuses:
+ * ── Two specific corrections ───────────────────────────────────────────────
  *
- *   user_asset_page_layouts   INSERT WITH CHECK (user_id = auth.uid())
- *                             — self-scoped. Anyone may author their own.
- *   research_fields/_sections USING (organization_id = current_org_id()
- *                               AND is_active_org_admin_of_current_org())
- *                             — org admins only, for every write.
+ * Visibility says "Shown" or "Hidden" in words. An eye icon inverts meaning
+ * depending on state — is the open eye what IS, or what tapping DOES? — and
+ * that ambiguity costs a tap to resolve every time.
  *
- * So composing a layout out of fields you can already read is offered to
- * everyone, and creating a NEW field or section is offered to nobody here.
- * The desktop shows those buttons to everyone and swallows the 42501 in a
- * console.error, which is the behaviour this screen deliberately does not
- * copy: an affordance that fails silently is worse than no affordance.
- *
- * For an admin that is a real deferral, and it says so. For a non-admin it
- * is not a deferral at all — they cannot create a field on a desktop either —
- * so they are told the catalog is managed by an admin rather than being sent
- * to a machine where the button would fail the same way.
+ * Reorder arrows appear only on shown fields, and they step to the next
+ * VISIBLE neighbour. A hidden field has no position, so offering to move it
+ * is offering a control that does nothing observable.
  */
 
 interface Props {
   onBack: () => void
 }
 
-type Selection = { kind: 'list' } | { kind: 'edit'; layoutId: string } | { kind: 'new' }
+type Selection =
+  | { kind: 'list' }
+  | { kind: 'edit'; layoutId: string }
+  | { kind: 'new' }
 
 export function MobileResearchLayoutEditor({ onBack }: Props) {
   const [selection, setSelection] = useState<Selection>({ kind: 'list' })
@@ -80,6 +93,41 @@ export function MobileResearchLayoutEditor({ onBack }: Props) {
 }
 
 // ============================================================================
+// Shared: the catalog both screens read
+// ============================================================================
+
+/**
+ * The fields and sections this user can read, plus the derived default.
+ *
+ * `useResearchFields` and `useResearchSections` are already RLS-filtered, so
+ * the default built from them is scoped to what this person may actually
+ * see — the same scoping the desktop gets, for the same reason.
+ */
+function useLayoutCatalog() {
+  const { sections, isLoading: sectionsLoading } = useResearchSections()
+  const { fields, isLoading: fieldsLoading } = useResearchFields()
+
+  const systemDefault = useMemo(
+    () =>
+      buildSystemDefaultLayout(
+        fields.map((f) => ({
+          field_id: f.id,
+          field_slug: f.slug,
+          section_id: f.section_id ?? '',
+        })),
+      ),
+    [fields],
+  )
+
+  return {
+    sections,
+    fields,
+    systemDefault,
+    isLoading: sectionsLoading || fieldsLoading,
+  }
+}
+
+// ============================================================================
 // The picker
 // ============================================================================
 
@@ -90,19 +138,28 @@ function LayoutList({
   onBack: () => void
   onSelect: (s: Selection) => void
 }) {
-  const { layouts = [], isLoading } = useUserAssetPageLayouts()
+  const { layouts = [], isLoading: layoutsLoading } = useUserAssetPageLayouts()
+  const { systemDefault, isLoading: catalogLoading } = useLayoutCatalog()
+  const loading = layoutsLoading || catalogLoading
+
+  // One function decides this list on both surfaces. The derived default is
+  // shown unless the user has a default of their own — see default-layout.ts.
+  const visible = useMemo(
+    () => (loading ? [] : resolveLayoutList(layouts, systemDefault)),
+    [loading, layouts, systemDefault],
+  )
 
   return (
     <MobileTemplateShell
       typeLabel="Research Layout"
       name="Research Layout"
-      meta={isLoading ? undefined : `${layouts.length} saved`}
+      meta={loading ? undefined : `${visible.length} layouts`}
       onBack={onBack}
     >
-      {isLoading ? (
+      {loading ? (
         <p className="py-8 text-center text-[13px] text-gray-500 dark:text-gray-400">Loading…</p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <button
             type="button"
             onClick={() => onSelect({ kind: 'new' })}
@@ -112,11 +169,12 @@ function LayoutList({
             New layout
           </button>
 
-          {layouts.map((layout) => {
-            // 'view' collaborators may open it but not save it, and the
-            // editor below enforces that. Saying so on the row means the
-            // Save button is not the first place they learn it.
-            const readOnly = layout.my_permission === 'view'
+          {visible.map((layout) => {
+            const counts = layoutCounts((layout.field_config as FieldConfigItem[]) ?? [])
+            const isSystem = isSystemDefaultLayout(layout)
+            const shared = 'is_shared_with_me' in layout && layout.is_shared_with_me
+            const readOnly = 'my_permission' in layout && layout.my_permission === 'view'
+
             return (
               <button
                 key={layout.id}
@@ -126,25 +184,32 @@ function LayoutList({
               >
                 <LayoutGrid className="h-4 w-4 shrink-0 text-gray-400" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-gray-900 dark:text-white">
-                    {layout.name}
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-[13px] font-medium text-gray-900 dark:text-white">
+                      {layout.name}
+                    </span>
+                    {layout.is_default && (
+                      <span className="shrink-0 rounded bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                        Default
+                      </span>
+                    )}
+                    {isSystem && (
+                      <span className="shrink-0 rounded bg-gray-100 px-1.5 py-px text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                        System
+                      </span>
+                    )}
                   </span>
                   <span className="mt-0.5 block truncate text-[11px] text-gray-500 dark:text-gray-400">
-                    {layout.is_default && 'Default · '}
-                    {(layout.field_config as FieldConfigItem[] | null)?.length ?? 0} fields
-                    {layout.is_shared_with_me && ' · Shared with you'}
+                    {counts.shown} of {counts.total} fields
+                    {counts.sections > 0 && ` · ${counts.sections} sections`}
+                    {shared && ' · Shared with you'}
                     {readOnly && ' · View only'}
                   </span>
                 </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-gray-300 dark:text-gray-600" />
               </button>
             )
           })}
-
-          {layouts.length === 0 && (
-            <p className="py-8 text-center text-[13px] text-gray-500 dark:text-gray-400">
-              No saved layouts yet.
-            </p>
-          )}
         </div>
       )}
     </MobileTemplateShell>
@@ -157,30 +222,35 @@ function LayoutList({
 
 function LayoutDraftEditor({ layoutId, onBack }: { layoutId: string | null; onBack: () => void }) {
   const { layouts = [], saveLayout, updateLayout } = useUserAssetPageLayouts()
-  const { sections, isLoading: sectionsLoading } = useResearchSections()
-  const { fields, isLoading: fieldsLoading } = useResearchFields()
+  const { sections, fields, systemDefault, isLoading } = useLayoutCatalog()
   const { isOrgAdmin } = useIsOrgAdmin()
 
-  const layout = layoutId ? layouts.find((l) => l.id === layoutId) : undefined
-  const readOnly = !!layout && layout.my_permission === 'view'
+  const editingSystemDefault = layoutId === SYSTEM_DEFAULT_LAYOUT_ID
+  const stored = layoutId && !editingSystemDefault
+    ? layouts.find((l) => l.id === layoutId)
+    : undefined
+  const layout = editingSystemDefault ? systemDefault : stored
+
+  const readOnly = !!stored && stored.my_permission === 'view'
 
   const originalConfig = useMemo<FieldConfigItem[]>(
     () => ((layout?.field_config as FieldConfigItem[] | null) ?? []),
     [layout?.field_config],
   )
 
-  const [name, setName] = useState(layout?.name ?? '')
+  // Editing the derived default produces the user's OWN layout, so it opens
+  // with a distinct name rather than a second thing called "Default".
+  const [name, setName] = useState(
+    editingSystemDefault ? 'My layout' : (layout?.name ?? ''),
+  )
   const [draft, setDraft] = useState<DraftSection[] | null>(null)
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const [moving, setMoving] = useState<{ fieldId: string; name: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const loading = sectionsLoading || fieldsLoading
-
-  // Built once the catalog has loaded. `fields` and `sections` are already
-  // RLS-filtered by the time they arrive, so the draft can only ever contain
-  // things this user may read.
   const built = useMemo(() => {
-    if (loading) return null
+    if (isLoading) return null
     return buildDraft(
       sections.map((s) => ({ id: s.id, name: s.name, display_order: s.display_order })),
       fields.map((f) => ({
@@ -191,16 +261,27 @@ function LayoutDraftEditor({ layoutId, onBack }: { layoutId: string | null; onBa
       })),
       originalConfig,
     )
-  }, [loading, sections, fields, originalConfig])
+  }, [isLoading, sections, fields, originalConfig])
 
   const current = draft ?? built
+
+  // Saving the derived default always creates something, so it is always
+  // dirty — there is no row to be unchanged relative to.
   const dirty =
-    !!current && (isDraftDirty(current, originalConfig) || name !== (layout?.name ?? ''))
+    editingSystemDefault ||
+    (!!current && (isDraftDirty(current, originalConfig) || name !== (layout?.name ?? '')))
 
   const edit = (next: DraftSection[]) => {
     if (readOnly) return
     setDraft(next)
   }
+
+  const toggleSection = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
 
   const handleSave = async () => {
     if (!current) return
@@ -213,25 +294,30 @@ function LayoutDraftEditor({ layoutId, onBack }: { layoutId: string | null; onBa
     const fieldConfig = serializeDraft(current)
     setSaving(true)
     try {
-      if (layoutId) {
-        await updateLayout.mutateAsync({ layoutId, name: name.trim(), fieldConfig })
+      if (stored) {
+        await updateLayout.mutateAsync({ layoutId: stored.id, name: name.trim(), fieldConfig })
       } else {
+        // Covers both "New layout" and "saved the derived default". The
+        // sentinel id is not a row, so an update would target nothing.
         await saveLayout.mutateAsync({ name: name.trim(), fieldConfig })
       }
       onBack()
     } catch (err) {
-      // Shown, not consoled. A save that fails silently is how the desktop
-      // loses a non-admin's work without telling them.
       setError(err instanceof Error ? err.message : 'Could not save this layout')
     } finally {
       setSaving(false)
     }
   }
 
-  const visibleCount = current?.reduce(
-    (n, s) => n + s.fields.filter((f) => f.is_visible).length,
-    0,
-  )
+  const totals = current
+    ? current.reduce(
+        (acc, s) => {
+          const c = sectionCounts(s)
+          return { shown: acc.shown + c.shown, total: acc.total + c.total }
+        },
+        { shown: 0, total: 0 },
+      )
+    : null
 
   return (
     <MobileTemplateShell
@@ -239,15 +325,13 @@ function LayoutDraftEditor({ layoutId, onBack }: { layoutId: string | null; onBa
       name={name}
       onNameChange={readOnly ? undefined : setName}
       namePlaceholder="Untitled layout"
-      meta={
-        readOnly ? 'View only' : visibleCount == null ? undefined : `${visibleCount} fields shown`
-      }
+      meta={readOnly ? 'View only' : totals ? `${totals.shown} of ${totals.total} shown` : undefined}
       onBack={onBack}
       onSave={readOnly ? undefined : handleSave}
-      saveLabel={layoutId ? 'Save' : 'Create'}
-      saveDisabled={!dirty || loading}
+      saveLabel={stored ? 'Save' : 'Create'}
+      saveDisabled={!dirty || isLoading}
       saving={saving}
-      dirty={dirty}
+      dirty={dirty && !editingSystemDefault}
     >
       {error && (
         <div
@@ -258,216 +342,332 @@ function LayoutDraftEditor({ layoutId, onBack }: { layoutId: string | null; onBa
         </div>
       )}
 
-      {loading || !current ? (
+      {/* Said once, at the top, rather than on every save attempt. */}
+      {editingSystemDefault && (
+        <p className="mb-3 rounded-lg bg-gray-50 px-3 py-2 text-[12px] leading-relaxed text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+          This is the standard layout everyone starts from. Saving creates your own
+          copy — the standard one is left as it is.
+        </p>
+      )}
+
+      {isLoading || !current ? (
         <p className="py-8 text-center text-[13px] text-gray-500 dark:text-gray-400">Loading…</p>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-1.5">
           {current.map((section) => (
-            <SectionBlock
+            <SectionGroup
               key={section.section_id}
               section={section}
-              allSections={current}
+              expanded={open.has(section.section_id)}
+              onToggle={() => toggleSection(section.section_id)}
               readOnly={readOnly}
               onMove={(fieldId, direction) =>
-                edit(moveFieldWithinSection(current, section.section_id, fieldId, direction))
+                edit(moveVisibleField(current, section.section_id, fieldId, direction))
               }
-              onToggle={(fieldId, isVisible) =>
+              onSetVisible={(fieldId, isVisible) =>
                 edit(setFieldVisibility(current, fieldId, isVisible))
               }
-              onReassign={(fieldId, toSectionId) =>
-                edit(moveFieldToSection(current, fieldId, toSectionId))
-              }
+              onRequestMove={(field) => setMoving({ fieldId: field.field_id, name: field.name })}
             />
           ))}
 
           <CatalogNotice isOrgAdmin={isOrgAdmin} />
         </div>
       )}
+
+      {moving && current && (
+        <MoveToSectionSheet
+          fieldName={moving.name}
+          sections={current}
+          currentSectionId={
+            current.find((s) => s.fields.some((f) => f.field_id === moving.fieldId))?.section_id ?? ''
+          }
+          onPick={(toSectionId) => {
+            edit(moveFieldToSection(current, moving.fieldId, toSectionId))
+            setOpen((prev) => new Set(prev).add(toSectionId))
+            setMoving(null)
+          }}
+          onClose={() => setMoving(null)}
+        />
+      )}
     </MobileTemplateShell>
+  )
+}
+
+// ============================================================================
+// A section
+// ============================================================================
+
+function SectionGroup({
+  section,
+  expanded,
+  onToggle,
+  readOnly,
+  onMove,
+  onSetVisible,
+  onRequestMove,
+}: {
+  section: DraftSection
+  expanded: boolean
+  onToggle: () => void
+  readOnly: boolean
+  onMove: (fieldId: string, direction: 'up' | 'down') => void
+  onSetVisible: (fieldId: string, isVisible: boolean) => void
+  onRequestMove: (field: DraftField) => void
+}) {
+  const { shown, total } = sectionCounts(section)
+
+  // Shown first in authored order, then what is available to add. Mixing
+  // them would make Move feel like it skipped rows, because Move only ever
+  // steps past a sibling that is actually rendered above or below.
+  const shownFields = section.fields.filter((f) => f.is_visible)
+  const hiddenFields = section.fields.filter((f) => !f.is_visible)
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="no-touch-target flex w-full items-center gap-2 px-3 py-2.5 text-left"
+      >
+        {expanded ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-medium text-gray-900 dark:text-white">
+            {section.name}
+          </span>
+          <span className="mt-0.5 block text-[11px] text-gray-500 dark:text-gray-400">
+            {shown} shown · {total} {total === 1 ? 'field' : 'fields'}
+          </span>
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-gray-100 dark:border-gray-800">
+          {total === 0 && (
+            <p className="px-3 py-3 text-[12px] text-gray-400">No fields in this section.</p>
+          )}
+
+          {shownFields.map((field, index) => (
+            <FieldRow
+              key={field.field_id}
+              field={field}
+              readOnly={readOnly}
+              canMoveUp={index > 0}
+              canMoveDown={index < shownFields.length - 1}
+              onMove={(d) => onMove(field.field_id, d)}
+              onSetVisible={(v) => onSetVisible(field.field_id, v)}
+              onRequestMove={() => onRequestMove(field)}
+            />
+          ))}
+
+          {hiddenFields.length > 0 && (
+            <p className="border-t border-gray-100 px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:border-gray-800">
+              Not shown
+            </p>
+          )}
+          {hiddenFields.map((field) => (
+            <FieldRow
+              key={field.field_id}
+              field={field}
+              readOnly={readOnly}
+              canMoveUp={false}
+              canMoveDown={false}
+              onMove={() => {}}
+              onSetVisible={(v) => onSetVisible(field.field_id, v)}
+              onRequestMove={() => onRequestMove(field)}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function FieldRow({
+  field,
+  readOnly,
+  canMoveUp,
+  canMoveDown,
+  onMove,
+  onSetVisible,
+  onRequestMove,
+}: {
+  field: DraftField
+  readOnly: boolean
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMove: (direction: 'up' | 'down') => void
+  onSetVisible: (isVisible: boolean) => void
+  onRequestMove: () => void
+}) {
+  return (
+    <div className="flex items-center gap-1 px-3 py-1.5">
+      <span className="min-w-0 flex-1">
+        <span
+          className={clsx(
+            'block truncate text-[13px]',
+            field.is_visible
+              ? 'text-gray-900 dark:text-white'
+              : 'text-gray-400 dark:text-gray-500',
+          )}
+        >
+          {field.name}
+        </span>
+      </span>
+
+      {/* The word, not an eye. An open eye is ambiguous between what IS and
+          what tapping WOULD DO, and the reader pays a tap to find out. */}
+      <button
+        type="button"
+        onClick={() => onSetVisible(!field.is_visible)}
+        disabled={readOnly}
+        aria-pressed={field.is_visible}
+        aria-label={field.is_visible ? `Hide ${field.name}` : `Show ${field.name}`}
+        className={clsx(
+          'no-touch-target tap-pad shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium disabled:opacity-40',
+          field.is_visible
+            ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+            : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+        )}
+      >
+        {field.is_visible ? 'Shown' : 'Hidden'}
+      </button>
+
+      {/* Only a shown field has a position, so only a shown field gets
+          arrows. Rendering them disabled on a hidden row would be offering a
+          control whose whole job is unavailable. */}
+      {field.is_visible ? (
+        <span className="flex shrink-0">
+          <button
+            type="button"
+            onClick={() => onMove('up')}
+            disabled={readOnly || !canMoveUp}
+            aria-label={`Move ${field.name} up`}
+            className="no-touch-target flex h-7 w-6 items-center justify-center rounded text-gray-400 disabled:opacity-20"
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onMove('down')}
+            disabled={readOnly || !canMoveDown}
+            aria-label={`Move ${field.name} down`}
+            className="no-touch-target flex h-7 w-6 items-center justify-center rounded text-gray-400 disabled:opacity-20"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+        </span>
+      ) : (
+        <span className="w-12 shrink-0" aria-hidden="true" />
+      )}
+
+      <button
+        type="button"
+        onClick={onRequestMove}
+        disabled={readOnly}
+        aria-label={`More actions for ${field.name}`}
+        className="no-touch-target flex h-7 w-6 shrink-0 items-center justify-center rounded text-gray-400 disabled:opacity-20"
+      >
+        <MoreHorizontal className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
+/**
+ * Moving a field to another section — secondary, on purpose.
+ *
+ * It was a `<select>` on every single row, which made the rarest action the
+ * most prominent control in the editor and cost every row 7rem of width.
+ */
+function MoveToSectionSheet({
+  fieldName,
+  sections,
+  currentSectionId,
+  onPick,
+  onClose,
+}: {
+  fieldName: string
+  sections: DraftSection[]
+  currentSectionId: string
+  onPick: (sectionId: string) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40" onClick={onClose}>
+      <div
+        className="max-h-[70%] overflow-y-auto rounded-t-2xl bg-white pb-safe dark:bg-gray-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2.5 dark:border-gray-700">
+          <span className="min-w-0">
+            <span className="block text-[13px] font-semibold text-gray-900 dark:text-white">
+              Move to section
+            </span>
+            <span className="block truncate text-[11px] text-gray-500 dark:text-gray-400">
+              {fieldName}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="no-touch-target flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-2">
+          {sections.map((s) => (
+            <button
+              key={s.section_id}
+              type="button"
+              onClick={() => onPick(s.section_id)}
+              disabled={s.section_id === currentSectionId}
+              className={clsx(
+                'no-touch-target block w-full rounded-lg px-3 py-2 text-left text-[13px]',
+                s.section_id === currentSectionId
+                  ? 'text-gray-400 dark:text-gray-600'
+                  : 'text-gray-900 dark:text-white',
+              )}
+            >
+              {s.name}
+              {s.section_id === currentSectionId && (
+                <span className="ml-1.5 text-[11px]">· current</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
 /**
  * Why there is no "New field" button.
  *
- * Two different sentences for two different truths. An admin genuinely can
- * create a field, just not here — that is a deferral. A non-admin cannot
- * create one anywhere, so sending them to a desktop would be a lie that costs
- * them a trip to find the same silent failure.
+ * `research_fields` and `research_sections` gate every write on
+ * `is_active_org_admin_of_current_org()`. The desktop shows those buttons to
+ * everyone and swallows the 42501 in a console.error; this does not copy
+ * that. For an admin it is a real deferral to desktop. For a non-admin it is
+ * not a deferral at all — they cannot create one there either — so they are
+ * told who can, rather than sent somewhere to meet the same silent failure.
  */
 function CatalogNotice({ isOrgAdmin }: { isOrgAdmin: boolean }) {
   return (
-    <p className="flex items-start gap-1.5 border-t border-gray-200 pt-3 text-[11px] leading-relaxed text-gray-500 dark:border-gray-700 dark:text-gray-400">
+    <p className="flex items-start gap-1.5 px-1 pt-2 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
       <Lock className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
       <span>
         {isOrgAdmin
-          ? 'This composes existing fields. Creating new fields and sections is done on desktop.'
-          : 'This composes the fields your organization has defined. New fields and sections are created by an organization admin.'}
+          ? 'Composes existing fields. New fields and sections are created on desktop.'
+          : 'Composes the fields your organization has defined. New fields and sections are created by an organization admin.'}
       </span>
     </p>
-  )
-}
-
-function SectionBlock({
-  section,
-  allSections,
-  readOnly,
-  onMove,
-  onToggle,
-  onReassign,
-}: {
-  section: DraftSection
-  allSections: DraftSection[]
-  readOnly: boolean
-  onMove: (fieldId: string, direction: 'up' | 'down') => void
-  onToggle: (fieldId: string, isVisible: boolean) => void
-  onReassign: (fieldId: string, toSectionId: string) => void
-}) {
-  // Shown fields first, in their authored order, then what is available to
-  // add. Mixing them would make reordering feel like it skipped rows, since
-  // Move only ever steps past a sibling that is actually rendered.
-  const shown = section.fields.filter((f) => f.is_visible)
-  const hidden = section.fields.filter((f) => !f.is_visible)
-
-  return (
-    <section>
-      <h2 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {section.name}
-      </h2>
-
-      <div className="divide-y divide-gray-100 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-700">
-        {shown.length === 0 && hidden.length === 0 && (
-          <p className="px-3 py-3 text-[12px] text-gray-400">No fields in this section.</p>
-        )}
-
-        {shown.map((field, index) => (
-          <FieldRow
-            key={field.field_id}
-            name={field.name}
-            isVisible
-            readOnly={readOnly}
-            canMoveUp={index > 0}
-            canMoveDown={index < shown.length - 1}
-            sections={allSections}
-            currentSectionId={section.section_id}
-            onMove={(d) => onMove(field.field_id, d)}
-            onToggle={() => onToggle(field.field_id, false)}
-            onReassign={(to) => onReassign(field.field_id, to)}
-          />
-        ))}
-
-        {hidden.map((field) => (
-          <FieldRow
-            key={field.field_id}
-            name={field.name}
-            isVisible={false}
-            readOnly={readOnly}
-            canMoveUp={false}
-            canMoveDown={false}
-            sections={allSections}
-            currentSectionId={section.section_id}
-            onMove={() => {}}
-            onToggle={() => onToggle(field.field_id, true)}
-            onReassign={(to) => onReassign(field.field_id, to)}
-          />
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function FieldRow({
-  name,
-  isVisible,
-  readOnly,
-  canMoveUp,
-  canMoveDown,
-  sections,
-  currentSectionId,
-  onMove,
-  onToggle,
-  onReassign,
-}: {
-  name: string
-  isVisible: boolean
-  readOnly: boolean
-  canMoveUp: boolean
-  canMoveDown: boolean
-  sections: DraftSection[]
-  currentSectionId: string
-  onMove: (direction: 'up' | 'down') => void
-  onToggle: () => void
-  onReassign: (toSectionId: string) => void
-}) {
-  return (
-    <div className="flex items-center gap-1 px-2 py-1.5">
-      <button
-        type="button"
-        onClick={onToggle}
-        disabled={readOnly}
-        aria-label={isVisible ? `Hide ${name}` : `Show ${name}`}
-        aria-pressed={isVisible}
-        className="no-touch-target flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-400 disabled:opacity-40"
-      >
-        {isVisible ? (
-          <Eye className="h-4 w-4 text-primary-600 dark:text-primary-400" />
-        ) : (
-          <EyeOff className="h-4 w-4" />
-        )}
-      </button>
-
-      <span
-        className={clsx(
-          'min-w-0 flex-1 truncate text-[13px]',
-          isVisible
-            ? 'text-gray-900 dark:text-white'
-            : 'text-gray-400 dark:text-gray-500',
-        )}
-      >
-        {name}
-      </span>
-
-      {/* Reassigning is a select rather than a drag: a phone has no room for
-          two drop targets side by side, and a list of names is readable where
-          a drag is guesswork. */}
-      {sections.length > 1 && (
-        <select
-          value={currentSectionId}
-          onChange={(e) => onReassign(e.target.value)}
-          disabled={readOnly}
-          aria-label={`Section for ${name}`}
-          className="no-touch-target h-8 max-w-[7.5rem] shrink-0 rounded-md border border-gray-200 bg-transparent px-1 text-[11px] text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300"
-        >
-          {sections.map((s) => (
-            <option key={s.section_id} value={s.section_id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      )}
-
-      {isVisible && (
-        <span className="flex shrink-0">
-          <button
-            type="button"
-            onClick={() => onMove('up')}
-            disabled={readOnly || !canMoveUp}
-            aria-label={`Move ${name} up`}
-            className="no-touch-target flex h-8 w-7 items-center justify-center rounded-md text-gray-500 disabled:opacity-25 dark:text-gray-400"
-          >
-            <ChevronUp className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onMove('down')}
-            disabled={readOnly || !canMoveDown}
-            aria-label={`Move ${name} down`}
-            className="no-touch-target flex h-8 w-7 items-center justify-center rounded-md text-gray-500 disabled:opacity-25 dark:text-gray-400"
-          >
-            <ChevronDown className="h-4 w-4" />
-          </button>
-        </span>
-      )}
-    </div>
   )
 }

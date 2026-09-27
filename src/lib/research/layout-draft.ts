@@ -168,6 +168,61 @@ export function moveFieldWithinSection(
 }
 
 /**
+ * Move a VISIBLE field one place among the visible fields of its section.
+ *
+ * ── Why this is separate from moveFieldWithinSection ──────────────────────
+ *
+ * The editor lists shown fields first and hidden ones after, because a
+ * hidden field has no position to speak of. But the draft array interleaves
+ * them in stored order, so a hidden field can sit between two shown ones.
+ * Stepping one index in that array then swaps a shown field with a hidden
+ * neighbour: the stored order changes, the visible order does not, and the
+ * control reads as broken.
+ *
+ * So this steps to the next VISIBLE neighbour and swaps with that, which is
+ * what the person tapping the arrow is looking at. Hidden fields keep their
+ * relative places around the move.
+ */
+export function moveVisibleField(
+  draft: DraftSection[],
+  sectionId: string,
+  fieldId: string,
+  direction: 'up' | 'down',
+): DraftSection[] {
+  const sectionIndex = draft.findIndex((s) => s.section_id === sectionId)
+  if (sectionIndex === -1) return draft
+
+  const section = draft[sectionIndex]
+  const from = section.fields.findIndex((f) => f.field_id === fieldId)
+  if (from === -1 || !section.fields[from].is_visible) return draft
+
+  // The nearest visible neighbour in that direction, not the nearest index.
+  const step = direction === 'up' ? -1 : 1
+  let to = from + step
+  while (to >= 0 && to < section.fields.length && !section.fields[to].is_visible) {
+    to += step
+  }
+  if (to < 0 || to >= section.fields.length) return draft
+
+  const fields = [...section.fields]
+  const tmp = fields[from]
+  fields[from] = fields[to]
+  fields[to] = tmp
+
+  const next = [...draft]
+  next[sectionIndex] = { ...section, fields }
+  return next
+}
+
+/** How a section reads in the collapsed overview: "4 shown · 6 fields". */
+export function sectionCounts(section: DraftSection): { shown: number; total: number } {
+  return {
+    shown: section.fields.filter((f) => f.is_visible).length,
+    total: section.fields.length,
+  }
+}
+
+/**
  * Move a field into a different section, at the end of it.
  *
  * The phone equivalent of dragging a card between columns. Appending rather

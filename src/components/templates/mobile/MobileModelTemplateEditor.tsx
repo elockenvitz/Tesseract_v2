@@ -264,20 +264,26 @@ function DraftEditor({ templateId, onBack }: { templateId: string | null; onBack
         </div>
       )}
 
-      <div className="space-y-4">
-        <Field label="Description">
-          <input
-            value={draft.description}
-            onChange={(e) => update({ description: e.target.value })}
-            placeholder="What this model looks like"
-            className="w-full rounded-lg border border-gray-300 bg-transparent px-2.5 py-1.5 text-[13px] text-gray-900 placeholder-gray-400 dark:border-gray-600 dark:text-white"
-          />
-        </Field>
+      <div className="space-y-5">
+        <Group title="Identity">
+          <Field label="Description">
+            <input
+              value={draft.description}
+              onChange={(e) => update({ description: e.target.value })}
+              placeholder="What this model looks like"
+              className="w-full rounded-lg border border-gray-300 bg-transparent px-2.5 py-1.5 text-[13px] text-gray-900 placeholder-gray-400 dark:border-gray-600 dark:text-white"
+            />
+          </Field>
+        </Group>
 
         <section>
+          {/* The only required work, and the only section marked as such.
+              Making optional configuration look identical to the one thing
+              that must be done is how a form hides its own requirement. */}
           <div className="mb-1.5 flex items-center justify-between">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Field mappings
+            <h2 className="flex items-baseline gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Fields
+              <span className="text-[10px] font-medium normal-case text-gray-400">Required</span>
             </h2>
             <button
               type="button"
@@ -290,9 +296,18 @@ function DraftEditor({ templateId, onBack }: { templateId: string | null; onBack
           </div>
 
           {draft.fieldMappings.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-center text-[12px] text-gray-500 dark:border-gray-600 dark:text-gray-400">
-              No fields yet. A template needs at least one.
-            </p>
+            <button
+              type="button"
+              onClick={() => setPicking(true)}
+              className="no-touch-target block w-full rounded-lg border border-dashed border-gray-300 px-3 py-5 text-center dark:border-gray-600"
+            >
+              <span className="block text-[13px] font-medium text-gray-700 dark:text-gray-200">
+                Add your first field
+              </span>
+              <span className="mt-0.5 block text-[11px] text-gray-500 dark:text-gray-400">
+                A template extracts nothing until one cell is mapped
+              </span>
+            </button>
           ) : (
             <div className="space-y-1.5">
               {draft.fieldMappings.map((mapping, index) => (
@@ -355,6 +370,36 @@ function DraftEditor({ templateId, onBack }: { templateId: string | null; onBack
         />
       )}
     </MobileTemplateShell>
+  )
+}
+
+/** A titled block. Optional sections say so, so required work stands out. */
+function Group({
+  title,
+  optional,
+  hint,
+  children,
+}: {
+  title: string
+  optional?: boolean
+  hint?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section>
+      <h2 className="mb-1 flex items-baseline gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {title}
+        {optional && (
+          <span className="text-[10px] font-medium normal-case text-gray-400">Optional</span>
+        )}
+      </h2>
+      {hint && (
+        <p className="mb-1.5 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+          {hint}
+        </p>
+      )}
+      {children}
+    </section>
   )
 }
 
@@ -466,8 +511,9 @@ function SnapshotRangesSection({
   return (
     <section>
       <div className="mb-1.5 flex items-center justify-between">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        <h2 className="flex items-baseline gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
           Snapshot ranges
+          <span className="text-[10px] font-medium normal-case text-gray-400">Optional</span>
         </h2>
         <button
           type="button"
@@ -592,11 +638,12 @@ function DetectionRulesSection({
 
   return (
     <section>
-      <h2 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        Detection
+      <h2 className="mb-1 flex items-baseline gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        Workbook detection
+        <span className="text-[10px] font-medium normal-case text-gray-400">Optional</span>
       </h2>
-      <p className="mb-1.5 text-[12px] text-gray-500 dark:text-gray-400">
-        How a workbook is matched to this template. One per line, optional.
+      <p className="mb-1.5 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+        How a workbook is matched to this template. One per line.
       </p>
 
       <Field label="Filename patterns">

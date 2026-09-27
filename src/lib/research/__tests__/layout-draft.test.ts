@@ -25,6 +25,8 @@ import {
   isDraftDirty,
   type DraftSourceField,
   type DraftSourceSection,
+  moveVisibleField,
+  sectionCounts,
 } from '../layout-draft'
 import type { FieldConfigItem } from '../layout-resolver'
 
@@ -225,6 +227,63 @@ describe('a phone-saved layout reopens on the desktop unchanged', () => {
     // Reopen the phone's output the way the desktop would, then write again.
     const reopened = serializeDraft(buildDraft(SECTIONS, FIELDS, edited))
     expect(reopened).toEqual(edited)
+  })
+
+  it('moveVisibleField steps past a hidden neighbour, not into it', () => {
+    // f-model is hidden and sits third in sec-thesis. Turn f-thesis's
+    // neighbour hidden and the naive index step would swap a shown field
+    // with an invisible one: stored order changes, the list on screen does
+    // not, and the arrow reads as broken.
+    const base = buildDraft(SECTIONS, FIELDS, DESKTOP_CONFIG)
+    const withHiddenMiddle = setFieldVisibility(base, 'f-thesis', false)
+
+    // sec-thesis is now [f-risks(shown), f-thesis(hidden), f-model(hidden)].
+    // There is no visible neighbour below f-risks, so this is a no-op.
+    expect(moveVisibleField(withHiddenMiddle, 'sec-thesis', 'f-risks', 'down'))
+      .toBe(withHiddenMiddle)
+  })
+
+  it('moveVisibleField swaps the two visible fields either side of a hidden one', () => {
+    const base = buildDraft(SECTIONS, FIELDS, DESKTOP_CONFIG)
+    // Make the middle hidden, leaving f-risks and f-model as the visible pair.
+    let d = setFieldVisibility(base, 'f-thesis', false)
+    d = setFieldVisibility(d, 'f-model', true)
+
+    const moved = moveVisibleField(d, 'sec-thesis', 'f-risks', 'down')
+    const ids = moved.find((s) => s.section_id === 'sec-thesis')!.fields.map((f) => f.field_id)
+
+    // f-risks and f-model traded places; the hidden f-thesis did not move.
+    expect(ids).toEqual(['f-model', 'f-thesis', 'f-risks'])
+  })
+
+  it('moveVisibleField refuses to move a hidden field at all', () => {
+    // A hidden field has no position, so its arrows are not rendered — and
+    // the model refuses even if something calls it anyway.
+    const base = buildDraft(SECTIONS, FIELDS, DESKTOP_CONFIG)
+    expect(moveVisibleField(base, 'sec-thesis', 'f-model', 'up')).toBe(base)
+  })
+
+  it('moveVisibleField is a no-op at the visible ends', () => {
+    const base = buildDraft(SECTIONS, FIELDS, DESKTOP_CONFIG)
+    expect(moveVisibleField(base, 'sec-thesis', 'f-risks', 'up')).toBe(base)
+    expect(moveVisibleField(base, 'sec-nope', 'f-risks', 'down')).toBe(base)
+    expect(moveVisibleField(base, 'sec-thesis', 'f-nope', 'up')).toBe(base)
+  })
+
+  it('a visible reorder still serialises densely', () => {
+    const d = moveVisibleField(
+      buildDraft(SECTIONS, FIELDS, DESKTOP_CONFIG), 'sec-thesis', 'f-thesis', 'up')
+    const rows = serializeDraft(d).filter((i) => i.section_id === 'sec-thesis')
+    expect(rows.map((i) => i.field_id)).toEqual(['f-thesis', 'f-risks'])
+    expect(rows.map((i) => i.display_order)).toEqual([0, 1])
+  })
+
+  it('sectionCounts reports what the collapsed row shows', () => {
+    const base = buildDraft(SECTIONS, FIELDS, DESKTOP_CONFIG)
+    expect(sectionCounts(base.find((s) => s.section_id === 'sec-thesis')!))
+      .toEqual({ shown: 2, total: 3 })
+    expect(sectionCounts(base.find((s) => s.section_id === 'sec-forecast')!))
+      .toEqual({ shown: 1, total: 2 })
   })
 
   it('stays stable across repeated open/save cycles', () => {

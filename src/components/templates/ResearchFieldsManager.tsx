@@ -113,6 +113,7 @@ import {
   getDefaultWidgetSize,
   recomputeAutoLayout,
 } from '../../lib/research/composite-layout'
+import { buildSystemDefaultLayout } from '../../lib/research/default-layout'
 import { supabase } from '../../lib/supabase'
 import { ResponsiveGridLayout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
@@ -5681,26 +5682,28 @@ function LayoutEditor({
 // VIRTUAL DEFAULT LAYOUT
 // ============================================================================
 
-function createVirtualDefaultLayout(fields: FieldWithPreference[]): SavedLayout {
-  // Only include the curated system default fields
-  const defaultFields = fields.filter(f => SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug))
+/*
+  The construction moved to src/lib/research/default-layout.ts and is
+  imported at the top of this file, so a phone derives the SAME default from
+  the same rule rather than from a copy.
 
-  return {
-    id: 'system-default',
-    user_id: '',
-    name: 'Default',
-    description: 'Standard research layout with thesis, forecasts, catalysts & documents',
-    is_default: true,
-    field_config: defaultFields.map((f, idx) => ({
+  It had to move because the default is not a row: it is computed from
+  SYSTEM_DEFAULT_FIELD_SLUGS at render time, and a surface only sees it if it
+  computes it. The mobile editor listed persisted rows only, so with no
+  custom layouts a phone showed "No saved layouts yet" while this component
+  showed "Default" — same query, same data, different derived state.
+
+  Desktop behaviour is unchanged: same slug filter, same visibility, same
+  display_order by index, same name and description.
+*/
+function createVirtualDefaultLayout(fields: FieldWithPreference[]): SavedLayout {
+  return buildSystemDefaultLayout(
+    fields.map(f => ({
       field_id: f.field_id,
+      field_slug: f.field_slug,
       section_id: f.section_id,
-      is_visible: true,
-      display_order: idx,
-      is_collapsed: false
-    })),
-    created_at: '',
-    updated_at: ''
-  }
+    }))
+  )
 }
 
 // ============================================================================

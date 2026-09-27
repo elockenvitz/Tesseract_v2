@@ -156,7 +156,14 @@ const MAX_ERRORS = 0
 // feature costs exactly one error of an existing kind. Raised knowingly
 // rather than left as slack, which is the failure this ceiling exists to
 // prevent; type the client and this comes back down with its neighbours.
-const MAX_REPO_ERRORS = 8677
+//
+// → 8676 with the Templates mobile UX pass. Extracting the type nav into
+// TemplateTypeNav left four icon imports unused in TemplatesTab; removing
+// those also took out a fifth (`Copy`) that had been unread since before
+// this lane. Four of the five were created and cleared by the same pass, so
+// the ground actually gained is one — held here rather than left as slack a
+// later regression could hide in.
+const MAX_REPO_ERRORS = 8676
 
 /**
  * A floor on real source files, now that they are counted as source files.
