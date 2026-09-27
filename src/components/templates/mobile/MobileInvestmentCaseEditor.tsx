@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { FileText, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileText, Plus, X } from 'lucide-react'
+import { useUserResearchLayout } from '../../../hooks/useResearchFields'
 import { MobileTemplateShell } from './MobileTemplateShell'
 import { useInvestmentCaseTemplates } from '../../../hooks/useInvestmentCaseTemplates'
 import { InvestmentCaseTemplatePreview } from '../../investment-case-templates'
@@ -79,11 +80,24 @@ import {
  * one on this screen.
  */
 
+/**
+ * Content → Structure → Style → Preview.
+ *
+ * Not the desktop's four tabs stacked. The desktop rail is organised by
+ * which CONFIG OBJECT a control writes — Cover, Style, Branding,
+ * Header/Footer — which is a fine filing system for a wide screen beside a
+ * live preview, and a poor sequence to walk through on a phone. This is
+ * ordered by the question being answered: what goes in it, what order it
+ * comes in, what it looks like, and then what it looks like.
+ *
+ * Style therefore covers three config objects (style, branding,
+ * header/footer) behind collapsible groups rather than three steps, because
+ * they are one question.
+ */
 const STEPS = [
-  { key: 'cover', label: 'Cover' },
+  { key: 'content', label: 'Content' },
+  { key: 'structure', label: 'Structure' },
   { key: 'style', label: 'Style' },
-  { key: 'branding', label: 'Branding' },
-  { key: 'header-footer', label: 'Header/Footer' },
   { key: 'preview', label: 'Preview' },
 ] as const
 
@@ -206,7 +220,7 @@ function CaseDraftEditor({ templateId, onBack }: { templateId: string | null; on
   const { myTemplates = [], createTemplate, updateTemplate } = useInvestmentCaseTemplates()
   const template = templateId ? myTemplates.find((t) => t.id === templateId) : undefined
 
-  const [step, setStep] = useState<StepKey>('cover')
+  const [step, setStep] = useState<StepKey>('content')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -313,7 +327,7 @@ function CaseDraftEditor({ templateId, onBack }: { templateId: string | null; on
         ))}
       </nav>
 
-      {step === 'cover' && (
+      {step === 'content' && (
         <CoverStep
           config={coverConfig}
           onChange={setCoverConfig}
@@ -325,10 +339,19 @@ function CaseDraftEditor({ templateId, onBack }: { templateId: string | null; on
           onDescriptionChange={setDescription}
         />
       )}
-      {step === 'style' && <StyleStep config={styleConfig} onChange={setStyleConfig} />}
-      {step === 'branding' && <BrandingStep config={brandingConfig} onChange={setBrandingConfig} />}
-      {step === 'header-footer' && (
-        <HeaderFooterStep config={headerFooterConfig} onChange={setHeaderFooterConfig} />
+      {step === 'structure' && <StructureStep />}
+      {step === 'style' && (
+        <div className="space-y-2">
+          <Disclosure title="Page & type" defaultOpen>
+            <StyleStep config={styleConfig} onChange={setStyleConfig} />
+          </Disclosure>
+          <Disclosure title="Branding">
+            <BrandingStep config={brandingConfig} onChange={setBrandingConfig} />
+          </Disclosure>
+          <Disclosure title="Header & footer">
+            <HeaderFooterStep config={headerFooterConfig} onChange={setHeaderFooterConfig} />
+          </Disclosure>
+        </div>
       )}
       {step === 'preview' && <PreviewStep draft={draft} template={template} />}
 
@@ -468,6 +491,108 @@ function TextField({
         />
       )}
     </label>
+  )
+}
+
+/**
+ * A collapsible group, same shape as a Research Layout section.
+ *
+ * Style holds three config objects. Showing all of their controls at once is
+ * the "long settings form" the other types were corrected away from, and
+ * splitting them into three steps would make presentation feel like three
+ * decisions when it is one.
+ */
+function Disclosure({
+  title,
+  defaultOpen,
+  children,
+}: {
+  title: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(!!defaultOpen)
+  return (
+    <section className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="no-touch-target flex w-full items-center gap-2 px-3 py-2.5 text-left"
+      >
+        {open ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
+        )}
+        <span className="text-[13px] font-medium text-gray-900 dark:text-white">{title}</span>
+      </button>
+      {open && <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">{children}</div>}
+    </section>
+  )
+}
+
+/**
+ * Structure: what the document contains, in order — and who owns that.
+ *
+ * This template type does not own section order. `section_config` is the
+ * only place order could live, it has no editor anywhere in the product, and
+ * the desktop computes it from the user's Research Layout purely to drive
+ * its preview before discarding it: on create the hook writes `[]`, on
+ * update the key never enters the payload.
+ *
+ * So this step derives the same list from the same hook the desktop preview
+ * uses, and presents it as INHERITED. Read-only on purpose — no reorder
+ * handles, no disabled controls pretending to be editable, nothing implying
+ * this template owns the order. It answers "what will be in it, and in what
+ * order", which is a real question a reader has here, and points at where
+ * the answer is actually changed.
+ *
+ * Writes nothing. `section_config` stays unwritten, per the parity decision.
+ */
+function StructureStep() {
+  const { sections, isLoading } = useUserResearchLayout()
+
+  // Only the sections that actually participate: one with no fields
+  // contributes no pages to the document.
+  const participating = sections.filter((s) => s.fields.length > 0)
+
+  return (
+    <div>
+      <div className="mb-2">
+        <h2 className="text-[13px] font-semibold text-gray-900 dark:text-white">
+          Inherited from Research Layout
+        </h2>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-gray-500 dark:text-gray-400">
+          Section order is managed in Research Layout.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <p className="py-6 text-center text-[13px] text-gray-500 dark:text-gray-400">Loading…</p>
+      ) : participating.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-center text-[12px] text-gray-500 dark:border-gray-600 dark:text-gray-400">
+          No sections with fields yet. The document takes its structure from your
+          Research Layout.
+        </p>
+      ) : (
+        <ol className="divide-y divide-gray-100 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-700">
+          {participating.map((s, i) => (
+            <li key={s.section.id} className="flex items-baseline gap-2.5 px-3 py-2">
+              <span className="w-4 shrink-0 text-[12px] tabular-nums text-gray-400">{i + 1}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] text-gray-900 dark:text-white">
+                  {s.section.name}
+                </span>
+                <span className="mt-0.5 block text-[11px] text-gray-500 dark:text-gray-400">
+                  {s.fields.length} {s.fields.length === 1 ? 'field' : 'fields'}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   )
 }
 
@@ -987,26 +1112,87 @@ function PreviewStep({
     [draft, template],
   )
 
+  const [full, setFull] = useState(false)
+
+  const context = {
+    ...DEFAULT_PREVIEW_CONTEXT,
+    firmName: draft.brandingConfig.firmName || '',
+  }
+
   return (
     <div>
-      <p className="mb-2 text-[11px] text-gray-500 dark:text-gray-400">
-        Sample data. Scaled to fit this screen.
-      </p>
-      {/* The preview is built for a page-width canvas. Rather than reflow it
-          into something that is no longer a preview, it is scaled down and
-          allowed to scroll sideways inside its own box — the page never
-          scrolls horizontally. */}
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-gray-100 p-2 dark:border-gray-700 dark:bg-gray-800">
-        <div className="origin-top-left scale-[0.42] [width:238%]">
-          <InvestmentCaseTemplatePreview
-            template={previewTemplate}
-            previewContext={{
-              ...DEFAULT_PREVIEW_CONTEXT,
-              firmName: draft.brandingConfig.firmName || '',
-            }}
-          />
-        </div>
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+          Sample data — real rendering, not a mock.
+        </p>
+        <button
+          type="button"
+          onClick={() => setFull(true)}
+          className="no-touch-target tap-pad shrink-0 text-[12px] font-medium text-primary-600 dark:text-primary-400"
+        >
+          Open full screen
+        </button>
       </div>
+
+      {/* Inline: a legible thumbnail, not a working surface. The page is
+          built for a wide canvas, so shrinking it to 390px and calling that
+          a preview reads as a broken layout rather than a small one. This
+          is deliberately a glance; the full-screen sheet is the real view. */}
+      <button
+        type="button"
+        onClick={() => setFull(true)}
+        aria-label="Open preview full screen"
+        className="no-touch-target block w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-100 p-2 text-left dark:border-gray-700 dark:bg-gray-800"
+      >
+        <div className="pointer-events-none h-52 overflow-hidden">
+          <div className="origin-top-left scale-[0.42] [width:238%]">
+            <InvestmentCaseTemplatePreview template={previewTemplate} previewContext={context} />
+          </div>
+        </div>
+      </button>
+
+      {/* Full screen: the preview at a size it was designed for, scrolling
+          both ways inside its own surface. Editor state is untouched — this
+          is a sibling view, not a navigation, so Back returns to exactly the
+          step and the unsaved draft that opened it. */}
+      {full && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-gray-900">
+          <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-3 py-2 dark:border-gray-700">
+            <span className="min-w-0">
+              <span className="block truncate text-[13px] font-semibold text-gray-900 dark:text-white">
+                {draft.name || 'Untitled template'}
+              </span>
+              <span className="block text-[11px] text-gray-500 dark:text-gray-400">
+                Preview · sample data
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setFull(false)}
+              aria-label="Close preview"
+              className="no-touch-target flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto bg-gray-100 p-3 dark:bg-gray-800">
+            <div className="origin-top-left scale-[0.62] [width:162%]">
+              <InvestmentCaseTemplatePreview template={previewTemplate} previewContext={context} />
+            </div>
+          </div>
+
+          <div className="shrink-0 border-t border-gray-200 px-3 py-2 pb-safe dark:border-gray-700">
+            <button
+              type="button"
+              onClick={() => setFull(false)}
+              className="no-touch-target h-9 w-full rounded-lg bg-primary-600 text-[13px] font-medium text-white"
+            >
+              Back to editing
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
