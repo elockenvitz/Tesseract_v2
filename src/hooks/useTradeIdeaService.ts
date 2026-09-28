@@ -18,6 +18,7 @@ import { usePendingLineageStore } from '../stores/pendingLineageStore'
 import { FINAL_STAGE, toIdeaStage } from '../lib/ideas/stage-model'
 import {
   moveTradeIdea,
+  snoozeTradeIdea,
   deleteTradeIdea,
   restoreTradeIdea,
   archiveTradeIdea,
@@ -295,7 +296,23 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     },
   })
 
-  // Defer trade mutation (with optional resurface date)
+  /**
+   * Snooze an idea until a date. NOT a decision.
+   *
+   * This wrote `outcome: 'deferred'`, which made the idea terminal —
+   * `isTerminalIdea` treats any non-null outcome as an end state — so parking
+   * an idea for three weeks recorded it as concluded and removed it from the
+   * live pipeline permanently. It also claimed a decision nobody had made,
+   * which the outcome rule now refuses outright.
+   *
+   * Deferring in the Decision Inbox is unchanged and still a real decision:
+   * a PM answering "not now" to a submitted recommendation, recorded on
+   * `decision_requests.status`. This is the other thing that was sharing its
+   * name — a personal reminder about an idea nobody has been asked to decide.
+   *
+   * `deferredUntil` is accepted under its old name and written to `revisit_at`,
+   * the column `useAttention`'s defer already uses.
+   */
   const deferTradeM = useMutation({
     mutationFn: async (params: {
       tradeId: string
@@ -304,22 +321,18 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     }) => {
       if (!user?.id) throw new Error('Not authenticated')
 
-      await moveTradeIdea({
+      await snoozeTradeIdea({
         tradeId: params.tradeId,
-        target: {
-          stage: FINAL_STAGE,
-          outcome: 'deferred',
-          deferredUntil: params.deferredUntil || null,
-        },
+        revisitAt: params.deferredUntil || null,
         context: buildActionContext(user, params.uiSource),
       })
     },
     onSuccess: () => {
       invalidateQueries()
-      toast.success('Trade deferred')
+      toast.success('Snoozed', 'This idea will come back on the date you set.')
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to defer trade')
+      toast.error(error instanceof Error ? error.message : 'Failed to snooze idea')
     },
   })
 

@@ -13,6 +13,21 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { moveTradeIdea } from '../lib/services/trade-idea-service'
+import { FINAL_STAGE } from '../lib/ideas/stage-model'
+import type { ActionContext } from '../types/trading'
+
+/** The audit context for an action taken from the Attention feed. */
+function attentionActionContext(user: { id: string; email?: string | null }): ActionContext {
+  return {
+    actorId: user.id,
+    actorName: user.email ?? 'Unknown',
+    actorEmail: user.email ?? undefined,
+    actorRole: 'pm',
+    requestId: crypto.randomUUID(),
+    uiSource: 'attention_feed',
+  }
+}
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import type {
@@ -1608,22 +1623,33 @@ export function useAttention(options: UseAttentionOptions = {}) {
     },
   })
 
-  // Approve trade idea
+  /**
+   * Approve / reject a trade idea from the Attention feed.
+   *
+   * Both of these wrote a terminal `status` straight to the table — `approved`
+   * with an actor, `rejected` with no actor recorded at all — bypassing the
+   * service entirely. No audit event, and no check that anybody had actually
+   * decided: a two-click path from a notification card could mark an idea
+   * finished with no recommendation, no decision request and no accepted
+   * trade behind it.
+   *
+   * They now go through `moveTradeIdea`, which records the outcome properly
+   * and refuses when there is no decision to record. `status` is derived from
+   * the outcome there rather than written by hand, so it can no longer say
+   * `approved` while `outcome` stays null — the divergence that made
+   * `isTerminalIdea` need two columns to answer one question.
+   */
   const approveTradeIdeaMutation = useMutation({
     mutationFn: async (tradeId: string) => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      const { error } = await supabase
-        .from('trade_queue_items')
-        .update({
-          status: 'approved',
-          approved_by: user.id,
-          approved_at: new Date().toISOString(),
-        })
-        .eq('id', tradeId)
-
-      if (error) throw new Error(error.message)
+      await moveTradeIdea({
+        tradeId,
+        target: { stage: FINAL_STAGE, outcome: 'executed' },
+        context: attentionActionContext(user),
+        note: 'Approved from the Attention feed',
+      })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attention'] })
@@ -1632,17 +1658,17 @@ export function useAttention(options: UseAttentionOptions = {}) {
     },
   })
 
-  // Reject trade idea
   const rejectTradeIdeaMutation = useMutation({
     mutationFn: async (tradeId: string) => {
-      const { error } = await supabase
-        .from('trade_queue_items')
-        .update({
-          status: 'rejected',
-        })
-        .eq('id', tradeId)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
 
-      if (error) throw new Error(error.message)
+      await moveTradeIdea({
+        tradeId,
+        target: { stage: FINAL_STAGE, outcome: 'rejected' },
+        context: attentionActionContext(user),
+        note: 'Rejected from the Attention feed',
+      })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attention'] })

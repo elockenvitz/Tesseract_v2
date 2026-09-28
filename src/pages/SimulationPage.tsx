@@ -118,7 +118,8 @@ import { useToast } from '../components/common/Toast'
 import { useWorkbench } from '../hooks/useTradeLab'
 import { submitRecommendation } from '../lib/services/recommendation-service'
 import { shareTradeSheetSnapshot } from '../lib/services/simulation-share-service'
-import { moveTradeIdea } from '../lib/services/trade-idea-service'
+import { moveTradeIdea, bulkMoveTradeIdeas } from '../lib/services/trade-idea-service'
+import { FINAL_STAGE } from '../lib/ideas/stage-model'
 import { executeSimVariants } from '../lib/services/execute-sim-variants-service'
 import { parseSizingInput, toSizingSpec, type SizingSpec } from '../lib/trade-lab/sizing-parser'
 import { detectDirectionConflict, normalizeSizing } from '../lib/trade-lab/normalize-sizing'
@@ -3769,26 +3770,35 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         .map(t => t.trade_queue_item_id)
         .filter((id): id is string => id !== null)
 
+      // 4. Record the outcome on linked ideas — through the service, which
+      //    enforces the outcome rule.
+      //
+      //    This was a direct bulk `.update()` that wrote `outcome: 'executed'`
+      //    onto every linked idea with no decision behind any of them. It was
+      //    the one remaining UI path that could fabricate an outcome, and it
+      //    also still wrote `stage: 'deciding'` — a value the four-stage enum
+      //    no longer accepts, so it would have failed outright after the
+      //    migration.
+      //
+      //    `bulkMoveTradeIdeas` runs each idea through `moveTradeIdea`, so
+      //    each one is checked against `fetchOutcomeEligibility`. An idea with
+      //    no recorded decision is refused rather than silently stamped.
+      let refusedIdeas: Array<{ tradeId: string; error: string }> = []
       if (linkedIds && linkedIds.length > 0) {
-        const now = new Date().toISOString()
-        const { error: ideaError } = await supabase
-          .from('trade_queue_items')
-          .update({
-            // New workflow fields
-            stage: 'deciding',
-            outcome: 'executed',
-            outcome_at: now,
-            outcome_by: user.id,
-            outcome_note: `Trade List: ${simulation.name} - ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
-            // Legacy fields for backwards compatibility
-            status: 'approved',
-            approved_at: now,
-            approved_by: user.id,
-            executed_at: now
-          })
-          .in('id', linkedIds)
-
-        if (ideaError) throw ideaError
+        const result = await bulkMoveTradeIdeas({
+          tradeIds: linkedIds,
+          target: { stage: FINAL_STAGE, outcome: 'executed' },
+          context: {
+            actorId: user.id,
+            actorName: user.email ?? 'Unknown',
+            actorEmail: user.email ?? undefined,
+            actorRole: 'pm',
+            requestId: crypto.randomUUID(),
+            uiSource: 'simulation_trade_list',
+          },
+          note: `Trade List: ${simulation.name} - ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+        })
+        refusedIdeas = result.failed
       }
 
       // 5. Clear workbench drafts (for fresh start)
@@ -3799,10 +3809,24 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         console.warn('Failed to clear workbench drafts:', clearError)
       }
 
-      return { linkedIdeaCount: linkedIds?.length || 0, listName: simulation.name }
+      return {
+        linkedIdeaCount: linkedIds?.length || 0,
+        listName: simulation.name,
+        refusedCount: refusedIdeas.length,
+      }
     },
     onSuccess: (data) => {
-      toast.success('Trade List Created', `Ready for approval`)
+      // Say so when ideas were refused. The trade list itself is saved either
+      // way, but silently dropping the outcome on some of its ideas is how a
+      // reader ends up believing a decision was recorded that was not.
+      if (data.refusedCount > 0) {
+        toast.success(
+          'Trade List Created',
+          `${data.refusedCount} of ${data.linkedIdeaCount} ideas were not marked executed — they have no recorded decision yet.`,
+        )
+      } else {
+        toast.success('Trade List Created', `Ready for approval`)
+      }
       queryClient.invalidateQueries({ queryKey: ['simulations'] })
       queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })

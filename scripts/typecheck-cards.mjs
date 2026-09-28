@@ -172,7 +172,14 @@ const MAX_ERRORS = 0
 // never be true. Fixing them cleared the 37 and five besides, mostly dead
 // array literals and an unused `groupedDecidingProposals`. Held at the
 // measured floor.
-const MAX_REPO_ERRORS = 8671
+//
+// → 8667 closing the decision/outcome bypasses. Routing the Attention feed's
+// Approve/Reject and the simulation Trade List through the service deleted
+// several hand-written `.update()` payloads, each of which had been producing
+// the `never` error from the untyped Database type. The `as never` casts on
+// the payloads that remain are the documented workaround for that same defect,
+// not a claim that those payloads are correct.
+const MAX_REPO_ERRORS = 8667
 
 /**
  * A floor on real source files, now that they are counted as source files.

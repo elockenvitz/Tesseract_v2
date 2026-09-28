@@ -7226,11 +7226,21 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 <Clock className="h-6 w-6 text-gray-600 dark:text-gray-400" />
               </div>
               <div className="flex-1">
+                {/*
+                  Two different actions share this sheet. With a portfolio
+                  selected it records a real DECISION — a PM answering "not
+                  now" to a recommendation — and keeps the word Defer. Without
+                  one it is a personal reminder about an idea nobody has been
+                  asked to decide, so it says Snooze, which is what it now
+                  does: set a revisit date and change nothing else.
+                */}
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Defer Trade Idea
+                  {selectedDecisionPortfolioId ? 'Defer Recommendation' : 'Snooze Idea'}
                 </h3>
                 <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                  When should this idea resurface for review?
+                  {selectedDecisionPortfolioId
+                    ? 'Recorded as a decision on this portfolio. When should it come back?'
+                    : 'Hides this idea until the date you choose. It stays undecided and no outcome is recorded.'}
                 </p>
               </div>
             </div>
@@ -7245,7 +7255,9 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 allowPastDates={false}
               />
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Leave empty to defer indefinitely
+                {selectedDecisionPortfolioId
+                  ? 'Leave empty to defer indefinitely'
+                  : 'Leave empty to snooze indefinitely'}
               </p>
             </div>
             <div className="mt-6 flex justify-end gap-3">

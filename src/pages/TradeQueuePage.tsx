@@ -861,20 +861,27 @@ export function TradeQueuePage({
   // Acknowledge resurfaced item mutation (restore to original status)
   const acknowledgeResurfacedMutation = useMutation({
     mutationFn: async (item: TradeQueueItemWithDetails) => {
-      // Get the original status from previous_state, default to 'idea'
-      const previousState = item.previous_state as { status?: string } | null
+      // `previous_state` is jsonb holding the STATUS the idea had before it
+      // was deferred, plus its stage. It was being written into BOTH columns —
+      // so a status value like 'idea' or 'deciding' went into the stage enum,
+      // which after the four-stage migration Postgres rejects outright.
+      //
+      // Coerce each column from the right field. `toIdeaStage` absorbs the
+      // legacy vocabulary `previous_state` still holds; the migration does not
+      // rewrite that jsonb, so it can hand back a retired value indefinitely.
+      const previousState = item.previous_state as { status?: string; stage?: string } | null
       const originalStatus = previousState?.status || 'idea'
 
       const { error } = await supabase
         .from('trade_queue_items')
         .update({
           status: originalStatus,
-          stage: originalStatus,
+          stage: toIdeaStage(previousState?.stage ?? originalStatus),
           outcome: null,
           deferred_until: null,
           previous_state: null,
           updated_at: new Date().toISOString(),
-        })
+        } as never)
         .eq('id', item.id)
 
       if (error) throw error

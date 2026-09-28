@@ -92,6 +92,10 @@ export interface BulkMoveParams {
   tradeIds: string[]
   target: MoveTarget
   context: ActionContext
+  /** Recorded as `outcome_note` on every idea in the batch. Provenance for
+   *  where a bulk outcome came from — without it, a row records that it was
+   *  executed but not by what. */
+  note?: string
 }
 
 export interface CreateTradeParams {
@@ -852,13 +856,179 @@ export async function restoreTradeIdea(params: RestoreTradeIdeaParams): Promise<
 }
 
 /**
+ * Snooze an idea: hide it now, bring it back later.
+ *
+ * ── Why this exists separately from a decision ────────────────────────────
+ *
+ * The detail modal's "Defer" wrote `outcome = 'deferred'`, which made the idea
+ * terminal — `isTerminalIdea` treats ANY non-null outcome as an end state. So
+ * an analyst parking an idea for three weeks was recorded as having concluded
+ * it, and the idea left the live pipeline for good.
+ *
+ * Deferring in the Decision Inbox is a different act and keeps its meaning: a
+ * decision-maker looking at a submitted recommendation and answering "not
+ * now". That is a real decision, it lives on `decision_requests.status`, and
+ * it still satisfies outcome eligibility. This one is a personal reminder
+ * about an idea nobody has been asked to decide on yet.
+ *
+ * `revisit_at` is the column `useAttention`'s defer already writes; this is
+ * the same mechanism, given a service function so both callers share it and
+ * the action is audited.
+ *
+ * Writes no outcome, no status, and no stage. A snoozed idea is simply an
+ * undecided idea with a date on it.
+ */
+export async function snoozeTradeIdea(params: {
+  tradeId: string
+  revisitAt: string | null
+  context: ActionContext
+  note?: string | null
+}): Promise<void> {
+  const { tradeId, revisitAt, context, note } = params
+
+  const { data: current } = await supabase
+    .from('trade_queue_items')
+    .select('id, revisit_at, action, assets(symbol)')
+    .eq('id', tradeId)
+    .maybeSingle()
+
+  const row = current as any
+  if (!row) throw new Error(`Trade not found: ${tradeId}`)
+
+  const { error } = await supabase
+    .from('trade_queue_items')
+    // `as never`: the generated Database type has no Relationships, which
+    // collapses every update argument to `never`. Documented defect, not a
+    // claim about this payload.
+    .update({ revisit_at: revisitAt, updated_at: new Date().toISOString() } as never)
+    .eq('id', tradeId)
+
+  if (error) throw error
+
+  await emitAuditEvent({
+    actor: { id: context.actorId, type: 'user', role: context.actorRole },
+    entity: {
+      type: 'trade_idea',
+      id: tradeId,
+      displayName: `${String(row.action ?? '').toUpperCase()} ${row.assets?.symbol ?? 'Unknown'}`,
+    },
+    // Not `set_outcome`: nothing was decided. This is a field edit.
+    action: { type: 'update_field', category: 'field_edit' },
+    state: {
+      from: { revisit_at: row.revisit_at ?? null },
+      to: { revisit_at: revisitAt },
+    },
+    changedFields: ['revisit_at'],
+    metadata: {
+      request_id: context.requestId,
+      ui_source: context.uiSource,
+      note: note ?? null,
+    },
+    orgId: getOrgId(context),
+    teamId: undefined,
+    actorName: context.actorName,
+    actorEmail: context.actorEmail,
+  }).catch((e) => console.warn('[snoozeTradeIdea] audit emit failed:', e))
+}
+
+/**
+ * Clear an idea's outcome when nothing supports it any more.
+ *
+ * Called after an accepted trade is reverted. It does NOT assume the revert
+ * invalidated the decision — it re-asks `fetchOutcomeEligibility`, the same
+ * question `moveTradeIdea` asks before allowing an outcome to be written, and
+ * clears only when the answer has become no.
+ *
+ * That distinction is the whole value of the function. An idea can carry
+ * several accepted trades, and `revertAcceptedTrade` only resets the decision
+ * request when `trade.source === 'inbox'` — so after reverting one simulation
+ * promotion the decision may still stand, and blanking the outcome would
+ * destroy a correct record.
+ *
+ * ── What is NOT erased ────────────────────────────────────────────────────
+ *
+ * `audit_events` holds the original `set_outcome` event, with its from/to
+ * state and actor, and is append-only by design (`docs/adr/0001`). This
+ * touches only the mutable current-state columns, and emits its own audit
+ * event so the clearing is itself part of the record. The history of "this
+ * was executed, then reverted" survives in full; what stops being true is the
+ * row's claim that it is executed NOW.
+ *
+ * Returns whether it cleared anything, so callers can report it.
+ */
+export async function reconcileOutcomeAfterRevert(
+  tradeId: string,
+  context: ActionContext,
+): Promise<{ cleared: boolean }> {
+  const { data: current } = await supabase
+    .from('trade_queue_items')
+    .select('id, stage, outcome, status, action, asset_id, assets(symbol)')
+    .eq('id', tradeId)
+    .maybeSingle()
+
+  const row = current as any
+  if (!row || row.outcome == null) return { cleared: false }
+
+  const eligibility = await fetchOutcomeEligibility(tradeId)
+  if (eligibility.eligible) return { cleared: false }
+
+  const { error } = await supabase
+    .from('trade_queue_items')
+    .update({
+      outcome: null,
+      outcome_at: null,
+      outcome_by: null,
+      outcome_note: null,
+      // The legacy mirror has to come back too, or `isTerminalIdea` keeps
+      // reading the idea as finished from `status` alone.
+      status: stageToLegacyStatus(toIdeaStage(row.stage), null),
+      // A reverted decision is not a deferral any more either.
+      deferred_until: null,
+      approved_by: null,
+      approved_at: null,
+      executed_at: null,
+      updated_at: new Date().toISOString(),
+    } as never)
+    .eq('id', tradeId)
+
+  if (error) throw error
+
+  await emitAuditEvent({
+    actor: { id: context.actorId, type: 'user', role: context.actorRole },
+    entity: {
+      type: 'trade_idea',
+      id: tradeId,
+      displayName: `${String(row.action ?? '').toUpperCase()} ${row.assets?.symbol ?? 'Unknown'}`,
+    },
+    action: { type: 'set_outcome', category: 'state_change' },
+    state: {
+      from: { stage: row.stage, outcome: row.outcome },
+      to: { stage: row.stage, outcome: null },
+    },
+    changedFields: ['outcome', 'status'],
+    metadata: {
+      request_id: context.requestId,
+      ui_source: context.uiSource,
+      reason: 'accepted_trade_reverted',
+      cleared_outcome: row.outcome,
+    },
+    orgId: getOrgId(context),
+    teamId: undefined,
+    actorName: context.actorName,
+    actorEmail: context.actorEmail,
+  }).catch((e) => console.warn('[reconcileOutcomeAfterRevert] audit emit failed:', e))
+
+  return { cleared: true }
+}
+
+/**
  * Bulk move multiple trade ideas
  */
 export async function bulkMoveTradeIdeas(params: BulkMoveParams): Promise<{
   succeeded: string[]
   failed: Array<{ tradeId: string; error: string }>
 }> {
-  const { tradeIds, target, context } = params
+  const { tradeIds, target, context, note } = params
   const batchId = crypto.randomUUID()
 
   const succeeded: string[] = []
@@ -871,6 +1041,7 @@ export async function bulkMoveTradeIdeas(params: BulkMoveParams): Promise<{
       await moveTradeIdea({
         tradeId,
         target,
+        note,
         context: {
           ...context,
           requestId: context.requestId ? `${context.requestId}-${i}` : crypto.randomUUID(),

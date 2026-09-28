@@ -234,6 +234,11 @@ export type UISource =
   | 'arrow_button'
   | 'mobile_step'
   | 'mobile_sheet'
+  // Two surfaces that used to write terminal state directly and so never
+  // recorded where the action came from. They go through the service now, and
+  // the audit trail should say which screen it was.
+  | 'attention_feed'
+  | 'simulation_trade_list'
 
 export interface ActionContext {
   actorId: string

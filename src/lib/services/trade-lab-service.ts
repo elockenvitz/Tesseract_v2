@@ -2095,9 +2095,14 @@ export async function updatePortfolioTrackDecision(
       const anyAccepted = allTracks?.some(t => t.decision_outcome === 'accepted')
       const allDeferred = allTracks?.every(t => t.decision_outcome === 'deferred')
       const newStatus = anyAccepted ? 'approved' : allDeferred ? 'cancelled' : 'rejected'
+      // The idea's STAGE is deliberately not touched. This used to also write
+      // `stage: 'deciding'`, which is no longer a member of the stage enum and
+      // would now be rejected outright — but the deeper reason is the same one
+      // that retired that value: recording a decision says nothing about how
+      // well understood the idea is, and must not rewrite its maturity.
       await supabase
         .from('trade_queue_items')
-        .update({ status: newStatus, stage: 'deciding' })
+        .update({ status: newStatus } as never)
         .eq('id', trade_queue_item_id)
     }
   } catch (e) {

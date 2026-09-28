@@ -14,7 +14,7 @@
 import { supabase } from '../supabase'
 import { updateDecisionRequest } from './decision-request-service'
 import { deleteVariant } from './intent-variant-service'
-import { moveTradeIdea } from './trade-idea-service'
+import { moveTradeIdea, reconcileOutcomeAfterRevert } from './trade-idea-service'
 import { FINAL_STAGE } from '../ideas/stage-model'
 import type {
   AcceptedTrade,
@@ -431,6 +431,25 @@ export async function revertAcceptedTrade(
       decisionNote: null,
       acceptedTradeId: null,
     })
+  }
+
+  // The idea may now be claiming an outcome that nothing supports.
+  //
+  // Reverting is a statement that the decision no longer stands, but the
+  // outcome columns on `trade_queue_items` were left exactly as they were —
+  // so the idea kept reading `executed` while its decision request sat back
+  // at `pending`. Production has a row in precisely that state. Worse, the
+  // overwrite guard in `moveTradeIdea` then refuses to change an existing
+  // outcome, so the reopened idea could never be decided again.
+  //
+  // This does NOT unconditionally clear the outcome. It re-asks the canonical
+  // question — is there still evidence of a decision? — and clears only if
+  // the answer is no. That matters because an idea can have several accepted
+  // trades, or a decided request that this revert did not touch (revert only
+  // resets the request for `source === 'inbox'`), and in those cases the
+  // outcome is still correct.
+  if (trade.trade_queue_item_id) {
+    await reconcileOutcomeAfterRevert(trade.trade_queue_item_id, context)
   }
 }
 
