@@ -21,7 +21,7 @@ import {
 
 const leg = (over: Record<string, any> = {}) => ({
   id: 'leg-1',
-  stage: 'investigate',
+  stage: 'researching',
   status: 'idea',
   action: 'buy',
   created_by: 'u1',
@@ -87,22 +87,25 @@ describe('groupIntoRows', () => {
         id: 'a',
         pair_id: 'p1',
         pair_leg_type: 'long',
-        stage: 'deep_research',
+        stage: 'developing',
         status: 'idea',
         // The parent still claims the stage the pair was created in.
-        pair_trades: { id: 'p1', name: 'Long AAPL / Short MSFT', status: 'idea', stage: 'aware' },
+        pair_trades: { id: 'p1', name: 'Long AAPL / Short MSFT', status: 'idea', stage: 'exploring' },
       }),
     ])
 
-    expect(rows[0].stage).toBe('deep_research')
+    expect(rows[0].stage).toBe('developing')
   })
 
-  it('resolves legacy statuses to a research stage, as the board does', () => {
+  it('resolves a legacy stage to a canonical one, as the board does', () => {
+    // Rows written before the four-stage migration still carry the old
+    // vocabulary. The strip has no column for them, so a raw pass-through
+    // would drop the card off the board entirely.
     const rows = groupIntoRows([leg({ id: 'a', stage: 'idea' })])
-    // Whatever toResearchStage maps it to, it must be a stage the strip renders
-    // rather than the raw legacy value passed through.
-    expect(rows[0].stage).toBeTruthy()
-    expect(rows[0].stage).not.toBe(undefined)
+    expect(rows[0].stage).toBe('exploring')
+
+    expect(groupIntoRows([leg({ id: 'b', stage: 'deciding' })])[0].stage)
+      .toBe('ready_to_recommend')
   })
 
   it('carries the joined pair record through for the card title', () => {
@@ -168,38 +171,40 @@ describe('terminal status buckets', () => {
 
 /**
  * The service throws on a forward move whose requirements are unmet, and the
- * phone used to offer the move anyway — tap, wait, refused. These mirror
- * validateStageRequirements so the control can be disabled before it is
- * pressed. If the service's rule changes and this does not, the UI goes back to
- * offering moves that fail.
+ * phone used to offer the move anyway — tap, wait, refused. This surface now
+ * calls the same `missingForStage` the service does rather than keeping its
+ * own copy, so the two cannot disagree; what is pinned here is the unwrapping
+ * of a pair row, which is this file's own logic.
  */
 describe('missingForStage', () => {
   const withFields = (over: Record<string, any>) =>
     groupIntoRows([leg({ id: 'a', ...over })])[0]
 
-  it('gates ready_for_decision on rationale and thesis', () => {
+  it('gates ready_to_recommend on rationale and thesis', () => {
     const bare = withFields({ rationale: null, thesis_text: null })
-    expect(missingForStage(bare, 'ready_for_decision')).toEqual(['Why now', 'Trade thesis'])
+    expect(missingForStage(bare, 'ready_to_recommend'))
+      .toEqual(['Why now (rationale)', 'Trade thesis'])
   })
 
   it('names only what is actually missing', () => {
     const partial = withFields({ rationale: 'Capex inflecting', thesis_text: null })
-    expect(missingForStage(partial, 'ready_for_decision')).toEqual(['Trade thesis'])
+    expect(missingForStage(partial, 'ready_to_recommend')).toEqual(['Trade thesis'])
   })
 
   it('treats whitespace as absent, as the service does', () => {
     const blank = withFields({ rationale: '   ', thesis_text: '\n' })
-    expect(missingForStage(blank, 'ready_for_decision')).toEqual(['Why now', 'Trade thesis'])
+    expect(missingForStage(blank, 'ready_to_recommend'))
+      .toEqual(['Why now (rationale)', 'Trade thesis'])
   })
 
   it('allows the move once both are present', () => {
     const complete = withFields({ rationale: 'Capex inflecting', thesis_text: 'Supply constrained' })
-    expect(missingForStage(complete, 'ready_for_decision')).toEqual([])
+    expect(missingForStage(complete, 'ready_to_recommend')).toEqual([])
   })
 
-  it('does not gate the earlier research stages', () => {
+  it('does not gate the earlier stages', () => {
     const bare = withFields({ rationale: null, thesis_text: null })
-    for (const s of ['aware', 'investigate', 'deep_research', 'thesis_forming']) {
+    for (const s of ['exploring', 'researching', 'developing']) {
       expect(missingForStage(bare, s)).toEqual([])
     }
   })
@@ -209,27 +214,32 @@ describe('missingForStage', () => {
       leg({ id: 'a', pair_id: 'p1', pair_leg_type: 'long', rationale: null, thesis_text: null }),
       leg({ id: 'b', pair_id: 'p1', pair_leg_type: 'short' }),
     ])[0]
-    expect(missingForStage(pair, 'ready_for_decision')).toContain('Trade thesis')
+    expect(missingForStage(pair, 'ready_to_recommend')).toContain('Trade thesis')
   })
 })
 
 describe('isForwardMove', () => {
-  it('recognises advancing through the research stages', () => {
-    expect(isForwardMove('aware', 'investigate')).toBe(true)
-    expect(isForwardMove('investigate', 'ready_for_decision')).toBe(true)
+  it('recognises advancing through the pipeline', () => {
+    expect(isForwardMove('exploring', 'researching')).toBe(true)
+    expect(isForwardMove('researching', 'ready_to_recommend')).toBe(true)
   })
 
   it('does not treat going back as forward, so backward moves stay ungated', () => {
-    expect(isForwardMove('ready_for_decision', 'aware')).toBe(false)
-    expect(isForwardMove('deep_research', 'investigate')).toBe(false)
+    expect(isForwardMove('ready_to_recommend', 'exploring')).toBe(false)
+    expect(isForwardMove('developing', 'researching')).toBe(false)
   })
 
   it('is false for a move to the same stage', () => {
-    expect(isForwardMove('investigate', 'investigate')).toBe(false)
+    expect(isForwardMove('researching', 'researching')).toBe(false)
   })
 
   it('is false when either stage is unknown, rather than gating blindly', () => {
-    expect(isForwardMove('nonsense', 'investigate')).toBe(false)
-    expect(isForwardMove('investigate', 'nonsense')).toBe(false)
+    expect(isForwardMove('nonsense', 'researching')).toBe(false)
+    expect(isForwardMove('researching', 'nonsense')).toBe(false)
+  })
+
+  it('is false for a retired stage name, which is no longer a position', () => {
+    expect(isForwardMove('deciding', 'ready_to_recommend')).toBe(false)
+    expect(isForwardMove('aware', 'developing')).toBe(false)
   })
 })

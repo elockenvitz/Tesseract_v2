@@ -118,7 +118,9 @@ import { useToast } from '../components/common/Toast'
 import { useWorkbench } from '../hooks/useTradeLab'
 import { submitRecommendation } from '../lib/services/recommendation-service'
 import { shareTradeSheetSnapshot } from '../lib/services/simulation-share-service'
-import { moveTradeIdea } from '../lib/services/trade-idea-service'
+import { moveTradeIdea, bulkMoveTradeIdeas } from '../lib/services/trade-idea-service'
+import { FINAL_STAGE, toIdeaStage, stageIndex, IDEA_STAGES } from '../lib/ideas/stage-model'
+import type { IdeaStage } from '../lib/ideas/stage-model'
 import { executeSimVariants } from '../lib/services/execute-sim-variants-service'
 import { parseSizingInput, toSizingSpec, type SizingSpec } from '../lib/trade-lab/sizing-parser'
 import { detectDirectionConflict, normalizeSizing } from '../lib/trade-lab/normalize-sizing'
@@ -566,7 +568,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   // Left pane search and filter
   const [leftPaneSearch, setLeftPaneSearch] = useState('')
-  const [leftPaneStageFilter, setLeftPaneStageFilter] = useState<'all' | 'investigate' | 'deep_research' | 'thesis_forming' | 'ready_for_decision'>('all')
+  // Canonical stages, not the retired five. This filter was built on
+  // `investigate` / `deep_research` / `thesis_forming` / `ready_for_decision`,
+  // so after the contract migration every option would have matched nothing —
+  // an empty Trade Lab list that looks like "no ideas" rather than a bug.
+  const [leftPaneStageFilter, setLeftPaneStageFilter] = useState<'all' | IdeaStage>('all')
 
   // Which recommendations are in the simulation is derived from persisted
   // membership below (`deriveProposalMembership`), not held in state here.
@@ -1883,15 +1889,17 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         portfolioName: portfolios?.find(p => p.id === selectedPortfolioId)?.name || null,
       }, actionContext)
 
-      // Move to deciding if not already there
-      const stage = idea.stage || idea.status
-      if (stage !== 'deciding' && stage !== 'approved') {
-        await moveTradeIdea({
-          tradeId: idea.id,
-          target: { stage: 'deciding' as any },
-          context: actionContext,
-        })
-      }
+      // The idea's stage is deliberately NOT changed.
+      //
+      // This was a third copy of the auto-advance that `submitRecommendation`
+      // and `autoAdvanceToDeciding` both carried: submitting a recommendation
+      // silently rewrote what the idea MEANT. It also targeted `deciding`,
+      // which the four-stage enum no longer accepts, so it would have thrown
+      // here after the contract migration.
+      //
+      // The recommendation now exists and is awaiting a decision — that fact
+      // is on the `decision_requests` row created above, which is what the
+      // Decision Inbox reads.
 
       return proposal
     },
@@ -3769,26 +3777,35 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         .map(t => t.trade_queue_item_id)
         .filter((id): id is string => id !== null)
 
+      // 4. Record the outcome on linked ideas — through the service, which
+      //    enforces the outcome rule.
+      //
+      //    This was a direct bulk `.update()` that wrote `outcome: 'executed'`
+      //    onto every linked idea with no decision behind any of them. It was
+      //    the one remaining UI path that could fabricate an outcome, and it
+      //    also still wrote `stage: 'deciding'` — a value the four-stage enum
+      //    no longer accepts, so it would have failed outright after the
+      //    migration.
+      //
+      //    `bulkMoveTradeIdeas` runs each idea through `moveTradeIdea`, so
+      //    each one is checked against `fetchOutcomeEligibility`. An idea with
+      //    no recorded decision is refused rather than silently stamped.
+      let refusedIdeas: Array<{ tradeId: string; error: string }> = []
       if (linkedIds && linkedIds.length > 0) {
-        const now = new Date().toISOString()
-        const { error: ideaError } = await supabase
-          .from('trade_queue_items')
-          .update({
-            // New workflow fields
-            stage: 'deciding',
-            outcome: 'executed',
-            outcome_at: now,
-            outcome_by: user.id,
-            outcome_note: `Trade List: ${simulation.name} - ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
-            // Legacy fields for backwards compatibility
-            status: 'approved',
-            approved_at: now,
-            approved_by: user.id,
-            executed_at: now
-          })
-          .in('id', linkedIds)
-
-        if (ideaError) throw ideaError
+        const result = await bulkMoveTradeIdeas({
+          tradeIds: linkedIds,
+          target: { stage: FINAL_STAGE, outcome: 'executed' },
+          context: {
+            actorId: user.id,
+            actorName: user.email ?? 'Unknown',
+            actorEmail: user.email ?? undefined,
+            actorRole: 'pm',
+            requestId: crypto.randomUUID(),
+            uiSource: 'simulation_trade_list',
+          },
+          note: `Trade List: ${simulation.name} - ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+        })
+        refusedIdeas = result.failed
       }
 
       // 5. Clear workbench drafts (for fresh start)
@@ -3799,10 +3816,24 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         console.warn('Failed to clear workbench drafts:', clearError)
       }
 
-      return { linkedIdeaCount: linkedIds?.length || 0, listName: simulation.name }
+      return {
+        linkedIdeaCount: linkedIds?.length || 0,
+        listName: simulation.name,
+        refusedCount: refusedIdeas.length,
+      }
     },
     onSuccess: (data) => {
-      toast.success('Trade List Created', `Ready for approval`)
+      // Say so when ideas were refused. The trade list itself is saved either
+      // way, but silently dropping the outcome on some of its ideas is how a
+      // reader ends up believing a decision was recorded that was not.
+      if (data.refusedCount > 0) {
+        toast.success(
+          'Trade List Created',
+          `${data.refusedCount} of ${data.linkedIdeaCount} ideas were not marked executed — they have no recorded decision yet.`,
+        )
+      } else {
+        toast.success('Trade List Created', `Ready for approval`)
+      }
       queryClient.invalidateQueries({ queryKey: ['simulations'] })
       queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
@@ -3840,14 +3871,20 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       const portfolioTrack = (idea as any).trade_idea_portfolios?.find(
         (t: any) => t.portfolio_id === selectedPortfolioId
       )
-      const stageRankMap: Record<string, number> = {
-        idea: 0, aware: 0, discussing: 1, working_on: 1, investigate: 1,
-        simulating: 2, modeling: 2, deep_research: 2,
-        thesis_forming: 3, deciding: 4, ready_for_decision: 4, approved: 5, executed: 5,
-      }
-      const ideaStage = idea.stage || idea.status
-      const trackStage = portfolioTrack?.stage
-      const effectiveStage = trackStage && (stageRankMap[trackStage] ?? 0) > (stageRankMap[ideaStage] ?? 0)
+      // Rank by canonical position rather than a hand-written table.
+      //
+      // This was a tenth independent copy of the stage order, and a
+      // legacy-only one: it listed `aware`/`deciding`/`ready_for_decision` and
+      // knew nothing of the canonical labels, so once rows started arriving as
+      // `developing` they would all have ranked 0 and the "more advanced
+      // stage" comparison would have silently stopped working.
+      //
+      // `trade_idea_portfolios.stage` shares the same enum as the idea's own
+      // stage and holds legacy values throughout the rollout window, so both
+      // sides go through the normalization boundary before being compared.
+      const ideaStage = toIdeaStage(idea.stage || idea.status)
+      const trackStage = portfolioTrack?.stage ? toIdeaStage(portfolioTrack.stage) : null
+      const effectiveStage = trackStage && stageIndex(trackStage) > stageIndex(ideaStage)
         ? trackStage
         : ideaStage
 
@@ -4163,29 +4200,24 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     }
 
     // Exclude aware/idea stage from Trade Lab — too early in research to simulate
-    const isAwareStage = (s: string) => s === 'aware' || s === 'idea'
+    // Normalise once, then compare canonical to canonical. Every legacy
+    // grouping this used to spell out by hand — investigate/working_on/
+    // discussing, deep_research/modeling/simulating — is now just what
+    // `toIdeaStage` already collapses them to.
+    const stageOf = (row: { effectiveStage?: string; stage?: string; status?: string }) =>
+      toIdeaStage(row.effectiveStage || row.stage || row.status)
 
     const matchesStage = (item: TradeItem): boolean => {
       if (item.type === 'single') {
-        const stage = item.idea.effectiveStage || item.idea.stage || item.idea.status
-        if (isAwareStage(stage)) return false // never show aware in Trade Lab
+        const stage = stageOf(item.idea as any)
+        if (stage === 'exploring') return false // never show unexplored ideas in Trade Lab
         if (leftPaneStageFilter === 'all') return true
-        if (leftPaneStageFilter === 'investigate') return stage === 'investigate' || stage === 'working_on' || stage === 'discussing'
-        if (leftPaneStageFilter === 'deep_research') return stage === 'deep_research' || stage === 'modeling' || stage === 'simulating'
-        if (leftPaneStageFilter === 'thesis_forming') return stage === 'thesis_forming'
-        if (leftPaneStageFilter === 'ready_for_decision') return stage === 'ready_for_decision' || stage === 'deciding'
+        return stage === leftPaneStageFilter
       } else {
-        const legStages = item.legs.map(l => (l as any).effectiveStage || l.stage || l.status)
-        if (legStages.every(isAwareStage)) return false // all legs are aware — hide
+        const legStages = item.legs.map(l => stageOf(l as any))
+        if (legStages.every(s => s === 'exploring')) return false // all legs unexplored — hide
         if (leftPaneStageFilter === 'all') return true
-        const stageMatches = (s: string) => {
-          if (leftPaneStageFilter === 'investigate') return s === 'investigate' || s === 'working_on' || s === 'discussing'
-          if (leftPaneStageFilter === 'deep_research') return s === 'deep_research' || s === 'modeling' || s === 'simulating'
-          if (leftPaneStageFilter === 'thesis_forming') return s === 'thesis_forming'
-          if (leftPaneStageFilter === 'ready_for_decision') return s === 'ready_for_decision' || s === 'deciding'
-          return false
-        }
-        return legStages.some(stageMatches)
+        return legStages.some(s => s === leftPaneStageFilter)
       }
       return true
     }
@@ -4204,15 +4236,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         })
       : itemsByCategory.proposals
 
+    // Most mature first. Derived from the canonical order rather than a
+    // hand-written rank table — this was yet another copy of the pipeline
+    // order, and a legacy-only one, so canonical rows would all have fallen
+    // through to 4 and sorted to the bottom.
     const stageRank = (item: TradeItem): number => {
-      const s = item.type === 'single'
+      const raw = item.type === 'single'
         ? (item.idea.effectiveStage || item.idea.stage || item.idea.status)
         : item.pairTrade.status
-      if (s === 'ready_for_decision' || s === 'deciding') return 0
-      if (s === 'thesis_forming') return 1
-      if (s === 'deep_research' || s === 'modeling' || s === 'simulating') return 2
-      if (s === 'investigate' || s === 'working_on' || s === 'discussing') return 3
-      return 4
+      return IDEA_STAGES.length - 1 - stageIndex(toIdeaStage(raw))
     }
 
     const filteredIdeas = itemsByCategory.ideas
@@ -4833,20 +4865,25 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     const timePressure = getTimePressure(idea)
     const authorInitials = getUserInitials(idea.users)
 
-    // Stage-based left border + subtle background tint
-    const stageOfIdea = idea.effectiveStage || idea.stage || idea.status
-    const stageBorderClass =
-      (stageOfIdea === 'ready_for_decision' || stageOfIdea === 'deciding') ? 'border-l-amber-500 dark:border-l-amber-400' :
-      (stageOfIdea === 'thesis_forming') ? 'border-l-purple-500 dark:border-l-purple-400' :
-      (stageOfIdea === 'deep_research' || stageOfIdea === 'modeling' || stageOfIdea === 'simulating') ? 'border-l-indigo-500 dark:border-l-indigo-400' :
-      (stageOfIdea === 'investigate' || stageOfIdea === 'working_on' || stageOfIdea === 'discussing') ? 'border-l-blue-500 dark:border-l-blue-400' :
-      'border-l-gray-400 dark:border-l-gray-500'
-    const stageBgClass =
-      (stageOfIdea === 'ready_for_decision' || stageOfIdea === 'deciding') ? 'bg-amber-50/40 dark:bg-amber-900/5 hover:bg-amber-50/80 dark:hover:bg-amber-900/15' :
-      (stageOfIdea === 'thesis_forming') ? 'bg-purple-50/40 dark:bg-purple-900/5 hover:bg-purple-50/80 dark:hover:bg-purple-900/15' :
-      (stageOfIdea === 'deep_research' || stageOfIdea === 'modeling' || stageOfIdea === 'simulating') ? 'bg-indigo-50/40 dark:bg-indigo-900/5 hover:bg-indigo-50/80 dark:hover:bg-indigo-900/15' :
-      (stageOfIdea === 'investigate' || stageOfIdea === 'working_on' || stageOfIdea === 'discussing') ? 'bg-blue-50/40 dark:bg-blue-900/5 hover:bg-blue-50/80 dark:hover:bg-blue-900/15' :
-      'hover:bg-gray-50 dark:hover:bg-gray-800'
+    // Stage-based left border + subtle background tint, keyed off the
+    // canonical stage. Both ladders previously listed legacy labels only, so
+    // every canonical row would have fallen through to the grey default —
+    // the colour cue quietly disappearing rather than visibly breaking.
+    const stageOfIdea = toIdeaStage(idea.effectiveStage || idea.stage || idea.status)
+    const STAGE_BORDER: Record<IdeaStage, string> = {
+      ready_to_recommend: 'border-l-amber-500 dark:border-l-amber-400',
+      developing: 'border-l-indigo-500 dark:border-l-indigo-400',
+      researching: 'border-l-yellow-500 dark:border-l-yellow-400',
+      exploring: 'border-l-gray-400 dark:border-l-gray-500',
+    }
+    const STAGE_BG: Record<IdeaStage, string> = {
+      ready_to_recommend: 'bg-amber-50/40 dark:bg-amber-900/5 hover:bg-amber-50/80 dark:hover:bg-amber-900/15',
+      developing: 'bg-indigo-50/40 dark:bg-indigo-900/5 hover:bg-indigo-50/80 dark:hover:bg-indigo-900/15',
+      researching: 'bg-yellow-50/40 dark:bg-yellow-900/5 hover:bg-yellow-50/80 dark:hover:bg-yellow-900/15',
+      exploring: 'hover:bg-gray-50 dark:hover:bg-gray-800',
+    }
+    const stageBorderClass = STAGE_BORDER[stageOfIdea]
+    const stageBgClass = STAGE_BG[stageOfIdea]
 
     // Direction conflict for single-name ideas (computed once, used for badge + card border)
     const singleIdeaConflict = idea.isAdded ? (() => {
@@ -5285,14 +5322,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       })
     }
 
-    // Stage-based tint for pair trade tile
-    const pairStage = pairTrade.status || 'idea'
-    const pairStageBgClass =
-      (pairStage === 'ready_for_decision' || pairStage === 'deciding') ? 'bg-amber-50/40 dark:bg-amber-900/5' :
-      (pairStage === 'thesis_forming') ? 'bg-purple-50/40 dark:bg-purple-900/5' :
-      (pairStage === 'deep_research' || pairStage === 'modeling' || pairStage === 'simulating') ? 'bg-indigo-50/40 dark:bg-indigo-900/5' :
-      (pairStage === 'investigate' || pairStage === 'working_on' || pairStage === 'discussing') ? 'bg-blue-50/40 dark:bg-blue-900/5' :
-      ''
+    // Stage-based tint for the pair trade tile. `pair_trades.status` carries
+    // the legacy vocabulary, so it goes through the same boundary as
+    // everything else rather than being compared raw.
+    const pairStageBgClass: Record<IdeaStage, string> = {
+      ready_to_recommend: 'bg-amber-50/40 dark:bg-amber-900/5',
+      developing: 'bg-indigo-50/40 dark:bg-indigo-900/5',
+      researching: 'bg-yellow-50/40 dark:bg-yellow-900/5',
+      exploring: '',
+    }[toIdeaStage(pairTrade.status)] as any
 
     return (
       <div
@@ -6427,11 +6465,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                           </div>
                           <div className="flex items-center gap-0.5">
                             {([
+                              // Canonical stages. `Exploring` is absent on
+                              // purpose — those ideas are filtered out of the
+                              // Trade Lab entirely, so a chip for them would
+                              // always yield an empty list.
                               { value: 'all' as const, label: 'All', dot: null },
-                              { value: 'ready_for_decision' as const, label: 'Deciding', dot: 'bg-amber-500' },
-                              { value: 'thesis_forming' as const, label: 'Thesis', dot: 'bg-purple-500' },
-                              { value: 'deep_research' as const, label: 'Research', dot: 'bg-indigo-500' },
-                              { value: 'investigate' as const, label: 'Investigate', dot: 'bg-blue-500' },
+                              { value: 'ready_to_recommend' as const, label: 'Ready', dot: 'bg-amber-500' },
+                              { value: 'developing' as const, label: 'Developing', dot: 'bg-indigo-500' },
+                              { value: 'researching' as const, label: 'Researching', dot: 'bg-yellow-500' },
                             ]).map(({ value, label, dot }) => (
                               <button
                                 key={value}

@@ -67,6 +67,8 @@ import { clsx } from 'clsx'
 import { PairTradeLegEditor } from './PairTradeLegEditor'
 import { canMoveGlobalStage } from '../../lib/permissions/trade-idea-permissions'
 import { toResearchStage, RESEARCH_STAGE_CONFIG } from '../../lib/trade-status-semantics'
+import { IDEA_STAGES, IDEA_STAGE_CONFIG, FINAL_STAGE, stageIndex, toIdeaStage } from '../../lib/ideas/stage-model'
+import type { IdeaStage } from '../../lib/ideas/stage-model'
 import { ThesesDebatePanel } from './ThesesDebatePanel'
 // AddThesisModal replaced by inline composers in ThesesDebatePanel
 import { useThesisCounts, useTheses } from '../../hooks/useTheses'
@@ -1553,10 +1555,15 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     isPending: isDeleting,
   }
 
-  // Wrapper for restore (for backwards compatibility with restore buttons)
+  // Wrapper for restore (for backwards compatibility with restore buttons).
+  //
+  // The parameter is a STAGE, not a status, despite the name it inherited —
+  // `restoreTradeIdea` feeds it straight to `toIdeaStage`. Typing it as
+  // `TradeQueueStatus` was what let the restore buttons pass 'idea' and
+  // 'discussing' for years without complaint.
   const restoreMutation = {
-    mutate: (targetStatus: TradeQueueStatus) => {
-      restoreTrade({ tradeId, targetStatus, uiSource: 'modal' })
+    mutate: (targetStage: IdeaStage) => {
+      restoreTrade({ tradeId, targetStatus: targetStage as any, uiSource: 'modal' })
     },
     isPending: isRestoring,
   }
@@ -2641,14 +2648,15 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 <div className="p-4 space-y-2 flex flex-col flex-1">
                   {/* ========== STAGE JOURNEY ========== */}
                   {(() => {
-                    const stageOrder = ['aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision'] as const
-                    const stageLabels: Record<string, string> = { aware: 'Aware', investigate: 'Investigate', deep_research: 'Deep Research', thesis_forming: 'Thesis Forming', ready_for_decision: 'Ready' }
-                    const legacyMap: Record<string, number> = { idea: 0, discussing: 1, working_on: 1, simulating: 2, modeling: 2, deciding: 4, approved: 4 }
-                    const currentStageIndex = stageOrder.indexOf(pairTradeData.stage as any) >= 0
-                      ? stageOrder.indexOf(pairTradeData.stage as any)
-                      : (legacyMap[pairTradeData.stage] ?? legacyMap[pairTradeData.status] ?? 0)
+                    // Canonical stage journey — the pair-trade twin of the
+                    // block in the single-idea view below. Both were the same
+                    // five-stage ladder, copied.
+                    const stageOrder = IDEA_STAGES
+                    const stageLabels = Object.fromEntries(
+                      IDEA_STAGES.map((s) => [s, IDEA_STAGE_CONFIG[s].label]),
+                    ) as Record<string, string>
+                    const currentStageIndex = stageIndex(toIdeaStage(pairTradeData.stage || pairTradeData.status))
                     const isTerminal = pairTradeData.status === 'approved' || pairTradeData.status === 'cancelled' || pairTradeData.status === 'rejected' || pairTradeData.status === 'archived' || pairTradeData.status === 'deleted'
-                    const currentStageLabel = stageLabels[stageOrder[currentStageIndex]] || 'Aware'
                     const stageAge = (() => {
                       const ref = pairTradeData.stage_changed_at || pairTradeData.updated_at || pairTradeData.created_at
                       const diffMs = Date.now() - new Date(ref).getTime()
@@ -2808,8 +2816,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
                   {/* ========== THESIS (unlocked at thesis_forming stage) ========== */}
                   {(() => {
-                    const thesisStages = ['thesis_forming', 'ready_for_decision', 'deciding']
-                    const showThesis = thesisStages.includes(pairTradeData.stage) || thesisStages.includes(pairTradeData.status)
+                    // The thesis section unlocks once an idea is forming a
+                    // view — Developing onward. Listing legacy labels here
+                    // meant a canonical row never matched, so the section
+                    // would simply have stopped appearing.
+                    const showThesis = stageIndex(toIdeaStage(pairTradeData.stage || pairTradeData.status)) >= stageIndex('developing')
                     if (!showThesis) return null
                     return (
                       <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
@@ -4789,14 +4800,23 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
                   {/* ========== STAGE JOURNEY ========== */}
                   {(() => {
-                    const stageOrder = ['aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision'] as const
-                    const stageLabels: Record<string, string> = { aware: 'Aware', investigate: 'Investigate', deep_research: 'Deep Research', thesis_forming: 'Thesis Forming', ready_for_decision: 'Ready' }
-                    const legacyMap: Record<string, number> = { idea: 0, discussing: 1, working_on: 1, simulating: 2, modeling: 2, deciding: 4, approved: 4 }
-                    const currentStageIndex = stageOrder.indexOf(trade.stage as any) >= 0
-                      ? stageOrder.indexOf(trade.stage as any)
-                      : (legacyMap[trade.stage] ?? legacyMap[trade.status] ?? 0)
+                    // The stage journey, from the canonical model.
+                    //
+                    // This was a hand-written five-stage ladder with its own
+                    // label table and its own legacy index map — the `as any`
+                    // casts on `indexOf` meant the type ceiling never saw it,
+                    // so it kept rendering Aware → Investigate → Deep Research
+                    // → Thesis Forming → Ready long after the pipeline became
+                    // four stages. `legacyMap`'s literal `4` hardcoded "last
+                    // index of a five-element array" on top of that.
+                    const stageOrder = IDEA_STAGES
+                    const stageLabels = Object.fromEntries(
+                      IDEA_STAGES.map((s) => [s, IDEA_STAGE_CONFIG[s].label]),
+                    ) as Record<string, string>
+                    // One coercion, covering both vocabularies and the legacy
+                    // `status` fallback for rows that never had a stage.
+                    const currentStageIndex = stageIndex(toIdeaStage(trade.stage || trade.status))
                     const isTerminal = trade.status === 'approved' || trade.status === 'cancelled' || trade.status === 'rejected' || trade.status === 'archived' || trade.status === 'deleted'
-                    const currentStageLabel = stageLabels[stageOrder[currentStageIndex]] || 'Aware'
                     const stageAge = (() => {
                       const ref = trade.stage_changed_at || trade.updated_at || trade.created_at
                       const diffMs = Date.now() - new Date(ref).getTime()
@@ -5030,8 +5050,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
                   {/* ========== TRADE THESIS (unlocked at thesis_forming stage) ========== */}
                   {(() => {
-                    const thesisStages = ['thesis_forming', 'ready_for_decision', 'deciding']
-                    const showThesis = thesisStages.includes(trade.stage) || thesisStages.includes(trade.status)
+                    // Developing onward — see the pair-trade twin above.
+                    const showThesis = stageIndex(toIdeaStage(trade.stage || trade.status)) >= stageIndex('developing')
                     if (!showThesis) return null
                     return (
                       <div className="pb-3 border-b border-gray-200 dark:border-gray-700">
@@ -5623,8 +5643,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                   {trade.status !== 'approved' && trade.status !== 'cancelled' && trade.status !== 'rejected' && trade.status !== 'archived' && (
                     <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-4">
 
-                      {/* SECTION 1: Quick Actions (not shown in Deciding) */}
-                      {trade.stage !== 'deciding' && trade.status !== 'deciding' && (
+                      {/* SECTION 1: Quick Actions — hidden once a decision is
+                          pending. That is a DECISION-workflow fact, so it is
+                          read from `status`, not from the idea's stage. */}
+                      {trade.status !== 'deciding' && (
                         <div className="flex flex-wrap gap-2">
                           {!canMoveStages && (
                             <Button
@@ -5656,16 +5678,34 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                       <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
                         Restore
                       </h4>
+                      {/*
+                        Restore targets, from the canonical model.
+
+                        These were three buttons writing 'aware',
+                        'investigate' and 'deep_research' — live LEGACY
+                        WRITERS, each hidden behind an `as any` that stopped
+                        the type ceiling from ever seeing them. After the
+                        contract migration every one would have thrown.
+
+                        Rendered from IDEA_STAGES rather than listed, so a
+                        change to the pipeline cannot leave them behind again.
+                        The final stage is excluded: restoring an archived
+                        idea straight to Ready to Recommend would assert it is
+                        ready to advocate, which is not something a Restore
+                        button gets to decide.
+                      */}
                       <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate('aware' as any)} disabled={updateStatusMutation.isPending}>
-                          Aware
-                        </Button>
-                        <Button size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate('investigate' as any)} disabled={updateStatusMutation.isPending}>
-                          Investigate
-                        </Button>
-                        <Button size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate('deep_research' as any)} disabled={updateStatusMutation.isPending}>
-                          Deep Research
-                        </Button>
+                        {IDEA_STAGES.filter((s) => s !== FINAL_STAGE).map((s) => (
+                          <Button
+                            key={s}
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => updateStatusMutation.mutate(s as any)}
+                            disabled={updateStatusMutation.isPending}
+                          >
+                            {IDEA_STAGE_CONFIG[s].label}
+                          </Button>
+                        ))}
                         <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
                           <Trash2 className="h-4 w-4 mr-1" />
                           Delete
@@ -5679,14 +5719,18 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                     <div className="border-t border-red-200 dark:border-red-800/50 pt-4 bg-red-50/50 dark:bg-red-900/10 -mx-4 px-4 pb-4 rounded-b-lg">
                       <h3 className="text-sm font-semibold text-red-700 dark:text-red-300 mb-3">Restore Deleted Trade Idea</h3>
                       <p className="text-xs text-red-600 dark:text-red-400 mb-3">This trade idea was deleted. You can restore it to an active status.</p>
+                      {/* Also legacy writers: 'idea' and 'discussing'. These
+                          had no `as any` to hide behind — `restoreMutation`
+                          takes a string — which is why the type ceiling did
+                          not catch them either. */}
                       <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => restoreMutation.mutate('idea')} disabled={restoreMutation.isPending}>
+                        <Button size="sm" variant="secondary" onClick={() => restoreMutation.mutate('exploring')} disabled={restoreMutation.isPending}>
                           <RotateCcw className="h-4 w-4 mr-1" />
-                          Restore to Ideas
+                          Restore to {IDEA_STAGE_CONFIG.exploring.label}
                         </Button>
-                        <Button size="sm" variant="secondary" onClick={() => restoreMutation.mutate('discussing')} disabled={restoreMutation.isPending}>
+                        <Button size="sm" variant="secondary" onClick={() => restoreMutation.mutate('developing')} disabled={restoreMutation.isPending}>
                           <Wrench className="h-4 w-4 mr-1" />
-                          Restore to Working On
+                          Restore to {IDEA_STAGE_CONFIG.developing.label}
                         </Button>
                       </div>
                     </div>
@@ -6015,8 +6059,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 // Check if we have multiple portfolios
                 const hasMultiplePortfolios = Object.keys(proposalsByPortfolio).length > 1
 
-                // Check if current user is PM/owner and trade is in deciding stage
-                const isDecidingStage = trade?.status === 'deciding' || trade?.stage === 'deciding'
+                // Is a decision actually pending? That is a fact about the
+                // decision workflow, not about the idea's maturity, so it is
+                // read from `status` — the stage no longer claims to know.
+                const isDecidingStage = trade?.status === 'deciding'
                 const canMakeDecision = isOwner && isDecidingStage
 
                 // Recommendation state
@@ -7222,11 +7268,21 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 <Clock className="h-6 w-6 text-gray-600 dark:text-gray-400" />
               </div>
               <div className="flex-1">
+                {/*
+                  Two different actions share this sheet. With a portfolio
+                  selected it records a real DECISION — a PM answering "not
+                  now" to a recommendation — and keeps the word Defer. Without
+                  one it is a personal reminder about an idea nobody has been
+                  asked to decide, so it says Snooze, which is what it now
+                  does: set a revisit date and change nothing else.
+                */}
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Defer Trade Idea
+                  {selectedDecisionPortfolioId ? 'Defer Recommendation' : 'Snooze Idea'}
                 </h3>
                 <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                  When should this idea resurface for review?
+                  {selectedDecisionPortfolioId
+                    ? 'Recorded as a decision on this portfolio. When should it come back?'
+                    : 'Hides this idea until the date you choose. It stays undecided and no outcome is recorded.'}
                 </p>
               </div>
             </div>
@@ -7241,7 +7297,9 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 allowPastDates={false}
               />
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Leave empty to defer indefinitely
+                {selectedDecisionPortfolioId
+                  ? 'Leave empty to defer indefinitely'
+                  : 'Leave empty to snooze indefinitely'}
               </p>
             </div>
             <div className="mt-6 flex justify-end gap-3">
@@ -7334,10 +7392,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 Submit Your Recommendation
               </h3>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                {trade.stage === 'deciding'
-                  ? `Add your sizing recommendation for ${trade.assets?.symbol}.`
-                  : `Before moving to Deciding, please submit your sizing recommendation for ${trade.assets?.symbol}.`
-                }
+                {`Add your sizing recommendation for ${trade.assets?.symbol}. It will appear in the Decision Inbox for PM review.`}
               </p>
 
               <div className="space-y-4">
@@ -7463,10 +7518,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                         assetCompanyName: trade?.assets?.company_name || null,
                       }, context)
 
-                      // Only move to deciding if not already there
-                      if (trade.stage !== 'deciding') {
-                        await updateStatusMutation.mutateAsync('deciding')
-                      }
+                      // The idea's stage is NOT changed. Submitting says the
+                      // recommendation now exists and is awaiting a decision —
+                      // that fact lives on the decision_requests row created
+                      // above, which is what the Decision Inbox reads.
 
                       // Refresh proposals, decision inbox, and activity
                       queryClient.invalidateQueries({ queryKey: ['trade-proposals', tradeId] })
@@ -7489,7 +7544,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                   loading={isSubmittingProposal}
                 >
                   <Scale className="h-4 w-4 mr-1.5" />
-                  {trade.stage === 'deciding' ? 'Submit Recommendation' : 'Submit & Move to Deciding'}
+                  Submit Recommendation
                 </Button>
               </div>
             </div>

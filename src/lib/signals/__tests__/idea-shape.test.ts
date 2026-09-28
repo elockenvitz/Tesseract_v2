@@ -36,29 +36,40 @@ describe('stanceOf', () => {
 })
 
 describe('maturityOf', () => {
-  it('normalises the three early stages to one pill', () => {
-    for (const s of ['aware', 'investigate', 'deep_research']) {
+  it('normalises the two early stages to one pill', () => {
+    for (const s of ['exploring', 'researching']) {
       expect(maturityOf(s)).toMatchObject({ maturity: 'researching', label: 'RESEARCHING' })
     }
   })
 
   it('keeps the later stages distinct, because each asks something different', () => {
-    expect(maturityOf('thesis_forming').label).toBe('THESIS FORMING')
-    expect(maturityOf('ready_for_decision').label).toBe('DECISION READY')
-    expect(maturityOf('deciding').label).toBe('DECIDING')
+    expect(maturityOf('developing').label).toBe('THESIS FORMING')
+    expect(maturityOf('ready_to_recommend').label).toBe('DECISION READY')
   })
 
   it('marks only the stages that are actually asking the desk for something', () => {
-    expect(maturityOf('deep_research').awaitingDesk).toBe(false)
-    expect(maturityOf('thesis_forming').awaitingDesk).toBe(false)
-    expect(maturityOf('ready_for_decision').awaitingDesk).toBe(true)
+    expect(maturityOf('exploring').awaitingDesk).toBe(false)
+    expect(maturityOf('researching').awaitingDesk).toBe(false)
+    expect(maturityOf('developing').awaitingDesk).toBe(false)
+    expect(maturityOf('ready_to_recommend').awaitingDesk).toBe(true)
+  })
+
+  it('never shows a DECIDING pill, because that was never maturity', () => {
+    // Whether a decision is underway is a fact about a decision_requests row.
+    // A former `deciding` idea reads as mature and awaiting the desk, which
+    // is what it actually was.
+    expect(maturityOf('deciding').label).toBe('DECISION READY')
     expect(maturityOf('deciding').awaitingDesk).toBe(true)
   })
 
   it('reads the legacy stage vocabulary still present on old rows', () => {
     expect(maturityOf('idea').maturity).toBe('researching')
-    expect(maturityOf('working_on').maturity).toBe('researching')
+    expect(maturityOf('aware').maturity).toBe('researching')
+    expect(maturityOf('investigate').maturity).toBe('researching')
+    expect(maturityOf('working_on').maturity).toBe('thesis_forming')
     expect(maturityOf('modeling').maturity).toBe('thesis_forming')
+    expect(maturityOf('deep_research').maturity).toBe('thesis_forming')
+    expect(maturityOf('ready_for_decision').maturity).toBe('decision_ready')
   })
 
   it('shows no pill at all for a stage it cannot read', () => {

@@ -163,7 +163,30 @@ const MAX_ERRORS = 0
 // this lane. Four of the five were created and cleared by the same pass, so
 // the ground actually gained is one — held here rather than left as slack a
 // later regression could hide in.
-const MAX_REPO_ERRORS = 8676
+//
+// → 8671 with the four-stage Idea Pipeline. Collapsing eleven stage values to
+// four made `ResearchStage` a narrow union, and TypeScript then rejected every
+// site still naming a retired stage — 37 of them. Those were not new errors;
+// they were pre-existing wrongness the old eleven-value union had been wide
+// enough to accept, including four `=== 'deciding'` comparisons that could
+// never be true. Fixing them cleared the 37 and five besides, mostly dead
+// array literals and an unused `groupedDecidingProposals`. Held at the
+// measured floor.
+//
+// → 8667 closing the decision/outcome bypasses. Routing the Attention feed's
+// Approve/Reject and the simulation Trade List through the service deleted
+// several hand-written `.update()` payloads, each of which had been producing
+// the `never` error from the untyped Database type. The `as never` casts on
+// the payloads that remain are the documented workaround for that same defect,
+// not a claim that those payloads are correct.
+// → 8662 with the expand/contract rollout. Normalising `effectiveStage` at
+// the Trade Lab boundary made its type canonical, and TypeScript then rejected
+// every downstream comparison against a retired label — a stage filter, two
+// colour ladders, a sort rank and a third copy of the submit-time auto-advance,
+// all of which would have silently stopped matching after the contract
+// migration rather than failing loudly. Fixing them cleared those and five
+// besides.
+const MAX_REPO_ERRORS = 8662
 
 /**
  * A floor on real source files, now that they are counted as source files.

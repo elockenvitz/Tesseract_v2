@@ -16,65 +16,65 @@ import type { DecisionStage } from '../types/outcomes'
 // Research Pipeline Stages (v2)
 // ============================================================
 
-export const RESEARCH_STAGES: ResearchStage[] = [
-  'aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision',
-]
+/**
+ * The pipeline vocabulary now lives in `lib/ideas/stage-model`. These
+ * re-exports keep the many existing `trade-status-semantics` imports working;
+ * there is no second definition here any more.
+ */
+export {
+  IDEA_STAGES,
+  IDEA_STAGE_CONFIG,
+  isIdeaStage,
+  stageLabel,
+  stageIndex,
+  isForwardMove,
+  previousStage,
+  nextStage,
+  FINAL_STAGE,
+  isFinalStage,
+  missingForStage,
+  canMoveToStage,
+  toIdeaStage,
+} from './ideas/stage-model'
+export type { IdeaStage, IdeaStageConfig } from './ideas/stage-model'
 
+import {
+  IDEA_STAGES as CANONICAL_STAGES,
+  IDEA_STAGE_CONFIG as CANONICAL_CONFIG,
+  toIdeaStage as coerceStage,
+} from './ideas/stage-model'
+import type { IdeaStage } from './ideas/stage-model'
+
+/** @deprecated Use `IDEA_STAGES`. */
+export const RESEARCH_STAGES: ResearchStage[] = [...CANONICAL_STAGES]
+
+/**
+ * @deprecated Use `IDEA_STAGE_CONFIG`.
+ *
+ * `shortLabel` is retained only because a handful of narrow surfaces read it.
+ * It is the same string as `label` — the four names are already short, and two
+ * names for one stage is how the old vocabulary drifted in the first place.
+ */
 export const RESEARCH_STAGE_CONFIG: Record<ResearchStage, {
   label: string
   shortLabel: string
   description: string
   color: string
   iconColor: string
-}> = {
-  aware: {
-    label: 'Aware',
-    shortLabel: 'Aware',
-    description: 'On the radar. Capture the initial thesis seed and why this name surfaced.',
-    color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
-    iconColor: 'text-sky-500',
-  },
-  investigate: {
-    label: 'Investigate',
-    shortLabel: 'Investigate',
-    description: 'Actively researching fundamentals, catalysts, and competitive position.',
-    color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
-    iconColor: 'text-yellow-500',
-  },
-  deep_research: {
-    label: 'Deep Research',
-    shortLabel: 'Deep Research',
-    description: 'Building the model, stress-testing assumptions, and sizing the opportunity.',
-    color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
-    iconColor: 'text-purple-500',
-  },
-  thesis_forming: {
-    label: 'Thesis Forming',
-    shortLabel: 'Thesis Forming',
-    description: 'Ideas here should have a clear thesis, defined catalysts, and key risks articulated.',
-    color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
-    iconColor: 'text-indigo-500',
-  },
-  ready_for_decision: {
-    label: 'Ready for Decision',
-    shortLabel: 'Ready for Decision',
-    description: 'Research complete. These ideas are mature enough for a formal decision request.',
-    color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-    iconColor: 'text-amber-500',
-  },
-}
+}> = Object.fromEntries(
+  CANONICAL_STAGES.map((s) => [s, { ...CANONICAL_CONFIG[s], shortLabel: CANONICAL_CONFIG[s].label }]),
+) as Record<IdeaStage, { label: string; shortLabel: string; description: string; color: string; iconColor: string }>
 
 /**
- * Map a trade_queue_items.stage value to a ResearchStage (or null if terminal/legacy).
+ * @deprecated Use `toIdeaStage`, which never returns null.
+ *
+ * The old signature returned `ResearchStage | null` and callers branched on the
+ * null. There is no longer a stage value that fails to map, so this always
+ * returns a stage; the nullable return type is kept only so existing
+ * null-checks still compile.
  */
 export function toResearchStage(stage: string): ResearchStage | null {
-  if (RESEARCH_STAGES.includes(stage as ResearchStage)) return stage as ResearchStage
-  // Map v1 stages
-  if (stage === 'idea') return 'aware'
-  if (stage === 'working_on' || stage === 'discussing') return 'investigate'
-  if (stage === 'modeling' || stage === 'simulating') return 'deep_research'
-  if (stage === 'deciding') return 'ready_for_decision'
-  return null
+  return coerceStage(stage)
 }
 
 // ============================================================

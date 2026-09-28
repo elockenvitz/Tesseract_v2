@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { INITIAL_STAGE } from '../lib/ideas/stage-model'
 import { useAuth } from './useAuth'
 import { useToast } from '../components/common/Toast'
 
@@ -46,7 +47,7 @@ export function usePromoteToTradeIdea() {
           portfolio_id: input.portfolioId || null,
           action: input.action,
           urgency: input.urgency || 'medium',
-          stage: 'idea',
+          stage: INITIAL_STAGE,
           status: 'idea',
           visibility_tier: 'active',
           sharing_visibility: input.visibility || 'private',

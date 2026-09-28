@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '../supabase'
+import { INITIAL_STAGE } from '../ideas/stage-model'
 import { createTradeIdea, type CreateTradeParams } from './trade-idea-service'
 import { emitAuditEvent } from '../audit/audit-service'
 import type { ActionContext } from '../../types/trading'
@@ -133,7 +134,9 @@ export async function createCounterView(params: CreateCounterViewParams): Promis
     state: {
       from: null,
       to: {
-        stage: 'idea',
+        // Must match what `createTradeIdea` actually inserted. Left as 'idea'
+        // this would record a stage the row never had.
+        stage: INITIAL_STAGE,
         outcome: null,
         relationship: 'opposes',
         original_idea_id: originalIdeaId,

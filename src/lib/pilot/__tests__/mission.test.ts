@@ -193,8 +193,21 @@ describe('stage 2 — Idea Pipeline basics', () => {
 
   /** Still exported for the Pipeline's own use; no stage reads it now. */
   it('keeps the stage vocabulary helper', () => {
+    // The first stage is where every idea is born, so sitting there is not an
+    // advance. Anything past it is.
+    expect(isPipelineAdvanced('exploring')).toBe(false)
+    expect(isPipelineAdvanced('researching')).toBe(true)
+    expect(isPipelineAdvanced('developing')).toBe(true)
+    expect(isPipelineAdvanced('ready_to_recommend')).toBe(true)
+
+    // Creation paths still write the legacy `idea`, which resolves to the
+    // first stage and therefore still does not count.
     expect(isPipelineAdvanced('idea')).toBe(false)
+    expect(isPipelineAdvanced('aware')).toBe(false)
     expect(isPipelineAdvanced('investigate')).toBe(true)
+
+    expect(isPipelineAdvanced(null)).toBe(false)
+    expect(isPipelineAdvanced('')).toBe(false)
   })
 })
 

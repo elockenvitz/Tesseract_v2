@@ -15,8 +15,10 @@ import { useAuth } from './useAuth'
 import { useToast } from '../components/common/Toast'
 import { usePipelineMoveMarker } from './usePipelineMoveMarker'
 import { usePendingLineageStore } from '../stores/pendingLineageStore'
+import { FINAL_STAGE, toIdeaStage } from '../lib/ideas/stage-model'
 import {
   moveTradeIdea,
+  snoozeTradeIdea,
   deleteTradeIdea,
   restoreTradeIdea,
   archiveTradeIdea,
@@ -67,28 +69,29 @@ function buildActionContext(
 }
 
 /**
- * Map legacy status (or research stage used as targetStatus) to new stage/outcome
+ * Map a legacy status (or a stage passed as a targetStatus) to a move target.
+ *
+ * The three decision outcomes now land on `ready_to_recommend` rather than a
+ * `deciding` stage. Recording a decision does not change how well understood
+ * the idea is, so it must not move the idea down the pipeline — and
+ * `ready_to_recommend` is where the service permits an outcome to be set.
+ *
+ * Stage values pass through `toIdeaStage`, which also absorbs the legacy
+ * vocabulary a caller may still hold.
  */
 function statusToTarget(status: TradeQueueStatus | string): MoveTarget {
   switch (status) {
     case 'executed':
     case 'approved':
-      return { stage: 'deciding', outcome: 'executed' }
+      return { stage: FINAL_STAGE, outcome: 'executed' }
     case 'rejected':
-      return { stage: 'deciding', outcome: 'rejected' }
+      return { stage: FINAL_STAGE, outcome: 'rejected' }
     case 'cancelled':
-      return { stage: 'deciding', outcome: 'deferred' }
+      return { stage: FINAL_STAGE, outcome: 'deferred' }
     case 'deleted':
       throw new Error('Use deleteTradeIdea instead')
-    // Research stages pass through directly
-    case 'aware':
-    case 'investigate':
-    case 'deep_research':
-    case 'thesis_forming':
-    case 'ready_for_decision':
-      return { stage: status as TradeStage }
     default:
-      return { stage: status as TradeStage }
+      return { stage: toIdeaStage(status) }
   }
 }
 
@@ -293,7 +296,23 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     },
   })
 
-  // Defer trade mutation (with optional resurface date)
+  /**
+   * Snooze an idea until a date. NOT a decision.
+   *
+   * This wrote `outcome: 'deferred'`, which made the idea terminal —
+   * `isTerminalIdea` treats any non-null outcome as an end state — so parking
+   * an idea for three weeks recorded it as concluded and removed it from the
+   * live pipeline permanently. It also claimed a decision nobody had made,
+   * which the outcome rule now refuses outright.
+   *
+   * Deferring in the Decision Inbox is unchanged and still a real decision:
+   * a PM answering "not now" to a submitted recommendation, recorded on
+   * `decision_requests.status`. This is the other thing that was sharing its
+   * name — a personal reminder about an idea nobody has been asked to decide.
+   *
+   * `deferredUntil` is accepted under its old name and written to `revisit_at`,
+   * the column `useAttention`'s defer already uses.
+   */
   const deferTradeM = useMutation({
     mutationFn: async (params: {
       tradeId: string
@@ -302,22 +321,18 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     }) => {
       if (!user?.id) throw new Error('Not authenticated')
 
-      await moveTradeIdea({
+      await snoozeTradeIdea({
         tradeId: params.tradeId,
-        target: {
-          stage: 'deciding',
-          outcome: 'deferred',
-          deferredUntil: params.deferredUntil || null,
-        },
+        revisitAt: params.deferredUntil || null,
         context: buildActionContext(user, params.uiSource),
       })
     },
     onSuccess: () => {
       invalidateQueries()
-      toast.success('Trade deferred')
+      toast.success('Snoozed', 'This idea will come back on the date you set.')
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to defer trade')
+      toast.error(error instanceof Error ? error.message : 'Failed to snooze idea')
     },
   })
 
@@ -728,7 +743,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
 
       await moveTradeIdea({
         tradeId: params.tradeId,
-        target: { stage: 'deciding', outcome: params.outcome },
+        target: { stage: FINAL_STAGE, outcome: params.outcome },
         context: buildActionContext(user, params.uiSource),
         note: params.note,
       })

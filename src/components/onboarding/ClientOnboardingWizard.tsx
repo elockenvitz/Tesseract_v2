@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
+import type { IdeaStage } from '../../lib/ideas/stage-model'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useClientOnboarding, ONBOARDING_STEPS, type OnboardingStepKey } from '../../hooks/useClientOnboarding'
@@ -227,11 +228,18 @@ export function ClientOnboardingWizard() {
       if (hErr) throw new Error(`Failed to seed holdings for the new portfolio: ${hErr.message}`)
     }
 
-    // Seed sample trade ideas at different pipeline stages
-    const sampleIdeas = [
-      { symbol: tpl.positions[0]?.symbol, action: 'add', stage: 'idea', thesis: 'Strong momentum and earnings growth trajectory. Consider adding to position.' },
-      { symbol: tpl.positions[3]?.symbol, action: 'trim', stage: 'discussing', thesis: 'Valuation stretched relative to peers. Evaluate trimming to reduce concentration risk.' },
-      { symbol: tpl.positions[6]?.symbol, action: 'buy', stage: 'deep_research', thesis: 'Compelling entry point after recent pullback. Needs further analysis on competitive positioning.' },
+    // Seed sample trade ideas at different pipeline stages.
+    //
+    // Canonical stages, and typed so they cannot drift back. These were
+    // 'idea', 'discussing' and 'deep_research' — retired values a new pilot
+    // org would have been seeded with, and which stop being insertable once
+    // the contract migration lands. The point of the seed is a board showing
+    // DIFFERENT maturities, so they are named individually rather than all
+    // starting at INITIAL_STAGE.
+    const sampleIdeas: Array<{ symbol?: string; action: string; stage: IdeaStage; thesis: string }> = [
+      { symbol: tpl.positions[0]?.symbol, action: 'add', stage: 'exploring', thesis: 'Strong momentum and earnings growth trajectory. Consider adding to position.' },
+      { symbol: tpl.positions[3]?.symbol, action: 'trim', stage: 'developing', thesis: 'Valuation stretched relative to peers. Evaluate trimming to reduce concentration risk.' },
+      { symbol: tpl.positions[6]?.symbol, action: 'buy', stage: 'developing', thesis: 'Compelling entry point after recent pullback. Needs further analysis on competitive positioning.' },
     ]
     for (const idea of sampleIdeas) {
       const ideaAssetId = assetMap.get(idea.symbol || '')

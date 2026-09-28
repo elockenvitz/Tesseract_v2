@@ -41,8 +41,11 @@ describe('ideaRowFromFeedItem', () => {
   })
 
   it('maps stage to maturity rather than inventing one', () => {
-    expect(ideaRowFromFeedItem(tradeIdea({ stage: 'deep_research' }))?.maturity).toBe('researching')
-    expect(ideaRowFromFeedItem(tradeIdea({ stage: 'ready_for_decision' }))?.maturity).toBe('decision_ready')
+    expect(ideaRowFromFeedItem(tradeIdea({ stage: 'researching' }))?.maturity).toBe('researching')
+    expect(ideaRowFromFeedItem(tradeIdea({ stage: 'developing' }))?.maturity).toBe('thesis_forming')
+    expect(ideaRowFromFeedItem(tradeIdea({ stage: 'ready_to_recommend' }))?.maturity).toBe('decision_ready')
+    // A pre-migration row still resolves rather than falling through.
+    expect(ideaRowFromFeedItem(tradeIdea({ stage: 'deep_research' }))?.maturity).toBe('thesis_forming')
     // No stage is a real state, and it must not throw or guess upward.
     expect(ideaRowFromFeedItem(tradeIdea({ stage: null }))?.maturity).toBe('researching')
   })

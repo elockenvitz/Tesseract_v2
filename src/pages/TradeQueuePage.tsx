@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
+﻿import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import {
@@ -86,7 +86,8 @@ import { useTradeExpressionCounts, getExpressionStatus } from '../hooks/useTrade
 import { useTradeIdeaService } from '../hooks/useTradeIdeaService'
 import { submitRecommendation } from '../lib/services/recommendation-service'
 import { isCreatorOrCoAnalyst, getUserPortfolioRole, isPMForPortfolio } from '../lib/permissions/trade-idea-permissions'
-import { RESEARCH_STAGES, RESEARCH_STAGE_CONFIG, toResearchStage } from '../lib/trade-status-semantics'
+import { RESEARCH_STAGES, RESEARCH_STAGE_CONFIG } from '../lib/trade-status-semantics'
+import { IDEA_STAGES, toIdeaStage, FINAL_STAGE, missingForStage } from '../lib/ideas/stage-model'
 import type { ActionContext, TradeSizingMode, ResearchStage } from '../types/trading'
 
 const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string; icon: React.ElementType }> = {
@@ -106,38 +107,40 @@ const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string; ic
 }
 
 const STAGE_ICON: Record<ResearchStage, React.ElementType> = {
-  aware: Eye,
-  investigate: SearchCode,
-  deep_research: Microscope,
-  thesis_forming: BrainCircuit,
-  ready_for_decision: Gavel,
+  exploring: Eye,
+  researching: SearchCode,
+  developing: BrainCircuit,
+  ready_to_recommend: Gavel,
 }
 
+/**
+ * The long-form help for each column.
+ *
+ * `purpose` restates the stage's question, because the question is what makes
+ * two analysts put the same idea in the same place. `advance` says what has to
+ * be TRUE to move on, never how much work has been done — the pipeline
+ * measures understanding, not activity.
+ */
 const STAGE_DESCRIPTION: Record<ResearchStage, { purpose: string; activity: string; advance: string }> = {
-  aware: {
-    purpose: 'Initial catalyst or observation. You\'ve noticed something worth watching — a news item, price move, or gut feeling.',
-    activity: 'No commitment yet. Just flag it. Capture the initial observation and why it caught your eye.',
-    advance: 'When you\'re ready to investigate further.',
+  exploring: {
+    purpose: 'Is this worth spending meaningful time on? Something caught your eye — a news item, a price move, a conversation.',
+    activity: 'Capture it, screen it, gather enough context to judge whether it deserves real work. No commitment yet.',
+    advance: 'When you decide this earns real research effort.',
   },
-  investigate: {
-    purpose: 'Early diligence. Reading filings, studying the business, identifying key drivers.',
-    activity: 'Build a working understanding of the setup. Identify whether there\'s a real opportunity here.',
-    advance: 'When you have a working hypothesis and want to go deeper.',
+  researching: {
+    purpose: 'What is actually true here? Building an accurate picture of the situation before forming a view of it.',
+    activity: 'Read the research, work through filings and data, run channel checks, test assumptions. Surface conflicting evidence rather than filtering it out.',
+    advance: 'When you understand the situation well enough to start forming a view. Not when you have read a certain number of things.',
   },
-  deep_research: {
-    purpose: 'Serious work. Modeling, expert calls, primary research, scenario analysis.',
-    activity: 'Test the thesis against data. Stress-test assumptions. Quantify the risk/reward.',
-    advance: 'When you have conviction in the underlying view and are ready to frame it as a trade.',
+  developing: {
+    purpose: 'What do we think, and what should we do? Turning evidence into an investment view.',
+    activity: 'Form and refine the thesis, establish where it differs from consensus, run scenarios, model upside and downside, consider sizing, name the risks.',
+    advance: 'When there is a thesis and a reason to act now — both are required to move on.',
   },
-  thesis_forming: {
-    purpose: 'Crystallizing the trade thesis. Defining what you believe, why now, and how you\'d size it.',
-    activity: 'Write the thesis. Set reference levels (entry, stop, target). Define conviction and time horizon.',
-    advance: 'When rationale, thesis, and reference levels are all in place.',
-  },
-  ready_for_decision: {
-    purpose: 'Handoff to PM. Rationale, thesis, and reference levels are complete. Ready for sizing recommendation.',
-    activity: 'Submit a portfolio-specific sizing recommendation. PM will accept, reject, or defer from the Decision Inbox.',
-    advance: 'When a PM makes a decision.',
+  ready_to_recommend: {
+    purpose: 'Am I prepared to formally advocate for an action? The work is done and the case is ready to put in front of a decision-maker.',
+    activity: 'Submit a portfolio-specific recommendation. It goes to the Decision Inbox, where a PM will accept, reject, or defer it.',
+    advance: 'This is the end of the pipeline. What happens next is a decision, not a further stage — the idea stays here while it is reviewed.',
   },
 }
 
@@ -494,7 +497,7 @@ export function TradeQueuePage({
     },
   })
 
-  // Build map of trade_queue_item_id → Set<portfolio_id> for committed trades.
+  // Build map of trade_queue_item_id â†’ Set<portfolio_id> for committed trades.
   // Used to show green check on portfolio dropdown items in idea cards.
   const { data: committedTradeMap } = useQuery({
     queryKey: ['committed-trade-portfolios'],
@@ -858,20 +861,27 @@ export function TradeQueuePage({
   // Acknowledge resurfaced item mutation (restore to original status)
   const acknowledgeResurfacedMutation = useMutation({
     mutationFn: async (item: TradeQueueItemWithDetails) => {
-      // Get the original status from previous_state, default to 'idea'
-      const previousState = item.previous_state as { status?: string } | null
+      // `previous_state` is jsonb holding the STATUS the idea had before it
+      // was deferred, plus its stage. It was being written into BOTH columns —
+      // so a status value like 'idea' or 'deciding' went into the stage enum,
+      // which after the four-stage migration Postgres rejects outright.
+      //
+      // Coerce each column from the right field. `toIdeaStage` absorbs the
+      // legacy vocabulary `previous_state` still holds; the migration does not
+      // rewrite that jsonb, so it can hand back a retired value indefinitely.
+      const previousState = item.previous_state as { status?: string; stage?: string } | null
       const originalStatus = previousState?.status || 'idea'
 
       const { error } = await supabase
         .from('trade_queue_items')
         .update({
           status: originalStatus,
-          stage: originalStatus,
+          stage: toIdeaStage(previousState?.stage ?? originalStatus),
           outcome: null,
           deferred_until: null,
           previous_state: null,
           updated_at: new Date().toISOString(),
-        })
+        } as never)
         .eq('id', item.id)
 
       if (error) throw error
@@ -1148,27 +1158,19 @@ export function TradeQueuePage({
 
   // Group items by research stage for kanban view (excluding individual pair trade legs)
   const itemsByStage = useMemo(() => {
-    const groups: Record<ResearchStage, TradeQueueItemWithDetails[]> = {
-      aware: [],
-      investigate: [],
-      deep_research: [],
-      thesis_forming: [],
-      ready_for_decision: [],
-    }
+    const groups = Object.fromEntries(
+      IDEA_STAGES.map(s => [s, [] as TradeQueueItemWithDetails[]]),
+    ) as Record<ResearchStage, TradeQueueItemWithDetails[]>
 
     filteredItems.forEach(item => {
       // Skip items that are part of pair trades - they'll be shown as grouped cards
       if (pairTradeItemIds.has(item.id)) return
 
-      // Resurfaced deferred items go back to their original stage (or Aware if unknown)
-      let researchStage: ResearchStage
-      if (isDeferredAndReady(item)) {
-        const returnStage = getResurfaceStage(item)
-        researchStage = toResearchStage(returnStage) || 'aware'
-      } else {
-        researchStage = toResearchStage(item.stage) || 'aware'
-      }
-      groups[researchStage].push(item)
+      // Resurfaced deferred items go back to where they were. `getResurfaceStage`
+      // reads `previous_state`, which stores the stage as free text and may
+      // still hold a pre-migration value — `toIdeaStage` absorbs that.
+      const stage = isDeferredAndReady(item) ? getResurfaceStage(item) : item.stage
+      groups[toIdeaStage(stage)].push(item)
     })
 
     return groups
@@ -1192,18 +1194,13 @@ export function TradeQueuePage({
 
   // Group pair trades by research stage
   const pairTradesByStage = useMemo(() => {
-    const groups: Record<ResearchStage, Array<{ pairTradeId: string; pairTrade: any; legs: TradeQueueItemWithDetails[] }>> = {
-      aware: [],
-      investigate: [],
-      deep_research: [],
-      thesis_forming: [],
-      ready_for_decision: [],
-    }
+    const groups = Object.fromEntries(
+      IDEA_STAGES.map(s => [s, [] as Array<{ pairTradeId: string; pairTrade: any; legs: TradeQueueItemWithDetails[] }>]),
+    ) as Record<ResearchStage, Array<{ pairTradeId: string; pairTrade: any; legs: TradeQueueItemWithDetails[] }>>
 
     pairTradeGroups.forEach((group, pairTradeId) => {
       if (!group?.pairTrade) return
-      const stage = toResearchStage(group.pairTrade.status as string) || 'aware'
-      groups[stage].push({ pairTradeId, ...group })
+      groups[toIdeaStage(group.pairTrade.status as string)].push({ pairTradeId, ...group })
     })
 
     return groups
@@ -1272,8 +1269,15 @@ export function TradeQueuePage({
       return
     }
 
-    // Research stages + legacy global stages that only creator/assigned/co-analysts can move
-    const globalStages: string[] = ['idea', 'discussing', 'working_on', 'simulating', 'modeling', ...RESEARCH_STAGES]
+    // Stage moves that only the creator, assignee or co-analysts may make.
+    // The legacy names stay in the list: a drop target rendered from a stale
+    // cache can still carry one, and treating it as a non-stage move would
+    // skip the permission check rather than fail closed.
+    const globalStages: string[] = [
+      ...IDEA_STAGES,
+      'idea', 'discussing', 'working_on', 'simulating', 'modeling',
+      'aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision', 'deciding',
+    ]
     const isGlobalStageMove = globalStages.includes(targetStatus)
 
     // Handle pair trade drag - uses audited service
@@ -1328,7 +1332,7 @@ export function TradeQueuePage({
     }
 
     // No-op check: compare against item's resolved research stage
-    const itemResearchStage = toResearchStage(item.stage)
+    const itemResearchStage = toIdeaStage(item.stage)
     if (itemResearchStage === targetStatus || item.status === targetStatus) {
       setDraggedItem(null)
       return
@@ -1746,7 +1750,7 @@ export function TradeQueuePage({
                   "gap-3 flex-shrink-0 pb-2",
                   fullscreenColumn
                     ? "grid grid-cols-1"
-                    : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+                    : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                 )}>
                   {RESEARCH_STAGES.map((stage) => {
                     const stageConfig = RESEARCH_STAGE_CONFIG[stage]
@@ -1851,7 +1855,7 @@ export function TradeQueuePage({
                   "gap-3 flex-1 min-h-0 overflow-y-auto pt-2",
                   fullscreenColumn
                     ? "grid grid-cols-1"
-                    : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+                    : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                 )}>
                   {RESEARCH_STAGES.map((stage, stageIdx) => {
                     const stageConfig = RESEARCH_STAGE_CONFIG[stage]
@@ -1904,7 +1908,7 @@ export function TradeQueuePage({
                                 onMoveLeft={prevStage ? () => movePairTrade({ pairTradeId, targetStatus: prevStage as any, uiSource: 'arrow_button' }) : undefined}
                                 onMoveRight={nextStage ? () => movePairTrade({ pairTradeId, targetStatus: nextStage as any, uiSource: 'arrow_button' }) : undefined}
                                 currentUserId={user?.id}
-                                onProposalClick={stage === 'ready_for_decision' ? () => {
+                                onProposalClick={stage === FINAL_STAGE ? () => {
                                   setSelectedTradeId(pairTradeId)
                                   setSelectedTradeInitialTab('decisions')
                                 } : undefined}
@@ -1931,7 +1935,7 @@ export function TradeQueuePage({
                                 canMoveRight={!!nextStage && canUserMoveItem(item)}
                                 onMoveLeft={prevStage ? () => moveTrade({ tradeId: item.id, targetStatus: prevStage as any, uiSource: 'arrow_button' }) : undefined}
                                 onMoveRight={nextStage ? () => moveTrade({ tradeId: item.id, targetStatus: nextStage as any, uiSource: 'arrow_button' }) : undefined}
-                                onProposalClick={stage === 'ready_for_decision' ? () => {
+                                onProposalClick={stage === FINAL_STAGE ? () => {
                                   setProposalTradeId(item.id)
                                   setProposalTrade(item)
                                   setShowProposalModal(true)
@@ -1944,20 +1948,20 @@ export function TradeQueuePage({
                             {items.length === 0 && pairs.length === 0 && (
                               <div className="flex flex-col items-center justify-center py-8 text-center px-3">
                                 <StageIcon className="h-8 w-8 text-gray-300 dark:text-gray-600 mb-3" />
-                                {stage === 'thesis_forming' ? (
+                                {stage === 'developing' ? (
                                   <>
-                                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1.5">Refine before recommending</p>
+                                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1.5">What do we think, and what should we do?</p>
                                     <ul className="text-[11px] text-gray-500 dark:text-gray-400 text-left space-y-1 list-none">
-                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Clear bull / bear thesis defined</li>
-                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Catalysts and timing identified</li>
-                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Key risks pressure-tested</li>
+                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Thesis and variant perception articulated</li>
+                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Scenarios run, sizing considered</li>
+                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Key risks named and pressure-tested</li>
                                     </ul>
-                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">Move here when ready to structure a recommendation.</p>
+                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">Move here once you understand the situation well enough to form a view.</p>
                                   </>
-                                ) : stage === 'ready_for_decision' ? (
+                                ) : stage === FINAL_STAGE ? (
                                   <>
-                                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Research complete</p>
-                                    <p className="text-[11px] text-gray-500 dark:text-gray-400">Ideas here are mature enough for a formal recommendation and PM review.</p>
+                                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Ready to advocate</p>
+                                    <p className="text-[11px] text-gray-500 dark:text-gray-400">Ideas here are ready to put in front of a decision-maker. Submit a recommendation and it appears in the Decision Inbox.</p>
                                     <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5">Drag ideas here or use the arrow buttons.</p>
                                   </>
                                 ) : (
@@ -1988,7 +1992,7 @@ export function TradeQueuePage({
           onToggleCollapsed={() => setDecisionPanelCollapsed(prev => {
             const next = !prev
             // Mark pilot step 2 the first time the inbox is opened.
-            // We only fire on collapsed → open transitions so closing
+            // We only fire on collapsed â†’ open transitions so closing
             // the panel doesn't trigger the mark.
             if (prev && pilotMode.effectiveIsPilot) markPilotStep2()
             return next
@@ -2130,7 +2134,7 @@ export function TradeQueuePage({
                             </span>
                           </div>
                           {hasAnyProposal && (
-                            <span className="text-xs text-green-600 dark:text-green-400 font-medium">✓</span>
+                            <span className="text-xs text-green-600 dark:text-green-400 font-medium">âœ“</span>
                           )}
                         </div>
 
@@ -2458,7 +2462,7 @@ export function TradeQueuePage({
                           )}
                         </span>
                         {proposal?.value && (
-                          <span className="text-green-600 dark:text-green-400">✓</span>
+                          <span className="text-green-600 dark:text-green-400">âœ“</span>
                         )}
                       </button>
 
@@ -2520,9 +2524,9 @@ export function TradeQueuePage({
                                 {sizingMode === 'weight' && `Target weight: ${proposal.value}%`}
                                 {sizingMode === 'delta_weight' && (
                                   parseFloat(proposal.value) > 0
-                                    ? `Increase weight by ${proposal.value}% → ${(portfolio.currentWeight + parseFloat(proposal.value)).toFixed(2)}%`
+                                    ? `Increase weight by ${proposal.value}% â†’ ${(portfolio.currentWeight + parseFloat(proposal.value)).toFixed(2)}%`
                                     : parseFloat(proposal.value) < 0
-                                    ? `Decrease weight by ${Math.abs(parseFloat(proposal.value))}% → ${(portfolio.currentWeight + parseFloat(proposal.value)).toFixed(2)}%`
+                                    ? `Decrease weight by ${Math.abs(parseFloat(proposal.value))}% â†’ ${(portfolio.currentWeight + parseFloat(proposal.value)).toFixed(2)}%`
                                     : `No change from current ${portfolio.currentWeight.toFixed(2)}%`
                                 )}
                                 {sizingMode === 'active_weight' && portfolio.benchmarkWeight !== null &&
@@ -3047,10 +3051,15 @@ function PairTradeCard({
           // many legs have their own decision_requests. Use the deduped
           // pair proposal count as the source of truth.
           const pairRecCount = pairTradeProposals.length
-          const missing: string[] = []
-          if (!hasRationale) missing.push('Why now')
-          if (['thesis_forming', 'ready_for_decision', 'deciding'].includes(stage) && !hasThesis) missing.push('Trade thesis')
-          if (['ready_for_decision', 'deciding'].includes(stage) && pairRecCount === 0) missing.push('Recommendation')
+          // The stage gate itself is the canonical one. What is added here is
+          // the Submit Recommendation prompt — which is NOT a gate: an idea at
+          // Ready to Recommend with no recommendation yet is in a perfectly
+          // valid state, it just has an obvious next action.
+          const missing = missingForStage(
+            { rationale: hasRationale ? pairTrade.rationale : null, thesis_text: hasThesis ? 'y' : null },
+            toIdeaStage(stage),
+          )
+          if (toIdeaStage(stage) === FINAL_STAGE && pairRecCount === 0) missing.push('Recommendation')
           if (missing.length === 0) return null
           return (
             <div className="absolute top-2 right-2">
@@ -4249,10 +4258,13 @@ function TradeQueueCard({
           const stage = item.stage || item.status
           const hasThesis = !!(item as any).thesis_text
           const hasRationale = !!item.rationale
-          const missing: string[] = []
-          if (!hasRationale) missing.push('Why now')
-          if (['thesis_forming', 'ready_for_decision', 'deciding'].includes(stage) && !hasThesis) missing.push('Trade thesis')
-          if (['ready_for_decision', 'deciding'].includes(stage) && recCount === 0) missing.push('Recommendation')
+          // Canonical gate, plus the Submit Recommendation prompt — see the
+          // pair-trade card above for why the latter is not a gate.
+          const missing = missingForStage(
+            { rationale: hasRationale ? item.rationale : null, thesis_text: hasThesis ? 'y' : null },
+            toIdeaStage(stage),
+          )
+          if (toIdeaStage(stage) === FINAL_STAGE && recCount === 0) missing.push('Recommendation')
           if (missing.length === 0) return null
           return (
             <div className="absolute top-2 right-2">

@@ -36,6 +36,7 @@
  */
 
 import { supabase } from '../supabase'
+import { FINAL_STAGE } from '../ideas/stage-model'
 import { createAcceptedTrade, type CreateAcceptedTradeInput } from './accepted-trade-service'
 import { deleteVariant } from './intent-variant-service'
 import type {
@@ -229,8 +230,12 @@ async function ensureTradeQueueItem(
       portfolio_id: v.portfolio_id ?? null,
       created_by: ctx.actorId,
       action: v.action,
+      // `status` is the legacy `trade_queue_status`, where 'deciding' remains
+      // a valid label; `stage` is the four-stage enum, where it is not. An
+      // ad-hoc idea created straight from Trade Lab Execute is mature by
+      // construction — it exists because somebody is executing it.
       status: 'deciding',
-      stage: 'ready_for_decision',
+      stage: FINAL_STAGE,
       visibility_tier: 'active',
       origin_type: 'manual',
       origin_metadata: { source: 'trade_lab_execute', variant_id: v.id },

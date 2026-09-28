@@ -1581,83 +1581,32 @@ export async function upsertProposal(
         }, context)
       }).catch(e => console.warn('Failed to log proposal_created event:', e))
 
-    // Auto-advance to deciding if all portfolios are now covered by proposals
-    autoAdvanceToDeciding(input.trade_queue_item_id, context)
-      .catch(e => console.warn('Failed to auto-advance to deciding:', e))
+    // The idea's stage is deliberately NOT advanced here. See the note on
+    // `autoAdvanceToDeciding` below.
 
     return data as TradeProposal
   }
 }
 
 /**
- * Auto-advance a trade idea to 'deciding' if every linked portfolio
- * has at least one active proposal.
+ * REMOVED: auto-advance to a `deciding` stage on full proposal coverage.
  *
- * Only fires for ideas still in a pre-deciding stage (idea, working_on,
- * discussing, simulating, modeling).
+ * This was the second of two places where writing a recommendation silently
+ * rewrote what the IDEA meant. It fired when every linked portfolio had an
+ * active proposal and pushed the idea's stage to `deciding` — so an analyst
+ * who saved sizing for their last portfolio found the idea's maturity had
+ * changed underneath them, decided by a coverage count rather than by any
+ * judgement about how well the idea was understood.
+ *
+ * Proposal coverage is a fact about recommendations. It belongs to the
+ * decision workflow, which is modelled by `trade_proposals` and
+ * `decision_requests` and surfaced in the Decision Inbox. Nothing is lost by
+ * removing this: the Inbox reads those tables directly and never read the
+ * stage.
+ *
+ * The sibling in `recommendation-service` (Step 3 of `submitRecommendation`)
+ * was removed for the same reason.
  */
-async function autoAdvanceToDeciding(
-  tradeQueueItemId: string,
-  context: ActionContext
-): Promise<void> {
-  // 1. Get the trade idea's current state
-  const { data: idea, error: ideaErr } = await supabase
-    .from('trade_queue_items')
-    .select('id, stage, portfolio_id')
-    .eq('id', tradeQueueItemId)
-    .single()
-
-  if (ideaErr || !idea) return
-
-  // Only auto-advance from pre-deciding stages
-  const preDecidingStages = ['idea', 'working_on', 'discussing', 'simulating', 'modeling']
-  if (!preDecidingStages.includes(idea.stage)) return
-
-  // 2. Determine all portfolios this idea is linked to
-  const { data: portfolioTracks } = await supabase
-    .from('trade_idea_portfolios')
-    .select('portfolio_id')
-    .eq('trade_queue_item_id', tradeQueueItemId)
-
-  // Build the set of portfolios that need coverage
-  const requiredPortfolios = new Set<string>()
-  if (idea.portfolio_id) requiredPortfolios.add(idea.portfolio_id)
-  if (portfolioTracks) {
-    for (const track of portfolioTracks) {
-      requiredPortfolios.add(track.portfolio_id)
-    }
-  }
-
-  if (requiredPortfolios.size === 0) return
-
-  // 3. Get all active proposals for this idea
-  const { data: proposals } = await supabase
-    .from('trade_proposals')
-    .select('portfolio_id')
-    .eq('trade_queue_item_id', tradeQueueItemId)
-    .eq('is_active', true)
-
-  if (!proposals) return
-
-  const coveredPortfolios = new Set(proposals.map(p => p.portfolio_id))
-
-  // 4. Check if every required portfolio is covered
-  for (const pid of requiredPortfolios) {
-    if (!coveredPortfolios.has(pid)) return // Not fully covered yet
-  }
-
-  // 5. All portfolios covered — move to deciding
-  await moveTradeIdea({
-    tradeId: tradeQueueItemId,
-    target: { stage: 'deciding' },
-    context: {
-      ...context,
-      requestId: crypto.randomUUID(),
-      uiSource: 'auto_advance_proposal_coverage',
-    },
-    note: 'Auto-advanced: all portfolios have proposals',
-  })
-}
 
 /**
  * Delete a user's proposal
@@ -2146,9 +2095,14 @@ export async function updatePortfolioTrackDecision(
       const anyAccepted = allTracks?.some(t => t.decision_outcome === 'accepted')
       const allDeferred = allTracks?.every(t => t.decision_outcome === 'deferred')
       const newStatus = anyAccepted ? 'approved' : allDeferred ? 'cancelled' : 'rejected'
+      // The idea's STAGE is deliberately not touched. This used to also write
+      // `stage: 'deciding'`, which is no longer a member of the stage enum and
+      // would now be rejected outright — but the deeper reason is the same one
+      // that retired that value: recording a decision says nothing about how
+      // well understood the idea is, and must not rewrite its maturity.
       await supabase
         .from('trade_queue_items')
-        .update({ status: newStatus, stage: 'deciding' })
+        .update({ status: newStatus } as never)
         .eq('id', trade_queue_item_id)
     }
   } catch (e) {

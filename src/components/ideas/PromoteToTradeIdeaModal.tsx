@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
+import { INITIAL_STAGE } from '../../lib/ideas/stage-model'
 import { useAuth } from '../../hooks/useAuth'
 import { usePromoteToTradeIdea, type PromoteAction } from '../../hooks/usePromoteToTradeIdea'
 import { useToast } from '../common/Toast'
@@ -277,7 +278,7 @@ export function PromoteToTradeIdeaModal({
             action: 'buy',
             urgency,
             rationale: rationale.trim() || quickThoughtContent,
-            stage: 'idea',
+            stage: INITIAL_STAGE,
             status: 'idea',
             pair_id: pairId,
             sharing_visibility: dbVisibility,
@@ -297,7 +298,7 @@ export function PromoteToTradeIdeaModal({
             action: 'sell',
             urgency,
             rationale: rationale.trim() || quickThoughtContent,
-            stage: 'idea',
+            stage: INITIAL_STAGE,
             status: 'idea',
             pair_id: pairId,
             sharing_visibility: dbVisibility,

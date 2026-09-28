@@ -35,9 +35,17 @@ const ladder: IdeaEnrichment = {
 
 describe('stance and maturity are separate', () => {
   it.each([
-    ['aware', 'researching'], ['investigate', 'researching'], ['deep_research', 'researching'],
-    ['thesis_forming', 'thesis_forming'], ['modeling', 'thesis_forming'],
-    ['ready_for_decision', 'decision_ready'], ['deciding', 'deciding'],
+    // The four canonical stages.
+    ['exploring', 'researching'], ['researching', 'researching'],
+    ['developing', 'thesis_forming'], ['ready_to_recommend', 'decision_ready'],
+    // Legacy values. Still on rows written before the migration, and still
+    // reachable afterwards through `previous_state`, which is free text.
+    ['aware', 'researching'], ['investigate', 'researching'],
+    ['deep_research', 'thesis_forming'], ['thesis_forming', 'thesis_forming'],
+    ['modeling', 'thesis_forming'], ['ready_for_decision', 'decision_ready'],
+    // `deciding` never described maturity — it described the decision
+    // workflow. It now reads as a mature idea, which is what it always was.
+    ['deciding', 'decision_ready'],
   ] as const)('maps stage %s to maturity %s', (stage, maturity) => {
     expect(maturityOf(stage)).toBe(maturity)
   })
