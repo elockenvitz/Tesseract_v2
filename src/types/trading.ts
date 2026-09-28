@@ -26,12 +26,23 @@ export interface TradeSizing {
   value: number | null
 }
 
-// New workflow types
-// Research Pipeline stages (v2): aware → investigate → deep_research → thesis_forming → ready_for_decision
-export type ResearchStage = 'aware' | 'investigate' | 'deep_research' | 'thesis_forming' | 'ready_for_decision'
-// Legacy stages kept for backwards compat
-export type TradeStage = 'idea' | 'working_on' | 'modeling' | 'deciding' | ResearchStage
-// Decision outcomes (set by PM/owner in deciding stage)
+// ── Idea Pipeline ───────────────────────────────────────────────────────────
+//
+// The canonical stage vocabulary lives in `src/lib/ideas/stage-model.ts`, not
+// here. These aliases exist so the many existing imports of `ResearchStage`
+// and `TradeStage` keep resolving; both now mean the same four values.
+//
+// `IdeaStage` is the name to use in new code.
+export type { IdeaStage } from '../lib/ideas/stage-model'
+import type { IdeaStage as CanonicalIdeaStage } from '../lib/ideas/stage-model'
+
+/** @deprecated Use `IdeaStage` from `lib/ideas/stage-model`. */
+export type ResearchStage = CanonicalIdeaStage
+/** @deprecated Use `IdeaStage` from `lib/ideas/stage-model`. */
+export type TradeStage = CanonicalIdeaStage
+
+// Decision outcomes. These belong to the DECISION workflow, not to idea
+// maturity — see the header of `lib/ideas/stage-model.ts`.
 export type DecisionOutcome = 'accepted' | 'deferred' | 'rejected'
 // Legacy outcome type for backwards compatibility
 export type TradeOutcome = 'executed' | 'rejected' | 'deferred' | 'accepted'

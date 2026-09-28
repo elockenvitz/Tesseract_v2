@@ -7,16 +7,25 @@
  * This ensures audit events are emitted for every state change.
  *
  * Core Concepts:
- * - Stage: idea → working_on → modeling → deciding
- * - Decision Outcome: accepted | deferred | rejected (PM/owner controlled)
+ * - Stage: exploring → researching → developing → ready_to_recommend
+ *   (idea MATURITY — the vocabulary and the gate live in lib/ideas/stage-model)
+ * - Outcome: executed | accepted | rejected | deferred — the result of a
+ *   DECISION, recorded against a mature idea. Not a stage.
  * - Visibility Tier: active | trash | archive
  *
  * Stage Change Permissions:
  * - Only owner (created_by), assignee (assigned_to), or PM can move stages
- * - PM can override (move to deciding without proposals)
  */
 
 import { supabase } from '../supabase'
+import {
+  FINAL_STAGE,
+  isForwardMove as isForwardStageMove,
+  missingForStage,
+  gateErrorMessage,
+  stageLabel,
+  toIdeaStage,
+} from '../ideas/stage-model'
 import {
   emitAuditEvent,
   checkIdempotency,
@@ -158,27 +167,39 @@ export interface UpdateTradeIdeaParams {
 // ============================================================
 
 /**
- * Map stage to legacy status for backwards compatibility
- * Research stages: aware, investigate, deep_research, thesis_forming, ready_for_decision
- * Legacy stages: idea, discussing, simulating, deciding
+ * Derive the legacy `status` column from stage + outcome.
+ *
+ * TRANSITIONAL. `trade_queue_items.status` is a second, older lifecycle column
+ * that many read sites still consult. It is written here so those sites keep
+ * working, and it is derived — never authoritative. When the two disagree the
+ * outcome is right, which is why outcome is checked first.
+ *
+ * The old version of this function collapsed `deep_research` and
+ * `thesis_forming` to the same status, so anything reading `status` could not
+ * tell two adjacent stages apart. With four stages the mapping is no longer
+ * lossy in a way that hides a boundary: the one place two stages still share a
+ * status is `researching`/`developing` → `simulating`, and `simulating` never
+ * meant either of them precisely. Read `stage` if you need maturity.
  */
 function stageToLegacyStatus(stage: TradeStage, outcome: TradeOutcome | null): TradeQueueStatus {
   if (outcome === 'executed' || outcome === 'accepted') return 'executed'
   if (outcome === 'rejected') return 'rejected'
-  if (outcome === 'deferred') return 'cancelled' // Map deferred to cancelled for legacy
+  if (outcome === 'deferred') return 'cancelled' // Legacy has no 'deferred'
 
-  // Map v1 stages to legacy
-  if (stage === 'working_on') return 'discussing'
-  if (stage === 'modeling') return 'simulating'
-
-  // Map v2 research stages to legacy
-  if (stage === 'aware') return 'idea'
-  if (stage === 'investigate') return 'discussing'
-  if (stage === 'deep_research') return 'simulating'
-  if (stage === 'thesis_forming') return 'simulating'
-  if (stage === 'ready_for_decision') return 'deciding'
-
-  return stage as TradeQueueStatus
+  switch (stage) {
+    case 'exploring':
+      return 'idea'
+    case 'researching':
+      return 'discussing'
+    case 'developing':
+      return 'simulating'
+    case 'ready_to_recommend':
+      // Legacy callers read 'deciding' to mean "mature, awaiting a decision".
+      // The STAGE no longer says that; the status still does.
+      return 'deciding'
+    default:
+      return 'idea'
+  }
 }
 
 /**
@@ -214,61 +235,26 @@ async function getTradeIdea(tradeId: string): Promise<TradeIdeaState | null> {
 }
 
 /**
- * Validate that a trade meets the prerequisites for the target stage.
- * Returns a list of missing requirements; empty array means the trade is ready to move.
+ * What is missing before this trade can move to `targetStage`.
  *
- * Gates:
- *   - ready_for_decision: requires rationale + thesis_text
- *   - deciding: requires all of the above + at least 1 active recommendation
+ * The rules themselves live in `lib/ideas/stage-model`; this is the service's
+ * thin adapter onto them. Three copies of this logic used to exist — here, in
+ * `lib/mobile/pipeline-rows`, and inline in `TradeQueuePage` — with
+ * deliberately different completeness. They now all call the same function.
  *
- * Earlier stages (aware, investigate, deep_research, thesis_forming) are not gated —
- * users should be able to freely explore ideas without upfront ceremony.
+ * No longer async, and no longer queries `decision_requests`. The old version
+ * required an active recommendation before entering `deciding`; submitting a
+ * recommendation is now an explicit action rather than a stage transition, so
+ * that gate moved to `submitRecommendation` where it belongs.
  */
-async function validateStageRequirements(
-  trade: TradeIdeaState & { thesis_text?: string | null; target_price?: number | null; conviction?: string | null },
+function validateStageRequirements(
+  trade: TradeIdeaState & { thesis_text?: string | null },
   targetStage: TradeStage
-): Promise<string[]> {
-  const missing: string[] = []
-
-  // Gate for ready_for_decision
-  if (targetStage === 'ready_for_decision' || targetStage === 'deciding') {
-    if (!trade.rationale?.trim()) missing.push('Why now (rationale)')
-    if (!(trade as any).thesis_text?.toString().trim()) missing.push('Trade thesis')
-  }
-
-  // Additional gate for deciding: requires at least one active recommendation
-  if (targetStage === 'deciding') {
-    // For pair trades, check all legs; otherwise just this trade
-    const pairId = (trade as any).pair_id || (trade as any).pair_trade_id
-    let hasRec = false
-
-    if (pairId) {
-      const { data: legs } = await supabase
-        .from('trade_queue_items')
-        .select('id')
-        .eq('pair_id', pairId)
-      const legIds = (legs || []).map(l => l.id)
-      if (legIds.length > 0) {
-        const { count } = await supabase
-          .from('decision_requests')
-          .select('*', { count: 'exact', head: true })
-          .in('trade_queue_item_id', legIds)
-          .in('status', ['pending', 'under_review', 'needs_discussion'])
-        hasRec = (count || 0) > 0
-      }
-    } else {
-      const { count } = await supabase
-        .from('decision_requests')
-        .select('*', { count: 'exact', head: true })
-        .eq('trade_queue_item_id', trade.id)
-        .in('status', ['pending', 'under_review', 'needs_discussion'])
-      hasRec = (count || 0) > 0
-    }
-
-    if (!hasRec) missing.push('At least one recommendation')
-  }
-
-  return missing
+): string[] {
+  return missingForStage(
+    { rationale: trade.rationale, thesis_text: (trade as any).thesis_text },
+    targetStage,
+  )
 }
 
 /**
@@ -285,50 +271,45 @@ async function getTradeDisplayName(trade: TradeIdeaState): Promise<string> {
 }
 
 /**
- * Validate stage transition
- * Uses new stage names: idea → working_on → modeling → deciding
+ * Is this stage/outcome move legal at all?
+ *
+ * Movement between stages is free in both directions — research is not linear,
+ * and an idea that turns out to be less understood than you thought must be
+ * able to go back. What this function blocks is only the two things that are
+ * genuinely incoherent.
+ *
+ * ── Where an outcome may be recorded ──────────────────────────────────────
+ *
+ * An outcome is the result of a DECISION, so it can only be recorded against
+ * an idea that has actually been advocated — that is, one at
+ * `ready_to_recommend`.
+ *
+ * This rule used to name `deciding`, and that was the coupling which made
+ * `deciding` a stage in the first place: the only way to record a decision was
+ * to move the idea into a stage that claimed the decision was in progress.
+ * Pointing the same rule at `ready_to_recommend` breaks the coupling without
+ * weakening it — the idea stays where its maturity actually is, and the
+ * decision workflow's own state lives in `decision_requests`.
  */
 function validateStageTransition(
-  fromStage: TradeStage,
+  _fromStage: TradeStage,
   fromOutcome: TradeOutcome | null,
   target: MoveTarget
 ): { valid: boolean; error?: string } {
   const { stage: toStage, outcome: toOutcome } = target
 
-  // If in deciding with an outcome, only allow if target has no outcome (restoring)
-  // This allows: deciding+deferred → idea (restore)
-  // But blocks: deciding+deferred → deciding+rejected (changing decision)
-  if (fromStage === 'deciding' && fromOutcome !== null) {
-    if (toStage === 'deciding' && toOutcome && toOutcome !== fromOutcome) {
-      return { valid: false, error: 'Trade has already been decided. Cannot change decision.' }
+  // A decision, once recorded, is not silently rewritten. Clearing it by
+  // moving the idea back down the pipeline is still allowed — that is a
+  // deliberate reopening, and it is audited.
+  if (fromOutcome !== null && toOutcome && toOutcome !== fromOutcome) {
+    return { valid: false, error: 'Trade has already been decided. Cannot change decision.' }
+  }
+
+  if (toOutcome && toStage !== FINAL_STAGE) {
+    return {
+      valid: false,
+      error: `A decision can only be recorded on an idea at ${stageLabel(FINAL_STAGE)}.`,
     }
-    // Allow restoring to a different stage (clears outcome)
-  }
-
-  // Outcome only valid when stage is 'deciding'
-  if (toOutcome && toStage !== 'deciding') {
-    return { valid: false, error: 'Outcome can only be set in deciding stage.' }
-  }
-
-  // Valid transitions - includes v1 legacy + v2 research stages
-  // v2 pipeline: aware → investigate → deep_research → thesis_forming → ready_for_decision
-  // All stages allow free movement (research is non-linear), plus cross-version transitions
-  const allStages = [
-    'idea', 'working_on', 'discussing', 'modeling', 'simulating', 'deciding',
-    'aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision',
-  ]
-  const validTransitions: Record<string, string[]> = {}
-  for (const s of allStages) {
-    validTransitions[s] = allStages.filter(t => t !== s)
-  }
-
-  // Allow same stage (for setting outcome in deciding)
-  if (fromStage === toStage) {
-    return { valid: true }
-  }
-
-  if (!validTransitions[fromStage].includes(toStage)) {
-    return { valid: false, error: `Cannot transition from ${fromStage} to ${toStage}` }
   }
 
   return { valid: true }
@@ -425,28 +406,18 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
     return
   }
 
-  // Validate stage prerequisites — block moves forward to gated stages if
-  // required fields are missing. Moving backward is always allowed.
+  // Block promotions that are not yet earned. Moving backward is always
+  // allowed — see `missingForStage`.
   //
-  // EXCEPTION: when the move includes an outcome, we're CONCLUDING the
-  // deciding stage (e.g. accept/reject/defer), not entering it. The
-  // "needs at least one active recommendation" gate exists to prevent
-  // entering deciding without any analyst input — but by the time outcome
-  // is being set, the recommendation has been acted on and the DR is no
-  // longer in active statuses. Without this exception, accepting a
-  // recommendation throws the validation error inside the try/catch in
-  // acceptFromInboxToAcceptedTrade and the trade idea is silently left
-  // at its prior stage (causing PLTR-style ghost cards on the kanban).
-  const forwardStages: TradeStage[] = ['aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision', 'deciding']
-  const fromIdx = forwardStages.indexOf(currentTrade.stage as TradeStage)
-  const toIdx = forwardStages.indexOf(target.stage)
-  const isForwardMove = fromIdx >= 0 && toIdx >= 0 && toIdx > fromIdx
-  if (isForwardMove && !target.outcome) {
-    const missing = await validateStageRequirements(currentTrade, target.stage)
+  // EXCEPTION: a move that carries an outcome is RECORDING a decision on an
+  // idea that is already at the end of the pipeline, not promoting it. Running
+  // the gate there would make accepting a recommendation fail inside the
+  // try/catch in `acceptFromInboxToAcceptedTrade`, silently leaving the idea at
+  // its prior stage and stranding a card on the board.
+  if (isForwardStageMove(currentTrade.stage, target.stage) && !target.outcome) {
+    const missing = validateStageRequirements(currentTrade, target.stage)
     if (missing.length > 0) {
-      throw new Error(
-        `Cannot move to ${target.stage.replace(/_/g, ' ')} — missing: ${missing.join(', ')}`
-      )
+      throw new Error(gateErrorMessage(target.stage, missing))
     }
   }
 
@@ -474,8 +445,10 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
       updates.approved_at = now
       updates.executed_at = now
     }
-  } else if (target.stage !== 'deciding' && currentTrade.outcome) {
-    // Moving out of deciding clears outcome
+  } else if (target.stage !== FINAL_STAGE && currentTrade.outcome) {
+    // Demoting a decided idea reopens it: the recorded decision no longer
+    // describes where the idea is, so it is cleared rather than left to
+    // contradict the stage.
     updates.outcome = null
     updates.outcome_at = null
     updates.outcome_by = null
@@ -483,8 +456,11 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
     updates.deferred_until = null  // Clear defer date when restoring
   }
 
-  // Track if we're moving out of deciding (need to cancel proposals)
-  const movingOutOfDeciding = currentTrade.stage === 'deciding' && target.stage !== 'deciding'
+  // Leaving the end of the pipeline retracts any live recommendation — an idea
+  // back in Developing is not being advocated, so it must not sit in someone's
+  // Decision Inbox.
+  const movingOutOfDeciding =
+    currentTrade.stage === FINAL_STAGE && target.stage !== FINAL_STAGE
 
   // Handle deferred_until date (only for deferred outcome)
   if (target.outcome === 'deferred') {
@@ -806,9 +782,16 @@ export async function restoreTradeIdea(params: RestoreTradeIdeaParams): Promise<
     throw new Error('Cannot restore archived trades. Contact compliance for access.')
   }
 
-  // Determine restore stage
+  // Determine restore stage.
+  //
+  // `previous_state` is jsonb written when the idea was deferred or trashed,
+  // and it stores the stage as free text. The four-stage migration does NOT
+  // rewrite it, so this is the one path that can still hand back a retired
+  // value — at any point in the future, not just during the rollout. Coerce
+  // it rather than trusting it. The old fallback here was the literal
+  // 'idea', which is itself now a retired value.
   const previousState = currentTrade.previous_state as TradeStateSnapshot | null
-  const restoreStage = targetStage || previousState?.stage || 'idea'
+  const restoreStage = toIdeaStage(targetStage || previousState?.stage)
 
   const now = new Date().toISOString()
 
@@ -1514,12 +1497,8 @@ export async function movePairTrade(params: {
   // Validate stage prerequisites for forward moves. Any leg missing
   // required fields blocks the whole pair from advancing.
   {
-    const forwardStages: TradeStage[] = ['aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision', 'deciding']
-    const fromStage = (isPairIdOnly ? legsFromPairId[0]?.stage : pairTrade?.trade_queue_items?.[0]?.stage) as TradeStage | undefined
-    const fromIdx = fromStage ? forwardStages.indexOf(fromStage) : -1
-    const toIdx = forwardStages.indexOf(target.stage)
-    const isForwardMove = fromIdx >= 0 && toIdx >= 0 && toIdx > fromIdx
-    if (isForwardMove) {
+    const fromStage = (isPairIdOnly ? legsFromPairId[0]?.stage : pairTrade?.trade_queue_items?.[0]?.stage) as string | undefined
+    if (fromStage && isForwardStageMove(fromStage, target.stage)) {
       // Fetch first leg with full fields for validation
       const legIds: string[] = isPairIdOnly
         ? legsFromPairId.map(l => l.id)
@@ -1527,10 +1506,10 @@ export async function movePairTrade(params: {
       if (legIds.length > 0) {
         const firstLeg = await getTradeIdea(legIds[0])
         if (firstLeg) {
-          const missing = await validateStageRequirements(firstLeg, target.stage)
+          const missing = validateStageRequirements(firstLeg, target.stage)
           if (missing.length > 0) {
             throw new Error(
-              `Cannot move pair trade to ${target.stage.replace(/_/g, ' ')} — missing: ${missing.join(', ')}`
+              `Cannot move pair trade to ${stageLabel(target.stage)} — missing: ${missing.join(', ')}`
             )
           }
         }
@@ -1721,21 +1700,22 @@ export async function moveTrade(params: {
 }): Promise<void> {
   const { tradeId, targetStatus, actorId, actorRole, metadata = {} } = params
 
-  // Map legacy status to new stage/outcome
+  // Map a legacy status to a move target. Outcomes land on the end of the
+  // pipeline, which is the only stage at which a decision may be recorded.
   let target: MoveTarget
   switch (targetStatus) {
     case 'executed':
     case 'approved':
-      target = { stage: 'deciding', outcome: 'executed' }
+      target = { stage: FINAL_STAGE, outcome: 'executed' }
       break
     case 'rejected':
-      target = { stage: 'deciding', outcome: 'rejected' }
+      target = { stage: FINAL_STAGE, outcome: 'rejected' }
       break
     case 'cancelled':
-      target = { stage: 'deciding', outcome: 'deferred' }
+      target = { stage: FINAL_STAGE, outcome: 'deferred' }
       break
     default:
-      target = { stage: targetStatus as TradeStage }
+      target = { stage: toIdeaStage(targetStatus) }
   }
 
   await moveTradeIdea({

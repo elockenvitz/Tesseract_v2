@@ -163,7 +163,16 @@ const MAX_ERRORS = 0
 // this lane. Four of the five were created and cleared by the same pass, so
 // the ground actually gained is one — held here rather than left as slack a
 // later regression could hide in.
-const MAX_REPO_ERRORS = 8676
+//
+// → 8671 with the four-stage Idea Pipeline. Collapsing eleven stage values to
+// four made `ResearchStage` a narrow union, and TypeScript then rejected every
+// site still naming a retired stage — 37 of them. Those were not new errors;
+// they were pre-existing wrongness the old eleven-value union had been wide
+// enough to accept, including four `=== 'deciding'` comparisons that could
+// never be true. Fixing them cleared the 37 and five besides, mostly dead
+// array literals and an unused `groupedDecidingProposals`. Held at the
+// measured floor.
+const MAX_REPO_ERRORS = 8671
 
 /**
  * A floor on real source files, now that they are counted as source files.

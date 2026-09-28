@@ -15,6 +15,7 @@ import { supabase } from '../supabase'
 import { updateDecisionRequest } from './decision-request-service'
 import { deleteVariant } from './intent-variant-service'
 import { moveTradeIdea } from './trade-idea-service'
+import { FINAL_STAGE } from '../ideas/stage-model'
 import type {
   AcceptedTrade,
   AcceptedTradeWithJoins,
@@ -699,7 +700,7 @@ export async function acceptFromInboxToAcceptedTrade(
         // All portfolios resolved → safe to advance the global trade idea
         await moveTradeIdea({
           tradeId: decisionRequest.trade_queue_item_id,
-          target: { stage: 'deciding', outcome: 'executed' },
+          target: { stage: FINAL_STAGE, outcome: 'executed' },
           context,
           note: 'All portfolios resolved — trade idea concluded after accept',
         })
@@ -766,7 +767,7 @@ export async function bulkPromoteFromSimulation(
       try {
         await moveTradeIdea({
           tradeId: variant.trade_queue_item_id,
-          target: { stage: 'deciding', outcome: 'executed' },
+          target: { stage: FINAL_STAGE, outcome: 'executed' },
           context,
           note: 'Trade promoted from simulation → Trade Book',
         })
@@ -1276,7 +1277,7 @@ export async function bulkPromoteWithBatch(params: {
       try {
         await moveTradeIdea({
           tradeId: variant.trade_queue_item_id,
-          target: { stage: 'deciding', outcome: 'accepted' },
+          target: { stage: FINAL_STAGE, outcome: 'accepted' },
           context: params.context,
           note: 'Trade promoted from simulation → Trade Book',
         })

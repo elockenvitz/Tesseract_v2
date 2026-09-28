@@ -10,6 +10,7 @@ import {
   getProposalVersions,
 } from '../../lib/services/trade-lab-service'
 import { submitRecommendation } from '../../lib/services/recommendation-service'
+import { FINAL_STAGE } from '../../lib/ideas/stage-model'
 import { parseSizingWithConflictCheck, mapFrameworkToLegacyMode } from '../../lib/trade-lab/proposal-sizing'
 import { ConflictBadgeV3, ConflictExplanation, SizingHelpText } from './VariantStatusBadges'
 import type {
@@ -287,11 +288,11 @@ export function RecommendationEditorModal({
             <Scale className="h-5 w-5 text-primary-600" />
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {tradeIdea.stage === 'deciding' ? 'Submit Recommendation' : 'Your Recommendation'}
+                {tradeIdea.stage === FINAL_STAGE ? 'Submit Recommendation' : 'Your Recommendation'}
               </h2>
-              {tradeIdea.stage === 'deciding' && (
+              {tradeIdea.stage === FINAL_STAGE && (
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Awaiting team recommendations for PM review
+                  Goes to the Decision Inbox for PM review
                 </p>
               )}
             </div>

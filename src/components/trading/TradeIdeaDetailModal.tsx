@@ -5623,8 +5623,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                   {trade.status !== 'approved' && trade.status !== 'cancelled' && trade.status !== 'rejected' && trade.status !== 'archived' && (
                     <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-4">
 
-                      {/* SECTION 1: Quick Actions (not shown in Deciding) */}
-                      {trade.stage !== 'deciding' && trade.status !== 'deciding' && (
+                      {/* SECTION 1: Quick Actions — hidden once a decision is
+                          pending. That is a DECISION-workflow fact, so it is
+                          read from `status`, not from the idea's stage. */}
+                      {trade.status !== 'deciding' && (
                         <div className="flex flex-wrap gap-2">
                           {!canMoveStages && (
                             <Button
@@ -6015,8 +6017,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 // Check if we have multiple portfolios
                 const hasMultiplePortfolios = Object.keys(proposalsByPortfolio).length > 1
 
-                // Check if current user is PM/owner and trade is in deciding stage
-                const isDecidingStage = trade?.status === 'deciding' || trade?.stage === 'deciding'
+                // Is a decision actually pending? That is a fact about the
+                // decision workflow, not about the idea's maturity, so it is
+                // read from `status` — the stage no longer claims to know.
+                const isDecidingStage = trade?.status === 'deciding'
                 const canMakeDecision = isOwner && isDecidingStage
 
                 // Recommendation state
@@ -7334,10 +7338,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 Submit Your Recommendation
               </h3>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                {trade.stage === 'deciding'
-                  ? `Add your sizing recommendation for ${trade.assets?.symbol}.`
-                  : `Before moving to Deciding, please submit your sizing recommendation for ${trade.assets?.symbol}.`
-                }
+                {`Add your sizing recommendation for ${trade.assets?.symbol}. It will appear in the Decision Inbox for PM review.`}
               </p>
 
               <div className="space-y-4">
@@ -7463,10 +7464,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                         assetCompanyName: trade?.assets?.company_name || null,
                       }, context)
 
-                      // Only move to deciding if not already there
-                      if (trade.stage !== 'deciding') {
-                        await updateStatusMutation.mutateAsync('deciding')
-                      }
+                      // The idea's stage is NOT changed. Submitting says the
+                      // recommendation now exists and is awaiting a decision —
+                      // that fact lives on the decision_requests row created
+                      // above, which is what the Decision Inbox reads.
 
                       // Refresh proposals, decision inbox, and activity
                       queryClient.invalidateQueries({ queryKey: ['trade-proposals', tradeId] })
@@ -7489,7 +7490,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                   loading={isSubmittingProposal}
                 >
                   <Scale className="h-4 w-4 mr-1.5" />
-                  {trade.stage === 'deciding' ? 'Submit Recommendation' : 'Submit & Move to Deciding'}
+                  Submit Recommendation
                 </Button>
               </div>
             </div>

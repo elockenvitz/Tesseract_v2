@@ -24,7 +24,6 @@ import {
   isActiveDecisionRequestStatus,
   isResolvedDecisionRequestStatus,
 } from './decision-request-service'
-import { moveTradeIdea } from './trade-idea-service'
 import type {
   ActionContext,
   TradeProposal,
@@ -77,8 +76,12 @@ export interface SubmitRecommendationResult {
  */
 export interface SubmitRecommendationOptions {
   /**
-   * If provided, auto-advance the trade idea to 'deciding' stage when conditions
-   * are met (e.g., user is owner/assignee and trade is in modeling stage).
+   * @deprecated Ignored. Submitting a recommendation no longer changes the
+   * idea's stage — see Step 3 in `submitRecommendation`.
+   *
+   * Kept as an accepted-and-ignored field rather than removed so the existing
+   * call sites that pass it keep compiling while they are cleaned up; passing
+   * it has no effect.
    */
   autoAdvance?: {
     tradeStage: TradeStage | string
@@ -104,7 +107,7 @@ export interface SubmitRecommendationOptions {
 export async function submitRecommendation(
   input: SubmitRecommendationInput,
   context: ActionContext,
-  options?: SubmitRecommendationOptions,
+  _options?: SubmitRecommendationOptions,
 ): Promise<SubmitRecommendationResult> {
   // ── Step 1: Persist recommendation content ──────────────────────────
   // trade_proposals remains the storage layer for now.
@@ -287,24 +290,19 @@ export async function submitRecommendation(
     )
   }
 
-  // ── Step 3: Auto-advance trade stage (best-effort) ──────────────────
-  // Stage advancement is a convenience side-effect, not a workflow integrity
-  // concern. It remains fire-and-forget because failing to advance the stage
-  // does not invalidate the recommendation or decision request.
-  if (options?.autoAdvance) {
-    const { tradeStage, createdBy, assignedTo } = options.autoAdvance
-    const isOwnerOrAssignee = context.actorId === createdBy || context.actorId === assignedTo
-    const isInModelingStage = tradeStage === 'modeling' || tradeStage === 'simulating'
-
-    if (isInModelingStage && isOwnerOrAssignee) {
-      moveTradeIdea({
-        tradeId: input.tradeQueueItemId,
-        target: { stage: 'deciding' },
-        context: { ...context, requestId: crypto.randomUUID() },
-        note: 'Auto-advanced to deciding after recommendation submitted',
-      }).catch(e => console.warn('[submitRecommendation] Auto-advance failed:', e))
-    }
-  }
+  // ── Step 3: the idea's stage is deliberately NOT changed ─────────────
+  //
+  // This used to auto-advance the idea to a `deciding` stage. That was the
+  // single line where idea maturity and decision workflow were conflated: an
+  // analyst submitting a recommendation had the MEANING of their idea silently
+  // rewritten as a side effect, and because the stage column is never moved
+  // back, ideas kept reading `deciding` long after they had been executed.
+  //
+  // Submitting a recommendation says something about the RECOMMENDATION — it
+  // now exists and is awaiting a decision. That fact is recorded on the
+  // `decision_requests` row created above, which is what the Decision Inbox
+  // reads. The idea stays at `ready_to_recommend`, because that is still an
+  // accurate statement about how well understood it is.
 
   // ── Step 4: Notify PMs of the target portfolio (best-effort) ─────────
   // Push signal so the PM doesn't have to manually check the inbox to know

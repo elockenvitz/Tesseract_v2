@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
+﻿import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import {
@@ -86,7 +86,8 @@ import { useTradeExpressionCounts, getExpressionStatus } from '../hooks/useTrade
 import { useTradeIdeaService } from '../hooks/useTradeIdeaService'
 import { submitRecommendation } from '../lib/services/recommendation-service'
 import { isCreatorOrCoAnalyst, getUserPortfolioRole, isPMForPortfolio } from '../lib/permissions/trade-idea-permissions'
-import { RESEARCH_STAGES, RESEARCH_STAGE_CONFIG, toResearchStage } from '../lib/trade-status-semantics'
+import { RESEARCH_STAGES, RESEARCH_STAGE_CONFIG } from '../lib/trade-status-semantics'
+import { IDEA_STAGES, toIdeaStage, FINAL_STAGE, missingForStage } from '../lib/ideas/stage-model'
 import type { ActionContext, TradeSizingMode, ResearchStage } from '../types/trading'
 
 const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string; icon: React.ElementType }> = {
@@ -106,38 +107,40 @@ const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string; ic
 }
 
 const STAGE_ICON: Record<ResearchStage, React.ElementType> = {
-  aware: Eye,
-  investigate: SearchCode,
-  deep_research: Microscope,
-  thesis_forming: BrainCircuit,
-  ready_for_decision: Gavel,
+  exploring: Eye,
+  researching: SearchCode,
+  developing: BrainCircuit,
+  ready_to_recommend: Gavel,
 }
 
+/**
+ * The long-form help for each column.
+ *
+ * `purpose` restates the stage's question, because the question is what makes
+ * two analysts put the same idea in the same place. `advance` says what has to
+ * be TRUE to move on, never how much work has been done â€” the pipeline
+ * measures understanding, not activity.
+ */
 const STAGE_DESCRIPTION: Record<ResearchStage, { purpose: string; activity: string; advance: string }> = {
-  aware: {
-    purpose: 'Initial catalyst or observation. You\'ve noticed something worth watching — a news item, price move, or gut feeling.',
-    activity: 'No commitment yet. Just flag it. Capture the initial observation and why it caught your eye.',
-    advance: 'When you\'re ready to investigate further.',
+  exploring: {
+    purpose: 'Is this worth spending meaningful time on? Something caught your eye â€” a news item, a price move, a conversation.',
+    activity: 'Capture it, screen it, gather enough context to judge whether it deserves real work. No commitment yet.',
+    advance: 'When you decide this earns real research effort.',
   },
-  investigate: {
-    purpose: 'Early diligence. Reading filings, studying the business, identifying key drivers.',
-    activity: 'Build a working understanding of the setup. Identify whether there\'s a real opportunity here.',
-    advance: 'When you have a working hypothesis and want to go deeper.',
+  researching: {
+    purpose: 'What is actually true here? Building an accurate picture of the situation before forming a view of it.',
+    activity: 'Read the research, work through filings and data, run channel checks, test assumptions. Surface conflicting evidence rather than filtering it out.',
+    advance: 'When you understand the situation well enough to start forming a view. Not when you have read a certain number of things.',
   },
-  deep_research: {
-    purpose: 'Serious work. Modeling, expert calls, primary research, scenario analysis.',
-    activity: 'Test the thesis against data. Stress-test assumptions. Quantify the risk/reward.',
-    advance: 'When you have conviction in the underlying view and are ready to frame it as a trade.',
+  developing: {
+    purpose: 'What do we think, and what should we do? Turning evidence into an investment view.',
+    activity: 'Form and refine the thesis, establish where it differs from consensus, run scenarios, model upside and downside, consider sizing, name the risks.',
+    advance: 'When there is a thesis and a reason to act now â€” both are required to move on.',
   },
-  thesis_forming: {
-    purpose: 'Crystallizing the trade thesis. Defining what you believe, why now, and how you\'d size it.',
-    activity: 'Write the thesis. Set reference levels (entry, stop, target). Define conviction and time horizon.',
-    advance: 'When rationale, thesis, and reference levels are all in place.',
-  },
-  ready_for_decision: {
-    purpose: 'Handoff to PM. Rationale, thesis, and reference levels are complete. Ready for sizing recommendation.',
-    activity: 'Submit a portfolio-specific sizing recommendation. PM will accept, reject, or defer from the Decision Inbox.',
-    advance: 'When a PM makes a decision.',
+  ready_to_recommend: {
+    purpose: 'Am I prepared to formally advocate for an action? The work is done and the case is ready to put in front of a decision-maker.',
+    activity: 'Submit a portfolio-specific recommendation. It goes to the Decision Inbox, where a PM will accept, reject, or defer it.',
+    advance: 'This is the end of the pipeline. What happens next is a decision, not a further stage â€” the idea stays here while it is reviewed.',
   },
 }
 
@@ -157,7 +160,7 @@ const CONVICTION_CONFIG: Record<string, { label: string; color: string; bg: stri
 export interface TradeQueuePageProps {
   /** An idea to bring into view on arrival. The pilot mission's "Open
    *  Pipeline" sends the tutorial idea, so the reader is not dropped on a full
-   *  board with no indication which card is theirs. Not a filter — the board
+   *  board with no indication which card is theirs. Not a filter â€” the board
    *  is unchanged, the card is just scrolled to and flashed. */
   focusIdeaId?: string | null
   /** Called once the card has actually been brought into view, so the caller
@@ -224,7 +227,7 @@ export function TradeQueuePage({
     tryMigrate(legacyLocalKey('step_tradelab'),    pilotStep3Done,       'pipeline_step_tradelab')
   }, [user?.id, currentOrgId, pilotBannerDismissed, pilotStep1Done, pilotStep2Done, pilotStep3Done, legacyLocalKey, markPilotStage])
 
-  // Step markers — short-circuit if the stage is already complete so
+  // Step markers â€” short-circuit if the stage is already complete so
   // repeated user actions (eg the global openTradeLab listener firing
   // on every Trade Lab button click) don't repeatedly hit the server.
   // markStage itself is also burst-deduped, but checking here saves a
@@ -244,7 +247,7 @@ export function TradeQueuePage({
 
   // Banner visibility is derived synchronously from the progress flags so
   // the very first render after pilot_progress hydrates already excludes
-  // it once all steps are done — no flash from a useEffect dismissing it
+  // it once all steps are done â€” no flash from a useEffect dismissing it
   // a frame later.
   const allStepsDone = pilotStep1Done && pilotStep2Done && pilotStep3Done
   const pilotBanner = usePilotPipelineBanner()
@@ -264,7 +267,7 @@ export function TradeQueuePage({
   // Trade service for audited mutations
   const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
 
-  // UI State — multi-select filters bridge to the legacy single-value TradeQueueFilters
+  // UI State â€” multi-select filters bridge to the legacy single-value TradeQueueFilters
   const [multiFilters, setMultiFilters] = useState<{
     actions: string[]
     derivedUrgencies: string[]
@@ -403,12 +406,12 @@ export function TradeQueuePage({
     })
   }
 
-  // Fetch trade queue items — strictly scoped to the current org via the
+  // Fetch trade queue items â€” strictly scoped to the current org via the
   // canonical organization_id column on trade_queue_items itself (see
   // 20260603020000_trade_queue_items_organization_id.sql). The column
   // is backfilled from portfolios for items with a portfolio and auto-
   // populated by a BEFORE INSERT trigger for new rows, so this single
-  // filter is sufficient — no LEFT JOIN gymnastics or per-row null
+  // filter is sufficient â€” no LEFT JOIN gymnastics or per-row null
   // handling.
   // Shared with the phone's pipeline via usePipelineItems, which owns the query
   // and its key so both surfaces read one cache entry.
@@ -418,7 +421,7 @@ export function TradeQueuePage({
    * Bring the arriving idea into view.
    *
    * The mission's "Open Pipeline" has always sent `focusIdeaId` and nothing
-   * ever read it — the page was rendered with no props at all — so a pilot on
+   * ever read it â€” the page was rendered with no props at all â€” so a pilot on
    * step 2 landed on a full board with no indication which card was theirs.
    *
    * This is deliberately the smallest thing that fixes that: no filter, no
@@ -443,7 +446,7 @@ export function TradeQueuePage({
         el.classList.add('decision-recorded-flash')
         setTimeout(() => el.classList.remove('decision-recorded-flash'), 2600)
       }
-      // Spent — after the flash is on, for the reason Trade Book's is: dropping
+      // Spent â€” after the flash is on, for the reason Trade Book's is: dropping
       // the id re-runs this effect and the cleanup would cancel the timer.
       onFocusConsumed?.()
     }, 80)
@@ -494,7 +497,7 @@ export function TradeQueuePage({
     },
   })
 
-  // Build map of trade_queue_item_id → Set<portfolio_id> for committed trades.
+  // Build map of trade_queue_item_id â†’ Set<portfolio_id> for committed trades.
   // Used to show green check on portfolio dropdown items in idea cards.
   const { data: committedTradeMap } = useQuery({
     queryKey: ['committed-trade-portfolios'],
@@ -521,7 +524,7 @@ export function TradeQueuePage({
   // belonged to, which leaked names from other orgs whenever a user was
   // on portfolios in more than one org (any pilot tester or platform
   // admin). Scope strictly to current-org members via the shared
-  // useOrgMembers hook — same defense-in-depth pattern applied to the
+  // useOrgMembers hook â€” same defense-in-depth pattern applied to the
   // other pickers in commit 868ee2f.
   const { data: teamMembers } = useOrgMembers()
 
@@ -673,7 +676,7 @@ export function TradeQueuePage({
     return { nonPairTradeProposals: singleProposals, pairTradeProposalGroups: pairGroups }
   }, [decidingProposals])
 
-  // Set of pair trade IDs that already have proposals — used to dedup
+  // Set of pair trade IDs that already have proposals â€” used to dedup
   // pair trade idea cards from the deciding section when a proposal exists.
   const pairIdsWithProposals = useMemo(
     () => new Set(pairTradeProposalGroups.map(g => g.pairTradeId)),
@@ -758,7 +761,7 @@ export function TradeQueuePage({
     return groupProposalsByTradeIdea(pending as ProposalData[])
   }, [nonPairTradeProposals, portfolioTrackStatuses])
 
-  // Fetch committed proposals — proposals on ideas where the portfolio track decision is 'accepted'
+  // Fetch committed proposals â€” proposals on ideas where the portfolio track decision is 'accepted'
   const { data: committedProposalsRaw } = useQuery({
     queryKey: ['committed-proposals', filters.portfolio_id],
     queryFn: async () => {
@@ -1148,27 +1151,19 @@ export function TradeQueuePage({
 
   // Group items by research stage for kanban view (excluding individual pair trade legs)
   const itemsByStage = useMemo(() => {
-    const groups: Record<ResearchStage, TradeQueueItemWithDetails[]> = {
-      aware: [],
-      investigate: [],
-      deep_research: [],
-      thesis_forming: [],
-      ready_for_decision: [],
-    }
+    const groups = Object.fromEntries(
+      IDEA_STAGES.map(s => [s, [] as TradeQueueItemWithDetails[]]),
+    ) as Record<ResearchStage, TradeQueueItemWithDetails[]>
 
     filteredItems.forEach(item => {
       // Skip items that are part of pair trades - they'll be shown as grouped cards
       if (pairTradeItemIds.has(item.id)) return
 
-      // Resurfaced deferred items go back to their original stage (or Aware if unknown)
-      let researchStage: ResearchStage
-      if (isDeferredAndReady(item)) {
-        const returnStage = getResurfaceStage(item)
-        researchStage = toResearchStage(returnStage) || 'aware'
-      } else {
-        researchStage = toResearchStage(item.stage) || 'aware'
-      }
-      groups[researchStage].push(item)
+      // Resurfaced deferred items go back to where they were. `getResurfaceStage`
+      // reads `previous_state`, which stores the stage as free text and may
+      // still hold a pre-migration value â€” `toIdeaStage` absorbs that.
+      const stage = isDeferredAndReady(item) ? getResurfaceStage(item) : item.stage
+      groups[toIdeaStage(stage)].push(item)
     })
 
     return groups
@@ -1192,18 +1187,13 @@ export function TradeQueuePage({
 
   // Group pair trades by research stage
   const pairTradesByStage = useMemo(() => {
-    const groups: Record<ResearchStage, Array<{ pairTradeId: string; pairTrade: any; legs: TradeQueueItemWithDetails[] }>> = {
-      aware: [],
-      investigate: [],
-      deep_research: [],
-      thesis_forming: [],
-      ready_for_decision: [],
-    }
+    const groups = Object.fromEntries(
+      IDEA_STAGES.map(s => [s, [] as Array<{ pairTradeId: string; pairTrade: any; legs: TradeQueueItemWithDetails[] }>]),
+    ) as Record<ResearchStage, Array<{ pairTradeId: string; pairTrade: any; legs: TradeQueueItemWithDetails[] }>>
 
     pairTradeGroups.forEach((group, pairTradeId) => {
       if (!group?.pairTrade) return
-      const stage = toResearchStage(group.pairTrade.status as string) || 'aware'
-      groups[stage].push({ pairTradeId, ...group })
+      groups[toIdeaStage(group.pairTrade.status as string)].push({ pairTradeId, ...group })
     })
 
     return groups
@@ -1272,8 +1262,15 @@ export function TradeQueuePage({
       return
     }
 
-    // Research stages + legacy global stages that only creator/assigned/co-analysts can move
-    const globalStages: string[] = ['idea', 'discussing', 'working_on', 'simulating', 'modeling', ...RESEARCH_STAGES]
+    // Stage moves that only the creator, assignee or co-analysts may make.
+    // The legacy names stay in the list: a drop target rendered from a stale
+    // cache can still carry one, and treating it as a non-stage move would
+    // skip the permission check rather than fail closed.
+    const globalStages: string[] = [
+      ...IDEA_STAGES,
+      'idea', 'discussing', 'working_on', 'simulating', 'modeling',
+      'aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision', 'deciding',
+    ]
     const isGlobalStageMove = globalStages.includes(targetStatus)
 
     // Handle pair trade drag - uses audited service
@@ -1309,7 +1306,7 @@ export function TradeQueuePage({
       }
 
       // Stage transitions and recommendation submissions are decoupled.
-      // Dropping on Ready for Decision just moves the workflow state — it
+      // Dropping on Ready for Decision just moves the workflow state â€” it
       // does NOT auto-prompt for a recommendation. If the pair has no
       // active recommendations, the card will show a "Needs recommendation"
       // indicator that explicitly opens the pair recommendation flow.
@@ -1328,7 +1325,7 @@ export function TradeQueuePage({
     }
 
     // No-op check: compare against item's resolved research stage
-    const itemResearchStage = toResearchStage(item.stage)
+    const itemResearchStage = toIdeaStage(item.stage)
     if (itemResearchStage === targetStatus || item.status === targetStatus) {
       setDraggedItem(null)
       return
@@ -1349,7 +1346,7 @@ export function TradeQueuePage({
       }
     }
 
-    // Stage transitions and recommendation submissions are decoupled — see
+    // Stage transitions and recommendation submissions are decoupled â€” see
     // comment in the pair-trade branch above. Just move the stage; if the
     // idea has no active recommendations, the card surfaces a "Needs
     // recommendation" indicator that opens the recommendation flow on click.
@@ -1357,7 +1354,7 @@ export function TradeQueuePage({
     setDraggedItem(null)
     /*
      * Pilot step 1 used to be marked here, which credited the step for a drop
-     * the server could still reject, and credited it only for a drag — so the
+     * the server could still reject, and credited it only for a drag â€” so the
      * same stage change made on a phone earned nothing. It is now marked by
      * the move mutation's success path in `useTradeIdeaService`, which both
      * shells go through. See `usePipelineMoveMarker`.
@@ -1382,8 +1379,8 @@ export function TradeQueuePage({
 
   // Mark step 3 the first time the user hands off to Trade Lab from
   // this page. Listening to the global `openTradeLab` event covers
-  // every path — portfolio chip click, inline pair-trade buttons,
-  // the "Open Trade Lab" CTA — without us having to wire mark into
+  // every path â€” portfolio chip click, inline pair-trade buttons,
+  // the "Open Trade Lab" CTA â€” without us having to wire mark into
   // each call site.
   useEffect(() => {
     if (!pilotMode.effectiveIsPilot || pilotStep3Done) return
@@ -1608,14 +1605,14 @@ export function TradeQueuePage({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Pilot Get Started banner — taller, prominent strip
+      {/* Pilot Get Started banner â€” taller, prominent strip
           matching the Trade Lab intro banner so the two onboarding
           surfaces feel like a pair. Each step pill carries a clear
           one-liner hint so a pilot reads exactly what to do.
           Dismissible per localStorage so a returning user isn't
           re-nagged. */}
       {/* Same steps, same flags, same visibility rule as the phone's
-          pipeline — see `usePilotPipelineBanner`. The board is where the
+          pipeline â€” see `usePilotPipelineBanner`. The board is where the
           steps are performed, so the markers below stay with this page. */}
       {pilotBanner.show && <PilotStepsBanner steps={pilotBanner.steps} label={pilotBanner.label} />}
 
@@ -1724,7 +1721,7 @@ export function TradeQueuePage({
         </div>
       </div>
 
-      {/* Content — kanban fills area, Decision Inbox overlays from bottom */}
+      {/* Content â€” kanban fills area, Decision Inbox overlays from bottom */}
       <div className="flex-1 min-h-0 relative">
         <div className="absolute inset-0 overflow-auto px-6 pb-14 flex flex-col">
         {filteredItems.length === 0 && deletedItems.length === 0 && archivedItems.length === 0 ? (
@@ -1746,7 +1743,7 @@ export function TradeQueuePage({
                   "gap-3 flex-shrink-0 pb-2",
                   fullscreenColumn
                     ? "grid grid-cols-1"
-                    : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+                    : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                 )}>
                   {RESEARCH_STAGES.map((stage) => {
                     const stageConfig = RESEARCH_STAGE_CONFIG[stage]
@@ -1851,7 +1848,7 @@ export function TradeQueuePage({
                   "gap-3 flex-1 min-h-0 overflow-y-auto pt-2",
                   fullscreenColumn
                     ? "grid grid-cols-1"
-                    : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+                    : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                 )}>
                   {RESEARCH_STAGES.map((stage, stageIdx) => {
                     const stageConfig = RESEARCH_STAGE_CONFIG[stage]
@@ -1904,7 +1901,7 @@ export function TradeQueuePage({
                                 onMoveLeft={prevStage ? () => movePairTrade({ pairTradeId, targetStatus: prevStage as any, uiSource: 'arrow_button' }) : undefined}
                                 onMoveRight={nextStage ? () => movePairTrade({ pairTradeId, targetStatus: nextStage as any, uiSource: 'arrow_button' }) : undefined}
                                 currentUserId={user?.id}
-                                onProposalClick={stage === 'ready_for_decision' ? () => {
+                                onProposalClick={stage === FINAL_STAGE ? () => {
                                   setSelectedTradeId(pairTradeId)
                                   setSelectedTradeInitialTab('decisions')
                                 } : undefined}
@@ -1931,7 +1928,7 @@ export function TradeQueuePage({
                                 canMoveRight={!!nextStage && canUserMoveItem(item)}
                                 onMoveLeft={prevStage ? () => moveTrade({ tradeId: item.id, targetStatus: prevStage as any, uiSource: 'arrow_button' }) : undefined}
                                 onMoveRight={nextStage ? () => moveTrade({ tradeId: item.id, targetStatus: nextStage as any, uiSource: 'arrow_button' }) : undefined}
-                                onProposalClick={stage === 'ready_for_decision' ? () => {
+                                onProposalClick={stage === FINAL_STAGE ? () => {
                                   setProposalTradeId(item.id)
                                   setProposalTrade(item)
                                   setShowProposalModal(true)
@@ -1944,20 +1941,20 @@ export function TradeQueuePage({
                             {items.length === 0 && pairs.length === 0 && (
                               <div className="flex flex-col items-center justify-center py-8 text-center px-3">
                                 <StageIcon className="h-8 w-8 text-gray-300 dark:text-gray-600 mb-3" />
-                                {stage === 'thesis_forming' ? (
+                                {stage === 'developing' ? (
                                   <>
-                                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1.5">Refine before recommending</p>
+                                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1.5">What do we think, and what should we do?</p>
                                     <ul className="text-[11px] text-gray-500 dark:text-gray-400 text-left space-y-1 list-none">
-                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Clear bull / bear thesis defined</li>
-                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Catalysts and timing identified</li>
-                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Key risks pressure-tested</li>
+                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">â€¢</span> Thesis and variant perception articulated</li>
+                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">â€¢</span> Scenarios run, sizing considered</li>
+                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">â€¢</span> Key risks named and pressure-tested</li>
                                     </ul>
-                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">Move here when ready to structure a recommendation.</p>
+                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">Move here once you understand the situation well enough to form a view.</p>
                                   </>
-                                ) : stage === 'ready_for_decision' ? (
+                                ) : stage === FINAL_STAGE ? (
                                   <>
-                                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Research complete</p>
-                                    <p className="text-[11px] text-gray-500 dark:text-gray-400">Ideas here are mature enough for a formal recommendation and PM review.</p>
+                                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Ready to advocate</p>
+                                    <p className="text-[11px] text-gray-500 dark:text-gray-400">Ideas here are ready to put in front of a decision-maker. Submit a recommendation and it appears in the Decision Inbox.</p>
                                     <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5">Drag ideas here or use the arrow buttons.</p>
                                   </>
                                 ) : (
@@ -1980,7 +1977,7 @@ export function TradeQueuePage({
             )}
         </div>
 
-        {/* Bottom drawer: Decision Inbox — overlays upward over kanban */}
+        {/* Bottom drawer: Decision Inbox â€” overlays upward over kanban */}
         <DecisionInboxPanel
           portfolioId={decisionPortfolioId}
           onIdeaClick={(tradeId) => { setSelectedTradeId(tradeId); setSelectedTradeInitialTab('details') }}
@@ -1988,7 +1985,7 @@ export function TradeQueuePage({
           onToggleCollapsed={() => setDecisionPanelCollapsed(prev => {
             const next = !prev
             // Mark pilot step 2 the first time the inbox is opened.
-            // We only fire on collapsed → open transitions so closing
+            // We only fire on collapsed â†’ open transitions so closing
             // the panel doesn't trigger the mark.
             if (prev && pilotMode.effectiveIsPilot) markPilotStep2()
             return next
@@ -2059,11 +2056,11 @@ export function TradeQueuePage({
                   </div>
                   <div className="flex items-center gap-2 text-sm mb-2">
                     <span className="text-green-600 dark:text-green-400 font-medium">
-                      BUY: {proposalPairTrade.legs.filter(l => l.pair_leg_type === 'long' || (l.pair_leg_type === null && l.action === 'buy')).map(l => l.assets?.symbol).join(', ') || '—'}
+                      BUY: {proposalPairTrade.legs.filter(l => l.pair_leg_type === 'long' || (l.pair_leg_type === null && l.action === 'buy')).map(l => l.assets?.symbol).join(', ') || 'â€”'}
                     </span>
                     <span className="text-gray-400">/</span>
                     <span className="text-red-600 dark:text-red-400 font-medium">
-                      SELL: {proposalPairTrade.legs.filter(l => l.pair_leg_type === 'short' || (l.pair_leg_type === null && l.action === 'sell')).map(l => l.assets?.symbol).join(', ') || '—'}
+                      SELL: {proposalPairTrade.legs.filter(l => l.pair_leg_type === 'short' || (l.pair_leg_type === null && l.action === 'sell')).map(l => l.assets?.symbol).join(', ') || 'â€”'}
                     </span>
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -2111,9 +2108,9 @@ export function TradeQueuePage({
 
                     const sizingModes: { value: ProposalSizingMode; label: string; placeholder: string }[] = [
                       { value: 'weight', label: 'Weight %', placeholder: 'e.g. 2.5' },
-                      { value: 'delta_weight', label: '± Weight', placeholder: 'e.g. +0.5 or -0.5' },
+                      { value: 'delta_weight', label: 'Â± Weight', placeholder: 'e.g. +0.5 or -0.5' },
                       { value: 'active_weight', label: 'Active Wgt', placeholder: 'e.g. 1.0' },
-                      { value: 'delta_benchmark', label: '± Bench', placeholder: 'e.g. +0.5' },
+                      { value: 'delta_benchmark', label: 'Â± Bench', placeholder: 'e.g. +0.5' },
                     ]
 
                     return (
@@ -2130,7 +2127,7 @@ export function TradeQueuePage({
                             </span>
                           </div>
                           {hasAnyProposal && (
-                            <span className="text-xs text-green-600 dark:text-green-400 font-medium">✓</span>
+                            <span className="text-xs text-green-600 dark:text-green-400 font-medium">âœ“</span>
                           )}
                         </div>
 
@@ -2171,7 +2168,7 @@ export function TradeQueuePage({
                                     <div>
                                       <span className="text-gray-500 dark:text-gray-400">Bench: </span>
                                       <span className="font-medium text-gray-700 dark:text-gray-300">
-                                        {legContext?.benchmarkWeight !== null ? `${legContext.benchmarkWeight.toFixed(2)}%` : '—'}
+                                        {legContext?.benchmarkWeight !== null ? `${legContext.benchmarkWeight.toFixed(2)}%` : 'â€”'}
                                       </span>
                                     </div>
                                     <div>
@@ -2185,7 +2182,7 @@ export function TradeQueuePage({
                                       )}>
                                         {legContext?.activeWeight !== null
                                           ? `${legContext.activeWeight >= 0 ? '+' : ''}${legContext.activeWeight.toFixed(2)}%`
-                                          : '—'}
+                                          : 'â€”'}
                                       </span>
                                     </div>
                                   </div>
@@ -2270,7 +2267,7 @@ export function TradeQueuePage({
                                     <div>
                                       <span className="text-gray-500 dark:text-gray-400">Bench: </span>
                                       <span className="font-medium text-gray-700 dark:text-gray-300">
-                                        {legContext?.benchmarkWeight !== null ? `${legContext.benchmarkWeight.toFixed(2)}%` : '—'}
+                                        {legContext?.benchmarkWeight !== null ? `${legContext.benchmarkWeight.toFixed(2)}%` : 'â€”'}
                                       </span>
                                     </div>
                                     <div>
@@ -2284,7 +2281,7 @@ export function TradeQueuePage({
                                       )}>
                                         {legContext?.activeWeight !== null
                                           ? `${legContext.activeWeight >= 0 ? '+' : ''}${legContext.activeWeight.toFixed(2)}%`
-                                          : '—'}
+                                          : 'â€”'}
                                       </span>
                                     </div>
                                   </div>
@@ -2357,9 +2354,9 @@ export function TradeQueuePage({
                   // Sizing mode options
                   const sizingModes: { value: ProposalSizingMode; label: string; placeholder: string }[] = [
                     { value: 'weight', label: 'Weight %', placeholder: 'e.g. 2.5' },
-                    { value: 'delta_weight', label: '± Weight', placeholder: 'e.g. +0.5 or -0.5' },
+                    { value: 'delta_weight', label: 'Â± Weight', placeholder: 'e.g. +0.5 or -0.5' },
                     { value: 'active_weight', label: 'Active Wgt', placeholder: 'e.g. 1.0' },
-                    { value: 'delta_benchmark', label: '± Bench', placeholder: 'e.g. +0.5' },
+                    { value: 'delta_benchmark', label: 'Â± Bench', placeholder: 'e.g. +0.5' },
                   ]
 
                   return (
@@ -2404,7 +2401,7 @@ export function TradeQueuePage({
                             <div>
                               <div className="text-gray-500 dark:text-gray-400">Bench Wt</div>
                               <div className="font-medium text-gray-900 dark:text-white">
-                                {portfolio.benchmarkWeight !== null ? `${portfolio.benchmarkWeight.toFixed(2)}%` : '—'}
+                                {portfolio.benchmarkWeight !== null ? `${portfolio.benchmarkWeight.toFixed(2)}%` : 'â€”'}
                               </div>
                             </div>
                             <div>
@@ -2418,7 +2415,7 @@ export function TradeQueuePage({
                               )}>
                                 {portfolio.activeWeight !== null
                                   ? `${portfolio.activeWeight >= 0 ? '+' : ''}${portfolio.activeWeight.toFixed(2)}%`
-                                  : '—'}
+                                  : 'â€”'}
                               </div>
                             </div>
                           </div>
@@ -2458,7 +2455,7 @@ export function TradeQueuePage({
                           )}
                         </span>
                         {proposal?.value && (
-                          <span className="text-green-600 dark:text-green-400">✓</span>
+                          <span className="text-green-600 dark:text-green-400">âœ“</span>
                         )}
                       </button>
 
@@ -2520,9 +2517,9 @@ export function TradeQueuePage({
                                 {sizingMode === 'weight' && `Target weight: ${proposal.value}%`}
                                 {sizingMode === 'delta_weight' && (
                                   parseFloat(proposal.value) > 0
-                                    ? `Increase weight by ${proposal.value}% → ${(portfolio.currentWeight + parseFloat(proposal.value)).toFixed(2)}%`
+                                    ? `Increase weight by ${proposal.value}% â†’ ${(portfolio.currentWeight + parseFloat(proposal.value)).toFixed(2)}%`
                                     : parseFloat(proposal.value) < 0
-                                    ? `Decrease weight by ${Math.abs(parseFloat(proposal.value))}% → ${(portfolio.currentWeight + parseFloat(proposal.value)).toFixed(2)}%`
+                                    ? `Decrease weight by ${Math.abs(parseFloat(proposal.value))}% â†’ ${(portfolio.currentWeight + parseFloat(proposal.value)).toFixed(2)}%`
                                     : `No change from current ${portfolio.currentWeight.toFixed(2)}%`
                                 )}
                                 {sizingMode === 'active_weight' && portfolio.benchmarkWeight !== null &&
@@ -2916,7 +2913,7 @@ function PairTradeCard({
   const isShortLeg = (leg: TradeQueueItemWithDetails) =>
     leg.pair_leg_type === 'short' || (leg.pair_leg_type === null && (leg.action === 'sell' || leg.action === 'reduce' || leg.action === 'trim'))
 
-  // Separate long and short legs — unclassified legs default to short side
+  // Separate long and short legs â€” unclassified legs default to short side
   const longLegs = legs.filter(isLongLeg)
   const classifiedShortLegs = legs.filter(isShortLeg)
   const unclassifiedLegs = legs.filter(l => !isLongLeg(l) && !isShortLeg(l))
@@ -2950,7 +2947,7 @@ function PairTradeCard({
   // A pair recommendation is stored as ONE trade_proposals row linked to a
   // representative leg's trade_queue_item_id, with sizing_context.legs holding
   // all legs. But under the per-leg decision model, each leg has its own
-  // decision_request referencing the SAME proposal — so proposals.get(leg.id)
+  // decision_request referencing the SAME proposal â€” so proposals.get(leg.id)
   // can return the same proposal for multiple legs. Dedupe by id so downstream
   // counters report "1 pair recommendation", not "N copies of the same rec".
   const pairTradeProposals = useMemo(() => {
@@ -3038,7 +3035,7 @@ function PairTradeCard({
       )}
 
       <div className="p-3 relative flex-1 flex flex-col">
-        {/* Missing requirement alert — upper right */}
+        {/* Missing requirement alert â€” upper right */}
         {(() => {
           const stage = firstLeg?.stage || firstLeg?.status
           const hasThesis = legs.some(l => !!(l as any).thesis_text)
@@ -3047,10 +3044,15 @@ function PairTradeCard({
           // many legs have their own decision_requests. Use the deduped
           // pair proposal count as the source of truth.
           const pairRecCount = pairTradeProposals.length
-          const missing: string[] = []
-          if (!hasRationale) missing.push('Why now')
-          if (['thesis_forming', 'ready_for_decision', 'deciding'].includes(stage) && !hasThesis) missing.push('Trade thesis')
-          if (['ready_for_decision', 'deciding'].includes(stage) && pairRecCount === 0) missing.push('Recommendation')
+          // The stage gate itself is the canonical one. What is added here is
+          // the Submit Recommendation prompt â€” which is NOT a gate: an idea at
+          // Ready to Recommend with no recommendation yet is in a perfectly
+          // valid state, it just has an obvious next action.
+          const missing = missingForStage(
+            { rationale: hasRationale ? pairTrade.rationale : null, thesis_text: hasThesis ? 'y' : null },
+            toIdeaStage(stage),
+          )
+          if (toIdeaStage(stage) === FINAL_STAGE && pairRecCount === 0) missing.push('Recommendation')
           if (missing.length === 0) return null
           return (
             <div className="absolute top-2 right-2">
@@ -3162,7 +3164,7 @@ function PairTradeCard({
               </button>
             )
           ) : firstLeg?.portfolios?.name ? (
-            // Not in labs but has portfolio — click to open trade lab
+            // Not in labs but has portfolio â€” click to open trade lab
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -3221,7 +3223,7 @@ function PairTradeCard({
           )}
         </div>
 
-        {/* Recommendation state — single derived state, single row */}
+        {/* Recommendation state â€” single derived state, single row */}
         {(() => {
           if (recStateLoading && !!onProposalClick) {
             return <div className="mb-2"><div className="h-7 w-full rounded-md bg-gray-100 dark:bg-gray-700/50 animate-pulse" /></div>
@@ -3246,7 +3248,7 @@ function PairTradeCard({
                   {recCount} {recCount === 1 ? 'recommendation' : 'recommendations'}
                 </button>
               )}
-              {/* "Needs recommendation" CTA — shown when the pair is in
+              {/* "Needs recommendation" CTA â€” shown when the pair is in
                   Ready for Decision with no active recommendations. Replaces
                   the old auto-prompt-on-drop behavior with an explicit click. */}
               {isReadyForDecision && recCount === 0 && (
@@ -3335,7 +3337,7 @@ function PairTradeCard({
           </div>
         )}
 
-        {/* Proposals section removed — the compact "N recommendations"
+        {/* Proposals section removed â€” the compact "N recommendations"
             badge in the card header is sufficient context, and expanding
             per-portfolio leg breakdowns here duplicated info available in
             the pair trade modal's decisions tab. */}
@@ -3351,14 +3353,14 @@ function PairTradeCard({
               const staleColor = getStalenessColor(stalenessDate, firstLeg.stage || firstLeg.status)
               return (
                 <>
-                  <span className="text-gray-300 dark:text-gray-600">•</span>
+                  <span className="text-gray-300 dark:text-gray-600">â€¢</span>
                   <span className={clsx("flex items-center gap-0.5", !hasUpdate && staleColor)} title={`In pipeline since ${new Date(firstLeg.created_at).toLocaleDateString()}`}>
                     <Timer className="h-3 w-3" />
                     Pipeline {getPipelineAge(firstLeg.created_at)}
                   </span>
                   {hasUpdate && (
                     <>
-                      <span className="text-gray-300 dark:text-gray-600">•</span>
+                      <span className="text-gray-300 dark:text-gray-600">â€¢</span>
                       <span className={staleColor} title={`Last updated ${new Date(firstLeg.updated_at).toLocaleString()}`}>
                         Updated {getPipelineAge(firstLeg.updated_at)}
                       </span>
@@ -3557,7 +3559,7 @@ interface DecidingRecommendationSummaryProps {
 function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = true, selectedPortfolioName }: DecidingRecommendationSummaryProps) {
   const { recommendationCount, latestUpdatedAt, ownerProposal, myProposal, portfolioCount, portfolioNames } = summary
 
-  // No recommendations — handled by the main recommendation state block on the card
+  // No recommendations â€” handled by the main recommendation state block on the card
   if (recommendationCount === 0) {
     return null
   }
@@ -3590,7 +3592,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           <span className="font-semibold text-primary-700 dark:text-primary-400">
             {ownerName} recommends: {Number(ownerProposal.weight).toFixed(1)}%{portfolioContext}
           </span>
-          <span className="mx-1.5 text-gray-400">·</span>
+          <span className="mx-1.5 text-gray-400">Â·</span>
           {showPortfolioCount ? (
             <span>{portfolioCount} portfolios with recommendations</span>
           ) : (
@@ -3598,7 +3600,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           )}
           {timeStr && (
             <>
-              <span className="mx-1.5 text-gray-400">·</span>
+              <span className="mx-1.5 text-gray-400">Â·</span>
               <span>Updated {timeStr}</span>
             </>
           )}
@@ -3611,7 +3613,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           <span className="font-semibold text-primary-700 dark:text-primary-400">
             {ownerName} recommends: {Number(ownerProposal.shares).toLocaleString()} shares{portfolioContext}
           </span>
-          <span className="mx-1.5 text-gray-400">·</span>
+          <span className="mx-1.5 text-gray-400">Â·</span>
           {showPortfolioCount ? (
             <span>{portfolioCount} portfolios with recommendations</span>
           ) : (
@@ -3619,7 +3621,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           )}
           {timeStr && (
             <>
-              <span className="mx-1.5 text-gray-400">·</span>
+              <span className="mx-1.5 text-gray-400">Â·</span>
               <span>Updated {timeStr}</span>
             </>
           )}
@@ -3633,7 +3635,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           <span className="font-medium text-amber-700 dark:text-amber-400">
             {ownerName} recommends{portfolioContext}
           </span>
-          <span className="mx-1.5 text-gray-400">·</span>
+          <span className="mx-1.5 text-gray-400">Â·</span>
           {showPortfolioCount ? (
             <span>{portfolioCount} portfolios with recommendations</span>
           ) : (
@@ -3641,7 +3643,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           )}
           {timeStr && (
             <>
-              <span className="mx-1.5 text-gray-400">·</span>
+              <span className="mx-1.5 text-gray-400">Â·</span>
               <span>Updated {timeStr}</span>
             </>
           )}
@@ -3657,11 +3659,11 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
         ) : (
           <span>{recommendationCount} {recLabel}</span>
         )}
-        <span className="mx-1.5 text-gray-400">·</span>
+        <span className="mx-1.5 text-gray-400">Â·</span>
         <span className="text-amber-600 dark:text-amber-400 font-medium">Awaiting owner sizing</span>
         {timeStr && (
           <>
-            <span className="mx-1.5 text-gray-400">·</span>
+            <span className="mx-1.5 text-gray-400">Â·</span>
             <span>Updated {timeStr}</span>
           </>
         )}
@@ -4140,7 +4142,7 @@ function TradeQueueCard({
 
   const isBuy = item.action === 'buy' || item.action === 'add'
   // Derive display label from proposed weight when available. Pilot
-  // seeds bypass the "NEW LONG / NEW SHORT" inference — those labels
+  // seeds bypass the "NEW LONG / NEW SHORT" inference â€” those labels
   // read as too role-specific for the starter scenario; pilots see
   // the plain action verb ("BUY" / "SELL") so the card reads cleanly.
   const actionLabel = (() => {
@@ -4244,15 +4246,18 @@ function TradeQueueCard({
       )}
 
       <div className="p-3 relative flex-1 flex flex-col">
-        {/* Missing requirement alert — upper right */}
+        {/* Missing requirement alert â€” upper right */}
         {(() => {
           const stage = item.stage || item.status
           const hasThesis = !!(item as any).thesis_text
           const hasRationale = !!item.rationale
-          const missing: string[] = []
-          if (!hasRationale) missing.push('Why now')
-          if (['thesis_forming', 'ready_for_decision', 'deciding'].includes(stage) && !hasThesis) missing.push('Trade thesis')
-          if (['ready_for_decision', 'deciding'].includes(stage) && recCount === 0) missing.push('Recommendation')
+          // Canonical gate, plus the Submit Recommendation prompt â€” see the
+          // pair-trade card above for why the latter is not a gate.
+          const missing = missingForStage(
+            { rationale: hasRationale ? item.rationale : null, thesis_text: hasThesis ? 'y' : null },
+            toIdeaStage(stage),
+          )
+          if (toIdeaStage(stage) === FINAL_STAGE && recCount === 0) missing.push('Recommendation')
           if (missing.length === 0) return null
           return (
             <div className="absolute top-2 right-2">
@@ -4330,7 +4335,7 @@ function TradeQueueCard({
                 <span className="text-primary-600 dark:text-primary-400 font-medium">{labInfo?.trackCounts?.total || labCount} portfolios</span>
                 {labInfo?.trackCounts && labInfo.trackCounts.committed > 0 && (
                   <>
-                    <span className="text-gray-400 dark:text-gray-500">·</span>
+                    <span className="text-gray-400 dark:text-gray-500">Â·</span>
                     <span className="text-green-600 dark:text-green-400">{labInfo.trackCounts.committed} committed</span>
                   </>
                 )}
@@ -4350,14 +4355,14 @@ function TradeQueueCard({
                 <span className="text-primary-600 dark:text-primary-400 font-medium hover:underline">{labInfo?.portfolioNames?.[0] || labInfo?.labNames[0]}</span>
                 {labInfo?.trackCounts?.committed === 1 && (
                   <>
-                    <span className="text-gray-400 dark:text-gray-500">·</span>
+                    <span className="text-gray-400 dark:text-gray-500">Â·</span>
                     <span className="text-green-600 dark:text-green-400">committed</span>
                   </>
                 )}
               </button>
             )
           ) : item.portfolios?.name ? (
-            // Not in labs but has portfolio — route to Trade Lab
+            // Not in labs but has portfolio â€” route to Trade Lab
             // scoped to that portfolio so the click takes the user
             // to where they can simulate/decide, not to the raw
             // portfolio tab.
@@ -4511,7 +4516,7 @@ function TradeQueueCard({
           />
         )}
 
-        {/* Recommendation badge + urgency alert — same line.
+        {/* Recommendation badge + urgency alert â€” same line.
             Includes a "Needs recommendation" CTA when the idea is in
             Deciding with zero active recommendations. Replaces the old
             auto-prompt-on-drop with an explicit click action. */}
@@ -4559,7 +4564,7 @@ function TradeQueueCard({
           <div className="flex items-center gap-1.5">
             <User className="h-3 w-3" />
             <span>{creatorName}</span>
-            <span className="text-gray-300 dark:text-gray-600">•</span>
+            <span className="text-gray-300 dark:text-gray-600">â€¢</span>
             {(() => {
               const hasUpdate = item.updated_at && item.updated_at !== item.created_at
               const stalenessDate = hasUpdate ? item.updated_at : item.created_at
@@ -4572,7 +4577,7 @@ function TradeQueueCard({
                   </span>
                   {hasUpdate && (
                     <>
-                      <span className="text-gray-300 dark:text-gray-600">•</span>
+                      <span className="text-gray-300 dark:text-gray-600">â€¢</span>
                       <span className={staleColor} title={`Last updated ${new Date(item.updated_at).toLocaleString()}`}>
                         Updated {getPipelineAge(item.updated_at)}
                       </span>
@@ -4614,7 +4619,7 @@ function TradeQueueCard({
 }
 
 // Numbered step pill used in the pilot Get Started banner. Mirrors
-// the Step component in PilotTradeLabIntroBanner — title + helper
+// the Step component in PilotTradeLabIntroBanner â€” title + helper
 // hint so the user knows exactly what to do, not just "step 1."
 function PilotPipelineStep({ n, title, hint, done }: { n: number; title: string; hint: string; done?: boolean }) {
   return (

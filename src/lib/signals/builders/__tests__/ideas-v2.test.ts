@@ -121,20 +121,27 @@ describe('context — maturity appears exactly once per card', () => {
      * conviction instead of taking a row of its own above the chart.
      */
     for (const over of [{ targetPrice: 310 }, { ladderCaseCount: 3 }, { hasPriceHistory: true }]) {
-      const c = card(idea({ stage: 'deciding', ...over }))
-      expect(c.context.map(x => x.label)).toContain('DECIDING')
+      const c = card(idea({ stage: 'ready_to_recommend', ...over }))
+      expect(c.context.map(x => x.label)).toContain('DECISION READY')
     }
   })
 
   it('keeps the maturity chip on a narrative card, which never had pills', () => {
-    const c = card(idea({ stage: 'deciding' }))
-    expect(c.context.map(x => x.label)).toContain('DECIDING')
+    const c = card(idea({ stage: 'ready_to_recommend' }))
+    expect(c.context.map(x => x.label)).toContain('DECISION READY')
+  })
+
+  it('never shows a DECIDING chip, because that is not a maturity', () => {
+    // A former `deciding` row reads DECISION READY. Whether a decision is
+    // actually underway is a decision_requests fact and no chip derived from
+    // `stage` can honestly claim it.
+    expect(card(idea({ stage: 'deciding' })).context.map(x => x.label)).not.toContain('DECIDING')
   })
 
   it('leads the row with the book, then maturity, then conviction', () => {
     // The book is first because it is the quiet identity line the headline no
     // longer carries; the two characteristics follow it.
-    const c = card(idea({ stage: 'deep_research', conviction: 'high', targetPrice: 310, portfolioName: 'Core Equity' }))
+    const c = card(idea({ stage: 'researching', conviction: 'high', targetPrice: 310, portfolioName: 'Core Equity' }))
     expect(c.context.map(x => x.label)).toEqual(['Core Equity', 'RESEARCHING', 'high conviction'])
   })
 

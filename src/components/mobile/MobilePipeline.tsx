@@ -16,6 +16,7 @@ import { PilotStepsBanner } from '../pilot/PilotStepsBanner'
 import { useTradeIdeaService } from '../../hooks/useTradeIdeaService'
 import { isCreatorOrCoAnalyst } from '../../lib/permissions/trade-idea-permissions'
 import { RESEARCH_STAGES, RESEARCH_STAGE_CONFIG } from '../../lib/trade-status-semantics'
+import { IDEA_STAGES } from '../../lib/ideas/stage-model'
 import {
   groupIntoRows,
   rowSearchText,
@@ -83,7 +84,7 @@ export function MobilePipeline({ focusIdeaId, onFocusConsumed }: MobilePipelineP
   const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
 
   const [view, setView] = useState<View>('pipeline')
-  const [stage, setStage] = useState<ResearchStage>('aware')
+  const [stage, setStage] = useState<ResearchStage>(IDEA_STAGES[0])
   const [search, setSearch] = useState('')
   const [stagePickerOpen, setStagePickerOpen] = useState(false)
   const [detail, setDetail] = useState<PipelineRow | null>(null)

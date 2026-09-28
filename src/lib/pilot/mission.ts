@@ -1,4 +1,4 @@
-import { toResearchStage } from '../trade-status-semantics'
+import { toIdeaStage, stageIndex } from '../ideas/stage-model'
 
 /**
  * The pilot mission: one trade idea, carried the whole way.
@@ -157,24 +157,25 @@ export interface MissionState {
 /**
  * Stages that count as developing the idea.
  *
- * Read through `toResearchStage` rather than compared literally, because an
+ * Read through `toIdeaStage` rather than compared literally, because an
  * idea is BORN in the v1 vocabulary — every creation path writes `stage:
  * 'idea'` — and is moved in the v2 one by the Pipeline. The coercion is the
  * single place that knows both, so a literal comparison here would be the
  * second definition and would miss whichever half it did not list.
  *
- * `idea` resolves to `aware`, which is where every idea starts, so it does not
- * count. Moving is the lesson.
+ * `idea` resolves to `exploring`, which is where every idea starts, so it does
+ * not count. Moving is the lesson.
  *
- * Deliberately NOT `maturityOf`: its buckets collapse `aware`, `investigate`
- * and `deep_research` into one, so a genuine advance would not register.
+ * Deliberately NOT `maturityOf`: its buckets merge `exploring` and
+ * `researching`, so the first advance a pilot user makes — the one this step
+ * is teaching — would not register.
  */
-const ADVANCED_STAGES = new Set(['investigate', 'deep_research', 'thesis_forming', 'ready_for_decision'])
-
 export function isPipelineAdvanced(stage: string | null | undefined): boolean {
   if (!stage) return false
-  const resolved = toResearchStage(stage)
-  return !!resolved && ADVANCED_STAGES.has(resolved)
+  // "Past the first stage" rather than a hand-listed set: the set was a fourth
+  // copy of the stage order, and adding a stage without updating it would have
+  // silently broken this step.
+  return stageIndex(toIdeaStage(stage)) > 0
 }
 
 /*

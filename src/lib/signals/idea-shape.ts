@@ -1,3 +1,10 @@
+import {
+  isIdeaStage,
+  isAwaitingDesk,
+  maturityForStage,
+  LEGACY_STAGE_MAP,
+} from '../ideas/stage-model'
+
 /**
  * What KIND of investment claim an idea is making, and how worked-through it is.
  *
@@ -115,19 +122,11 @@ export interface MaturityShape {
   awaitingDesk: boolean
 }
 
-const MATURITY: Record<string, MaturityShape> = {
-  // Research pipeline v2.
-  aware: { maturity: 'researching', label: 'RESEARCHING', awaitingDesk: false },
-  investigate: { maturity: 'researching', label: 'RESEARCHING', awaitingDesk: false },
-  deep_research: { maturity: 'researching', label: 'RESEARCHING', awaitingDesk: false },
-  thesis_forming: { maturity: 'thesis_forming', label: 'THESIS FORMING', awaitingDesk: false },
-  ready_for_decision: { maturity: 'decision_ready', label: 'DECISION READY', awaitingDesk: true },
-  // Legacy stages. Still present on older rows — see `TradeStage`, which is a
-  // union of both vocabularies because the column was never migrated.
-  idea: { maturity: 'researching', label: 'RESEARCHING', awaitingDesk: false },
-  working_on: { maturity: 'researching', label: 'RESEARCHING', awaitingDesk: false },
-  modeling: { maturity: 'thesis_forming', label: 'THESIS FORMING', awaitingDesk: false },
-  deciding: { maturity: 'deciding', label: 'DECIDING', awaitingDesk: true },
+const MATURITY_PILL: Record<string, string> = {
+  researching: 'RESEARCHING',
+  thesis_forming: 'THESIS FORMING',
+  decision_ready: 'DECISION READY',
+  deciding: 'DECIDING',
 }
 
 const UNKNOWN_MATURITY: MaturityShape = {
@@ -139,9 +138,28 @@ const UNKNOWN_MATURITY: MaturityShape = {
   awaitingDesk: false,
 }
 
+/**
+ * This file used to hold its own stage table, and it disagreed with the one in
+ * `lib/desktop-ideas/model` — `working_on` read RESEARCHING here and
+ * THESIS FORMING there, so the same idea wore a different pill on two screens.
+ * Both now project through `lib/ideas/stage-model`.
+ *
+ * An empty or absent stage still yields no pill, which is why this does not
+ * simply call `maturityForStage`: that function coerces unknown input to
+ * `exploring`, and claiming "researching" about an idea whose stage failed to
+ * load would be inventing a fact about someone else's work.
+ */
 export function maturityOf(stage: string | null | undefined): MaturityShape {
   const s = String(stage ?? '').trim().toLowerCase()
-  return MATURITY[s] ?? UNKNOWN_MATURITY
+  if (!s) return UNKNOWN_MATURITY
+  if (!isIdeaStage(s) && !(s in LEGACY_STAGE_MAP)) return UNKNOWN_MATURITY
+
+  const bucket = maturityForStage(s)
+  return {
+    maturity: bucket,
+    label: MATURITY_PILL[bucket] ?? null,
+    awaitingDesk: isAwaitingDesk(s),
+  }
 }
 
 /**

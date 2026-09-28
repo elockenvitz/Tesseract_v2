@@ -16,6 +16,7 @@
  */
 
 import type { EngagementTarget } from '../engagement'
+import { maturityForStage } from '../ideas/stage-model'
 
 /** What we intend to do. From `trade_queue_items.action`. */
 export type IdeaDirection = 'buy' | 'sell' | 'add' | 'trim'
@@ -38,24 +39,17 @@ export const MATURITY_LABEL: Record<IdeaMaturity, string> = {
   deciding: 'Deciding',
 }
 
-const STAGE_TO_MATURITY: Record<string, IdeaMaturity> = {
-  aware: 'researching',
-  idea: 'researching',
-  investigate: 'researching',
-  research: 'researching',
-  analysis: 'researching',
-  deep_research: 'researching',
-  discussing: 'researching',
-  working_on: 'thesis_forming',
-  thesis_forming: 'thesis_forming',
-  modeling: 'thesis_forming',
-  simulating: 'thesis_forming',
-  ready_for_decision: 'decision_ready',
-  deciding: 'deciding',
-}
-
+/**
+ * Projection lives in `lib/ideas/stage-model`. This file used to keep its own
+ * table, which disagreed with the one in `lib/signals/idea-shape` about
+ * `working_on` — the same idea showed a different pill depending on which
+ * screen you were on.
+ *
+ * `research` and `analysis` are dropped: they are `assets.process_stage`
+ * values, a different enum on a different table, and were never valid here.
+ */
 export function maturityOf(stage: string | null | undefined): IdeaMaturity {
-  return (stage && STAGE_TO_MATURITY[stage]) ?? 'researching'
+  return maturityForStage(stage)
 }
 
 export type IdeaConviction = 'low' | 'medium' | 'high'

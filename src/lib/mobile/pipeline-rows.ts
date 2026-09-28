@@ -1,4 +1,4 @@
-import { toResearchStage } from '../trade-status-semantics'
+import { toIdeaStage, missingForStage as stageGate } from '../ideas/stage-model'
 
 /**
  * A pipeline row: either a single idea or a pair trade carrying its legs.
@@ -59,7 +59,7 @@ export function groupIntoRows(items: any[]): PipelineRow[] {
   const rows: PipelineRow[] = singles.map(item => ({
     kind: 'item' as const,
     id: item.id,
-    stage: toResearchStage(item.stage) as string,
+    stage: toIdeaStage(item.stage) as string,
     status: item.status,
     item,
   }))
@@ -72,7 +72,7 @@ export function groupIntoRows(items: any[]): PipelineRow[] {
     rows.push({
       kind: 'pair',
       id: pairId,
-      stage: toResearchStage(first?.stage) as string,
+      stage: toIdeaStage(first?.stage) as string,
       status: first?.status,
       pair: group.pair,
       legs,
@@ -85,42 +85,24 @@ export function groupIntoRows(items: any[]): PipelineRow[] {
 /**
  * What a row is still missing before it can advance to `targetStage`.
  *
- * Mirrors validateStageRequirements in trade-idea-service, which throws on a
- * forward move that fails it. The phone previously offered the move anyway and
- * surfaced the throw afterwards, which is the wrong way round: the reader taps
- * "advance", waits, and is told no. Checking the same rule up front lets the
- * control say what is missing before it is pressed.
+ * The rule itself is `lib/ideas/stage-model`'s; this only unwraps the subject
+ * row. Checking it up front is what lets the phone's advance control say what
+ * is missing BEFORE it is pressed, rather than letting the reader tap, wait,
+ * and be told no by a thrown error from the service.
  *
- * Deliberately covers only the field gates, which are answerable from the row
- * already in hand. The `deciding` stage additionally requires an active
- * recommendation, which needs a query — and `deciding` is not one of the
- * research stages this surface moves between, so it cannot arise here. If that
- * ever changes this must grow a query rather than silently under-reporting.
- *
- * Backward moves are never gated, matching the service.
+ * This used to be an independent copy that deliberately omitted one of the
+ * service's conditions. It no longer can drift: there is one implementation.
  */
 export function missingForStage(row: PipelineRow, targetStage: string): string[] {
-  if (targetStage !== 'ready_for_decision' && targetStage !== 'deciding') return []
-
   const subject = row.kind === 'pair' ? row.legs[0] : row.item
   if (!subject) return []
-
-  const missing: string[] = []
-  if (!subject.rationale?.toString().trim()) missing.push('Why now')
-  if (!subject.thesis_text?.toString().trim()) missing.push('Trade thesis')
-  return missing
+  return stageGate(
+    { rationale: subject.rationale, thesis_text: subject.thesis_text },
+    targetStage,
+  )
 }
 
-/** Stage order used for "is this a forward move", matching the service. */
-const FORWARD_ORDER = [
-  'aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision', 'deciding',
-]
-
-export function isForwardMove(fromStage: string, toStage: string): boolean {
-  const from = FORWARD_ORDER.indexOf(fromStage)
-  const to = FORWARD_ORDER.indexOf(toStage)
-  return from >= 0 && to >= 0 && to > from
-}
+export { isForwardMove } from '../ideas/stage-model'
 
 /** Every string a row should be searchable by. */
 export function rowSearchText(row: PipelineRow): string {
