@@ -118,12 +118,12 @@ const STAGE_ICON: Record<ResearchStage, React.ElementType> = {
  *
  * `purpose` restates the stage's question, because the question is what makes
  * two analysts put the same idea in the same place. `advance` says what has to
- * be TRUE to move on, never how much work has been done â€” the pipeline
+ * be TRUE to move on, never how much work has been done — the pipeline
  * measures understanding, not activity.
  */
 const STAGE_DESCRIPTION: Record<ResearchStage, { purpose: string; activity: string; advance: string }> = {
   exploring: {
-    purpose: 'Is this worth spending meaningful time on? Something caught your eye â€” a news item, a price move, a conversation.',
+    purpose: 'Is this worth spending meaningful time on? Something caught your eye — a news item, a price move, a conversation.',
     activity: 'Capture it, screen it, gather enough context to judge whether it deserves real work. No commitment yet.',
     advance: 'When you decide this earns real research effort.',
   },
@@ -135,12 +135,12 @@ const STAGE_DESCRIPTION: Record<ResearchStage, { purpose: string; activity: stri
   developing: {
     purpose: 'What do we think, and what should we do? Turning evidence into an investment view.',
     activity: 'Form and refine the thesis, establish where it differs from consensus, run scenarios, model upside and downside, consider sizing, name the risks.',
-    advance: 'When there is a thesis and a reason to act now â€” both are required to move on.',
+    advance: 'When there is a thesis and a reason to act now — both are required to move on.',
   },
   ready_to_recommend: {
     purpose: 'Am I prepared to formally advocate for an action? The work is done and the case is ready to put in front of a decision-maker.',
     activity: 'Submit a portfolio-specific recommendation. It goes to the Decision Inbox, where a PM will accept, reject, or defer it.',
-    advance: 'This is the end of the pipeline. What happens next is a decision, not a further stage â€” the idea stays here while it is reviewed.',
+    advance: 'This is the end of the pipeline. What happens next is a decision, not a further stage — the idea stays here while it is reviewed.',
   },
 }
 
@@ -160,7 +160,7 @@ const CONVICTION_CONFIG: Record<string, { label: string; color: string; bg: stri
 export interface TradeQueuePageProps {
   /** An idea to bring into view on arrival. The pilot mission's "Open
    *  Pipeline" sends the tutorial idea, so the reader is not dropped on a full
-   *  board with no indication which card is theirs. Not a filter â€” the board
+   *  board with no indication which card is theirs. Not a filter — the board
    *  is unchanged, the card is just scrolled to and flashed. */
   focusIdeaId?: string | null
   /** Called once the card has actually been brought into view, so the caller
@@ -227,7 +227,7 @@ export function TradeQueuePage({
     tryMigrate(legacyLocalKey('step_tradelab'),    pilotStep3Done,       'pipeline_step_tradelab')
   }, [user?.id, currentOrgId, pilotBannerDismissed, pilotStep1Done, pilotStep2Done, pilotStep3Done, legacyLocalKey, markPilotStage])
 
-  // Step markers â€” short-circuit if the stage is already complete so
+  // Step markers — short-circuit if the stage is already complete so
   // repeated user actions (eg the global openTradeLab listener firing
   // on every Trade Lab button click) don't repeatedly hit the server.
   // markStage itself is also burst-deduped, but checking here saves a
@@ -247,7 +247,7 @@ export function TradeQueuePage({
 
   // Banner visibility is derived synchronously from the progress flags so
   // the very first render after pilot_progress hydrates already excludes
-  // it once all steps are done â€” no flash from a useEffect dismissing it
+  // it once all steps are done — no flash from a useEffect dismissing it
   // a frame later.
   const allStepsDone = pilotStep1Done && pilotStep2Done && pilotStep3Done
   const pilotBanner = usePilotPipelineBanner()
@@ -267,7 +267,7 @@ export function TradeQueuePage({
   // Trade service for audited mutations
   const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
 
-  // UI State â€” multi-select filters bridge to the legacy single-value TradeQueueFilters
+  // UI State — multi-select filters bridge to the legacy single-value TradeQueueFilters
   const [multiFilters, setMultiFilters] = useState<{
     actions: string[]
     derivedUrgencies: string[]
@@ -406,12 +406,12 @@ export function TradeQueuePage({
     })
   }
 
-  // Fetch trade queue items â€” strictly scoped to the current org via the
+  // Fetch trade queue items — strictly scoped to the current org via the
   // canonical organization_id column on trade_queue_items itself (see
   // 20260603020000_trade_queue_items_organization_id.sql). The column
   // is backfilled from portfolios for items with a portfolio and auto-
   // populated by a BEFORE INSERT trigger for new rows, so this single
-  // filter is sufficient â€” no LEFT JOIN gymnastics or per-row null
+  // filter is sufficient — no LEFT JOIN gymnastics or per-row null
   // handling.
   // Shared with the phone's pipeline via usePipelineItems, which owns the query
   // and its key so both surfaces read one cache entry.
@@ -421,7 +421,7 @@ export function TradeQueuePage({
    * Bring the arriving idea into view.
    *
    * The mission's "Open Pipeline" has always sent `focusIdeaId` and nothing
-   * ever read it â€” the page was rendered with no props at all â€” so a pilot on
+   * ever read it — the page was rendered with no props at all — so a pilot on
    * step 2 landed on a full board with no indication which card was theirs.
    *
    * This is deliberately the smallest thing that fixes that: no filter, no
@@ -446,7 +446,7 @@ export function TradeQueuePage({
         el.classList.add('decision-recorded-flash')
         setTimeout(() => el.classList.remove('decision-recorded-flash'), 2600)
       }
-      // Spent â€” after the flash is on, for the reason Trade Book's is: dropping
+      // Spent — after the flash is on, for the reason Trade Book's is: dropping
       // the id re-runs this effect and the cleanup would cancel the timer.
       onFocusConsumed?.()
     }, 80)
@@ -524,7 +524,7 @@ export function TradeQueuePage({
   // belonged to, which leaked names from other orgs whenever a user was
   // on portfolios in more than one org (any pilot tester or platform
   // admin). Scope strictly to current-org members via the shared
-  // useOrgMembers hook â€” same defense-in-depth pattern applied to the
+  // useOrgMembers hook — same defense-in-depth pattern applied to the
   // other pickers in commit 868ee2f.
   const { data: teamMembers } = useOrgMembers()
 
@@ -676,7 +676,7 @@ export function TradeQueuePage({
     return { nonPairTradeProposals: singleProposals, pairTradeProposalGroups: pairGroups }
   }, [decidingProposals])
 
-  // Set of pair trade IDs that already have proposals â€” used to dedup
+  // Set of pair trade IDs that already have proposals — used to dedup
   // pair trade idea cards from the deciding section when a proposal exists.
   const pairIdsWithProposals = useMemo(
     () => new Set(pairTradeProposalGroups.map(g => g.pairTradeId)),
@@ -761,7 +761,7 @@ export function TradeQueuePage({
     return groupProposalsByTradeIdea(pending as ProposalData[])
   }, [nonPairTradeProposals, portfolioTrackStatuses])
 
-  // Fetch committed proposals â€” proposals on ideas where the portfolio track decision is 'accepted'
+  // Fetch committed proposals — proposals on ideas where the portfolio track decision is 'accepted'
   const { data: committedProposalsRaw } = useQuery({
     queryKey: ['committed-proposals', filters.portfolio_id],
     queryFn: async () => {
@@ -1168,7 +1168,7 @@ export function TradeQueuePage({
 
       // Resurfaced deferred items go back to where they were. `getResurfaceStage`
       // reads `previous_state`, which stores the stage as free text and may
-      // still hold a pre-migration value â€” `toIdeaStage` absorbs that.
+      // still hold a pre-migration value — `toIdeaStage` absorbs that.
       const stage = isDeferredAndReady(item) ? getResurfaceStage(item) : item.stage
       groups[toIdeaStage(stage)].push(item)
     })
@@ -1313,7 +1313,7 @@ export function TradeQueuePage({
       }
 
       // Stage transitions and recommendation submissions are decoupled.
-      // Dropping on Ready for Decision just moves the workflow state â€” it
+      // Dropping on Ready for Decision just moves the workflow state — it
       // does NOT auto-prompt for a recommendation. If the pair has no
       // active recommendations, the card will show a "Needs recommendation"
       // indicator that explicitly opens the pair recommendation flow.
@@ -1353,7 +1353,7 @@ export function TradeQueuePage({
       }
     }
 
-    // Stage transitions and recommendation submissions are decoupled â€” see
+    // Stage transitions and recommendation submissions are decoupled — see
     // comment in the pair-trade branch above. Just move the stage; if the
     // idea has no active recommendations, the card surfaces a "Needs
     // recommendation" indicator that opens the recommendation flow on click.
@@ -1361,7 +1361,7 @@ export function TradeQueuePage({
     setDraggedItem(null)
     /*
      * Pilot step 1 used to be marked here, which credited the step for a drop
-     * the server could still reject, and credited it only for a drag â€” so the
+     * the server could still reject, and credited it only for a drag — so the
      * same stage change made on a phone earned nothing. It is now marked by
      * the move mutation's success path in `useTradeIdeaService`, which both
      * shells go through. See `usePipelineMoveMarker`.
@@ -1386,8 +1386,8 @@ export function TradeQueuePage({
 
   // Mark step 3 the first time the user hands off to Trade Lab from
   // this page. Listening to the global `openTradeLab` event covers
-  // every path â€” portfolio chip click, inline pair-trade buttons,
-  // the "Open Trade Lab" CTA â€” without us having to wire mark into
+  // every path — portfolio chip click, inline pair-trade buttons,
+  // the "Open Trade Lab" CTA — without us having to wire mark into
   // each call site.
   useEffect(() => {
     if (!pilotMode.effectiveIsPilot || pilotStep3Done) return
@@ -1612,14 +1612,14 @@ export function TradeQueuePage({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Pilot Get Started banner â€” taller, prominent strip
+      {/* Pilot Get Started banner — taller, prominent strip
           matching the Trade Lab intro banner so the two onboarding
           surfaces feel like a pair. Each step pill carries a clear
           one-liner hint so a pilot reads exactly what to do.
           Dismissible per localStorage so a returning user isn't
           re-nagged. */}
       {/* Same steps, same flags, same visibility rule as the phone's
-          pipeline â€” see `usePilotPipelineBanner`. The board is where the
+          pipeline — see `usePilotPipelineBanner`. The board is where the
           steps are performed, so the markers below stay with this page. */}
       {pilotBanner.show && <PilotStepsBanner steps={pilotBanner.steps} label={pilotBanner.label} />}
 
@@ -1728,7 +1728,7 @@ export function TradeQueuePage({
         </div>
       </div>
 
-      {/* Content â€” kanban fills area, Decision Inbox overlays from bottom */}
+      {/* Content — kanban fills area, Decision Inbox overlays from bottom */}
       <div className="flex-1 min-h-0 relative">
         <div className="absolute inset-0 overflow-auto px-6 pb-14 flex flex-col">
         {filteredItems.length === 0 && deletedItems.length === 0 && archivedItems.length === 0 ? (
@@ -1952,9 +1952,9 @@ export function TradeQueuePage({
                                   <>
                                     <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1.5">What do we think, and what should we do?</p>
                                     <ul className="text-[11px] text-gray-500 dark:text-gray-400 text-left space-y-1 list-none">
-                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">â€¢</span> Thesis and variant perception articulated</li>
-                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">â€¢</span> Scenarios run, sizing considered</li>
-                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">â€¢</span> Key risks named and pressure-tested</li>
+                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Thesis and variant perception articulated</li>
+                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Scenarios run, sizing considered</li>
+                                      <li className="flex items-start gap-1.5"><span className="text-indigo-400 mt-px">•</span> Key risks named and pressure-tested</li>
                                     </ul>
                                     <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">Move here once you understand the situation well enough to form a view.</p>
                                   </>
@@ -1984,7 +1984,7 @@ export function TradeQueuePage({
             )}
         </div>
 
-        {/* Bottom drawer: Decision Inbox â€” overlays upward over kanban */}
+        {/* Bottom drawer: Decision Inbox — overlays upward over kanban */}
         <DecisionInboxPanel
           portfolioId={decisionPortfolioId}
           onIdeaClick={(tradeId) => { setSelectedTradeId(tradeId); setSelectedTradeInitialTab('details') }}
@@ -2063,11 +2063,11 @@ export function TradeQueuePage({
                   </div>
                   <div className="flex items-center gap-2 text-sm mb-2">
                     <span className="text-green-600 dark:text-green-400 font-medium">
-                      BUY: {proposalPairTrade.legs.filter(l => l.pair_leg_type === 'long' || (l.pair_leg_type === null && l.action === 'buy')).map(l => l.assets?.symbol).join(', ') || 'â€”'}
+                      BUY: {proposalPairTrade.legs.filter(l => l.pair_leg_type === 'long' || (l.pair_leg_type === null && l.action === 'buy')).map(l => l.assets?.symbol).join(', ') || '—'}
                     </span>
                     <span className="text-gray-400">/</span>
                     <span className="text-red-600 dark:text-red-400 font-medium">
-                      SELL: {proposalPairTrade.legs.filter(l => l.pair_leg_type === 'short' || (l.pair_leg_type === null && l.action === 'sell')).map(l => l.assets?.symbol).join(', ') || 'â€”'}
+                      SELL: {proposalPairTrade.legs.filter(l => l.pair_leg_type === 'short' || (l.pair_leg_type === null && l.action === 'sell')).map(l => l.assets?.symbol).join(', ') || '—'}
                     </span>
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -2115,9 +2115,9 @@ export function TradeQueuePage({
 
                     const sizingModes: { value: ProposalSizingMode; label: string; placeholder: string }[] = [
                       { value: 'weight', label: 'Weight %', placeholder: 'e.g. 2.5' },
-                      { value: 'delta_weight', label: 'Â± Weight', placeholder: 'e.g. +0.5 or -0.5' },
+                      { value: 'delta_weight', label: '± Weight', placeholder: 'e.g. +0.5 or -0.5' },
                       { value: 'active_weight', label: 'Active Wgt', placeholder: 'e.g. 1.0' },
-                      { value: 'delta_benchmark', label: 'Â± Bench', placeholder: 'e.g. +0.5' },
+                      { value: 'delta_benchmark', label: '± Bench', placeholder: 'e.g. +0.5' },
                     ]
 
                     return (
@@ -2175,7 +2175,7 @@ export function TradeQueuePage({
                                     <div>
                                       <span className="text-gray-500 dark:text-gray-400">Bench: </span>
                                       <span className="font-medium text-gray-700 dark:text-gray-300">
-                                        {legContext?.benchmarkWeight !== null ? `${legContext.benchmarkWeight.toFixed(2)}%` : 'â€”'}
+                                        {legContext?.benchmarkWeight !== null ? `${legContext.benchmarkWeight.toFixed(2)}%` : '—'}
                                       </span>
                                     </div>
                                     <div>
@@ -2189,7 +2189,7 @@ export function TradeQueuePage({
                                       )}>
                                         {legContext?.activeWeight !== null
                                           ? `${legContext.activeWeight >= 0 ? '+' : ''}${legContext.activeWeight.toFixed(2)}%`
-                                          : 'â€”'}
+                                          : '—'}
                                       </span>
                                     </div>
                                   </div>
@@ -2274,7 +2274,7 @@ export function TradeQueuePage({
                                     <div>
                                       <span className="text-gray-500 dark:text-gray-400">Bench: </span>
                                       <span className="font-medium text-gray-700 dark:text-gray-300">
-                                        {legContext?.benchmarkWeight !== null ? `${legContext.benchmarkWeight.toFixed(2)}%` : 'â€”'}
+                                        {legContext?.benchmarkWeight !== null ? `${legContext.benchmarkWeight.toFixed(2)}%` : '—'}
                                       </span>
                                     </div>
                                     <div>
@@ -2288,7 +2288,7 @@ export function TradeQueuePage({
                                       )}>
                                         {legContext?.activeWeight !== null
                                           ? `${legContext.activeWeight >= 0 ? '+' : ''}${legContext.activeWeight.toFixed(2)}%`
-                                          : 'â€”'}
+                                          : '—'}
                                       </span>
                                     </div>
                                   </div>
@@ -2361,9 +2361,9 @@ export function TradeQueuePage({
                   // Sizing mode options
                   const sizingModes: { value: ProposalSizingMode; label: string; placeholder: string }[] = [
                     { value: 'weight', label: 'Weight %', placeholder: 'e.g. 2.5' },
-                    { value: 'delta_weight', label: 'Â± Weight', placeholder: 'e.g. +0.5 or -0.5' },
+                    { value: 'delta_weight', label: '± Weight', placeholder: 'e.g. +0.5 or -0.5' },
                     { value: 'active_weight', label: 'Active Wgt', placeholder: 'e.g. 1.0' },
-                    { value: 'delta_benchmark', label: 'Â± Bench', placeholder: 'e.g. +0.5' },
+                    { value: 'delta_benchmark', label: '± Bench', placeholder: 'e.g. +0.5' },
                   ]
 
                   return (
@@ -2408,7 +2408,7 @@ export function TradeQueuePage({
                             <div>
                               <div className="text-gray-500 dark:text-gray-400">Bench Wt</div>
                               <div className="font-medium text-gray-900 dark:text-white">
-                                {portfolio.benchmarkWeight !== null ? `${portfolio.benchmarkWeight.toFixed(2)}%` : 'â€”'}
+                                {portfolio.benchmarkWeight !== null ? `${portfolio.benchmarkWeight.toFixed(2)}%` : '—'}
                               </div>
                             </div>
                             <div>
@@ -2422,7 +2422,7 @@ export function TradeQueuePage({
                               )}>
                                 {portfolio.activeWeight !== null
                                   ? `${portfolio.activeWeight >= 0 ? '+' : ''}${portfolio.activeWeight.toFixed(2)}%`
-                                  : 'â€”'}
+                                  : '—'}
                               </div>
                             </div>
                           </div>
@@ -2920,7 +2920,7 @@ function PairTradeCard({
   const isShortLeg = (leg: TradeQueueItemWithDetails) =>
     leg.pair_leg_type === 'short' || (leg.pair_leg_type === null && (leg.action === 'sell' || leg.action === 'reduce' || leg.action === 'trim'))
 
-  // Separate long and short legs â€” unclassified legs default to short side
+  // Separate long and short legs — unclassified legs default to short side
   const longLegs = legs.filter(isLongLeg)
   const classifiedShortLegs = legs.filter(isShortLeg)
   const unclassifiedLegs = legs.filter(l => !isLongLeg(l) && !isShortLeg(l))
@@ -2954,7 +2954,7 @@ function PairTradeCard({
   // A pair recommendation is stored as ONE trade_proposals row linked to a
   // representative leg's trade_queue_item_id, with sizing_context.legs holding
   // all legs. But under the per-leg decision model, each leg has its own
-  // decision_request referencing the SAME proposal â€” so proposals.get(leg.id)
+  // decision_request referencing the SAME proposal — so proposals.get(leg.id)
   // can return the same proposal for multiple legs. Dedupe by id so downstream
   // counters report "1 pair recommendation", not "N copies of the same rec".
   const pairTradeProposals = useMemo(() => {
@@ -3042,7 +3042,7 @@ function PairTradeCard({
       )}
 
       <div className="p-3 relative flex-1 flex flex-col">
-        {/* Missing requirement alert â€” upper right */}
+        {/* Missing requirement alert — upper right */}
         {(() => {
           const stage = firstLeg?.stage || firstLeg?.status
           const hasThesis = legs.some(l => !!(l as any).thesis_text)
@@ -3052,7 +3052,7 @@ function PairTradeCard({
           // pair proposal count as the source of truth.
           const pairRecCount = pairTradeProposals.length
           // The stage gate itself is the canonical one. What is added here is
-          // the Submit Recommendation prompt â€” which is NOT a gate: an idea at
+          // the Submit Recommendation prompt — which is NOT a gate: an idea at
           // Ready to Recommend with no recommendation yet is in a perfectly
           // valid state, it just has an obvious next action.
           const missing = missingForStage(
@@ -3171,7 +3171,7 @@ function PairTradeCard({
               </button>
             )
           ) : firstLeg?.portfolios?.name ? (
-            // Not in labs but has portfolio â€” click to open trade lab
+            // Not in labs but has portfolio — click to open trade lab
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -3230,7 +3230,7 @@ function PairTradeCard({
           )}
         </div>
 
-        {/* Recommendation state â€” single derived state, single row */}
+        {/* Recommendation state — single derived state, single row */}
         {(() => {
           if (recStateLoading && !!onProposalClick) {
             return <div className="mb-2"><div className="h-7 w-full rounded-md bg-gray-100 dark:bg-gray-700/50 animate-pulse" /></div>
@@ -3255,7 +3255,7 @@ function PairTradeCard({
                   {recCount} {recCount === 1 ? 'recommendation' : 'recommendations'}
                 </button>
               )}
-              {/* "Needs recommendation" CTA â€” shown when the pair is in
+              {/* "Needs recommendation" CTA — shown when the pair is in
                   Ready for Decision with no active recommendations. Replaces
                   the old auto-prompt-on-drop behavior with an explicit click. */}
               {isReadyForDecision && recCount === 0 && (
@@ -3344,7 +3344,7 @@ function PairTradeCard({
           </div>
         )}
 
-        {/* Proposals section removed â€” the compact "N recommendations"
+        {/* Proposals section removed — the compact "N recommendations"
             badge in the card header is sufficient context, and expanding
             per-portfolio leg breakdowns here duplicated info available in
             the pair trade modal's decisions tab. */}
@@ -3360,14 +3360,14 @@ function PairTradeCard({
               const staleColor = getStalenessColor(stalenessDate, firstLeg.stage || firstLeg.status)
               return (
                 <>
-                  <span className="text-gray-300 dark:text-gray-600">â€¢</span>
+                  <span className="text-gray-300 dark:text-gray-600">•</span>
                   <span className={clsx("flex items-center gap-0.5", !hasUpdate && staleColor)} title={`In pipeline since ${new Date(firstLeg.created_at).toLocaleDateString()}`}>
                     <Timer className="h-3 w-3" />
                     Pipeline {getPipelineAge(firstLeg.created_at)}
                   </span>
                   {hasUpdate && (
                     <>
-                      <span className="text-gray-300 dark:text-gray-600">â€¢</span>
+                      <span className="text-gray-300 dark:text-gray-600">•</span>
                       <span className={staleColor} title={`Last updated ${new Date(firstLeg.updated_at).toLocaleString()}`}>
                         Updated {getPipelineAge(firstLeg.updated_at)}
                       </span>
@@ -3566,7 +3566,7 @@ interface DecidingRecommendationSummaryProps {
 function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = true, selectedPortfolioName }: DecidingRecommendationSummaryProps) {
   const { recommendationCount, latestUpdatedAt, ownerProposal, myProposal, portfolioCount, portfolioNames } = summary
 
-  // No recommendations â€” handled by the main recommendation state block on the card
+  // No recommendations — handled by the main recommendation state block on the card
   if (recommendationCount === 0) {
     return null
   }
@@ -3599,7 +3599,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           <span className="font-semibold text-primary-700 dark:text-primary-400">
             {ownerName} recommends: {Number(ownerProposal.weight).toFixed(1)}%{portfolioContext}
           </span>
-          <span className="mx-1.5 text-gray-400">Â·</span>
+          <span className="mx-1.5 text-gray-400">·</span>
           {showPortfolioCount ? (
             <span>{portfolioCount} portfolios with recommendations</span>
           ) : (
@@ -3607,7 +3607,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           )}
           {timeStr && (
             <>
-              <span className="mx-1.5 text-gray-400">Â·</span>
+              <span className="mx-1.5 text-gray-400">·</span>
               <span>Updated {timeStr}</span>
             </>
           )}
@@ -3620,7 +3620,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           <span className="font-semibold text-primary-700 dark:text-primary-400">
             {ownerName} recommends: {Number(ownerProposal.shares).toLocaleString()} shares{portfolioContext}
           </span>
-          <span className="mx-1.5 text-gray-400">Â·</span>
+          <span className="mx-1.5 text-gray-400">·</span>
           {showPortfolioCount ? (
             <span>{portfolioCount} portfolios with recommendations</span>
           ) : (
@@ -3628,7 +3628,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           )}
           {timeStr && (
             <>
-              <span className="mx-1.5 text-gray-400">Â·</span>
+              <span className="mx-1.5 text-gray-400">·</span>
               <span>Updated {timeStr}</span>
             </>
           )}
@@ -3642,7 +3642,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           <span className="font-medium text-amber-700 dark:text-amber-400">
             {ownerName} recommends{portfolioContext}
           </span>
-          <span className="mx-1.5 text-gray-400">Â·</span>
+          <span className="mx-1.5 text-gray-400">·</span>
           {showPortfolioCount ? (
             <span>{portfolioCount} portfolios with recommendations</span>
           ) : (
@@ -3650,7 +3650,7 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
           )}
           {timeStr && (
             <>
-              <span className="mx-1.5 text-gray-400">Â·</span>
+              <span className="mx-1.5 text-gray-400">·</span>
               <span>Updated {timeStr}</span>
             </>
           )}
@@ -3666,11 +3666,11 @@ function DecidingRecommendationSummary({ summary, ownerName, showMyProposal = tr
         ) : (
           <span>{recommendationCount} {recLabel}</span>
         )}
-        <span className="mx-1.5 text-gray-400">Â·</span>
+        <span className="mx-1.5 text-gray-400">·</span>
         <span className="text-amber-600 dark:text-amber-400 font-medium">Awaiting owner sizing</span>
         {timeStr && (
           <>
-            <span className="mx-1.5 text-gray-400">Â·</span>
+            <span className="mx-1.5 text-gray-400">·</span>
             <span>Updated {timeStr}</span>
           </>
         )}
@@ -4149,7 +4149,7 @@ function TradeQueueCard({
 
   const isBuy = item.action === 'buy' || item.action === 'add'
   // Derive display label from proposed weight when available. Pilot
-  // seeds bypass the "NEW LONG / NEW SHORT" inference â€” those labels
+  // seeds bypass the "NEW LONG / NEW SHORT" inference — those labels
   // read as too role-specific for the starter scenario; pilots see
   // the plain action verb ("BUY" / "SELL") so the card reads cleanly.
   const actionLabel = (() => {
@@ -4253,12 +4253,12 @@ function TradeQueueCard({
       )}
 
       <div className="p-3 relative flex-1 flex flex-col">
-        {/* Missing requirement alert â€” upper right */}
+        {/* Missing requirement alert — upper right */}
         {(() => {
           const stage = item.stage || item.status
           const hasThesis = !!(item as any).thesis_text
           const hasRationale = !!item.rationale
-          // Canonical gate, plus the Submit Recommendation prompt â€” see the
+          // Canonical gate, plus the Submit Recommendation prompt — see the
           // pair-trade card above for why the latter is not a gate.
           const missing = missingForStage(
             { rationale: hasRationale ? item.rationale : null, thesis_text: hasThesis ? 'y' : null },
@@ -4342,7 +4342,7 @@ function TradeQueueCard({
                 <span className="text-primary-600 dark:text-primary-400 font-medium">{labInfo?.trackCounts?.total || labCount} portfolios</span>
                 {labInfo?.trackCounts && labInfo.trackCounts.committed > 0 && (
                   <>
-                    <span className="text-gray-400 dark:text-gray-500">Â·</span>
+                    <span className="text-gray-400 dark:text-gray-500">·</span>
                     <span className="text-green-600 dark:text-green-400">{labInfo.trackCounts.committed} committed</span>
                   </>
                 )}
@@ -4362,14 +4362,14 @@ function TradeQueueCard({
                 <span className="text-primary-600 dark:text-primary-400 font-medium hover:underline">{labInfo?.portfolioNames?.[0] || labInfo?.labNames[0]}</span>
                 {labInfo?.trackCounts?.committed === 1 && (
                   <>
-                    <span className="text-gray-400 dark:text-gray-500">Â·</span>
+                    <span className="text-gray-400 dark:text-gray-500">·</span>
                     <span className="text-green-600 dark:text-green-400">committed</span>
                   </>
                 )}
               </button>
             )
           ) : item.portfolios?.name ? (
-            // Not in labs but has portfolio â€” route to Trade Lab
+            // Not in labs but has portfolio — route to Trade Lab
             // scoped to that portfolio so the click takes the user
             // to where they can simulate/decide, not to the raw
             // portfolio tab.
@@ -4523,7 +4523,7 @@ function TradeQueueCard({
           />
         )}
 
-        {/* Recommendation badge + urgency alert â€” same line.
+        {/* Recommendation badge + urgency alert — same line.
             Includes a "Needs recommendation" CTA when the idea is in
             Deciding with zero active recommendations. Replaces the old
             auto-prompt-on-drop with an explicit click action. */}
@@ -4571,7 +4571,7 @@ function TradeQueueCard({
           <div className="flex items-center gap-1.5">
             <User className="h-3 w-3" />
             <span>{creatorName}</span>
-            <span className="text-gray-300 dark:text-gray-600">â€¢</span>
+            <span className="text-gray-300 dark:text-gray-600">•</span>
             {(() => {
               const hasUpdate = item.updated_at && item.updated_at !== item.created_at
               const stalenessDate = hasUpdate ? item.updated_at : item.created_at
@@ -4584,7 +4584,7 @@ function TradeQueueCard({
                   </span>
                   {hasUpdate && (
                     <>
-                      <span className="text-gray-300 dark:text-gray-600">â€¢</span>
+                      <span className="text-gray-300 dark:text-gray-600">•</span>
                       <span className={staleColor} title={`Last updated ${new Date(item.updated_at).toLocaleString()}`}>
                         Updated {getPipelineAge(item.updated_at)}
                       </span>
@@ -4626,7 +4626,7 @@ function TradeQueueCard({
 }
 
 // Numbered step pill used in the pilot Get Started banner. Mirrors
-// the Step component in PilotTradeLabIntroBanner â€” title + helper
+// the Step component in PilotTradeLabIntroBanner — title + helper
 // hint so the user knows exactly what to do, not just "step 1."
 function PilotPipelineStep({ n, title, hint, done }: { n: number; title: string; hint: string; done?: boolean }) {
   return (

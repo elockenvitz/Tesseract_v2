@@ -51,7 +51,7 @@ interface CalendarPageProps {
 
 type ViewMode = 'month' | 'week' | 'agenda'
 
-/** `dotColor` is the phone month-view rendering â€” see the day cell. */
+/** `dotColor` is the phone month-view rendering — see the day cell. */
 const EVENT_TYPE_CONFIG: Record<string, { label: string; color: string; bgColor: string; dotColor: string; icon: React.ReactNode }> = {
   earnings_call: { label: 'Earnings Call', color: 'text-green-700', bgColor: 'bg-green-100 border-green-300', dotColor: 'bg-green-500', icon: <TrendingUp className="h-3 w-3" /> },
   conference: { label: 'Conference', color: 'text-purple-700', bgColor: 'bg-purple-100 border-purple-300', dotColor: 'bg-purple-500', icon: <CalendarClock className="h-3 w-3" /> },
@@ -75,7 +75,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
   const queryClient = useQueryClient()
   const { currentOrgId } = useOrganization()
   const [currentDate, setCurrentDate] = useState(new Date())
-  // The month grid is seven columns of 55px at 390px â€” a cell too small for a
+  // The month grid is seven columns of 55px at 390px — a cell too small for a
   // date plus an event title. The agenda view already existed and is the shape
   // a phone wants: days as a list, with what is on them underneath. Month and
   // week remain selectable; they are just not the default where they do not fit.
@@ -477,7 +477,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-6">
-        {/* The outer header wraps, but this inner group did not â€” title, three
+        {/* The outer header wraps, but this inner group did not — title, three
             nav buttons, the month heading and two fixed-width selects were
             locked on one line well past 390px. It wraps too now, and the
             filters lose their rule and left indent when they fall to their own
@@ -801,7 +801,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
                     )}>
                       {format(day, 'd')}
                     </span>
-                    {/* One dot per event, to three â€” the count past that is
+                    {/* One dot per event, to three — the count past that is
                         not information you act on from a grid. */}
                     <span className="flex items-center gap-0.5 h-1">
                       {dayEvents.slice(0, 3).map(ev => (
@@ -883,7 +883,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
                               {event.all_day
                                 ? 'All day'
                                 : format(parseISO(event.start_date), 'h:mm a')}
-                              {' Â· '}{config.label}
+                              {' · '}{config.label}
                             </span>
                           </span>
                           <PriorityBadge priority={event.priority} size="sm" />
@@ -940,7 +940,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
                     )}>
                       {format(day, 'd')}
                     </div>
-                    {/* This path is desktop, plus week view on a phone â€” seven
+                    {/* This path is desktop, plus week view on a phone — seven
                         columns of a full screen is enough for titles. The phone
                         month view is its own branch above. */}
                     <div className="flex-1 space-y-0.5 overflow-y-auto min-h-0">
@@ -1310,7 +1310,7 @@ function EventModal({
   const [showMoreOptions, setShowMoreOptions] = useState(false)
   const [attendeeSearch, setAttendeeSearch] = useState('')
 
-  // Attendees picker â€” org-scoped. Previously queried users globally.
+  // Attendees picker — org-scoped. Previously queried users globally.
   // Same defense-in-depth swap as the other pickers in commit 868ee2f.
   const { data: users = [] } = useOrgMembers({ enabled: isOpen })
 
@@ -1617,7 +1617,7 @@ function EventModal({
 
                   {/* Location & URL */}
                   {/* Location and a URL side by side leave ~160px each with an
-                      inset icon â€” a pasted link shows about four characters. */}
+                      inset icon — a pasted link shows about four characters. */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
