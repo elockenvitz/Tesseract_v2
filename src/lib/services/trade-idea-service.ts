@@ -26,6 +26,7 @@ import {
   stageLabel,
   toIdeaStage,
 } from '../ideas/stage-model'
+import { fetchOutcomeEligibility } from '../decisions/outcome-eligibility'
 import {
   emitAuditEvent,
   checkIdempotency,
@@ -280,36 +281,29 @@ async function getTradeDisplayName(trade: TradeIdeaState): Promise<string> {
  *
  * ── Where an outcome may be recorded ──────────────────────────────────────
  *
- * An outcome is the result of a DECISION, so it can only be recorded against
- * an idea that has actually been advocated — that is, one at
- * `ready_to_recommend`.
+ * Not here. Whether an outcome may be recorded depends on whether a DECISION
+ * was recorded, which is a fact about `decision_requests` and
+ * `accepted_trades` — see `lib/decisions/outcome-eligibility`. It needs a
+ * query, so it happens in `moveTradeIdea` rather than in this sync predicate.
  *
- * This rule used to name `deciding`, and that was the coupling which made
- * `deciding` a stage in the first place: the only way to record a decision was
- * to move the idea into a stage that claimed the decision was in progress.
- * Pointing the same rule at `ready_to_recommend` breaks the coupling without
- * weakening it — the idea stays where its maturity actually is, and the
- * decision workflow's own state lives in `decision_requests`.
+ * What used to be here was `stage !== 'deciding'`, mechanically renamed to
+ * `stage !== 'ready_to_recommend'` in the four-stage pass. Both used maturity
+ * as evidence of a decision, which it is not: an idea can sit at
+ * `ready_to_recommend` for a month with no recommendation ever submitted, and
+ * that rule would still have let a drag-and-drop stamp an outcome on it.
  */
 function validateStageTransition(
   _fromStage: TradeStage,
   fromOutcome: TradeOutcome | null,
   target: MoveTarget
 ): { valid: boolean; error?: string } {
-  const { stage: toStage, outcome: toOutcome } = target
+  const { outcome: toOutcome } = target
 
   // A decision, once recorded, is not silently rewritten. Clearing it by
   // moving the idea back down the pipeline is still allowed — that is a
   // deliberate reopening, and it is audited.
   if (fromOutcome !== null && toOutcome && toOutcome !== fromOutcome) {
     return { valid: false, error: 'Trade has already been decided. Cannot change decision.' }
-  }
-
-  if (toOutcome && toStage !== FINAL_STAGE) {
-    return {
-      valid: false,
-      error: `A decision can only be recorded on an idea at ${stageLabel(FINAL_STAGE)}.`,
-    }
   }
 
   return { valid: true }
@@ -406,14 +400,28 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
     return
   }
 
+  // An outcome may only be recorded once a decision actually has been.
+  //
+  // This is the check that used to read `stage !== 'ready_to_recommend'`.
+  // Maturity was never evidence of a decision; `decision_requests` and
+  // `accepted_trades` are. Both promotion paths in `accepted-trade-service`
+  // create the accepted_trade BEFORE calling this, so the evidence is already
+  // in place for them.
+  if (target.outcome) {
+    const eligibility = await fetchOutcomeEligibility(tradeId)
+    if (!eligibility.eligible) {
+      throw new Error(eligibility.reason ?? 'No recorded decision for this idea.')
+    }
+  }
+
   // Block promotions that are not yet earned. Moving backward is always
   // allowed — see `missingForStage`.
   //
-  // EXCEPTION: a move that carries an outcome is RECORDING a decision on an
-  // idea that is already at the end of the pipeline, not promoting it. Running
-  // the gate there would make accepting a recommendation fail inside the
-  // try/catch in `acceptFromInboxToAcceptedTrade`, silently leaving the idea at
-  // its prior stage and stranding a card on the board.
+  // EXCEPTION: a move that carries an outcome is RECORDING a decision, not
+  // promoting the idea. Running the maturity gate there would make accepting a
+  // recommendation fail inside the try/catch in
+  // `acceptFromInboxToAcceptedTrade`, silently leaving the idea at its prior
+  // stage and stranding a card on the board.
   if (isForwardStageMove(currentTrade.stage, target.stage) && !target.outcome) {
     const missing = validateStageRequirements(currentTrade, target.stage)
     if (missing.length > 0) {
@@ -1492,6 +1500,28 @@ export async function movePairTrade(params: {
     isPairIdOnly = true
   } else {
     fromStatus = pairTrade.status
+  }
+
+  // A pair records ONE decision across its legs, so eligibility is checked
+  // once, against the first leg — the same leg the field gate below uses.
+  //
+  // This path previously performed no outcome validation at all: it never
+  // called `validateStageTransition`, so even the old stage rule did not apply
+  // to pairs. A pair could be stamped `executed` from any stage with no
+  // decision behind it.
+  if (target.outcome) {
+    // `pairTrade` collapses to `never` under the untyped generated Database
+    // type — the same defect the field gate below already wears. Cast, rather
+    // than spend a fresh type-ceiling slot on a known problem.
+    const firstLegId = isPairIdOnly
+      ? legsFromPairId[0]?.id
+      : ((pairTrade as any)?.trade_queue_items || [])[0]?.id
+    if (firstLegId) {
+      const eligibility = await fetchOutcomeEligibility(firstLegId)
+      if (!eligibility.eligible) {
+        throw new Error(eligibility.reason ?? 'No recorded decision for this pair trade.')
+      }
+    }
   }
 
   // Validate stage prerequisites for forward moves. Any leg missing

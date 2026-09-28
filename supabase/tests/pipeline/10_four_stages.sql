@@ -172,7 +172,8 @@ BEGIN
   -- ── 12. And it still RUNS, writing the new labels ────────────────────────
   -- 11 proves the text changed. Only this proves the function still works —
   -- a rewrite that produced syntactically valid but semantically broken SQL
-  -- would pass 11 and fail here.
+  -- would pass 11 and fail here. This is the provisioning path: if it throws,
+  -- a new pilot org silently gets no demo data.
   PERFORM public.seed_demo_ideas(gen_random_uuid());
 
   SELECT string_agg(DISTINCT stage::text, ',' ORDER BY stage::text) INTO v_txt
@@ -182,6 +183,75 @@ BEGIN
   END IF;
   RAISE NOTICE 'PASS 12: rewritten seeder executes and writes canonical stages';
 
-  RAISE NOTICE '--- 12/12 assertions passed ---';
+  -- ── 13. THE SHARED-LABEL REGRESSION, at row level ────────────────────────
+  --
+  -- `trade_stage` and `trade_queue_status` share four labels. The seeder's
+  -- last tuple is deliberately the collision case:
+  --
+  --     (gen_random_uuid(), 'ready_for_decision', 'deciding', p_org)
+  --                          ^ stage              ^ status
+  --
+  -- A broad quoted-string rewrite turns that status into 'ready_to_recommend',
+  -- which trade_queue_status does not accept. Assertion 11d catches that in
+  -- the function TEXT; this catches it in the WRITTEN ROW, which is what
+  -- actually matters — and would also catch a rewrite that corrupted the
+  -- value through some path the text check does not model.
+  SELECT count(*) INTO v_n
+    FROM public.trade_queue_items
+   WHERE stage_migrated_from IS NULL
+     AND stage = 'ready_to_recommend'
+     AND status = 'deciding';
+  IF v_n IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION
+      'FAIL 13a: expected exactly 1 seeded row with stage=ready_to_recommend AND status=deciding, found %. The shared label was rewritten in the status column.', v_n;
+  END IF;
+
+  -- The inverse guarantee: every status the seeder wrote is still a status
+  -- the seeder meant to write. Named explicitly so a rewrite that mangled a
+  -- DIFFERENT shared label (idea, simulating) also fails here.
+  SELECT string_agg(DISTINCT status::text, ',' ORDER BY status::text) INTO v_txt
+    FROM public.trade_queue_items WHERE stage_migrated_from IS NULL;
+  IF v_txt IS DISTINCT FROM 'deciding,idea,simulating' THEN
+    RAISE EXCEPTION
+      'FAIL 13b: seeded statuses are [%], expected [deciding,idea,simulating]', COALESCE(v_txt, '<none>');
+  END IF;
+  RAISE NOTICE 'PASS 13: shared labels survive in the status column (stage=ready_to_recommend, status=deciding)';
+
+  -- ── 14. The same collision on a MIGRATED row ─────────────────────────────
+  --
+  -- 13 covers the seeder. This covers the table: the fixture holds a row that
+  -- was stage='deciding' AND status='deciding' before the migration. The
+  -- stage must move and the status must not — one rewrite, two columns, same
+  -- four characters.
+  SELECT count(*) INTO v_n
+    FROM public.trade_queue_items
+   WHERE stage_migrated_from = 'deciding'
+     AND status = 'deciding'
+     AND stage = 'ready_to_recommend';
+  IF v_n IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION
+      'FAIL 14a: the stage=deciding/status=deciding row did not migrate to stage=ready_to_recommend with status intact (found %)', v_n;
+  END IF;
+
+  -- And the whole status column is untouched, asserted as a histogram rather
+  -- than a hand-counted total — an expected number I work out by eye is a
+  -- number I can get wrong, and a wrong expectation in a regression test is
+  -- indistinguishable from the regression it is meant to catch. (It was wrong
+  -- the first time: 12, against 9 actual.)
+  SELECT string_agg(s, ',' ORDER BY s) INTO v_txt
+    FROM (
+      SELECT status::text || '=' || count(*)::text AS s
+        FROM public.trade_queue_items
+       WHERE stage_migrated_from IS NOT NULL
+       GROUP BY status::text
+    ) h;
+  IF v_txt IS DISTINCT FROM
+     'approved=1,cancelled=1,deciding=2,deleted=2,discussing=1,executed=2,idea=5,rejected=1,simulating=1'
+  THEN
+    RAISE EXCEPTION 'FAIL 14b: migrated status histogram is [%]', COALESCE(v_txt, '<none>');
+  END IF;
+  RAISE NOTICE 'PASS 14: migrated rows keep their trade_queue_status untouched';
+
+  RAISE NOTICE '--- 14/14 assertions passed ---';
 END;
 $t$;

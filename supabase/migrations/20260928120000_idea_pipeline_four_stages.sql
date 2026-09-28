@@ -233,9 +233,13 @@ ALTER TABLE public.trade_queue_items
 -- nothing would otherwise look identical to a rewrite that worked.
 DO $fix$
 DECLARE
-  r      record;
-  v_def  text;
-  v_new  text;
+  r        record;
+  v_def    text;
+  v_new    text;
+  v_shared text;
+  v_before int;
+  v_cast   int;
+  v_after  int;
 BEGIN
   FOR r IN
     SELECT p.oid, p.oid::regprocedure::text AS sig
@@ -304,17 +308,38 @@ BEGIN
     v_new := replace(v_new, '::trade_stage', '::idea_stage');
     v_new := replace(v_new, 'trade_stage[]', 'idea_stage[]');
 
-    -- (d) Refuse to guess. If a shared label still sits in a position that
-    --     assigns to `stage`, this migration cannot tell whether it means the
-    --     stage or the status, and silently picking one is how the bug above
-    --     happened. Verified against production before writing: none of the
-    --     four affected functions contains a bare shared label in a stage
-    --     position, so this should never fire. If it does, the function needs
-    --     an explicit rewrite rather than a pattern.
-    IF v_new ~ 'stage[^,)]*=>?\s*''(idea|discussing|simulating|deciding)''' THEN
-      RAISE EXCEPTION
-        'Ambiguous shared enum label in a stage position in % — rewrite this function explicitly.', r.sig;
-    END IF;
+    -- (d) Prove no shared label was disturbed — by counting, not by pattern.
+    --
+    -- The hazard is positional: a seeder writes both columns inside one
+    -- VALUES tuple, where neither literal is anywhere near the word "stage":
+    --
+    --     INSERT INTO trade_queue_items (asset_id, stage, status, organization_id)
+    --     VALUES (gen_random_uuid(), 'ready_for_decision', 'deciding', p_org)
+    --
+    -- No predicate over the surrounding text can tell which column a bare
+    -- literal feeds, so an earlier draft's `stage[^,)]*=` guard could never
+    -- have fired here — it looks for an assignment that positional SQL does
+    -- not contain. Pattern-matching the context is the wrong instrument.
+    --
+    -- What IS decidable: how many times each shared label appears. Every
+    -- legitimate rewrite of a shared label is cast-qualified, and (a) consumed
+    -- those. So after (a)-(c), the count of each shared label must be exactly
+    -- what it was in the original MINUS its cast-qualified occurrences. If it
+    -- dropped by more than that, a bare status literal was rewritten.
+    FOREACH v_shared IN ARRAY ARRAY['idea', 'discussing', 'simulating', 'deciding'] LOOP
+      v_before := (length(v_def) - length(replace(v_def, '''' || v_shared || '''', '')))
+                / length('''' || v_shared || '''');
+      v_cast   := (length(v_def) - length(replace(v_def, '''' || v_shared || '''::trade_stage', '')))
+                / length('''' || v_shared || '''::trade_stage');
+      v_after  := (length(v_new) - length(replace(v_new, '''' || v_shared || '''', '')))
+                / length('''' || v_shared || '''');
+
+      IF v_after IS DISTINCT FROM (v_before - v_cast) THEN
+        RAISE EXCEPTION
+          'Rewrite disturbed the shared label ''%'' in %: % occurrences before (% cast-qualified), % after — expected %. A trade_queue_status literal was almost certainly rewritten.',
+          v_shared, r.sig, v_before, v_cast, v_after, v_before - v_cast;
+      END IF;
+    END LOOP;
 
     IF v_new IS DISTINCT FROM v_def THEN
       EXECUTE v_new;

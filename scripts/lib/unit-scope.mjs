@@ -56,6 +56,11 @@ import path from 'node:path'
 export const GATED_DIRS = [
   'src/lib/org-scope',
   'src/lib/ideas',
+  // The outcome-eligibility rule: whether an investment outcome may be
+  // recorded at all. Gated because getting it wrong either fabricates
+  // decisions that never happened or blocks real ones, and neither failure
+  // mode shows up as a crash.
+  'src/lib/decisions',
   'src/lib/ops',
   'src/lib/guards',
   'src/hooks/ideas',
