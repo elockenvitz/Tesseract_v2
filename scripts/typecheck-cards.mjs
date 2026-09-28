@@ -163,7 +163,13 @@ const MAX_ERRORS = 0
 // this lane. Four of the five were created and cleared by the same pass, so
 // the ground actually gained is one — held here rather than left as slack a
 // later regression could hide in.
-const MAX_REPO_ERRORS = 8676
+//
+// → 8675 with the ops client-detail org-attribution fix. Five direct table
+// reads left OpsClientDetailPage for one RPC, taking their errors with them;
+// the new read path adds two of the usual `rpc()` argument collapses, which
+// are contained behind a single documented cast instead of scattered. Net
+// one, measured on the artifact rather than inherited from a branch.
+const MAX_REPO_ERRORS = 8675
 
 /**
  * A floor on real source files, now that they are counted as source files.

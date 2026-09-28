@@ -6,7 +6,12 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchOpsQuickThoughtActivity, totalThoughtCount, activeAuthorIds } from '../../lib/ops/quick-thought-activity'
+// `totalThoughtCount` went with the engagement block: the ideas and
+// trade-idea counts now come from ops_client_engagement, attributed by org.
+// `fetchOpsQuickThoughtActivity` and `activeAuthorIds` remain for the
+// post-graduation artifact block further down, which is untouched here.
+import { fetchOpsQuickThoughtActivity, activeAuthorIds } from '../../lib/ops/quick-thought-activity'
+import { fetchOpsClientEngagement, fetchOpsClientPortfolios } from '../../lib/ops/client-engagement'
 import { ArrowLeft, Building2, Users, Briefcase, Database, Eye, Clock, Activity, CheckCircle2, TrendingUp, FileText, Target, MessageCircleQuestion, Ban, UserCheck, Sparkles, Mail, X, Link2 } from 'lucide-react'
 import { OpsPilotPanel } from './OpsPilotPanel'
 import { clsx } from 'clsx'
@@ -162,17 +167,22 @@ export function OpsClientDetailPage() {
     onError: (err: any) => showError(err.message || 'Could not copy the invitation link'),
   })
 
-  // Portfolios
+  // Portfolios — through the ops RPC, not a direct table read.
+  //
+  // `portfolios` RLS is `organization_id = current_org_id()` with no
+  // platform-admin branch, so the direct read this replaces returned an
+  // empty array for every org except the operator's own: a real pilot
+  // portfolio rendered as "0 portfolios". The same read also feeds
+  // `orgPortfolioIds` further down, so its empty result silently skipped
+  // four downstream signal queries without anything erroring.
   const { data: portfolios = [] } = useQuery({
     queryKey: ['ops-client-portfolios', orgId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('portfolios')
-        .select('id, name, is_active, created_at')
-        .eq('organization_id', orgId!)
-        .order('name')
-      if (error) throw error
-      return data || []
+      const rows = await fetchOpsClientPortfolios(orgId!)
+      // Keep the shape the panel below already renders.
+      return rows.map(p => ({
+        id: p.id, name: p.name, is_active: p.isActive, created_at: p.createdAt,
+      }))
     },
     enabled: !!orgId,
   })
@@ -198,35 +208,38 @@ export function OpsClientDetailPage() {
     enabled: !!orgId,
   })
 
-  // Engagement data
+  // Engagement — one org-aware fetch, replacing five reads with five
+  // different tenancy semantics.
+  //
+  // What was here counted a MEMBER's activity anywhere, because four of the
+  // five queries filtered on `created_by`/`user_id` with no organization
+  // predicate at all. A platform admin who belongs to both their own org and
+  // the pilot they are inspecting saw their own work reported as the
+  // client's — including a note whose `organization_id` was NULL, which
+  // belongs to no org by definition.
+  //
+  // Membership is not attribution. Every count now comes from the row's own
+  // `organization_id = p_org_id`, decided in the database where the caller
+  // cannot forget it.
+  //
+  // No longer gated on `members.length > 0`: the org's activity is a fact
+  // about the org, and an org whose roster has not loaded yet is not an org
+  // with zero notes.
   const { data: engagement } = useQuery({
     queryKey: ['ops-client-engagement', orgId],
     queryFn: async () => {
       const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString()
-      const memberIds = members.map((m: any) => m.user_id)
-      if (memberIds.length === 0) return { ideas: 0, notes: 0, ratings: 0, tradeIdeas: 0, sessions: 0, avgDuration: 0 }
-
-      const [ideasRes, notesRes, ratingsRes, tradeIdeasRes, sessionsRes] = await Promise.all([
-        fetchOpsQuickThoughtActivity({ userIds: memberIds, since: monthAgo, excludeArchived: true }),
-        supabase.from('asset_notes').select('id', { count: 'exact', head: true }).in('created_by', memberIds).gte('created_at', monthAgo),
-        supabase.from('analyst_ratings').select('id', { count: 'exact', head: true }).in('user_id', memberIds).gte('updated_at', monthAgo),
-        fetchOpsQuickThoughtActivity({ userIds: memberIds, since: monthAgo, ideaType: 'trade_idea' }),
-        supabase.from('user_sessions').select('duration_seconds').in('user_id', memberIds).gte('started_at', monthAgo).not('duration_seconds', 'is', null),
-      ])
-
-      const durations = (sessionsRes.data || []).map((s: any) => s.duration_seconds).filter(Boolean)
-      const avgDuration = durations.length > 0 ? Math.round(durations.reduce((a: number, b: number) => a + b, 0) / durations.length) : 0
-
+      const e = await fetchOpsClientEngagement(orgId!, monthAgo)
       return {
-        ideas: totalThoughtCount(ideasRes),
-        notes: notesRes.count || 0,
-        ratings: ratingsRes.count || 0,
-        tradeIdeas: totalThoughtCount(tradeIdeasRes),
-        sessions: durations.length,
-        avgDuration,
+        ideas: e.ideas,
+        notes: e.notes,
+        ratings: e.ratings,
+        tradeIdeas: e.tradeIdeas,
+        sessions: e.sessions,
+        avgDuration: e.avgDurationSeconds,
       }
     },
-    enabled: !!orgId && members.length > 0,
+    enabled: !!orgId,
   })
 
   // Pilot Get Started funnel — mirrors the user-facing 3-banner sequential
