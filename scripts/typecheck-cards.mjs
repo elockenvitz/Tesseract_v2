@@ -179,7 +179,14 @@ const MAX_ERRORS = 0
 // the `never` error from the untyped Database type. The `as never` casts on
 // the payloads that remain are the documented workaround for that same defect,
 // not a claim that those payloads are correct.
-const MAX_REPO_ERRORS = 8667
+// → 8662 with the expand/contract rollout. Normalising `effectiveStage` at
+// the Trade Lab boundary made its type canonical, and TypeScript then rejected
+// every downstream comparison against a retired label — a stage filter, two
+// colour ladders, a sort rank and a third copy of the submit-time auto-advance,
+// all of which would have silently stopped matching after the contract
+// migration rather than failing loudly. Fixing them cleared those and five
+// besides.
+const MAX_REPO_ERRORS = 8662
 
 /**
  * A floor on real source files, now that they are counted as source files.

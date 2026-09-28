@@ -163,9 +163,10 @@ describe('legacy coercion', () => {
   })
 
   it('agrees with the SQL migration, value for value', () => {
-    // If this drifts from supabase/migrations/20260928120000, rows written
-    // before the migration and rows written after will disagree about what
-    // the same idea means.
+    // If this drifts from `pg_temp.canonical_stage` in the CONTRACT migration
+    // (20260928130000), rows the application normalises during the rollout
+    // window and rows the migration rewrites afterwards will disagree about
+    // what the same idea means.
     expect(LEGACY_STAGE_MAP).toEqual({
       aware: 'exploring',
       idea: 'exploring',

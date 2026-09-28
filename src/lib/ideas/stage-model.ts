@@ -223,21 +223,26 @@ export function gateErrorMessage(targetStage: string, missing: string[]): string
 // ============================================================
 
 /**
- * TRANSITIONAL. Delete once the enum migration has been applied to production.
+ * TRANSITIONAL — the read half of the expand/contract rollout.
  *
- * Rows written before the four-stage migration carry one of eleven legacy
- * values. The migration rewrites them, but this map has to exist in the
- * meantime for two reasons that outlive the migration itself by a few
- * deploys:
+ * ── Why this exists and when it can go ────────────────────────────────────
  *
- *   1. Code ships before migrations are applied. Between those two moments the
- *      app reads legacy values out of the database.
- *   2. `previous_state` (jsonb, written when an idea is deferred) stores the
- *      stage as free text and is NOT rewritten by the migration. Restoring a
- *      deferred idea can hand a legacy value back at any point in the future.
+ * The rollout is expand → deploy → contract. Between the expand migration and
+ * the contract migration the database legitimately holds BOTH vocabularies at
+ * once: rows written by the still-running old build carry legacy labels, rows
+ * written by this build carry canonical ones. This map is what lets one
+ * application read both without the rest of the codebase knowing.
  *
- * The mapping is identical to the one in the migration. If you change one,
- * change both — `stage-model.test.ts` asserts they agree.
+ * It outlives the contract migration by a while, for a reason that is not
+ * about rollout at all: `previous_state` (jsonb, written when an idea is
+ * deferred or trashed) stores the stage as free text and is NOT rewritten by
+ * any migration. Restoring such a row can hand back a legacy label years
+ * later. Removing this map is a separate cleanup, gated on that jsonb being
+ * drained or normalised — not on the contract migration landing.
+ *
+ * The mapping is identical to `pg_temp.canonical_stage` in the contract
+ * migration. If you change one, change both — `stage-model.test.ts` asserts
+ * they agree, value for value.
  */
 export const LEGACY_STAGE_MAP: Readonly<Record<string, IdeaStage>> = {
   // v2 five-stage vocabulary
@@ -302,13 +307,24 @@ export function isAwaitingDesk(raw: string | null | undefined): boolean {
 }
 
 /**
- * Coerce any stored stage value to a canonical stage.
+ * THE normalization boundary. Every stage value read out of the database
+ * passes through here, and nothing downstream of it sees a legacy label.
  *
- * Unknown values fall back to `exploring` rather than throwing. A stage value
- * nobody recognises means the idea's maturity is unknown, and the honest
+ * Call it at the point a row enters the application — in the hook, mapper or
+ * service that reads the column — never deep inside a component. The rule
+ * this protects is that `IdeaStage` stays four values: the previous model had
+ * eleven, in two vocabularies, with nine independently-written copies of the
+ * order, and that is what made two screens disagree about the same idea.
+ *
+ * Unknown values fall back to `exploring` rather than throwing. A stage nobody
+ * recognises means the idea's maturity is unknown, and the honest
  * representation of unknown maturity is the start of the pipeline — not a
  * blank card, and certainly not a crash on a screen full of other people's
  * ideas.
+ *
+ * Note what this is NOT: a cast. `as IdeaStage` on a legacy value would
+ * silence the type error and leave `'deciding'` flowing through code that has
+ * no branch for it.
  */
 export function toIdeaStage(raw: string | null | undefined): IdeaStage {
   if (!raw) return 'exploring'

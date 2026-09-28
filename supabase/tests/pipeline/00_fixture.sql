@@ -48,6 +48,24 @@ CREATE TABLE public.trade_queue_items (
 
 CREATE INDEX idx_trade_queue_items_stage ON public.trade_queue_items (stage);
 
+-- The SECOND column on the `trade_stage` enum, and the one the original
+-- single-shot migration never mentioned. Production has 37 rows here, all
+-- legacy (idea 21, deciding 8, working_on 6, modeling 2). Retyping only
+-- trade_queue_items would have left this behind on the old enum — a split
+-- model, and a `trade_stage` that could never be dropped.
+CREATE TABLE public.trade_idea_portfolios (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  trade_queue_item_id uuid NOT NULL REFERENCES public.trade_queue_items(id) ON DELETE CASCADE,
+  portfolio_id        uuid NOT NULL,
+  stage               public.trade_stage NOT NULL,
+  decision_outcome    text,
+  decided_by          uuid,
+  decided_at          timestamptz,
+  created_at          timestamptz DEFAULT now()
+);
+
+CREATE INDEX idx_tip_stage ON public.trade_idea_portfolios (stage);
+
 CREATE TABLE public.decision_requests (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   trade_queue_item_id  uuid NOT NULL REFERENCES public.trade_queue_items(id) ON DELETE CASCADE,
@@ -86,6 +104,15 @@ INSERT INTO public.trade_queue_items (asset_id, stage, status, rationale, thesis
   (gen_random_uuid(), 'deep_research',  'idea',       'Why now', NULL,     NULL),
   (gen_random_uuid(), 'thesis_forming', 'simulating', 'Why now', 'Thesis', NULL),
   (gen_random_uuid(), 'simulating',     'deleted',    '',        NULL,     NULL);
+
+-- Portfolio tracks, mirroring the production distribution: all legacy, and
+-- including `deciding`, which is also a trade_queue_status label.
+INSERT INTO public.trade_idea_portfolios (trade_queue_item_id, portfolio_id, stage)
+SELECT t.id, gen_random_uuid(), v.stage::public.trade_stage
+  FROM (VALUES ('idea'), ('deciding'), ('working_on'), ('modeling')) AS v(stage)
+  CROSS JOIN LATERAL (
+    SELECT id FROM public.trade_queue_items ORDER BY id LIMIT 1
+  ) t;
 
 -- Only SOME deciding rows have a decision_requests row — in production 10 of
 -- 23. The rest have no recommendation record at all, which is precisely why
