@@ -74,7 +74,13 @@ import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
 const FEED_MEASURE = 'mx-auto w-full max-w-[96rem]'
 
 const DIRECTIONS: IdeaDirection[] = ['buy', 'sell', 'add', 'trim']
-const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready', 'deciding']
+/**
+ * `deciding` is deliberately absent. It is still a member of `IdeaMaturity`,
+ * but nothing projects a stage onto it any more — whether a decision is
+ * underway is a fact about `decision_requests`, not about idea maturity. Left
+ * in this list it would render a filter chip that can never match anything.
+ */
+const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready']
 
 export function IdeasExplore({
   onSelect, selectedKey = null, onSelectionInvalid, onProgress,
