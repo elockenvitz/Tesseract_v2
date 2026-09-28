@@ -20,6 +20,7 @@
 import { supabase } from '../supabase'
 import {
   FINAL_STAGE,
+  INITIAL_STAGE,
   isForwardMove as isForwardStageMove,
   missingForStage,
   gateErrorMessage,
@@ -1181,7 +1182,7 @@ export async function createTradeIdea(params: CreateTradeParams): Promise<{ id: 
       urgency,
       rationale,
       sharing_visibility: sharingVisibility || 'private',
-      stage: 'aware',
+      stage: INITIAL_STAGE,
       outcome: null,
       visibility_tier: 'active',
       status: 'idea', // Legacy
@@ -1224,7 +1225,8 @@ export async function createTradeIdea(params: CreateTradeParams): Promise<{ id: 
     state: {
       from: null,
       to: {
-        stage: 'idea',
+        // Matches the insert above.
+        stage: INITIAL_STAGE,
         outcome: null,
         visibility_tier: 'active',
         action,
@@ -1463,10 +1465,10 @@ export async function createPairTrade(params: CreatePairTradeParams): Promise<{ 
     proposed_weight: leg.proposedWeight,
     target_price: leg.targetPrice,
     urgency,
-    stage: 'aware' as TradeStage,
+    stage: INITIAL_STAGE,
     outcome: null,
     visibility_tier: 'active' as VisibilityTier,
-    status: 'idea', // Legacy
+    status: 'idea', // Legacy `trade_queue_status`, not a stage — still valid.
     rationale: '',
     created_by: context.actorId,
     pair_trade_id: pairTrade.id,
@@ -1515,7 +1517,9 @@ export async function createPairTrade(params: CreatePairTradeParams): Promise<{ 
     state: {
       from: null,
       to: {
-        stage: 'idea',
+        // Matches the insert above. A literal here would record a stage the
+        // row never had.
+        stage: INITIAL_STAGE,
         outcome: null,
         visibility_tier: 'active',
         urgency,
@@ -1555,7 +1559,8 @@ export async function createPairTrade(params: CreatePairTradeParams): Promise<{ 
       state: {
         from: null,
         to: {
-          stage: 'idea',
+          // Matches the leg insert above.
+          stage: INITIAL_STAGE,
           outcome: null,
           visibility_tier: 'active',
           action: legInfo?.action,

@@ -6,6 +6,7 @@ import {
   Lock, Users, FolderKanban, ArrowLeftRight, X, AlertCircle
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { INITIAL_STAGE } from '../../lib/ideas/stage-model'
 import { useInvalidateAttention } from '../../hooks/useAttention'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useAuth } from '../../hooks/useAuth'
@@ -708,7 +709,10 @@ export function QuickTradeIdeaCapture({
           action,
           urgency,
           rationale: rationale.trim() || null,
-          stage: 'idea',
+          // `stage` is the four-stage enum; `status` is the separate legacy
+          // `trade_queue_status`, where 'idea' remains valid. Same spelling,
+          // different columns — which is why this one was missed.
+          stage: INITIAL_STAGE,
           status: 'idea',
           pair_id: null,
           sharing_visibility: dbVisibility,
@@ -733,7 +737,7 @@ export function QuickTradeIdeaCapture({
             action: 'buy',
             urgency,
             rationale: rationale.trim() || null,
-            stage: 'idea',
+            stage: INITIAL_STAGE,
             status: 'idea',
             pair_id: pairId,
             sharing_visibility: dbVisibility,
@@ -756,7 +760,7 @@ export function QuickTradeIdeaCapture({
             action: 'sell',
             urgency,
             rationale: rationale.trim() || null,
-            stage: 'idea',
+            stage: INITIAL_STAGE,
             status: 'idea',
             pair_id: pairId,
             sharing_visibility: dbVisibility,
@@ -893,7 +897,8 @@ export function QuickTradeIdeaCapture({
           state: {
             from: null,
             to: {
-              stage: 'idea',
+              // Matches what was inserted above.
+              stage: INITIAL_STAGE,
               action: trade.action,
               urgency: trade.urgency,
               visibility_tier: 'active',

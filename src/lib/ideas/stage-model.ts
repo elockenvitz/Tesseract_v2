@@ -152,6 +152,17 @@ export function nextStage(stage: IdeaStage): IdeaStage | null {
   return i >= 0 && i < IDEA_STAGES.length - 1 ? IDEA_STAGES[i + 1] : null
 }
 
+/**
+ * Where a newly created idea starts.
+ *
+ * Every creation path — quick capture, promote-from-thought, pair trades,
+ * onboarding samples, Trade Lab ad-hoc inserts — writes this rather than a
+ * literal. They each used to spell it `'idea'` or `'aware'`, which is how a
+ * dozen creation paths were still emitting retired enum values after the
+ * pipeline had four stages: nothing type-checks a string in an insert payload.
+ */
+export const INITIAL_STAGE: IdeaStage = 'exploring'
+
 /** The end of the pipeline — where Submit Recommendation becomes available. */
 export const FINAL_STAGE: IdeaStage = 'ready_to_recommend'
 
