@@ -3,10 +3,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import {
   TrendingUp, TrendingDown, Search, Send, Loader2, ChevronDown,
-  Lock, Users, FolderKanban, ArrowLeftRight, X, AlertCircle
+  Lock, Users, FolderKanban, ArrowLeftRight, X, AlertCircle, History
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { INITIAL_STAGE } from '../../lib/ideas/stage-model'
+import {
+  isLiveIdea,
+  isCommittedIdea,
+  IDEA_EVIDENCE_SELECT,
+  type IdeaLifecycleRow,
+} from '../../lib/ideas/lifecycle'
 import { useInvalidateAttention } from '../../hooks/useAttention'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useAuth } from '../../hooks/useAuth'
@@ -19,7 +25,7 @@ import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
 
 // Shape of a row returned by the duplicate-idea queries below. Kept loose
 // since we only project a handful of columns and don't need a full type.
-interface ExistingIdeaRow {
+interface ExistingIdeaRow extends IdeaLifecycleRow {
   id: string
   asset_id?: string
   action: string | null
@@ -29,6 +35,21 @@ interface ExistingIdeaRow {
   pair_id?: string | null
   origin_metadata?: Record<string, any> | null
   users?: { id: string; email: string | null; first_name: string | null; last_name: string | null } | null
+}
+
+/**
+ * How a closed idea ended, in two or three words.
+ *
+ * Says what happened rather than naming the status, because the reader is
+ * deciding whether to write another idea and "Executed Sep 28" answers that
+ * where "executed" alone does not.
+ */
+function historicalIdeaLabel(idea: ExistingIdeaRow): string {
+  const when = idea.created_at
+    ? new Date(idea.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    : ''
+  const what = isCommittedIdea(idea) ? 'Executed' : 'Closed'
+  return when ? `${what} · ${when}` : what
 }
 
 function formatCreatorName(idea: ExistingIdeaRow): string {
@@ -287,12 +308,20 @@ export function QuickTradeIdeaCapture({
       // is a member of.
       const { data, error } = await supabase
         .from('trade_queue_items')
-        .select('asset_id')
+        .select('asset_id, status, outcome')
         .in('asset_id', ids)
         .eq('visibility_tier', 'active')
         .eq('organization_id', currentOrgId)
       if (error) throw error
-      return new Set((data ?? []).map(r => r.asset_id as string))
+      // `visibility_tier` is which drawer a row is in, not whether anyone is
+      // working it — an executed trade stays `active` until something
+      // archives it. Without the liveness test this badged every ticker the
+      // desk had ever traded as "In pipeline".
+      return new Set(
+        (data ?? [])
+          .filter(r => isLiveIdea(r as never))
+          .map(r => r.asset_id as string),
+      )
     },
     enabled: (assets ?? []).length > 0 && !!currentOrgId,
     staleTime: 30_000,
@@ -371,12 +400,20 @@ export function QuickTradeIdeaCapture({
       if (ids.length === 0 || !currentOrgId) return new Set<string>()
       const { data, error } = await supabase
         .from('trade_queue_items')
-        .select('asset_id')
+        .select('asset_id, status, outcome')
         .in('asset_id', ids)
         .eq('visibility_tier', 'active')
         .eq('organization_id', currentOrgId)
       if (error) throw error
-      return new Set((data ?? []).map(r => r.asset_id as string))
+      // `visibility_tier` is which drawer a row is in, not whether anyone is
+      // working it — an executed trade stays `active` until something
+      // archives it. Without the liveness test this badged every ticker the
+      // desk had ever traded as "In pipeline".
+      return new Set(
+        (data ?? [])
+          .filter(r => isLiveIdea(r as never))
+          .map(r => r.asset_id as string),
+      )
     },
     enabled: visibleLongResults.length > 0 && !!currentOrgId,
     staleTime: 30_000,
@@ -388,12 +425,20 @@ export function QuickTradeIdeaCapture({
       if (ids.length === 0 || !currentOrgId) return new Set<string>()
       const { data, error } = await supabase
         .from('trade_queue_items')
-        .select('asset_id')
+        .select('asset_id, status, outcome')
         .in('asset_id', ids)
         .eq('visibility_tier', 'active')
         .eq('organization_id', currentOrgId)
       if (error) throw error
-      return new Set((data ?? []).map(r => r.asset_id as string))
+      // `visibility_tier` is which drawer a row is in, not whether anyone is
+      // working it — an executed trade stays `active` until something
+      // archives it. Without the liveness test this badged every ticker the
+      // desk had ever traded as "In pipeline".
+      return new Set(
+        (data ?? [])
+          .filter(r => isLiveIdea(r as never))
+          .map(r => r.asset_id as string),
+      )
     },
     enabled: visibleShortResults.length > 0 && !!currentOrgId,
     staleTime: 30_000,
@@ -506,24 +551,50 @@ export function QuickTradeIdeaCapture({
   // duplicate. Strictly scoped to the current org via the canonical
   // organization_id column on trade_queue_items (see migration
   // 20260603020000_trade_queue_items_organization_id.sql).
-  const { data: existingIdeasForAsset } = useQuery({
+  const { data: assetIdeaHistory } = useQuery({
     queryKey: ['quick-capture-existing-ideas', currentAssetId, currentOrgId],
     queryFn: async () => {
-      if (!currentAssetId || !currentOrgId) return []
+      if (!currentAssetId || !currentOrgId) return { live: [], historical: [] }
       const { data, error } = await supabase
         .from('trade_queue_items')
-        .select('id, action, stage, created_at, portfolio_id, pair_id, origin_metadata, users:created_by(id, email, first_name, last_name)')
+        .select(`
+          id, action, stage, status, visibility_tier, created_at, portfolio_id, pair_id,
+          origin_metadata, users:created_by(id, email, first_name, last_name),
+          ${IDEA_EVIDENCE_SELECT}
+        `)
         .eq('asset_id', currentAssetId)
         .eq('visibility_tier', 'active')
         .eq('organization_id', currentOrgId)
         .order('created_at', { ascending: false })
         .limit(10)
       if (error) throw error
-      return (data ?? []) as unknown as ExistingIdeaRow[]
+
+      /*
+       * Split, rather than warn about everything the table still holds.
+       *
+       * This asked only for `visibility_tier = 'active'`, which is not the
+       * same question as "is anyone working on this". A trade executed the
+       * previous day is still `active` — nothing deletes it, and nothing
+       * should — so writing a fresh idea for the same name was met with
+       * "AAPL is already in the pipeline" about a position the reader had
+       * just put on themselves.
+       *
+       * Terminal rows are not duplicates. They are the reason to write the
+       * next idea, so they stay on screen as history and stop claiming to be
+       * open work.
+       */
+      const rows = (data ?? []) as unknown as ExistingIdeaRow[]
+      return {
+        live: rows.filter(r => isLiveIdea(r as never)),
+        historical: rows.filter(r => !isLiveIdea(r as never)),
+      }
     },
     enabled: !!currentAssetId && !!currentOrgId && tradeType === 'single',
     staleTime: 30_000,
   })
+
+  const existingIdeasForAsset = assetIdeaHistory?.live ?? []
+  const historicalIdeasForAsset = assetIdeaHistory?.historical ?? []
 
   // Stable, sorted IDs for pair leg duplicate detection — used in
   // queryKeys so React Query memoizes correctly when the user reorders
@@ -557,14 +628,19 @@ export function QuickTradeIdeaCapture({
 
       // Step 1: ideas for any of our leg assets, strictly scoped to the
       // current org via the canonical organization_id column.
-      const { data: legIdeas, error } = await supabase
+      const { data: legIdeasRaw, error } = await supabase
         .from('trade_queue_items')
-        .select('id, asset_id, action, stage, created_at, portfolio_id, pair_id, origin_metadata, users:created_by(id, email, first_name, last_name)')
+        .select('id, asset_id, action, stage, status, outcome, created_at, portfolio_id, pair_id, origin_metadata, users:created_by(id, email, first_name, last_name)')
         .in('asset_id', allLegIds)
         .eq('visibility_tier', 'active')
         .eq('organization_id', currentOrgId)
         .order('created_at', { ascending: false })
       if (error) throw error
+
+      // Same correction as the single path: a closed leg is history, not a
+      // duplicate. Applied before grouping so neither the per-leg warning nor
+      // the exact-pair block can be triggered by finished work.
+      const legIdeas = (legIdeasRaw ?? []).filter(r => isLiveIdea(r as never))
 
       const perAsset: Record<string, ExistingIdeaRow[]> = {}
       ;(legIdeas ?? []).forEach((idea: any) => {
@@ -1337,6 +1413,43 @@ export function QuickTradeIdeaCapture({
               <p className="text-[10px] text-amber-700 mt-1.5 italic">
                 Click an idea above to open it.
               </p>
+            </div>
+          )}
+
+          {/* Prior activity — context, not a warning.
+              Shown only when nothing live exists, so the reader is never
+              given two panels about the same ticker. Grey rather than amber:
+              this is the history that justifies writing the next idea, and
+              nothing here should read as an objection to writing it. */}
+          {selectedAsset && existingIdeasForAsset.length === 0 && historicalIdeasForAsset.length > 0 && (
+            <div className="mb-3 p-2.5 bg-gray-50 border border-gray-200 rounded-lg dark:bg-gray-800/60 dark:border-gray-700">
+              <div className="flex items-start gap-2 mb-2">
+                <History className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                    Prior {selectedAsset.symbol} activity
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">
+                    {historicalIdeasForAsset.length === 1 ? 'One closed idea' : `${historicalIdeasForAsset.length} closed ideas`}. Nothing is open — carry on.
+                  </p>
+                </div>
+              </div>
+              <ul className="space-y-1">
+                {historicalIdeasForAsset.slice(0, 3).map(idea => (
+                  <li key={idea.id}>
+                    <button
+                      type="button"
+                      onClick={() => openExistingIdea(idea.id)}
+                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 bg-white border border-gray-200 rounded text-xs hover:border-gray-400 transition-colors text-left dark:bg-gray-900 dark:border-gray-700"
+                    >
+                      <span className="min-w-0 truncate">{renderExistingIdeaRow(idea, portfolios)}</span>
+                      <span className="shrink-0 text-[10px] text-gray-400">
+                        {historicalIdeaLabel(idea)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

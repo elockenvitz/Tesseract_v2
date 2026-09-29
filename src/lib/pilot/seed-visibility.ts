@@ -26,6 +26,8 @@
  * the Dashboard lenses, so all of them answer the question the same way.
  */
 
+import { hasGenuineUserWork, type IdeaLifecycleRow } from '../ideas/lifecycle'
+
 /** Rows that may carry the marker, in the two shapes the database uses. */
 export interface SeedMetadataRow {
   origin_metadata?: unknown
@@ -77,20 +79,31 @@ export function isOperationalAfterPilot(
  * engine that invented a sixth answer is how the lenses start disagreeing
  * about what the reader's book contains.
  *
- * For an idea the act is a decision or an outcome: somebody decided it, or it
- * reached a terminal state. Stage movement alone is deliberately NOT enough --
- * the seeder plants ideas at five different stages, so treating stage as
- * evidence of work would make every seed look acted-on the moment it existed.
+ * For an idea the act is a decision or a committed trade. Stage movement alone
+ * is deliberately NOT enough -- the seeder plants ideas at five different
+ * stages, so treating stage as evidence of work would make every seed look
+ * acted-on the moment it existed. A seeded AMZN idea sitting at `deciding`
+ * must still be suppressible.
+ *
+ * ── What this used to read, and why it was wrong ──────────────────────────
+ *
+ * It answered "acted on" from `decided_at`, `decision_outcome` and `outcome`
+ * on the idea row. Those three columns are NULL on all 179 active rows in
+ * production -- including an AAPL idea that was decided, executed, and has a
+ * completed `accepted_trades` record. So the rule reported that nobody had
+ * ever acted on anything, and the pilot's one genuine outcome was filed as an
+ * untouched seed and suppressed. That is precisely the case this file's own
+ * docstring says must survive graduation.
+ *
+ * The fix is to read the artifacts the action produced rather than mirror
+ * columns nothing populates. `hasGenuineUserWork` owns that; the evidence is
+ * embedded by the caller's query (`IDEA_EVIDENCE_SELECT`), so judging a list
+ * still costs one query.
  */
-export function judgeIdeaRow(row: {
-  origin_metadata?: unknown
-  decided_at?: string | null
-  decision_outcome?: string | null
-  outcome?: string | null
-}): SeedJudgeable {
+export function judgeIdeaRow(row: IdeaLifecycleRow & { origin_metadata?: unknown }): SeedJudgeable {
   return {
     pilotSeed: isPilotSeedRow(row),
-    actedOn: !!row.decided_at || !!row.decision_outcome || !!row.outcome,
+    actedOn: hasGenuineUserWork(row),
   }
 }
 
