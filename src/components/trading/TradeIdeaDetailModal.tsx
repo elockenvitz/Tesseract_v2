@@ -67,7 +67,7 @@ import { clsx } from 'clsx'
 import { PairTradeLegEditor } from './PairTradeLegEditor'
 import { canMoveGlobalStage } from '../../lib/permissions/trade-idea-permissions'
 import { toResearchStage, RESEARCH_STAGE_CONFIG } from '../../lib/trade-status-semantics'
-import { IDEA_STAGES, IDEA_STAGE_CONFIG, FINAL_STAGE, stageIndex, toIdeaStage } from '../../lib/ideas/stage-model'
+import { IDEA_STAGES, IDEA_STAGE_CONFIG, FINAL_STAGE, stageIndex, toIdeaStage, missingForStage } from '../../lib/ideas/stage-model'
 import type { IdeaStage } from '../../lib/ideas/stage-model'
 import { ThesesDebatePanel } from './ThesesDebatePanel'
 // AddThesisModal replaced by inline composers in ThesesDebatePanel
@@ -218,6 +218,21 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const [isSizingExpanded, setIsSizingExpanded] = useState(false)
   const [isRiskExpanded, setIsRiskExpanded] = useState(false)
   const [pendingStageMove, setPendingStageMove] = useState<string | null>(null)
+  /*
+   * A stage move the maturity gate refused, parked until it is earned.
+   *
+   * Refusing with a toast is a dead end: it names the missing field and then
+   * leaves the reader to find it, on a phone where the field may not even be
+   * on screen. The requirement is not the problem — asserting an idea is ready
+   * for a decision-maker without a thesis is exactly what the gate is for —
+   * but "no" is only half an answer when the other half is one field away.
+   *
+   * So the move is held rather than thrown away, the blocking field is opened
+   * for editing, and the save that satisfies the last requirement offers to
+   * complete the move. Nothing advances a stage silently: the button that
+   * finishes the move says so, and a plain Save still just saves.
+   */
+  const [blockedMove, setBlockedMove] = useState<{ stage: string; missing: string[] } | null>(null)
 
   // Per-portfolio sizing state
   type SizingMode = 'absolute' | 'relative_current' | 'relative_benchmark'
@@ -1506,6 +1521,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     deferTradeAsync,
     movePairTrade,
     updateTrade,
+    updateTradeAsync,
     isMoving,
     isDeleting,
     isRestoring,
@@ -2080,6 +2096,130 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     setIsEditingThesis(false)
     setEditedThesis('')
   }
+
+  // ==========================================================
+  // Blocked stage moves — see `blockedMove` above
+  // ==========================================================
+
+  /**
+   * What the gate reads, from whichever of the two render trees is live.
+   *
+   * A pair trade keeps its thesis in `thesis_summary` on the pair row and
+   * `thesis_text` on the legs; the service gates on the first leg, so read
+   * the same pair of fields the synthetic pair object was built from.
+   */
+  const gateSubject = isPairTrade
+    ? {
+        rationale: pairTradeData?.rationale,
+        thesis_text: (pairTradeData as any)?.thesis_summary || (pairTradeData as any)?.thesis_text,
+      }
+    : { rationale: trade?.rationale, thesis_text: (trade as any)?.thesis_text }
+
+  /** Whether this user can write the fields a blocked move needs. */
+  const canEditGatedFields = isPairTrade ? isPairTradeOwner : isOwner
+
+  /**
+   * Open the editor for the first thing a parked move is waiting on.
+   *
+   * Document order, not the order `missingForStage` returns them in: "Why
+   * now" sits above Trade Thesis in the Details tab, and sending the reader
+   * to the lower field first makes the one above it look optional.
+   */
+  const openFirstBlocker = (missing: string[]) => {
+    if (!canEditGatedFields) return
+    if (missing.includes('Why now (rationale)')) {
+      setEditedRationale((isPairTrade ? pairTradeData?.rationale : trade?.rationale) || '')
+      setIsEditingRationale(true)
+      return
+    }
+    if (missing.includes('Trade thesis')) {
+      setEditedThesis((gateSubject.thesis_text as string) || '')
+      setIsEditingThesis(true)
+    }
+  }
+
+  /**
+   * Every stage tap goes through here, so the gate is answered before a
+   * doomed write is sent rather than after it comes back.
+   *
+   * This does NOT replace the service-side gate at `trade-idea-service.ts`.
+   * That one is the rule; this one is the reason the reader is not told "no"
+   * and left there. A caller that skips this — a bulk move, an import, a
+   * future surface — still hits the real gate and still gets a toast.
+   */
+  const requestStageMove = (stage: string) => {
+    const missing = missingForStage(gateSubject, stage)
+    if (missing.length === 0) {
+      setBlockedMove(null)
+      setPendingStageMove(stage)
+      return
+    }
+    setPendingStageMove(null)
+    setBlockedMove({ stage, missing })
+    setActiveTab('details')
+    openFirstBlocker(missing)
+  }
+
+  const clearBlockedMove = () => {
+    setBlockedMove(null)
+    setIsEditingRationale(false)
+    setIsEditingThesis(false)
+    setEditedRationale('')
+    setEditedThesis('')
+  }
+
+  /**
+   * Save one gated field and, if it was the last one the parked move needed,
+   * complete the move.
+   *
+   * Re-runs the gate against the saved value rather than assuming the save
+   * satisfied it — a field saved empty (or whitespace) still blocks, and the
+   * banner should say so instead of the move failing a second time.
+   */
+  const saveGatedField = async (field: 'rationale' | 'thesis', value: string) => {
+    const text = value.trim()
+    if (isPairTrade) {
+      if (field === 'rationale') await updatePairRationaleMutation.mutateAsync(text || null)
+      else await updatePairThesisMutation.mutateAsync(text || null)
+    } else {
+      await updateTradeAsync({
+        tradeId,
+        updates: field === 'rationale' ? { rationale: text || null } : { thesisText: text || null },
+        uiSource: 'modal',
+      })
+    }
+    setIsEditingRationale(false)
+    setIsEditingThesis(false)
+    setEditedRationale('')
+    setEditedThesis('')
+
+    if (!blockedMove) return
+    const next = {
+      rationale: field === 'rationale' ? text : gateSubject.rationale,
+      thesis_text: field === 'thesis' ? text : gateSubject.thesis_text,
+    }
+    const stillMissing = missingForStage(next, blockedMove.stage)
+    if (stillMissing.length > 0) {
+      setBlockedMove({ stage: blockedMove.stage, missing: stillMissing })
+      openFirstBlocker(stillMissing)
+      return
+    }
+    const stage = blockedMove.stage
+    setBlockedMove(null)
+    if (isPairTrade) updatePairTradeStatusMutation.mutate(stage as any)
+    else updateStatusMutation.mutate(stage as any)
+  }
+
+  /** The move completes on this save only when nothing else is outstanding. */
+  const isLastBlocker = (field: 'rationale' | 'thesis') =>
+    !!blockedMove &&
+    blockedMove.missing.length === 1 &&
+    blockedMove.missing[0] === (field === 'rationale' ? 'Why now (rationale)' : 'Trade thesis')
+
+  const gatedSaveLabel = (field: 'rationale' | 'thesis') =>
+    isLastBlocker(field)
+      ? `Save & move to ${IDEA_STAGE_CONFIG[blockedMove!.stage as keyof typeof IDEA_STAGE_CONFIG]?.label ?? blockedMove!.stage}`
+      : 'Save'
 
   const startEditSizing = () => {
     setEditedSizing({
@@ -2681,7 +2821,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 key={stage}
                                 type="button"
                                 disabled={!canClick}
-                                onClick={() => canClick && setPendingStageMove(stage)}
+                                onClick={() => canClick && requestStageMove(stage)}
                                 className={clsx(
                                   "flex-1 py-1.5 text-[11px] font-medium rounded transition-all text-center leading-tight",
                                   isCompleted && "bg-green-500 text-white",
@@ -2725,6 +2865,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                             </div>
                           </div>
                         )}
+                        <BlockedMoveNotice
+                          blocked={blockedMove}
+                          canEdit={isPairTradeOwner}
+                          onCancel={clearBlockedMove}
+                        />
                       </div>
                     )
                   })()}
@@ -2769,11 +2914,13 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                             Cancel
                           </button>
                           <button
-                            onClick={() => updatePairRationaleMutation.mutate(editedRationale || null)}
+                            onClick={() => (blockedMove
+                              ? saveGatedField('rationale', editedRationale)
+                              : updatePairRationaleMutation.mutate(editedRationale || null))}
                             disabled={updatePairRationaleMutation.isPending}
                             className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
                           >
-                            {updatePairRationaleMutation.isPending ? 'Saving...' : 'Save'}
+                            {updatePairRationaleMutation.isPending ? 'Saving...' : gatedSaveLabel('rationale')}
                           </button>
                           <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{editedRationale.length}/300</span>
                         </div>
@@ -2820,7 +2967,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                     // view — Developing onward. Listing legacy labels here
                     // meant a canonical row never matched, so the section
                     // would simply have stopped appearing.
-                    const showThesis = stageIndex(toIdeaStage(pairTradeData.stage || pairTradeData.status)) >= stageIndex('developing')
+                    // ...or whenever a parked move is waiting on it. See the
+                    // single-idea twin below for why hiding it was the trap.
+                    const showThesis =
+                      stageIndex(toIdeaStage(pairTradeData.stage || pairTradeData.status)) >= stageIndex('developing') ||
+                      !!blockedMove?.missing.includes('Trade thesis')
                     if (!showThesis) return null
                     return (
                       <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
@@ -2862,12 +3013,13 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 onClick={() => {
                                   // Thesis goes to pair_trades.thesis_summary or
                                   // trade_queue_items.thesis_text (per leg) — NOT rationale.
-                                  updatePairThesisMutation.mutate(editedThesis || null)
+                                  if (blockedMove) saveGatedField('thesis', editedThesis)
+                                  else updatePairThesisMutation.mutate(editedThesis || null)
                                 }}
                                 disabled={updatePairThesisMutation.isPending}
                                 className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
                               >
-                                {updatePairThesisMutation.isPending ? 'Saving...' : 'Save'}
+                                {updatePairThesisMutation.isPending ? 'Saving...' : gatedSaveLabel('thesis')}
                               </button>
                               <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{editedThesis.length}/300</span>
                             </div>
@@ -4841,7 +4993,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 key={stage}
                                 type="button"
                                 disabled={!canClick}
-                                onClick={() => canClick && setPendingStageMove(stage)}
+                                onClick={() => canClick && requestStageMove(stage)}
                                 className={clsx(
                                   "flex-1 py-1.5 text-[11px] font-medium rounded transition-all text-center leading-tight",
                                   isCompleted && "bg-green-500 text-white",
@@ -4885,6 +5037,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                             </div>
                           </div>
                         )}
+                        <BlockedMoveNotice
+                          blocked={blockedMove}
+                          canEdit={isOwner}
+                          onCancel={clearBlockedMove}
+                        />
                       </div>
                     )
                   })()}
@@ -4981,11 +5138,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                             Cancel
                           </button>
                           <button
-                            onClick={saveRationale}
+                            onClick={() => (blockedMove ? saveGatedField('rationale', editedRationale) : saveRationale())}
                             disabled={isUpdating}
                             className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
                           >
-                            {isUpdating ? 'Saving...' : 'Save'}
+                            {isUpdating ? 'Saving...' : gatedSaveLabel('rationale')}
                           </button>
                           <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{editedRationale.length}/300</span>
                         </div>
@@ -5051,7 +5208,16 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                   {/* ========== TRADE THESIS (unlocked at thesis_forming stage) ========== */}
                   {(() => {
                     // Developing onward — see the pair-trade twin above.
-                    const showThesis = stageIndex(toIdeaStage(trade.stage || trade.status)) >= stageIndex('developing')
+                    //
+                    // Unless a parked move is waiting on it. Hiding the field
+                    // the gate is asking for is how "missing: Trade thesis"
+                    // became a wall: the reader was told what was missing and
+                    // then shown no way to supply it, because jumping from
+                    // Researching straight to Ready to Recommend skips the
+                    // stage that reveals the editor.
+                    const showThesis =
+                      stageIndex(toIdeaStage(trade.stage || trade.status)) >= stageIndex('developing') ||
+                      !!blockedMove?.missing.includes('Trade thesis')
                     if (!showThesis) return null
                     return (
                       <div className="pb-3 border-b border-gray-200 dark:border-gray-700">
@@ -5087,11 +5253,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 Cancel
                               </button>
                               <button
-                                onClick={saveThesis}
+                                onClick={() => (blockedMove ? saveGatedField('thesis', editedThesis) : saveThesis())}
                                 disabled={isUpdating}
                                 className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
                               >
-                                {isUpdating ? 'Saving...' : 'Save'}
+                                {isUpdating ? 'Saving...' : gatedSaveLabel('thesis')}
                               </button>
                               <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{editedThesis.length}/300</span>
                             </div>
@@ -7594,6 +7760,55 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
         </div>
       )}
 
+    </div>
+  )
+}
+
+/**
+ * What a parked stage move is still waiting on.
+ *
+ * Replaces a toast that named the missing field and then vanished, leaving
+ * the reader to find it. This sits under the stage ladder that raised it,
+ * names every outstanding requirement rather than only the first, and stays
+ * until the move completes or is cancelled — so the reason the idea has not
+ * advanced is visible the whole time it has not advanced.
+ *
+ * A reader who cannot write these fields still sees the list. Being told why
+ * an idea is stuck is useful even when fixing it is someone else's job, and
+ * the stage gate and the edit permission are deliberately different rules:
+ * a collaborator may advance an idea they cannot rewrite.
+ */
+export function BlockedMoveNotice({
+  blocked,
+  canEdit,
+  onCancel,
+}: {
+  blocked: { stage: string; missing: string[] } | null
+  canEdit: boolean
+  onCancel: () => void
+}) {
+  if (!blocked) return null
+  const label = IDEA_STAGE_CONFIG[blocked.stage as keyof typeof IDEA_STAGE_CONFIG]?.label ?? blocked.stage
+  return (
+    <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/60 px-3 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs text-amber-800 dark:text-amber-200">
+          <span className="font-semibold">{label}</span> needs{' '}
+          {blocked.missing.map((m, i) => (
+            <span key={m}>
+              {i > 0 && (i === blocked.missing.length - 1 ? ' and ' : ', ')}
+              <span className="font-semibold">{m.toLowerCase()}</span>
+            </span>
+          ))}
+          .{canEdit ? ' Fill it in below and the move completes.' : ' Its creator can add this.'}
+        </p>
+        <button
+          onClick={onCancel}
+          className="shrink-0 text-xs text-amber-700 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }
