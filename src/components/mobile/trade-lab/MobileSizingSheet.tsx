@@ -88,13 +88,19 @@ export function MobileSizingSheet({
       case 'weight_target':
         return parsed.value
       case 'weight_delta':
-        return cur + (parsed.input_sign === '-' ? -parsed.value : parsed.value)
+        // `parsed.value` is ALREADY signed — the parser stores -0.25 for
+        // "-0.25" and keeps `input_sign` only as display metadata. This line
+        // used to negate it again when the sign was '-', so a field reading
+        // "-0.25" projected as an INCREASE of 0.25. Paired with a chip bug
+        // that wrote the raw step into the field, the two errors cancelled on
+        // screen and diverged at execution: the readout agreed with what the
+        // user wanted while the trade did the opposite.
+        return cur + parsed.value
       case 'shares_target':
         return ((parsed.value * price) / portfolioTotalValue) * 100
-      case 'shares_delta': {
-        const delta = parsed.input_sign === '-' ? -parsed.value : parsed.value
-        return (((row.currentShares + delta) * price) / portfolioTotalValue) * 100
-      }
+      case 'shares_delta':
+        // Same double-negation, same reasoning.
+        return (((row.currentShares + parsed.value) * price) / portfolioTotalValue) * 100
       default:
         // Active-space sizing needs the benchmark weight to resolve; the server
         // does that. Showing nothing beats showing a number that ignores it.
@@ -106,7 +112,10 @@ export function MobileSizingSheet({
   const deltaNotional =
     deltaWeight != null ? (deltaWeight / 100) * portfolioTotalValue : null
 
-  /** Apply a chip. Chips are always deltas — a target is what the field is for. */
+  /**
+   * Apply a chip. Chips NUDGE what is already in the field, in kind: a target
+   * stays a target, a delta stays a delta. See `lib/mobile/sizing-steps`.
+   */
   const step = (amount: number) => setValue(v => applyStep(v, mode, amount))
 
   const modeChips = mode === 'shares' ? SHARE_STEPS : WEIGHT_STEPS

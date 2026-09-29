@@ -37,6 +37,8 @@
 
 import { supabase } from '../supabase'
 import { FINAL_STAGE } from '../ideas/stage-model'
+import { parseSizingInput } from '../trade-lab/sizing-parser'
+import { nearlyEqual } from '../mobile/exploration'
 import { createAcceptedTrade, type CreateAcceptedTradeInput } from './accepted-trade-service'
 import { deleteVariant } from './intent-variant-service'
 import type {
@@ -255,6 +257,72 @@ async function ensureTradeQueueItem(
 /**
  * Build the CreateAcceptedTradeInput from a variant + resolved DR.
  */
+/**
+ * Refuse to execute a variant whose `computed` numbers contradict its
+ * `sizing_input` string.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────
+ *
+ * `sizing_input` is what the user typed or nudged, and what the sheet's
+ * readout is derived from. `computed` is what actually sizes the trade. They
+ * are produced at different moments by different code, and nothing downstream
+ * compares them — `createAcceptedTrade` is a pure pass-through insert, so a
+ * disagreement becomes a real position change with no error anywhere.
+ *
+ * A live AAPL trade went out that way: a sheet showing +0.25% committed the
+ * string "-0.25", and the trade trimmed 25bps instead of adding 25.
+ *
+ * ── What it checks, and what it deliberately does not ────────────────────
+ *
+ * Only that the SIGN and MAGNITUDE of the sizing agree with the string. That
+ * needs no price and no NAV, so it can run at the point of execution where
+ * neither is in scope — and sign disagreement is the failure that inverts a
+ * trade. Share and notional conversions are the normalizer's job and are not
+ * re-derived here; duplicating that arithmetic is what this whole class of bug
+ * is made of.
+ *
+ * Tolerance comes from `nearlyEqual`, which is already the codebase's
+ * money-and-percentage comparison. Exact float equality would reject rounding
+ * the normalizer legitimately applies.
+ */
+export function assertSizingAgreesWithInput(v: {
+  id?: string
+  sizing_input?: string | null
+  computed?: { target_weight?: number | null; delta_weight?: number | null } | null
+}): void {
+  const input = v.sizing_input?.trim()
+  const computed = v.computed
+  if (!input || !computed) return // the caller's own guard handles missing sizing
+
+  const parsed = parseSizingInput(input, { has_benchmark: true })
+  if (!parsed.is_valid || parsed.value == null) return
+
+  const refuse = (detail: string): never => {
+    throw new Error(
+      `Refusing to execute: the sizing shown does not match the sizing computed for this trade (${detail}). ` +
+      `Re-enter the size and try again.`,
+    )
+  }
+
+  // `parsed.value` is already signed; `input_sign` is display metadata.
+  if (parsed.framework === 'weight_delta') {
+    const actual = computed.delta_weight
+    if (actual == null) return
+    if (!nearlyEqual(actual, parsed.value, 1e-3)) {
+      refuse(`input "${input}" means ${parsed.value}% but the trade is sized at ${actual.toFixed(4)}%`)
+    }
+  } else if (parsed.framework === 'weight_target') {
+    const actual = computed.target_weight
+    if (actual == null) return
+    if (!nearlyEqual(actual, parsed.value, 1e-3)) {
+      refuse(`input "${input}" targets ${parsed.value}% but the trade is sized to ${actual.toFixed(4)}%`)
+    }
+  }
+  // shares_* and active_* resolve through price and benchmark weight, which are
+  // not available here. The normalizer owns those; this guard stays silent
+  // rather than re-deriving them badly.
+}
+
 function buildAcceptedTradeInput(
   v: IntentVariantWithDetails,
   decisionRequestId: string,
@@ -265,6 +333,20 @@ function buildAcceptedTradeInput(
   batchDescription?: string | null,
 ): CreateAcceptedTradeInput {
   const computed = v.computed
+
+  // ── Last line: what executes must be what the sizing string says ────────
+  //
+  // `computed` is trusted by everything below, and it is produced at a
+  // different moment from `sizing_input` — optimistic cache patches null it,
+  // the server recomputes it, and `SimulationPage` rebuilds it from the cache
+  // when it is missing. Any of those can leave the two describing different
+  // trades, and nothing downstream would notice: an accepted_trade is a pure
+  // pass-through insert.
+  //
+  // So re-derive from the string and refuse if they disagree. This is a
+  // safety net, not the calculation — the numbers used are still `computed`.
+  assertSizingAgreesWithInput(v)
+
   // Shares columns on accepted_trades are integers. If the baseline has
   // fractional holdings (e.g. AZO 1,075.12) and the user trims to a
   // rounded delta (e.g. -1,075), the resulting target_shares is
