@@ -24,7 +24,7 @@
  * and the invitation's own state on its own.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -97,7 +97,37 @@ export function InvitePage() {
   const [preview, setPreview] = useState<InvitePreview | null>(null)
   const [mode, setMode] = useState<Mode>('signup')
   const [formError, setFormError] = useState<string | null>(null)
+  /*
+   * `busy` is the FORM's in-flight flag — signup or sign-in submitted, buttons
+   * disabled. It must never gate acceptance.
+   *
+   * It used to. `onCreateAccount` left `busy` true after a successful signup
+   * ("keep the button busy until the accept effect takes over"), and the accept
+   * effect required `!busy` before it would run. So on the first attempt the
+   * effect re-ran the moment the session appeared, found `busy` still true, and
+   * declined — and nothing ever set it back, because the only code that cleared
+   * it was the error paths. The gate could never open.
+   *
+   * The screen said "Setting up your workspace" the whole time, because that
+   * branch renders on `user && emailMatches` and simply assumed the effect was
+   * running. `accept_org_invite` was never called: the user was created and
+   * confirmed, the invitation stayed pending, and no membership existed.
+   * Reloading fixed it because a fresh mount starts with `busy === false`.
+   *
+   * Acceptance now has its own flag and its own once-guard, so the form's state
+   * and the acceptance state cannot deadlock each other.
+   */
   const [busy, setBusy] = useState(false)
+  /** Acceptance in flight. Drives the joining screen; independent of `busy`. */
+  const [accepting, setAccepting] = useState(false)
+  /**
+   * The token the automatic accept has already been fired for.
+   *
+   * A ref, not state: it must be readable and writable inside the effect
+   * without itself retriggering the effect. Keyed by token so a different
+   * invitation in the same mount still gets its one attempt.
+   */
+  const autoAcceptedFor = useRef<string | null>(null)
   // 'sent' after we asked for a confirmation email, 'blocked' when we found out
   // from a refused sign-in or a refused acceptance that one is still needed.
   // The two say different things to the reader and reach the same screen.
@@ -159,41 +189,64 @@ export function InvitePage() {
   }, [preview?.valid, user?.id, signedInEmail, emailMatches, token])
 
   const runAccept = useCallback(async () => {
-    setBusy(true)
+    setAccepting(true)
     setFormError(null)
-    const result = await acceptInvite(token)
-    if (result.error) {
-      // The server refused because the identity is unconfirmed. That is not an
-      // error to report and leave them with — it is the one state on this page
-      // with an obvious next action, so send them to the screen that offers it.
-      if (result.needsEmailConfirmation) {
-        setAwaitingConfirmation('blocked')
-        setBusy(false)
+    try {
+      const result = await acceptInvite(token)
+      if (result.error) {
+        // The server refused because the identity is unconfirmed. That is not
+        // an error to report and leave them with — it is the one state on this
+        // page with an obvious next action, so send them to the screen that
+        // offers it.
+        if (result.needsEmailConfirmation) {
+          setAwaitingConfirmation('blocked')
+          return
+        }
+        setFormError(result.error)
         return
       }
-      setFormError(result.error)
-      setBusy(false)
-      return
+      clearPendingInvite()
+      // Full reload rather than a client-side navigate: membership, current org
+      // and the cached auth user all changed underneath the running app, and the
+      // dashboard's queries are keyed on values that were null a moment ago.
+      window.location.assign('/dashboard')
+    } catch (err) {
+      // `acceptInvite` reports refusals in its result rather than throwing, so
+      // reaching here means something unexpected did. Caught anyway: an
+      // uncaught throw would leave `accepting` true forever, which is the
+      // class of bug this whole block exists to remove.
+      setFormError(err instanceof Error ? err.message : 'Could not join this workspace.')
+    } finally {
+      // `finally`, so there is no path out of this function that leaves the
+      // screen spinning.
+      setAccepting(false)
     }
-    clearPendingInvite()
-    // Full reload rather than a client-side navigate: membership, current org
-    // and the cached auth user all changed underneath the running app, and the
-    // dashboard's queries are keyed on values that were null a moment ago.
-    window.location.assign('/dashboard')
   }, [token])
 
-  // Signed in as the invited address with a valid invitation — accept it
-  // without making them press a second button. Idempotent server-side, so a
-  // refresh mid-flight is harmless.
+  /*
+   * Signed in as the invited address with a valid invitation — accept it
+   * without making them press a second button.
+   *
+   * Gated on a ref rather than on a loading flag. The previous gate read
+   * `!busy`, which the signup handler had deliberately left true, so this
+   * effect ran, declined, and never got another chance: none of its three
+   * dependencies changed again. The ref makes "have I already fired this?" a
+   * question about acceptance alone, and it cannot be falsified by the form.
+   *
+   * Every value the condition reads is in the dependency list. The old list
+   * omitted `busy`, `formError` and `awaitingConfirmation`, so even a change
+   * in those could not have re-triggered it.
+   */
   useEffect(() => {
-    if (
-      !authLoading && preview?.valid && emailMatches &&
-      !busy && !formError && awaitingConfirmation === null
-    ) {
-      void runAccept()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, preview?.valid, emailMatches])
+    if (authLoading || !preview?.valid || !emailMatches) return
+    // The confirmation waiting room owns the screen; do not fight it.
+    if (awaitingConfirmation !== null) return
+    // Exactly once per token. A manual retry calls `runAccept` directly and is
+    // deliberately not subject to this.
+    if (autoAcceptedFor.current === token) return
+    autoAcceptedFor.current = token
+    void runAccept()
+  }, [authLoading, preview?.valid, emailMatches, awaitingConfirmation, token, runAccept])
 
   const credentialsForm = useForm<CredentialsData>({ resolver: zodResolver(credentialsSchema) })
   const signInForm = useForm<SignInData>({ resolver: zodResolver(signInSchema) })
@@ -229,8 +282,17 @@ export function InvitePage() {
       setBusy(false)
       return
     }
-    // With a session in hand the accept effect above takes over once useAuth
-    // settles; keep the button busy until then.
+    /*
+     * A session is in hand. Release the FORM here and let the accept effect
+     * own the screen from now on.
+     *
+     * This line is the fix. Leaving `busy` true was what jammed the accept
+     * effect's old `!busy` gate — the signup succeeded, the session arrived,
+     * the effect woke up, saw a flag the form had never lowered, and gave up
+     * permanently. The joining screen renders on `user && emailMatches`, not
+     * on `busy`, so clearing it shows nothing different to the reader.
+     */
+    setBusy(false)
   }
 
   const onSignIn = async (data: SignInData) => {
@@ -400,7 +462,7 @@ export function InvitePage() {
     )
   }
 
-  // Signed in as the right person — the accept effect is running.
+  // Signed in as the right person.
   if (user && emailMatches) {
     return (
       <AuthLayout title={`Joining ${preview.orgName}…`}>
@@ -415,8 +477,27 @@ export function InvitePage() {
                 Try again
               </Button>
             </>
-          ) : (
+          ) : accepting ? (
             <p className="text-sm text-gray-600 dark:text-gray-400">Setting up your workspace.</p>
+          ) : (
+            /*
+              Signed in, invited, no error, and nothing in flight.
+
+              This should not be reachable — the effect above fires on exactly
+              these conditions. It is rendered rather than left blank because
+              the previous version of this screen ASSUMED the effect was
+              running and showed a spinner regardless; when the effect had
+              silently declined, that spinner was forever and offered nothing.
+              A state that should not happen must still have a way out.
+            */
+            <>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Ready to join {preview.orgName}.
+              </p>
+              <Button className="w-full" onClick={() => { setFormError(null); void runAccept() }}>
+                Continue
+              </Button>
+            </>
           )}
         </div>
       </AuthLayout>
