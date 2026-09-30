@@ -24,6 +24,7 @@ const src = (p: string) => readFileSync(path.join(process.cwd(), 'src', p), 'utf
 const pipeline = src('hooks/usePipelineItems.ts')
 const lab = src('pages/SimulationPage.tsx')
 const capture = src('components/thoughts/QuickTradeIdeaCapture.tsx')
+const thoughts = src('components/communication/ThoughtsSection.tsx')
 const seedVisibility = src('lib/pilot/seed-visibility.ts')
 const lifecycle = src('lib/ideas/lifecycle.ts')
 
@@ -53,8 +54,28 @@ describe('every surface that judges rows also fetches the evidence', () => {
    * judging rows, so it must have asked for what the judgement reads. A file
    * that judges without the evidence reads every idea as unworked, silently.
    */
+  /**
+   * The right-hand pane's "in the pipeline" count. It was a `head: true`
+   * count with its own status list — missing `archived` and `cancelled`, no
+   * drawer filter, no pilot rule — and it read 5 for a graduated reader whose
+   * pipeline held one idea, because it counted four untouched tour seeds.
+   */
+  it('the capture pane count embeds it', () => {
+    expect(thoughts).toContain('judgeIdeaRow')
+    expect(thoughts).toMatch(EMBEDDED)
+    expect(thoughts).toContain('operationalAfterPilot')
+    // Not a head count any more: the evidence has to come back as rows.
+    expect(thoughts).not.toContain("{ count: 'exact', head: true }")
+    // And not its own vocabulary.
+    expect(thoughts).not.toContain('"approved","rejected","executed","deleted"')
+  })
+
   it('and nothing judges without it', () => {
-    const judges = ['hooks/usePipelineItems.ts', 'pages/SimulationPage.tsx']
+    const judges = [
+      'hooks/usePipelineItems.ts',
+      'pages/SimulationPage.tsx',
+      'components/communication/ThoughtsSection.tsx',
+    ]
     for (const f of judges) {
       const text = src(f)
       if (!text.includes('judgeIdeaRow(')) continue
