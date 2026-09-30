@@ -97,6 +97,7 @@ import { DecisionConfirmationModal, type DecisionRecord } from '../components/tr
 import { buildDecisionRecord } from '../lib/trade-lab/decision-record'
 import { usePilotProgress } from '../hooks/usePilotProgress'
 import { operationalAfterPilot, judgeIdeaRow } from '../lib/pilot/seed-visibility'
+import { isLiveIdea, IDEA_EVIDENCE_SELECT } from '../lib/ideas/lifecycle'
 import type {
   SimulationWithDetails,
   SimulationTradeWithDetails,
@@ -403,6 +404,87 @@ function resolveSizing(
 
     default:
       return { shares: null, weight: null }
+  }
+}
+
+/**
+ * A recommended weight, as a reader can hold it in their head.
+ *
+ * `trade_proposals.weight` is `numeric`, which PostgREST returns as a STRING —
+ * so `{proposal.weight}%` printed it verbatim and nothing rounded it. A live
+ * AAPL recommendation is stored as `9.225074633705818`, and the row read
+ * "9.225074633705818%" beside a formatted "9.22%" of the same number.
+ *
+ * Two decimals, matching the ~200 other percent renders in this codebase, and
+ * `Number()` first because the value is a string more often than not.
+ *
+ * This is presentation only. The stored precision is a separate defect — a
+ * computed target was persisted unrounded — and rounding here does not touch
+ * what executes, which reads `computed`, not this.
+ */
+export function pct(value: unknown): string {
+  const n = toNumber(value)
+  return n === null ? '—' : `${n.toFixed(2)}%`
+}
+
+/** Signed, so a trim reads as one at a glance. */
+export function signedPct(value: unknown): string {
+  const n = toNumber(value)
+  if (n === null) return '—'
+  return `${n > 0 ? '+' : ''}${n.toFixed(2)}%`
+}
+
+/**
+ * `Number(null)` and `Number('')` are both 0, so a missing weight rendered as
+ * "0.00%" — a real recommendation to hold nothing, which is not what an
+ * absent value means. Absence has to be distinguishable from zero here.
+ */
+function toNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * What was actually recommended, in the terms it was recommended in.
+ *
+ * `trade_proposals.weight` is always an absolute target, but it is DERIVED:
+ * for a delta recommendation it is `currentWeight + inputValue`, resolved once
+ * at submission. A real AAPL row reads
+ *
+ *   proposalType  delta_weight     inputValue  -0.75
+ *   currentWeight 9.975074633705818
+ *   weight        9.225074633705818
+ *
+ * The analyst said "trim 75bps". The 9.225… is arithmetic done against a
+ * position that has since moved, so showing it presents a stale number as the
+ * recommendation — and shows sixteen digits of a figure that was never typed.
+ *
+ * So the row renders the instruction: a delta as a delta, a target as a
+ * target. `sizing_context.proposalType` is the mode the analyst chose (see
+ * `TradeIdeaDetailModal`'s submit). Thirty legacy rows carry no context at
+ * all; for those `weight` is all there is, and it is shown as a target.
+ */
+export function recommendationLabel(proposal: any): { text: string; title: string } {
+  const ctx = (proposal?.sizing_context ?? {}) as Record<string, unknown>
+  const mode = ctx.proposalType as string | undefined
+  const input = ctx.inputValue
+
+  if (mode === 'delta_weight' && input != null) {
+    return {
+      text: signedPct(input),
+      title: `Recommended change of ${signedPct(input)} from the weight at the time (${pct(ctx.currentWeight)})`,
+    }
+  }
+  if ((mode === 'active_weight' || mode === 'delta_benchmark') && input != null) {
+    return {
+      text: `${signedPct(input)} vs bench`,
+      title: `Recommended ${signedPct(input)} versus benchmark weight`,
+    }
+  }
+  return {
+    text: pct(proposal?.weight),
+    title: `Recommended target weight of ${pct(proposal?.weight)}`,
   }
 }
 
@@ -1071,7 +1153,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           portfolios (id, name),
           pair_trades (id, name, description, rationale, urgency, status),
           users:created_by (id, email, first_name, last_name),
-          trade_idea_portfolios (stage, portfolio_id)
+          trade_idea_portfolios (stage, portfolio_id),
+          ${IDEA_EVIDENCE_SELECT}
         `)
         .eq('visibility_tier', 'active')
         .in('status', ['idea', 'discussing', 'simulating', 'deciding', 'executed'])
@@ -4223,7 +4306,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     }
 
     // Proposals filtered by search only; ideas by search + stage
-    const filteredProposals = searchLower
+    const filteredProposalsBase = searchLower
       ? itemsByCategory.proposals.filter(p => {
           const tradeItem = p.proposal.trade_queue_items as any
           const asset = tradeItem?.assets
@@ -4251,7 +4334,27 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       .filter(item => matchesSearch(item) && matchesStage(item))
       .sort((a, b) => stageRank(a) - stageRank(b))
 
-    return { proposals: filteredProposals, ideas: filteredIdeas }
+    /*
+     * The badge's population, which is NOT this list.
+     *
+     * `tradeIdeas` deliberately keeps `executed` rows so a partly-committed
+     * pair can still render all its legs (see the query's own note), and the
+     * lists above inherit them. That is right for rendering a basket and
+     * wrong for a count of open work: a badge saying 5 over a board the
+     * reader knows holds one live idea is not a number they can use.
+     *
+     * So the count asks the shared predicate instead of re-deriving terminal
+     * status here. `isLiveIdea` is the same one the Idea Pipeline filters on,
+     * and the pilot rule has already been applied upstream in the query, so
+     * this and the Pipeline now describe the same population.
+     */
+    const liveIdeas = filteredIdeas.filter(item =>
+      item.type === 'single'
+        ? isLiveIdea(item.idea as any)
+        : item.legs.some((leg: any) => isLiveIdea(leg)),
+    )
+
+    return { proposals: filteredProposalsBase, ideas: filteredIdeas, liveIdeas }
   }, [itemsByCategory, leftPaneSearch, leftPaneStageFilter])
 
   /**
@@ -5974,9 +6077,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 >
                   <Layers className={clsx('h-3.5 w-3.5', labBasicsStep === 1 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-400')} />
                   Ideas
-                  {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
+                  {/* Live ideas only. Recommendations are counted beside it,
+                      not inside it — see the desktop header. */}
+                  {filteredItems.liveIdeas.length > 0 && (
                     <span className="rounded-full bg-primary-100 px-1 text-[11px] font-semibold tabular-nums text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
-                      {filteredItems.proposals.length + filteredItems.ideas.length}
+                      {filteredItems.liveIdeas.length}
+                    </span>
+                  )}
+                  {filteredItems.proposals.length > 0 && (
+                    <span
+                      title={`${filteredItems.proposals.length} recommendation${filteredItems.proposals.length === 1 ? '' : 's'}`}
+                      className="rounded-full bg-amber-100 px-1 text-[11px] font-semibold tabular-nums text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                    >
+                      {filteredItems.proposals.length}
                     </span>
                   )}
                 </button>
@@ -6362,8 +6475,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                         <span className="font-medium text-gray-900 dark:text-white text-sm flex items-center gap-2">
                           <Layers className="h-4 w-4" />
                           Trade Ideas
-                          {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
-                            <Badge variant="default" className="text-xs">{filteredItems.proposals.length + filteredItems.ideas.length}</Badge>
+                          {/* Two counts, never one sum.
+                              This was `proposals.length + ideas.length` under a
+                              single unlabelled number, so an idea and a
+                              recommendation — different objects, different
+                              places to act on them — were indistinguishable in
+                              it. And `ideas` carries committed rows the Lab
+                              needs for pair rendering, so the number counted
+                              finished work as open. */}
+                          {filteredItems.liveIdeas.length > 0 && (
+                            <Badge variant="default" className="text-xs">{filteredItems.liveIdeas.length}</Badge>
+                          )}
+                          {filteredItems.proposals.length > 0 && (
+                            <Badge variant="warning" className="text-xs">
+                              {filteredItems.proposals.length} rec{filteredItems.proposals.length === 1 ? '' : 's'}
+                            </Badge>
                           )}
                         </span>
                       </>
@@ -6672,7 +6798,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                               const expectedWeight = isSell && proposal.weight > 0 ? -proposal.weight : proposal.weight
                                               const variantSizing = variant.sizing_input ? parseFloat(variant.sizing_input) : null
                                               isModified = variantSizing != null && expectedWeight != null && Math.abs(variantSizing - expectedWeight) > 0.01
-                                              if (isModified && variantSizing != null) currentSizing = `${variantSizing}%`
+                                              if (isModified && variantSizing != null) currentSizing = pct(variantSizing)
                                             }
                                           }
                                           return isModified ? (
@@ -6682,12 +6808,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                               </span>
                                               <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1.5 rounded-lg bg-gray-900 dark:bg-gray-700 text-white text-[11px] leading-snug whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-50 shadow-lg">
                                                 <span className="block font-medium">Sizing adjusted</span>
-                                                <span className="block text-gray-300 dark:text-gray-400 mt-0.5">Rec: {proposal.weight}% → Sim: {currentSizing}</span>
+                                                <span className="block text-gray-300 dark:text-gray-400 mt-0.5">Rec: {recommendationLabel(proposal).text} → Sim: {currentSizing}</span>
                                               </span>
                                             </span>
                                           ) : (
-                                            <span className="ml-auto text-[12px] tabular-nums font-medium text-gray-500 dark:text-gray-400 flex-shrink-0">
-                                              {proposal.weight}%
+                                            <span
+                                              className="ml-auto text-[12px] tabular-nums font-medium text-gray-500 dark:text-gray-400 flex-shrink-0"
+                                              title={recommendationLabel(proposal).title}
+                                            >
+                                              {recommendationLabel(proposal).text}
                                             </span>
                                           )
                                         })()}
@@ -6793,7 +6922,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                                       <span className="text-gray-400 dark:text-gray-500 truncate max-w-[8rem]">{leg.companyName}</span>
                                                     )}
                                                     {leg.weight != null && (
-                                                      <span className="text-gray-500 dark:text-gray-400 ml-auto tabular-nums flex-shrink-0">{leg.weight}%</span>
+                                                      <span className="text-gray-500 dark:text-gray-400 ml-auto tabular-nums flex-shrink-0">{pct(leg.weight)}</span>
                                                     )}
                                                   </div>
                                                 )

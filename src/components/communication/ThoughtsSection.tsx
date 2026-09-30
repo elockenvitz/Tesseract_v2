@@ -19,6 +19,8 @@ import { useRecentQuickIdeas } from '../../hooks/useRecentQuickIdeas'
 import { useDirectCounts } from '../../hooks/useDirectCounts'
 import { useUpdateDecisionRequest, useAcceptFromInbox } from '../../hooks/useDecisionRequests'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { operationalAfterPilot, judgeIdeaRow } from '../../lib/pilot/seed-visibility'
+import { isLiveIdea, IDEA_EVIDENCE_SELECT } from '../../lib/ideas/lifecycle'
 import { isPilotExampleRequest } from '../../lib/pilot/pilot-inbox'
 import { useToast } from '../common/Toast'
 import { buildQuickThoughtsFilters } from '../../hooks/useIdeasRouting'
@@ -170,17 +172,42 @@ export function ThoughtsSection({
   const { success } = useToast()
   const { openPromptCount, pendingRecommendationCount } = useDirectCounts()
 
-  // Count active trade ideas in pipeline (not committed/rejected/deleted)
+  /*
+   * My trade ideas still in flight.
+   *
+   * This was a `head: true` count carrying its own status list — a ninth
+   * copy of a vocabulary that already existed canonically — and it disagreed
+   * with every other surface three ways: the list omitted `archived` and
+   * `cancelled`, nothing excluded the trash and archive drawers, and no
+   * pilot rule was applied. After graduation it read 5 for a reader whose
+   * pipeline held one idea, because four untouched tour seeds were being
+   * counted as work they were doing.
+   *
+   * It cannot stay a `head` count. Whether a seed became genuine work is
+   * answered from rows the database has to return, and that is affordable
+   * here precisely because the filter is `created_by` — one person's ideas,
+   * not the desk's — with the evidence riding along in the same request.
+   */
+  const { hasGraduated: liveGraduated, cachedHasGraduated } = usePilotProgress()
+  const hasGraduated = liveGraduated || cachedHasGraduated
   const { data: pipelineCount = 0 } = useQuery({
-    queryKey: ['pipeline-active-count', user?.id],
+    queryKey: ['pipeline-active-count', user?.id, hasGraduated],
     queryFn: async () => {
-      const { count, error } = await supabase
+      const { data, error } = await supabase
         .from('trade_queue_items')
-        .select('id', { count: 'exact', head: true })
+        .select(`
+          id, status, outcome, decided_at, origin_metadata,
+          ${IDEA_EVIDENCE_SELECT}
+        `)
         .eq('created_by', user!.id)
-        .not('status', 'in', '("approved","rejected","executed","deleted")')
+        .eq('visibility_tier', 'active')
       if (error) return 0
-      return count ?? 0
+
+      const rows = (data ?? []) as Array<Record<string, unknown>>
+      return operationalAfterPilot(
+        rows.map(r => ({ ...r, ...judgeIdeaRow(r as never) })),
+        { hasGraduated },
+      ).filter(r => isLiveIdea(r as never)).length
     },
     enabled: !!user?.id,
     staleTime: 60_000,

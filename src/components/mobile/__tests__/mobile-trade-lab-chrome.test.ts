@@ -54,9 +54,27 @@ describe('recommendations have a named control', () => {
     expect(row.slice(0, 300)).toContain('setShowIdeasPanel(true)')
   })
 
-  it('carries a count when there is something to review', () => {
+  /**
+   * It used to carry `proposals.length + ideas.length` — two object types
+   * summed under one unlabelled number, over a list that deliberately keeps
+   * committed rows so a partly-committed pair can render all its legs. A
+   * graduated org holding one live idea read 5.
+   *
+   * Now it counts live ideas, on the same rule the Idea Pipeline filters on,
+   * and recommendations get their own chip rather than being folded in.
+   */
+  it('carries a count of live ideas when there is something to review', () => {
     const row = page.slice(page.indexOf('data-slot="mobile-lab-ideas"'))
-    expect(row.slice(0, 1400)).toContain('filteredItems.proposals.length + filteredItems.ideas.length')
+    expect(row.slice(0, 1400)).toContain('filteredItems.liveIdeas.length')
+    expect(row.slice(0, 1400)).not.toContain('proposals.length + filteredItems.ideas.length')
+  })
+
+  /** Two counts, never one sum. Window reaches past the className comments. */
+  it('counts recommendations separately from ideas', () => {
+    const row = page.slice(page.indexOf('data-slot="mobile-lab-ideas"'))
+    const button = row.slice(0, row.indexOf('data-slot="mobile-lab-add"'))
+    expect(button).toContain('filteredItems.liveIdeas.length')
+    expect(button).toContain('filteredItems.proposals.length')
   })
 
   /** One route in, not two. The dead inline button is gone. */

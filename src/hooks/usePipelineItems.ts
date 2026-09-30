@@ -13,14 +13,12 @@ import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePilotProgress } from './usePilotProgress'
 import { operationalAfterPilot, judgeIdeaRow } from '../lib/pilot/seed-visibility'
+import { IDEA_EVIDENCE_SELECT, type IdeaLifecycleRow } from '../lib/ideas/lifecycle'
 import type { TradeQueueItemWithDetails } from '../types/trading'
 
 /** The shape the seed rule needs, over rows PostgREST types loosely. */
-type SeedJudgedRow = Record<string, unknown> & {
+type SeedJudgedRow = Record<string, unknown> & IdeaLifecycleRow & {
   origin_metadata?: unknown
-  decided_at?: string | null
-  decision_outcome?: string | null
-  outcome?: string | null
 }
 
 export function usePipelineItems() {
@@ -28,11 +26,11 @@ export function usePipelineItems() {
   /*
    * After graduation the tour's untouched ideas stop being pipeline work.
    *
-   * Unlike the decision engine, this query already selected everything it
-   * needed -- `select('*')` carries `origin_metadata` and all three acted-on
-   * fields. The columns were there; the rule was simply never applied, so a
-   * graduated reader's board still showed five seeded ideas spread across its
-   * stages as though someone were working them.
+   * `select('*')` carries `origin_metadata`, but the acted-on columns it also
+   * carries are NULL on every production row, so the rule used to suppress
+   * genuine work along with the seeds. The evidence is now embedded
+   * explicitly -- see `IDEA_EVIDENCE_SELECT` -- which is one query, not one
+   * per row.
    *
    * `cachedHasGraduated` covers the window before the live read resolves, so
    * the tour does not flash back onto the board on a refresh.
@@ -55,7 +53,8 @@ export function usePipelineItems() {
           users:created_by (id, email, first_name, last_name),
           trade_queue_comments (id),
           trade_queue_votes (id, vote),
-          pair_trades (id, name, description, rationale, urgency, status)
+          pair_trades (id, name, description, rationale, urgency, status),
+          ${IDEA_EVIDENCE_SELECT}
         `)
         .eq('visibility_tier', 'active')
         .eq('organization_id', currentOrgId)
