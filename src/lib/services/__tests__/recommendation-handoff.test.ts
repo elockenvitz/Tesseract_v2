@@ -59,6 +59,18 @@ vi.mock('../decision-request-service', () => ({
 vi.mock('../trade-idea-service', () => ({
   moveTradeIdea: (...a: unknown[]) => moveTradeIdea(...a),
 }))
+/*
+ * Submitting a recommendation also clears any revisit obligation on the
+ * idea — the work resumed. The stub supabase here does not model
+ * `memory_obligations`, so the writer degraded correctly and warned on
+ * every case. Stubbed so a real warning in this suite would be visible;
+ * the writer itself is tested in lib/memory/__tests__/due-obligations.test.ts.
+ */
+vi.mock('../../memory/obligation-writer', () => ({
+  clearIdeaRevisitObligation: vi.fn(async () => ({ obligationId: null, action: 'unchanged' })),
+  syncIdeaRevisitObligation: vi.fn(async () => ({ obligationId: null, action: 'unchanged' })),
+  syncDecisionRevisitObligation: vi.fn(async () => ({ obligationId: null, action: 'unchanged' })),
+}))
 vi.mock('../../supabase', () => ({
   supabase: {
     from: () => ({

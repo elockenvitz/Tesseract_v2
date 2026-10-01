@@ -426,7 +426,12 @@ describe('a due obligation resolves to its canonical work object', () => {
     expect(c.dueState).toBe('due')
     expect(c.parkedAt).toBeTruthy()
     expect(c.daysOverdue).toBe(11)
-    expect(c.href).toBe('/trade-queue?idea=idea-1')
+    // A plain route, deliberately. This asserted `?idea=idea-1`, and
+    // TradeQueuePage does not read that parameter — so the link looked like
+    // a deep link and silently did nothing. Claiming a destination the
+    // product cannot honour is the same class of defect as claiming a fact
+    // it cannot support.
+    expect(c.href).toBe('/trade-queue')
   })
 
   it('voices the sentence from facts alone', async () => {

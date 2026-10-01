@@ -30,6 +30,20 @@ vi.mock('../../memory/lifecycle-events', () => ({
   recordRecommendationSubmitted: vi.fn().mockResolvedValue({ written: true, duplicate: false }),
 }))
 
+/*
+ * This suite is about which lifecycle MEMORY EVENTS a decision writes.
+ * `updateDecisionRequest` also keeps a deferral obligation in step, and the
+ * stub below does not model `memory_obligations` — so every case printed a
+ * TypeError warning from the obligation writer. Correct behaviour, but noise
+ * that would hide a real one. The writer is tested properly in
+ * lib/memory/__tests__/due-obligations.test.ts.
+ */
+vi.mock('../../memory/obligation-writer', () => ({
+  syncIdeaRevisitObligation: vi.fn(async () => ({ obligationId: 'ob-test', action: 'superseded' })),
+  syncDecisionRevisitObligation: vi.fn(async () => ({ obligationId: 'ob-test', action: 'superseded' })),
+  clearIdeaRevisitObligation: vi.fn(async () => ({ obligationId: null, action: 'unchanged' })),
+}))
+
 vi.mock('../../supabase', () => ({
   supabase: {
     auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
