@@ -66,6 +66,10 @@ export const KIND_LABEL: Record<SignalType, string> = {
   catalyst_ahead: 'Catalyst near',
   project_overdue: 'Overdue',
   awaiting_review: 'Needs review',
+  // Not "Overdue" and not "Due". It is back because the reader asked for it
+  // back, and the pill should say so rather than sound like a deadline
+  // somebody else imposed.
+  ready_to_revisit: 'Ready to revisit',
   coverage_gap: 'Coverage gap',
   news: 'News',
   unusual_move: 'Unusual move',

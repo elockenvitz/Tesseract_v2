@@ -5,6 +5,7 @@ import { SignalCardView } from '../src/components/signals/SignalCardView'
 import { buildActiveRiskCard } from '../src/lib/signals/builders/activeRisk'
 import { buildRecommendationCard } from '../src/lib/signals/builders/recommendation'
 import { buildNewsCard } from '../src/lib/signals/builders/news'
+import { buildReadyToRevisitCard } from '../src/lib/signals/builders/readyToRevisit'
 import { buildScenarioGapCard } from '../src/lib/signals/builders/scenarioGap'
 import { ScenarioLadder } from '../src/components/signals/ScenarioLadder'
 import { ScenarioCaseDetail } from '../src/components/signals/ScenarioCaseDetail'
@@ -1818,6 +1819,65 @@ const CARDS: {
    */
   { slug: 'news', card: news,
     Component: () => <NewsCardFixture card={news} series={AAPL_CLOSES} symbol="AAPL" /> },
+
+  /*
+   * Parked work, back on its date — the card with the most deterministic
+   * facts attached, so the "Since then" row is at its widest here.
+   *
+   * Three chips plus a portfolio is the realistic maximum: the producer caps
+   * shown facts at three and adds an overflow count. Photographed at that
+   * maximum deliberately, because the row that has to survive 390px is this
+   * one, and a fixture showing one chip would prove nothing about it.
+   */
+  { slug: 'ready-to-revisit', card: unwrap(buildReadyToRevisitCard({
+      obligationId: 'ob-gallery-1',
+      tradeQueueItemId: 'idea-gallery-1',
+      assetId: 'a1',
+      symbol: 'NVDA',
+      companyName: 'NVIDIA Corporation',
+      portfolioId: 'p1',
+      portfolioName: 'Core Equity',
+      parkedAt: new Date(NOW.getTime() - 25 * 86_400_000).toISOString(),
+      dueAt: new Date(NOW.getTime() - 11 * 86_400_000).toISOString(),
+      daysOverdue: 11,
+      stage: 'researching',
+      conviction: 'medium',
+      facts: [
+        { kind: 'price_change', label: '+8.4% price', from: '2026-09-05', to: '2026-09-30',
+          confidence: 'SAFE_WITH_ATTRIBUTION', sourceType: 'price_history_cache',
+          sourceIds: ['NVDA'], attribution: 'close 2026-09-05 → 2026-09-30', magnitude: 8.4 },
+        { kind: 'research_added', label: '3 new research items', from: null, to: '2026-09-30',
+          confidence: 'SAFE_FACT', sourceType: 'object_links', sourceIds: ['l1', 'l2', 'l3'], magnitude: 3 },
+        { kind: 'target_price_changed', label: 'Target changed from $120 to $135',
+          from: '2026-09-01', to: '2026-09-28', confidence: 'SAFE_FACT',
+          sourceType: 'trade_proposal_versions', sourceIds: ['idea-gallery-1'], magnitude: 15 },
+      ],
+      totalFactCount: 4,
+    })) },
+
+  /*
+   * The same card with nothing to report.
+   *
+   * A parked idea where nothing moved is still the answer to "what did I
+   * miss", so the empty state must stand on its own rather than collapse —
+   * and must not pad itself. This fixture is what proves it.
+   */
+  { slug: 'ready-to-revisit-quiet', card: unwrap(buildReadyToRevisitCard({
+      obligationId: 'ob-gallery-2',
+      tradeQueueItemId: 'idea-gallery-2',
+      assetId: 'a1',
+      symbol: 'MSFT',
+      companyName: 'Microsoft Corporation',
+      portfolioId: 'p1',
+      portfolioName: 'Core Equity',
+      parkedAt: new Date(NOW.getTime() - 3 * 86_400_000).toISOString(),
+      dueAt: new Date(NOW.getTime()).toISOString(),
+      daysOverdue: 0,
+      stage: 'developing',
+      conviction: 'low',
+      facts: [],
+      totalFactCount: 0,
+    })) },
 ]
 
 createRoot(document.getElementById('root')!).render(

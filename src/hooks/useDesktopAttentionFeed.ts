@@ -15,6 +15,10 @@ import { EMPTY_FILTER, useFeedFacets, type FeedFacets, type FeedFilter } from '.
 import type { SignalCard } from '../lib/signals/contract'
 import type { ScoredFeedItem } from './ideas/types'
 import type { PreviewSource } from '../lib/signals/feed-preview'
+import { buildReadyToRevisitCard } from '../lib/signals/builders/readyToRevisit'
+import { useReadyToRevisit } from './useReadyToRevisit'
+import { isEligible, factsForTile, factKeyFor } from '../lib/memory/ready-to-revisit'
+import { renderableFacts } from '../lib/memory/what-changed'
 
 /**
  * The Ideas attention feed: every candidate family, ranked by consequence.
@@ -52,7 +56,7 @@ export interface AttentionEntry {
   /** Present for posts only. Needed to build panes. */
   input: IdeaInput | null
   /** Which producer this came from, for the workspace router. */
-  family: 'post' | 'stale_target' | 'target_hit' | 'conviction' | 'crowding' | 'scenario_gap'
+  family: 'post' | 'stale_target' | 'target_hit' | 'conviction' | 'crowding' | 'scenario_gap' | 'ready_to_revisit'
   /**
    * The structured row the producer returned, for the preview layer.
    *
@@ -128,6 +132,8 @@ export function useDesktopAttentionFeed(
 ) {
   const pool = useDesktopCandidates()
   const facets = opts.facets ?? EMPTY_FILTER
+  // One query set for every parked-work card on the page, not one per card.
+  const revisit = useReadyToRevisit()
 
   const needsIndex = facets.sectors.length > 0 || facets.countries.length > 0 || facets.exchanges.length > 0
   const { data: facetIndex } = useFeedFacets({ enabled: needsIndex })
@@ -161,6 +167,40 @@ export function useDesktopAttentionFeed(
     for (const c of lenses?.crowded ?? []) add(buildCrowdingCard(c as never), 'crowding', c as PreviewSource)
 
     /*
+     * Work the reader parked, back on the date they chose.
+     *
+     * Unlike every family above it, this one is not derived from a lens
+     * scanning the book — it comes from a `memory_obligations` row somebody
+     * created on purpose. The producer has already applied eligibility (due,
+     * resolved, not terminal, not dismissed), so everything arriving here is
+     * meant to be shown.
+     */
+    for (const c of revisit.candidates) {
+      if (!isEligible(c, undefined)) continue
+      add(
+        buildReadyToRevisitCard({
+          obligationId: c.obligationId,
+          tradeQueueItemId: c.ideaId ?? c.subjectId,
+          assetId: c.assetId,
+          symbol: c.symbol,
+          companyName: c.companyName,
+          portfolioId: c.portfolioId,
+          portfolioName: c.portfolioName,
+          parkedAt: c.parkedAt,
+          dueAt: c.dueAt,
+          daysOverdue: c.daysOverdue,
+          stage: c.stage,
+          conviction: c.conviction,
+          facts: factsForTile(revisit.factsBySubject, factKeyFor(c)),
+          totalFactCount: renderableFacts(
+            revisit.factsBySubject.get(factKeyFor(c)) ?? [],
+          ).length,
+        }),
+        'ready_to_revisit',
+      )
+    }
+
+    /*
      * Scenario cards arrive already BUILT — `useScenarioCards` runs
      * `buildScenarioGapCard` itself — so they are taken as they are rather than
      * rebuilt. Rebuilding would mean a second call site deciding whether a
@@ -175,7 +215,7 @@ export function useDesktopAttentionFeed(
     }
 
     return out
-  }, [pool.feedItems, pool.lenses, pool.scenarioCards])
+  }, [pool.feedItems, pool.lenses, pool.scenarioCards, revisit])
 
   const entries = useMemo(() => {
     const now = Date.now()

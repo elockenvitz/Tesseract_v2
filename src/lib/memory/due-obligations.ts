@@ -314,9 +314,21 @@ export async function resolveRevisitCandidates(
   })
 }
 
-function candidateHref(o: ObligationRow, idea: IdeaSubject | null): string {
-  if (o.kind === OBLIGATION_KINDS.decisionRevisit) return '/trade-queue?inbox=1'
-  if (idea?.id) return `/trade-queue?idea=${idea.id}`
+/**
+ * Where "resume work" goes.
+ *
+ * Plain routes, deliberately. An earlier version of this returned
+ * `/trade-queue?idea=<id>` and `?inbox=1` — neither parameter is read by
+ * `TradeQueuePage`, so both were links that silently did nothing while
+ * looking like deep links. That is the same class of defect as inventing a
+ * fact: a claim the product cannot honour.
+ *
+ * The page itself is the right destination in the meantime, and it is now a
+ * useful one: the idea is no longer suppressed there, because its revisit
+ * date has passed. Deep-linking to a specific idea needs
+ * `TradeQueuePage` to read a parameter first, and that is a separate change.
+ */
+function candidateHref(_o: ObligationRow, _idea: IdeaSubject | null): string {
   return '/trade-queue'
 }
 
