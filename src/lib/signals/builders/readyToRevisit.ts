@@ -152,23 +152,52 @@ export function buildReadyToRevisitCard(input: ReadyToRevisitInput): CardResult 
     entity: {
       kind: 'asset',
       id: input.assetId,
-      label: input.symbol,
-      sublabel: input.companyName ?? undefined,
+      name: input.companyName ?? input.symbol,
+      ticker: input.symbol,
     },
     context,
     actions: {
-      primary: { id: 'open_idea', label: 'Resume work' },
+      // `inline: false` is the rare, deliberate case the contract warns
+      // about. Resuming parked work means going back to the work — there is
+      // nothing to resolve from inside a card, and pretending otherwise
+      // would be a button that looks like it finishes something.
+      primary: { id: 'open_idea', label: 'Resume work', inline: false },
+      /*
+       * No quick actions.
+       *
+       * The obvious candidate is "snooze again", and it is wrong as a
+       * button: re-parking is a decision about a date, which is the
+       * one-line form on the idea itself, not a one-tap default. Giving it
+       * button weight would make deferring easier than resuming on a card
+       * whose entire purpose is to get the work resumed.
+       */
+      quick: [],
+      /*
+       * Re-park and dismiss live here. Non-empty by contract, and rightly:
+       * a reminder you cannot put down is one people learn to scroll past,
+       * which would undo the thing this card is for.
+       *
+       * Dismissing is personal suppression of the CARD. It does not clear
+       * the obligation — only a real resume does, per the rules in
+       * lib/memory/obligations — so the work stays owed and findable.
+       */
+      menu: [
+        { id: 'snooze', label: 'Remind me later', inline: true },
+        { id: 'dismiss', label: 'Not now', inline: true },
+      ],
+      open: { label: 'Open idea', href: '/trade-queue' },
     },
     provenance: {
-      // Not a derivation. A row exists because a person asked for this.
-      source: 'memory_obligations',
-      asOf: input.parkedAt,
-      detail: `You set this revisit date${input.dueAt ? ` for ${input.dueAt.slice(0, 10)}` : ''}.`,
+      // When the work was parked — not when this ran. "Why am I seeing
+      // this" has an unusually good answer on this card: because you said
+      // so, on a date, and here it is.
+      occurredAt: input.parkedAt,
+      reason: `You asked to revisit this${input.dueAt ? ` on ${input.dueAt.slice(0, 10)}` : ''}.`,
     },
     expiry: { staleAfterDays: 30 },
-    // Same claim recurring = same obligation. Not the same idea: parking it
-    // again later is a new promise and deserves a new card.
-    recurrenceKey: `ready_to_revisit:${input.obligationId}`,
-    occurredAt: input.parkedAt,
-  } as never)
+    // Same claim recurring = same obligation. Deliberately NOT the idea:
+    // parking the same idea again later is a new promise and deserves its
+    // own card rather than being deduped against the fulfilled one.
+    dedupeKey: `ready_to_revisit:${input.obligationId}`,
+  })
 }

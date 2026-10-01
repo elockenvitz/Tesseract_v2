@@ -191,19 +191,18 @@ describe('identity and provenance', () => {
     expect(card({ daysOverdue: 11 }).id).toBe(card({ daysOverdue: 99 }).id)
   })
 
-  it('recurs on the obligation, not the idea', () => {
+  it('dedupes on the obligation, not the idea', () => {
     // Parking the same idea again later is a NEW promise and deserves a new
-    // card rather than being deduped against the old one.
-    expect(card().recurrenceKey).toBe('ready_to_revisit:ob-1')
+    // card rather than being deduped against the fulfilled one.
+    expect(card().dedupeKey).toBe('ready_to_revisit:ob-1')
   })
 
-  it('attributes itself to the obligation, not to a derivation', () => {
-    expect(card().provenance.source).toBe('memory_obligations')
-    expect(card().provenance.detail).toContain('You set this revisit date')
+  it('answers "why am I seeing this" with the reader\'s own action', () => {
+    expect(card().provenance.reason).toContain('You asked to revisit this')
   })
 
-  it('dates itself from when the work was parked', () => {
-    expect(card().occurredAt).toBe('2026-09-20T00:00:00Z')
+  it('dates itself from when the work was parked, not from now', () => {
+    expect(card().provenance.occurredAt).toBe('2026-09-20T00:00:00Z')
   })
 
   it('offers one action, back to the work', () => {

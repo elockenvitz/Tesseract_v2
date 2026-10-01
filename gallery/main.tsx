@@ -6,6 +6,26 @@ import { buildActiveRiskCard } from '../src/lib/signals/builders/activeRisk'
 import { buildRecommendationCard } from '../src/lib/signals/builders/recommendation'
 import { buildNewsCard } from '../src/lib/signals/builders/news'
 import { buildReadyToRevisitCard } from '../src/lib/signals/builders/readyToRevisit'
+import { SinceYouParkedIt } from '../src/components/signals/SinceYouParkedIt'
+import type { ChangeFact } from '../src/lib/memory/what-changed'
+
+/**
+ * The three facts the loaded fixture shows, declared once.
+ *
+ * The card's chips and its detail region must be the same three — a fixture
+ * where they disagree photographs a card that cannot exist.
+ */
+const PARKED_FACTS_AT = '2026-09-05T00:00:00Z'
+const PARKED_FACTS: ChangeFact[] = [
+  { kind: 'price_change', label: '+8.4% price', from: '2026-09-05', to: '2026-09-30',
+    confidence: 'SAFE_WITH_ATTRIBUTION', sourceType: 'price_history_cache',
+    sourceIds: ['NVDA'], attribution: 'close 2026-09-05 → 2026-09-30', magnitude: 8.4 },
+  { kind: 'research_added', label: '3 new research items', from: null, to: '2026-09-30',
+    confidence: 'SAFE_FACT', sourceType: 'object_links', sourceIds: ['l1', 'l2', 'l3'], magnitude: 3 },
+  { kind: 'target_price_changed', label: 'Target changed from $120 to $135',
+    from: '2026-09-01', to: '2026-09-28', confidence: 'SAFE_FACT',
+    sourceType: 'trade_proposal_versions', sourceIds: ['idea-gallery-1'], magnitude: 15 },
+]
 import { buildScenarioGapCard } from '../src/lib/signals/builders/scenarioGap'
 import { ScenarioLadder } from '../src/components/signals/ScenarioLadder'
 import { ScenarioCaseDetail } from '../src/components/signals/ScenarioCaseDetail'
@@ -1842,18 +1862,19 @@ const CARDS: {
       daysOverdue: 11,
       stage: 'researching',
       conviction: 'medium',
-      facts: [
-        { kind: 'price_change', label: '+8.4% price', from: '2026-09-05', to: '2026-09-30',
-          confidence: 'SAFE_WITH_ATTRIBUTION', sourceType: 'price_history_cache',
-          sourceIds: ['NVDA'], attribution: 'close 2026-09-05 → 2026-09-30', magnitude: 8.4 },
-        { kind: 'research_added', label: '3 new research items', from: null, to: '2026-09-30',
-          confidence: 'SAFE_FACT', sourceType: 'object_links', sourceIds: ['l1', 'l2', 'l3'], magnitude: 3 },
-        { kind: 'target_price_changed', label: 'Target changed from $120 to $135',
-          from: '2026-09-01', to: '2026-09-28', confidence: 'SAFE_FACT',
-          sourceType: 'trade_proposal_versions', sourceIds: ['idea-gallery-1'], magnitude: 15 },
-      ],
+      facts: PARKED_FACTS,
       totalFactCount: 4,
-    })) },
+    })),
+    /*
+     * The attribution the chips cannot carry.
+     *
+     * "+8.4% price" is true and incomplete — a percentage over a stale cache
+     * is a confident lie, so the fact carries its two closing dates and this
+     * is where they are shown. Not padding: it is the half of the number
+     * that makes it safe to believe.
+     */
+    detail: <SinceYouParkedIt parkedAt={PARKED_FACTS_AT} facts={PARKED_FACTS} />,
+    detailLabel: 'See what changed' },
 
   /*
    * The same card with nothing to report.
@@ -1877,7 +1898,10 @@ const CARDS: {
       conviction: 'low',
       facts: [],
       totalFactCount: 0,
-    })) },
+    })),
+    // The empty case still has something true to say, and says it once.
+    detail: <SinceYouParkedIt parkedAt={new Date(NOW.getTime() - 3 * 86_400_000).toISOString()} facts={[]} />,
+    detailLabel: 'See what changed' },
 ]
 
 createRoot(document.getElementById('root')!).render(
