@@ -92,8 +92,11 @@ vi.mock('../../supabase', () => {
     rows.filter(r => filters.every(([col, val]) => {
       if (col.endsWith(':null')) return r[col.slice(0, -5)] === null
       if (col.endsWith(':in')) return (val as unknown[]).includes(r[col.slice(0, -3)])
-      if (col.endsWith(':lte')) return r[col.slice(0, -4)] !== null && r[col.slice(0, -4)] <= val
-      if (col.endsWith(':gt')) return r[col.slice(0, -3)] !== null && r[col.slice(0, -3)] > val
+      // Timestamps compare as ISO strings, which is why the cast is to
+      // string rather than to any — an accidental numeric compare here
+      // would make the due filter pass for the wrong reason.
+      if (col.endsWith(':lte')) return r[col.slice(0, -4)] !== null && r[col.slice(0, -4)] <= (val as string)
+      if (col.endsWith(':gt')) return r[col.slice(0, -3)] !== null && r[col.slice(0, -3)] > (val as string)
       return r[col] === val
     }))
 

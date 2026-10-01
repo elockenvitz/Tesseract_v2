@@ -110,6 +110,52 @@ export async function fetchObligations(q: DueObligationQuery): Promise<Obligatio
   return rows.filter(r => wanted.has(dueState(r.due_at, now)))
 }
 
+/* ── Display enrichment ────────────────────────────────────────────────── */
+
+/**
+ * The symbol and portfolio behind a batch of obligations, for display.
+ *
+ * ONE query per subject type for the whole batch, never one per obligation.
+ * Twenty-four due obligations must not become twenty-four requests — the
+ * defect `TileClosesBatch` exists to prevent, and the reason this takes an
+ * array rather than being a per-row hook.
+ *
+ * Returns a Map keyed by the obligation's `subject_id`. A subject the caller
+ * cannot read is simply absent, so an unreadable row degrades to a candidate
+ * with no symbol rather than leaking one.
+ */
+export interface SubjectDisplay {
+  symbol: string | null
+  companyName: string | null
+  assetId: string | null
+  portfolioId: string | null
+  portfolioName: string | null
+}
+
+export async function fetchTradeSubjectDisplay(
+  tradeIds: string[],
+): Promise<Map<string, SubjectDisplay>> {
+  const out = new Map<string, SubjectDisplay>()
+  if (tradeIds.length === 0) return out
+
+  const { data, error } = await supabase
+    .from('accepted_trades')
+    .select('id, asset_id, portfolio_id, asset:asset_id (id, symbol, company_name), portfolio:portfolio_id (id, name)')
+    .in('id', tradeIds)
+
+  if (error) return out
+  for (const row of (data ?? []) as any[]) {
+    out.set(row.id, {
+      symbol: row.asset?.symbol ?? null,
+      companyName: row.asset?.company_name ?? null,
+      assetId: row.asset_id ?? null,
+      portfolioId: row.portfolio_id ?? null,
+      portfolioName: row.portfolio?.name ?? null,
+    })
+  }
+  return out
+}
+
 /* ── Candidate resolution ──────────────────────────────────────────────── */
 
 /**
