@@ -171,6 +171,15 @@ export interface RevisitCandidate {
   /** The canonical row this is about. */
   subjectType: string
   subjectId: string
+  /**
+   * The idea behind it.
+   *
+   * Equal to `subjectId` for an idea obligation. For a DEFERRED
+   * RECOMMENDATION it is the idea behind the decision request, which is
+   * what the change-fact engine compares against — passing the request id
+   * there would silently return no facts for every deferred candidate.
+   */
+  ideaId: string | null
   ownerId: string | null
   /** When the user parked it. */
   parkedAt: string
@@ -186,10 +195,29 @@ export interface RevisitCandidate {
   assetId: string | null
   portfolioId: string | null
   portfolioName: string | null
+  /** Where the user left it. Canonical columns, not derived. */
+  stage: string | null
+  conviction: string | null
+  /** True when resurfacing would be nonsensical: decided, archived, gone. */
+  terminal: boolean
   /** In-app route back to the work. */
   href: string
   /** False when the subject could not be read — RLS, or a deleted row. */
   resolved: boolean
+}
+
+/**
+ * Would bringing this back make sense?
+ *
+ * An idea that was decided, archived or deleted while parked has nothing to
+ * resume. The obligation is still open — only a real action clears it, and
+ * nobody performed one — but the candidate must not be voiced.
+ */
+function isTerminalSubject(idea: IdeaSubject | null): boolean {
+  if (!idea) return false
+  if (idea.outcome != null) return true
+  if (idea.visibility_tier && idea.visibility_tier !== 'active') return true
+  return ['executed', 'rejected', 'cancelled', 'archived', 'deleted'].includes(idea.status ?? '')
 }
 
 interface IdeaSubject {
@@ -197,9 +225,19 @@ interface IdeaSubject {
   asset_id: string | null
   portfolio_id: string | null
   revisit_at: string | null
+  /** Where the user left it, and whether resurfacing still makes sense. */
+  stage: string | null
+  conviction: string | null
+  status: string | null
+  outcome: string | null
+  visibility_tier: string | null
   assets: { id: string; symbol: string; company_name: string | null } | null
   portfolios: { id: string; name: string | null } | null
 }
+
+const IDEA_SUBJECT_SELECT =
+  'id, asset_id, portfolio_id, revisit_at, stage, conviction, status, outcome, visibility_tier, ' +
+  'assets:asset_id (id, symbol, company_name), portfolios:portfolio_id (id, name)'
 
 /**
  * Resolve due obligations to candidates.
@@ -222,7 +260,7 @@ export async function resolveRevisitCandidates(
   if (ideaIds.length) {
     const { data } = await supabase
       .from('trade_queue_items')
-      .select('id, asset_id, portfolio_id, revisit_at, assets:asset_id (id, symbol, company_name), portfolios:portfolio_id (id, name)')
+      .select(IDEA_SUBJECT_SELECT)
       .in('id', ideaIds)
     for (const row of (data ?? []) as unknown as IdeaSubject[]) ideas.set(row.id, row)
   }
@@ -233,7 +271,7 @@ export async function resolveRevisitCandidates(
   if (decisionIds.length) {
     const { data } = await supabase
       .from('decision_requests')
-      .select('id, trade_queue_item_id, portfolio_id, idea:trade_queue_item_id (id, asset_id, portfolio_id, revisit_at, assets:asset_id (id, symbol, company_name), portfolios:portfolio_id (id, name))')
+      .select(`id, trade_queue_item_id, portfolio_id, idea:trade_queue_item_id (${IDEA_SUBJECT_SELECT})`)
       .in('id', decisionIds)
     for (const row of (data ?? []) as any[]) {
       decisions.set(row.id, { ...row, idea: row.idea ?? null })
@@ -252,6 +290,7 @@ export async function resolveRevisitCandidates(
       kind: o.kind,
       subjectType: o.subject_type,
       subjectId: o.subject_id,
+      ideaId: idea?.id ?? null,
       ownerId: o.owner_id,
       parkedAt: o.raised_at,
       dueAt: o.due_at,
@@ -263,6 +302,9 @@ export async function resolveRevisitCandidates(
       assetId: idea?.asset_id ?? null,
       portfolioId: idea?.portfolio_id ?? decisions.get(o.subject_id)?.portfolio_id ?? null,
       portfolioName: idea?.portfolios?.name ?? null,
+      stage: idea?.stage ?? null,
+      conviction: idea?.conviction ?? null,
+      terminal: isTerminalSubject(idea),
       href: candidateHref(o, idea),
       // The subject row came back. False means RLS hid it or it is gone —
       // either way the candidate must not be voiced as though we know what
