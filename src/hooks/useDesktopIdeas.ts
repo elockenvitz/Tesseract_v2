@@ -23,6 +23,7 @@ import {
   type HoldingRow, type Book,
 } from '../lib/portfolio/holdings'
 import { maturityOf, type IdeaEnrichment, type IdeaRow } from '../lib/desktop-ideas'
+import { isParked } from '../lib/memory/obligations'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useHoldingsForAssets } from './useHoldingsForAssets'
 
@@ -78,7 +79,7 @@ export function useIdeaScan() {
         .select(`
           id, asset_id, portfolio_id, action, stage, status, outcome, rationale, conviction, urgency,
           proposed_weight, decision_outcome, visibility_tier, created_by, created_at, updated_at,
-          origin_metadata,
+          origin_metadata, revisit_at,
           assets(id, symbol, company_name),
           portfolios(id, name),
           users!trade_queue_items_created_by_fkey(id, first_name, last_name, email)
@@ -92,6 +93,9 @@ export function useIdeaScan() {
 
       return (data ?? [])
         .filter((r: any) => !isTerminal(r))
+        // Parked until a future date. Same boundary as the terminal filter
+        // above: out before ranking, not hidden at render.
+        .filter((r: any) => !isParked(r.revisit_at))
         .map((r: any): IdeaRow => ({
           id: r.id,
           assetId: r.asset_id ?? null,

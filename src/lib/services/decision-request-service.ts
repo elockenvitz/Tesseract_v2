@@ -20,6 +20,8 @@ import {
   recordDecisionRecorded,
   resolveOrganizationIdForPortfolio,
 } from '../memory/lifecycle-events'
+import { syncDecisionRevisitObligation } from '../memory/obligation-writer'
+import { classifyDeferral } from '../memory/deferral-semantics'
 import type { DecisionRequest, DecisionRequestUrgency, DecisionRequestStatus } from '../../types/trading'
 
 // ---------------------------------------------------------------------------
@@ -277,6 +279,43 @@ export async function updateDecisionRequest(
         proposalId: updated.proposal_id ?? null,
         portfolioId: updated.portfolio_id ?? null,
         acceptedTradeId: (updates.accepted_trade_id as string | null) ?? null,
+      })
+    }
+  }
+
+  // ── A deferral is a promise to come back ──────────────────────────────
+  //
+  // `deferred_until` and `deferred_trigger` were written, shown back to the
+  // PM, and read by nothing. The request left the pending inbox and never
+  // returned on its own — the product displayed a condition it had no
+  // mechanism to evaluate, which moves the job of remembering from the user
+  // to a system that is not doing it.
+  //
+  // Every deferral now raises a durable obligation, so none becomes
+  // undiscoverable. Only date-based ones carry a `due_at` and therefore
+  // resurface automatically; price, earnings and free-text conditions are
+  // kept outstanding with no due date, because this product cannot evaluate
+  // them truthfully today. See `classifyDeferral` for why, per type.
+  //
+  // Clearing is driven from here too: any OTHER resolution of the request
+  // means the deferral is over.
+  {
+    const organizationId = await resolveOrganizationIdForPortfolio(updated.portfolio_id)
+    if (organizationId) {
+      const deferring = input.status === 'deferred'
+      const semantics = deferring
+        ? classifyDeferral({
+            deferredUntil: updated.deferred_until,
+            deferredTrigger: updated.deferred_trigger,
+          })
+        : null
+
+      await syncDecisionRevisitObligation({
+        organizationId,
+        decisionRequestId: requestId,
+        ownerId: user.id,
+        deferredUntil: semantics?.dueAt ?? null,
+        stillDeferred: deferring,
       })
     }
   }

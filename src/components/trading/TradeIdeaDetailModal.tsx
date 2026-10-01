@@ -7445,10 +7445,16 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   {selectedDecisionPortfolioId ? 'Defer Recommendation' : 'Snooze Idea'}
                 </h3>
+                {/* The description now matches what the product does.
+                    "Hides this idea until the date you choose" was false:
+                    `revisit_at` was written and read by nothing, so the idea
+                    never moved. Suppression is real as of this slice, and
+                    the sentence says where it applies and where it does
+                    not — a user who cannot find parked work has lost it. */}
                 <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                   {selectedDecisionPortfolioId
                     ? 'Recorded as a decision on this portfolio. When should it come back?'
-                    : 'Hides this idea until the date you choose. It stays undecided and no outcome is recorded.'}
+                    : 'Hides this idea from your pipeline, feed and attention list until the date you choose, then brings it back. It stays undecided, no outcome is recorded, and you can still find it by search or under Snoozed.'}
                 </p>
               </div>
             </div>
@@ -7462,10 +7468,13 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 placeholder="Select date (optional)"
                 allowPastDates={false}
               />
+              {/* An open-ended snooze is kept and findable, but nothing
+                  brings it back on its own. Saying so is the difference
+                  between a park and a quiet archive. */}
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                 {selectedDecisionPortfolioId
                   ? 'Leave empty to defer indefinitely'
-                  : 'Leave empty to snooze indefinitely'}
+                  : 'Leave empty to snooze indefinitely — it stays under Snoozed, but nothing will bring it back for you.'}
               </p>
             </div>
             <div className="mt-6 flex justify-end gap-3">

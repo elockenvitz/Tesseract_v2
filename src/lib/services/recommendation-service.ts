@@ -29,6 +29,8 @@ import {
   resolveOrganizationIdForPortfolio,
 } from '../memory/lifecycle-events'
 import { captureRecommendationVersion } from '../recommendations/recommendation-version'
+import { clearIdeaRevisitObligation } from '../memory/obligation-writer'
+import { CLEAR_REASONS } from '../memory/obligations'
 import type {
   ActionContext,
   TradeProposal,
@@ -396,6 +398,22 @@ export async function submitRecommendation(
       weight: input.weight ?? null,
       shares: input.shares ?? null,
       provenance: context.uiSource ? `ui:${context.uiSource}` : 'ui:recommendation',
+    })
+  }
+
+  // ── Step 6: a parked idea that gets recommended is no longer parked ──
+  //
+  // Recommending is the strongest possible signal that the work resumed —
+  // stronger than a stage change, since it puts the idea in front of a PM.
+  // Leaving the revisit obligation open would have the product tell someone
+  // to come back to work they have already finished.
+  //
+  // Cleared for ANY owner: whoever parked it, the idea has moved on.
+  if (organizationId) {
+    await clearIdeaRevisitObligation({
+      organizationId,
+      tradeQueueItemId: input.tradeQueueItemId,
+      reason: CLEAR_REASONS.workResumed,
     })
   }
 

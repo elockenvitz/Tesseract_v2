@@ -33,6 +33,7 @@ import {
   proposalWindowDays,
 } from '../../lib/ideas/open-proposal'
 import { pairIsLive } from '../../lib/signals/pair-shape'
+import { isParked } from '../../lib/memory/obligations'
 
 // ============================================================
 // Types
@@ -500,7 +501,7 @@ async function fetchFeedPage(
          * how the card tells a buy somebody sketched this morning from a buy
          * sitting in front of a PM. See `lib/signals/idea-shape`.
          */
-        .select('id, action, urgency, rationale, status, outcome, stage, stage_changed_at, updated_at, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, target_price, conviction, time_horizon, thesis_text, proposed_weight, proposed_shares, assigned_to, collaborators, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
+        .select('id, action, urgency, rationale, status, outcome, stage, stage_changed_at, updated_at, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, target_price, conviction, time_horizon, thesis_text, proposed_weight, proposed_shares, assigned_to, collaborators, revisit_at, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
         // Every open proposal, not only untouched ones. See `open-proposal`:
         // this used to be `status = 'idea'` while the pair source filtered on
         // nothing, and that asymmetry is what made the Ideas filter look like
@@ -547,6 +548,21 @@ async function fetchFeedPage(
       return (data as any[])
         .filter(d => !d.pair_id && !d.pair_trade_id)
         .filter(isOpenProposal)
+        /*
+         * Parked work leaves at the same boundary, and for the same reason.
+         *
+         * A user who snoozed an idea until the 15th was told it would be
+         * hidden until then; `revisit_at` was written and read by nothing,
+         * so it kept appearing in the feed. Filtering here rather than at
+         * render matters exactly as much as it does for terminal ideas — a
+         * snoozed row that survives this line still competes in ranking and
+         * consumes a diversity slot even if its card is never drawn.
+         *
+         * `isParked` is false for a null date, so ideas nobody snoozed are
+         * untouched, and false once the date passes, so the idea returns on
+         * its own.
+         */
+        .filter(d => !isParked(d.revisit_at))
         .map(d => ({
         id: d.id,
         type: 'trade_idea' as const,

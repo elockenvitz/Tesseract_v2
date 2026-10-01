@@ -2328,9 +2328,26 @@ function PortfolioRow({
             {/* Divider */}
             <div className="flex items-center gap-2 my-2">
               <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-              <span className="text-[9px] font-medium text-gray-400 uppercase tracking-wider">or trigger</span>
+              <span className="text-[9px] font-medium text-gray-400 uppercase tracking-wider">or note a condition</span>
               <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
             </div>
+
+            {/*
+              "or trigger" promised something this product does not do.
+              Nothing reads `deferred_trigger`: there is no price watcher,
+              and `asset_earnings_dates` holds zero rows, so there is no
+              earnings calendar either. The condition is recorded and shown
+              back, and the recommendation now stays on an open follow-up
+              list rather than vanishing — but it does not fire.
+
+              Only the DATE options above resurface on their own. This line
+              says which half is which, so a PM choosing a condition knows
+              they are leaving themselves a note, not setting an alert.
+            */}
+            <p className="text-[10px] leading-snug text-gray-500 dark:text-gray-400 mb-1.5">
+              Kept as an open follow-up you can find under Deferred. Tesseract won't detect these
+              on its own — only the dates above bring a recommendation back automatically.
+            </p>
 
             {/* Event triggers */}
             <div className="space-y-1">

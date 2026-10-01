@@ -322,6 +322,19 @@ export interface TradeQueueItem {
   outcome_by: string | null
   outcome_note: string | null
   deferred_until: string | null  // When a deferred idea should resurface
+  /**
+   * When the user asked to see this idea again — the "Snooze Idea" date.
+   *
+   * Distinct from `deferred_until` above, which belongs to the decision
+   * lifecycle (a PM answered "not now" about a recommendation). This one is
+   * a personal park on an idea nobody has been asked to decide yet, and it
+   * is what `isParked` reads to suppress the idea from attention surfaces
+   * until the date passes.
+   *
+   * The column has existed since the beginning; it was absent from this type
+   * because, until now, nothing read it.
+   */
+  revisit_at: string | null
 
   // Visibility/retention
   visibility_tier: VisibilityTier
