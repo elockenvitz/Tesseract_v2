@@ -1227,19 +1227,57 @@ export interface AcceptedTradeWithJoins extends AcceptedTrade {
     company_name: string
     sector: string | null
   }
+  /**
+   * The decision request this trade was committed against, and the
+   * IMMUTABLE recommendation version it was raised on.
+   *
+   * This is where the Trade Book reads "the case for the idea". It used to
+   * read `trade_queue_item.thesis_text` below — a live join — so editing an
+   * idea rewrote the stated reasoning behind trades already executed.
+   *
+   * Null for a trade with no originating decision request (Trade Lab
+   * promotion, direct Trade Book entry), and `proposal_version` is null for
+   * any request raised before versioning existed.
+   */
+  decision_request?: {
+    id: string
+    submission_snapshot?: Record<string, unknown> | null
+    sizing_weight?: number | null
+    sizing_shares?: number | null
+    sizing_mode?: string | null
+    requested_action?: string | null
+    created_at?: string | null
+    proposal_version?: {
+      id: string
+      version_number: number
+      action: string | null
+      weight: number | null
+      shares: number | null
+      sizing_mode: string | null
+      notes: string | null
+      thesis_text: string | null
+      rationale: string | null
+      conviction: string | null
+      target_price: number | null
+      time_horizon: string | null
+      theses: unknown
+      captured_from: Record<string, unknown> | null
+      submitted_at: string | null
+    } | null
+  } | null
   /** Joined from trade_queue_items via accepted_trades.trade_queue_item_id.
    *  Present only for trades that originated from a trade idea. Used by
-   *  the Trade Book to render pair legs adjacent with a "↔ pair" badge. */
+   *  the Trade Book to render pair legs adjacent with a "↔ pair" badge.
+   *
+   *  CURRENT idea state. `rationale` and `thesis_text` here are TODAY'S
+   *  values — do not render them as the historical case for a committed
+   *  trade; use `decision_request.proposal_version` for that. */
   trade_queue_item?: {
     id: string
     pair_id: string | null
     pair_trade_id: string | null
     pair_leg_type: PairLegType | null
     action: TradeAction
-    /** The analyst's original case, read through the FK this row already
-     *  carries. Not a copy: the text lives on `trade_queue_items` and is
-     *  joined, so it cannot drift from the idea it belongs to. Null for a
-     *  trade that did not originate from an idea. */
     rationale?: string | null
     thesis_text?: string | null
   } | null

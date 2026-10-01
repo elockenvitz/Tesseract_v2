@@ -19,12 +19,40 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const upsertProposal = vi.fn()
 const ensureDecisionRequestForProposal = vi.fn()
 const moveTradeIdea = vi.fn()
+const captureRecommendationVersion = vi.fn()
+
+/**
+ * The order of writes is the contract, so it is recorded rather than
+ * inferred: version, then decision request, then memory event. Reversing the
+ * first two is what would let a decision exist with no record of what was
+ * recommended.
+ */
+const callOrder: string[] = []
 
 vi.mock('../trade-lab-service', () => ({
-  upsertProposal: (...a: unknown[]) => upsertProposal(...a),
+  upsertProposal: (...a: unknown[]) => {
+    callOrder.push('proposal')
+    return upsertProposal(...a)
+  },
+}))
+vi.mock('../../recommendations/recommendation-version', () => ({
+  captureRecommendationVersion: (...a: unknown[]) => {
+    callOrder.push('version')
+    return captureRecommendationVersion(...a)
+  },
+}))
+vi.mock('../../memory/lifecycle-events', () => ({
+  recordRecommendationSubmitted: vi.fn(async () => {
+    callOrder.push('memory')
+    return { written: true, duplicate: false }
+  }),
+  resolveOrganizationIdForPortfolio: vi.fn(async () => 'org-1'),
 }))
 vi.mock('../decision-request-service', () => ({
-  ensureDecisionRequestForProposal: (...a: unknown[]) => ensureDecisionRequestForProposal(...a),
+  ensureDecisionRequestForProposal: (...a: unknown[]) => {
+    callOrder.push('request')
+    return ensureDecisionRequestForProposal(...a)
+  },
   isActiveDecisionRequestStatus: () => true,
   isResolvedDecisionRequestStatus: () => false,
 }))
@@ -54,11 +82,15 @@ const input = {
 }
 const context = { actorId: 'u-1', actorName: 'Analyst', uiSource: 'test' } as any
 
+const VERSION = { id: 'ver-1', version_number: 1 }
+
 beforeEach(() => {
   vi.clearAllMocks()
+  callOrder.length = 0
   upsertProposal.mockResolvedValue(PROPOSAL)
   ensureDecisionRequestForProposal.mockResolvedValue(REQUEST)
   moveTradeIdea.mockResolvedValue(undefined)
+  captureRecommendationVersion.mockResolvedValue(VERSION)
 })
 
 describe('submitRecommendation', () => {
@@ -102,5 +134,43 @@ describe('submitRecommendation', () => {
     // Swallowing this would leave the analyst believing a PM had been asked.
     ensureDecisionRequestForProposal.mockRejectedValue(new Error('rls denied'))
     await expect(submitRecommendation(input as any, context)).rejects.toThrow(/decision request/i)
+  })
+})
+
+describe('the recommendation is frozen before it becomes a request', () => {
+  it('freezes the submission, passing the sizing that was submitted', async () => {
+    await submitRecommendation(input as any, context)
+    expect(captureRecommendationVersion).toHaveBeenCalledTimes(1)
+    expect(captureRecommendationVersion.mock.calls[0][0]).toMatchObject({
+      proposalId: 'prop-1',
+      tradeQueueItemId: 'tq-1',
+      portfolioId: 'pf-1',
+      organizationId: 'org-1',
+      actorId: 'u-1',
+      weight: 2.5,
+      action: 'buy',
+    })
+  })
+
+  it('writes the version BEFORE the decision request', async () => {
+    // The ordering is the whole failure model. Reversed, a request can exist
+    // with no record of what was recommended — the state this slice removes.
+    // Version-first can at worst strand an unreferenced version row, which
+    // nothing renders and which the next retry adopts by fingerprint.
+    await submitRecommendation(input as any, context)
+    expect(callOrder).toEqual(['proposal', 'version', 'request', 'memory'])
+  })
+
+  it('hands the request the version id so the link is set on insert', async () => {
+    await submitRecommendation(input as any, context)
+    expect(ensureDecisionRequestForProposal.mock.calls[0][0]).toMatchObject({
+      proposalVersionId: 'ver-1',
+    })
+  })
+
+  it('a failed freeze aborts the submission — no decision request is created', async () => {
+    captureRecommendationVersion.mockRejectedValue(new Error('rls denied'))
+    await expect(submitRecommendation(input as any, context)).rejects.toThrow(/rls denied/)
+    expect(ensureDecisionRequestForProposal).not.toHaveBeenCalled()
   })
 })

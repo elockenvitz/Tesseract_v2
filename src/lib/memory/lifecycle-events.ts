@@ -184,6 +184,16 @@ export interface RecommendationSubmittedInput {
   tradeQueueItemId: string
   decisionRequestId: string
   proposalId?: string | null
+  /**
+   * The immutable `trade_proposal_versions` row this submission froze.
+   *
+   * A POINTER, never a copy. The version holds the thesis, conviction and
+   * target that were current at submission; duplicating any of that into the
+   * event would make memory a competing store of the same truth, which the
+   * Spine's foundation exists to avoid. The event says a recommendation was
+   * submitted and where to read exactly what it said.
+   */
+  proposalVersionId?: string | null
   portfolioId?: string | null
   assetId?: string | null
   action?: string | null
@@ -219,6 +229,7 @@ export async function recordRecommendationSubmitted(input: RecommendationSubmitt
     related: {
       decision_request_id: input.decisionRequestId,
       proposal_id: input.proposalId,
+      proposal_version_id: input.proposalVersionId,
       portfolio_id: input.portfolioId,
       asset_id: input.assetId,
       trade_queue_item_id: input.tradeQueueItemId,

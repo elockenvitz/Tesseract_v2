@@ -55,9 +55,30 @@ import type {
 //
 // Two columns on an existing embed. No new query, no copy of the text, and no
 // second place for it to drift from.
+//
+// ── Correction, Memory Spine slice 2 ───────────────────────────────────────
+// Reaching the analyst's case through this embed restored the link, but it
+// reached the CURRENT case. A committed trade is a historical fact and its
+// "case for the idea" was re-reading `trade_queue_items` live, so editing an
+// idea silently rewrote the stated reasoning behind trades already executed
+// against it.
+//
+// `decision_request.proposal_version` is the frozen submission. The
+// `trade_queue_item` embed stays for pair wiring and for the current action,
+// which are current facts by nature — but its `rationale`/`thesis_text` must
+// not be rendered as the historical case. See AcceptedTradesTable's
+// `originalCase`.
 const TRADE_SELECT = `
   *,
   asset:assets(id, symbol, company_name, sector),
+  decision_request:decision_requests!accepted_trades_decision_request_id_fkey(
+    id, submission_snapshot, sizing_weight, sizing_shares, sizing_mode, requested_action, created_at,
+    proposal_version:proposal_version_id(
+      id, version_number, action, weight, shares, sizing_mode, notes,
+      thesis_text, rationale, conviction, target_price, time_horizon,
+      theses, captured_from, submitted_at
+    )
+  ),
   trade_queue_item:trade_queue_items!accepted_trades_trade_queue_item_id_fkey(id, pair_id, pair_trade_id, pair_leg_type, action, rationale, thesis_text)
 `
 

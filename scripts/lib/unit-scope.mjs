@@ -61,6 +61,11 @@ export const GATED_DIRS = [
   // decisions that never happened or blocks real ones, and neither failure
   // mode shows up as a crash.
   'src/lib/decisions',
+  // What a recommendation said when it was submitted. Gated because the
+  // failure is silent and backwards-looking: a broken freeze does not throw
+  // or render wrong today, it quietly re-narrates past decisions in today's
+  // words the next time somebody edits an idea.
+  'src/lib/recommendations',
   'src/lib/ops',
   'src/lib/guards',
   'src/hooks/ideas',

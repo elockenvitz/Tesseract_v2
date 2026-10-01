@@ -74,15 +74,44 @@ export interface UpdateDecisionRequestInput {
   acceptedTradeId?: string | null
 }
 
+/*
+ * Two embeds here answer two different questions, and conflating them is the
+ * defect this slice closes.
+ *
+ *   `proposal_version`   WHAT WAS RECOMMENDED. Immutable. Read this for all
+ *                        historical content — thesis, conviction, target,
+ *                        sizing, bull/bear/catalyst/risk cases. Null for the
+ *                        113 requests that predate versioning, which the
+ *                        resolver in lib/recommendations/
+ *                        historical-recommendation.ts handles by falling back
+ *                        to submission_snapshot and then saying so.
+ *
+ *   `trade_queue_item`   CURRENT IDEA STATE. Mutable. Kept because a PM
+ *                        looking at a PENDING request legitimately wants
+ *                        today's view, and because symbol, company and the
+ *                        pair wiring are current facts by nature. Its
+ *                        `rationale`, `thesis_text` and `conviction` are
+ *                        TODAY'S values — rendering them as the historical
+ *                        recommendation is what made past decisions
+ *                        re-narrate themselves whenever an idea was edited.
+ *
+ * No comments inside the template literal: PostgREST parses this string as a
+ * select parameter and will reject anything that is not a column list.
+ */
 const DECISION_REQUEST_SELECT = `
   id, trade_queue_item_id, requested_by, portfolio_id, proposal_id, accepted_trade_id,
   urgency, context_note,
   status, reviewed_by, reviewed_at, decision_note, deferred_until, deferred_trigger,
   sizing_weight, sizing_shares, sizing_mode,
-  requested_action, submission_snapshot,
+  requested_action, submission_snapshot, proposal_version_id,
   created_at, updated_at,
   requester:requested_by (id, email, first_name, last_name),
   portfolio:portfolio_id (id, name),
+  proposal_version:proposal_version_id (
+    id, version_number, action, idea_stage, weight, shares, sizing_mode, sizing_context,
+    notes, thesis_text, rationale, conviction, target_price, stop_loss, take_profit,
+    time_horizon, theses, captured_from, submitted_at, created_at, created_by
+  ),
   trade_queue_item:trade_queue_item_id (
     id, action, rationale, thesis_text, conviction, urgency, pair_id, pair_trade_id, pair_leg_type, created_by, assigned_to,
     assets:asset_id (id, symbol, company_name)
@@ -282,6 +311,15 @@ export interface EnsureDecisionRequestInput {
   requestedAction?: string | null
   /** Immutable snapshot of the submitted recommendation state */
   submissionSnapshot?: Record<string, unknown> | null
+  /**
+   * The immutable recommendation version this request is raised on.
+   *
+   * This is the canonical record of what was recommended.
+   * `submissionSnapshot` above is a projection kept for the 70 requests that
+   * predate versioning; it holds sizing and identity only and is overwritten
+   * on resubmission, so it cannot answer "what did the FIRST submission say".
+   */
+  proposalVersionId?: string | null
 }
 
 /**
@@ -332,6 +370,16 @@ export async function ensureDecisionRequestForProposal(
     if (input.requestedAction !== undefined) updates.requested_action = input.requestedAction
     if (input.submissionSnapshot) updates.submission_snapshot = input.submissionSnapshot
 
+    // Repoint an UNRESOLVED request at the version the analyst just
+    // submitted. Safe precisely because no PM has acted: there is no decision
+    // yet whose basis could be rewritten.
+    //
+    // The earlier version row is NOT touched — it is append-only and stays
+    // readable. What moves is only which version this still-open request is
+    // asking about, which is the honest answer to "what is the PM being asked
+    // to decide right now".
+    if (input.proposalVersionId) updates.proposal_version_id = input.proposalVersionId
+
     const { data, error } = await supabase
       .from('decision_requests')
       .update(updates)
@@ -362,6 +410,7 @@ export async function ensureDecisionRequestForProposal(
       sizing_mode: input.sizingMode ?? null,
       requested_action: input.requestedAction || null,
       submission_snapshot: input.submissionSnapshot || null,
+      proposal_version_id: input.proposalVersionId || null,
     })
     .select(DECISION_REQUEST_SELECT)
     .single()

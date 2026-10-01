@@ -25,6 +25,10 @@ import { ExecutionStatusDropdown } from './ExecutionStatusDropdown'
 import { PairBadge } from './PairBadge'
 import { CreateCorrectionModal } from './CreateCorrectionModal'
 import { buildPairInfoByAsset } from '../../lib/trade-lab/pair-info'
+import {
+  resolveHistoricalRecommendation,
+  reasoningFallbackNote,
+} from '../../lib/recommendations/historical-recommendation'
 import { useAcceptedTradeComments } from '../../hooks/useAcceptedTrades'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import {
@@ -224,11 +228,42 @@ export function ReasonBlock({
  *   sees the trade's full "why" story in one place instead of navigating
  *   between a reason block and a separate discussion thread.
  */
+/**
+ * The case for the idea, as it read WHEN THE TRADE WAS COMMITTED.
+ *
+ * This used to be `trade.trade_queue_item?.thesis_text || …rationale`, a live
+ * read of a mutable row. A committed trade is a historical fact; editing the
+ * idea behind it rewrote the stated reasoning for a trade already executed,
+ * with no trace that it had changed.
+ *
+ * Resolution order is frozen version → pre-versioning snapshot (which holds
+ * no reasoning, so this yields the honest note instead) → nothing. Current
+ * idea state is deliberately absent from that list.
+ */
+export function historicalCaseProps(trade: {
+  decision_request?: {
+    proposal_version?: unknown
+    submission_snapshot?: Record<string, unknown> | null
+  } | null
+}): { originalCase: string | null; originalCaseNote: string | null } {
+  const dr = trade.decision_request ?? null
+  const history = resolveHistoricalRecommendation(
+    dr as never,
+    (dr?.proposal_version ?? null) as never,
+  )
+  const text = history.thesisText.value || history.rationale.value || null
+  return {
+    originalCase: text,
+    originalCaseNote: text ? null : reasoningFallbackNote(history),
+  }
+}
+
 export function TradeRationaleLog({
   tradeId,
   acceptanceNote,
   batchDescription,
   originalCase,
+  originalCaseNote,
   onAddComment,
 }: {
   tradeId: string
@@ -239,6 +274,9 @@ export function TradeRationaleLog({
    *  came first: it is why anybody wanted the trade, where `acceptance_note`
    *  is why the PM took it. Absent for a trade with no originating idea. */
   originalCase?: string | null
+  /** Set when the case was never captured. Shown in place of silence, so an
+   *  absent record is not mistaken for an analyst who gave no reason. */
+  originalCaseNote?: string | null
   onAddComment?: (tradeId: string, content: string) => void
 }) {
   const { data: additions = [] } = useAcceptedTradeComments(tradeId)
@@ -252,6 +290,9 @@ export function TradeRationaleLog({
      under two labels reads as two findings. */
   const original = (originalCase || '').trim()
   const showOriginal = original.length > 0 && original !== initial && original !== batchDesc
+  // Only when there is nothing to show. A note alongside a real case would
+  // read as a disclaimer on the case itself.
+  const showCaseGap = !showOriginal && !!originalCaseNote
 
   const handleSubmit = () => {
     if (!draft.trim() || !onAddComment) return
@@ -298,6 +339,12 @@ export function TradeRationaleLog({
             </div>
             <p className="mt-0.5 text-[13px] leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">{original}</p>
           </div>
+        )}
+
+        {showCaseGap && (
+          <p data-slot="trade-rationale-case-gap" className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400 italic">
+            {originalCaseNote}
+          </p>
         )}
 
         <div data-slot="trade-rationale-initial" className="rounded-lg border-l-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
@@ -374,6 +421,17 @@ export function TradeRationaleLog({
             </span>
             <p className="text-xs text-gray-700 dark:text-gray-200 whitespace-pre-wrap leading-relaxed flex-1">
               {original}
+            </p>
+          </div>
+        )}
+
+        {showCaseGap && (
+          <div data-slot="trade-rationale-case-gap" className="flex gap-2.5">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 whitespace-nowrap pt-0.5 w-16 flex-shrink-0">
+              The case
+            </span>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 italic leading-relaxed flex-1">
+              {originalCaseNote}
             </p>
           </div>
         )}
@@ -1347,7 +1405,7 @@ function TradeDetailPane({
           tradeId={trade.id}
           acceptanceNote={trade.acceptance_note}
           batchDescription={batchDescription ?? null}
-          originalCase={trade.trade_queue_item?.thesis_text || trade.trade_queue_item?.rationale}
+          {...historicalCaseProps(trade)}
           onAddComment={onAddComment}
         />
       </div>

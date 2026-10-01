@@ -28,6 +28,7 @@ import {
   recordRecommendationSubmitted,
   resolveOrganizationIdForPortfolio,
 } from '../memory/lifecycle-events'
+import { captureRecommendationVersion } from '../recommendations/recommendation-version'
 import type {
   ActionContext,
   TradeProposal,
@@ -153,6 +154,43 @@ export async function submitRecommendation(
     submissionSnapshot.sizing_context = input.sizingContext
   }
 
+  // ── Step 2b: Freeze the recommendation BEFORE the request exists ─────
+  //
+  // `submissionSnapshot` above freezes sizing and identity and nothing else;
+  // it has never held a thesis, a conviction or a target, and it cannot be
+  // made to, because Step 3 updates an active request IN PLACE and overwrites
+  // the column. An analyst's second submission destroys the record of their
+  // first.
+  //
+  // This writes the append-only version instead, and it happens FIRST so the
+  // decision request below can carry `proposal_version_id` on its own insert.
+  // The ordering decides which partial failure is reachable: version-then-
+  // request can strand an unreferenced version row, which nothing renders and
+  // which the next retry adopts by fingerprint. Request-then-version would
+  // strand a decision with no record of what was recommended, which is the
+  // defect this slice exists to remove.
+  //
+  // Unlike the Memory Spine writers this throws. A memory event describes an
+  // action that already completed; this IS the submission, and a submission
+  // that cannot say what it recommended must fail rather than succeed into an
+  // unreconstructable history.
+  const organizationId = await resolveOrganizationIdForPortfolio(input.portfolioId)
+  const version = await captureRecommendationVersion({
+    proposalId: proposal.id,
+    tradeQueueItemId: input.tradeQueueItemId,
+    portfolioId: input.portfolioId,
+    organizationId,
+    actorId: context.actorId,
+    weight: input.weight ?? null,
+    shares: input.shares ?? null,
+    sizingMode: typeof input.sizingMode === 'string' ? input.sizingMode : null,
+    sizingContext: input.sizingContext ?? {},
+    notes: input.notes ?? null,
+    action: input.requestedAction ?? null,
+  })
+  submissionSnapshot.proposal_version_id = version.id
+  submissionSnapshot.proposal_version_number = version.version_number
+
   // ── Step 3: Create or update decision requests (AWAITED) ────────────
   // For singletons: one decision_request for the submitted trade_queue_item.
   // For pair trades: one decision_request per leg, all linked to the same
@@ -260,6 +298,12 @@ export async function submitRecommendation(
             sizingMode: (leg.sizingMode || input.sizingMode) as TradeSizingMode | undefined,
             requestedAction: (leg.action || input.requestedAction) as any,
             submissionSnapshot,
+            // One version per submission, shared by every leg. A pair trade
+            // is ONE act of recommending that happens to produce several
+            // requests — the same reasoning the Memory Spine uses to emit one
+            // `recommendation.submitted` event rather than one per leg. The
+            // per-leg sizing lives in the version's `sizing_context.legs`.
+            proposalVersionId: version.id,
           }),
         ),
       )
@@ -282,6 +326,7 @@ export async function submitRecommendation(
         sizingMode: input.sizingMode,
         requestedAction: input.requestedAction,
         submissionSnapshot,
+        proposalVersionId: version.id,
       })
     }
   } catch (err) {
@@ -335,7 +380,6 @@ export async function submitRecommendation(
   // and the representative DR links to the shared proposal, through which the
   // other legs are reachable. Emitting per leg would make the Spine count two
   // recommendations where one happened.
-  const organizationId = await resolveOrganizationIdForPortfolio(input.portfolioId)
   if (organizationId) {
     await recordRecommendationSubmitted({
       organizationId,
@@ -343,6 +387,9 @@ export async function submitRecommendation(
       tradeQueueItemId: input.tradeQueueItemId,
       decisionRequestId: decisionRequest.id,
       proposalId: proposal.id,
+      // Points at the immutable version; does NOT copy it. The event stays a
+      // connector, exactly as the Spine's foundation requires.
+      proposalVersionId: version.id,
       portfolioId: input.portfolioId,
       action: input.requestedAction ?? null,
       sizingMode: typeof input.sizingMode === 'string' ? input.sizingMode : null,
