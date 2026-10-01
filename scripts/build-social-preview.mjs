@@ -46,16 +46,45 @@ const dataUri = (rel) =>
   `data:image/png;base64,${readFileSync(join(root, rel)).toString('base64')}`
 
 const wordmark = dataUri('public/Tesseract Logo.png')
-const icon = dataUri('public/Tesseract Icon.png')
+const glowIcon = dataUri('public/Tesseract Icon.png')
+
+/**
+ * The app's actual mark, lifted from the boot loader in `index.html`.
+ *
+ * ── Why this and not `Tesseract Icon.png` ────────────────────────────────
+ *
+ * The first version of this image used that PNG, which is a 1024px soft glow
+ * on black. Scaled up to fill the canvas it stopped reading as a mark at all
+ * and became a background texture — the preview looked like a photograph of a
+ * cube rather than a product's icon.
+ *
+ * This is the wireframe the product itself draws: the resting frame of
+ * `TesseractMark`, generated from `lib/brand/tesseract-geometry` and inlined
+ * in `index.html` so the pre-JS splash can paint it. Reading it from there
+ * means the preview shows the same figure the app shows, and cannot drift
+ * from it — the alternative is a third hand-copied version of the geometry.
+ */
+function appMark() {
+  const html = readFileSync(join(root, 'index.html'), 'utf8')
+  const open = html.indexOf('<svg viewBox="0 0 100 100"')
+  const close = html.indexOf('</svg>', open)
+  if (open === -1 || close === -1) {
+    throw new Error('app mark SVG not found in index.html — did the boot loader change?')
+  }
+  return html.slice(open, close + '</svg>'.length)
+}
 
 /*
  * Sized for the smallest place it is read, not the largest.
  *
  * An iMessage preview is roughly 300px wide, so everything here is scaled as
- * if it will be seen at a quarter size: the wordmark takes a third of the
- * canvas, the tagline sits at 40px, and there is no third tier of text. A
- * layout that looks balanced at 1200px and unreadable at 300px is the usual
- * way these go wrong.
+ * if it will be seen at a quarter size: the tagline sits at 42px and there is
+ * no third tier of text. A layout that looks balanced at 1200px and
+ * unreadable at 300px is the usual way these go wrong.
+ *
+ * The composition is a LOCKUP, not a scene: mark and wordmark on one baseline
+ * at the proportions of a launcher icon beside its name, tagline beneath, all
+ * on one left axis. It scans as a single object at thumbnail size.
  */
 const html = `
 <!doctype html>
@@ -66,19 +95,24 @@ const html = `
   body {
     background: #0A0A0B;
     font-family: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-    display: flex; align-items: center; justify-content: center;
+    display: flex; align-items: center;
     position: relative; overflow: hidden;
   }
-  /* The icon's own glow, echoed as ambient light rather than pasted in as a
-     second logo. Two marks competing at this size reads as clutter. */
-  .glow {
-    position: absolute; inset: -20% -10%;
-    background-image: url('${icon}');
-    background-size: 78% auto; background-position: 92% 50%;
-    background-repeat: no-repeat;
-    filter: blur(2px); opacity: 0.22;
-    mask-image: radial-gradient(ellipse at 92% 50%, #000 0%, #000 42%, transparent 72%);
-    -webkit-mask-image: radial-gradient(ellipse at 92% 50%, #000 0%, #000 42%, transparent 72%);
+  /*
+   * What is left of the old background icon: a wash, not a figure.
+   *
+   * It was the glow PNG at 78% width and 0.22 opacity, which dominated the
+   * canvas and read as a photograph of a cube rather than as branding. Here
+   * it is pushed off the right edge, heavily blurred and at 0.06, so it is a
+   * warm cast on the panel rather than a second mark competing with the real
+   * one. At thumbnail size it is barely perceptible, which is the point — it
+   * exists only so the plate is not flat black.
+   */
+  .wash {
+    position: absolute; top: -34%; right: -30%; width: 74%; height: 168%;
+    background-image: url('${glowIcon}');
+    background-size: contain; background-position: center; background-repeat: no-repeat;
+    filter: blur(30px); opacity: 0.06;
   }
   /* A hairline of warmth along the top, so the card does not read as a
      black rectangle in a dark-themed message list. */
@@ -86,27 +120,36 @@ const html = `
     position: absolute; top: 0; left: 0; right: 0; height: 4px;
     background: linear-gradient(90deg, #E9C33D 0%, #E9C33D 38%, rgba(233,195,61,0) 88%);
   }
-  .plate { position: relative; padding: 0 96px; width: 100%; }
-  .wordmark { display: block; width: 420px; height: auto; }
+  .plate { position: relative; padding: 0 104px; width: 100%; }
+  /* Mark and wordmark on one baseline, the way an app presents itself. */
+  .lockup { display: flex; align-items: center; gap: 30px; }
+  .mark { width: 128px; height: 128px; flex: none; }
+  .mark svg { width: 100%; height: 100%; display: block; }
+  /* Height-matched to the mark rather than set by width, so the two scale
+     together if either is ever resized. */
+  .wordmark { display: block; height: 74px; width: auto; }
   .tagline {
-    margin-top: 34px; font-size: 40px; line-height: 1.28;
+    margin-top: 44px; font-size: 42px; line-height: 1.26;
     color: #E8E8EA; font-weight: 400; letter-spacing: -0.015em;
-    max-width: 620px;
+    max-width: 660px;
   }
   .eyebrow {
-    margin-top: 44px; font-size: 19px; letter-spacing: 0.17em;
+    margin-top: 40px; font-size: 19px; letter-spacing: 0.17em;
     /* Bright enough to survive the ~300px-wide thumbnail iMessage actually
        renders. At #9A8A52 it disappeared there while looking fine at full
        size, which is the failure this whole file is scaled against. */
     text-transform: uppercase; color: #C2A85C; font-weight: 600;
   }
 </style>
-<div class="glow"></div>
+<div class="wash"></div>
 <div class="rule"></div>
 <div class="plate">
-  <img class="wordmark" src="${wordmark}" alt="Tesseract">
+  <div class="lockup">
+    <div class="mark">${appMark()}</div>
+    <img class="wordmark" src="${wordmark}" alt="Tesseract">
+  </div>
   <p class="tagline">Decision intelligence<br>for investment teams.</p>
-  <p class="eyebrow">Professional Early Access</p>
+  <p class="eyebrow">Early Access</p>
 </div>
 `
 
@@ -145,7 +188,7 @@ for (const [file, size] of [['favicon.png', 64], ['apple-touch-icon.png', 180]])
       html, body { width: ${size}px; height: ${size}px; background: #0A0A0B; }
       img { width: 100%; height: 100%; object-fit: cover; }
     </style>
-    <img src="${icon}">
+    <img src="${glowIcon}">
   `, { waitUntil: 'load' })
   writeFileSync(join(root, 'public', file), await iconPage.screenshot({ type: 'png' }))
   await iconPage.close()
