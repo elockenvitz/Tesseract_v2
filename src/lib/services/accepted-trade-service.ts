@@ -16,6 +16,11 @@ import { updateDecisionRequest } from './decision-request-service'
 import { deleteVariant } from './intent-variant-service'
 import { moveTradeIdea, reconcileOutcomeAfterRevert } from './trade-idea-service'
 import { FINAL_STAGE } from '../ideas/stage-model'
+import {
+  recordDecisionReverted,
+  recordExecutionRecorded,
+  resolveOrganizationIdForPortfolio,
+} from '../memory/lifecycle-events'
 import type {
   AcceptedTrade,
   AcceptedTradeWithJoins,
@@ -146,6 +151,34 @@ export async function createAcceptedTrade(
   // - paper/manual_eod: apply to holdings, auto-complete execution.
   // - live_feed: leave execution_status='not_started' for trader workflow.
   const finalized = await finalizeTradeForHoldingsSource(trade, input.accepted_by)
+
+  // ── Record the execution in organisational memory ─────────────────────
+  //
+  // After finalization, because until holdings are applied the trade is not
+  // yet the thing the event claims it is.
+  //
+  // `decision_request_id` is passed through as-is and is frequently null:
+  // simulation promotion and direct Trade Book entry both commit trades with
+  // no decision request behind them. That absence is recorded faithfully
+  // rather than papered over — an active accepted_trade is itself the
+  // decision evidence on those paths, and inventing a request would put a
+  // decision nobody made into the permanent record.
+  const organizationId = await resolveOrganizationIdForPortfolio(input.portfolio_id)
+  if (organizationId) {
+    await recordExecutionRecorded({
+      organizationId,
+      actorId: input.accepted_by,
+      acceptedTradeId: finalized.id,
+      portfolioId: input.portfolio_id,
+      assetId: input.asset_id,
+      decisionRequestId: input.decision_request_id ?? null,
+      tradeQueueItemId: input.trade_queue_item_id ?? null,
+      proposalId: input.proposal_id ?? null,
+      action: input.action,
+      provenance: `source:${input.source}`,
+    })
+  }
+
   return finalized
 }
 
@@ -450,6 +483,30 @@ export async function revertAcceptedTrade(
   // outcome is still correct.
   if (trade.trade_queue_item_id) {
     await reconcileOutcomeAfterRevert(trade.trade_queue_item_id, context)
+  }
+
+  // ── Record the reversal in organisational memory ──────────────────────
+  //
+  // Nothing above leaves a legible trail that a decision was undone: the
+  // trade is soft-deleted, the decision request is reset to `pending`, its
+  // `decision_note` is nulled, and the idea's outcome may be cleared. Read
+  // afterwards, the canonical rows say the decision never happened — not
+  // that it was reversed. This event is the difference.
+  //
+  // It appends; it does not alter the earlier `decision.recorded` or
+  // `execution.recorded` events, which remain true statements about what was
+  // decided at the time.
+  const organizationId = await resolveOrganizationIdForPortfolio((trade as any).portfolio_id)
+  if (organizationId) {
+    await recordDecisionReverted({
+      organizationId,
+      actorId: context.actorId,
+      acceptedTradeId: id,
+      decisionRequestId: (trade as any).decision_request_id ?? null,
+      tradeQueueItemId: (trade as any).trade_queue_item_id ?? null,
+      portfolioId: (trade as any).portfolio_id ?? null,
+      provenance: context.uiSource ? `ui:${context.uiSource}` : 'ui:trade-book',
+    })
   }
 }
 

@@ -24,6 +24,10 @@ import {
   isActiveDecisionRequestStatus,
   isResolvedDecisionRequestStatus,
 } from './decision-request-service'
+import {
+  recordRecommendationSubmitted,
+  resolveOrganizationIdForPortfolio,
+} from '../memory/lifecycle-events'
 import type {
   ActionContext,
   TradeProposal,
@@ -318,6 +322,35 @@ export async function submitRecommendation(
     portfolioName: input.portfolioName || null,
     isPairTrade: !!(input.sizingContext as any)?.isPairTrade,
   }).catch(e => console.warn('[submitRecommendation] PM notification failed:', e))
+
+  // ── Step 5: Record the submission in organisational memory ───────────
+  //
+  // Last, and awaited. Last because everything above is the canonical write
+  // and memory must never be the reason a recommendation fails to reach a PM;
+  // awaited because a fire-and-forget write would be lost whenever the user
+  // navigates on submit, which is exactly when they submit.
+  //
+  // One event per submission, not per leg. A pair trade creates a decision
+  // request for each leg, but the analyst performed ONE act of recommending —
+  // and the representative DR links to the shared proposal, through which the
+  // other legs are reachable. Emitting per leg would make the Spine count two
+  // recommendations where one happened.
+  const organizationId = await resolveOrganizationIdForPortfolio(input.portfolioId)
+  if (organizationId) {
+    await recordRecommendationSubmitted({
+      organizationId,
+      actorId: context.actorId,
+      tradeQueueItemId: input.tradeQueueItemId,
+      decisionRequestId: decisionRequest.id,
+      proposalId: proposal.id,
+      portfolioId: input.portfolioId,
+      action: input.requestedAction ?? null,
+      sizingMode: typeof input.sizingMode === 'string' ? input.sizingMode : null,
+      weight: input.weight ?? null,
+      shares: input.shares ?? null,
+      provenance: context.uiSource ? `ui:${context.uiSource}` : 'ui:recommendation',
+    })
+  }
 
   return { proposal, decisionRequest }
 }

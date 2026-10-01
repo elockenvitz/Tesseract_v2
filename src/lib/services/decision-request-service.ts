@@ -16,6 +16,10 @@
  */
 
 import { supabase } from '../supabase'
+import {
+  recordDecisionRecorded,
+  resolveOrganizationIdForPortfolio,
+} from '../memory/lifecycle-events'
 import type { DecisionRequest, DecisionRequestUrgency, DecisionRequestStatus } from '../../types/trading'
 
 // ---------------------------------------------------------------------------
@@ -219,7 +223,36 @@ export async function updateDecisionRequest(
     .single()
 
   if (error) throw new Error(`Failed to update decision request: ${error.message}`)
-  return data as unknown as DecisionRequest
+  const updated = data as unknown as DecisionRequest
+
+  // ── Record the decision in organisational memory ──────────────────────
+  //
+  // Here, not at the four call sites, because this function is where every
+  // path converges — defer, accept, reject — and a writer per call site is a
+  // writer someone forgets to add to the fifth.
+  //
+  // RESOLVED STATUSES ONLY. `revertAcceptedTrade` calls this with 'pending'
+  // to reopen a request; that is the undoing of a decision, not the making of
+  // one, and it is recorded as `decision.reverted` by the revert itself. An
+  // unguarded emit here would log a phantom decision every time a PM undid a
+  // trade.
+  if (isResolvedDecisionRequestStatus(input.status)) {
+    const organizationId = await resolveOrganizationIdForPortfolio(updated.portfolio_id)
+    if (organizationId) {
+      await recordDecisionRecorded({
+        organizationId,
+        actorId: user.id,
+        decisionRequestId: requestId,
+        status: input.status,
+        tradeQueueItemId: updated.trade_queue_item_id ?? null,
+        proposalId: updated.proposal_id ?? null,
+        portfolioId: updated.portfolio_id ?? null,
+        acceptedTradeId: (updates.accepted_trade_id as string | null) ?? null,
+      })
+    }
+  }
+
+  return updated
 }
 
 export async function deleteDecisionRequest(requestId: string): Promise<void> {
