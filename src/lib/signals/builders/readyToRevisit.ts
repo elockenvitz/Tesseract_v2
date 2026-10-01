@@ -93,31 +93,44 @@ export function buildReadyToRevisitCard(input: ReadyToRevisitInput): CardResult 
     return suppress('insufficient_coverage', input.tradeQueueItemId, 'no resolvable asset')
   }
 
-  const where = whereYouLeftItLine(input.stage, input.conviction)
   const when = parkedPhrase(input.daysOverdue)
 
-  const body = where
-    ? `You left it at ${where}.`
-    : 'It is still undecided, exactly as you left it.'
+  /**
+   * One region, one job — and the first draft broke that rule.
+   *
+   * It put every fact label in the CHIPS and the same labels again in the
+   * detail. The 390px screenshot showed what that costs: the chip row
+   * overflowed and clipped "Core Equity" mid-word, the body went
+   * unrendered, and the three facts appeared twice on one screen. The
+   * contract warns about exactly this for metrics ("the same value on
+   * screen twice... guaranteed to collide"); it applies to lists too.
+   *
+   * So:
+   *   headline  what you did, and when
+   *   metric    how long it has been
+   *   body      WHAT MOVED, in one line
+   *   chips     WHERE YOU LEFT IT, plus the book
+   *   detail    the facts, each with its source and as-of dates
+   */
+  const body = input.facts.length
+    ? `While it was parked: ${input.facts.map(f => f.label.toLowerCase()).join(', ')}` +
+      (input.totalFactCount > input.facts.length
+        ? `, and ${input.totalFactCount - input.facts.length} more.`
+        : '.')
+    : 'Nothing has been recorded against it since.'
 
   /**
-   * "Since then", as chips rather than prose.
+   * Where you left it — short, few, and never the facts.
    *
-   * Each is one deterministic fact with its own source. Rendering them as a
-   * sentence would invite a model to join them into a narrative, and the
-   * join is the part nobody can verify — "+8.4% and 3 new research items"
-   * is two facts; "+8.4% on the back of new research" is a claim.
+   * These were invisible in the first draft because the fact labels had
+   * taken the row. They are the thing a reader needs in order to pick the
+   * work back up, so they get the chips.
    */
-  const context: CardContextChip[] = input.facts.map(f => ({
-    label: f.label,
-  }))
-
-  if (input.totalFactCount > input.facts.length) {
-    context.push({ label: `+${input.totalFactCount - input.facts.length} more` })
-  }
-  if (input.portfolioName) {
-    context.push({ label: input.portfolioName })
-  }
+  const context: CardContextChip[] = []
+  if (input.stage) context.push({ label: titleCase(input.stage) })
+  if (input.conviction) context.push({ label: `${titleCase(input.conviction)} conviction` })
+  if (!input.stage && !input.conviction) context.push({ label: 'Still undecided' })
+  if (input.portfolioName) context.push({ label: input.portfolioName })
 
   /**
    * The metric is the wait, not a price.

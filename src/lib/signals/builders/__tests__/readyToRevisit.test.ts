@@ -74,53 +74,81 @@ describe('the headline is the reader\'s own decision', () => {
   })
 })
 
-describe('where you left it', () => {
-  it('states the stage and conviction as the body', () => {
-    expect(card().body).toBe('You left it at Researching · Medium conviction.')
+/**
+ * One region, one job.
+ *
+ * The first draft put the fact labels in the chips AND in the detail. At
+ * 390px that overflowed the chip row — clipping "Core Equity" mid-word —
+ * left the body unrendered, and printed the same three facts twice on one
+ * screen. These tests pin the split that fixed it.
+ */
+describe('where you left it lives in the chips', () => {
+  it('carries the stage and conviction', () => {
+    const labels = card().context.map(x => x.label)
+    expect(labels).toContain('Researching')
+    expect(labels).toContain('Medium conviction')
   })
 
   it('renders only what exists', () => {
-    expect(card({ conviction: null }).body).toBe('You left it at Researching.')
-    expect(card({ stage: null }).body).toBe('You left it at Medium conviction.')
+    expect(card({ conviction: null }).context.map(x => x.label)).not.toContain('Medium conviction')
+    expect(card({ stage: null }).context.map(x => x.label)).not.toContain('Researching')
   })
 
-  it('falls back to a true sentence when neither is known', () => {
-    // Not "Unknown · Unknown", and not silence.
-    expect(card({ stage: null, conviction: null }).body)
-      .toBe('It is still undecided, exactly as you left it.')
+  it('says something true when neither is known', () => {
+    // Not "Unknown · Unknown", and not an empty row.
+    expect(card({ stage: null, conviction: null }).context.map(x => x.label))
+      .toContain('Still undecided')
   })
 
-  it('whereYouLeftItLine returns null rather than an empty join', () => {
+  it('carries the portfolio', () => {
+    expect(card().context.map(x => x.label)).toContain('Core Growth')
+  })
+
+  it('never puts a change fact in the chips', () => {
+    // That row is for picking the work back up. The facts are the body and
+    // the detail; repeating them here is what clipped the row.
+    const c = card({ facts: [fact()], totalFactCount: 1 })
+    expect(c.context.map(x => x.label)).not.toContain('+8.4% price')
+  })
+
+  it('stays short enough not to overflow a 390px row', () => {
+    const c = card()
+    expect(c.context.length).toBeLessThanOrEqual(3)
+    for (const chip of c.context) expect(chip.label.length).toBeLessThan(26)
+  })
+
+  it('whereYouLeftItLine still composes the line for other surfaces', () => {
+    expect(whereYouLeftItLine('researching', 'medium')).toBe('Researching · Medium conviction')
     expect(whereYouLeftItLine(null, null)).toBeNull()
   })
 })
 
-describe('since then', () => {
-  it('renders each fact as its own chip, never joined into a narrative', () => {
-    // "+8.4% and 3 new research items" is two facts. "+8.4% on the back of
-    // new research" is a claim nobody verified. Chips make the join
-    // impossible to express.
+describe('what moved is the body', () => {
+  it('lists the facts in one line', () => {
     const c = card({
       facts: [fact(), fact({ kind: 'research_added', label: '3 new research items' })],
       totalFactCount: 2,
     })
-    const labels = c.context.map(x => x.label)
-    expect(labels).toContain('+8.4% price')
-    expect(labels).toContain('3 new research items')
+    expect(c.body).toBe('While it was parked: +8.4% price, 3 new research items.')
   })
 
   it('counts the overflow rather than dropping it silently', () => {
     const c = card({ facts: [fact()], totalFactCount: 4 })
-    expect(c.context.map(x => x.label)).toContain('+3 more')
+    expect(c.body).toContain('and 3 more.')
   })
 
-  it('shows no overflow chip when everything is shown', () => {
-    const c = card({ facts: [fact()], totalFactCount: 1 })
-    expect(c.context.map(x => x.label)).not.toContain('+0 more')
+  it('does not claim an overflow when everything is shown', () => {
+    expect(card({ facts: [fact()], totalFactCount: 1 }).body).not.toMatch(/more/)
   })
 
-  it('carries the portfolio as context', () => {
-    expect(card().context.map(x => x.label)).toContain('Core Growth')
+  it('joins with commas and never with a causal word', () => {
+    // "+8.4% and 3 new research items" is two facts; "+8.4% on the back of
+    // new research" is a claim nobody verified. The join must stay inert.
+    const c = card({
+      facts: [fact(), fact({ kind: 'research_added', label: '3 new research items' })],
+      totalFactCount: 2,
+    })
+    expect(c.body).not.toMatch(/because|after|on the back of|driven by|following/i)
   })
 })
 
@@ -132,13 +160,14 @@ describe('the empty case is still a useful card', () => {
   })
 
   it('still says where they left it', () => {
-    expect(c.body).toContain('Researching')
+    expect(c.context.map(x => x.label)).toContain('Researching')
   })
 
-  it('invents no activity to fill the space', () => {
-    const factLabels = c.context.map(x => x.label).filter(l => l !== 'Core Growth')
-    expect(factLabels).toEqual([])
-    expect(`${c.headline} ${c.body}`).not.toMatch(/no changes|nothing happened|no activity/i)
+  it('states the absence plainly rather than inventing activity', () => {
+    expect(c.body).toBe('Nothing has been recorded against it since.')
+    // "Nothing happened" would be a claim about the world. This is a claim
+    // about our records, which is the only one we can make.
+    expect(c.body).not.toMatch(/nothing happened|no news|quiet/i)
   })
 
   it('asks a different question when nothing moved', () => {
@@ -160,9 +189,9 @@ describe('it must not read as a price alert', () => {
     expect(card({ daysOverdue: 1 }).metric?.label).toBe('Day since you asked')
   })
 
-  it('the price move stays a chip among the other facts', () => {
+  it('the price move stays one item among the other facts', () => {
     const c = card({ facts: [fact()], totalFactCount: 1 })
-    expect(c.context.map(x => x.label)).toContain('+8.4% price')
+    expect(c.body).toContain('+8.4% price')
   })
 
   it('sits on the workflow surface, not market', () => {
