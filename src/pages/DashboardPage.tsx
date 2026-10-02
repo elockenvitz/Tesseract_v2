@@ -1019,13 +1019,15 @@ export function DashboardPage() {
   // Listen for custom event to open Trade Queue (e.g., from toast action after creating trade idea)
   useEffect(() => {
     const handleOpenTradeQueue = (event: CustomEvent) => {
-      const { selectedTradeId, openDecisionDrawer } = event.detail || {}
+      // `openIdeaDetail` carries this so the phone can honour the half of
+      // its promise that `openTradeIdeaModal` delivers on desktop.
+      const { selectedTradeId, openDecisionDrawer, openIdeaDetail } = event.detail || {}
 
       navigateRef.current({
         id: 'trade-queue',
         title: 'Idea Pipeline',
         type: 'trade-queue',
-        data: { selectedTradeId, openDecisionDrawer }
+        data: { selectedTradeId, openDecisionDrawer, openIdeaDetail }
       })
     }
 
@@ -1141,6 +1143,16 @@ export function DashboardPage() {
         return isMobile ? (
           <MobilePipeline
             focusIdeaId={activeTab.data?.focusIdeaId ?? activeTab.data?.selectedTradeId ?? null}
+            /*
+             * Open the detail, not just scroll to it, when the hand-off came
+             * from "Resume work".
+             *
+             * `openIdeaDetail` also dispatches `openTradeIdeaModal`, which
+             * only `TradeQueuePage` listens for — and a phone renders this
+             * instead, so that half of the promise never arrived. The flag
+             * carries the intent the second event was carrying on desktop.
+             */
+            openDetailOnFocus={activeTab.data?.openIdeaDetail === true}
             onFocusConsumed={() => setTabs(prev => prev.map(t => {
               if (t.type !== 'trade-queue') return t
               if (!t.data?.focusIdeaId && !t.data?.selectedTradeId) return t

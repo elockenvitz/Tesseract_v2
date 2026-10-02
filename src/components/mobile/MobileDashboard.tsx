@@ -27,6 +27,9 @@ import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { useReadyToRevisit } from '../../hooks/useReadyToRevisit'
 import { buildReadyToRevisitCard } from '../../lib/signals/builders/readyToRevisit'
 import { isEligible, factsForTile, factKeyFor } from '../../lib/memory/ready-to-revisit'
+// The contract type this family declares. One constant, shared with desktop
+// and with the feed-priority table — never a second copy.
+const READY_TO_REVISIT_TYPE = 'ready_to_revisit' as const
 import { renderableFacts } from '../../lib/memory/what-changed'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
@@ -2615,15 +2618,30 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         ideaCardType(e.idea?.type))
 
       default:
-        // `signal` entries are already contract cards.
+        /*
+         * `signal` entries are already contract cards.
+         *
+         * An entry that DECLARES its own `signalType` is honoured first.
+         * Without that, a kind with no case of its own fell through to
+         * `'news'` — the lowest tier — and a parked-work tile ranked as
+         * news on a phone while `feed-priority` already defined
+         * `ready_to_revisit: { tier: 3, base: 0.62 }` that desktop was
+         * using. Deferring to the declared type is how `categoryOf`
+         * already resolves (see `feed-categories`), so the two now agree
+         * instead of disagreeing silently.
+         *
+         * `id` follows the same rule: every revisit entry previously
+         * collapsed to the literal string `'revisit'`, so nothing keyed on
+         * id could tell two parked ideas apart.
+         */
         return withJudgment({
-          id: String(e.signal?.id ?? e.kind),
-          type: (e.signal?.type ?? 'news') as SignalType,
-          severity: e.signal?.severity ?? 'informational',
-          occurredAt: e.signal?.provenance?.occurredAt ?? null,
+          id: String(e.signal?.id ?? e.entryId ?? e.kind),
+          type: (e.signal?.type ?? e.signalType ?? 'news') as SignalType,
+          severity: e.signal?.severity ?? e.severity ?? 'informational',
+          occurredAt: e.signal?.provenance?.occurredAt ?? e.occurredAt ?? null,
           weightPct: null,
           held: false,
-        }, e.signal?.entity?.id)
+        }, e.signal?.entity?.id ?? e.entityId)
     }
     /**
      * `lenses?.book` and `exposureFor` belong here, and their absence was a
@@ -2881,16 +2899,32 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * Nothing about parked work is re-derived here; only the entry shape is
      * mobile's.
      *
-     * Scored above the ordinary signal families for the same reason the
-     * desktop ranker lifts it: the reader asked for this one and nobody
-     * asked for the others. Bounded, not absolute — it shares the pool with
-     * everything else and the interleaver still decides placement.
+     * Ranked by DECLARING its contract type, not by a local score.
+     *
+     * An earlier version set `score: 100 - idx` and claimed it lifted the
+     * family. Nothing read it: `rankFeed` is driven by `rankInputFor`,
+     * which had no case for this kind and fell through to `'news'` — the
+     * lowest tier — while `feed-priority` already defined
+     * `ready_to_revisit: { tier: 3, base: 0.62 }` that desktop was using.
+     * The dead score is gone and the entry declares `signalType` instead,
+     * so mobile and desktop rank from the one table.
+     *
+     * `signalType` also resolves the CATEGORY: `categoryOf` defers to
+     * `content-registry`, which already registers `ready_to_revisit` as
+     * `workflow`. Without it the category was null and any category pill
+     * silently removed the card.
      */
     const revisitEntries = revisit.candidates
-      .filter(c => isEligible(c, undefined))
-      .map((c, idx) => ({
+      .filter(c => isEligible(c))
+      .map(c => ({
         kind: 'revisit' as const,
-        score: 100 - idx,
+        signalType: READY_TO_REVISIT_TYPE,
+        // Distinct per candidate. Every revisit entry previously collapsed
+        // to the literal id `'revisit'`, so nothing keyed on id — tiebreaks,
+        // the baseline list — could tell two parked ideas apart.
+        entryId: `ready-to-revisit:${c.obligationId}`,
+        entityId: c.assetId ?? undefined,
+        occurredAt: c.parkedAt,
         candidate: c,
         subject: c.symbol ?? undefined,
       }))

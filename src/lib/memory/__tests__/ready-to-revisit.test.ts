@@ -70,12 +70,10 @@ const fact = (over: Partial<ChangeFact> = {}): ChangeFact => ({
 const produce = (
   candidates: RevisitCandidate[],
   facts: Record<string, ChangeFact[]> = {},
-  dismissedIds?: Set<string>,
 ) =>
   readyToRevisitCandidates({
     candidates,
     factsBySubject: new Map(Object.entries(facts)),
-    dismissedIds,
     now: NOW,
   })
 
@@ -103,14 +101,21 @@ describe('eligibility', () => {
     expect(produce([candidate({ terminal: true })])).toHaveLength(0)
   })
 
-  it('a dismissed candidate does not, and loses no ranking slot', () => {
+  it('carries a stable id the surface can key a dismissal on', () => {
     const c = candidate()
-    expect(produce([c], {}, new Set([candidateId(c)]))).toHaveLength(0)
+    // Dismissal is the SURFACE's job, not the producer's — mobile records
+    // it through `recordTriage` into `dispositions` and `rankFeed`
+    // suppresses on it. The producer-level `dismissedIds` set that used to
+    // live here was passed `undefined` by every call site: a parameter that
+    // existed, was documented, and did nothing. Removed rather than wired,
+    // because a second dismissal store would be a parallel truth about one
+    // act.
+    expect(candidateId(c)).toBe(`ready-to-revisit-${c.obligationId}`)
   })
 
   it('isEligible is the single gate', () => {
-    expect(isEligible(candidate(), undefined)).toBe(true)
-    expect(isEligible(candidate({ terminal: true }), undefined)).toBe(false)
+    expect(isEligible(candidate())).toBe(true)
+    expect(isEligible(candidate({ terminal: true }))).toBe(false)
   })
 })
 

@@ -64,7 +64,7 @@ export function useReadyToRevisit(opts?: { enabled?: boolean }): ReadyToRevisitD
       // Facts are fetched only for candidates that will actually be shown.
       // Computing them for a terminal or unreadable subject is work whose
       // result is discarded, and it would widen the price query for nothing.
-      const eligible = candidates.filter(c => isEligible(c, undefined))
+      const eligible = candidates.filter(c => isEligible(c))
       if (eligible.length === 0) return { candidates, factsBySubject: new Map() }
 
       // Keyed by the IDEA, not the obligation's subject: a deferred

@@ -44,8 +44,19 @@ describe('openIdeaDetail', () => {
     cap.stop()
 
     expect(cap.seen.map(e => e.type)).toEqual([OPEN_IDEA_EVENTS.tab, OPEN_IDEA_EVENTS.modal])
-    expect(cap.seen[0].detail).toEqual({ selectedTradeId: IDEA_ID })
+    // The tab event carries the intent as well as the id. The modal event
+    // is heard only by TradeQueuePage, which a phone never mounts, so the
+    // flag is what lets MobilePipeline honour the same promise.
+    expect(cap.seen[0].detail).toEqual({ selectedTradeId: IDEA_ID, openIdeaDetail: true })
     expect(cap.seen[1].detail).toEqual({ tradeId: IDEA_ID })
+  })
+
+  it('carries the open-detail intent on the event BOTH shells hear', () => {
+    const cap = captureEvents()
+    openIdeaDetail(IDEA_ID)
+    vi.runAllTimers()
+    cap.stop()
+    expect((cap.seen[0].detail as { openIdeaDetail?: boolean }).openIdeaDetail).toBe(true)
   })
 
   it('defers the modal past the tab, so the listener exists to hear it', () => {

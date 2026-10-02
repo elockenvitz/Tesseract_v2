@@ -118,6 +118,24 @@ function isPrompt(item: ScoredFeedItem): boolean {
  */
 function inLens(entry: AttentionEntry, lens: IdeaLens): boolean {
   if (lens === 'all') return true
+  /*
+   * `ready_to_revisit` appears under `all` and under no other lens, and
+   * that is a decision rather than a side effect.
+   *
+   * Every other lens — prompts, thoughts, trade ideas — selects a POST TYPE,
+   * and the line below drops anything that is not a post. Parked work has
+   * no post behind it (`item` is null; it comes from an obligation), so it
+   * was being excluded by accident, through a clause written about
+   * something else.
+   *
+   * Left excluded, deliberately: a reader who has narrowed to "prompts" is
+   * asking for a kind of post, and answering with a reminder about an idea
+   * would be ignoring the question. `all` is the lens that means "whatever
+   * needs me", which is exactly what this family is.
+   *
+   * Stated here so the next person reads a decision instead of inferring
+   * one from a `!== 'post'`.
+   */
   if (entry.family !== 'post' || !entry.item) return false
   const item = entry.item
   if (lens === 'prompts') return item.type === 'quick_thought' && isPrompt(item)
@@ -176,7 +194,7 @@ export function useDesktopAttentionFeed(
      * meant to be shown.
      */
     for (const c of revisit.candidates) {
-      if (!isEligible(c, undefined)) continue
+      if (!isEligible(c)) continue
       add(
         buildReadyToRevisitCard({
           obligationId: c.obligationId,

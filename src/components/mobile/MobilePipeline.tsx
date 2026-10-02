@@ -17,6 +17,7 @@ import {
   rowSearchText,
   COMMITTED_PIPELINE_STATUSES,
   ARCHIVED_PIPELINE_STATUSES,
+  isRowParked,
   type PipelineRow,
 } from '../../lib/mobile/pipeline-rows'
 import type { ResearchStage } from '../../types/trading'
@@ -63,11 +64,23 @@ export interface MobilePipelineProps {
   /** The idea to bring into view on arrival — the same payload the desktop
    *  board takes, so a hand-off means the same thing on both. */
   focusIdeaId?: string | null
+  /**
+   * Open the idea's detail on arrival, not merely scroll to it.
+   *
+   * Eleven producers hand this surface an idea just to put it in view, and
+   * for them a scroll-and-flash is the right amount. One does not: the
+   * parked-work card's "Resume work" promises the WORK, and landing on a
+   * highlighted row in a list is a different promise.
+   *
+   * Opt-in rather than a change to `focusIdeaId`'s meaning, so the other
+   * ten callers are untouched.
+   */
+  openDetailOnFocus?: boolean
   /** Called once it has actually been applied, so the shell can drop it. */
   onFocusConsumed?: () => void
 }
 
-export function MobilePipeline({ focusIdeaId, onFocusConsumed }: MobilePipelineProps = {}) {
+export function MobilePipeline({ focusIdeaId, onFocusConsumed, openDetailOnFocus }: MobilePipelineProps = {}) {
   // Permission checks moved with the stage controls: `TradeIdeaDetailModal`
   // decides who may move an idea, using the same `isCreatorOrCoAnalyst` rule
   // the board uses. The pipeline no longer needs the current user.
@@ -135,16 +148,35 @@ export function MobilePipeline({ focusIdeaId, onFocusConsumed }: MobilePipelineP
     return rows.filter(row => rowSearchText(row).includes(q))
   }, [rows, search])
 
+  /*
+   * Parked work is hidden from the stage columns, and from here only.
+   *
+   * The snooze dialog promises it hides the idea "from your pipeline, feed
+   * and attention list". Desktop honoured that in `TradeQueuePage`'s own
+   * `filteredItems`; this surface reads the same `usePipelineItems` and
+   * applied nothing, so the sentence was false on a phone — the exact class
+   * of defect the whole slice exists to remove.
+   *
+   * Applied HERE rather than in `usePipelineItems`, because that hook also
+   * feeds the desktop Snoozed tab, which exists precisely to list these.
+   * Suppressing at the shared read would make parked work unrecoverable.
+   *
+   * Search is deliberately exempt: `visible` is already filtered by the
+   * query above, so a reader who types a symbol still finds their own
+   * parked idea. A snooze you cannot search your way out of is a delete.
+   */
+  const searching = search.trim().length > 0
   const byStage = useMemo(() => {
     const map = new Map<ResearchStage, PipelineRow[]>(RESEARCH_STAGES.map(s => [s, []]))
     for (const row of visible) {
       if (COMMITTED_PIPELINE_STATUSES.includes(row.status)) continue
       if (ARCHIVED_PIPELINE_STATUSES.includes(row.status)) continue
+      if (!searching && isRowParked(row)) continue
       const s = row.stage as ResearchStage
       if (map.has(s)) map.get(s)!.push(row)
     }
     return map
-  }, [visible])
+  }, [visible, searching])
 
   /*
    * Bring the arriving idea into view.
@@ -173,6 +205,18 @@ export function MobilePipeline({ focusIdeaId, onFocusConsumed }: MobilePipelineP
     else if (ARCHIVED_PIPELINE_STATUSES.includes(match.status)) setView('archived')
     else { setView('pipeline'); setStage(match.stage as ResearchStage) }
 
+    /*
+     * Open the detail, for the caller that asked to resume rather than to
+     * look.
+     *
+     * The same `setDetail` an ordinary tap uses (see `onIdeaClick` below) —
+     * the shared `TradeIdeaDetailModal`, not a second implementation and not
+     * a route parameter nothing reads. `openIdeaDetail`'s second event,
+     * `openTradeIdeaModal`, is listened for ONLY by `TradeQueuePage`, which
+     * a phone never mounts; this is the mobile half of that promise.
+     */
+    if (openDetailOnFocus) setDetail(match)
+
     const timeout = setTimeout(() => {
       const el = document.querySelector<HTMLElement>(`[data-pipeline-row-id="${match.id}"]`)
       if (el) {
@@ -186,7 +230,7 @@ export function MobilePipeline({ focusIdeaId, onFocusConsumed }: MobilePipelineP
     }, 80)
     return () => clearTimeout(timeout)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusIdeaId, rows])
+  }, [focusIdeaId, rows, openDetailOnFocus])
 
   const committedRows = useMemo(
     () => visible.filter(r => COMMITTED_PIPELINE_STATUSES.includes(r.status)),

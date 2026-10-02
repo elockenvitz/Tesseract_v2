@@ -31,6 +31,18 @@ const SAMPLE_ENTRIES: Record<string, Record<string, unknown>> = {
   idea: { idea: { type: 'quick_thought', content: 'a post', asset: { symbol: 'MSFT' } } },
   lens: { lens: { type: 'conviction', gap: { symbol: 'MSFT', portfolioName: 'Core', cohort: [1, 2, 3] } } },
   attention: { attention: { title: 'Trim MSFT', symbol: 'MSFT', description: 'x' } },
+  // Parked work. The guard above demanded this the moment `revisit` joined
+  // PRODUCTION_ENTRY_KINDS — which is exactly what it is for, and exactly
+  // what it could not do while the kind was missing from both lists.
+  revisit: {
+    candidate: {
+      symbol: 'NVDA',
+      waitingFor: 'Q3 earnings',
+      stage: 'researching',
+      conviction: 'medium',
+      portfolioName: 'Core Equity',
+    },
+  },
 }
 
 /** The compositions a reader can actually engage, including every lens shape. */

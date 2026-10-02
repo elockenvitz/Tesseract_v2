@@ -1,4 +1,5 @@
 import { toIdeaStage, missingForStage as stageGate } from '../ideas/stage-model'
+import { isParked } from '../memory/obligations'
 
 /**
  * A pipeline row: either a single idea or a pair trade carrying its legs.
@@ -18,6 +19,26 @@ export type PipelineRow =
 /** Terminal statuses, split the way the desktop board's fourth column splits them. */
 export const COMMITTED_PIPELINE_STATUSES: string[] = ['approved', 'executed']
 export const ARCHIVED_PIPELINE_STATUSES: string[] = ['rejected', 'cancelled', 'archived']
+
+/**
+ * Has the reader parked this row until a future date?
+ *
+ * One definition for both shapes, because a pair has no `revisit_at` of its
+ * own — its legs carry one each. A pair counts as parked only when EVERY
+ * leg is, so snoozing one side of a pair cannot make the other side
+ * disappear from the board.
+ *
+ * Reads `isParked`, the same predicate the desktop board, the ideas feed,
+ * the attention collector and the desktop ideas scan all use. A second
+ * definition here is how "snoozed" would come to mean two things.
+ */
+export function isRowParked(row: PipelineRow, now: Date = new Date()): boolean {
+  if (row.kind === 'pair') {
+    const legs = row.legs ?? []
+    return legs.length > 0 && legs.every(l => isParked(l?.revisit_at, now))
+  }
+  return isParked(row.item?.revisit_at, now)
+}
 
 /**
  * Collapse a flat trade_queue_items list into rows, grouping pair legs.

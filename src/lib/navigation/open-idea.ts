@@ -39,7 +39,23 @@ export function openIdeaDetail(tradeQueueItemId: string): void {
   if (!tradeQueueItemId) return
   try {
     window.dispatchEvent(
-      new CustomEvent('openTradeQueue', { detail: { selectedTradeId: tradeQueueItemId } }),
+      new CustomEvent('openTradeQueue', {
+        detail: {
+          selectedTradeId: tradeQueueItemId,
+          /*
+           * The intent, carried in the FIRST event.
+           *
+           * The second event below is heard only by `TradeQueuePage`, which
+           * a phone never mounts — `DashboardPage` renders `MobilePipeline`
+           * for that tab. So on mobile the modal half of this never
+           * arrived, and "Resume work" landed on a highlighted row in a
+           * list. This flag reaches the shell through the event that IS
+           * heard on both, and `MobilePipeline` opens the shared detail
+           * with it.
+           */
+          openIdeaDetail: true,
+        },
+      }),
     )
     const pop = () =>
       window.dispatchEvent(

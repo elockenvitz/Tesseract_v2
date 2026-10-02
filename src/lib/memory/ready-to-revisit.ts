@@ -42,8 +42,6 @@ export interface ReadyToRevisitInput {
   candidates: RevisitCandidate[]
   /** Facts by `tradeQueueItemId`, from `fetchChangeFacts`. */
   factsBySubject: Map<string, ChangeFact[]>
-  /** Candidate ids the reader has personally dismissed. */
-  dismissedIds?: ReadonlySet<string>
   now: Date
 }
 
@@ -59,21 +57,28 @@ export interface ReadyToRevisitInput {
  *                      obligation stays open — only a real action clears
  *                      it and nobody performed one — but there is nothing
  *                      to resume.
- *   dismissed          the reader already said not this. Honoured here
- *                      rather than at render, so a dismissed candidate does
- *                      not occupy a ranking slot.
  *
  * Cleared obligations never reach this function: `fetchObligations` filters
  * on `cleared_at is null`, which is why there is no clause for it.
+ *
+ * ── Dismissal is NOT handled here ────────────────────────────────────────
+ *
+ * This took a `dismissedIds` set that both call sites passed as `undefined`
+ * — a parameter that existed, was documented, and did nothing. Removed
+ * rather than wired, because the product already has a canonical dismissal
+ * mechanism and it belongs to the SURFACE, not to the producer: mobile
+ * records a dismissal through `recordTriage` into `dispositions`, and
+ * `rankFeed` suppresses on it by (type, entity). Adding a second,
+ * producer-level set would have been a parallel truth about the same act.
+ *
+ * Desktop has no dismissal plumbing for machine families at all. That is a
+ * real V1 limitation, stated rather than papered over with a parameter that
+ * looks like support.
  */
-export function isEligible(
-  c: RevisitCandidate,
-  dismissedIds: ReadonlySet<string> | undefined,
-): boolean {
+export function isEligible(c: RevisitCandidate): boolean {
   if (c.dueState !== 'due') return false
   if (!c.resolved) return false
   if (c.terminal) return false
-  if (dismissedIds?.has(candidateId(c))) return false
   return true
 }
 
@@ -148,7 +153,7 @@ export function readyToRevisitCandidates(input: ReadyToRevisitInput): FeedCandid
   const out: FeedCandidate[] = []
 
   for (const c of input.candidates) {
-    if (!isEligible(c, input.dismissedIds)) continue
+    if (!isEligible(c)) continue
 
     // Keyed by the idea. For a deferred recommendation the subject is the
     // decision request, and the facts were gathered against the idea
