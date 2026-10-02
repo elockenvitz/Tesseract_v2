@@ -103,9 +103,25 @@ describe('the phone board brings the card into view', () => {
 
   /* One stage at a time, so "into view" also means switching to the stage the
      card is in -- otherwise the scroll looks for a card not being drawn. */
-  it('switches to the stage the card is actually in', () => {
+  /**
+   * The focus effect's body, sliced without pinning its dependency array.
+   *
+   * This used `indexOf('}, [focusIdeaId, rows])')`, and adding one
+   * dependency made that literal miss — `indexOf` returned -1, `slice(0,
+   * -1)` handed back nearly the whole file, and the `setSearch` assertion
+   * below failed against an unrelated line. The property it guards never
+   * changed. Matched on the deps array's SHAPE so the next dependency does
+   * not break it again.
+   */
+  const focusEffectBody = () => {
     const effect = page.slice(page.indexOf('const focusAppliedRef'))
-    const body = effect.slice(0, effect.indexOf('}, [focusIdeaId, rows])'))
+    const end = effect.search(/\}, \[focusIdeaId[^\]]*\]\)/)
+    expect(end, 'focus effect deps array not found').toBeGreaterThan(-1)
+    return effect.slice(0, end)
+  }
+
+  it('switches to the stage the card is actually in', () => {
+    const body = focusEffectBody()
     expect(body).toContain('setStage(match.stage as ResearchStage)')
     expect(body).toContain("setView('committed')")
     expect(body).toContain("setView('archived')")
@@ -113,9 +129,17 @@ describe('the phone board brings the card into view', () => {
 
   /* Searching would hide every other card. That is a filter, not a focus. */
   it('does not filter the board to find it', () => {
-    const effect = page.slice(page.indexOf('const focusAppliedRef'))
-    const body = effect.slice(0, effect.indexOf('}, [focusIdeaId, rows])'))
-    expect(body).not.toContain('setSearch')
+    expect(focusEffectBody()).not.toContain('setSearch')
+  })
+
+  /**
+   * Opening the detail is opt-in, so the ten producers that only want the
+   * card in view are unaffected.
+   */
+  it('opens the detail only when the hand-off asked for it', () => {
+    const body = focusEffectBody()
+    expect(body).toContain('if (openDetailOnFocus) setDetail(match)')
+    expect(page).toContain('openDetailOnFocus?: boolean')
   })
 
   it('finds a pair row by either leg', () => {
