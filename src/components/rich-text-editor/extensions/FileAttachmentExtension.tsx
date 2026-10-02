@@ -9,7 +9,8 @@ import {
 import { clsx } from 'clsx'
 import { supabase } from '../../../lib/supabase'
 import { useOrganizationOptional } from '../../../contexts/OrganizationContext'
-import { assetsPath } from '../../../lib/storage/asset-paths'
+import { assetsPath, ASSETS_BUCKET } from '../../../lib/storage/asset-paths'
+import { useSignedUrl } from '../../../lib/storage/signed-url'
 // XLSX is lazy loaded to reduce bundle size
 
 // Debounce helper
@@ -79,13 +80,34 @@ interface SheetData {
   columns: string[]
 }
 
-function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: string; width: number; height: number; onSizeChange: (w: number, h: number) => void }) {
+/**
+ * A spreadsheet preview, loaded once per OBJECT.
+ *
+ * `objectPath` is the identity; `fileUrl` is only the credential used to
+ * fetch. The load effect depends on the path, and a `loadedPathRef` guard
+ * means a URL rotation — which happens every fifty minutes, and on any
+ * cache refresh — cannot trigger a second download and re-parse of a
+ * workbook already in state. Previously the effect's only dependency was
+ * `fileUrl`, so every rotation re-downloaded the entire file.
+ */
+function ExcelPreview({ fileUrl, objectPath, width, height, onSizeChange }: { fileUrl: string; objectPath: string | null; width: number; height: number; onSizeChange: (w: number, h: number) => void }) {
   const [sheets, setSheets] = useState<SheetData[]>([])
   const [activeSheet, setActiveSheet] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const loadedPathRef = useRef<string | null>(null)
+  // Read the URL without depending on it, so a rotation does not re-run.
+  const fileUrlRef = useRef(fileUrl)
+  fileUrlRef.current = fileUrl
 
   useEffect(() => {
+    // Identity, not credential. A legacy node with no path falls back to the
+    // URL so it still loads exactly once.
+    const identity = objectPath ?? fileUrlRef.current
+    if (!identity) return
+    if (loadedPathRef.current === identity) return
+    loadedPathRef.current = identity
+
     const loadExcel = async () => {
       try {
         setLoading(true)
@@ -94,7 +116,7 @@ function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: strin
         // Lazy load xlsx library
         const XLSX = await import('xlsx')
 
-        const response = await fetch(fileUrl)
+        const response = await fetch(fileUrlRef.current)
         if (!response.ok) throw new Error('Failed to fetch file')
 
         const arrayBuffer = await response.arrayBuffer()
@@ -128,7 +150,8 @@ function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: strin
     }
 
     loadExcel()
-  }, [fileUrl])
+    // Deliberately the object identity, NOT `fileUrl`. See the header.
+  }, [objectPath])
 
   if (loading) {
     return (
@@ -534,43 +557,15 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
   // unauthenticated link to the file would have been sitting in the note
   // body forever. Signed URLs cannot be persisted — they expire — which is
   // exactly why deriving one at render from `filePath` is the correct shape.
-  const [signedUrl, setSignedUrl] = useState<string | null>(null)
+  //
+  // The signing itself was a per-node `setTimeout(sign, 50 * 60 * 1000)` with
+  // no shared cache, so every attachment node ran its own timer and every
+  // remount re-signed. A re-sign changes the URL, and the preview below
+  // keyed its byte fetch on that URL — so rotating the credential
+  // re-downloaded and re-parsed the whole file. The shared cache keeps the
+  // same refresh-near-expiry behaviour without either problem.
   const filePath: string | null = node.attrs.filePath ?? null
-
-  useEffect(() => {
-    if (!filePath) {
-      setSignedUrl(null)
-      return
-    }
-
-    let cancelled = false
-    let refreshTimer: ReturnType<typeof setTimeout>
-
-    const sign = async () => {
-      const { data, error: signError } = await supabase.storage
-        .from('assets')
-        .createSignedUrl(filePath, 3600)
-
-      if (cancelled) return
-
-      if (signError || !data?.signedUrl) {
-        setSignedUrl(null)
-        return
-      }
-
-      setSignedUrl(data.signedUrl)
-      // Refresh before the hour is up so a long editing session doesn't
-      // leave a stale link behind a preview iframe.
-      refreshTimer = setTimeout(sign, 50 * 60 * 1000)
-    }
-
-    sign()
-
-    return () => {
-      cancelled = true
-      clearTimeout(refreshTimer)
-    }
-  }, [filePath])
+  const { url: signedUrl } = useSignedUrl(ASSETS_BUCKET, filePath)
 
   // Legacy notes stored a (broken) public URL and no filePath. Fall back to it
   // so those nodes keep whatever behaviour they had rather than losing the
@@ -1021,6 +1016,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
             {category === 'spreadsheet' && (
               <ExcelPreview
                 fileUrl={fileUrl ?? ''}
+                objectPath={filePath}
                 width={localWidth}
                 height={localHeight}
                 onSizeChange={handlePreviewSizeChange}

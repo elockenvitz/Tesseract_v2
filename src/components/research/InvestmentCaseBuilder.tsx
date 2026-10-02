@@ -1,5 +1,7 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import { clsx } from 'clsx'
+import { useObjectDataUrl } from '../../lib/storage/signed-url'
+import { ORG_LOGO_BUCKET } from '../../lib/storage/buckets'
 import {
   FileText,
   Download,
@@ -112,12 +114,11 @@ export function InvestmentCaseBuilder({
   const { contributions } = useContributions({ assetId })
   const { ratings } = useAnalystRatings({ assetId })
   const { priceTargets } = useAnalystPriceTargets({ assetId, userId: user?.id })
-  const { recordUsage, getLogoUrl, defaultTemplate } = useInvestmentCaseTemplates()
+  const { recordUsage, defaultTemplate } = useInvestmentCaseTemplates()
 
   // Template
   const [selectedTemplate, setSelectedTemplate] = useState<InvestmentCaseTemplate | null>(null)
   const [showTemplateEditor, setShowTemplateEditor] = useState(false)
-  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null)
 
   // Snapshot
   const [asOfDate, setAsOfDate] = useState(() => {
@@ -140,25 +141,25 @@ export function InvestmentCaseBuilder({
   const [hideCoverPage, setHideCoverPage] = useState(false)
   const [excludeHeaderFooter, setExcludeHeaderFooter] = useState(false)
 
-  // Load logo when template changes
-  useEffect(() => {
-    if (selectedTemplate?.branding_config.logoPath) {
-      getLogoUrl(selectedTemplate.branding_config.logoPath).then(url => {
-        if (url) {
-          fetch(url)
-            .then(r => r.blob())
-            .then(blob => {
-              const reader = new FileReader()
-              reader.onloadend = () => setLogoDataUrl(reader.result as string)
-              reader.readAsDataURL(blob)
-            })
-            .catch(() => setLogoDataUrl(null))
-        }
-      }).catch(() => setLogoDataUrl(null))
-    } else {
-      setLogoDataUrl(null)
-    }
-  }, [selectedTemplate?.branding_config.logoPath, getLogoUrl])
+  /*
+   * The logo, as base64, because jsPDF's `addImage` cannot take a URL.
+   *
+   * This was an effect depending on `[logoPath, getLogoUrl]`, and
+   * `getLogoUrl` was a plain arrow re-created on every render of
+   * `useInvestmentCaseTemplates`. So the effect re-ran on EVERY render of
+   * this modal — and the modal re-renders on every checkbox and section
+   * toggle in it. Each run signed a new URL, fetched the full 1.44 MB image,
+   * and ran a `FileReader` over it. Configuring one export re-downloaded the
+   * logo once per interaction.
+   *
+   * Keyed on the storage path now, so the bytes are fetched once and reused
+   * across renders, across modal opens, and across templates that share a
+   * logo.
+   */
+  const logoDataUrl = useObjectDataUrl(
+    ORG_LOGO_BUCKET,
+    selectedTemplate?.branding_config.logoPath ?? null,
+  )
 
   // Build section configurations from user's layout (only visible fields)
   const [sectionConfigs, setSectionConfigs] = useState<SectionConfig[]>(() =>

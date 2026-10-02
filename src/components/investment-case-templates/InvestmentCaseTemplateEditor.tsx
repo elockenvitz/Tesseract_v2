@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { clsx } from 'clsx'
+import { useSignedUrl } from '../../lib/storage/signed-url'
+import { ORG_LOGO_BUCKET } from '../../lib/storage/buckets'
 import {
   X,
   Save,
@@ -109,24 +111,33 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
       if (error && error.code !== 'PGRST116') throw error
       const branding = data?.settings?.branding || {}
 
-      // Generate a signed URL for the logo if a storage path exists
-      let logoSignedUrl: string | null = null
-      if (data?.logo_url) {
-        const { data: signedData } = await supabase.storage
-          .from('template-branding')
-          .createSignedUrl(data.logo_url, 3600)
-        logoSignedUrl = signedData?.signedUrl || null
-      }
-
+      /*
+       * Returns the logo PATH, never a signed URL.
+       *
+       * This query used to sign inline, and it declares no `staleTime` or
+       * `gcTime` of its own — so it inherited the app's 5-minute default and
+       * re-signed the same 1.44 MB object on every mount of this editor,
+       * independently of the four other surfaces doing the same thing.
+       */
       return {
         firmName: branding.firm_name || '',
         tagline: branding.tagline || '',
         defaultDisclaimer: branding.default_disclaimer || '',
-        logoUrl: logoSignedUrl,
         logoPath: data?.logo_url || null,
       }
     },
   })
+
+  /*
+   * Resolved once per path, shared with every other surface showing this
+   * logo, and handed to the sub-editors as part of `orgBranding` so there is
+   * still exactly one signer for the object no matter how many of them render.
+   */
+  const { url: orgLogoUrl } = useSignedUrl(ORG_LOGO_BUCKET, orgBranding?.logoPath)
+  const orgBrandingResolved = useMemo(
+    () => (orgBranding ? { ...orgBranding, logoUrl: orgLogoUrl } : orgBranding),
+    [orgBranding, orgLogoUrl],
+  )
 
   const [activeTab, setActiveTab] = useState<EditorTab>('cover')
   const [name, setName] = useState(template?.name || '')
@@ -301,7 +312,10 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
     ? {
         ...brandingConfig,
         firmName: orgBranding.firmName || brandingConfig.firmName,
-        logoPath: orgBranding.logoPath || orgBranding.logoUrl || brandingConfig.logoPath,
+        // A path, never a URL. This read `|| orgBranding.logoUrl` as a second
+        // fallback, which would put an expiring signed URL into a field whose
+        // whole job is to be the object's stable identity.
+        logoPath: orgBranding.logoPath || brandingConfig.logoPath,
       }
     : brandingConfig
 
@@ -466,7 +480,7 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
                 tocConfig={tocConfig}
                 onTocChange={setTocConfig}
                 brandingConfig={brandingConfig}
-                orgBranding={orgBranding}
+                orgBranding={orgBrandingResolved}
               />
             )}
             {activeTab === 'style' && (
@@ -475,7 +489,7 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
                 onChange={setStyleConfig}
                 onHighlight={handleStyleHighlight}
                 sectionCount={sectionConfig.filter(s => s.enabled).length}
-                orgBranding={orgBranding}
+                orgBranding={orgBrandingResolved}
                 showMarginGuides={showMarginGuides}
                 onShowMarginGuides={setShowMarginGuides}
               />
@@ -488,7 +502,7 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
                 onLogoDelete={handleDeleteLogo}
                 isUploading={isUploadingLogo}
                 isCreateMode={isCreateMode}
-                orgBranding={orgBranding}
+                orgBranding={orgBrandingResolved}
                 coverConfig={coverConfig}
                 onCoverChange={setCoverConfig}
                 onHighlight={handleStyleHighlight}

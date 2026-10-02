@@ -15,6 +15,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useIsMobile } from '../hooks/useMediaQuery'
+import { fetchSignedUrl } from '../lib/storage/signed-url'
+import { ORG_LOGO_BUCKET } from '../lib/storage/buckets'
 import {
   Building2,
   Users,
@@ -1643,13 +1645,15 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         tagline: branding.tagline || '',
         default_disclaimer: branding.default_disclaimer || '',
       })
-      // Set logo preview from existing logo_url (bucket is private, use signed URL)
+      // Set logo preview from the existing logo_url, which is a storage PATH
+      // in a private bucket. Resolved through the shared cache so re-running
+      // this effect — `organization` is an object identity that changes on
+      // every refetch of its query — does not mint a second URL and make the
+      // browser re-download the image.
       if (organization.logo_url) {
-        supabase.storage.from('template-branding')
-          .createSignedUrl(organization.logo_url, 3600)
-          .then(({ data }) => {
-            if (data?.signedUrl) setBrandingLogoPreview(data.signedUrl)
-          })
+        fetchSignedUrl(queryClient, ORG_LOGO_BUCKET, organization.logo_url)
+          .then(url => { if (url) setBrandingLogoPreview(url) })
+          .catch(() => {})
       }
     }
   }, [organization])
@@ -4964,11 +4968,9 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                             })
                             setBrandingLogoFile(null)
                             if (organization?.logo_url) {
-                              supabase.storage.from('template-branding')
-                                .createSignedUrl(organization.logo_url, 3600)
-                                .then(({ data }) => {
-                                  if (data?.signedUrl) setBrandingLogoPreview(data.signedUrl)
-                                })
+                              fetchSignedUrl(queryClient, ORG_LOGO_BUCKET, organization.logo_url)
+                                .then(url => { if (url) setBrandingLogoPreview(url) })
+                                .catch(() => {})
                             } else {
                               setBrandingLogoPreview(null)
                             }
