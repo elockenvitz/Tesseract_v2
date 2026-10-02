@@ -17,13 +17,32 @@ import type { ReactNode } from 'react'
 
 const db = vi.hoisted(() => ({ rows: [] as unknown[], error: null as { message: string } | null }))
 
+/*
+ * The benchmark read is now two steps — newest `as_of_date`, then that file —
+ * so the double has to answer both. A single-shape mock would make the probe
+ * throw, and the hook would report "no benchmark" for every book regardless of
+ * what the table held, which is the very thing this file exists to catch.
+ */
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => {
+      let columns = ''
       const chain: Record<string, unknown> = {}
-      for (const op of ['select', 'eq', 'in']) chain[op] = () => chain
-      chain.then = (resolve: (v: unknown) => unknown) =>
-        Promise.resolve({ data: db.error ? null : db.rows, error: db.error }).then(resolve)
+      chain.select = (cols: string) => { columns = cols; return chain }
+      for (const op of ['eq', 'in', 'is', 'or', 'order', 'limit']) chain[op] = () => chain
+      chain.then = (resolve: (v: unknown) => unknown) => {
+        if (db.error) return Promise.resolve({ data: null, error: db.error }).then(resolve)
+        // The date probe: one row carrying the newest date, or none at all
+        // when the book has no file.
+        if (columns === 'as_of_date') {
+          const dates = (db.rows as Array<{ as_of_date?: string | null }>)
+            .map(r => r.as_of_date ?? null)
+            .sort((a, b) => String(b ?? '').localeCompare(String(a ?? '')))
+          const data = db.rows.length === 0 ? [] : [{ as_of_date: dates[0] ?? null }]
+          return Promise.resolve({ data, error: null }).then(resolve)
+        }
+        return Promise.resolve({ data: db.rows, error: null }).then(resolve)
+      }
       return chain
     },
   },

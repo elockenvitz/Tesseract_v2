@@ -4,7 +4,7 @@ import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { timeframeMonths } from '../../lib/signals/timeframe'
 import { statedAtOf } from '../../lib/signals/horizon-copy'
 import { isPriceable, targetIsPlausible } from '../../lib/signals/instruments'
-import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
+import { fetchLatestBenchmarkWeightsFor } from '../../lib/holdings/benchmark-latest-query'
 import { currentBook, type CurrentBook } from '../../lib/holdings/portfolio-context'
 
 /**
@@ -637,34 +637,42 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
        * a different direction.
        *
        * So: weights for the names in the lens only, which is bounded by
-       * `assetIds`. Whether a book has a file at all is a separate, cheap
-       * question — a HEAD count per portfolio — because that is the fact the
-       * zero depends on and it cannot be inferred from a filtered read.
+       * `assetIds`. Whether a book has a file at all is a separate question —
+       * it is the fact the zero depends on, and it cannot be inferred from a
+       * filtered read. The date probe answers it for free.
        *
-       * `as_of_date` is selected for the same reason the active-risk query
-       * selects it: `UNIQUE (portfolio_id, asset_id)` forbids a second row
-       * today, and the day that is relaxed an unfiltered read starts merging
-       * index files across dates.
+       * The table is a dated series, so the read must also be narrowed to each
+       * book's newest file. That happens server-side; see
+       * `lib/holdings/benchmark-latest-query`.
        */
       const heldPortfolios = Array.from(new Set(all.map(h => h.portfolio_id)))
-      const [{ data: benchRaw, error: benchErr }, fileCounts] = await Promise.all([
-        supabase
-          .from('portfolio_benchmark_weights')
-          .select('asset_id, weight, as_of_date, portfolio_id')
-          .in('portfolio_id', heldPortfolios)
-          .in('asset_id', assetIds),
-        Promise.all(heldPortfolios.map(async id => {
-          const { count } = await supabase
-            .from('portfolio_benchmark_weights')
-            .select('portfolio_id', { count: 'exact', head: true })
-            .eq('portfolio_id', id)
-          return [id, count ?? 0] as const
-        })),
-      ])
-      if (benchErr) console.warn('[lenses] benchmark weights failed', benchErr)
-      /** How many names each book's index file lists. Zero means no file. */
-      const benchFileSize = new Map<string, number>(fileCounts)
-      const bench = latestBenchmarkRows((benchRaw ?? []) as any[])
+      /*
+       * Each book's newest benchmark file, resolved per book.
+       *
+       * This was one unfiltered read across every portfolio — which on a dated
+       * series transfers every historical date — plus a second pass of one
+       * `count: 'exact'` per portfolio to learn whether a file existed at all.
+       *
+       * The date probe inside the helper answers both questions at once: a
+       * portfolio with no file gets `undefined`, which is exactly what the
+       * old count's zero meant. So this is the same number of round trips as
+       * before, with the 33x payload removed and the full count scans gone.
+       */
+      let bench: Array<Record<string, unknown>> = []
+      let benchDates = new Map<string, string | null | undefined>()
+      try {
+        const latest = await fetchLatestBenchmarkWeightsFor(
+          supabase as never,
+          heldPortfolios,
+          { assetIds },
+        )
+        bench = latest.rows
+        benchDates = latest.datesByPortfolio
+      } catch (benchErr) {
+        console.warn('[lenses] benchmark weights failed', benchErr)
+      }
+      /** Whether each book has an index file at all. */
+      const hasBenchFile = (portfolioId: string) => benchDates.get(portfolioId) !== undefined
       /** Weight by portfolio, then by asset — for the queried assets only. */
       const benchByPortfolio = new Map<string, Map<string, number>>()
       for (const b of bench as any[]) {
@@ -675,7 +683,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       const benchmarkFor = (portfolioId: string, assetId: string): number | null => {
         // No file for this book: "active" is undefined, not zero. Measured, 7
         // of the active portfolios in production have one and the rest do not.
-        if (!(benchFileSize.get(portfolioId) ?? 0)) return null
+        if (!hasBenchFile(portfolioId)) return null
         // The file exists and does not list this name, so the index does not
         // hold it — a genuine zero, and the whole position is active.
         return benchByPortfolio.get(portfolioId)?.get(assetId) ?? 0

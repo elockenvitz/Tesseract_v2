@@ -43,7 +43,7 @@ import {
   BookOpen,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { latestBenchmarkRows } from '../lib/holdings/latest-benchmark'
+import { fetchLatestBenchmarkWeights } from '../lib/holdings/benchmark-latest-query'
 /* The stored closes, so a failed live quote falls back to a real observed
    price rather than to the literal 100 this page used to invent. */
 import { fetchLatestCloses, LATEST_CLOSE_WINDOW_DAYS } from '../lib/market-data/latest-closes'
@@ -2185,15 +2185,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     queryKey: ['benchmark-weights', selectedPortfolioId],
     queryFn: async () => {
       if (!selectedPortfolioId) return {}
-      const { data, error } = await supabase
-        .from('portfolio_benchmark_weights')
-        // as_of_date carried so the newest file wins once the table holds
-        // more than one. See src/lib/holdings/latest-benchmark.ts.
-        .select('asset_id, weight, portfolio_id, as_of_date')
-        .eq('portfolio_id', selectedPortfolioId)
-      if (error) throw error
+      // Newest file only, filtered server-side. The table is a dated series,
+      // so selecting by portfolio alone transferred every historical date.
+      // See src/lib/holdings/benchmark-latest-query.ts.
+      const rows = await fetchLatestBenchmarkWeights(supabase as never, selectedPortfolioId)
       const map: Record<string, number> = {}
-      latestBenchmarkRows((data ?? []) as any[]).forEach((row: any) => { map[row.asset_id] = Number(row.weight) })
+      rows.forEach((row: any) => { map[row.asset_id] = Number(row.weight) })
       return map
     },
     enabled: !!selectedPortfolioId,
