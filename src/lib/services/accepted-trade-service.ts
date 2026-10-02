@@ -207,7 +207,10 @@ export async function createAcceptedTrade(
         tradeQueueItemId: input.trade_queue_item_id ?? null,
         proposalId: input.proposal_id ?? null,
         action: input.action,
-        provenance: `source:${input.source}`,
+        // The other grade of proof is 'attested:trader', written by
+        // updateExecutionStatus. Keeping them distinguishable is what stops
+        // the Spine implying it watched something a person asserted.
+        provenance: `observed:holdings-apply:${input.source}`,
       })
     }
   }
@@ -566,21 +569,28 @@ export async function revertAcceptedTrade(
     const source = (portfolio as any)?.holdings_source as 'live_feed' | 'manual_eod' | 'paper' | undefined
 
     /*
-     * Reverse only what was actually applied.
+     * Reverse only what this application actually applied.
      *
      * Reverting a decision and reversing a position are two different acts,
      * and this used to conflate them: any non-live_feed portfolio got a
      * reversal attempt regardless of whether the accept had moved shares.
-     * Once `execution_status` is only 'complete' when the holdings apply
-     * reported it moved shares (see finalizeTradeForHoldingsSource), it is
-     * the honest gate — reversing an accept that never applied would
-     * subtract a position the portfolio never gained.
+     *
+     * The gate is system-applied EVIDENCE, not `execution_status`. A status
+     * is a claim and can be set by hand — a trader can walk a trade to
+     * 'complete' through the execution dropdown without the app ever
+     * touching holdings, and on a priced-but-refused trade (one that has
+     * delta_shares but whose price the RPC rejected) reversing on status
+     * alone would subtract shares the portfolio never gained.
+     *
+     * Attested evidence is deliberately NOT enough either: that execution
+     * happened at the desk, so the app's holdings were never incremented by
+     * it and the next EOD upload is what carries it.
      *
      * An un-executed decision therefore reverts as a decision only: the row
      * is soft-deleted, the request goes back to pending, and holdings are
      * untouched because they were never touched.
      */
-    if (source && source !== 'live_feed' && (trade as any).execution_status === 'complete') {
+    if (source && source !== 'live_feed' && await hasSystemAppliedEvidence(id)) {
       await reverseTradeOnHoldings((trade as any).portfolio_id, trade as unknown as AcceptedTradeWithJoins)
     }
   } catch (e) {
@@ -1228,7 +1238,7 @@ async function emitPaperTradeEvent(
   const mvBefore = sharesBefore * priceUsed
   const mvAfter = sharesAfter * priceUsed
 
-  const { error } = await supabase.from('portfolio_trade_events').insert({
+  await insertExecutionEvent({
     portfolio_id: trade.portfolio_id,
     asset_id: trade.asset_id,
     source_type: 'holdings_diff',
@@ -1243,7 +1253,7 @@ async function emitPaperTradeEvent(
     linked_trade_idea_id: trade.trade_queue_item_id ?? null,
     linked_decision_id: trade.decision_request_id ?? null,
     metadata: {
-      origin: 'paper_execute',
+      origin: EXECUTION_ORIGIN.observed,
       accepted_trade_id: trade.id,
       batch_id: (trade as any).batch_id ?? null,
     },
@@ -1253,7 +1263,154 @@ async function emitPaperTradeEvent(
     status: 'complete',
     created_by: actorId,
   })
+}
+
+/**
+ * The one place an execution evidence row is written.
+ *
+ * Both grades of proof — observed and attested — go through here, so the
+ * canonical row has a single shape and a single writer.
+ */
+async function insertExecutionEvent(row: Record<string, unknown>): Promise<void> {
+  const { error } = await supabase.from('portfolio_trade_events').insert(row)
   if (error) throw error
+}
+
+// ---------------------------------------------------------------------------
+// Execution evidence
+// ---------------------------------------------------------------------------
+
+/*
+ * `portfolio_trade_events` is the canonical record that a trade executed.
+ * Two things can produce one, and they are not interchangeable:
+ *
+ *   OBSERVED  — the system applied the trade to holdings itself and watched
+ *               the position change. `source_type: 'holdings_diff'`,
+ *               `detected_by_system: true`.
+ *   ATTESTED  — a PM or trader states that the trade was executed away from
+ *               the app, on a manual_eod book where fills arrive by EOD
+ *               upload. `source_type: 'manual'`, `detected_by_system: false`.
+ *
+ * Both are evidence of execution. Only the first is evidence that THIS
+ * application moved the numbers, which is what reversal depends on — see
+ * `hasSystemAppliedEvidence`. The enum already carried both values
+ * ('holdings_diff' and 'manual'), so no schema change was needed to tell
+ * them apart.
+ */
+const EXECUTION_ORIGIN = {
+  observed: 'paper_execute',
+  attested: 'trader_attested',
+} as const
+
+/** Every execution evidence row recorded against a trade. */
+async function executionEvidenceFor(tradeId: string): Promise<Array<{ origin: string }>> {
+  const { data, error } = await supabase
+    .from('portfolio_trade_events')
+    .select('metadata')
+    .eq('metadata->>accepted_trade_id', tradeId)
+
+  if (error) {
+    // Treat an unreadable evidence table as "no proof". Callers use this to
+    // decide whether to mutate holdings; failing closed is the safe side.
+    console.warn('[AcceptedTrade] Could not read execution evidence', error)
+    return []
+  }
+  return ((data ?? []) as Array<{ metadata: { origin?: string } | null }>)
+    .map(r => ({ origin: r.metadata?.origin ?? '' }))
+}
+
+/**
+ * Did THIS application apply the trade to holdings?
+ *
+ * The gate for reversal. An attested execution happened at the desk, so the
+ * app's holdings were never incremented by it and must not be decremented
+ * on revert — the next EOD upload is what carries that reality. Reversing
+ * on attested evidence would subtract a position the app never added.
+ */
+async function hasSystemAppliedEvidence(tradeId: string): Promise<boolean> {
+  return (await executionEvidenceFor(tradeId)).some(e => e.origin === EXECUTION_ORIGIN.observed)
+}
+
+/**
+ * Record that a human states this trade was executed away from the app.
+ *
+ * Writes the same canonical row the observed path writes, with provenance
+ * that keeps the two distinguishable forever. Returns false when the trade
+ * cannot support the claim — an execution nobody can size is not evidence,
+ * and the observed path already declines to write a zero-delta row for the
+ * same reason.
+ *
+ * Idempotent: a trade that already carries evidence does not get a second
+ * row, so a retried or repeated completion cannot double-count.
+ */
+async function emitAttestedExecutionEvent(
+  trade: AcceptedTradeWithJoins,
+  actorId: string,
+): Promise<boolean> {
+  if ((await executionEvidenceFor(trade.id)).length > 0) {
+    // Already evidenced. Nothing to add, and the caller may proceed.
+    return true
+  }
+
+  // What the trader is attesting moved. Read the current position so the
+  // row states before/after rather than a bare delta.
+  const { data: holding } = await supabase
+    .from('portfolio_holdings')
+    .select('shares')
+    .eq('portfolio_id', trade.portfolio_id)
+    .eq('asset_id', trade.asset_id)
+    .order('date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const sharesBefore = Number((holding as { shares?: number } | null)?.shares ?? 0)
+  const delta = trade.delta_shares != null
+    ? Number(trade.delta_shares)
+    : trade.target_shares != null
+      ? Number(trade.target_shares) - sharesBefore
+      : null
+
+  if (delta == null || delta === 0) return false
+
+  const sharesAfter = sharesBefore + delta
+  const action = trade.action as TradeAction
+  let actionType: 'initiate' | 'add' | 'trim' | 'exit'
+  if (action === 'sell' || action === 'trim') {
+    actionType = sharesAfter <= 0 ? 'exit' : 'trim'
+  } else if (action === 'buy') {
+    actionType = sharesBefore <= 0 ? 'initiate' : 'add'
+  } else {
+    actionType = 'add'
+  }
+
+  const price = trade.price_at_acceptance != null ? Number(trade.price_at_acceptance) : null
+
+  await insertExecutionEvent({
+    portfolio_id: trade.portfolio_id,
+    asset_id: trade.asset_id,
+    // 'manual' and detected_by_system:false are the standing way this table
+    // says "a person entered this, the system did not see it happen".
+    source_type: 'manual',
+    action_type: actionType,
+    event_date: new Date().toISOString().split('T')[0],
+    quantity_before: sharesBefore,
+    quantity_after: sharesAfter,
+    quantity_delta: delta,
+    market_value_before: price != null ? sharesBefore * price : null,
+    market_value_after: price != null ? sharesAfter * price : null,
+    detected_by_system: false,
+    linked_trade_idea_id: trade.trade_queue_item_id ?? null,
+    linked_decision_id: trade.decision_request_id ?? null,
+    metadata: {
+      origin: EXECUTION_ORIGIN.attested,
+      accepted_trade_id: trade.id,
+      batch_id: (trade as any).batch_id ?? null,
+      attested_by: actorId,
+    },
+    status: 'complete',
+    created_by: actorId,
+  })
+  return true
 }
 
 export async function createAdHocAcceptedTrade(params: {
@@ -1279,6 +1436,29 @@ export async function createAdHocAcceptedTrade(params: {
 // Execution
 // ---------------------------------------------------------------------------
 
+/**
+ * The trader workflow: a human moves a trade through execution by hand.
+ *
+ * Marking a trade 'complete' here is an ATTESTATION — the person is stating
+ * that the trade executed away from the app, which is the normal shape of a
+ * manual_eod book where fills arrive by EOD upload. It is not a PM decision,
+ * and it is not the system observing a position change.
+ *
+ * Before this, completing a trade flipped `execution_status` and nothing
+ * else: no holdings moved, no `portfolio_trade_events` row was written, no
+ * memory event was emitted. Three surfaces then read the bare status and
+ * said "Executed" while Decision Accountability — which reads evidence —
+ * correctly said "Pending". The status was a claim with nothing behind it.
+ *
+ * Now the attestation writes the canonical evidence row first, and the
+ * status flip only happens if that succeeded. Completion is refused for a
+ * trade nobody can size, because an execution with no quantity is not
+ * evidence of anything; such a trade can still be cancelled, or corrected
+ * with real sizing.
+ *
+ * The ordering matters and matches `finalizeTradeForHoldingsSource`: record
+ * the proof, then make the claim.
+ */
 export async function updateExecutionStatus(
   id: string,
   status: ExecutionStatus,
@@ -1292,10 +1472,30 @@ export async function updateExecutionStatus(
     updated_at: now,
   }
 
+  let attested = false
   if (status === 'in_progress') {
     updates.execution_started_at = now
     updates.executed_by = context.actorId
   } else if (status === 'complete') {
+    const { data: existing, error: readError } = await supabase
+      .from('accepted_trades')
+      .select(TRADE_SELECT)
+      .eq('id', id)
+      .single()
+
+    if (readError || !existing) throw readError || new Error('Trade not found')
+    const trade = existing as unknown as AcceptedTradeWithJoins
+
+    const evidenced = await emitAttestedExecutionEvent(trade, context.actorId)
+    if (!evidenced) {
+      throw new Error(
+        'This trade cannot be marked executed: it has no executable share '
+        + 'quantity, so there is nothing to record as having been traded. '
+        + 'Add sizing with a correction, or cancel it.',
+      )
+    }
+    attested = true
+
     updates.execution_completed_at = now
     updates.executed_by = context.actorId
   }
@@ -1308,6 +1508,33 @@ export async function updateExecutionStatus(
     .single()
 
   if (error) throw error
+
+  /*
+   * The memory event is emitted from the evidence, never from the status.
+   *
+   * `provenance` carries which KIND of proof this was, so the Spine never
+   * implies it observed something a person asserted. Dedupe is on the trade
+   * id, so a trade already evidenced by the observed path cannot gain a
+   * second execution event here.
+   */
+  if (attested) {
+    const row = data as unknown as AcceptedTradeWithJoins
+    const organizationId = await resolveOrganizationIdForPortfolio(row.portfolio_id)
+    if (organizationId) {
+      await recordExecutionRecorded({
+        organizationId,
+        actorId: context.actorId,
+        acceptedTradeId: id,
+        portfolioId: row.portfolio_id,
+        assetId: row.asset_id,
+        decisionRequestId: row.decision_request_id ?? null,
+        tradeQueueItemId: row.trade_queue_item_id ?? null,
+        proposalId: (row as any).proposal_id ?? null,
+        action: row.action as TradeAction,
+        provenance: 'attested:trader',
+      })
+    }
+  }
 
   // Auto-comment
   await addComment(id, context.actorId, {

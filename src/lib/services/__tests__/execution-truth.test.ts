@@ -52,7 +52,14 @@ const db = vi.hoisted(() => ({
   eventInsertThrows: false,
   tradeRow: { id: 'at-1' } as Record<string, unknown>,
   holdingRow: { id: 'h-1', shares: 11039 } as Record<string, unknown> | null,
+  /** Rows portfolio_trade_events returns for this trade: the evidence. */
+  evidence: [] as Array<{ metadata: Record<string, unknown> }>,
 }))
+
+/** Evidence as it would exist after a system-applied (observed) execution. */
+const OBSERVED_EVIDENCE = [{ metadata: { origin: 'paper_execute', accepted_trade_id: 'at-1' } }]
+/** Evidence as it would exist after a trader attested execution. */
+const ATTESTED_EVIDENCE = [{ metadata: { origin: 'trader_attested', accepted_trade_id: 'at-1' } }]
 
 const memory = vi.hoisted(() => ({ execution: [] as Array<Record<string, unknown>> }))
 
@@ -88,6 +95,8 @@ vi.mock('../../supabase', () => ({
           // A real holding for today, so a reversal that is supposed to
           // happen reaches its write instead of early-returning.
           data = db.holdingRow
+        } else if (table === 'portfolio_trade_events' && has(call.ops, 'select')) {
+          data = db.evidence
         } else if (table === 'accepted_trades' && has(call.ops, 'insert')) {
           data = { ...db.tradeRow, ...arg0(call.ops, 'insert') }
         } else if (table === 'accepted_trades' && has(call.ops, 'update')) {
@@ -128,6 +137,7 @@ import {
   createAcceptedTrade,
   revertAcceptedTrade,
   acceptFromInboxToAcceptedTrade,
+  updateExecutionStatus,
 } from '../accepted-trade-service'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -172,6 +182,7 @@ beforeEach(() => {
   db.eventInsertThrows = false
   db.tradeRow = { id: 'at-1' }
   db.holdingRow = { id: 'h-1', shares: 11039 }
+  db.evidence = []
   memory.execution = []
   drUpdates.calls = []
   vi.clearAllMocks()
@@ -384,67 +395,14 @@ describe('execution.recorded', () => {
 // 12. Revert tells the two realities apart
 // ───────────────────────────────────────────────────────────────────────────
 
-describe('reverting', () => {
-  it('does NOT reverse holdings for a decision that never executed', async () => {
-    // Subtracting a position the portfolio never gained is how a truthful
-    // pending state turns into a wrong one.
-    db.tradeRow = {
-      id: 'at-1', portfolio_id: 'p1', asset_id: 'a-aapl',
-      execution_status: 'not_started', delta_shares: 539, source: 'inbox',
-      decision_request_id: null, trade_queue_item_id: null,
-    }
-    await revertAcceptedTrade('at-1', 'mistake', { actorId: 'u1' } as never)
-    const holdingWrites = db.calls.filter(
-      c => c.table === 'portfolio_holdings' && (has(c.ops, 'update') || has(c.ops, 'delete')),
-    )
-    expect(holdingWrites).toHaveLength(0)
-  })
-
-  it('still soft-deletes the trade, because the decision is withdrawn', async () => {
-    db.tradeRow = {
-      id: 'at-1', portfolio_id: 'p1', asset_id: 'a-aapl',
-      execution_status: 'not_started', delta_shares: null, source: 'inbox',
-      decision_request_id: null, trade_queue_item_id: null,
-    }
-    await revertAcceptedTrade('at-1', 'mistake', { actorId: 'u1' } as never)
-    const soft = db.calls.find(
-      c => c.table === 'accepted_trades'
-        && has(c.ops, 'update')
-        && arg0(c.ops, 'update')?.is_active === false,
-    )
-    expect(soft).toBeTruthy()
-  })
-
-  it('DOES reverse holdings for a decision that executed', async () => {
-    db.tradeRow = {
-      id: 'at-1', portfolio_id: 'p1', asset_id: 'a-aapl',
-      execution_status: 'complete', delta_shares: 539, source: 'inbox',
-      decision_request_id: null, trade_queue_item_id: null,
-    }
-    await revertAcceptedTrade('at-1', 'wrong size', { actorId: 'u1' } as never)
-    // The arithmetic, not merely that the table was read: 11039 - 539.
-    const write = db.calls.find(c => c.table === 'portfolio_holdings' && has(c.ops, 'update'))
-    expect(write, 'expected a holdings reversal write').toBeTruthy()
-    expect(arg0(write!.ops, 'update')?.shares).toBe(10500)
-  })
-
-  /*
-   * Guards the harness, not the product. The "never executed" case above
-   * asserts an ABSENCE, which would also hold if the double simply never let
-   * any reversal reach its write — as it did on the first run of this file,
-   * where `reverseTradeOnHoldings` bailed at "no holding row for today" and
-   * the test passed for the wrong reason.
-   */
-  it('(harness) a reversal can reach its write, so the absence above means something', async () => {
-    db.tradeRow = {
-      id: 'at-1', portfolio_id: 'p1', asset_id: 'a-aapl',
-      execution_status: 'complete', delta_shares: 539, source: 'inbox',
-      decision_request_id: null, trade_queue_item_id: null,
-    }
-    await revertAcceptedTrade('at-1', 'x', { actorId: 'u1' } as never)
-    expect(db.calls.some(c => c.table === 'portfolio_holdings' && has(c.ops, 'update'))).toBe(true)
-  })
-})
+/*
+ * Reversal is covered by "reverting against execution evidence" below.
+ *
+ * An earlier version of this block gated on `execution_status === 'complete'`,
+ * which is what Slice 1 shipped. That gate was wrong — a status can be set by
+ * hand — so the cases moved to the evidence-based block rather than being
+ * kept here in two versions that disagree about the rule.
+ */
 
 // ───────────────────────────────────────────────────────────────────────────
 // 8. Accepted with modification: two different numbers, both kept
@@ -510,6 +468,203 @@ describe('the analyst recommended +100bps and the PM decided +50bps', () => {
       context: { actorId: 'u1' } as never,
     })
     expect(drUpdates.calls[0][1].status).toBe('accepted')
+  })
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// Trader attestation produces evidence, not just a status
+// ───────────────────────────────────────────────────────────────────────────
+
+/** A sized trade sitting unexecuted, as Slice 1 now leaves a refused apply. */
+const PENDING_SIZED_TRADE = {
+  id: 'at-1',
+  portfolio_id: 'p1',
+  asset_id: 'a-aapl',
+  action: 'add',
+  execution_status: 'in_progress',
+  delta_shares: 539,
+  target_shares: 11039,
+  price_at_acceptance: 308.33,
+  source: 'inbox',
+  decision_request_id: 'dr-1',
+  trade_queue_item_id: 'tq-1',
+  batch_id: null,
+}
+
+const evidenceInserts = () =>
+  db.calls.filter(c => c.table === 'portfolio_trade_events' && has(c.ops, 'insert'))
+
+const evidenceRow = () => arg0(evidenceInserts()[0]?.ops ?? [], 'insert')
+
+describe('a trader marking a manual_eod trade complete', () => {
+  beforeEach(() => { db.tradeRow = { ...PENDING_SIZED_TRADE } })
+
+  it('writes canonical execution evidence, not only a status', async () => {
+    await updateExecutionStatus('at-1', 'complete', null, { actorId: 'u-trader' } as never)
+    expect(evidenceInserts()).toHaveLength(1)
+    expect(evidenceRow()?.quantity_delta).toBe(539)
+  })
+
+  it('marks that evidence as attested, not observed', async () => {
+    // The whole point of the provenance split: the system did not watch
+    // this happen, a person said it happened.
+    await updateExecutionStatus('at-1', 'complete', null, { actorId: 'u-trader' } as never)
+    const row = evidenceRow()
+    expect(row?.source_type).toBe('manual')
+    expect(row?.detected_by_system).toBe(false)
+    expect((row?.metadata as Record<string, unknown>)?.origin).toBe('trader_attested')
+  })
+
+  it('emits execution.recorded with attested provenance', async () => {
+    await updateExecutionStatus('at-1', 'complete', null, { actorId: 'u-trader' } as never)
+    expect(memory.execution).toHaveLength(1)
+    expect(memory.execution[0].provenance).toBe('attested:trader')
+  })
+
+  it('still flips the status, because the claim is now backed', async () => {
+    await updateExecutionStatus('at-1', 'complete', null, { actorId: 'u-trader' } as never)
+    const u = db.calls
+      .filter(c => c.table === 'accepted_trades' && has(c.ops, 'update'))
+      .map(c => arg0(c.ops, 'update'))[0]
+    expect(u?.execution_status).toBe('complete')
+    expect(u?.execution_completed_at).toBeTruthy()
+  })
+
+  it('refuses to complete a trade nobody can size', async () => {
+    // An execution with no quantity is not evidence of anything. The trade
+    // can still be cancelled or corrected — it cannot be called executed.
+    db.tradeRow = { ...PENDING_SIZED_TRADE, delta_shares: null, target_shares: null }
+    await expect(
+      updateExecutionStatus('at-1', 'complete', null, { actorId: 'u-trader' } as never),
+    ).rejects.toThrow(/no executable share quantity/i)
+  })
+
+  it('leaves the status alone when it refuses', async () => {
+    db.tradeRow = { ...PENDING_SIZED_TRADE, delta_shares: null, target_shares: null }
+    await updateExecutionStatus('at-1', 'complete', null, { actorId: 'u-trader' } as never)
+      .catch(() => {})
+    const statusWrites = db.calls.filter(
+      c => c.table === 'accepted_trades'
+        && has(c.ops, 'update')
+        && arg0(c.ops, 'update')?.execution_status === 'complete',
+    )
+    expect(statusWrites).toHaveLength(0)
+    expect(memory.execution).toHaveLength(0)
+    expect(evidenceInserts()).toHaveLength(0)
+  })
+
+  it('writes no evidence and no event for in_progress', async () => {
+    // Starting work is not executing. Only completion attests.
+    await updateExecutionStatus('at-1', 'in_progress', null, { actorId: 'u-trader' } as never)
+    expect(evidenceInserts()).toHaveLength(0)
+    expect(memory.execution).toHaveLength(0)
+  })
+
+  it('does not double-record a trade the system already executed', async () => {
+    // Idempotency against the observed path: the trade is already evidenced,
+    // so no second row is written.
+    db.evidence = OBSERVED_EVIDENCE
+    await updateExecutionStatus('at-1', 'complete', null, { actorId: 'u-trader' } as never)
+    expect(evidenceInserts()).toHaveLength(0)
+  })
+
+  it('does not double-record on a repeated attestation', async () => {
+    db.evidence = ATTESTED_EVIDENCE
+    await updateExecutionStatus('at-1', 'complete', null, { actorId: 'u-trader' } as never)
+    expect(evidenceInserts()).toHaveLength(0)
+  })
+
+  it('keys its memory event on the trade id, so retries collapse', async () => {
+    await updateExecutionStatus('at-1', 'complete', null, { actorId: 'u-trader' } as never)
+    db.evidence = ATTESTED_EVIDENCE
+    await updateExecutionStatus('at-1', 'complete', null, { actorId: 'u-trader' } as never)
+    expect(new Set(memory.execution.map(e => e.acceptedTradeId)).size).toBe(1)
+  })
+})
+
+describe('the observed path keeps its own provenance', () => {
+  it('labels a system-applied execution as observed', async () => {
+    await createAcceptedTrade(SIZED_INPUT)
+    expect(String(memory.execution[0].provenance)).toMatch(/^observed:holdings-apply/)
+  })
+
+  it('still marks its evidence detected_by_system', async () => {
+    await createAcceptedTrade(SIZED_INPUT)
+    const row = evidenceRow()
+    expect(row?.source_type).toBe('holdings_diff')
+    expect(row?.detected_by_system).toBe(true)
+    expect((row?.metadata as Record<string, unknown>)?.origin).toBe('paper_execute')
+  })
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// Reversal follows evidence, never status
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('reverting against execution evidence', () => {
+  /**
+   * The regression this slice exists to prevent.
+   *
+   * Slice 1 left a priced-but-refused trade at not_started, which made the
+   * execution dropdown reachable on manual_eod for the first time. A trader
+   * could then walk it to 'complete' by hand. Because the revert gate keyed
+   * on `execution_status === 'complete'`, reverting it called
+   * reverseTradeOnHoldings on a trade whose delta_shares were populated but
+   * whose holdings were never applied — subtracting 539 shares the portfolio
+   * never gained.
+   */
+  it('performs ZERO holdings mutation for a manually completed trade with no evidence', async () => {
+    db.tradeRow = {
+      ...PENDING_SIZED_TRADE,
+      execution_status: 'complete', // set by hand
+      price_at_acceptance: null, // the apply was refused
+    }
+    db.evidence = [] // nothing ever executed
+
+    await revertAcceptedTrade('at-1', 'never actually traded', { actorId: 'u1' } as never)
+
+    const mutations = db.calls.filter(
+      c => c.table === 'portfolio_holdings' && (has(c.ops, 'update') || has(c.ops, 'delete')),
+    )
+    expect(mutations).toHaveLength(0)
+  })
+
+  it('performs ZERO holdings mutation when the evidence is only attested', async () => {
+    // The desk moved these shares, not the app. The app's holdings were
+    // never incremented, so they must not be decremented; the next EOD
+    // upload carries the reality.
+    db.tradeRow = { ...PENDING_SIZED_TRADE, execution_status: 'complete' }
+    db.evidence = ATTESTED_EVIDENCE
+
+    await revertAcceptedTrade('at-1', 'attested in error', { actorId: 'u1' } as never)
+
+    const mutations = db.calls.filter(
+      c => c.table === 'portfolio_holdings' && (has(c.ops, 'update') || has(c.ops, 'delete')),
+    )
+    expect(mutations).toHaveLength(0)
+  })
+
+  it('DOES reverse when the system applied the trade itself', async () => {
+    db.tradeRow = { ...PENDING_SIZED_TRADE, execution_status: 'complete' }
+    db.evidence = OBSERVED_EVIDENCE
+
+    await revertAcceptedTrade('at-1', 'wrong size', { actorId: 'u1' } as never)
+
+    const write = db.calls.find(c => c.table === 'portfolio_holdings' && has(c.ops, 'update'))
+    expect(write, 'expected a holdings reversal write').toBeTruthy()
+    expect(arg0(write!.ops, 'update')?.shares).toBe(10500) // 11039 - 539
+  })
+
+  it('still withdraws the decision in every case', async () => {
+    db.tradeRow = { ...PENDING_SIZED_TRADE, execution_status: 'complete' }
+    db.evidence = []
+    await revertAcceptedTrade('at-1', 'x', { actorId: 'u1' } as never)
+    const soft = db.calls.find(
+      c => c.table === 'accepted_trades'
+        && has(c.ops, 'update')
+        && arg0(c.ops, 'update')?.is_active === false,
+    )
+    expect(soft).toBeTruthy()
   })
 })
 

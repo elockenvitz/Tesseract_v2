@@ -160,23 +160,101 @@ backfilled. They are a historical limitation, consistent with V1's own
 decision not to backfill (of 203 reconstructable events only 57 would have
 been true).
 
-## Known gaps, not addressed here
+---
+
+# Part 2 — evidence, not status
+
+Part 1 left one path worse than it found it. Because an unsized or
+price-refused trade now rests at `not_started`, its `LifecyclePhase` is
+`queued` rather than `settled`, and the execution dropdown — which returns
+`null` for settled rows — **became reachable on `manual_eod` for the first
+time**. A trader could walk such a trade to `complete` by hand, and the Part 1
+revert gate keyed on `execution_status === 'complete'`, so reverting it would
+call `reverseTradeOnHoldings` on a trade whose `delta_shares` were populated
+but whose holdings were never applied: subtracting shares the portfolio never
+gained.
+
+## Revert follows evidence
+
+The gate is now system-applied evidence, not status:
+
+```
+hasSystemAppliedEvidence(tradeId)
+  → a portfolio_trade_events row for this trade
+    whose metadata.origin is 'paper_execute'
+```
+
+A status is a claim and can be set by hand. Evidence is a row that says what
+moved. **Attested evidence is deliberately not enough either** — that
+execution happened at the desk, so the app's holdings were never incremented
+by it and the next EOD upload is what carries it. The two grades of proof have
+genuinely different reversal semantics, which is the clearest argument for
+keeping them distinguishable.
+
+## Manual completion is an attestation, and attestations produce evidence
+
+Completing a trade through the execution dropdown is a person stating that it
+executed away from the app — the normal shape of a `manual_eod` book. That is
+not a PM decision, and it is not the system observing a position change. It is
+now recorded as what it is:
+
+| | Observed | Attested |
+|---|---|---|
+| Written by | `finalizeTradeForHoldingsSource` | `updateExecutionStatus(…, 'complete')` |
+| `source_type` | `holdings_diff` | `manual` |
+| `detected_by_system` | `true` | `false` |
+| `metadata.origin` | `paper_execute` | `trader_attested` |
+| `execution.recorded` provenance | `observed:holdings-apply:<source>` | `attested:trader` |
+| Reverses holdings | yes | **no** |
+
+Ordering matches Part 1: record the proof, then make the claim. The evidence
+row is written first, and the status flips only if that succeeded.
+
+**Completion is refused for a trade nobody can size.** An execution with no
+quantity is not evidence of anything — the observed path already declines to
+write a zero-delta row for the same reason. Such a trade can still be
+cancelled, or corrected with real sizing. This is the one user-visible
+workflow change: an error instead of a silent, meaningless completion.
+
+Idempotency: a trade that already carries any evidence gets no second row, and
+the Spine's dedupe key is still the trade id, so repeated or retried
+completion cannot produce a second execution event.
+
+## No schema change, again
+
+`portfolio_trade_events` could already express this. The `trade_event_source`
+enum has carried `manual` alongside `holdings_diff` from the start, and
+`detected_by_system` is an existing boolean that means exactly "a person
+entered this". Provenance detail goes in `metadata.origin`, where
+`paper_execute` already lived. **No migration was created or is needed.**
+
+Both event writers were unified onto one `insertExecutionEvent` call, which
+also kept the repo-wide type ceiling flat at 8662.
+
+## Known gaps, still not addressed
 
 - **`live_feed` fills emit no execution event.** Previously one was emitted
-  falsely at accept time; now none is emitted at all. Nothing marks the later
-  fill, because `updateExecutionStatus` — the manual trader workflow — does
-  not write a memory event. There are zero `live_feed` portfolios in
-  production. Wiring that belongs with the trader workflow, not here.
-- **A PM can still mark a `manual_eod` trade complete by hand** via
-  `updateExecutionStatus`, with no holdings movement, and revert would then
-  reverse a position that never moved. Pre-existing; the dropdown is gated on
-  `holdingsSource !== 'paper'`.
+  falsely at accept time; now none is emitted at all. The mode is
+  unimplemented rather than broken: `generateEventsFromHoldingsDiff` has zero
+  callers, so no fill would ever arrive, and there are zero `live_feed`
+  portfolios in production. The writer belongs with the feed ingestion that
+  does not exist yet.
 - **`seed-pilot-data` inserts `accepted_trades` directly**, bypassing
   `finalizeTradeForHoldingsSource` entirely, and writes `source: 'trade_lab'`
   — a value the table's CHECK constraint (`inbox|simulation|adhoc`) does not
-  allow.
-- **The two Outcomes surfaces disagree.** Decision Accountability derives
-  execution from `portfolio_trade_events` and was already honest; the simpler
-  Outcomes feed derives it from `execution_status`. Both now read correctly
-  because the field they disagree about is finally truthful, but the
-  duplication remains.
+  allow. Dead tooling: `ClientOnboardingWizard` was removed, nothing calls
+  `seedPilotDemoData`, production has zero such rows, and the insert throws
+  loudly if ever run.
+- **Three surfaces still derive execution independently** —
+  `OutcomesPage` from `execution_status`, decisions-v2 from
+  `execution_completed_at`, Decision Accountability from
+  `portfolio_trade_events`. They now agree operationally, because every
+  completion writes evidence and every evidence row has a status behind it.
+  Collapsing them onto `portfolio_trade_events` as the single read path is
+  cleanup, not correctness, and is deliberately deferred.
+- **A manual attestation is still trusted on its word.** Nothing checks it
+  against the next EOD upload. `reconcilePortfolioSnapshot` runs on upload and
+  compares expected against actual shares, but it writes only
+  `reconciliation_status` and skips trades with no share columns. Closing that
+  loop — an attested execution that reconciliation later contradicts — is the
+  natural next piece of work and is not in this lane.
