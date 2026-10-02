@@ -6911,7 +6911,18 @@ a.context?.asset_id ?? null,
                */
               onPrimary: (_card, actionId) => {
                 if (actionId !== 'open_idea') return
-                note('open')
+                /*
+                 * No interest signal recorded here.
+                 *
+                 * The `note('open')` the post branch calls is scoped to that
+                 * branch and records interest in a POST — it needs an author
+                 * and a feed row, neither of which an obligation has.
+                 * Reaching for it from here was a use-before-define that
+                 * guard:tdz caught, and the right fix is not to hoist it:
+                 * opening work you already told us to show you is not a
+                 * discovery signal, and feeding it to the post ranker would
+                 * be inventing an interest the reader never expressed.
+                 */
                 openIdeaDetail(c.ideaId ?? c.subjectId)
               },
             })
