@@ -514,6 +514,64 @@ describe('the analyst recommended +100bps and the PM decided +50bps', () => {
 })
 
 // ───────────────────────────────────────────────────────────────────────────
+// The code may not write a status the database will reject
+// ───────────────────────────────────────────────────────────────────────────
+
+/*
+ * `accepted_trades.execution_status` is TEXT with a CHECK constraint, not an
+ * enum, and the constraint lives in production — no migration in this repo
+ * defines it. Verified against production on 2026-10-02:
+ *
+ *   accepted_trades_execution_status_check
+ *     CHECK (execution_status = ANY (ARRAY['not_started','in_progress',
+ *                                          'complete','cancelled']))
+ *
+ * The danger this pins down: writing a value outside that set does not
+ * degrade, it throws, at the moment a PM clicks. `useOutcomes.mapExecStatus`
+ * carries a `case 'failed'` arm, which reads as though 'failed' were a state
+ * this system has — it is not, nothing writes it, and it must not be written
+ * until the constraint is widened first.
+ *
+ * So: the TypeScript union is the contract, and it must not drift ahead of
+ * the database. Widening the union without the migration breaks here.
+ */
+const PRODUCTION_CHECK_VALUES = ['not_started', 'in_progress', 'complete', 'cancelled']
+
+describe('execution_status values the database will accept', () => {
+  const tradingTypes = () =>
+    readFileSync(path.join(process.cwd(), 'src', 'types', 'trading.ts'), 'utf8')
+
+  const unionMembers = () => {
+    const src = tradingTypes()
+    const start = src.indexOf('export type ExecutionStatus')
+    expect(start, 'ExecutionStatus union not found').toBeGreaterThan(-1)
+    const line = src.slice(start, src.indexOf('\n', start))
+    return [...line.matchAll(/'([a-z_]+)'/g)].map(m => m[1])
+  }
+
+  it('the TypeScript union matches the production CHECK exactly', () => {
+    expect(unionMembers().sort()).toEqual([...PRODUCTION_CHECK_VALUES].sort())
+  })
+
+  it("does not include 'failed' — it is not a state this system has", () => {
+    expect(unionMembers()).not.toContain('failed')
+  })
+
+  it('every literal the service writes is one the database accepts', () => {
+    // Catches a hand-written literal that bypasses the typed signature.
+    const service = readFileSync(
+      path.join(process.cwd(), 'src', 'lib', 'services', 'accepted-trade-service.ts'),
+      'utf8',
+    )
+    const written = [...service.matchAll(/execution_status:\s*'([a-z_]+)'/g)].map(m => m[1])
+    expect(written.length, 'expected the service to write this column').toBeGreaterThan(0)
+    for (const value of written) {
+      expect(PRODUCTION_CHECK_VALUES, `service writes execution_status '${value}'`).toContain(value)
+    }
+  })
+})
+
+// ───────────────────────────────────────────────────────────────────────────
 // 13. Outcomes cannot read a pending execution as a completed one
 // ───────────────────────────────────────────────────────────────────────────
 

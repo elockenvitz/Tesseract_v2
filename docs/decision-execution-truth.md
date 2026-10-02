@@ -75,10 +75,40 @@ No migration. All four required states are expressible today:
   reason on `execution_note`, the column `updateExecutionStatus` already uses
   for execution commentary.
 
-### The additive schema change, proposed and deliberately not taken
+### Why there is no `'failed'` status, and no migration
 
-B and D are distinguished only by `execution_note`. A first-class value would
-be clearer:
+B and D are distinguished only by `execution_note`. A first-class `'failed'`
+value would be clearer, and was considered and rejected for this slice.
+
+**No migration is needed, because nothing writes `'failed'`.** Verified
+across the whole tree:
+
+- `ExecutionStatus` (`src/types/trading.ts:1151`) is
+  `'not_started' | 'in_progress' | 'complete' | 'cancelled'`. It does not
+  include `'failed'`, so `updateExecutionStatus` — the only writer taking a
+  status as an argument — cannot be called with it without a compile error.
+- The only literal writes are `'not_started'` and `'complete'`, both in
+  `finalizeTradeForHoldingsSource`.
+- `ExecutionStatusDropdown`'s `TRANSITIONS` table offers only `in_progress`,
+  `complete` and `cancelled`.
+- Both `as ExecutionStatus` casts in the tree are read-side, narrowing a
+  database string for display.
+- No migration, trigger, RPC or edge function writes the column;
+  `seed-pilot-data` writes the literal `'not_started'`.
+
+The one thing that reads as though `'failed'` existed is a
+`case 'failed': return 'missed'` arm in `useOutcomes.mapExecStatus` — dead
+defensive code, left alone because removing it is unrelated to this fix.
+
+What is enforced instead is the ordering rule, as a test
+(`execution-truth.test.ts`, "execution_status values the database will
+accept"): the TypeScript union must equal the production CHECK set, so
+adding `'failed'` to the union fails the build and the migration cannot be
+forgotten. Whenever a first-class failed state is actually wanted the
+sequence is: widen the CHECK in production, then the union, then write the
+value — in that order, in separate releases.
+
+For reference, that widening would be:
 
 ```sql
 ALTER TABLE accepted_trades DROP CONSTRAINT accepted_trades_execution_status_check;
@@ -86,12 +116,12 @@ ALTER TABLE accepted_trades ADD  CONSTRAINT accepted_trades_execution_status_che
   CHECK (execution_status IN ('not_started','in_progress','complete','cancelled','failed'));
 ```
 
-It is not written as a migration here, on purpose. The constraint lives in
-production and this slice does not apply migrations. A release whose code
-writes `'failed'` against the un-migrated constraint converts a silent wrong
-state into a hard error on the PM's click — strictly worse than the bug.
-`useOutcomes.mapExecStatus` already has a `case 'failed': return 'missed'`
-arm waiting for it, so the UI side is ready whenever the migration is.
+It is not written as a migration file here. The constraint lives in
+production, verified live on 2026-10-02 as
+`accepted_trades_execution_status_check`, and no migration in this repo
+defines it — so a migration adding `'failed'` would widen a constraint for a
+value no code produces, in a branch whose remit is to stop the system making
+claims it cannot support.
 
 ## Decisions this slice had to make
 
