@@ -171,12 +171,22 @@ export async function createAcceptedTrade(
   // Post-insert: apply holdings_source behavior.
   // - paper/manual_eod: apply to holdings, auto-complete execution.
   // - live_feed: leave execution_status='not_started' for trader workflow.
-  const finalized = await finalizeTradeForHoldingsSource(trade, input.accepted_by)
+  const { trade: finalized, executionProven } = await finalizeTradeForHoldingsSource(
+    trade,
+    input.accepted_by,
+  )
 
   // ── Record the execution in organisational memory ─────────────────────
   //
-  // After finalization, because until holdings are applied the trade is not
-  // yet the thing the event claims it is.
+  // Gated on `executionProven`, which is true only when the holdings apply
+  // reported that it moved shares. The decision is recorded either way by
+  // the caller; this event is specifically the claim that the portfolio
+  // changed, and it may only exist when the portfolio actually changed.
+  //
+  // It previously fired on every create. An Inbox accept carries no share
+  // sizing, so the apply RPC returned `applied: false` without raising and
+  // the event asserted an execution that never happened — permanently, in
+  // an append-only table.
   //
   // `decision_request_id` is passed through as-is and is frequently null:
   // simulation promotion and direct Trade Book entry both commit trades with
@@ -184,24 +194,60 @@ export async function createAcceptedTrade(
   // rather than papered over — an active accepted_trade is itself the
   // decision evidence on those paths, and inventing a request would put a
   // decision nobody made into the permanent record.
-  const organizationId = await resolveOrganizationIdForPortfolio(input.portfolio_id)
-  if (organizationId) {
-    await recordExecutionRecorded({
-      organizationId,
-      actorId: input.accepted_by,
-      acceptedTradeId: finalized.id,
-      portfolioId: input.portfolio_id,
-      assetId: input.asset_id,
-      decisionRequestId: input.decision_request_id ?? null,
-      tradeQueueItemId: input.trade_queue_item_id ?? null,
-      proposalId: input.proposal_id ?? null,
-      action: input.action,
-      provenance: `source:${input.source}`,
-    })
+  if (executionProven) {
+    const organizationId = await resolveOrganizationIdForPortfolio(input.portfolio_id)
+    if (organizationId) {
+      await recordExecutionRecorded({
+        organizationId,
+        actorId: input.accepted_by,
+        acceptedTradeId: finalized.id,
+        portfolioId: input.portfolio_id,
+        assetId: input.asset_id,
+        decisionRequestId: input.decision_request_id ?? null,
+        tradeQueueItemId: input.trade_queue_item_id ?? null,
+        proposalId: input.proposal_id ?? null,
+        action: input.action,
+        provenance: `source:${input.source}`,
+      })
+    }
   }
 
   return finalized
 }
+
+/**
+ * The result of attempting execution at accept time.
+ *
+ * `executionProven` is the single authority for whether Tesseract may claim
+ * this trade executed. It is true ONLY when the holdings apply reported that
+ * it moved shares. Every caller that wants to assert execution — the
+ * `execution_status` stamp, the `portfolio_trade_events` evidence row, the
+ * append-only `execution.recorded` memory event — must gate on it.
+ */
+type FinalizeOutcome = {
+  trade: AcceptedTradeWithJoins
+  executionProven: boolean
+}
+
+/**
+ * The note recorded when execution was attempted and did not happen.
+ *
+ * Not a new status value. `execution_status` is a TEXT column whose CHECK
+ * constraint in production allows only
+ * not_started/in_progress/complete/cancelled. Writing a 'failed' value would
+ * need a migration applied first, and a release where the code writes a value
+ * the database rejects turns a silent wrong state into a hard runtime error on
+ * the PM's click. The additive CHECK change is proposed in
+ * docs/decision-execution-truth.md and deliberately not taken here.
+ *
+ * So an unproven execution rests at `not_started` / `pending` — which are
+ * also the insert defaults, and which `tradeLifecyclePhase` already renders
+ * as "Queued · Waiting on trader" — and the reason lands here, where
+ * `updateExecutionStatus` already writes execution commentary.
+ */
+const UNEXECUTABLE_SIZING_NOTE =
+  'Awaiting execution: the accepted sizing has no executable share quantity, '
+  + 'so no holdings were changed.'
 
 /**
  * Post-create finalization based on portfolios.holdings_source.
@@ -210,14 +256,36 @@ export async function createAcceptedTrade(
  * holdings get updated and execution_status flips to 'complete'. For
  * live_feed portfolios this is a no-op — fills arrive later from the feed.
  *
- * Safe to call once per created trade. On failure, logs a warning and
- * returns the original (not-yet-finalized) trade so the caller still sees
- * the inserted row — the PM can recover manually via the Trade Book UI.
+ * ── The invariant this function now enforces ─────────────────────────────
+ *
+ * Completion is claimed only on proof. Previously the `complete` /
+ * `matched` stamp at the end ran unconditionally, so three different
+ * non-executions were all recorded as executed-and-reconciled:
+ *
+ *   1. A trade with no share sizing. `apply_trade_to_holdings` checks for
+ *      missing shares BEFORE its price guard and RETURNs `applied: false`
+ *      instead of raising, so nothing threw. This is every Decision Inbox
+ *      accept, which passes no share columns at all.
+ *   2. A trade whose price the RPC refused. That one does raise, and the
+ *      exception was caught by the outer handler below, which returned the
+ *      un-finalized trade — truthful by accident, and invisible.
+ *   3. A failed `portfolio_trade_events` insert, which was caught and
+ *      ignored while the completion stamp proceeded.
+ *
+ * Case 1 was the P0: 47 of 49 production trades completed within 5 seconds
+ * of creation, and two Inbox rows read `complete` with null sizing and no
+ * event row. `reconciliation_status='matched'` was the worse half — the
+ * reconciler skips trades with no share columns, so nothing downstream
+ * would ever revisit a stamp it did not earn.
+ *
+ * Safe to call once per created trade. On failure it records the attempt on
+ * `execution_note` and reports `executionProven: false`; it never throws,
+ * so a decision is never lost because execution could not be completed.
  */
 async function finalizeTradeForHoldingsSource(
   trade: AcceptedTradeWithJoins,
   actorId: string
-): Promise<AcceptedTradeWithJoins> {
+): Promise<FinalizeOutcome> {
   try {
     const { data: portfolio, error } = await supabase
       .from('portfolios')
@@ -227,56 +295,101 @@ async function finalizeTradeForHoldingsSource(
 
     if (error || !portfolio) {
       console.warn('[AcceptedTrade] Could not read holdings_source for portfolio', trade.portfolio_id, error)
-      return trade
+      return { trade, executionProven: false }
     }
 
     const source = (portfolio as any).holdings_source as 'live_feed' | 'manual_eod' | 'paper'
     if (source === 'live_feed') {
-      // Hands off — external feed drives holdings + execution state.
-      return trade
+      // Hands off — external feed drives holdings + execution state. No
+      // execution has happened yet, so nothing may claim one: the trade
+      // stays not_started and `executionProven` stays false. The event for
+      // the eventual fill has to come from whatever marks that fill; see
+      // the known gap in docs/decision-execution-truth.md.
+      return { trade, executionProven: false }
     }
 
-    // paper / manual_eod: apply to holdings and auto-complete execution.
-    // Also mark reconciliation_status='matched' since the holdings are now
-    // in sync with the trade — there's nothing left to reconcile. This
-    // matters for pro-forma-baseline queries which key off pending L1 rows.
-    const applyResult = await applyTradeToHoldings(trade.portfolio_id, trade)
-
-    // Emit a portfolio_trade_events row so the Decision Accountability
-    // surface (which matches decisions against events) picks up the
-    // execution. Without this, paper/manual_eod executes would show as
-    // "awaiting execution" in Outcomes forever — there's no holdings
-    // feed running the diff-based event generator, so the event must be
-    // produced inline when the trade is applied.
+    // paper / manual_eod: attempt the apply, then record what actually
+    // happened — in ONE write, whose payload is chosen by the outcome.
+    let applyResult: ApplyTradeResult | null = null
+    let refusal: string | null = null
     try {
-      await emitPaperTradeEvent(trade, applyResult, actorId)
+      applyResult = await applyTradeToHoldings(trade.portfolio_id, trade)
     } catch (e) {
-      console.warn('[AcceptedTrade] Failed to emit paper trade event', e)
+      // The RPC refused the trade — a missing or non-positive price is the
+      // known case. The decision stands; execution did not occur.
+      refusal = e instanceof Error ? e.message : String(e)
+      console.warn('[AcceptedTrade] Holdings apply refused; execution not recorded', refusal)
     }
 
+    // `applied: false` means the RPC ran and chose to write nothing, which
+    // it does when the trade carries no share information. Nothing moved,
+    // so nothing below may say otherwise.
+    const executionProven = !refusal && !!applyResult?.applied
     const now = new Date().toISOString()
-    const { data: updated, error: updateError } = await supabase
-      .from('accepted_trades')
-      .update({
+    let updates: Record<string, unknown>
+
+    if (!executionProven) {
+      updates = {
+        execution_status: 'not_started',
+        execution_note: refusal
+          ? `Execution could not be applied: ${refusal}`
+          : UNEXECUTABLE_SIZING_NOTE,
+        updated_at: now,
+      }
+    } else {
+      // Emit a portfolio_trade_events row so the Decision Accountability
+      // surface (which matches decisions against events) picks up the
+      // execution. Without this, paper/manual_eod executes would show as
+      // "awaiting execution" in Outcomes forever — there's no holdings
+      // feed running the diff-based event generator, so the event must be
+      // produced inline when the trade is applied.
+      //
+      // A failure here does not un-execute the trade — the shares have
+      // moved — so it does not block completion. It is recorded on the
+      // trade rather than only in the console, because that missing
+      // evidence row is exactly what Outcomes reads.
+      let eventNote: string | null = null
+      try {
+        await emitPaperTradeEvent(trade, applyResult as ApplyTradeResult, actorId)
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e)
+        console.warn('[AcceptedTrade] Failed to emit paper trade event', e)
+        eventNote = `Executed, but the execution evidence row could not be written: ${reason}`
+      }
+
+      // `reconciliation_status='matched'` is only honest on this branch:
+      // the holdings were just written from this trade's own numbers, so
+      // there is nothing left to reconcile. This matters for
+      // pro-forma-baseline queries which key off pending L1 rows.
+      updates = {
         execution_status: 'complete',
         execution_completed_at: now,
         executed_by: actorId,
         reconciliation_status: 'matched',
         reconciled_at: now,
         updated_at: now,
-      })
+        ...(eventNote ? { execution_note: eventNote } : {}),
+      }
+    }
+
+    const { data: updated, error: updateError } = await supabase
+      .from('accepted_trades')
+      .update(updates)
       .eq('id', trade.id)
       .select(TRADE_SELECT)
       .single()
 
     if (updateError || !updated) {
-      console.warn('[AcceptedTrade] Failed to auto-complete execution_status', updateError)
-      return trade
+      // If the shares moved but the row still says not_started, that is an
+      // understatement rather than a false claim, so the execution event is
+      // still allowed: the portfolio really did change.
+      console.warn('[AcceptedTrade] Failed to record execution outcome', updateError)
+      return { trade, executionProven }
     }
-    return updated as unknown as AcceptedTradeWithJoins
+    return { trade: updated as unknown as AcceptedTradeWithJoins, executionProven }
   } catch (e) {
     console.warn('[AcceptedTrade] finalizeTradeForHoldingsSource failed:', e)
-    return trade
+    return { trade, executionProven: false }
   }
 }
 
@@ -451,7 +564,23 @@ export async function revertAcceptedTrade(
       .eq('id', (trade as any).portfolio_id)
       .single()
     const source = (portfolio as any)?.holdings_source as 'live_feed' | 'manual_eod' | 'paper' | undefined
-    if (source && source !== 'live_feed') {
+
+    /*
+     * Reverse only what was actually applied.
+     *
+     * Reverting a decision and reversing a position are two different acts,
+     * and this used to conflate them: any non-live_feed portfolio got a
+     * reversal attempt regardless of whether the accept had moved shares.
+     * Once `execution_status` is only 'complete' when the holdings apply
+     * reported it moved shares (see finalizeTradeForHoldingsSource), it is
+     * the honest gate — reversing an accept that never applied would
+     * subtract a position the portfolio never gained.
+     *
+     * An un-executed decision therefore reverts as a decision only: the row
+     * is soft-deleted, the request goes back to pending, and holdings are
+     * untouched because they were never touched.
+     */
+    if (source && source !== 'live_feed' && (trade as any).execution_status === 'complete') {
       await reverseTradeOnHoldings((trade as any).portfolio_id, trade as unknown as AcceptedTradeWithJoins)
     }
   } catch (e) {
