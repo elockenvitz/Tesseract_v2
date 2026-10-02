@@ -189,6 +189,7 @@ export function useDesktopAttentionFeed(
           parkedAt: c.parkedAt,
           dueAt: c.dueAt,
           daysOverdue: c.daysOverdue,
+          waitingFor: c.waitingFor,
           stage: c.stage,
           conviction: c.conviction,
           facts: factsForTile(revisit.factsBySubject, factKeyFor(c)),

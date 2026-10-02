@@ -24,6 +24,11 @@ import { useReaderSnapshots } from '../../hooks/mobile/useReaderSnapshots'
 import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
+import { useReadyToRevisit } from '../../hooks/useReadyToRevisit'
+import { buildReadyToRevisitCard } from '../../lib/signals/builders/readyToRevisit'
+import { isEligible, factsForTile, factKeyFor } from '../../lib/memory/ready-to-revisit'
+import { renderableFacts } from '../../lib/memory/what-changed'
+import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import type { StaleTarget, TargetBreach } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
@@ -373,6 +378,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // size", so it has to arrive unprompted.
   const { data: lenses, isLoading: lensesLoading } = usePortfolioLenses()
   const { signals, isLoading: signalsLoading } = useSignalCards()
+  /*
+   * One query set for every parked-work card on the page.
+   *
+   * The same hook desktop uses, so the obligations and their change facts
+   * are fetched once per shell rather than once per card — and React Query
+   * dedupes it against the desktop mount when both exist. Mobile adds no
+   * obligation query of its own.
+   */
+  const revisit = useReadyToRevisit()
   /**
    * The signal types that still earn a screen, filtered BEFORE a slot exists.
    *
@@ -2859,6 +2873,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     }))
 
     /**
+     * Work the reader parked, back on the date they chose.
+     *
+     * Unlike every source above it, this is not a lens over the book — it
+     * comes from `memory_obligations` rows somebody created on purpose, and
+     * it is the SAME candidate, eligibility, facts and builder desktop uses.
+     * Nothing about parked work is re-derived here; only the entry shape is
+     * mobile's.
+     *
+     * Scored above the ordinary signal families for the same reason the
+     * desktop ranker lifts it: the reader asked for this one and nobody
+     * asked for the others. Bounded, not absolute — it shares the pool with
+     * everything else and the interleaver still decides placement.
+     */
+    const revisitEntries = revisit.candidates
+      .filter(c => isEligible(c, undefined))
+      .map((c, idx) => ({
+        kind: 'revisit' as const,
+        score: 100 - idx,
+        candidate: c,
+        subject: c.symbol ?? undefined,
+      }))
+
+    /**
      * One round's worth, like every other source.
      *
      * This used to be `Array.from({ length: cycle + 1 })` — the derived
@@ -3010,7 +3047,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       card: c,
     }))
 
-    const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntriesDeduped, ...newsEntries, ...templateEntries, ...lensEntries, ...scenarioEntries]
+    const all = [...revisitEntries, ...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntriesDeduped, ...newsEntries, ...templateEntries, ...lensEntries, ...scenarioEntries]
 
     /**
      * Every candidate, before anything is dropped.
@@ -3497,7 +3534,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * lets the lead band see yesterday's leader on the first pass rather than
      * on some later recompute.
      */
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, seenAtMount, lenses, scenarioCards, coverageSignature(coverageIndex), absorbedTargets, composedTargetKeyByAsset])
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, seenAtMount, lenses, scenarioCards, coverageSignature(coverageIndex), absorbedTargets, composedTargetKeyByAsset, revisit])
 
   /**
    * The base order this page lifetime is committed to.
@@ -6823,6 +6860,61 @@ a.context?.asset_id ?? null,
                         }
                       : null,
               })
+          }
+
+          /*
+           * Parked work, back on its date.
+           *
+           * The SAME builder, facts and eligibility as desktop — nothing
+           * about parked work is re-derived for the phone. The card has no
+           * panes: the facts and their sources are already its detail
+           * region, and a pane repeating them is the duplication the
+           * desktop screenshot review removed.
+           */
+          if (entry.kind === 'revisit') {
+            const c = entry.candidate
+            const built = buildReadyToRevisitCard({
+              obligationId: c.obligationId,
+              tradeQueueItemId: c.ideaId ?? c.subjectId,
+              assetId: c.assetId,
+              symbol: c.symbol,
+              companyName: c.companyName,
+              portfolioId: c.portfolioId,
+              portfolioName: c.portfolioName,
+              parkedAt: c.parkedAt,
+              dueAt: c.dueAt,
+              daysOverdue: c.daysOverdue,
+              waitingFor: c.waitingFor,
+              stage: c.stage,
+              conviction: c.conviction,
+              facts: factsForTile(revisit.factsBySubject, factKeyFor(c)),
+              totalFactCount: renderableFacts(
+                revisit.factsBySubject.get(factKeyFor(c)) ?? [],
+              ).length,
+            })
+            return renderCard(built as never, entry, 'revisit', c.assetId, [], {
+              /*
+               * Resume work, on the one path that actually opens an idea.
+               *
+               * `open_idea` is not routable through `resolveFeedAction` for
+               * this family — that route needs a `ScoredFeedItem`, and this
+               * card comes from an obligation, not from the feed query. So
+               * it lands here, and without a handler it would be a button
+               * that looks fine and does nothing, which is precisely the
+               * defect the invented `?idea=` route already was.
+               *
+               * `openIdeaDetail` is the mechanism `QuickTradeIdeaCapture`
+               * and `LinkedObjectsPanel` already use, and `TradeQueuePage`
+               * already listens for. Opening does NOT clear the obligation:
+               * that is judged by the deterministic rules, where looking at
+               * something is not doing it.
+               */
+              onPrimary: (_card, actionId) => {
+                if (actionId !== 'open_idea') return
+                note('open')
+                openIdeaDetail(c.ideaId ?? c.subjectId)
+              },
+            })
           }
 
           if (entry.kind === 'signal') {

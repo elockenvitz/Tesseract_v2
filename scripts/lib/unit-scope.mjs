@@ -66,6 +66,11 @@ export const GATED_DIRS = [
   // or render wrong today, it quietly re-narrates past decisions in today's
   // words the next time somebody edits an idea.
   'src/lib/recommendations',
+  // Where "Resume work" goes. Gated because the failure is silent by
+  // construction: a CTA pointed at a route nothing consumes navigates
+  // somewhere plausible and opens nothing, which is exactly what the first
+  // version of it did.
+  'src/lib/navigation',
   'src/lib/ops',
   'src/lib/guards',
   'src/hooks/ideas',

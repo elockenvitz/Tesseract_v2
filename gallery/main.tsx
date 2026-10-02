@@ -1862,6 +1862,9 @@ const CARDS: {
       daysOverdue: 11,
       stage: 'researching',
       conviction: 'medium',
+      // Their words, reported. The card may say they were waiting for this
+      // and may never say it happened — see the builder.
+      waitingFor: 'Q3 earnings and updated margin guidance',
       facts: PARKED_FACTS,
       totalFactCount: 4,
     })),
@@ -1896,6 +1899,8 @@ const CARDS: {
       daysOverdue: 0,
       stage: 'developing',
       conviction: 'low',
+      // Nobody said why. The copy falls back honestly rather than inventing one.
+      waitingFor: null,
       facts: [],
       totalFactCount: 0,
     })),

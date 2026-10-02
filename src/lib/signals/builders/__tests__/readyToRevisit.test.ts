@@ -42,6 +42,7 @@ const input = (over: Partial<ReadyToRevisitInput> = {}): ReadyToRevisitInput => 
   parkedAt: '2026-09-20T00:00:00Z',
   dueAt: '2026-09-20T00:00:00Z',
   daysOverdue: 11,
+  waitingFor: null,
   stage: 'researching',
   conviction: 'medium',
   facts: [],
@@ -54,6 +55,62 @@ const card = (over: Partial<ReadyToRevisitInput> = {}) => {
   if (!r.ok) throw new Error(`suppressed: ${r.reason}`)
   return r.card
 }
+
+/**
+ * The reason, reported and never evaluated.
+ *
+ * This is the distinction the whole slice turns on. "You parked this
+ * waiting for Q3 earnings" is a true statement about what somebody said.
+ * "The thing you were waiting for happened" is a claim about the world that
+ * the product cannot check — `asset_earnings_dates` holds zero rows and
+ * there is no price watcher — and the due date arriving is evidence about
+ * the calendar, nothing else.
+ */
+describe('what they were waiting for', () => {
+  const WAITING = 'Q3 earnings and updated margin guidance'
+
+  it('becomes the headline, in their words, verbatim', () => {
+    expect(card({ waitingFor: WAITING }).headline)
+      .toBe('You parked NVDA waiting for Q3 earnings and updated margin guidance')
+  })
+
+  it('NEVER claims the thing happened', () => {
+    const c = card({ waitingFor: WAITING, daysOverdue: 40 })
+    const all = `${c.headline} ${c.body} ${c.prompt} ${c.provenance.reason}`
+    expect(all).not.toMatch(/has happened\b|have happened\b|occurred|has now|took place|is done|reported|released/i)
+  })
+
+  it('an overdue date is not treated as evidence the condition was met', () => {
+    // The one inference a reader might expect us to make, and the one we
+    // must not: the date passing says the date passed.
+    const fresh = card({ waitingFor: WAITING, daysOverdue: 0 })
+    const stale = card({ waitingFor: WAITING, daysOverdue: 90 })
+    expect(stale.headline).toBe(fresh.headline)
+    expect(stale.prompt).toBe(fresh.prompt)
+  })
+
+  it('asks whether it happened rather than asserting it', () => {
+    expect(card({ waitingFor: WAITING }).prompt)
+      .toBe('Has Q3 earnings and updated margin guidance happened?')
+  })
+
+  it('keeps the timing in the body once the headline carries the reason', () => {
+    // Nothing is said twice: reason in the headline, timing and changes in
+    // the body, where-you-left-it in the chips, sources in the detail.
+    const c = card({ waitingFor: WAITING })
+    expect(c.body).toContain('Parked 11 days ago.')
+    expect(c.headline).not.toMatch(/11 days/)
+  })
+
+  it('falls back honestly when no reason was given', () => {
+    expect(card({ waitingFor: null }).headline).toBe('You parked NVDA 11 days ago')
+    expect(card({ waitingFor: null }).prompt).toBe('Is this still worth doing?')
+  })
+
+  it('treats whitespace as no reason at all', () => {
+    expect(card({ waitingFor: '   ' as unknown as string }).headline).not.toMatch(/waiting for\s*$/)
+  })
+})
 
 describe('the headline is the reader\'s own decision', () => {
   it('leads with what they did, not with what we noticed', () => {

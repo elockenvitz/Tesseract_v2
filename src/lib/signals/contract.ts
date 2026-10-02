@@ -349,6 +349,16 @@ export interface CardAction {
    */
   route?: {
     research?: { id?: string | null; kind?: 'note' | 'thought' | null; title?: string | null } | null
+    /**
+     * The pipeline idea this action opens.
+     *
+     * Needed because a card's ENTITY is the asset, and one asset carries
+     * several ideas — so "open the idea" cannot be recovered from the
+     * entity, and a surface that tried would open an arbitrary one. The
+     * parked-work card is the first producer with a destination its entity
+     * does not name; see `builders/readyToRevisit`.
+     */
+    idea?: { tradeQueueItemId: string } | null
   }
 }
 

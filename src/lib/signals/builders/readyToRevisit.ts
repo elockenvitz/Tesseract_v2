@@ -9,13 +9,19 @@
  * action, not from the system's analysis, and the copy is written to keep
  * that distinction audible.
  *
- * The structure follows it:
+ * The structure follows it, and every region has exactly one job:
  *
- *   headline     what you did, and when          (your decision)
- *   body         where you left it               (your state)
- *   context      what moved while you were gone  (our facts)
+ *   headline     WHY you parked it, in your words — or, failing that, when
+ *   metric       how long it has been
+ *   body         the timing, and what moved while you were gone
+ *   context      WHERE YOU LEFT IT, plus the book
+ *   detail       each change with its source and as-of dates
  *   prompt       the question you now face
  *   action       back to the work
+ *
+ * Nothing appears twice. An earlier draft put the change labels in both the
+ * chips and the detail; at 390px that overflowed the row, clipped a
+ * portfolio name mid-word and hid where-you-left-it entirely.
  *
  * ── The empty case is a first-class case ─────────────────────────────────
  *
@@ -42,6 +48,15 @@ export interface ReadyToRevisitInput {
   /** When they asked for it back. */
   dueAt: string | null
   daysOverdue: number
+  /**
+   * What they said they were waiting for, verbatim. Null when unsaid.
+   *
+   * Reported, never evaluated. The card may say "you parked this while
+   * waiting for X" and may NEVER say or imply that X happened — the
+   * product cannot tell, and the due date arriving is evidence about the
+   * calendar, not about X.
+   */
+  waitingFor: string | null
   /** Where they left it — canonical columns, either may be absent. */
   stage: string | null
   conviction: string | null
@@ -95,29 +110,43 @@ export function buildReadyToRevisitCard(input: ReadyToRevisitInput): CardResult 
 
   const when = parkedPhrase(input.daysOverdue)
 
-  /**
-   * One region, one job — and the first draft broke that rule.
+  /*
+   * The headline becomes their own sentence when they gave one.
    *
-   * It put every fact label in the CHIPS and the same labels again in the
-   * detail. The 390px screenshot showed what that costs: the chip row
-   * overflowed and clipped "Core Equity" mid-word, the body went
-   * unrendered, and the three facts appeared twice on one screen. The
-   * contract warns about exactly this for metrics ("the same value on
-   * screen twice... guaranteed to collide"); it applies to lists too.
+   * "You parked NVDA waiting for Q3 earnings and updated margin guidance"
+   * is the line that makes this card worth opening, and it is theirs — the
+   * product contributed the date and nothing else.
    *
-   * So:
-   *   headline  what you did, and when
-   *   metric    how long it has been
-   *   body      WHAT MOVED, in one line
-   *   chips     WHERE YOU LEFT IT, plus the book
-   *   detail    the facts, each with its source and as-of dates
+   * PAST TENSE AND NO OUTCOME CLAUSE, deliberately. "waiting for X" reports
+   * what they said; "X happened" would be a claim the product cannot
+   * support, since it has no earnings calendar and no price watcher. The
+   * due date arriving says the date arrived.
    */
-  const body = input.facts.length
+  // Trimmed here as well as at the writer and in the RPC. A blank string
+  // that survives to this line produces "You parked NVDA waiting for " —
+  // a sentence that stops mid-thought, which is worse than the fallback.
+  const waitingFor = input.waitingFor?.trim() || null
+
+  const headline = waitingFor
+    ? `You parked ${input.symbol} waiting for ${waitingFor}`
+    : `You parked ${input.symbol} ${when}`
+
+  const changeLine = input.facts.length
     ? `While it was parked: ${input.facts.map(f => f.label.toLowerCase()).join(', ')}` +
       (input.totalFactCount > input.facts.length
         ? `, and ${input.totalFactCount - input.facts.length} more.`
         : '.')
     : 'Nothing has been recorded against it since.'
+
+  /*
+   * When they named a condition, the headline no longer carries the timing,
+   * so the body picks it up. One region, one job — and nothing is said
+   * twice: the reason is in the headline, the timing and the changes are
+   * here, where you left it is in the chips, the sources are in the detail.
+   */
+  const body = waitingFor
+    ? `Parked ${when}. ${changeLine}`
+    : changeLine
 
   /**
    * Where you left it — short, few, and never the facts.
@@ -156,12 +185,22 @@ export function buildReadyToRevisitCard(input: ReadyToRevisitInput): CardResult 
     type: 'ready_to_revisit',
     surface: 'workflow',
     severity: severityFor(input.daysOverdue),
-    headline: `You parked ${input.symbol} ${when}`,
+    headline,
     metric,
     body,
-    prompt: input.facts.length
-      ? 'Does any of this change the call?'
-      : 'Is this still worth doing?',
+    /*
+     * The question, and a third variant for the case that matters most.
+     *
+     * When they named a condition, the honest question is whether it has
+     * actually happened — because only they can answer that. Asking it is
+     * the opposite of asserting it, and it puts the judgement back where
+     * the evidence is.
+     */
+    prompt: waitingFor
+      ? `Has ${waitingFor} happened?`
+      : input.facts.length
+        ? 'Does any of this change the call?'
+        : 'Is this still worth doing?',
     entity: {
       kind: 'asset',
       id: input.assetId,
@@ -174,7 +213,22 @@ export function buildReadyToRevisitCard(input: ReadyToRevisitInput): CardResult 
       // about. Resuming parked work means going back to the work — there is
       // nothing to resolve from inside a card, and pretending otherwise
       // would be a button that looks like it finishes something.
-      primary: { id: 'open_idea', label: 'Resume work', inline: false },
+      primary: {
+        id: 'open_idea',
+        label: 'Resume work',
+        inline: false,
+        /*
+         * The idea to open, travelling ON the action.
+         *
+         * This is what `CardAction.context` is for, and the contract says
+         * why: the builder and the card surface were assembling routing
+         * context independently, so an action could type-check and declare
+         * a label and then resolve somewhere else at tap time. The entity
+         * here is the ASSET — one asset can carry several ideas — so the
+         * destination cannot be recovered from it.
+         */
+        route: { idea: { tradeQueueItemId: input.tradeQueueItemId } },
+      },
       /*
        * No quick actions.
        *
