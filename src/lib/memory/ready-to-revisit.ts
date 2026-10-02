@@ -103,7 +103,23 @@ function reasonFor(c: RevisitCandidate, factCount: number): string {
     : `${c.daysOverdue} days ago`
 
   const subject = c.kind === OBLIGATION_KINDS.decisionRevisit ? 'this recommendation' : 'this idea'
-  const head = `You asked to revisit ${subject} ${when}.`
+
+  /*
+   * Their words, reported — never evaluated.
+   *
+   * "You parked this while waiting for Q3 earnings" is a true statement
+   * about what somebody said. "The thing you were waiting for happened" is
+   * a claim about the world, and the product has no way to check it: there
+   * is no earnings calendar (`asset_earnings_dates` is empty) and no price
+   * watcher. The past tense, and the absence of any "it happened" clause,
+   * is what keeps the first sentence from drifting into the second.
+   *
+   * The due date arriving means the DATE arrived. Nothing more.
+   */
+  const head = c.waitingFor
+    ? `You parked ${subject} while waiting for ${c.waitingFor}.`
+    : `You asked to revisit ${subject} ${when}.`
+
   return factCount > 0 ? `${head} Some things changed while it was parked.` : head
 }
 
@@ -161,6 +177,9 @@ export function readyToRevisitCandidates(input: ReadyToRevisitInput): FeedCandid
         dueAt: c.dueAt,
         daysOverdue: c.daysOverdue,
         daysParked: c.daysParked,
+        // Their words. Carried verbatim so the surface quotes rather than
+        // paraphrases, and null when they gave none.
+        waitingFor: c.waitingFor,
         // Where you left it. Canonical columns, rendered only if present.
         stage: c.stage,
         conviction: c.conviction,

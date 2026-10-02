@@ -43,11 +43,19 @@ export interface ObligationRow {
   source_type: string | null
   source_id: string | null
   provenance: string
+  /**
+   * What the person said they were waiting for, in their own words.
+   *
+   * Comes down with the obligation that is already being fetched — no
+   * second query, which is why the candidate can show it without touching
+   * the request budget.
+   */
+  waiting_for: string | null
 }
 
 const OBLIGATION_SELECT =
   'id, organization_id, kind, subject_type, subject_id, owner_id, ' +
-  'raised_at, due_at, source_type, source_id, provenance'
+  'raised_at, due_at, source_type, source_id, provenance, waiting_for'
 
 export interface DueObligationQuery {
   organizationId: string
@@ -185,6 +193,14 @@ export interface RevisitCandidate {
   parkedAt: string
   /** When they asked for it back. */
   dueAt: string | null
+  /**
+   * What they said they were waiting for. Null when they said nothing.
+   *
+   * A record of INTENT, never of a condition the product evaluated. No
+   * reader may treat a passed due date as evidence that the named thing
+   * occurred — see `describeCandidate` and the card builder.
+   */
+  waitingFor: string | null
   dueState: DueState
   /** Whole days since it came due. Zero on the day. */
   daysOverdue: number
@@ -294,6 +310,7 @@ export async function resolveRevisitCandidates(
       ownerId: o.owner_id,
       parkedAt: o.raised_at,
       dueAt: o.due_at,
+      waitingFor: o.waiting_for ?? null,
       dueState: state,
       daysOverdue: o.due_at && state === 'due' ? elapsedDays(o.due_at, now) : 0,
       daysParked: o.due_at ? Math.max(0, elapsedDays(o.raised_at, new Date(o.due_at))) : elapsedDays(o.raised_at, now),

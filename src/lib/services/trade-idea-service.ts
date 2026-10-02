@@ -920,8 +920,21 @@ export async function snoozeTradeIdea(params: {
   revisitAt: string | null
   context: ActionContext
   note?: string | null
+  /**
+   * What the person said they were waiting for. Optional.
+   *
+   * Distinct from `note` above, which is audit metadata about the action.
+   * This is the user's stated INTENT and it lives on the obligation, where
+   * the resurfacing card reads it — so the card can say "you parked this
+   * while waiting for the Q3 print" instead of only "you asked to revisit
+   * this".
+   *
+   * It is a record of what they said, never an evaluated condition: the
+   * product has no way to know whether the thing they named happened.
+   */
+  waitingFor?: string | null
 }): Promise<void> {
-  const { tradeId, revisitAt, context, note } = params
+  const { tradeId, revisitAt, context, note, waitingFor } = params
 
   const { data: current } = await supabase
     .from('trade_queue_items')
@@ -974,6 +987,7 @@ export async function snoozeTradeIdea(params: {
     tradeQueueItemId: tradeId,
     ownerId: context.actorId,
     revisitAt,
+    waitingFor: waitingFor ?? null,
   })
 
   await emitAuditEvent({
@@ -994,6 +1008,10 @@ export async function snoozeTradeIdea(params: {
       request_id: context.requestId,
       ui_source: context.uiSource,
       note: note ?? null,
+      // Whether a reason was given, not the reason itself. The words live
+      // on the obligation — one home, so the audit trail and the card
+      // cannot end up quoting different things.
+      waiting_for_given: !!waitingFor?.trim(),
     },
     orgId: getOrgId(context),
     teamId: undefined,

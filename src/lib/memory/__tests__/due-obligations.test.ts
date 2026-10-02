@@ -27,6 +27,7 @@ interface Ob {
   source_type: string | null
   source_id: string | null
   provenance: string
+  waiting_for: string | null
 }
 
 const db = vi.hoisted(() => ({
@@ -60,6 +61,8 @@ vi.mock('../../supabase', () => {
       raised_at: new Date().toISOString(), due_at: p.p_due_at ?? null,
       cleared_at: null, source_type: p.p_source_type ?? null,
       source_id: p.p_source_id ?? null, provenance: p.p_provenance,
+      // Mirrors the RPC's own `nullif(btrim(...), '')`.
+      waiting_for: (p.p_waiting_for ?? '').trim() || null,
     }
     db.obligations.push(row)
     return row.id
@@ -82,7 +85,14 @@ vi.mock('../../supabase', () => {
       (o: Ob) => o.cleared_at === null && OPEN_KEY(o) === OPEN_KEY(candidate),
     )
     if (existing) {
-      if ((existing.due_at ?? null) === (p.p_due_at ?? null)) return existing.id
+      // Mirrors the RPC: BOTH the date and the stated reason decide whether
+      // anything changed. Comparing only the date would let a changed
+      // reason be silently dropped; comparing with `=` rather than `is not
+      // distinct from` would churn a cleared/raised pair every time
+      // somebody added a reason to an existing snooze.
+      const sameDue = (existing.due_at ?? null) === (p.p_due_at ?? null)
+      const sameWaiting = (existing.waiting_for ?? null) === ((p.p_waiting_for ?? '').trim() || null)
+      if (sameDue && sameWaiting) return existing.id
       clear(existing.id)
     }
     return raise(p)
@@ -251,6 +261,74 @@ describe('changing the snooze date is deterministic', () => {
     // same button twice.
     expect(db.obligations).toHaveLength(1)
     expect(db.obligations[0].cleared_at).toBeNull()
+  })
+})
+
+/* ── What they were waiting for ────────────────────────────────────────── */
+
+describe('the stated reason is stored with the obligation', () => {
+  it('a snooze without a reason works exactly as before', () => {
+    return syncIdeaRevisitObligation(SNOOZE).then(() => {
+      expect(openOnes()).toHaveLength(1)
+      expect(openOnes()[0].waiting_for).toBeNull()
+    })
+  })
+
+  it('a snooze with a reason stores it verbatim', async () => {
+    await syncIdeaRevisitObligation({ ...SNOOZE, waitingFor: 'Q3 earnings and margin guidance' })
+    expect(openOnes()[0].waiting_for).toBe('Q3 earnings and margin guidance')
+  })
+
+  it('whitespace is the same as saying nothing', async () => {
+    await syncIdeaRevisitObligation({ ...SNOOZE, waitingFor: '   ' })
+    expect(openOnes()[0].waiting_for).toBeNull()
+  })
+
+  it('a changed reason supersedes, preserving the first', async () => {
+    // "Parked until the 15th waiting for the print" and "...waiting for the
+    // CFO search" are two different intentions on one date. Updating in
+    // place would rewrite the first out of existence.
+    await syncIdeaRevisitObligation({ ...SNOOZE, waitingFor: 'the print' })
+    await syncIdeaRevisitObligation({ ...SNOOZE, waitingFor: 'the CFO search' })
+
+    expect(openOnes()).toHaveLength(1)
+    expect(openOnes()[0].waiting_for).toBe('the CFO search')
+
+    const cleared = db.obligations.filter((o: Ob) => o.cleared_at !== null)
+    expect(cleared).toHaveLength(1)
+    expect(cleared[0].waiting_for).toBe('the print')
+  })
+
+  it('an unchanged reason and date churn nothing', async () => {
+    await syncIdeaRevisitObligation({ ...SNOOZE, waitingFor: 'the print' })
+    await syncIdeaRevisitObligation({ ...SNOOZE, waitingFor: 'the print' })
+    expect(db.obligations).toHaveLength(1)
+    expect(db.obligations[0].cleared_at).toBeNull()
+  })
+
+  it('adding a reason to an existing snooze supersedes rather than no-ops', async () => {
+    // The `is not distinct from` case: null → text is a real change. With a
+    // plain `=` the comparison yields NULL, reads as "not the same", and
+    // would churn on every save instead.
+    await syncIdeaRevisitObligation(SNOOZE)
+    await syncIdeaRevisitObligation({ ...SNOOZE, waitingFor: 'the print' })
+    expect(openOnes()).toHaveLength(1)
+    expect(openOnes()[0].waiting_for).toBe('the print')
+    expect(db.obligations).toHaveLength(2)
+  })
+
+  it('changing only the date keeps the reason', async () => {
+    await syncIdeaRevisitObligation({ ...SNOOZE, waitingFor: 'the print' })
+    await syncIdeaRevisitObligation({ ...SNOOZE, revisitAt: OCT_30, waitingFor: 'the print' })
+    expect(openOnes()[0]).toMatchObject({ due_at: OCT_30, waiting_for: 'the print' })
+  })
+
+  it('reaches the candidate without a second query', async () => {
+    await syncIdeaRevisitObligation({ ...SNOOZE, revisitAt: SEP_20, waitingFor: 'the print' })
+    const due = await fetchObligations({ organizationId: 'org-A', now: NOW })
+    const [c] = await resolveRevisitCandidates(due, NOW)
+    // It rode down with the obligation that was already being fetched.
+    expect(c.waitingFor).toBe('the print')
   })
 })
 

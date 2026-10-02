@@ -136,6 +136,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showDeferModal, setShowDeferModal] = useState(false)
   const [deferUntilDate, setDeferUntilDate] = useState<string | null>(null)
+  /** What the user said they were waiting for. Optional; theirs, not ours. */
+  const [deferWaitingFor, setDeferWaitingFor] = useState('')
   const [showProposalModal, setShowProposalModal] = useState(false)
   const [debateComposerTrigger, setDebateComposerTrigger] = useState<'argument' | 'context' | null>(null)
   const [defaultThesisDirection, setDefaultThesisDirection] = useState<import('../../types/trading').ThesisDirection | undefined>()
@@ -1320,6 +1322,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       setSelectedDecisionPortfolioId(null)
       setShowDeferModal(false)
       setDeferUntilDate(null)
+      setDeferWaitingFor('')
     },
   })
 
@@ -7426,6 +7429,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
             onClick={() => {
               setShowDeferModal(false)
               setDeferUntilDate(null)
+              setDeferWaitingFor('')
             }}
           />
           <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
@@ -7477,12 +7481,61 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                   : 'Leave empty to snooze indefinitely — it stays under Snoozed, but nothing will bring it back for you.'}
               </p>
             </div>
+
+            {/*
+              What they are waiting for — the one thing the product could
+              never say when the work came back.
+
+              Optional, deliberately and permanently. Making it required
+              would get "ok" typed into it within a week, and then there is
+              a reasoning field full of noise that looks aggregable. An
+              absent reason is a true record of somebody who did not have
+              one to give.
+
+              Only on the snooze branch. A portfolio-scoped deferral is a
+              decision on a recommendation and belongs to a different
+              record; asking the question there would put the answer
+              somewhere nothing reads it.
+            */}
+            {!selectedDecisionPortfolioId && (
+              <div className="mt-4">
+                <label
+                  htmlFor="snooze-waiting-for"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                >
+                  What are you waiting for?{' '}
+                  <span className="font-normal text-gray-400 dark:text-gray-500">(optional)</span>
+                </label>
+                <input
+                  id="snooze-waiting-for"
+                  data-testid="snooze-waiting-for"
+                  type="text"
+                  value={deferWaitingFor}
+                  onChange={e => setDeferWaitingFor(e.target.value)}
+                  maxLength={200}
+                  placeholder="Q3 earnings and updated margin guidance"
+                  className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-400"
+                />
+                {/*
+                  States the limit plainly. Tesseract cannot tell whether
+                  the thing they name has happened — there is no earnings
+                  calendar and no price watcher — and a field that looks
+                  like a trigger while behaving like a note is the exact
+                  defect the deferred-recommendation work just removed.
+                */}
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  We'll show this back to you when the idea returns. Tesseract won't detect it
+                  for you — the date above is what brings the idea back.
+                </p>
+              </div>
+            )}
             <div className="mt-6 flex justify-end gap-3">
               <Button
                 variant="secondary"
                 onClick={() => {
                   setShowDeferModal(false)
                   setDeferUntilDate(null)
+                  setDeferWaitingFor('')
                   setSelectedDecisionPortfolioId(null)
                   setPendingDecision(null)
                 }}
@@ -7504,6 +7557,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                       tradeId,
                       deferredUntil: deferUntilDate,
                       uiSource: 'modal',
+                      waitingFor: deferWaitingFor,
                     })
                     // Force immediate refetch to ensure UI updates
                     await queryClient.invalidateQueries({
@@ -7516,6 +7570,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                     })
                     setShowDeferModal(false)
                     setDeferUntilDate(null)
+                    setDeferWaitingFor('')
                     onClose()
                   }
                 }}

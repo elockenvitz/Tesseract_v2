@@ -38,6 +38,7 @@ const candidate = (over: Partial<RevisitCandidate> = {}): RevisitCandidate => ({
   ownerId: 'user-1',
   parkedAt: '2026-09-10T00:00:00Z',
   dueAt: '2026-09-20T00:00:00Z',
+  waitingFor: null,
   dueState: 'due',
   daysOverdue: 11,
   daysParked: 10,
@@ -151,6 +152,29 @@ describe('the claim', () => {
     expect(c.facts?.changeSummary).toBe('+8.4% price')
   })
 
+  it('quotes the stated reason rather than the elapsed time', () => {
+    const [c] = produce([candidate({ waitingFor: 'Q3 earnings' })])
+    expect(c.reason).toBe('You parked this idea while waiting for Q3 earnings.')
+  })
+
+  it('falls back to the generic wording when no reason was given', () => {
+    expect(produce([candidate({ waitingFor: null })])[0].reason)
+      .toContain('You asked to revisit this idea 11 days ago.')
+  })
+
+  it('never says the awaited thing happened, however overdue', () => {
+    // The only inference a reader might expect, and the one that would be
+    // false: there is no earnings calendar and no price watcher, so a
+    // passed due date is evidence about the calendar and nothing else.
+    const [c] = produce([candidate({ waitingFor: 'Q3 earnings', daysOverdue: 120 })])
+    expect(c.reason).not.toMatch(/happened|occurred|has now|reported|released|took place/i)
+  })
+
+  it('carries the reason verbatim for the surface to quote', () => {
+    const [c] = produce([candidate({ waitingFor: 'the CFO search to conclude' })])
+    expect(c.facts?.waitingFor).toBe('the CFO search to conclude')
+  })
+
   it('measures from when it was parked, not from when this ran', () => {
     expect(produce([candidate()])[0].occurredAt).toBe('2026-09-10T00:00:00Z')
   })
@@ -175,7 +199,10 @@ describe('carried facts', () => {
   it('carries scalars a surface needs, not blobs', () => {
     const [c] = produce([candidate()])
     for (const v of Object.values(c.facts ?? {})) {
-      expect(['string', 'number', 'object']).toContain(typeof v)
+      // `undefined` is allowed alongside null: the contract's facts map is
+      // `string | number | null`, and an absent key is how a producer says
+      // "we do not have this" without the surface rendering an empty slot.
+      expect(['string', 'number', 'object', 'undefined']).toContain(typeof v)
       if (typeof v === 'object') expect(v).toBeNull()
     }
   })

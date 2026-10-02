@@ -36,6 +36,14 @@ export interface SyncIdeaRevisitInput {
   ownerId: string
   /** Null means the snooze was cleared — cancel the obligation. */
   revisitAt: string | null
+  /**
+   * What the person said they were waiting for. Optional, and theirs.
+   *
+   * Passed straight through to the RPC. Nothing here interprets it,
+   * normalises it beyond trimming, or fills it in when absent — an empty
+   * reason is a true record of someone who did not give one.
+   */
+  waitingFor?: string | null
 }
 
 /**
@@ -77,6 +85,7 @@ export async function syncIdeaRevisitObligation(
       sourceType: 'trade_queue_items',
       sourceId: input.tradeQueueItemId,
       provenance: 'ui:snooze-idea',
+      waitingFor: input.waitingFor ?? null,
     })
   }
 
@@ -175,6 +184,7 @@ async function supersede(args: {
   sourceType: string
   sourceId: string
   provenance: string
+  waitingFor?: string | null
 }): Promise<SyncObligationResult> {
   try {
     const { data, error } = await supabase.rpc('supersede_memory_obligation' as never, {
@@ -187,6 +197,10 @@ async function supersede(args: {
       p_source_type: args.sourceType,
       p_source_id: args.sourceId,
       p_provenance: args.provenance,
+      // Trimmed to null here as well as in the RPC: a caller passing "   "
+      // should produce the same row as one passing nothing, whichever side
+      // of the wire the check happens on.
+      p_waiting_for: args.waitingFor?.trim() || null,
     } as never)
     if (error) {
       console.warn(`[obligations] ${args.kind} not recorded:`, error.message)
