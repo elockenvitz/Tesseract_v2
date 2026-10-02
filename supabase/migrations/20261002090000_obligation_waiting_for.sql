@@ -53,18 +53,59 @@ comment on column public.memory_obligations.waiting_for is
 -- (org, kind, subject, owner) is still returned as-is rather than updated.
 -- That is deliberate even now that there is a note to update — see
 -- supersede below for why changing the note creates a new row instead.
+--
+-- ── DROP, not just CREATE OR REPLACE ─────────────────────────────────────
+--
+-- `CREATE OR REPLACE FUNCTION` with a DIFFERENT argument list OVERLOADS; it
+-- does not replace. Without the drop below, applying this migration would
+-- leave two `raise_memory_obligation` functions: the live 9-argument one and
+-- this 10-argument one whose extra parameter has a default.
+--
+-- A call supplying exactly the original nine named arguments then matches
+-- BOTH, and Postgres raises `42725 function ... is not unique`. That is not
+-- hypothetical: `useTradeReviewObligations.ts` makes exactly that call, so
+-- the Trade Book obligation sync would start failing the moment this
+-- migration was applied — while the old app was still deployed, which is
+-- precisely the window the rollout order depends on.
+--
+-- Dropped by EXACT typed signature, never by name. A bare
+-- `drop function raise_memory_obligation` would itself fail with 42725 once
+-- an overload exists, and would be a loaded gun if a future overload were
+-- added.
+--
+-- Safe inside the migration's transaction: the drop and the create are
+-- atomic, so no concurrent caller ever observes the gap.
+--
+-- ── Defaults are PRESERVED ───────────────────────────────────────────────
+--
+-- The live function defaults `p_owner_id` through `p_provenance`. The first
+-- draft of this migration silently dropped those, narrowing the contract for
+-- any caller that omitted an optional argument. They are restored verbatim
+-- below so the only difference between the old function and the new one is
+-- the added trailing parameter — which is what makes an old 9-argument
+-- caller resolve cleanly against the new 10-argument function.
+--
+-- ── Grants must be re-issued ─────────────────────────────────────────────
+--
+-- `CREATE OR REPLACE` keeps a function's ACL; `DROP` discards it. The live
+-- ACL is `authenticated=X, service_role=X` and NOT anon, and it is restored
+-- explicitly after each create rather than inherited by accident.
 -- ─────────────────────────────────────────────────────────────────────────
+
+drop function if exists public.raise_memory_obligation(
+  uuid, text, text, uuid, uuid, timestamptz, text, uuid, text
+);
 
 create or replace function public.raise_memory_obligation(
   p_org_id uuid,
   p_kind text,
   p_subject_type text,
   p_subject_id uuid,
-  p_owner_id uuid,
-  p_due_at timestamptz,
-  p_source_type text,
-  p_source_id uuid,
-  p_provenance text,
+  p_owner_id uuid default null,
+  p_due_at timestamptz default null,
+  p_source_type text default null,
+  p_source_id uuid default null,
+  p_provenance text default 'ui',
   p_waiting_for text default null
 )
 returns uuid
@@ -114,6 +155,14 @@ begin
 end;
 $function$;
 
+-- The live ACL, restored exactly. `anon` is deliberately absent.
+revoke all on function public.raise_memory_obligation(
+  uuid, text, text, uuid, uuid, timestamptz, text, uuid, text, text
+) from public;
+grant execute on function public.raise_memory_obligation(
+  uuid, text, text, uuid, uuid, timestamptz, text, uuid, text, text
+) to authenticated, service_role;
+
 -- ─────────────────────────────────────────────────────────────────────────
 -- supersede_memory_obligation: a changed REASON supersedes, like a changed
 -- date.
@@ -130,16 +179,29 @@ $function$;
 -- the same button twice.
 -- ─────────────────────────────────────────────────────────────────────────
 
+-- Same overload hazard, same fix.
+--
+-- `20260930180000` introduces a 9-argument `supersede_memory_obligation`.
+-- Both migrations are unapplied, so this overload would exist only inside
+-- the bundle — but it would exist, and a 9-argument caller would hit the
+-- same 42725. Dropped by exact signature for the same reasons as above.
+--
+-- Nothing calls the 9-argument form today; it is removed so it cannot
+-- become the ambiguity somebody rediscovers later.
+drop function if exists public.supersede_memory_obligation(
+  uuid, text, text, uuid, uuid, timestamptz, text, uuid, text
+);
+
 create or replace function public.supersede_memory_obligation(
   p_org_id uuid,
   p_kind text,
   p_subject_type text,
   p_subject_id uuid,
-  p_owner_id uuid,
-  p_due_at timestamptz,
-  p_source_type text,
-  p_source_id uuid,
-  p_provenance text,
+  p_owner_id uuid default null,
+  p_due_at timestamptz default null,
+  p_source_type text default null,
+  p_source_id uuid default null,
+  p_provenance text default 'ui',
   p_waiting_for text default null
 )
 returns uuid
@@ -190,7 +252,7 @@ end;
 $function$;
 
 revoke all on function public.supersede_memory_obligation(uuid, text, text, uuid, uuid, timestamptz, text, uuid, text, text) from public;
-grant execute on function public.supersede_memory_obligation(uuid, text, text, uuid, uuid, timestamptz, text, uuid, text, text) to authenticated;
+grant execute on function public.supersede_memory_obligation(uuid, text, text, uuid, uuid, timestamptz, text, uuid, text, text) to authenticated, service_role;
 
 comment on function public.supersede_memory_obligation(uuid, text, text, uuid, uuid, timestamptz, text, uuid, text, text) is
   'Move an open obligation to a new due date or a new stated reason, in one transaction: clears the old (preserving it) and raises the new. Returns the existing row unchanged when neither has moved.';
