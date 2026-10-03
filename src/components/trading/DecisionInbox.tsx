@@ -109,6 +109,17 @@ interface DecisionInboxProps {
 }
 
 interface IdeaGroup {
+  /**
+   * The group's unique identity: `proposal:<id>` | `pair:<id>` | `tqi:<id>`.
+   *
+   * Distinct from `tradeId`, and that distinction is load-bearing. Two
+   * competing proposals on the SAME pair produce two groups — `proposal:A`
+   * and `proposal:B` — that both carry `tradeId = pairId`. Keying the
+   * rendered card or the collapse set on `tradeId` therefore gave two
+   * sibling elements the same React key and made one collapse toggle drive
+   * both. `tradeId` is for navigation; this is for identity.
+   */
+  groupKey: string
   tradeId: string
   symbol: string
   companyName: string
@@ -600,6 +611,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
       )
 
       const group: IdeaGroup = {
+        groupKey,
         tradeId,
         // Symbol and company are current identity, not recommendation
         // content, so the live join is the right source for them.
@@ -620,10 +632,19 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
       // Collect buy/sell symbols and upgrade thesis from any leg that has one.
       requests.forEach(r => {
         const rtqi = (r.trade_queue_item as any)
-        // Upgrade the thesis only from another leg's FROZEN version. The old
-        // line here read `rtqi.thesis_text`, so a group whose seed leg had no
-        // captured thesis would quietly adopt a sibling idea's current one.
-        if (!group.thesisText && (r as any).proposal_version?.thesis_text) {
+        // Borrow a thesis from a sibling only WITHIN A PAIR, where the legs
+        // are two halves of one proposal by one author and share its
+        // reasoning.
+        //
+        // For a singleton group the siblings are a different thing entirely:
+        // the same idea recommended into other portfolios, or — because the
+        // unique index is (trade_queue_item_id, portfolio_id, requested_by) —
+        // a COMPETING recommendation from a different analyst on the very
+        // same book. Borrowing there printed analyst B's thesis under a card
+        // headed with analyst A's name and sizing, which is an unattributable
+        // claim: the PM cannot tell whose reasoning they are reading. Better
+        // to show `reasoningNote` and say it was not captured.
+        if (isPair && !group.thesisText && (r as any).proposal_version?.thesis_text) {
           group.thesisText = (r as any).proposal_version.thesis_text
         }
         if (!isPair) return
@@ -887,7 +908,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
         ) : (
           <div className="py-1">
             {grouped.map((group, gi) => {
-              const isExpanded = !collapsedGroups.has(group.tradeId)
+              const isExpanded = !collapsedGroups.has(group.groupKey)
               const isBuy = group.action === 'buy' || group.action === 'add'
               const isPair = group.isPairTrade
               const urg = URGENCY_CONFIG[group.urgency || '']
@@ -895,11 +916,11 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
               const groupIsExample = group.requests.length > 0 && group.requests.every(isExample)
 
               return (
-                <div key={group.tradeId} className={clsx("mx-2 mb-3 rounded-lg border overflow-hidden", "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/60")}>
+                <div key={group.groupKey} className={clsx("mx-2 mb-3 rounded-lg border overflow-hidden", "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/60")}>
                   {/* ── Idea Header ─────────────────────────────── */}
                   <div
                     className="px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors"
-                    onClick={() => toggleGroup(group.tradeId)}
+                    onClick={() => toggleGroup(group.groupKey)}
                   >
                     {compact ? renderCompactIdeaHeader(group, isExpanded) : (
                     /* Line 1: chevron + action/pair badge + symbol + company + urgency + count */
@@ -2118,11 +2139,59 @@ function PortfolioRow({
         )}>{request.context_note}</p>
       )}
 
-      {/* Line 3: Who recommended + when */}
+      {/*
+        Line 2b: this row's own reasoning provenance.
+
+        Rendered per request, not per idea card, because two analysts may hold
+        competing recommendations on the same idea AND the same portfolio —
+        the unique index is (trade_queue_item_id, portfolio_id, requested_by).
+        The card header can only narrate one of them, so without this a PM
+        reading the second tile has no way to tell whose thinking they are
+        looking at, or that there is none.
+
+        `reasoningFallbackNote` was already computed for every group and
+        rendered nowhere. Printing a blank where a thesis belongs is exactly
+        the gap `historical-recommendation.ts` exists to close: the reader
+        fills in the silence themselves.
+      */}
+      {history.reasoningUnavailable ? (
+        <p className="text-[11px] text-amber-700 dark:text-amber-500/90 mt-1 leading-snug">
+          {reasoningFallbackNote(history)}
+        </p>
+      ) : history.thesisText.captured && history.thesisText.value ? (
+        <p className={clsx(
+          "text-gray-600 dark:text-gray-300 mt-1 leading-snug",
+          compact ? "text-[13px] line-clamp-4" : "text-[11px] line-clamp-2",
+        )}>{history.thesisText.value}</p>
+      ) : null}
+
+      {/* Line 3: Who recommended, when, and what record it came from */}
       <div className="flex items-center gap-1.5 mt-1 text-[11px] text-gray-400 dark:text-gray-500">
         <span className="font-medium text-gray-500 dark:text-gray-400">{analyst}</span>
         <span className="text-gray-300 dark:text-gray-600">&middot;</span>
         <span>{timeAgo}</span>
+        {/*
+          Which record this row is quoting. A PM deciding needs to know
+          whether they are reading an immutable submission, a sizing-only
+          snapshot from before versioning, or nothing at all — those carry
+          very different weight and looked identical before.
+        */}
+        {history.source === 'version' && history.versionNumber != null && (
+          <>
+            <span className="text-gray-300 dark:text-gray-600">&middot;</span>
+            <span title="Immutable record of what was recommended at submission. Editing the idea cannot change it.">
+              v{history.versionNumber}
+            </span>
+          </>
+        )}
+        {history.source === 'snapshot' && (
+          <>
+            <span className="text-gray-300 dark:text-gray-600">&middot;</span>
+            <span title="Sizing-only snapshot from before recommendation versioning. The thesis at that time was not recorded.">
+              pre-versioning
+            </span>
+          </>
+        )}
       </div>
 
       {/* 5. Actions — pending tab (default state) */}
