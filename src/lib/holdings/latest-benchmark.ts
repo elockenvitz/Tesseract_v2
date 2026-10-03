@@ -1,26 +1,31 @@
 /**
- * `portfolio_benchmark_weights` is about to become a dated series, and every
- * existing read of it assumes it is not.
+ * Keep only each portfolio's newest benchmark file. The correctness backstop,
+ * not the mechanism for narrowing the read.
  *
- * ── The trap, stated before it springs ────────────────────────────────────
+ * ── The trap sprang ──────────────────────────────────────────────────────
  *
- * Today the table holds exactly one file: SPY, as_of 2026-08-14, 483 names,
- * one copy per portfolio. A `UNIQUE (portfolio_id, asset_id)` constraint makes
- * a second date impossible, so every read site selects `asset_id, weight` with
- * no date predicate and is accidentally correct.
+ * This was written while the table still held exactly one file per portfolio,
+ * when `UNIQUE (portfolio_id, asset_id)` made a second date impossible and
+ * every read site selected `asset_id, weight` with no date predicate and was
+ * accidentally correct. The prediction was that relaxing the constraint for
+ * historical active weights would make those sites silently sum or overwrite
+ * across dates — `docs/handoff.md` §5c, the distinct-vs-current collapse,
+ * which had already inflated portfolio denominators by up to 36x in
+ * `usePortfolioLenses`.
  *
- * The moment that constraint is relaxed to allow history — which is what
- * historical active weights require — those five call sites silently start
- * summing or overwriting across dates. That is not a hypothetical failure
- * mode; it is `docs/handoff.md` §5c, the distinct-vs-current collapse, which
- * already inflated portfolio denominators by up to 36x in `usePortfolioLenses`
- * and made every conviction card emit nothing rather than something visibly
- * wrong.
+ * The constraint was relaxed. The prediction was right and this helper did
+ * its job: no read site produced a wrong number.
  *
- * So this helper exists BEFORE the migration rather than after it. Applied
- * today it is a no-op, because there is one date; applied after the migration
- * it is the only thing standing between the feed and the same defect a third
- * time.
+ * What it could not do, because it runs in the browser, is stop those sites
+ * TRANSFERRING the history they then discarded. The table reached 33 dates and
+ * the largest portfolio's read reached 2.46 MB to use 76 KB of it — a 33x
+ * amplification that grew by one date a day and accounted for most of one
+ * day's PostgREST egress.
+ *
+ * So the read is narrowed server-side now, by
+ * `lib/holdings/benchmark-latest-query`, and this stays as the backstop
+ * underneath it: cheap once the payload is already one date, and the reason a
+ * mistake there is a performance regression rather than a wrong number.
  *
  * ── Why per portfolio, not globally ───────────────────────────────────────
  *
