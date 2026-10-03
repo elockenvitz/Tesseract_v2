@@ -1266,7 +1266,15 @@ describe('a handoff never promises what is not there', () => {
      */
     const hook = src('hooks/useDesktopPortfolio.ts')
     expect(hook).toContain('What it does NOT hold is a benchmark return series')
-    expect(hook).toContain('latestBenchmarkRows')
+    /*
+     * The newest benchmark file, never a merge across dates. This asserted
+     * `latestBenchmarkRows`, the client-side filter that enforced the rule
+     * when the hook read every historical row. The read is now narrowed
+     * server-side by `fetchLatestBenchmarkWeights`, which applies that same
+     * filter internally as a backstop — so the property is unchanged and the
+     * mechanism moved.
+     */
+    expect(hook).toContain('fetchLatestBenchmarkWeights')
 
     /*
      * Both halves of the decision. A manager who owns none of the largest
