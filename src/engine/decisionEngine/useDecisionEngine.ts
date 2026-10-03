@@ -12,6 +12,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useThesisReviews } from '../../hooks/useThesisReview'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { useTradeReviewObligationsForEngine } from '../../hooks/useOpenObligations'
 import { operationalAfterPilot, judgeIdeaRow } from '../../lib/pilot/seed-visibility'
 import {
   runGlobalDecisionEngine,
@@ -552,6 +553,11 @@ export function useDecisionEngine(): UseDecisionEngineResult {
     return result
   }, [enrichedTradeIdeas, tradeProposals])
 
+  // Shared with useGlobalDecisionEngine — one loader, one query, one
+  // definition of "open obligation". React Query dedupes the fetch when both
+  // hooks are mounted.
+  const tradeReviewObligations = useTradeReviewObligationsForEngine()
+
   // ---- 8. Run engine (memoized) ----
   const result = useMemo<GlobalDecisionEngineResult | null>(() => {
     if (!userId || coverageLoading) return null
@@ -571,11 +577,16 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         // A thesis confirmed to still hold is not stale, even if nobody
         // edited it. Omitting this is what made every review invisible here.
         thesisReviews,
+        // The other half of the read-end gap: this call site omitted
+        // `tradeReviewObligations` too, so `evaluateTradeReviewOwed` was
+        // dead on both paths into the engine.
+        tradeReviewObligations,
         projects: projects ?? [],
         roleByPortfolioId: coverage?.roleByPortfolioId ?? {},
       },
     })
-  }, [userId, coverage, expandedTradeIdeas, proposals, ratingChanges, thesisUpdates, thesisReviews, projects, coverageLoading])
+  }, [userId, coverage, expandedTradeIdeas, proposals, ratingChanges, thesisUpdates, thesisReviews,
+      tradeReviewObligations, projects, coverageLoading])
 
   // ---- 8. Selectors ----
   // Rollup items have children — asset/portfolio selectors unwrap them

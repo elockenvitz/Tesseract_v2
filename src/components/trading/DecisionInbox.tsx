@@ -43,6 +43,10 @@ import type { DecisionRequest, DecisionRequestStatus, DeferralTrigger } from '..
 import { usePilotMode } from '../../hooks/usePilotMode'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
 import { isPilotExampleRequest, PILOT_EXAMPLE_HINT } from '../../lib/pilot/pilot-inbox'
+import {
+  resolveHistoricalRecommendation,
+  reasoningFallbackNote,
+} from '../../lib/recommendations/historical-recommendation'
 
 type InboxTab = 'needs_decision' | 'accepted' | 'rejected' | 'deferred'
 
@@ -111,6 +115,12 @@ interface IdeaGroup {
   rationale: string | null
   thesisText: string | null
   conviction: string | null
+  /**
+   * Set when the submitted reasoning was never captured, so the surface can
+   * say that instead of leaving a blank the reader fills in themselves. Null
+   * when the reasoning IS available.
+   */
+  reasoningNote: string | null
   urgency: string | null
   isPairTrade: boolean
   pairBuySymbols: string[]
@@ -578,14 +588,27 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
       const seedLeg = requests.find(r => ['pending', 'under_review', 'needs_discussion'].includes(r.status)) || requests[0]
       const seedTqi = (seedLeg.trade_queue_item as any)
 
+      // What the analyst actually submitted, frozen. Falls back to the
+      // request's own columns and then to "not captured" — never to the
+      // idea's current thesis. Reading `seedTqi.thesis_text` here is what
+      // made a resolved decision re-narrate itself every time someone edited
+      // the idea behind it.
+      const seedHistory = resolveHistoricalRecommendation(
+        seedLeg as never,
+        (seedLeg as any).proposal_version ?? null,
+      )
+
       const group: IdeaGroup = {
         tradeId,
+        // Symbol and company are current identity, not recommendation
+        // content, so the live join is the right source for them.
         symbol: seedTqi?.assets?.symbol || '?',
         companyName: seedTqi?.assets?.company_name || '',
-        action: isPair ? 'pair' : (seedTqi?.action || 'buy'),
-        rationale: seedTqi?.rationale || null,
-        thesisText: seedTqi?.thesis_text || null,
-        conviction: seedTqi?.conviction || null,
+        action: isPair ? 'pair' : (seedHistory.action.value || seedTqi?.action || 'buy'),
+        rationale: seedHistory.rationale.captured ? seedHistory.rationale.value : null,
+        thesisText: seedHistory.thesisText.captured ? seedHistory.thesisText.value : null,
+        conviction: seedHistory.conviction.captured ? seedHistory.conviction.value : null,
+        reasoningNote: reasoningFallbackNote(seedHistory),
         urgency: seedTqi?.urgency || seedLeg.urgency || null,
         isPairTrade: isPair,
         pairBuySymbols: [],
@@ -596,7 +619,12 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
       // Collect buy/sell symbols and upgrade thesis from any leg that has one.
       requests.forEach(r => {
         const rtqi = (r.trade_queue_item as any)
-        if (!group.thesisText && rtqi?.thesis_text) group.thesisText = rtqi.thesis_text
+        // Upgrade the thesis only from another leg's FROZEN version. The old
+        // line here read `rtqi.thesis_text`, so a group whose seed leg had no
+        // captured thesis would quietly adopt a sibling idea's current one.
+        if (!group.thesisText && (r as any).proposal_version?.thesis_text) {
+          group.thesisText = (r as any).proposal_version.thesis_text
+        }
         if (!isPair) return
         const sym = rtqi?.assets?.symbol
         const legAction = rtqi?.action
@@ -1734,14 +1762,27 @@ function PortfolioRow({
   const [deferEventDescription, setDeferEventDescription] = useState('')
   const [deferNote, setDeferNote] = useState('')
   const snapshot = request.submission_snapshot as any
-  const analystWeight = snapshot?.weight ?? request.sizing_weight ?? null
+  // What was recommended, resolved once: frozen version first, then the
+  // pre-versioning snapshot, then an honest gap. Current idea state is never
+  // a fallback here.
+  const history = resolveHistoricalRecommendation(
+    request as never,
+    (request as any).proposal_version ?? null,
+  )
+  const analystWeight = history.weight.value ?? snapshot?.weight ?? request.sizing_weight ?? null
   const [overrideWeight, setOverrideWeight] = useState<string | null>(null)
   const effectiveWeight = overrideWeight != null ? parseFloat(overrideWeight) : analystWeight
   const targetWeight = effectiveWeight != null && !isNaN(effectiveWeight) ? effectiveWeight : analystWeight
   const currentWeight = (snapshot?.baseline_weight as number) ?? 0
   const sizingCtx = snapshot?.sizing_context as any
   const rawLegs = sizingCtx?.legs as Array<{ symbol?: string; action?: string; weight?: number | null; baselineWeight?: number | null; enteredValue?: string; sizingMode?: string }> | null
-  const conviction = request.trade_queue_item?.conviction || null
+  // The conviction the analyst HELD WHEN THEY RECOMMENDED, not the idea's
+  // conviction today. These diverge the moment anyone edits the idea, and the
+  // old reading made a past decision look like it was taken at a confidence
+  // level that was set afterwards.
+  const conviction = history.conviction.captured
+    ? history.conviction.value
+    : null
   // Pilot recommendations are seeded against the pilot user (the
   // "requester" in DB terms), but the UI should attribute them to
   // "Pilot" so the demo doesn't expose the seed user's display
@@ -1850,7 +1891,13 @@ function PortfolioRow({
   ) : undoBtn
 
   const portfolioName = request.portfolio?.name || 'Unknown'
-  const actionLabel = tc?.label?.toLowerCase() || request.trade_queue_item?.action || 'trade'
+  // The action as SUBMITTED. An idea whose action is later flipped from buy
+  // to sell must not restate a past recommendation as the opposite trade.
+  const actionLabel =
+    tc?.label?.toLowerCase() ||
+    history.action.value ||
+    request.trade_queue_item?.action ||
+    'trade'
 
   return (
     <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2">
@@ -2281,9 +2328,26 @@ function PortfolioRow({
             {/* Divider */}
             <div className="flex items-center gap-2 my-2">
               <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-              <span className="text-[9px] font-medium text-gray-400 uppercase tracking-wider">or trigger</span>
+              <span className="text-[9px] font-medium text-gray-400 uppercase tracking-wider">or note a condition</span>
               <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
             </div>
+
+            {/*
+              "or trigger" promised something this product does not do.
+              Nothing reads `deferred_trigger`: there is no price watcher,
+              and `asset_earnings_dates` holds zero rows, so there is no
+              earnings calendar either. The condition is recorded and shown
+              back, and the recommendation now stays on an open follow-up
+              list rather than vanishing — but it does not fire.
+
+              Only the DATE options above resurface on their own. This line
+              says which half is which, so a PM choosing a condition knows
+              they are leaving themselves a note, not setting an alert.
+            */}
+            <p className="text-[10px] leading-snug text-gray-500 dark:text-gray-400 mb-1.5">
+              Kept as an open follow-up you can find under Deferred. Tesseract won't detect these
+              on its own — only the dates above bring a recommendation back automatically.
+            </p>
 
             {/* Event triggers */}
             <div className="space-y-1">

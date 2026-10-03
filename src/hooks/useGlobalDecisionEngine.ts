@@ -13,6 +13,7 @@ import { useAuth } from './useAuth'
 import { useThesisReviews, useThesisReviewConclusions } from './useThesisReview'
 import { useResearchScan } from './useDesktopResearch'
 import { useAssetViewCursors } from './useObjectViewCursor'
+import { useTradeReviewObligationsForEngine } from './useOpenObligations'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePilotProgress } from './usePilotProgress'
 import { operationalAfterPilot, judgeIdeaRow } from '../lib/pilot/seed-visibility'
@@ -403,6 +404,10 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
     staleTime: 120_000,
   })
 
+  // Org-scoped by the hook, and by `memory_obligations`' own
+  // `is_member_of_org` SELECT policy underneath it.
+  const tradeReviewObligations = useTradeReviewObligationsForEngine()
+
   // ---- 7. Run engine ----
   const result = useMemo<GlobalDecisionEngineResult | null>(() => {
     if (!userId || coverageLoading) return null
@@ -430,6 +435,13 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
         // Capital already out, on a case somebody has since questioned.
         committedTrades: committedTrades ?? [],
         thesisConcernReviews,
+        // Open `trade_review` obligations.
+        //
+        // This field was declared on EngineArgs, consumed by
+        // `evaluateTradeReviewOwed`, and passed by nobody — so the evaluator
+        // returned [] on every run since it shipped. Obligations were being
+        // written by the Trade Book sync and read by nothing.
+        tradeReviewObligations,
         organizationId: currentOrgId,
         projects: projects ?? [],
         // Skip: catalysts, prompts, recurrentWorkflows (not in data model)
@@ -437,7 +449,7 @@ export function useGlobalDecisionEngine(): UseGlobalDecisionEngineResult {
     })
   }, [userId, coverage, tradeIdeas, proposals, ratingChanges, thesisUpdates, thesisReviews,
       researchSubjects, assetViewCursors, committedTrades, thesisConcernReviews,
-      currentOrgId, projects, coverageLoading])
+      tradeReviewObligations, currentOrgId, projects, coverageLoading])
 
   const isLoading = coverageLoading || ideasLoading || proposalsLoading ||
     ratingsLoading || thesisLoading || projectsLoading

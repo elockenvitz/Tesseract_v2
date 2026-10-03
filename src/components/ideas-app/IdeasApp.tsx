@@ -9,6 +9,7 @@ import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDes
 import { selectionFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
 import { exploreOpen, type ExploreOpen } from '../../lib/desktop-ideas/explore-open'
 import { openAsset } from '../../lib/desktop-asset/navigate'
+import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import type { Progression } from '../../lib/desktop-ideas/progression'
 import { usePromptResolve } from '../../hooks/usePromptResolve'
 import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
@@ -274,7 +275,30 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
         <div className={clsx('h-full', mode === 'explore' && 'hidden')}>
         <IdeasExplore
           selectedKey={selected?.selection.key ?? null}
-          onSelect={entry => openWorkspace(selectionFor(entry), entry, null)}
+          onSelect={entry => {
+            /*
+             * Parked work resumes AT the work.
+             *
+             * Every other family opens the asset workspace, because every
+             * other family is a finding ABOUT an asset. This one is a promise
+             * to return to a specific idea, and landing on the asset's
+             * research tab — which is where it landed — is landing near the
+             * work rather than on it.
+             *
+             * `openIdeaDetail` is the mechanism `TradeQueuePage` already
+             * listens for and two other callers already use. It opens the
+             * idea; it does not clear the obligation, which only a real
+             * resume does.
+             */
+            if (entry.family === 'ready_to_revisit') {
+              const target = entry.card.actions?.primary?.route?.idea?.tradeQueueItemId
+              if (target) {
+                openIdeaDetail(target)
+                return
+              }
+            }
+            openWorkspace(selectionFor(entry), entry, null)
+          }}
           onProgress={(entry, progression) => {
             /*
              * Resolve is a WRITE, not a destination. It finishes the prompt

@@ -318,6 +318,8 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       tradeId: string
       deferredUntil?: string | null
       uiSource?: UISource
+      /** What they said they were waiting for. Optional, and theirs. */
+      waitingFor?: string | null
     }) => {
       if (!user?.id) throw new Error('Not authenticated')
 
@@ -325,11 +327,20 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         tradeId: params.tradeId,
         revisitAt: params.deferredUntil || null,
         context: buildActionContext(user, params.uiSource),
+        waitingFor: params.waitingFor ?? null,
       })
+      return { waitingFor: params.waitingFor?.trim() || null }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       invalidateQueries()
-      toast.success('Snoozed', 'This idea will come back on the date you set.')
+      // Reads back what they typed, so the promise is visibly the one they
+      // made rather than a generic acknowledgement.
+      toast.success(
+        'Snoozed',
+        result?.waitingFor
+          ? `We'll bring this back and remind you that you were waiting for ${result.waitingFor}.`
+          : 'This idea will come back on the date you set.',
+      )
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to snooze idea')

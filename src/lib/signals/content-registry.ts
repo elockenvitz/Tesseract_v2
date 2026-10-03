@@ -310,6 +310,23 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
     fullscreenChart: false, manipulationSurface: 'none', portfolioContext: false,
   },
   /**
+   * Parked work, back on its date.
+   *
+   * `assetLinked` and `portfolioContext` are true where
+   * `project_overdue`'s are false: this is always about an idea on a
+   * security in a book, so the ticker and the portfolio are real context
+   * rather than decoration.
+   *
+   * `fullscreenChart` stays false. The price move since parking is one line
+   * of text with its as-of dates attached; promoting it to a chart would
+   * make a two-point comparison look like a series and invite the reader to
+   * read a shape into it that the data does not support.
+   */
+  ready_to_revisit: {
+    canonicalCategory: 'workflow', judgment: 'on_engage', assetLinked: true,
+    fullscreenChart: false, manipulationSurface: 'none', portfolioContext: true,
+  },
+  /**
    * Research, and neither of the two categories it looks like.
    *
    * Not `workflow`: that is work assigned to somebody with a date on it, and

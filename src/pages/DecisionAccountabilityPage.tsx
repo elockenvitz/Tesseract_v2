@@ -86,6 +86,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { MultiSelectFilter } from '../components/ui/MultiSelectFilter'
 import { resolvePortfolioFilter, applyColumnFilters } from '../lib/outcomes/outcomesFilterScope'
+import {
+  resolveHistoricalRecommendation,
+  compareRecommendedWithDecided,
+} from '../lib/recommendations/historical-recommendation'
 import type {
   AccountabilityFilters,
   AccountabilityRow,
@@ -1920,7 +1924,16 @@ export function DetailPanel({
              the fetch lands, so this read as "Needs info" on a decision that
              does have a thesis — a wrong claim, not just an early one, and on
              a phone the window is seconds rather than a frame. */
-          needsAttention={!storyLoading && !row.rationale_text && !(story?.theses && story.theses.length > 0) && !story?.ideaExtras?.thesis_text}
+          /* "Needs attention" must measure the RECORD, not the idea. The old
+             expression counted a thesis written today as attention already
+             paid to a decision taken months ago. */
+          needsAttention={
+            !storyLoading &&
+            !row.rationale_text &&
+            !story?.recommendationVersion?.thesis_text &&
+            !story?.recommendationVersion?.rationale &&
+            !(story?.recommendationVersion?.theses?.length)
+          }
         >
           {/* Compact metadata line — owner, date, conviction, horizon
               all on one row separated by middle dots. Sits at the top
@@ -1929,8 +1942,15 @@ export function DetailPanel({
             const parts: string[] = []
             if (row.owner_name) parts.push(`by ${row.owner_name}`)
             parts.push(format(new Date(row.created_at), 'MMM d, yyyy'))
-            if (story?.ideaExtras?.conviction) parts.push(`${story.ideaExtras.conviction} conviction`)
-            if (story?.ideaExtras?.time_horizon) parts.push(`${story.ideaExtras.time_horizon} horizon`)
+            // Conviction and horizon AS RECOMMENDED. `ideaExtras` holds
+            // today's values, and this line sits directly under a past
+            // decision — reading it live asserted the PM decided at a
+            // confidence level that may have been set afterwards.
+            const rv = story?.recommendationVersion
+            const convictionAtSubmission = rv?.conviction ?? null
+            const horizonAtSubmission = rv?.time_horizon ?? null
+            if (convictionAtSubmission) parts.push(`${convictionAtSubmission} conviction`)
+            if (horizonAtSubmission) parts.push(`${horizonAtSubmission} horizon`)
             return (
               <div className="text-[10px] text-gray-500 capitalize mb-3 dark:text-gray-400">
                 {parts.join(' · ')}
@@ -1938,26 +1958,54 @@ export function DetailPanel({
             )
           })()}
 
-          {/* ── 1. THESIS ── the long-form view of the trade. */}
+          {/* ── 1. THESIS ──────────────────────────────────────────────
+              The thesis AS SUBMITTED, and the bull/bear cases as they stood
+              at submission.
+
+              This read `story.ideaExtras.thesis_text` and `story.theses`,
+              both live. Two consequences, both silent: editing an idea
+              restated the basis of every past decision on it, and the
+              "Add thesis" form further down writes `trade_idea_theses` and
+              invalidates this query — so a case written AFTER the decision
+              appeared as part of the reasoning behind it.
+
+              Frozen values now, with the gap stated when nothing was
+              captured. Current thinking is a different question and belongs
+              under its own heading, not here. */}
+          {(() => {
+            const frozen = story?.recommendationVersion ?? null
+            const frozenThesis = frozen?.thesis_text || frozen?.rationale || null
+            const frozenTheses = (frozen?.theses ?? []) as Array<{
+              id: string; direction: string; rationale: string | null
+            }>
+            const noVersion = !storyLoading && !frozen
+            return (
           <div className="border-l-2 border-gray-300 pl-2.5 dark:border-gray-600">
-            <div className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-1 dark:text-gray-400">Thesis</div>
+            <div className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-1 dark:text-gray-400">
+              Thesis at submission
+            </div>
             {storyLoading ? (
               <StoryLoadingLine />
-            ) : story?.ideaExtras?.thesis_text ? (
+            ) : frozenThesis ? (
               <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">
-                {story.ideaExtras.thesis_text}
+                {frozenThesis}
               </p>
-            ) : (story?.theses && story.theses.length > 0) ? (
+            ) : frozenTheses.length > 0 ? (
               <p className="text-[11px] text-gray-400 italic">No standalone thesis — see bull / bear cases below.</p>
+            ) : noVersion ? (
+              <p className="text-[11px] text-gray-400 italic">
+                Submitted before reasoning was captured. The idea's current thesis is not shown here
+                because it is not what this decision was made on.
+              </p>
             ) : (
-              <p className="text-[11px] text-gray-400 italic">No thesis recorded.</p>
+              <p className="text-[11px] text-gray-400 italic">No thesis recorded at submission.</p>
             )}
 
             {/* Bull/Bear cases sit under Thesis since they're a debate
                 view of the same idea, not a separate top-level section. */}
-            {story?.theses && story.theses.length > 0 && (
+            {frozenTheses.length > 0 && (
               <div className="mt-2 space-y-1.5">
-                {story.theses.map(t => (
+                {frozenTheses.map(t => (
                   <div
                     key={t.id}
                     className={`border-l-2 pl-2.5 ${
@@ -1979,12 +2027,21 @@ export function DetailPanel({
               </div>
             )}
           </div>
+            )
+          })()}
 
           {/* ── 2. WHY NOW ── the catalyst / what changed. */}
           <div className="mt-3 border-l-2 border-blue-300 pl-2.5">
             <div className="text-[9px] font-bold uppercase tracking-wider text-blue-700 mb-1">Why now</div>
             {row.rationale_text ? (
               <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">{row.rationale_text}</p>
+            ) : row.recommendation_captured === false ? (
+              /* Not "no catalyst recorded" — that is a claim about the
+                 analyst. This decision predates reasoning capture, which is
+                 a fact about our record keeping. */
+              <p className="text-[11px] text-gray-400 italic">
+                Submitted before reasoning was captured — not recorded at the time.
+              </p>
             ) : (
               <p className="text-[11px] text-gray-400 italic">No catalyst recorded.</p>
             )}
@@ -2005,11 +2062,27 @@ export function DetailPanel({
             const snapNotes = typeof snap.notes === 'string' ? snap.notes.trim() : ''
             const contextNote = (dr?.context_note || '').trim()
 
-            // Compose the sizing strip inline: "ADD · 3.5% wt · 1,200 shs"
+            // Compose the sizing strip inline: "ADD · 3.5% wt · 1,200 shs".
+            // Prefer the frozen version; the snapshot is the pre-versioning
+            // fallback and holds the same three fields.
+            const ver = story?.recommendationVersion
+            const recAction = ver?.action ?? snap.action ?? null
+            const recWeight = ver?.weight ?? (snap.weight != null ? Number(snap.weight) : null)
+            const recShares = ver?.shares ?? (snap.shares != null ? Number(snap.shares) : null)
             const sizingParts: string[] = []
-            if (snap.action) sizingParts.push(String(snap.action).toUpperCase())
-            if (snap.weight != null) sizingParts.push(`${Number(snap.weight).toFixed(1)}% wt`)
-            if (snap.shares != null) sizingParts.push(`${Number(snap.shares).toLocaleString()} shs`)
+            if (recAction) sizingParts.push(String(recAction).toUpperCase())
+            if (recWeight != null) sizingParts.push(`${Number(recWeight).toFixed(1)}% wt`)
+            if (recShares != null) sizingParts.push(`${Number(recShares).toLocaleString()} shs`)
+
+            // What the PM actually did, against what was asked for. Both are
+            // kept: a PM who takes a +100bps recommendation at +50bps has
+            // made a different decision, and collapsing the two into one
+            // number erases the judgement they exercised — and makes the
+            // analyst look like they recommended the PM's number.
+            const decided = compareRecommendedWithDecided(
+              resolveHistoricalRecommendation(dr as never, (ver ?? null) as never),
+              story?.acceptedTrade ?? null,
+            )
 
             // Pilot-seeded recommendations always read as "by Pilot".
             const recommenderLabel = dr
@@ -2037,6 +2110,26 @@ export function DetailPanel({
                     {sizingParts.length > 0 && (
                       <div className="text-[11px] text-gray-800 font-medium tabular-nums mb-1 dark:text-gray-100">
                         {sizingParts.join(' · ')}
+                      </div>
+                    )}
+                    {decided.comparable && decided.modified && (
+                      <div
+                        data-slot="recommended-vs-decided"
+                        className="mb-1 text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-1 tabular-nums dark:bg-amber-950/30 dark:text-amber-200 dark:border-amber-900"
+                      >
+                        PM decided differently:{' '}
+                        {decided.decidedAction && decided.decidedAction !== decided.recommendedAction && (
+                          <span className="uppercase">{decided.decidedAction} </span>
+                        )}
+                        {decided.decidedWeight != null && decided.decidedWeight !== decided.recommendedWeight && (
+                          <span>{Number(decided.decidedWeight).toFixed(1)}% wt </span>
+                        )}
+                        {decided.decidedShares != null && decided.decidedShares !== decided.recommendedShares && (
+                          <span>{Number(decided.decidedShares).toLocaleString()} shs</span>
+                        )}
+                        <span className="text-amber-700/80 dark:text-amber-300/80">
+                          {' '}· recommendation above is unchanged
+                        </span>
                       </div>
                     )}
                     {contextNote && (

@@ -39,6 +39,10 @@ import { supabase } from '../supabase'
 import { FINAL_STAGE } from '../ideas/stage-model'
 import { parseSizingInput } from '../trade-lab/sizing-parser'
 import { nearlyEqual } from '../mobile/exploration'
+import {
+  recordDecisionRecorded,
+  resolveOrganizationIdForPortfolio,
+} from '../memory/lifecycle-events'
 import { createAcceptedTrade, type CreateAcceptedTradeInput } from './accepted-trade-service'
 import { deleteVariant } from './intent-variant-service'
 import type {
@@ -742,7 +746,7 @@ async function resolveOrphanedIdeaArtifacts(params: {
  */
 async function markDRAccepted(decisionRequestId: string, ctx: ActionContext): Promise<void> {
   const now = new Date().toISOString()
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('decision_requests')
     .update({
       status: 'accepted',
@@ -752,7 +756,38 @@ async function markDRAccepted(decisionRequestId: string, ctx: ActionContext): Pr
       updated_at: now,
     })
     .eq('id', decisionRequestId)
+    .select('id, portfolio_id, trade_queue_item_id, proposal_id')
+    .single()
   if (error) throw error
+
+  // This is the fifth decision path, and it bypasses `updateDecisionRequest`
+  // deliberately (see the note above) — which means it also bypasses the
+  // memory write that lives there. It still has to emit: a PM resolving a
+  // request by clicking Execute made a real decision, identical in kind to
+  // an inbox accept, and the Spine would otherwise show executions in Trade
+  // Lab with no decision preceding them.
+  //
+  // `decision_note` here is boilerplate the code wrote, not a reason the PM
+  // gave, so it is not carried into the event. The event says accepted; it
+  // does not pretend to say why.
+  const row = data as {
+    portfolio_id?: string | null
+    trade_queue_item_id?: string | null
+    proposal_id?: string | null
+  } | null
+  const organizationId = await resolveOrganizationIdForPortfolio(row?.portfolio_id)
+  if (organizationId) {
+    await recordDecisionRecorded({
+      organizationId,
+      actorId: ctx.actorId,
+      decisionRequestId,
+      status: 'accepted',
+      tradeQueueItemId: row?.trade_queue_item_id ?? null,
+      proposalId: row?.proposal_id ?? null,
+      portfolioId: row?.portfolio_id ?? null,
+      provenance: 'ui:trade-lab',
+    })
+  }
 }
 
 /**

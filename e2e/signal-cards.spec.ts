@@ -13,7 +13,7 @@ import { FEED_SEPARATOR_PX } from '../src/lib/signals/tile-geometry'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'awaiting-review', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news',
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'awaiting-review', 'ready-to-revisit', 'ready-to-revisit-quiet', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news',
   // The capital fixtures, added once the gallery began mounting the panes
   // the feed gives them. Before that they were plain cards the feed cannot
   // produce, and holding them to these rules measured the harness.

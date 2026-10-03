@@ -15,6 +15,10 @@ import { EMPTY_FILTER, useFeedFacets, type FeedFacets, type FeedFilter } from '.
 import type { SignalCard } from '../lib/signals/contract'
 import type { ScoredFeedItem } from './ideas/types'
 import type { PreviewSource } from '../lib/signals/feed-preview'
+import { buildReadyToRevisitCard } from '../lib/signals/builders/readyToRevisit'
+import { useReadyToRevisit } from './useReadyToRevisit'
+import { isEligible, factsForTile, factKeyFor } from '../lib/memory/ready-to-revisit'
+import { renderableFacts } from '../lib/memory/what-changed'
 
 /**
  * The Ideas attention feed: every candidate family, ranked by consequence.
@@ -52,7 +56,7 @@ export interface AttentionEntry {
   /** Present for posts only. Needed to build panes. */
   input: IdeaInput | null
   /** Which producer this came from, for the workspace router. */
-  family: 'post' | 'stale_target' | 'target_hit' | 'conviction' | 'crowding' | 'scenario_gap'
+  family: 'post' | 'stale_target' | 'target_hit' | 'conviction' | 'crowding' | 'scenario_gap' | 'ready_to_revisit'
   /**
    * The structured row the producer returned, for the preview layer.
    *
@@ -114,6 +118,24 @@ function isPrompt(item: ScoredFeedItem): boolean {
  */
 function inLens(entry: AttentionEntry, lens: IdeaLens): boolean {
   if (lens === 'all') return true
+  /*
+   * `ready_to_revisit` appears under `all` and under no other lens, and
+   * that is a decision rather than a side effect.
+   *
+   * Every other lens — prompts, thoughts, trade ideas — selects a POST TYPE,
+   * and the line below drops anything that is not a post. Parked work has
+   * no post behind it (`item` is null; it comes from an obligation), so it
+   * was being excluded by accident, through a clause written about
+   * something else.
+   *
+   * Left excluded, deliberately: a reader who has narrowed to "prompts" is
+   * asking for a kind of post, and answering with a reminder about an idea
+   * would be ignoring the question. `all` is the lens that means "whatever
+   * needs me", which is exactly what this family is.
+   *
+   * Stated here so the next person reads a decision instead of inferring
+   * one from a `!== 'post'`.
+   */
   if (entry.family !== 'post' || !entry.item) return false
   const item = entry.item
   if (lens === 'prompts') return item.type === 'quick_thought' && isPrompt(item)
@@ -128,6 +150,8 @@ export function useDesktopAttentionFeed(
 ) {
   const pool = useDesktopCandidates()
   const facets = opts.facets ?? EMPTY_FILTER
+  // One query set for every parked-work card on the page, not one per card.
+  const revisit = useReadyToRevisit()
 
   const needsIndex = facets.sectors.length > 0 || facets.countries.length > 0 || facets.exchanges.length > 0
   const { data: facetIndex } = useFeedFacets({ enabled: needsIndex })
@@ -161,6 +185,41 @@ export function useDesktopAttentionFeed(
     for (const c of lenses?.crowded ?? []) add(buildCrowdingCard(c as never), 'crowding', c as PreviewSource)
 
     /*
+     * Work the reader parked, back on the date they chose.
+     *
+     * Unlike every family above it, this one is not derived from a lens
+     * scanning the book — it comes from a `memory_obligations` row somebody
+     * created on purpose. The producer has already applied eligibility (due,
+     * resolved, not terminal, not dismissed), so everything arriving here is
+     * meant to be shown.
+     */
+    for (const c of revisit.candidates) {
+      if (!isEligible(c)) continue
+      add(
+        buildReadyToRevisitCard({
+          obligationId: c.obligationId,
+          tradeQueueItemId: c.ideaId ?? c.subjectId,
+          assetId: c.assetId,
+          symbol: c.symbol,
+          companyName: c.companyName,
+          portfolioId: c.portfolioId,
+          portfolioName: c.portfolioName,
+          parkedAt: c.parkedAt,
+          dueAt: c.dueAt,
+          daysOverdue: c.daysOverdue,
+          waitingFor: c.waitingFor,
+          stage: c.stage,
+          conviction: c.conviction,
+          facts: factsForTile(revisit.factsBySubject, factKeyFor(c)),
+          totalFactCount: renderableFacts(
+            revisit.factsBySubject.get(factKeyFor(c)) ?? [],
+          ).length,
+        }),
+        'ready_to_revisit',
+      )
+    }
+
+    /*
      * Scenario cards arrive already BUILT — `useScenarioCards` runs
      * `buildScenarioGapCard` itself — so they are taken as they are rather than
      * rebuilt. Rebuilding would mean a second call site deciding whether a
@@ -175,7 +234,7 @@ export function useDesktopAttentionFeed(
     }
 
     return out
-  }, [pool.feedItems, pool.lenses, pool.scenarioCards])
+  }, [pool.feedItems, pool.lenses, pool.scenarioCards, revisit])
 
   const entries = useMemo(() => {
     const now = Date.now()

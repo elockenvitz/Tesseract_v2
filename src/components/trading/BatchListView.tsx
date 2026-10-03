@@ -44,7 +44,7 @@ import {
   PHASE_META,
   type LifecyclePhase,
 } from '../../lib/trade-book/lifecycle'
-import { TradeRationaleLog } from './AcceptedTradesTable'
+import { TradeRationaleLog, historicalCaseProps } from './AcceptedTradesTable'
 import { MobileNoteField } from '../mobile/MobileNoteField'
 import { supabase } from '../../lib/supabase'
 import { useIsMobile } from '../../hooks/useMediaQuery'
@@ -679,9 +679,10 @@ function MobileTradeCard({
             tradeId={trade.id}
             acceptanceNote={trade.acceptance_note}
             batchDescription={batchDescription}
-            // Thesis first, then the analyst's rationale: the thesis is the
-            // durable case, the rationale the reason it was raised now.
-            originalCase={trade.trade_queue_item?.thesis_text || trade.trade_queue_item?.rationale}
+            // Thesis first, then the analyst's rationale — but read from the
+            // FROZEN submission, not from the live idea. See
+            // historicalCaseProps.
+            {...historicalCaseProps(trade)}
             onAddComment={onAddComment}
           />
         </div>
@@ -944,9 +945,10 @@ function TradeRow({
             tradeId={trade.id}
             acceptanceNote={trade.acceptance_note}
             batchDescription={batchDescription}
-            // Thesis first, then the analyst's rationale: the thesis is the
-            // durable case, the rationale the reason it was raised now.
-            originalCase={trade.trade_queue_item?.thesis_text || trade.trade_queue_item?.rationale}
+            // Thesis first, then the analyst's rationale — but read from the
+            // FROZEN submission, not from the live idea. See
+            // historicalCaseProps.
+            {...historicalCaseProps(trade)}
             onAddComment={onAddComment}
           />
         </td>

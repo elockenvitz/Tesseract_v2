@@ -105,6 +105,17 @@ const FOCUS_FOR_FAMILY: Record<string, AssetFocus> = {
   scenario_gap: 'framework',
   conviction: 'position',
   crowding: 'position',
+  /*
+   * Parked work resumes at research, where the idea's case lives.
+   *
+   * Not the idea detail itself: that surface is reached through the `post`
+   * path, which needs the `ScoredFeedItem` row this producer does not have —
+   * it comes from an obligation, not from the feed query. Landing on the
+   * asset's research tab puts the reader next to the thesis they parked
+   * rather than at the top of a list, which is useful and honest. Opening
+   * the idea directly is a follow-up that needs a route by idea id.
+   */
+  ready_to_revisit: 'research',
 }
 
 export function assetFocusFor(family: IdeasSelection['family']): AssetFocus {

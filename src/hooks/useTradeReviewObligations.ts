@@ -15,8 +15,8 @@
  * org-member SELECT policy, and writes only through the two RPCs, which are
  * the sole path to obligation state.
  */
-import { useEffect, useRef } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
 import {
@@ -24,6 +24,7 @@ import {
   planTradeReviewObligations,
   type ReviewableTrade,
 } from '../lib/memory/trade-review-obligation'
+import { useOpenObligations, OPEN_OBLIGATIONS_KEY } from './useOpenObligations'
 
 export const TRADE_REVIEW_OBLIGATIONS_KEY = ['memory', 'obligations', TRADE_REVIEW_KIND] as const
 
@@ -36,31 +37,30 @@ export interface OpenObligation {
   due_at: string | null
 }
 
-/** Open `trade_review` obligations in this org, by the trade they concern. */
+/**
+ * Open `trade_review` obligations in this org, by the trade they concern.
+ *
+ * Delegates to `useOpenObligations` rather than issuing its own query. It
+ * had one, and so did each decision-engine call site would have — three
+ * queries for one question is how "open obligation" comes to mean three
+ * slightly different things on three surfaces. React Query dedupes the
+ * fetch, so the Trade Book sync and the engine share a single round trip.
+ */
 export function useOpenTradeReviewObligations() {
-  const { currentOrgId } = useOrganization()
+  const { data } = useOpenObligations(TRADE_REVIEW_KIND)
 
-  const { data } = useQuery({
-    queryKey: [...TRADE_REVIEW_OBLIGATIONS_KEY, currentOrgId],
-    enabled: !!currentOrgId,
-    staleTime: 60_000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('memory_obligations')
-        .select('id, subject_id, owner_id, raised_at, due_at')
-        .eq('organization_id', currentOrgId!)
-        .eq('kind', TRADE_REVIEW_KIND)
-        .is('cleared_at', null)
-      if (error) throw new Error(error.message)
-      const out = new Map<string, OpenObligation>()
-      for (const r of (data ?? []) as unknown as (OpenObligation & { subject_id: string })[]) {
-        out.set(r.subject_id, r)
-      }
-      return out
-    },
-  })
-
-  return data ?? new Map<string, OpenObligation>()
+  return useMemo(() => {
+    const out = new Map<string, OpenObligation>()
+    for (const r of data ?? []) {
+      out.set(r.subject_id, {
+        id: r.id,
+        owner_id: r.owner_id,
+        raised_at: r.raised_at,
+        due_at: r.due_at,
+      })
+    }
+    return out
+  }, [data])
 }
 
 /**
@@ -116,7 +116,9 @@ export function useSyncTradeReviewObligations(trades: readonly ReviewableTrade[]
         if (error) console.warn('[TradeReview] clear failed', error)
       }
 
-      queryClient.invalidateQueries({ queryKey: TRADE_REVIEW_OBLIGATIONS_KEY })
+      // Invalidate the shared key, so the decision engine sees what this
+      // sync just raised rather than its own 60s-stale copy.
+      queryClient.invalidateQueries({ queryKey: OPEN_OBLIGATIONS_KEY })
     })()
   }, [currentOrgId, trades, open, queryClient])
 }

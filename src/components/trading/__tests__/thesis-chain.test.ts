@@ -139,11 +139,40 @@ describe('the rationale log shows it, in order', () => {
   })
 
   it('is wired on every surface that renders the log', () => {
-    // Desktop drawer, and both phone/desktop paths in the batch view.
-    expect(log.match(/originalCase=/g)?.length).toBeGreaterThanOrEqual(1)
+    // Desktop drawer, and both phone/desktop paths in the batch view. All
+    // three go through `historicalCaseProps`, which spreads originalCase and
+    // originalCaseNote together.
+    expect(log.match(/historicalCaseProps\(trade\)/g)?.length).toBeGreaterThanOrEqual(1)
     const batch = src('components/trading/BatchListView.tsx')
-    expect(batch.match(/originalCase=/g)).toHaveLength(2)
-    // Thesis preferred over rationale: the durable case over the timing note.
-    expect(batch).toContain('thesis_text || trade.trade_queue_item?.rationale')
+    expect(batch.match(/historicalCaseProps\(trade\)/g)).toHaveLength(2)
+  })
+
+  /*
+   * The case shown beside a COMMITTED trade must be the one that was
+   * submitted, not the idea's text today.
+   *
+   * This read `trade.trade_queue_item?.thesis_text || …rationale` on all
+   * three surfaces — a live join — so editing an idea rewrote the stated
+   * reasoning for trades already executed against it, silently and with no
+   * trace. The resolver reaches the frozen version through the decision
+   * request instead.
+   */
+  it('reads the frozen submission, never the live idea', () => {
+    const helper = log.slice(log.indexOf('export function historicalCaseProps'))
+    expect(helper.slice(0, 900)).toContain('resolveHistoricalRecommendation')
+    expect(helper.slice(0, 900)).toContain('decision_request')
+
+    for (const file of ['components/trading/AcceptedTradesTable.tsx', 'components/trading/BatchListView.tsx']) {
+      const text = src(file)
+      expect(text).not.toContain('originalCase={trade.trade_queue_item?.thesis_text')
+    }
+  })
+
+  /* An absent record is not an analyst who gave no reason. */
+  it('says so when the case was never captured', () => {
+    expect(fn).toContain('originalCaseNote')
+    expect(fn).toContain('trade-rationale-case-gap')
+    // Only when there is nothing real to show.
+    expect(fn).toContain('!showOriginal && !!originalCaseNote')
   })
 })

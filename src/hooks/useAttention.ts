@@ -15,6 +15,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { moveTradeIdea } from '../lib/services/trade-idea-service'
 import { FINAL_STAGE } from '../lib/ideas/stage-model'
+import { parkedSuppressionFilter } from '../lib/memory/obligations'
+import { syncIdeaRevisitObligation } from '../lib/memory/obligation-writer'
 import type { ActionContext } from '../types/trading'
 
 /** The audit context for an action taken from the Attention feed. */
@@ -1041,11 +1043,22 @@ async function collectStaleTradeIdeas(userId: string, orgId: string): Promise<At
 
   const { data: ideas, error } = await supabase
     .from('trade_queue_items')
-    .select('id, action, status, stage, urgency, created_at, updated_at, assets!inner(id, symbol, company_name), portfolios(name)')
+    .select('id, action, status, stage, urgency, created_at, updated_at, revisit_at, assets!inner(id, symbol, company_name), portfolios(name)')
     .eq('organization_id', orgId)
     .eq('created_by', userId)
     .not('status', 'in', '("approved","rejected","executed","deleted","cancelled")')
     .lt('updated_at', staleThreshold.toISOString())
+    // Snoozed work is not neglected work.
+    //
+    // This surface says "No updates in N days — advance, archive, or
+    // update". Saying that about an idea the user deliberately parked until
+    // next month is nagging them for following their own plan, and it is
+    // the loudest place the broken snooze showed: the one action taken to
+    // defer the nag reset `updated_at` and so removed the idea from this
+    // very query for another seven days. Both halves are fixed — the write
+    // no longer bumps `updated_at`, and parked ideas are excluded here
+    // until their date passes.
+    .or(parkedSuppressionFilter())
     .order('updated_at', { ascending: true })
     .limit(20)
 
@@ -1682,14 +1695,32 @@ export function useAttention(options: UseAttentionOptions = {}) {
     mutationFn: async ({ tradeId, hours }: { tradeId: string; hours: number }) => {
       const revisitAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString()
 
-      const { error } = await supabase
+      const { data: row, error } = await supabase
         .from('trade_queue_items')
         .update({
           revisit_at: revisitAt,
         })
         .eq('id', tradeId)
+        .select('id, organization_id')
+        .maybeSingle()
 
       if (error) throw new Error(error.message)
+
+      // The second writer of `revisit_at`.
+      //
+      // `snoozeTradeIdea` is the other one, and the two were already
+      // inconsistent — that one bumped `updated_at` and this one did not.
+      // They must at least agree on the durable promise, or whether a
+      // parked idea comes back depends on which button the user happened to
+      // press. Best-effort: suppression reads `revisit_at`, which is
+      // already written above, so a failure here costs the prompt and not
+      // the parking.
+      await syncIdeaRevisitObligation({
+        organizationId: (row as { organization_id?: string | null } | null)?.organization_id ?? null,
+        tradeQueueItemId: tradeId,
+        ownerId: user!.id,
+        revisitAt,
+      })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attention'] })

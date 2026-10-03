@@ -89,6 +89,7 @@ const QUESTION: Record<SignalType, ReaderQuestion> = {
   // Somebody is waiting on the reader.
   recommendation: 'workflow',
   awaiting_review: 'workflow',
+  ready_to_revisit: 'workflow',
   project_overdue: 'workflow',
 
   // Outside the book.

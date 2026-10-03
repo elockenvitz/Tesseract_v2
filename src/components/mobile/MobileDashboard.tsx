@@ -24,6 +24,14 @@ import { useReaderSnapshots } from '../../hooks/mobile/useReaderSnapshots'
 import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
+import { useReadyToRevisit } from '../../hooks/useReadyToRevisit'
+import { buildReadyToRevisitCard } from '../../lib/signals/builders/readyToRevisit'
+import { isEligible, factsForTile, factKeyFor } from '../../lib/memory/ready-to-revisit'
+// The contract type this family declares. One constant, shared with desktop
+// and with the feed-priority table — never a second copy.
+const READY_TO_REVISIT_TYPE = 'ready_to_revisit' as const
+import { renderableFacts } from '../../lib/memory/what-changed'
+import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import type { StaleTarget, TargetBreach } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
@@ -373,6 +381,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // size", so it has to arrive unprompted.
   const { data: lenses, isLoading: lensesLoading } = usePortfolioLenses()
   const { signals, isLoading: signalsLoading } = useSignalCards()
+  /*
+   * One query set for every parked-work card on the page.
+   *
+   * The same hook desktop uses, so the obligations and their change facts
+   * are fetched once per shell rather than once per card — and React Query
+   * dedupes it against the desktop mount when both exist. Mobile adds no
+   * obligation query of its own.
+   */
+  const revisit = useReadyToRevisit()
   /**
    * The signal types that still earn a screen, filtered BEFORE a slot exists.
    *
@@ -2599,15 +2616,30 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         ideaCardType(e.idea?.type))
 
       default:
-        // `signal` entries are already contract cards.
+        /*
+         * `signal` entries are already contract cards.
+         *
+         * An entry that DECLARES its own `signalType` is honoured first.
+         * Without that, a kind with no case of its own fell through to
+         * `'news'` — the lowest tier — and a parked-work tile ranked as
+         * news on a phone while `feed-priority` already defined
+         * `ready_to_revisit: { tier: 3, base: 0.62 }` that desktop was
+         * using. Deferring to the declared type is how `categoryOf`
+         * already resolves (see `feed-categories`), so the two now agree
+         * instead of disagreeing silently.
+         *
+         * `id` follows the same rule: every revisit entry previously
+         * collapsed to the literal string `'revisit'`, so nothing keyed on
+         * id could tell two parked ideas apart.
+         */
         return withJudgment({
-          id: String(e.signal?.id ?? e.kind),
-          type: (e.signal?.type ?? 'news') as SignalType,
-          severity: e.signal?.severity ?? 'informational',
-          occurredAt: e.signal?.provenance?.occurredAt ?? null,
+          id: String(e.signal?.id ?? e.entryId ?? e.kind),
+          type: (e.signal?.type ?? e.signalType ?? 'news') as SignalType,
+          severity: e.signal?.severity ?? e.severity ?? 'informational',
+          occurredAt: e.signal?.provenance?.occurredAt ?? e.occurredAt ?? null,
           weightPct: null,
           held: false,
-        }, e.signal?.entity?.id)
+        }, e.signal?.entity?.id ?? e.entityId)
     }
     /**
      * `lenses?.book` and `exposureFor` belong here, and their absence was a
@@ -2857,6 +2889,45 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     }))
 
     /**
+     * Work the reader parked, back on the date they chose.
+     *
+     * Unlike every source above it, this is not a lens over the book — it
+     * comes from `memory_obligations` rows somebody created on purpose, and
+     * it is the SAME candidate, eligibility, facts and builder desktop uses.
+     * Nothing about parked work is re-derived here; only the entry shape is
+     * mobile's.
+     *
+     * Ranked by DECLARING its contract type, not by a local score.
+     *
+     * An earlier version set `score: 100 - idx` and claimed it lifted the
+     * family. Nothing read it: `rankFeed` is driven by `rankInputFor`,
+     * which had no case for this kind and fell through to `'news'` — the
+     * lowest tier — while `feed-priority` already defined
+     * `ready_to_revisit: { tier: 3, base: 0.62 }` that desktop was using.
+     * The dead score is gone and the entry declares `signalType` instead,
+     * so mobile and desktop rank from the one table.
+     *
+     * `signalType` also resolves the CATEGORY: `categoryOf` defers to
+     * `content-registry`, which already registers `ready_to_revisit` as
+     * `workflow`. Without it the category was null and any category pill
+     * silently removed the card.
+     */
+    const revisitEntries = revisit.candidates
+      .filter(c => isEligible(c))
+      .map(c => ({
+        kind: 'revisit' as const,
+        signalType: READY_TO_REVISIT_TYPE,
+        // Distinct per candidate. Every revisit entry previously collapsed
+        // to the literal id `'revisit'`, so nothing keyed on id — tiebreaks,
+        // the baseline list — could tell two parked ideas apart.
+        entryId: `ready-to-revisit:${c.obligationId}`,
+        entityId: c.assetId ?? undefined,
+        occurredAt: c.parkedAt,
+        candidate: c,
+        subject: c.symbol ?? undefined,
+      }))
+
+    /**
      * One round's worth, like every other source.
      *
      * This used to be `Array.from({ length: cycle + 1 })` — the derived
@@ -3008,7 +3079,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       card: c,
     }))
 
-    const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntriesDeduped, ...newsEntries, ...templateEntries, ...lensEntries, ...scenarioEntries]
+    const all = [...revisitEntries, ...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntriesDeduped, ...newsEntries, ...templateEntries, ...lensEntries, ...scenarioEntries]
 
     /**
      * Every candidate, before anything is dropped.
@@ -3495,7 +3566,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * lets the lead band see yesterday's leader on the first pass rather than
      * on some later recompute.
      */
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, seenAtMount, lenses, scenarioCards, coverageSignature(coverageIndex), absorbedTargets, composedTargetKeyByAsset])
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, seenAtMount, lenses, scenarioCards, coverageSignature(coverageIndex), absorbedTargets, composedTargetKeyByAsset, revisit])
 
   /**
    * The base order this page lifetime is committed to.
@@ -6821,6 +6892,72 @@ a.context?.asset_id ?? null,
                         }
                       : null,
               })
+          }
+
+          /*
+           * Parked work, back on its date.
+           *
+           * The SAME builder, facts and eligibility as desktop — nothing
+           * about parked work is re-derived for the phone. The card has no
+           * panes: the facts and their sources are already its detail
+           * region, and a pane repeating them is the duplication the
+           * desktop screenshot review removed.
+           */
+          if (entry.kind === 'revisit') {
+            const c = entry.candidate
+            const built = buildReadyToRevisitCard({
+              obligationId: c.obligationId,
+              tradeQueueItemId: c.ideaId ?? c.subjectId,
+              assetId: c.assetId,
+              symbol: c.symbol,
+              companyName: c.companyName,
+              portfolioId: c.portfolioId,
+              portfolioName: c.portfolioName,
+              parkedAt: c.parkedAt,
+              dueAt: c.dueAt,
+              daysOverdue: c.daysOverdue,
+              waitingFor: c.waitingFor,
+              stage: c.stage,
+              conviction: c.conviction,
+              facts: factsForTile(revisit.factsBySubject, factKeyFor(c)),
+              totalFactCount: renderableFacts(
+                revisit.factsBySubject.get(factKeyFor(c)) ?? [],
+              ).length,
+            })
+            return renderCard(built as never, entry, 'revisit', c.assetId, [], {
+              /*
+               * Resume work, on the one path that actually opens an idea.
+               *
+               * `open_idea` is not routable through `resolveFeedAction` for
+               * this family — that route needs a `ScoredFeedItem`, and this
+               * card comes from an obligation, not from the feed query. So
+               * it lands here, and without a handler it would be a button
+               * that looks fine and does nothing, which is precisely the
+               * defect the invented `?idea=` route already was.
+               *
+               * `openIdeaDetail` is the mechanism `QuickTradeIdeaCapture`
+               * and `LinkedObjectsPanel` already use, and `TradeQueuePage`
+               * already listens for. Opening does NOT clear the obligation:
+               * that is judged by the deterministic rules, where looking at
+               * something is not doing it.
+               */
+              onPrimary: (_card, actionId) => {
+                if (actionId !== 'open_idea') return
+                /*
+                 * No interest signal recorded here.
+                 *
+                 * The `note('open')` the post branch calls is scoped to that
+                 * branch and records interest in a POST — it needs an author
+                 * and a feed row, neither of which an obligation has.
+                 * Reaching for it from here was a use-before-define that
+                 * guard:tdz caught, and the right fix is not to hoist it:
+                 * opening work you already told us to show you is not a
+                 * discovery signal, and feeding it to the post ranker would
+                 * be inventing an interest the reader never expressed.
+                 */
+                openIdeaDetail(c.ideaId ?? c.subjectId)
+              },
+            })
           }
 
           if (entry.kind === 'signal') {

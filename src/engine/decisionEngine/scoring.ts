@@ -37,6 +37,38 @@ export const CATEGORY_WEIGHT: Record<DecisionCategory, number> = {
   prompt: 1000,
 }
 
+/**
+ * The user asked for this one.
+ *
+ * Every other producer infers that something needs attention. A
+ * `READY_TO_REVISIT` candidate exists because a person set a date and asked
+ * to be shown it, and that is better evidence of relevance than any
+ * heuristic in this file.
+ *
+ * Sized DELIBERATELY SMALL: 1500 is less than one severity step (2000
+ * between yellow and orange) and a twentieth of a tier step. So an
+ * explicitly parked idea outranks an inferred finding of the same severity
+ * and tier, and loses to anything genuinely more serious. It cannot promote
+ * a coverage item above a capital one, and it cannot put a quiet reminder
+ * above a red reconciliation break.
+ *
+ * "Memory candidate always first" would have been the easy rule and the
+ * wrong one — the feed has to stay about what matters, not about what the
+ * newest subsystem produced.
+ */
+export const USER_REQUESTED_BONUS = 1500
+
+/**
+ * Per deterministic change found while the work was parked.
+ *
+ * Capped at three, so the most this contributes is 900 — still under one
+ * severity step. Something that moved while you were away is more worth
+ * your attention than something that did not, but "four facts" is not
+ * evidence of importance, only of activity.
+ */
+export const EVIDENCE_BONUS = 300
+export const MAX_EVIDENCE_COUNTED = 3
+
 // ---------------------------------------------------------------------------
 // Deterministic tiebreaker
 // ---------------------------------------------------------------------------
@@ -76,8 +108,16 @@ export function computeSortScore(item: DecisionItem, now: Date): number {
     score += CATEGORY_WEIGHT[item.category] || 0
   }
 
-  // Age factor
+  // Age factor. For a parked item `createdAt` is when it was PARKED, so
+  // overdue magnitude is already priced here and needs no second term.
   score += computeAge(item, now) * 50
+
+  // Explicit user intent, and evidence that something moved. Both are
+  // additive and both are small — see the constants above for why.
+  if (item.userRequested) score += USER_REQUESTED_BONUS
+  if (item.evidenceCount) {
+    score += Math.min(item.evidenceCount, MAX_EVIDENCE_COUNTED) * EVIDENCE_BONUS
+  }
 
   return score
 }
