@@ -40,6 +40,7 @@ import {
   useRevertDecisionAccept,
 } from '../../hooks/useDecisionRequests'
 import type { DecisionRequest, DecisionRequestStatus, DeferralTrigger } from '../../types/trading'
+import { useCurrentBook, weightOf } from '../../hooks/useCurrentBook'
 import { usePilotMode } from '../../hooks/usePilotMode'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
 import { isPilotExampleRequest, PILOT_EXAMPLE_HINT } from '../../lib/pilot/pilot-inbox'
@@ -1773,7 +1774,31 @@ function PortfolioRow({
   const [overrideWeight, setOverrideWeight] = useState<string | null>(null)
   const effectiveWeight = overrideWeight != null ? parseFloat(overrideWeight) : analystWeight
   const targetWeight = effectiveWeight != null && !isNaN(effectiveWeight) ? effectiveWeight : analystWeight
-  const currentWeight = (snapshot?.baseline_weight as number) ?? 0
+  /**
+   * What the book holds RIGHT NOW — not what the analyst saw at submission.
+   *
+   * This read used to be `snapshot?.baseline_weight ?? 0`. Nothing writes
+   * `submission_snapshot.baseline_weight`: the one writer nests it at
+   * `submission_snapshot.sizing_context.baseline_weight`, so the lookup
+   * always missed and the `?? 0` turned "we could not find out" into the
+   * factual claim "we hold none". Measured on production: 16 of 30 pending
+   * requests rendered 0.00%.
+   *
+   * Even had the lookup hit, it would have been the wrong number. A frozen
+   * submission baseline is what the analyst believed days ago; the PM is
+   * deciding now, and `target = current + delta` is computed against this
+   * value. Stale in, stale out.
+   *
+   * Three states, and only one of them is zero — see `weightOf`. `undefined`
+   * means the book has not loaded yet.
+   */
+  const { data: currentBookData } = useCurrentBook()
+  const currentWeight = weightOf(
+    currentBookData,
+    request.portfolio_id,
+    request.trade_queue_item?.assets?.id,
+  )
+  const currentWeightKnown = typeof currentWeight === 'number'
   const sizingCtx = snapshot?.sizing_context as any
   const rawLegs = sizingCtx?.legs as Array<{ symbol?: string; action?: string; weight?: number | null; baselineWeight?: number | null; enteredValue?: string; sizingMode?: string }> | null
   // The conviction the analyst HELD WHEN THEY RECOMMENDED, not the idea's
@@ -1807,8 +1832,10 @@ function PortfolioRow({
   const sellLegs = legs?.filter(l => l.action === 'sell' || l.action === 'reduce') || []
   const isPairTrade = legs && legs.length > 0
 
-  const delta = targetWeight != null ? targetWeight - currentWeight : null
-  const tc = targetWeight != null ? classifyTrade(currentWeight, targetWeight) : null
+  // Both halves must be known. Classifying against an unknown baseline is how
+  // "Add" and "Trim" got decided by a fallback zero rather than by the book.
+  const delta = targetWeight != null && currentWeightKnown ? targetWeight - currentWeight : null
+  const tc = targetWeight != null && currentWeightKnown ? classifyTrade(currentWeight, targetWeight) : null
   const TcIcon = tc?.icon || Minus
 
   // Role-aware action logic
@@ -1910,7 +1937,20 @@ function PortfolioRow({
             <span className="font-semibold text-gray-900 dark:text-white">{portfolioName}</span>
             <span className="text-gray-300 dark:text-gray-600">|</span>
             <span className="text-gray-400 tabular-nums">
-              {currentWeight.toFixed(2)}% →{' '}
+              {currentWeightKnown ? (
+                `${currentWeight.toFixed(2)}%`
+              ) : (
+                <span
+                  title={
+                    currentWeight === undefined
+                      ? 'Reading the current book…'
+                      : 'Current weight unavailable for this book — not shown as 0%, because we do not know that we hold none.'
+                  }
+                >
+                  —
+                </span>
+              )}
+              {' → '}
               {showActions && editingSizing ? (
                 <input
                   type="text"
