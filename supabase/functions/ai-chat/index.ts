@@ -36,6 +36,7 @@
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requirePublishableKey } from "../_shared/publishable-key.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -136,13 +137,30 @@ Deno.serve(async (req) => {
     if (!authHeader) throw new Error("Missing authorization header");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+    /*
+     * The publishable key, not the legacy anon key.
+     *
+     * This client exists only to identify the caller: it carries their own
+     * Authorization header and is used for auth.getUser(). It performs no
+     * anon-level data access, which is exactly the role a publishable key
+     * replaces. The legacy `SUPABASE_ANON_KEY` is being retired.
+     *
+     * `requirePublishableKey` throws a message naming the variable if it is
+     * absent, malformed, or has no `default` entry — inside the handler's
+     * existing try/catch, so a misconfiguration surfaces as a server error
+     * about configuration rather than as a confusing 401 later. The previous
+     * `?? ""` would have built a client with an empty key and failed at the
+     * first request instead.
+     */
+    const supabasePublishableKey = requirePublishableKey((n) => Deno.env.get(n));
     const platformApiKey = Deno.env.get("ANTHROPIC_API_KEY");
     const platformOpenAIKey = Deno.env.get("OPENAI_API_KEY");
     const platformGoogleKey = Deno.env.get("GOOGLE_AI_API_KEY");
     const platformPerplexityKey = Deno.env.get("PERPLEXITY_API_KEY");
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    // Unchanged: the caller's Authorization header is forwarded, so the
+    // client remains scoped to that user and RLS applies as before.
+    const supabase = createClient(supabaseUrl, supabasePublishableKey, {
       global: { headers: { Authorization: authHeader } }
     });
 
