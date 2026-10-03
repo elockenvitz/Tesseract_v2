@@ -163,6 +163,51 @@ describe('grants survive the drop', () => {
   })
 })
 
+/**
+ * `REVOKE ... FROM public` does not take a privilege away from `anon`.
+ *
+ * The test directly above — "never grants either to anon" — asserts that no
+ * GRANT statement names anon, and it passed while production had
+ * `anon=X/postgres` on both recreated functions. It could not have failed:
+ * the privilege did not arrive through a GRANT in this file. It arrived
+ * through Supabase's ALTER DEFAULT PRIVILEGES, which hands anon EXECUTE on
+ * every new function in `public`, and DROP had discarded the foundation's
+ * explicit `revoke ... from public, anon`.
+ *
+ * Both functions are SECURITY DEFINER and guard on
+ * `is_member_of_org(p_org_id) or auth.uid() is null` — and auth.uid() IS
+ * null for an anonymous caller, so the guard passes for any organisation.
+ * PostgREST publishes them to the publishable key that ships in the browser
+ * bundle. That was an unauthenticated write path into any org's
+ * memory_obligations and memory_events.
+ *
+ * The absence of a grant is therefore not the invariant. The presence of an
+ * explicit revoke is.
+ */
+describe('anon is revoked, not merely ungranted', () => {
+  const REVOKE_ANON = squash(read('20261003020000_obligation_rpc_revoke_anon.sql'))
+
+  for (const fn of ['raise_memory_obligation', 'supersede_memory_obligation'] as const) {
+    it(`revokes ${fn} from anon by exact signature`, () => {
+      expect(REVOKE_ANON).toContain(
+        `revoke all on function public.${fn}( ${TEN_ARG} ) from anon`,
+      )
+    })
+  }
+
+  it('states the invariant for clear_memory_obligation too', () => {
+    expect(REVOKE_ANON).toContain(
+      'revoke all on function public.clear_memory_obligation(uuid, text) from anon',
+    )
+  })
+
+  it('revokes from anon specifically, not only from public', () => {
+    // The whole defect in one assertion: `from public` is not `from anon`.
+    const fromAnon = REVOKE_ANON.match(/from anon/g) ?? []
+    expect(fromAnon).toHaveLength(3)
+  })
+})
+
 describe('the bundle no longer leaves a latent overload', () => {
   it('20260930180000 still creates the 9-arg supersede, and the final migration removes it', () => {
     // Recorded rather than silently reconciled: the earlier migration is
