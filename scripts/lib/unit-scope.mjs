@@ -242,6 +242,15 @@ export const GATED_DIRS = [
    */
   'src/lib/memory/__tests__',
   /*
+   * Storage object identity. A signed URL carries a token that changes on
+   * every signing, so using one as a cache key or an effect dependency turns
+   * every refresh into a full re-download. That cost 782.693 MB of egress in
+   * one day -- 86.1% of the project's total -- from a single 1.44 MB logo, and
+   * nothing in the product looked wrong while it happened. These watch the
+   * call counts, which is the only place the defect is visible.
+   */
+  'src/lib/storage/__tests__',
+  /*
    * The per-object view cursor. Its two properties -- only a real detail open
    * counts, and the prior value is readable before it moves -- are both
    * invisible when broken: the cursor still exists, it just stops meaning

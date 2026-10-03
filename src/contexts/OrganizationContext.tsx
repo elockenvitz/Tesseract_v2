@@ -16,6 +16,14 @@ interface OrgSummary {
   id: string
   name: string
   slug: string
+  /**
+   * A storage PATH in the private `template-branding` bucket — not a URL.
+   *
+   * Resolve it with `useSignedUrl('template-branding', logo_url)` from
+   * `lib/storage/signed-url`. Never write a signed URL back into this field:
+   * the token changes on every signing, which makes the value useless as a
+   * cache key and re-downloads the image. See the note in the query below.
+   */
   logo_url: string | null
   settings: Record<string, any> | null
 }
@@ -92,21 +100,25 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
         .in('id', orgIds)
         .order('name')
       if (error) throw error
-      const orgs = (data || []) as OrgSummary[]
-
-      // Resolve private storage paths to signed URLs for logos
-      for (const org of orgs) {
-        if (org.logo_url && !org.logo_url.startsWith('http')) {
-          const { data: signed } = await supabase.storage
-            .from('template-branding')
-            .createSignedUrl(org.logo_url, 3600)
-          if (signed?.signedUrl) {
-            org.logo_url = signed.signedUrl
-          }
-        }
-      }
-
-      return orgs
+      /*
+       * `logo_url` stays exactly as the database holds it: a storage PATH in
+       * the private `template-branding` bucket.
+       *
+       * This used to loop the orgs here and overwrite each `logo_url` with a
+       * freshly signed URL. Two things went wrong with that. The signing was
+       * a serial round-trip per org inside a query the whole app waits on;
+       * and, far worse, the rewritten value carried a new `?token=` on every
+       * refetch — so the one field every consumer treats as the logo's
+       * identity changed every 60 seconds and on every window refocus.
+       * `Header` preloaded it with `new Image()`, the browser saw a URL it
+       * had never seen, and re-downloaded 1.44 MB. That was 86.1% of the
+       * project's Storage egress.
+       *
+       * Consumers now resolve the path themselves through
+       * `useSignedUrl('template-branding', path)`, which caches on
+       * (bucket, path) and is shared across every surface.
+       */
+      return (data || []) as OrgSummary[]
     },
     enabled: !!effectiveUserId,
     /*

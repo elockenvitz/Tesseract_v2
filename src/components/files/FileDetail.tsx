@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
 import { ChevronLeft, Download, ExternalLink, Pencil, Archive, Link2, X } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import {
-  useFileUrl, useRenameFile, useArchiveFile, useUnlinkFile,
+  useRenameFile, useArchiveFile, useUnlinkFile,
   type FileRecord,
 } from '../../hooks/useFiles'
+import { ASSETS_BUCKET } from '../../lib/storage/asset-paths'
+import { useSignedUrl } from '../../lib/storage/signed-url'
 import { canPreviewInline, fileKind, formatBytes } from '../../lib/files/file-format'
 import { FileTypeIcon, uploaderName } from './FileRows'
 
@@ -32,7 +34,6 @@ interface Props {
 
 export function FileDetail({ file, onClose, onArchived, variant }: Props) {
   const { user } = useAuth()
-  const getUrl = useFileUrl()
   const rename = useRenameFile()
   const archive = useArchiveFile()
   const unlink = useUnlinkFile()
@@ -41,22 +42,25 @@ export function FileDetail({ file, onClose, onArchived, variant }: Props) {
   const kind = fileKind(file.mime_type, file.name)
   const previewable = canPreviewInline(file.mime_type, file.name)
 
-  const [url, setUrl] = useState<string | null>(null)
-  const [urlError, setUrlError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(file.name)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  // A signed URL expires, so it is fetched per view and never stored.
-  useEffect(() => {
-    let cancelled = false
-    setUrl(null)
-    setUrlError(null)
-    getUrl(file)
-      .then(u => { if (!cancelled) setUrl(u) })
-      .catch(e => { if (!cancelled) setUrlError(e instanceof Error ? e.message : 'Could not open that file.') })
-    return () => { cancelled = true }
-  }, [file, getUrl])
+  /*
+   * A signed URL expires, so it is never stored — but it is also not the
+   * file's identity. This was an effect keyed on `[file, getUrl]`, and `file`
+   * is `files?.find(f => f.id === selectedId)` from a query with
+   * `staleTime: 30_000`. Every list refetch produced a new object, re-signed,
+   * and handed `<img>` and `<object>` a URL they had to download again.
+   *
+   * Keyed on bucket and path now, so a refetch that changes nothing about
+   * the file changes nothing about the URL.
+   */
+  const { url, error: urlSignError } = useSignedUrl(
+    file.storage_bucket || ASSETS_BUCKET,
+    file.storage_path,
+  )
+  const urlError = urlSignError ? 'Could not open that file.' : null
 
   const commitRename = async () => {
     const next = draftName.trim()
