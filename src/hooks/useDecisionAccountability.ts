@@ -468,8 +468,11 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           reviewed_by, reviewed_at, created_at, deferred_until,
           portfolio_id,
           portfolios:portfolio_id ( id, name ),
+          proposal_version:proposal_version_id (
+            thesis_text, rationale, submitted_at, created_at
+          ),
           trade_idea:trade_queue_items!inner (
-            id, rationale, thesis_text, asset_id, origin_metadata,
+            id, asset_id, origin_metadata,
             assets:asset_id ( id, symbol, company_name ),
             created_by_user:created_by ( id, email, first_name, last_name )
           ),
@@ -950,6 +953,12 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     // ── Passed decisions (rejected/deferred) ──
     const passedRows: AccountabilityRow[] = passedData.map((d: any) => {
       const ti = d.trade_idea
+      // The immutable record of what was recommended. Null for requests
+      // raised before versioning existed — which means "not captured",
+      // never "fall back to the idea".
+      const pv = d.proposal_version as
+        | { thesis_text?: string | null; rationale?: string | null; submitted_at?: string | null; created_at?: string | null }
+        | null
       const assetId = ti?.asset_id || null
       const currentPrice = assetId ? (priceMap.get(assetId) ?? null) : null
       const direction = mapActionToDirection(d.requested_action || 'unknown')
@@ -970,7 +979,35 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         category: 'passed' as const,
         direction,
         stage: (d.status === 'deferred' ? 'rejected' : d.status) as any,
-        rationale_text: ti?.rationale || ti?.thesis_text || null,
+        /*
+         * What the analyst said WHEN THEY RECOMMENDED, for a decision the PM
+         * rejected or deferred.
+         *
+         * This read used to be `ti?.rationale || ti?.thesis_text` — the
+         * idea's CURRENT text, through the live `trade_queue_items` join. So
+         * a rejection from months ago was narrated with whatever the idea
+         * says today, and every later edit silently rewrote the reasoning
+         * the PM had actually turned down.
+         *
+         * The approved path was fixed server-side by
+         * `20260930170300_outcomes_payload_frozen_recommendation`, which
+         * reaches the frozen version through `dr.proposal_version_id`.
+         * Passed decisions never went through that RPC, so they kept the
+         * defect. They qualify for exactly the same lookup: `rejected` and
+         * `deferred` are two of the four statuses that migration's LATERAL
+         * join covers.
+         *
+         * Absent a version this is null, never the idea's text — and
+         * `recommendation_captured: false` makes the surface say the record
+         * was not kept, rather than "No catalyst recorded", which is a claim
+         * about the analyst that the page explicitly forbids.
+         *
+         * The mutable columns are gone from the select above as well, so the
+         * fallback cannot be reintroduced by reflex.
+         */
+        rationale_text: pv ? (pv.thesis_text || pv.rationale || null) : null,
+        recommendation_captured: !!pv,
+        recommended_at: pv ? (pv.submitted_at ?? pv.created_at ?? null) : null,
         decision_note: d.decision_note || null,
         deferred_until: d.deferred_until || null,
         asset_id: assetId,
