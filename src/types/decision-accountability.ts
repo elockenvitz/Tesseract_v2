@@ -136,7 +136,16 @@ export interface AccountabilityRow {
   /** Decision info */
   direction: DecisionDirection
   stage: DecisionStage
+  /**
+   * The recommendation's rationale AS SUBMITTED, not the idea's current
+   * text. Null when none was captured — see `recommendation_captured`, which
+   * separates "the analyst gave no reason" from "we never recorded one".
+   */
   rationale_text: string | null
+  /** True only when a frozen recommendation version backs this row. */
+  recommendation_captured?: boolean
+  /** When the recommendation was submitted, if a version exists. */
+  recommended_at?: string | null
 
   /** PM's note when rejecting/deferring (passed decisions) */
   decision_note: string | null

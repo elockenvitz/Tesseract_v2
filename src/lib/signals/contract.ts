@@ -128,6 +128,28 @@ export type SignalType =
   // workflow
   | 'project_overdue'
   | 'awaiting_review'
+  /**
+   * Work the reader themselves parked, now due back.
+   *
+   * ── Why this is its own type ─────────────────────────────────────────────
+   *
+   * Every other member of this union is an OBSERVATION: the data noticed a
+   * gap, a drift, a deadline. This one is a PROMISE BEING KEPT — a person set
+   * a date and asked to be shown this on it. The claim is not "we think you
+   * should look at this" but "you told us to".
+   *
+   * Folding it into `awaiting_review` would lose exactly that. Awaiting
+   * review is work owed to somebody else and inferred from a queue; this is
+   * work owed to yourself and recorded as an obligation row. They want
+   * different copy, different severity and a different question, and a reader
+   * who cannot tell them apart learns to distrust both.
+   *
+   * It is also NOT `research_stale`. Staleness is the system's opinion about
+   * neglect; a parked idea is the opposite of neglected — somebody made a
+   * decision about when to return to it. Treating the two the same is how a
+   * product nags people for following their own plan.
+   */
+  | 'ready_to_revisit'
   // market
   | 'news'
   | 'unusual_move'
@@ -327,6 +349,16 @@ export interface CardAction {
    */
   route?: {
     research?: { id?: string | null; kind?: 'note' | 'thought' | null; title?: string | null } | null
+    /**
+     * The pipeline idea this action opens.
+     *
+     * Needed because a card's ENTITY is the asset, and one asset carries
+     * several ideas — so "open the idea" cannot be recovered from the
+     * entity, and a surface that tried would open an arbitrary one. The
+     * parked-work card is the first producer with a destination its entity
+     * does not name; see `builders/readyToRevisit`.
+     */
+    idea?: { tradeQueueItemId: string } | null
   }
 }
 

@@ -256,7 +256,7 @@ for (const width of [360, 390, 430]) {
 const RESPOND_CARDS = [
   'scenario-below-bear', 'scenario-above-bull', 'scenario-at-expected',
   'target-expired', 'target-reached', 'no-target', 'unreviewed-move', 'unreviewed-size',
-  'active-risk-real', 'recommendation', 'awaiting-review',
+  'active-risk-real', 'recommendation', 'awaiting-review', 'ready-to-revisit',
   'conviction-cohort', 'crowding-spread', 'portfolio-unwritten-position',
 ] as const
 

@@ -80,4 +80,17 @@ export type DecisionItem = {
   decisionTier?: DecisionTier
   sortScore: number
   createdAt?: string
+
+  /**
+   * A person explicitly asked to be shown this, rather than a rule
+   * inferring it. Worth a small, bounded ranking bonus — see
+   * `USER_REQUESTED_BONUS`.
+   */
+  userRequested?: boolean
+  /**
+   * How many deterministic changes support this item. Counted, capped and
+   * weighted in `computeSortScore`; never used as a claim of importance on
+   * its own.
+   */
+  evidenceCount?: number
 }

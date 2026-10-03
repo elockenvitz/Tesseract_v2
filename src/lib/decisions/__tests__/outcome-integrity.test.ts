@@ -48,6 +48,27 @@ vi.mock('../../supabase', () => ({
   },
 }))
 
+/*
+ * This suite is about outcome integrity, not about obligations.
+ *
+ * `snoozeTradeIdea` and `moveTradeIdea` now also keep a revisit obligation
+ * in step, and the thin supabase stub below does not model
+ * `memory_obligations` — so every case printed a TypeError warning from the
+ * obligation writer. That warning is correct behaviour (the writer degrades
+ * rather than failing a portfolio action) but it was eighteen lines of noise
+ * across two suites, which is how a real warning gets missed.
+ *
+ * Mocked rather than silenced: the writer's own guarantees are tested in
+ * lib/memory/__tests__/due-obligations.test.ts against a fake that models
+ * the real constraints, and `lifecycle-memory-wiring.test.ts` asserts the
+ * services call it. Nothing is lost here by stubbing it.
+ */
+vi.mock('../../memory/obligation-writer', () => ({
+  syncIdeaRevisitObligation: vi.fn(async () => ({ obligationId: 'ob-test', action: 'superseded' })),
+  syncDecisionRevisitObligation: vi.fn(async () => ({ obligationId: 'ob-test', action: 'superseded' })),
+  clearIdeaRevisitObligation: vi.fn(async () => ({ obligationId: null, action: 'unchanged' })),
+}))
+
 vi.mock('../../audit', () => ({
   emitAuditEvent: vi.fn(() => Promise.resolve()),
   checkIdempotency: vi.fn(() => Promise.resolve(false)),

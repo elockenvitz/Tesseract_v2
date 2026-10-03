@@ -94,6 +94,9 @@ export type BriefClass =
 const BRIEF_CLASS: Record<SignalType, BriefClass> = {
   // ── work ────────────────────────────────────────────────────────────────
   awaiting_review: 'work',
+  // Work, like its neighbours — but the reader's own, which the chip wording
+  // in card-identity carries rather than this class.
+  ready_to_revisit: 'work',
   project_overdue: 'work',
   coverage_gap: 'work',
   /**

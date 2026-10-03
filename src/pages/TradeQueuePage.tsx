@@ -80,6 +80,7 @@ import type {
   PairTradeWithDetails
 } from '../types/trading'
 import { getDerivedUrgency, getUrgencySeverity, DERIVED_URGENCY_CONFIG, type DerivedUrgency } from '../lib/derived-urgency'
+import { isParked } from '../lib/memory/obligations'
 import { clsx } from 'clsx'
 import { latestSnapshotRows } from '../lib/holdings/latest-snapshot'
 import { useTradeExpressionCounts, getExpressionStatus } from '../hooks/useTradeExpressionCounts'
@@ -967,6 +968,15 @@ export function TradeQueuePage({
         if (archivedStatuses.includes(item.status)) return false
         if (deferredStatuses.includes(item.status) && !isDeferredAndReady(item)) return false
         if (item.status === 'deleted') return false
+        // Snoozed until a future date.
+        //
+        // "Snooze Idea — hides this idea until the date you choose" wrote
+        // `revisit_at` and nothing read it, so the idea never moved. This is
+        // the same shape as the `isDeferredAndReady` check on the line above:
+        // suppressed while parked, back in the list the moment the date
+        // passes. The Snoozed tab below reads the inverse, so the work stays
+        // recoverable rather than hidden.
+        if (isParked(item.revisit_at)) return false
         if (filters.status && filters.status !== 'all' && item.status !== filters.status) return false
         // Multi-select: urgency
         if (multiFilters.derivedUrgencies.length > 0) {
@@ -1053,6 +1063,25 @@ export function TradeQueuePage({
   const deletedItems = useMemo(() => {
     if (!tradeItems) return []
     return tradeItems.filter(item => item.status === 'deleted')
+  }, [tradeItems])
+
+  /**
+   * Snoozed items — the recovery path.
+   *
+   * Suppressing parked work from the main list is only safe because this
+   * exists. A snooze a user cannot find and undo is a delete with a
+   * friendlier label, and the point of remembering parked work is that the
+   * person who parked it stays in control of it.
+   *
+   * Deliberately NOT filtered out of search: `useEntitySearch` and
+   * `useExploreSearch` apply no lifecycle filter at all, and that stays
+   * true. Someone looking for their own idea by name must always find it.
+   */
+  const snoozedItems = useMemo(() => {
+    if (!tradeItems) return []
+    return tradeItems
+      .filter(item => item && item.status !== 'deleted' && isParked(item.revisit_at))
+      .sort((a, b) => String(a.revisit_at).localeCompare(String(b.revisit_at)))
   }, [tradeItems])
 
   // Pretrade items - approved items that are linked to simulations
@@ -1731,7 +1760,7 @@ export function TradeQueuePage({
       {/* Content — kanban fills area, Decision Inbox overlays from bottom */}
       <div className="flex-1 min-h-0 relative">
         <div className="absolute inset-0 overflow-auto px-6 pb-14 flex flex-col">
-        {filteredItems.length === 0 && deletedItems.length === 0 && archivedItems.length === 0 ? (
+        {filteredItems.length === 0 && deletedItems.length === 0 && archivedItems.length === 0 && snoozedItems.length === 0 ? (
               <EmptyState
                 icon={TrendingUp}
                 title="No trade ideas yet"
@@ -1745,6 +1774,25 @@ export function TradeQueuePage({
               />
             ) : (
               <div className="flex-1 flex flex-col pt-6 min-h-0 overflow-hidden">
+                {/*
+                  Parked work, acknowledged rather than silently hidden.
+                  Suppressing snoozed ideas from the board is only safe if
+                  the person who parked them can see that they exist and
+                  when they return — otherwise a snooze is indistinguishable
+                  from a delete. Search is the other recovery path and is
+                  deliberately left unfiltered.
+                */}
+                {snoozedItems.length > 0 && (
+                  <div
+                    data-slot="snoozed-notice"
+                    className="flex-shrink-0 mb-2 text-xs text-gray-500 dark:text-gray-400"
+                  >
+                    {snoozedItems.length} snoozed
+                    {snoozedItems[0]?.revisit_at && (
+                      <> · next returns {format(new Date(snoozedItems[0].revisit_at), 'MMM d')}</>
+                    )}
+                  </div>
+                )}
                 {/* Fixed column headers */}
                 <div className={clsx(
                   "gap-3 flex-shrink-0 pb-2",

@@ -89,6 +89,11 @@ function generatedClaimChars(...parts: unknown[]): number {
  */
 export const PRODUCTION_ENTRY_KINDS = [
   'scenario', 'template', 'signal', 'insight', 'news', 'idea', 'lens', 'attention',
+  // Parked work. Omitted when the family shipped, which disarmed the very
+  // guard above: the test holds this list against the switch below, and a
+  // kind missing from BOTH passes while the tile silently takes a full
+  // screen through the defensive fallback.
+  'revisit',
 ] as const
 
 function claimCharsOf(...candidates: unknown[]): number {
@@ -393,6 +398,33 @@ export function tileRequirementFor(
         hasMetric: true,
         contextRows: 1,
         bodyLines: a.description || a.body ? CLAMPED_BODY_LINES : 0,
+        controlRows: 1,
+        visual: null,
+        hasActionTray: true,
+      })
+    }
+
+    /**
+     * Parked work, back on its date.
+     *
+     * Shaped like the workflow families above and sized from what the card
+     * actually draws: the headline is the reader's own sentence ("You
+     * parked NVDA waiting for Q3 earnings…"), the metric is the wait in
+     * days, one context row carries stage · conviction · book, and the
+     * "since then" list is the detail rather than a visual — a two-point
+     * price comparison is a line of text, not a chart.
+     */
+    case 'revisit': {
+      const c = e.candidate
+      if (!c) return null
+      return withState({
+        claimChars: generatedClaimChars(
+          c.waitingFor ? `You parked ${c.symbol} waiting for ${c.waitingFor}` : `You parked ${c.symbol}`,
+          c.symbol,
+        ),
+        hasMetric: true,
+        contextRows: 1,
+        bodyLines: CLAMPED_BODY_LINES,
         controlRows: 1,
         visual: null,
         hasActionTray: true,

@@ -133,6 +133,11 @@ export const CARD_COVERAGE: Record<SignalType, CardCoverage> = {
       'no ticker and no chart — and that is worth its own fixture next.',
   },
   awaiting_review: { slug: 'awaiting-review' },
+  // Two fixtures: the loaded case (three facts plus an overflow count, the
+  // widest the "Since then" row ever gets) and the quiet one. The quiet
+  // fixture is not redundant — "nothing moved" is a real answer and the
+  // card has to stand up while giving it.
+  ready_to_revisit: { slug: 'ready-to-revisit' },
   coverage_gap: {
     reason:
       'Built by buildAttentionCard from the same row as awaiting_review, whose ' +

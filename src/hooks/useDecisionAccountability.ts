@@ -575,6 +575,26 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       }
     }
 
+    /**
+     * The rationale as it read WHEN THE RECOMMENDATION WAS SUBMITTED.
+     *
+     * This used to be `item.rationale`, read live from `trade_queue_items`,
+     * so editing an idea restated every past decision on it in today's
+     * words. `recommended_rationale` comes from the frozen version the
+     * resolved decision request points at.
+     *
+     * No fallback to `item.rationale` when nothing was captured. A row whose
+     * reasoning was never recorded says so; substituting current text is the
+     * defect, not a graceful degradation.
+     */
+    const historicalRationale = (item: any) => ({
+      rationale_text: item.recommendation_captured
+        ? (item.recommended_rationale || null)
+        : null,
+      recommendation_captured: item.recommendation_captured === true,
+      recommended_at: item.recommended_at || null,
+    })
+
     const decisionRows = decisionData.map((item: any): AccountabilityRow => {
       const direction = mapActionToDirection(item.action)
       const approvedAt = item.approved_at ? parseISO(item.approved_at) : null
@@ -621,7 +641,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           category: 'passed' as const,
           direction,
           stage: effectiveStage as any,
-          rationale_text: item.rationale || null,
+          ...historicalRationale(item),
           decision_note: null,
           deferred_until: null,
           asset_id: item.asset_id,
@@ -807,7 +827,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         category: 'acted' as const,
         direction,
         stage: effectiveStage as any,
-        rationale_text: item.rationale || null,
+        ...historicalRationale(item),
         decision_note: null,
         deferred_until: null,
         asset_id: item.asset_id,
@@ -1271,10 +1291,48 @@ export interface DecisionStory {
     decision_note: string | null
     status: string
     submission_snapshot: Record<string, unknown> | null
+    proposal_version_id: string | null
     requester_name: string | null
     reviewed_by_name: string | null
     reviewed_at: string | null
     created_at: string
+  } | null
+
+  /**
+   * WHAT WAS RECOMMENDED — immutable, frozen at submission.
+   *
+   * Null for every decision raised before versioning existed. Null means
+   * "not captured" and must NOT fall back to `ideaExtras` or `theses`
+   * below: those are the idea's CURRENT state, and rendering them here is
+   * what made past decisions re-narrate themselves whenever an idea was
+   * edited.
+   */
+  recommendationVersion: {
+    id: string
+    version_number: number
+    action: string | null
+    idea_stage: string | null
+    weight: number | null
+    shares: number | null
+    sizing_mode: string | null
+    notes: string | null
+    thesis_text: string | null
+    rationale: string | null
+    conviction: string | null
+    target_price: number | null
+    stop_loss: number | null
+    take_profit: number | null
+    time_horizon: string | null
+    theses: Array<{
+      id: string
+      direction: string
+      rationale: string | null
+      conviction: string | null
+      created_at: string
+    }>
+    captured_from: Record<string, unknown> | null
+    submitted_at: string | null
+    submitted_by_name: string | null
   } | null
 
   // Accepted trade (Trade Book commitment)
@@ -1285,6 +1343,10 @@ export interface DecisionStory {
     execution_status: string
     execution_note: string | null
     source: string
+    /** What the PM actually decided — compare with recommendationVersion. */
+    action: string | null
+    target_weight: number | null
+    target_shares: number | null
     created_at: string
   } | null
 
@@ -1324,6 +1386,9 @@ export interface DecisionStory {
 // prefetch effect. One RPC round-trip replaces the prior 6 parallel
 // supabase reads — the right pane can paint as soon as the click
 // resolves, instead of waiting on the slowest of six.
+const numOrNull = (v: unknown): number | null =>
+  v == null || v === '' || isNaN(Number(v)) ? null : Number(v)
+
 export async function fetchDecisionStory(
   decisionId: string,
   executionEventId?: string | null,
@@ -1337,6 +1402,20 @@ export async function fetchDecisionStory(
   return {
     theses: payload.theses || [],
     decisionRequest: payload.decisionRequest ?? null,
+    // Numerics arrive as strings over PostgREST. Coerced here so a surface
+    // comparing recommended against decided sizing compares numbers, not
+    // "2.50" with 2.5.
+    recommendationVersion: payload.recommendationVersion
+      ? {
+          ...payload.recommendationVersion,
+          theses: payload.recommendationVersion.theses || [],
+          weight: numOrNull(payload.recommendationVersion.weight),
+          shares: numOrNull(payload.recommendationVersion.shares),
+          target_price: numOrNull(payload.recommendationVersion.target_price),
+          stop_loss: numOrNull(payload.recommendationVersion.stop_loss),
+          take_profit: numOrNull(payload.recommendationVersion.take_profit),
+        }
+      : null,
     acceptedTrade: payload.acceptedTrade
       ? {
           ...payload.acceptedTrade,

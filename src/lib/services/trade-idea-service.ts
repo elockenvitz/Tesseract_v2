@@ -36,6 +36,8 @@ import {
   SYSTEM_ACTORS,
 } from '../audit'
 import { captureDecisionPriceSnapshot, outcomeToSnapshotType } from './decision-snapshot-service'
+import { syncIdeaRevisitObligation, clearIdeaRevisitObligation } from '../memory/obligation-writer'
+import { ideaClearReason } from '../memory/obligations'
 import type {
   TradeStage,
   TradeOutcome,
@@ -509,6 +511,40 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
 
   const sideEffects: Promise<void>[] = []
 
+  // ── The work resumed, so the revisit obligation is satisfied ─────────
+  //
+  // A stage change is somebody picking the idea back up; a terminal outcome
+  // or an archive means there is nothing to come back to. Either way the
+  // promise we made when they parked it has been kept and the obligation
+  // closes.
+  //
+  // Not cleared merely because the due date arrived, and not cleared
+  // because someone looked at the idea. The due date means "eligible for
+  // attention again"; an obligation that clears on sight is a reminder that
+  // deletes itself the moment it becomes useful.
+  //
+  // `revisit_at` itself is deliberately left alone here. It is the user's
+  // own note about when they wanted this back, and the suppression window
+  // has already passed or they would not be moving it.
+  {
+    const stageChanged = currentTrade.stage !== target.stage
+    const reason = ideaClearReason({
+      isTerminal: !!target.outcome,
+      stageAdvanced: stageChanged,
+    })
+    if (reason) {
+      sideEffects.push(
+        (async () => {
+          await clearIdeaRevisitObligation({
+            organizationId: (currentTrade as { organization_id?: string | null }).organization_id ?? null,
+            tradeQueueItemId: tradeId,
+            reason,
+          })
+        })(),
+      )
+    }
+  }
+
   // Capture decision price snapshot on outcome set
   if (target.outcome) {
     const snapshotType = outcomeToSnapshotType(target.outcome)
@@ -884,12 +920,25 @@ export async function snoozeTradeIdea(params: {
   revisitAt: string | null
   context: ActionContext
   note?: string | null
+  /**
+   * What the person said they were waiting for. Optional.
+   *
+   * Distinct from `note` above, which is audit metadata about the action.
+   * This is the user's stated INTENT and it lives on the obligation, where
+   * the resurfacing card reads it — so the card can say "you parked this
+   * while waiting for the Q3 print" instead of only "you asked to revisit
+   * this".
+   *
+   * It is a record of what they said, never an evaluated condition: the
+   * product has no way to know whether the thing they named happened.
+   */
+  waitingFor?: string | null
 }): Promise<void> {
-  const { tradeId, revisitAt, context, note } = params
+  const { tradeId, revisitAt, context, note, waitingFor } = params
 
   const { data: current } = await supabase
     .from('trade_queue_items')
-    .select('id, revisit_at, action, assets(symbol)')
+    .select('id, revisit_at, action, organization_id, created_by, assets(symbol)')
     .eq('id', tradeId)
     .maybeSingle()
 
@@ -901,10 +950,45 @@ export async function snoozeTradeIdea(params: {
     // `as never`: the generated Database type has no Relationships, which
     // collapses every update argument to `never`. Documented defect, not a
     // claim about this payload.
-    .update({ revisit_at: revisitAt, updated_at: new Date().toISOString() } as never)
+    //
+    // `updated_at` is deliberately NOT written here any more.
+    //
+    // It used to be, and it made this action actively harmful. Staleness
+    // heuristics read `updated_at` as "last worked on"; snoozing bumped it,
+    // so the single action a user took in order to be reminded later reset
+    // the clock that might otherwise have resurfaced the idea. Parking work
+    // made it LESS likely to come back.
+    //
+    // Scheduling a revisit is not working on the investment case. Omitting
+    // the bump is the smallest correct fix: it changes this one write, not
+    // what `updated_at` means anywhere else. The proper separation is a
+    // `last_worked_on_at` distinct from row mtime — noted in the backlog,
+    // out of scope here.
+    .update({ revisit_at: revisitAt } as never)
     .eq('id', tradeId)
 
   if (error) throw error
+
+  // ── The durable half of the promise ──────────────────────────────────
+  //
+  // `revisit_at` is the date; the obligation is the commitment to act on
+  // it. Written after the canonical column so a failure here cannot leave
+  // an obligation pointing at a snooze that was never applied.
+  //
+  // Best-effort, like the Memory Spine writers and for the same reason: a
+  // user parking an idea must not be told their snooze failed because an
+  // append-only log was briefly unavailable. The cost is honest — the idea
+  // is suppressed but we may not proactively resurface it. Suppression
+  // reads the canonical column, so the idea still reappears on its own
+  // date; what is lost is the "you asked to revisit this" prompt, not the
+  // work.
+  await syncIdeaRevisitObligation({
+    organizationId: row.organization_id ?? null,
+    tradeQueueItemId: tradeId,
+    ownerId: context.actorId,
+    revisitAt,
+    waitingFor: waitingFor ?? null,
+  })
 
   await emitAuditEvent({
     actor: { id: context.actorId, type: 'user', role: context.actorRole },
@@ -924,6 +1008,10 @@ export async function snoozeTradeIdea(params: {
       request_id: context.requestId,
       ui_source: context.uiSource,
       note: note ?? null,
+      // Whether a reason was given, not the reason itself. The words live
+      // on the obligation — one home, so the audit trail and the card
+      // cannot end up quoting different things.
+      waiting_for_given: !!waitingFor?.trim(),
     },
     orgId: getOrgId(context),
     teamId: undefined,

@@ -41,6 +41,9 @@ export function candidateToDecisionItem(
     chips?: DecisionItem['chips']
     ctaLabels?: Record<string, string>
     decisionTier?: DecisionItem['decisionTier']
+    /** The claim exists because a person asked for it, not because a rule
+     *  inferred it. Small, bounded ranking bonus. */
+    userRequested?: boolean
   },
 ): DecisionItem {
   return {
@@ -77,5 +80,11 @@ export function candidateToDecisionItem(
     // evaluator passes; the post-process stage scores them.
     sortScore: 0,
     createdAt: candidate.occurredAt,
+    userRequested: presentation.userRequested ?? false,
+    // From the producer's own facts, so the adapter counts rather than
+    // judges. Absent for every candidate that carries no change evidence.
+    evidenceCount: typeof candidate.facts?.changeCount === 'number'
+      ? candidate.facts.changeCount
+      : undefined,
   } as DecisionItem
 }

@@ -141,6 +141,16 @@ const TIER: Record<SignalType, { tier: PriorityTier; base: number }> = {
   // 3 — assigned work
   project_overdue:       { tier: 3, base: 0.60 },
   awaiting_review:       { tier: 3, base: 0.50 },
+  /*
+   * Same tier as the work it sits beside, a little above it.
+   *
+   * 0.62 rather than 0.50 because a person explicitly asked for this one and
+   * nobody asked for the others — that is better evidence of relevance than
+   * any heuristic here. Deliberately NOT promoted to a lower tier: a quiet
+   * reminder must never outrank a target hit or a thesis conflict, and the
+   * tier is what guarantees it cannot.
+   */
+  ready_to_revisit:      { tier: 3, base: 0.62 },
   /**
    * Where the legacy coverage item already ranked, deliberately unchanged.
    *

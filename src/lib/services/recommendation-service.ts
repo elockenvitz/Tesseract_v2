@@ -24,6 +24,13 @@ import {
   isActiveDecisionRequestStatus,
   isResolvedDecisionRequestStatus,
 } from './decision-request-service'
+import {
+  recordRecommendationSubmitted,
+  resolveOrganizationIdForPortfolio,
+} from '../memory/lifecycle-events'
+import { captureRecommendationVersion } from '../recommendations/recommendation-version'
+import { clearIdeaRevisitObligation } from '../memory/obligation-writer'
+import { CLEAR_REASONS } from '../memory/obligations'
 import type {
   ActionContext,
   TradeProposal,
@@ -149,6 +156,43 @@ export async function submitRecommendation(
     submissionSnapshot.sizing_context = input.sizingContext
   }
 
+  // ── Step 2b: Freeze the recommendation BEFORE the request exists ─────
+  //
+  // `submissionSnapshot` above freezes sizing and identity and nothing else;
+  // it has never held a thesis, a conviction or a target, and it cannot be
+  // made to, because Step 3 updates an active request IN PLACE and overwrites
+  // the column. An analyst's second submission destroys the record of their
+  // first.
+  //
+  // This writes the append-only version instead, and it happens FIRST so the
+  // decision request below can carry `proposal_version_id` on its own insert.
+  // The ordering decides which partial failure is reachable: version-then-
+  // request can strand an unreferenced version row, which nothing renders and
+  // which the next retry adopts by fingerprint. Request-then-version would
+  // strand a decision with no record of what was recommended, which is the
+  // defect this slice exists to remove.
+  //
+  // Unlike the Memory Spine writers this throws. A memory event describes an
+  // action that already completed; this IS the submission, and a submission
+  // that cannot say what it recommended must fail rather than succeed into an
+  // unreconstructable history.
+  const organizationId = await resolveOrganizationIdForPortfolio(input.portfolioId)
+  const version = await captureRecommendationVersion({
+    proposalId: proposal.id,
+    tradeQueueItemId: input.tradeQueueItemId,
+    portfolioId: input.portfolioId,
+    organizationId,
+    actorId: context.actorId,
+    weight: input.weight ?? null,
+    shares: input.shares ?? null,
+    sizingMode: typeof input.sizingMode === 'string' ? input.sizingMode : null,
+    sizingContext: input.sizingContext ?? {},
+    notes: input.notes ?? null,
+    action: input.requestedAction ?? null,
+  })
+  submissionSnapshot.proposal_version_id = version.id
+  submissionSnapshot.proposal_version_number = version.version_number
+
   // ── Step 3: Create or update decision requests (AWAITED) ────────────
   // For singletons: one decision_request for the submitted trade_queue_item.
   // For pair trades: one decision_request per leg, all linked to the same
@@ -256,6 +300,12 @@ export async function submitRecommendation(
             sizingMode: (leg.sizingMode || input.sizingMode) as TradeSizingMode | undefined,
             requestedAction: (leg.action || input.requestedAction) as any,
             submissionSnapshot,
+            // One version per submission, shared by every leg. A pair trade
+            // is ONE act of recommending that happens to produce several
+            // requests — the same reasoning the Memory Spine uses to emit one
+            // `recommendation.submitted` event rather than one per leg. The
+            // per-leg sizing lives in the version's `sizing_context.legs`.
+            proposalVersionId: version.id,
           }),
         ),
       )
@@ -278,6 +328,7 @@ export async function submitRecommendation(
         sizingMode: input.sizingMode,
         requestedAction: input.requestedAction,
         submissionSnapshot,
+        proposalVersionId: version.id,
       })
     }
   } catch (err) {
@@ -318,6 +369,53 @@ export async function submitRecommendation(
     portfolioName: input.portfolioName || null,
     isPairTrade: !!(input.sizingContext as any)?.isPairTrade,
   }).catch(e => console.warn('[submitRecommendation] PM notification failed:', e))
+
+  // ── Step 5: Record the submission in organisational memory ───────────
+  //
+  // Last, and awaited. Last because everything above is the canonical write
+  // and memory must never be the reason a recommendation fails to reach a PM;
+  // awaited because a fire-and-forget write would be lost whenever the user
+  // navigates on submit, which is exactly when they submit.
+  //
+  // One event per submission, not per leg. A pair trade creates a decision
+  // request for each leg, but the analyst performed ONE act of recommending —
+  // and the representative DR links to the shared proposal, through which the
+  // other legs are reachable. Emitting per leg would make the Spine count two
+  // recommendations where one happened.
+  if (organizationId) {
+    await recordRecommendationSubmitted({
+      organizationId,
+      actorId: context.actorId,
+      tradeQueueItemId: input.tradeQueueItemId,
+      decisionRequestId: decisionRequest.id,
+      proposalId: proposal.id,
+      // Points at the immutable version; does NOT copy it. The event stays a
+      // connector, exactly as the Spine's foundation requires.
+      proposalVersionId: version.id,
+      portfolioId: input.portfolioId,
+      action: input.requestedAction ?? null,
+      sizingMode: typeof input.sizingMode === 'string' ? input.sizingMode : null,
+      weight: input.weight ?? null,
+      shares: input.shares ?? null,
+      provenance: context.uiSource ? `ui:${context.uiSource}` : 'ui:recommendation',
+    })
+  }
+
+  // ── Step 6: a parked idea that gets recommended is no longer parked ──
+  //
+  // Recommending is the strongest possible signal that the work resumed —
+  // stronger than a stage change, since it puts the idea in front of a PM.
+  // Leaving the revisit obligation open would have the product tell someone
+  // to come back to work they have already finished.
+  //
+  // Cleared for ANY owner: whoever parked it, the idea has moved on.
+  if (organizationId) {
+    await clearIdeaRevisitObligation({
+      organizationId,
+      tradeQueueItemId: input.tradeQueueItemId,
+      reason: CLEAR_REASONS.workResumed,
+    })
+  }
 
   return { proposal, decisionRequest }
 }
