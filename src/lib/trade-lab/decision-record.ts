@@ -109,6 +109,9 @@ export function buildDecisionRecord(args: BuildDecisionRecordArgs): DecisionReco
       whyNow,
       beforeWeight,
       afterWeight,
+      // Carried, not inferred. A committed leg is not an executed leg.
+      executionStatus: (t as { execution_status?: string | null }).execution_status ?? null,
+      executionNote: (t as { execution_note?: string | null }).execution_note ?? null,
     }
   })
 
