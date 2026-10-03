@@ -187,6 +187,26 @@ grant select, insert on public.trade_proposal_versions to authenticated;
 --     whenever they are not on the analyst's lab. The correct test is the one
 --     `decision_requests` already uses: the portfolio is in the caller's
 --     organisation, and the caller is on that portfolio's team.
+--
+--     `user_is_portfolio_member` is OR'd in for one reason: a frozen version
+--     is EMBEDDED in the accepted-trade read (`accepted-trade-service.ts`
+--     selects `proposal_version:proposal_version_id(...)`), and
+--     `accepted_trades` is gated on `user_is_portfolio_member`, which reads
+--     `portfolio_memberships` — a different table from `portfolio_team`.
+--     Without this branch a reader authorised to see the trade would get the
+--     trade with a silently null recommendation, which is the one failure
+--     mode a frozen record exists to prevent. It widens nothing: every user
+--     it admits can already read the accepted trade the version hangs off.
+--
+--     This is SELECT only. The INSERT policy below stays on `portfolio_team`,
+--     matching `decision_requests_insert` — submitting a recommendation also
+--     writes a decision request, so a membership-only user cannot submit
+--     either way, and loosening the write would create a new inconsistency
+--     rather than remove one.
+--
+--     Consolidating the two membership tables is deliberately NOT attempted
+--     here. See the backlog item; this migration only stops the split from
+--     costing a reader their history.
 drop policy if exists "Users can view versions of accessible proposals" on public.trade_proposal_versions;
 drop policy if exists trade_proposal_versions_select on public.trade_proposal_versions;
 
@@ -197,6 +217,7 @@ create policy trade_proposal_versions_select
     public.portfolio_in_current_org(portfolio_id)
     and (
       created_by = auth.uid()
+      or public.user_is_portfolio_member(portfolio_id)
       or exists (
         select 1 from public.portfolio_team pt
         where pt.portfolio_id = trade_proposal_versions.portfolio_id
