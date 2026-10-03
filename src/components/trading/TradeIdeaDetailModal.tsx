@@ -43,7 +43,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
+import { fetchLatestBenchmarkWeightsFor } from '../../lib/holdings/benchmark-latest-query'
 import { emitAuditEvent } from '../../lib/audit'
 import { useAuth } from '../../hooks/useAuth'
 import { useIsMobile } from '../../hooks/useMediaQuery'
@@ -969,19 +969,18 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
         portfolioTotals[h.portfolio_id] = (portfolioTotals[h.portfolio_id] || 0) + (h.shares * h.price)
       })
 
-      // Fetch benchmark weights for all relevant portfolios
-      const { data: benchmarkRows } = await supabase
-        .from('portfolio_benchmark_weights')
-        // See latest-benchmark.ts: one file per portfolio, newest wins. A
-        // no-op while the unique constraint permits a single date, and the
-        // only thing preventing a cross-date merge once it does not.
-        .select('portfolio_id, asset_id, weight, as_of_date')
-        .in('portfolio_id', pairTradeProposalPortfolioIds)
-        .in('asset_id', pairTradeLegAssetIds)
+      // Each portfolio's newest benchmark file, resolved per portfolio and
+      // filtered server-side. Selecting by portfolio alone transferred every
+      // historical date of a dated series. See benchmark-latest-query.ts.
+      const { rows: benchmarkRows } = await fetchLatestBenchmarkWeightsFor(
+        supabase as never,
+        pairTradeProposalPortfolioIds,
+        { assetIds: pairTradeLegAssetIds },
+      )
 
       // Build benchmark lookup: portfolioId -> assetId -> weight
       const benchmarkMap: Record<string, Record<string, number>> = {}
-      latestBenchmarkRows((benchmarkRows ?? []) as any[])?.forEach((row: any) => {
+      benchmarkRows?.forEach((row: any) => {
         if (!benchmarkMap[row.portfolio_id]) benchmarkMap[row.portfolio_id] = {}
         benchmarkMap[row.portfolio_id][row.asset_id] = Number(row.weight)
       })

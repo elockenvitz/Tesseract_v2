@@ -17,6 +17,7 @@ import { SetupWizard } from '../onboarding/SetupWizard'
 import { TesseractLogo } from '../ui/TesseractLogo'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { MobileSearchOverlay } from '../mobile/MobileSearchOverlay'
+import { OrgLogo } from '../organization/OrgLogo'
 // SetupWizard removed — org creation disabled for normal users
 
 interface HeaderProps {
@@ -79,18 +80,22 @@ export function Header({
    */
   const canOpenOrgSwitcher = userOrgs.length > 1 || !currentOrg
 
-  // Preload every org logo as soon as the user-orgs query resolves, so the
-  // first time the dropdown opens the browser already has the images in
-  // memory cache. Without this, each `<img src={signed-url}>` in the menu
-  // triggers its own network round-trip on the click, and the user sees
-  // empty squares for a beat before the logos pop in.
-  useEffect(() => {
-    for (const org of userOrgs) {
-      if (!org.logo_url) continue
-      const img = new Image()
-      img.src = org.logo_url
-    }
-  }, [userOrgs])
+  /*
+   * There was a `new Image()` preload loop here, keyed on `[userOrgs]`.
+   *
+   * It existed to warm the browser cache so the switcher dropdown would not
+   * flash empty squares. It could never do that: `userOrgs` was rebuilt by
+   * its query on every refetch — every 60 seconds, and on every window
+   * refocus — and each rebuild carried a newly signed logo URL. A new URL is
+   * a new cache key, so the loop did not warm a cache, it defeated one, and
+   * downloaded 1.44 MB per org per refetch whether or not the menu was ever
+   * opened. It was 86.1% of this project's Supabase egress.
+   *
+   * The dropdown rows now resolve the logo themselves via `OrgLogo` below,
+   * which shares one cached signed URL per (bucket, path). The URL is stable
+   * for fifty minutes, so the browser's own image cache does the warming
+   * that this loop was trying to force.
+   */
   const { activeSession } = useMorphSession()
   const pilotMode = usePilotMode()
 
@@ -746,19 +751,7 @@ export function Header({
                             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                         )}
                       >
-                        {org.logo_url ? (
-                          <img
-                            src={org.logo_url}
-                            alt=""
-                            loading="eager"
-                            decoding="async"
-                            className="w-6 h-6 rounded object-cover flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="w-6 h-6 rounded bg-gray-200 dark:bg-gray-600 flex items-center justify-center flex-shrink-0">
-                            <Building2 className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
-                          </div>
-                        )}
+                        <OrgLogo path={org.logo_url} />
                         <span className="font-medium truncate">{org.name}</span>
                         {org.id === currentOrg?.id && (
                           <span className="ml-auto text-indigo-500 text-xs">Active</span>

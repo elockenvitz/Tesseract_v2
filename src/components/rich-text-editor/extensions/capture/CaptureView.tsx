@@ -1,6 +1,7 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback } from 'react'
 import { NodeViewWrapper, NodeViewProps } from '@tiptap/react'
-import { supabase } from '../../../../lib/supabase'
+import { useSignedUrl } from '../../../../lib/storage/signed-url'
+import { CAPTURES_BUCKET } from '../../../../lib/storage/buckets'
 import {
   Link2, Image, Camera, ExternalLink, ChevronDown, ChevronRight,
   X, MoreHorizontal, RefreshCw, Clock, TrendingUp, Building2,
@@ -73,49 +74,22 @@ export function CaptureView({ node, updateAttributes, deleteNode, selected }: Ca
     deleteNode()
   }, [deleteNode])
 
-  // Screenshot URL. The node stores the storage path, never a URL: a public
-  // URL would outlive the note it was embedded in and stay fetchable by
-  // anyone who had ever seen it. Signed URLs expire, so we mint one per
-  // mount and refresh it well before the hour is up.
-  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null)
-  const [screenshotError, setScreenshotError] = useState(false)
-
-  useEffect(() => {
-    if (!screenshotPath) {
-      setScreenshotUrl(null)
-      return
-    }
-
-    let cancelled = false
-    let refreshTimer: ReturnType<typeof setTimeout>
-
-    const sign = async () => {
-      const { data, error } = await supabase.storage
-        .from('captures')
-        .createSignedUrl(screenshotPath, 3600)
-
-      if (cancelled) return
-
-      if (error || !data?.signedUrl) {
-        setScreenshotError(true)
-        setScreenshotUrl(null)
-        return
-      }
-
-      setScreenshotError(false)
-      setScreenshotUrl(data.signedUrl)
-      // Re-sign at 50 minutes so a note left open all afternoon doesn't
-      // silently turn into a broken image.
-      refreshTimer = setTimeout(sign, 50 * 60 * 1000)
-    }
-
-    sign()
-
-    return () => {
-      cancelled = true
-      clearTimeout(refreshTimer)
-    }
-  }, [screenshotPath])
+  /*
+   * Screenshot URL. The node stores the storage path, never a URL: a public
+   * URL would outlive the note it was embedded in and stay fetchable by
+   * anyone who had ever seen it.
+   *
+   * This used to mint a URL per mount and re-sign on its own
+   * `setTimeout(sign, 50 * 60 * 1000)`. The intent was right — refresh before
+   * the hour is up — but each node ran its own timer and its own signing with
+   * no shared cache, so scrolling a note in and out of view re-signed, and a
+   * re-sign produced a new URL that the browser had to re-download in full.
+   *
+   * The shared cache keys on (bucket, path) and holds a URL for fifty
+   * minutes, which is the same refresh behaviour with none of the duplication.
+   */
+  const { url: screenshotUrl, error: screenshotSignError } = useSignedUrl(CAPTURES_BUCKET, screenshotPath)
+  const screenshotError = !!screenshotSignError
 
   // Get entity config if this is an entity capture
   const entityConfig = entityType ? ENTITY_CONFIG[entityType as CaptureEntityType] : null

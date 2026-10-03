@@ -160,7 +160,7 @@ import { IdeaDetail } from './ideas/IdeaDetail'
 import { PairLegsPane } from './ideas/PairLegsPane'
 import { pairSides as pairSidesOf, sideLabel, type PairLegRow } from '../../lib/signals/pair-shape'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
-import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
+import { fetchLatestBenchmarkWeightsFor } from '../../lib/holdings/benchmark-latest-query'
 import { WeightBars } from '../signals/WeightBars'
 import { buildNewsCard } from '../../lib/signals/builders/news'
 import { useRecommendationCards } from '../../hooks/mobile/useRecommendationCards'
@@ -1465,7 +1465,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       const bookIds = books.map(p => p.id as string)
       const bookName = new Map<string, string>(books.map(p => [p.id as string, p.name as string]))
 
-      const [{ data: holdings }, { data: bench }] = await Promise.all([
+      const [{ data: holdings }, { rows: bench }] = await Promise.all([
         supabase
           .from('portfolio_holdings')
           .select('portfolio_id, asset_id, shares, price, date, assets(id, symbol, asset_type, current_symbol, lifecycle_status)')
@@ -1475,15 +1475,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // lenses' holdings read.
           .order('date', { ascending: false, nullsFirst: false })
           .limit(5000),
-        supabase
-          .from('portfolio_benchmark_weights')
-          // as_of_date is selected even though the table can only hold one
-          // today: `UNIQUE (portfolio_id, asset_id)` forbids a second. The
-          // moment that constraint is relaxed for historical active weights,
-          // an unfiltered read starts merging index files across dates — the
-          // distinct-vs-current collapse, for the third time in this codebase.
-          .select('asset_id, weight, as_of_date, portfolio_id')
-          .in('portfolio_id', bookIds),
+        // Each book's newest benchmark file, resolved per portfolio and
+        // filtered server-side. Selecting by portfolio alone transferred every
+        // historical date — 33 of them in production, and one more each day —
+        // only for the browser to discard all but the newest.
+        fetchLatestBenchmarkWeightsFor(supabase as never, bookIds),
       ])
 
       /**
@@ -1508,7 +1504,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
        * benchmark — and an active weight is a difference against a specific
        * index, so that is not an approximation, it is a different number.
        */
-      const currentBench = latestBenchmarkRows((bench ?? []) as any[])
+      // Already narrowed to each book's newest file, and already passed
+      // through `latestBenchmarkRows`, by the query helper.
+      const currentBench = bench ?? []
       const benchByBook = new Map<string, Map<string, number>>()
       for (const b of currentBench as any[]) {
         const forBook = benchByBook.get(b.portfolio_id) ?? new Map<string, number>()

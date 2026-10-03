@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat } from 'lucide-react'
 import { clsx } from 'clsx'
+import { fetchSignedUrl } from '../../lib/storage/signed-url'
+import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../../lib/storage/buckets'
 import { useAuth } from '../../hooks/useAuth'
 import {
   fetchOneAssetResearch,
@@ -3608,7 +3610,21 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                   {template.file_size ? `${(template.file_size / 1024).toFixed(1)} KB` : 'Unknown size'}
                                 </span>
                                 <button
-                                  onClick={() => window.open(template.file_url, '_blank')}
+                                  onClick={async () => {
+                                    /*
+                                     * `file_url` holds a storage path in a
+                                     * private bucket, so it has to be signed
+                                     * before it can be opened. It used to hold
+                                     * a `getPublicUrl` result, which opened a
+                                     * tab onto a 400.
+                                     */
+                                    const url = await fetchSignedUrl(
+                                      queryClient,
+                                      WORKFLOW_TEMPLATES_BUCKET,
+                                      workflowTemplatePath(template.file_url),
+                                    )
+                                    if (url) window.open(url, '_blank')
+                                  }}
                                   className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                   title="Download template"
                                 >

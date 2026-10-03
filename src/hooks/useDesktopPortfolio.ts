@@ -27,7 +27,7 @@ import { buildBook, currentRows, type Book, type HoldingRow, type Position } fro
 import { selectCurrentLadders, type TargetRow } from '../lib/signals/current-ladder'
 import { CORE_SECTIONS } from '../lib/desktop-research'
 import { EMPTY_FRAME, type PositionFrame } from '../lib/desktop-portfolio/model'
-import { latestBenchmarkRows } from '../lib/holdings/latest-benchmark'
+import { fetchLatestBenchmarkWeights } from '../lib/holdings/benchmark-latest-query'
 import {
   benchmarkFileFrom, compareToBenchmark, UNHELD_MIN_PCT,
   type BenchmarkComparison, type BenchmarkFile,
@@ -311,9 +311,10 @@ export function usePositionDetail(position: Position | null) {
  *
  * ── What this can honestly say, and what it cannot ───────────────────────
  *
- * `portfolio_benchmark_weights` holds an index file per portfolio: today one
- * date, 483 names, read through `latestBenchmarkRows` so it stays correct the
- * moment that table becomes a dated series.
+ * `portfolio_benchmark_weights` holds a dated series of index files per
+ * portfolio — 33 dates and counting, ~481 names each. Only the newest is read,
+ * narrowed server-side by `benchmark-latest-query` rather than filtered after
+ * the fact in the browser.
  *
  * What it does NOT hold is a benchmark return series. There is no index level
  * anywhere in this schema, so "the fund is up 4.2% against the benchmark's
@@ -344,17 +345,11 @@ export function useActiveWeights(book: Book | null): BenchmarkComparison {
     enabled: !!portfolioId,
     staleTime: 5 * 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('portfolio_benchmark_weights')
-        // `as_of_date` is selected so the newest file can be isolated. The
-        // table can hold only one date today -- UNIQUE (portfolio_id,
-        // asset_id) forbids a second -- but the moment that is relaxed for
-        // historical active weights, an unfiltered read merges index files
-        // across dates. See `lib/holdings/latest-benchmark`.
-        .select('asset_id, weight, portfolio_id, as_of_date')
-        .eq('portfolio_id', portfolioId as string)
-      if (error) throw new Error(error.message)
-      const rows = latestBenchmarkRows((data ?? []) as never[]) as unknown as
+      // The newest file only. The table is a dated series -- 33 dates in
+      // production -- so an unfiltered read transferred every one of them and
+      // discarded all but the newest in the browser: 2.46 MB to use 76 KB.
+      // See `lib/holdings/benchmark-latest-query`.
+      const rows = await fetchLatestBenchmarkWeights(supabase as never, portfolioId as string) as
         { asset_id: string | null; weight: unknown }[]
       return benchmarkFileFrom(rows)
     },

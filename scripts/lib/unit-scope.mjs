@@ -242,6 +242,25 @@ export const GATED_DIRS = [
    */
   'src/lib/memory/__tests__',
   /*
+   * Storage object identity. A signed URL carries a token that changes on
+   * every signing, so using one as a cache key or an effect dependency turns
+   * every refresh into a full re-download. That cost 782.693 MB of egress in
+   * one day -- 86.1% of the project's total -- from a single 1.44 MB logo, and
+   * nothing in the product looked wrong while it happened. These watch the
+   * call counts, which is the only place the defect is visible.
+   */
+  'src/lib/storage/__tests__',
+  /*
+   * How a benchmark file is read. Moved up from deferred: `latestBenchmarkRows`
+   * kept five read sites CORRECT when the table became a dated series, and
+   * precisely because the numbers stayed right, nobody noticed those sites were
+   * transferring all 33 dates to use one -- 2.46 MB to need 76 KB on the
+   * largest book, growing by a date a day, and most of one day's PostgREST
+   * egress. The assertions here are about row COUNTS, which is the only place
+   * that defect is visible, so they gate.
+   */
+  'src/lib/holdings/__tests__',
+  /*
    * The per-object view cursor. Its two properties -- only a real detail open
    * counts, and the prior value is readable before it moves -- are both
    * invisible when broken: the cursor still exists, it just stops meaning
@@ -314,7 +333,8 @@ export const DEFERRED_DIRS = [
   'src/lib/desktop-research',
   'src/lib/engagement',
   'src/lib/financial-data/__tests__',
-  'src/lib/holdings/__tests__',
+  // 'src/lib/holdings/__tests__' moved UP to the gated list: it now holds the
+  // row-count assertions that keep benchmark reads off the whole history.
   'src/lib/lists',
   'src/lib/permissions/__tests__',
   'src/lib/portfolio',

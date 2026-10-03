@@ -1,6 +1,9 @@
+import { useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { fetchSignedUrl } from '../lib/storage/signed-url'
+import { ORG_LOGO_BUCKET } from '../lib/storage/buckets'
 import {
   InvestmentCaseTemplate,
   CreateInvestmentCaseTemplateData,
@@ -379,21 +382,23 @@ export function useInvestmentCaseTemplates() {
     }
   })
 
-  // Get signed URL for logo
-  const getLogoUrl = async (logoPath: string): Promise<string | null> => {
-    if (!logoPath) return null
-
-    const { data, error } = await supabase.storage
-      .from('template-branding')
-      .createSignedUrl(logoPath, 60 * 60) // 1 hour
-
-    if (error) {
-      console.error('Error getting logo URL:', error)
-      return null
-    }
-
-    return data.signedUrl
-  }
+  /**
+   * Signed URL for a logo path, from the shared cache.
+   *
+   * Two things were wrong here. It signed directly, so it was a fifth
+   * independent signer of the same object; and it was a plain arrow, so its
+   * identity changed on every render and any effect listing it as a
+   * dependency re-ran every time. `useCallback` with a stable `queryClient`
+   * fixes the second, and delegating fixes the first.
+   *
+   * Prefer `useSignedUrl` in components. This remains for callers that need
+   * the imperative form.
+   */
+  const getLogoUrl = useCallback(
+    (logoPath: string): Promise<string | null> =>
+      fetchSignedUrl(queryClient, ORG_LOGO_BUCKET, logoPath),
+    [queryClient],
+  )
 
   return {
     templates,

@@ -6,6 +6,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown, ChevronRight, GitBranch, TreeDeciduous, Network, Orbit, Archive, Play, Pause, RotateCcw, Pencil, AlertCircle, RefreshCw, ArrowLeft, Square, Menu } from 'lucide-react'
 import { clsx } from 'clsx'
+import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../lib/storage/buckets'
 import { useIsMobile } from '../hooks/useMediaQuery'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -5261,28 +5262,35 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       if (!userId) throw new Error('Not authenticated')
 
       // Upload file to storage
-      const fileExt = file.name.split('.').pop()
       const fileName = `${workflowId}/${Date.now()}_${file.name}`
 
       const { error: uploadError } = await supabase.storage
-        .from('workflow-templates')
+        .from(WORKFLOW_TEMPLATES_BUCKET)
         .upload(fileName, file)
 
       if (uploadError) throw uploadError
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('workflow-templates')
-        .getPublicUrl(fileName)
-
-      // Create template record
+      /*
+       * Store the storage PATH, not a public URL.
+       *
+       * This called `getPublicUrl` and persisted the result. The
+       * `workflow-templates` bucket is private, so that URL was never
+       * fetchable — every template uploaded through here had a permanently
+       * stored, permanently broken link. And had the bucket ever been flipped
+       * to public to "fix" it, the note would have been holding an
+       * unauthenticated link to the file forever.
+       *
+       * The column is still called `file_url` because renaming it needs a
+       * migration and this branch applies none. It holds a path; readers
+       * resolve it with a signed URL at the moment of use.
+       */
       const { data, error } = await supabase
         .from('workflow_templates')
         .insert({
           workflow_id: workflowId,
           name,
           description,
-          file_url: publicUrl,
+          file_url: fileName,
           file_name: file.name,
           file_size: file.size,
           file_type: file.type,
@@ -5311,11 +5319,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       const template = workflowTemplates?.find(t => t.id === templateId)
       if (!template) throw new Error('Template not found')
 
-      // Delete file from storage
-      const fileName = template.file_url.split('/').slice(-2).join('/')
+      // Delete file from storage. `file_url` holds the path; the helper
+      // tolerates a legacy URL-shaped value.
       const { error: storageError } = await supabase.storage
-        .from('workflow-templates')
-        .remove([fileName])
+        .from(WORKFLOW_TEMPLATES_BUCKET)
+        .remove([workflowTemplatePath(template.file_url)])
 
       if (storageError) throw storageError
 
