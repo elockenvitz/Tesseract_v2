@@ -33,6 +33,7 @@ import {
   findAcceptedTradeForDecisionRequest,
 } from './accepted-trade-service'
 import { updateDecisionRequest } from './decision-request-service'
+import { resolveIdeaAfterDecision, type FanInResult } from '../decisions/decision-fan-in'
 import type { DecisionRequest, TradeAction, ActionContext, AcceptedTradeWithJoins } from '../../types/trading'
 
 // ---------------------------------------------------------------------------
@@ -102,9 +103,12 @@ export interface RejectFromInboxParams {
  *
  * Marks the DR rejected, deactivates its linked trade_proposal (so the
  * "Needs recommendation" CTA returns and the analyst can revise), and
- * updates the per-portfolio decision track. Trade idea stays alive.
+ * updates the per-portfolio decision track.
+ *
+ * The idea stays alive while ANY portfolio still owes a decision, and is
+ * concluded as `rejected` once none does. Returns which of those happened.
  */
-export async function rejectFromInbox(params: RejectFromInboxParams): Promise<void> {
+export async function rejectFromInbox(params: RejectFromInboxParams): Promise<FanInResult> {
   const { decisionRequest, reason, context } = params
 
   // 1. Update DR to rejected
@@ -171,10 +175,34 @@ export async function rejectFromInbox(params: RejectFromInboxParams): Promise<vo
     }
   }
 
-  // NOTE: trade idea is intentionally NOT advanced. Iterative reject means
-  // the idea stays in ready_for_decision so the analyst can revise sizing
-  // and resubmit a new recommendation. The amber "Needs recommendation"
-  // CTA will return on the card because the proposal is now inactive.
+  /*
+   * Conclude the idea only when NO portfolio still owes a decision.
+   *
+   * Iterative reject is real and must survive: a rejection is feedback, and
+   * while any track is open the analyst can revise sizing and resubmit, so
+   * the idea stays live and the amber "Needs recommendation" CTA returns
+   * because the proposal is now inactive.
+   *
+   * What was wrong is the other half. Once EVERY track is rejected there is
+   * nothing left to revise for, yet this path wrote nothing to
+   * `trade_queue_items` at all — so a fully-rejected idea stayed
+   * indistinguishable from one nobody had looked at, sitting in the pipeline
+   * presenting itself as still awaiting the same decision that was already
+   * made. Accept and reject are now symmetric: same fan-in rule, same shared
+   * implementation, same observable result.
+   */
+  const fanIn = await resolveIdeaAfterDecision({
+    tradeQueueItemId: decisionRequest.trade_queue_item_id,
+    outcome: 'rejected',
+    context,
+    note: 'All portfolios resolved — trade idea concluded after rejection',
+  })
+
+  if (fanIn.status === 'failed') {
+    console.error('[RejectFromInbox] Idea not concluded after rejection:', fanIn.reason)
+  }
+
+  return fanIn
 }
 
 // ---------------------------------------------------------------------------

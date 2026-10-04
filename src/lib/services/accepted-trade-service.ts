@@ -16,6 +16,8 @@ import { updateDecisionRequest } from './decision-request-service'
 import { deleteVariant } from './intent-variant-service'
 import { moveTradeIdea, reconcileOutcomeAfterRevert } from './trade-idea-service'
 import { FINAL_STAGE } from '../ideas/stage-model'
+import { resolveAcceptSizingBasis, computeAcceptSizing, isRefusal } from '../decisions/accept-sizing'
+import { resolveIdeaAfterDecision, type FanInResult } from '../decisions/decision-fan-in'
 import {
   recordDecisionReverted,
   recordExecutionRecorded,
@@ -132,7 +134,25 @@ export interface CreateAcceptedTradeInput {
   corrects_accepted_trade_id?: string | null
   /** Optional soft deadline for execution. Informational only. */
   execution_expected_by?: string | null
+  /**
+   * Provenance for the execution evidence this create may produce.
+   * Omitted means `observed`. The Inbox accept path sets `pmAssumed`.
+   */
+  execution_origin?: string
+  /**
+   * Why this trade carries no executable quantity, when it does not.
+   *
+   * Set by a caller that already tried to size and failed, so the stored
+   * note names the ACTUAL obstacle — no price on the snapshot date, an
+   * unparseable instruction — rather than the generic fallback. The decision
+   * is still recorded; only the execution is withheld.
+   */
+  unexecutable_reason?: string | null
 }
+
+/** Whole shares. Mirrors the Trade Lab execute path's rounding exactly. */
+const roundIntOrNull = (v: number | null | undefined): number | null =>
+  v == null || !Number.isFinite(v) ? null : Math.round(v)
 
 export async function createAcceptedTrade(
   input: CreateAcceptedTradeInput
@@ -174,6 +194,8 @@ export async function createAcceptedTrade(
   const { trade: finalized, executionProven } = await finalizeTradeForHoldingsSource(
     trade,
     input.accepted_by,
+    input.execution_origin ?? EXECUTION_ORIGIN.observed,
+    input.unexecutable_reason ?? null,
   )
 
   // ── Record the execution in organisational memory ─────────────────────
@@ -287,7 +309,11 @@ const UNEXECUTABLE_SIZING_NOTE =
  */
 async function finalizeTradeForHoldingsSource(
   trade: AcceptedTradeWithJoins,
-  actorId: string
+  actorId: string,
+  /** Provenance for the evidence row this writes. See `EXECUTION_ORIGIN`. */
+  executionOrigin: string = EXECUTION_ORIGIN.observed,
+  /** A caller-diagnosed reason this trade cannot execute, if it cannot. */
+  unexecutableReason: string | null = null,
 ): Promise<FinalizeOutcome> {
   try {
     const { data: portfolio, error } = await supabase
@@ -336,7 +362,10 @@ async function finalizeTradeForHoldingsSource(
         execution_status: 'not_started',
         execution_note: refusal
           ? `Execution could not be applied: ${refusal}`
-          : UNEXECUTABLE_SIZING_NOTE,
+          // A caller that already diagnosed the obstacle says what it was.
+          // "No price for SHOP on or before 2026-09-29" is actionable;
+          // "no executable share quantity" sends the reader hunting.
+          : (unexecutableReason ?? UNEXECUTABLE_SIZING_NOTE),
         updated_at: now,
       }
     } else {
@@ -353,7 +382,7 @@ async function finalizeTradeForHoldingsSource(
       // evidence row is exactly what Outcomes reads.
       let eventNote: string | null = null
       try {
-        await emitPaperTradeEvent(trade, applyResult as ApplyTradeResult, actorId)
+        await emitPaperTradeEvent(trade, applyResult as ApplyTradeResult, actorId, executionOrigin)
       } catch (e) {
         const reason = e instanceof Error ? e.message : String(e)
         console.warn('[AcceptedTrade] Failed to emit paper trade event', e)
@@ -794,9 +823,18 @@ export interface AcceptFromInboxToTradeBookParams {
   context: ActionContext
 }
 
+/**
+ * The committed trade, plus what happened to the idea behind it.
+ *
+ * Widened rather than changed: it is still an `AcceptedTradeWithJoins`, so
+ * existing callers compile untouched, but a caller that cares whether the
+ * idea actually left the pipeline can now find out instead of guessing.
+ */
+export type AcceptedTradeWithFanIn = AcceptedTradeWithJoins & { fanIn: FanInResult }
+
 export async function acceptFromInboxToAcceptedTrade(
   params: AcceptFromInboxToTradeBookParams
-): Promise<AcceptedTradeWithJoins> {
+): Promise<AcceptedTradeWithFanIn> {
   const { decisionRequest, sizingInput, decisionNote, context } = params
 
   const assetId = decisionRequest.trade_queue_item?.assets?.id
@@ -810,12 +848,56 @@ export async function acceptFromInboxToAcceptedTrade(
     : null
   const isModified = analystSizing != null && sizingInput !== analystSizing
 
+  /*
+   * PILOT EXECUTION CONTRACT — size the approval so it can actually execute.
+   *
+   * Tesseract has no OMS/EMS/broker integration, so a PM's approval is taken
+   * as sufficient cause to move the modeled book. That only works if the
+   * approval carries a share quantity, and until now this path carried none:
+   * it wrote `sizing_input` and left every numeric column null, so the
+   * holdings RPC had nothing to apply.
+   *
+   * On refusal the trade is still created — the DECISION happened and must
+   * be recorded — but with no quantities, so the existing machinery leaves
+   * it `not_started` with the reason on `execution_note`. A decision is
+   * never lost because it could not be priced, and sizing is never invented
+   * to make the flow look complete.
+   */
+  const basis = await resolveAcceptSizingBasis(
+    decisionRequest.portfolio_id,
+    assetId,
+    decisionRequest.trade_queue_item?.assets?.symbol ?? null,
+  )
+  const sized = isRefusal(basis)
+    ? basis
+    : computeAcceptSizing(basis, sizingInput, rawAction, assetId)
+  const computed = sized.ok ? sized.computed : null
+  if (!sized.ok) {
+    console.warn('[AcceptedTrade] Approval could not be sized; recording the decision only:', sized.reason)
+  }
+
   // Create accepted trade
   const trade = await createAcceptedTrade({
     portfolio_id: decisionRequest.portfolio_id,
     asset_id: assetId,
     action: rawAction,
     sizing_input: sizingInput,
+    sizing_spec: sized.ok ? sized.spec : null,
+    // Shares columns are Postgres integers; mirror the Trade Lab rounding.
+    target_weight: computed?.target_weight ?? null,
+    target_shares: roundIntOrNull(computed?.target_shares),
+    delta_weight: computed?.delta_weight ?? null,
+    delta_shares: roundIntOrNull(computed?.delta_shares),
+    notional_value: computed?.notional_value ?? null,
+    price_at_acceptance: computed?.price_used ?? null,
+    /*
+     * Provenance for whatever evidence this produces. Nothing observed a
+     * fill and nobody attested to one — a PM decision implied it, and the
+     * record says exactly that so a future broker-confirmed execution stays
+     * distinguishable.
+     */
+    execution_origin: EXECUTION_ORIGIN.pmAssumed,
+    unexecutable_reason: sized.ok ? null : sized.reason,
     source: 'inbox',
     decision_request_id: decisionRequest.id,
     trade_queue_item_id: decisionRequest.trade_queue_item_id,
@@ -922,37 +1004,29 @@ export async function acceptFromInboxToAcceptedTrade(
   // Errors here are logged loudly. We do NOT throw — the accepted_trade
   // already exists and the per-portfolio track is updated; failing to
   // advance the global status is recoverable.
-  if (decisionRequest.trade_queue_item_id) {
-    try {
-      // Are there any other portfolios with unresolved tracks for this idea?
-      const { data: openTracks, error: tracksErr } = await supabase
-        .from('trade_idea_portfolios')
-        .select('portfolio_id, decision_outcome')
-        .eq('trade_queue_item_id', decisionRequest.trade_queue_item_id)
-      if (tracksErr) throw tracksErr
+  const fanIn = await resolveIdeaAfterDecision({
+    tradeQueueItemId: decisionRequest.trade_queue_item_id,
+    outcome: 'executed',
+    context,
+    note: 'All portfolios resolved — trade idea concluded after approval',
+  })
 
-      const anyOpen = (openTracks || []).some(t => (t as any).decision_outcome == null)
-      if (!anyOpen) {
-        // All portfolios resolved → safe to advance the global trade idea
-        await moveTradeIdea({
-          tradeId: decisionRequest.trade_queue_item_id,
-          target: { stage: FINAL_STAGE, outcome: 'executed' },
-          context,
-          note: 'All portfolios resolved — trade idea concluded after accept',
-        })
-      }
-    } catch (e) {
-      console.error(
-        '[AcceptedTrade] Failed to advance trade idea after accept — '
-        + 'the accepted_trade was created but the kanban card may not have '
-        + 'moved. This usually means a stage validation failed. Trade ID: '
-        + decisionRequest.trade_queue_item_id,
-        e,
-      )
-    }
+  /*
+   * A failed conclusion is reported, not swallowed.
+   *
+   * The accepted trade exists and the decision is recorded, so this must not
+   * throw — losing a committed decision because a kanban card did not move
+   * would be far worse. But the previous `console.error` meant the only
+   * trace lived in a browser tab nobody had open: a real production accept
+   * left the idea sitting in `ready_to_recommend` with no database record of
+   * why. The result is attached to the returned trade so the caller can tell
+   * the PM, and so a test can assert on it.
+   */
+  if (fanIn.status === 'failed') {
+    console.error('[AcceptedTrade] Idea not concluded after approval:', fanIn.reason)
   }
 
-  return trade
+  return { ...trade, fanIn }
 }
 
 export interface BulkPromoteParams {
@@ -1215,6 +1289,13 @@ async function emitPaperTradeEvent(
   trade: AcceptedTradeWithJoins,
   apply: ApplyTradeResult,
   actorId: string,
+  /**
+   * Why we believe this executed. Defaults to `observed` — the app applied
+   * the trade as book of record. The Inbox accept path passes `pmAssumed`,
+   * because under the pilot contract nothing observed a fill; a PM decision
+   * implied one. Same row shape, same holdings effect, honest label.
+   */
+  origin: string = EXECUTION_ORIGIN.observed,
 ): Promise<void> {
   if (!apply.applied) return
 
@@ -1241,7 +1322,7 @@ async function emitPaperTradeEvent(
   await insertExecutionEvent({
     portfolio_id: trade.portfolio_id,
     asset_id: trade.asset_id,
-    source_type: 'holdings_diff',
+    source_type: origin === EXECUTION_ORIGIN.observed ? 'holdings_diff' : 'manual',
     action_type: actionType,
     event_date: new Date().toISOString().split('T')[0],
     quantity_before: sharesBefore,
@@ -1249,11 +1330,17 @@ async function emitPaperTradeEvent(
     quantity_delta: delta,
     market_value_before: mvBefore,
     market_value_after: mvAfter,
-    detected_by_system: true,
+    /*
+     * Only a genuinely observed apply was detected BY the system. An assumed
+     * execution was caused by a person's decision and observed by nobody, so
+     * it reports `false` and `source_type: 'manual'` — the table's existing
+     * way of saying "a human put this here, we did not watch it happen".
+     */
+    detected_by_system: origin === EXECUTION_ORIGIN.observed,
     linked_trade_idea_id: trade.trade_queue_item_id ?? null,
     linked_decision_id: trade.decision_request_id ?? null,
     metadata: {
-      origin: EXECUTION_ORIGIN.observed,
+      origin,
       accepted_trade_id: trade.id,
       batch_id: (trade as any).batch_id ?? null,
     },
@@ -1297,10 +1384,43 @@ async function insertExecutionEvent(row: Record<string, unknown>): Promise<void>
  * ('holdings_diff' and 'manual'), so no schema change was needed to tell
  * them apart.
  */
-const EXECUTION_ORIGIN = {
+export const EXECUTION_ORIGIN = {
   observed: 'paper_execute',
   attested: 'trader_attested',
+  /**
+   * PILOT POLICY: the PM approved, so we assume it filled.
+   *
+   * Tesseract has no OMS/EMS/broker integration. For the pilot, a PM's
+   * "Approve & Execute" is treated as sufficient cause to move the modeled
+   * book — but that assumption is written down rather than hidden. This row
+   * says "no system and no human observed a fill; a decision implied one."
+   *
+   * It is deliberately NOT `paper_execute`: that value means the app applied
+   * the trade and watched the position change as the book of record. And it
+   * is deliberately not `trader_attested`: nobody attested anything.
+   *
+   * The whole point is the upgrade path. When broker confirmation exists,
+   * these rows are trivially separable from real fills — by provenance, not
+   * by guessing from timestamps.
+   */
+  pmAssumed: 'pm_assumed_execution',
 } as const
+
+/**
+ * Origins where THIS application moved the holdings.
+ *
+ * `pm_assumed_execution` belongs here and `trader_attested` does not, and
+ * the distinction is about mechanics, not credibility. An attested execution
+ * happened at the desk, so our holdings were never incremented by it. An
+ * assumed execution ran through `apply_trade_to_holdings` exactly like an
+ * observed one — the app added those shares, so the app must take them back
+ * on revert. Leaving `pmAssumed` out of this set would strand a position
+ * that a revert is supposed to remove.
+ */
+const SYSTEM_APPLIED_ORIGINS: readonly string[] = [
+  EXECUTION_ORIGIN.observed,
+  EXECUTION_ORIGIN.pmAssumed,
+]
 
 /** Every execution evidence row recorded against a trade. */
 async function executionEvidenceFor(tradeId: string): Promise<Array<{ origin: string }>> {
@@ -1328,7 +1448,7 @@ async function executionEvidenceFor(tradeId: string): Promise<Array<{ origin: st
  * on attested evidence would subtract a position the app never added.
  */
 async function hasSystemAppliedEvidence(tradeId: string): Promise<boolean> {
-  return (await executionEvidenceFor(tradeId)).some(e => e.origin === EXECUTION_ORIGIN.observed)
+  return (await executionEvidenceFor(tradeId)).some(e => SYSTEM_APPLIED_ORIGINS.includes(e.origin))
 }
 
 /**
@@ -1347,8 +1467,23 @@ async function emitAttestedExecutionEvent(
   trade: AcceptedTradeWithJoins,
   actorId: string,
 ): Promise<boolean> {
-  if ((await executionEvidenceFor(trade.id)).length > 0) {
-    // Already evidenced. Nothing to add, and the caller may proceed.
+  /*
+   * Idempotent on REAL evidence; an assumption does not count as evidence.
+   *
+   * This used to return on any existing row. Under the pilot that is wrong
+   * in one direction: an accept writes a `pm_assumed_execution` row
+   * immediately, so a trader who later confirms the actual fill would have
+   * been told "already evidenced" and their attestation never recorded —
+   * the assumption permanently crowding out the fact it was standing in for.
+   *
+   * It is still right in the other direction. An OBSERVED execution means
+   * the system applied the trade and watched it; a later attestation adds
+   * nothing and would double-record. A second ATTESTATION is the
+   * double-click this guard was written for. So both of those still
+   * suppress, and only the pilot's assumption yields to the real thing.
+   */
+  const existing = await executionEvidenceFor(trade.id)
+  if (existing.some(e => e.origin !== EXECUTION_ORIGIN.pmAssumed)) {
     return true
   }
 

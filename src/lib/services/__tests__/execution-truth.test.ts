@@ -597,6 +597,70 @@ describe('the observed path keeps its own provenance', () => {
   })
 })
 
+/**
+ * The pilot's third grade of proof.
+ *
+ * Under the pilot contract a PM's approval produces execution evidence
+ * labelled `pm_assumed_execution`: nothing observed a fill and nobody
+ * attested to one: a decision implied it. Two consequences have to hold,
+ * and they pull in opposite directions.
+ */
+describe('pm-assumed execution evidence', () => {
+  const PM_ASSUMED_EVIDENCE = [
+    { metadata: { origin: 'pm_assumed_execution', accepted_trade_id: 'at-1' } },
+  ]
+
+  it('IS reversible — the app moved those shares, so the app takes them back', async () => {
+    /*
+     * The opposite of the attested case, and for a mechanical reason rather
+     * than a credibility one. An attested execution happened at the desk, so
+     * our holdings were never incremented by it. An assumed execution went
+     * through `apply_trade_to_holdings` exactly like an observed one. If
+     * `pm_assumed` were left out of the system-applied set, a revert would
+     * silently strand the position it was supposed to remove.
+     */
+    db.tradeRow = { ...PENDING_SIZED_TRADE, execution_status: 'complete' }
+    db.evidence = PM_ASSUMED_EVIDENCE
+
+    await revertAcceptedTrade('at-1', 'approved in error', { actorId: 'u1' } as never)
+
+    const mutations = db.calls.filter(
+      c => c.table === 'portfolio_holdings' && (has(c.ops, 'update') || has(c.ops, 'delete')),
+    )
+    expect(mutations.length).toBeGreaterThan(0)
+  })
+
+  it('does not suppress a later trader attestation', async () => {
+    /*
+     * `emitAttestedExecutionEvent` used to return early on ANY existing
+     * evidence row. Under the pilot every accept writes one immediately, so
+     * a trader confirming the real fill would have been told "already
+     * evidenced" and their attestation would never have been recorded — the
+     * assumption permanently crowding out the fact.
+     */
+    db.tradeRow = { ...PENDING_SIZED_TRADE, execution_status: 'not_started' }
+    db.evidence = PM_ASSUMED_EVIDENCE
+    const before = db.calls.filter(c => c.table === 'portfolio_trade_events' && has(c.ops, 'insert')).length
+
+    await updateExecutionStatus('at-1', 'complete', 'filled at the desk', { actorId: 'u1' } as never)
+
+    const after = db.calls.filter(c => c.table === 'portfolio_trade_events' && has(c.ops, 'insert')).length
+    expect(after).toBeGreaterThan(before)
+  })
+
+  it('a second attestation is still a no-op', async () => {
+    // The double-click case the idempotency guard actually exists for.
+    db.tradeRow = { ...PENDING_SIZED_TRADE, execution_status: 'not_started' }
+    db.evidence = [{ metadata: { origin: 'trader_attested', accepted_trade_id: 'at-1' } }]
+    const before = db.calls.filter(c => c.table === 'portfolio_trade_events' && has(c.ops, 'insert')).length
+
+    await updateExecutionStatus('at-1', 'complete', 'again', { actorId: 'u1' } as never)
+
+    const after = db.calls.filter(c => c.table === 'portfolio_trade_events' && has(c.ops, 'insert')).length
+    expect(after).toBe(before)
+  })
+})
+
 // ───────────────────────────────────────────────────────────────────────────
 // Reversal follows evidence, never status
 // ───────────────────────────────────────────────────────────────────────────

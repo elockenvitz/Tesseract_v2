@@ -470,16 +470,26 @@ export function DecisionConfirmationModal({
                 className="rounded-md border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2"
                 data-testid="awaiting-execution"
               >
+                {/*
+                  Under the pilot contract approval normally executes, so
+                  this block is the exception rather than the routine state
+                  it described before. When it fires, the cause is that the
+                  trade could not be SIZED — no price on the book's snapshot
+                  date, or an instruction this path cannot execute — not
+                  that a trader has yet to get to it. The wording says which,
+                  because "awaiting execution" would tell the PM to wait for
+                  something that is never coming.
+                */}
                 <p className="text-xs font-semibold text-amber-900 dark:text-amber-300">
                   {pendingExecution.length === 1
-                    ? '1 decision committed, but not executed'
-                    : `${pendingExecution.length} decisions committed, but not executed`}
+                    ? '1 decision recorded, but it could not be executed'
+                    : `${pendingExecution.length} decisions recorded, but they could not be executed`}
                 </p>
                 <ul className="mt-1 space-y-0.5">
                   {pendingExecution.map(d => (
                     <li key={d.tradeId} className="text-[11px] text-amber-800 dark:text-amber-400/90">
                       <span className="font-medium">{d.symbol}</span>
-                      {d.executionNote ? ` — ${d.executionNote}` : ' — holdings were not moved.'}
+                      {d.executionNote ? ` — ${d.executionNote}` : ' — it could not be sized, so holdings were not moved.'}
                     </li>
                   ))}
                 </ul>

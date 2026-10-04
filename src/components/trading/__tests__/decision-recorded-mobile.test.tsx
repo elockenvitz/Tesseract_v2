@@ -124,7 +124,11 @@ describe('a committed decision is not announced as executed', () => {
     expect(screen.getByText('What was decided')).toBeTruthy()
     // ...and the reason the service already wrote must reach the reader.
     expect(screen.getByTestId('awaiting-execution')).toBeTruthy()
-    expect(screen.getByText('1 decision committed, but not executed')).toBeTruthy()
+    // Under the pilot contract approval normally executes, so when this
+    // fires the cause is that the trade could not be SIZED — not that a
+    // trader has yet to pick it up. "Awaiting execution" would tell the PM
+    // to wait for something that is never coming.
+    expect(screen.getByText('1 decision recorded, but it could not be executed')).toBeTruthy()
     expect(screen.getByText(/Execution could not be applied: no price/)).toBeTruthy()
   })
 
@@ -133,7 +137,7 @@ describe('a committed decision is not announced as executed', () => {
     viewport.isMobile = false
     mountWith(withStatus(null, null))
     expect(screen.getByTestId('awaiting-execution')).toBeTruthy()
-    expect(screen.getByText(/holdings were not moved/)).toBeTruthy()
+    expect(screen.getByText(/could not be sized, so holdings were not moved/)).toBeTruthy()
   })
 
   it('does not treat in_progress as executed either', () => {

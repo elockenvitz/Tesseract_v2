@@ -39,8 +39,9 @@ import {
   useRejectFromInbox,
   useRevertDecisionAccept,
 } from '../../hooks/useDecisionRequests'
-import type { DecisionRequest, DecisionRequestStatus, DeferralTrigger } from '../../types/trading'
+import type { DecisionRequest, DecisionRequestStatus, DeferralTrigger, TradeAction } from '../../types/trading'
 import { useCurrentBook, weightOf } from '../../hooks/useCurrentBook'
+import { ApproveExecutePreview } from './ApproveExecutePreview'
 import { usePilotMode } from '../../hooks/usePilotMode'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
 import { isPilotExampleRequest, PILOT_EXAMPLE_HINT } from '../../lib/pilot/pilot-inbox'
@@ -2207,7 +2208,12 @@ function PortfolioRow({
             disabled={isPending}
             className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50 transition-colors disabled:opacity-50"
           >
-            <Check className="h-3 w-3" /> Accept
+            {/*
+              "Approve & Execute", not "Accept". Under the pilot contract
+              this moves the modeled book on click — the label has to carry
+              that, because the word Accept does not.
+            */}
+            <Check className="h-3 w-3" /> Approve &amp; Execute
           </button>
           <button
             onClick={() => { setRejectReason(''); setRejectMode(true) }}
@@ -2233,13 +2239,40 @@ function PortfolioRow({
             <div className="flex items-center gap-1.5 text-xs">
               <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
               <span className="font-semibold text-green-700 dark:text-green-400">
-                Accept at {targetWeight != null ? `${targetWeight.toFixed(2)}%` : 'analyst sizing'}
+                Approve at {targetWeight != null ? `${targetWeight.toFixed(2)}%` : 'analyst sizing'}
               </span>
               {overrideWeight != null && analystWeight != null && parseFloat(overrideWeight) !== analystWeight && (
                 <span className="text-[10px] text-amber-500">(modified)</span>
               )}
             </div>
           </div>
+
+          {/*
+            What approval will actually do, before it is done. Pair legs are
+            excluded: they commit with the literal 'pair' sizing string,
+            which is not an executable instruction and must not be previewed
+            as though it were.
+          */}
+          {!isPairTrade && (
+            <ApproveExecutePreview
+              book={currentBookData}
+              portfolioId={request.portfolio_id}
+              assetId={request.trade_queue_item?.assets?.id ?? null}
+              symbol={request.trade_queue_item?.assets?.symbol ?? null}
+              sizingInput={overrideWeight ?? (analystWeight != null ? String(analystWeight) : '')}
+              action={(request.requested_action || request.trade_queue_item?.action || 'buy') as TradeAction}
+              isModified={overrideWeight != null && analystWeight != null && parseFloat(overrideWeight) !== analystWeight}
+              analystWeight={analystWeight}
+            />
+          )}
+
+          {/* The frozen thesis this decision is being made on. */}
+          {history.thesisText.captured && history.thesisText.value && (
+            <p className="text-[11px] leading-snug text-gray-600 dark:text-gray-300 mb-2 line-clamp-3">
+              {history.thesisText.value}
+            </p>
+          )}
+
           <input
             type="text"
             value={noteValue}
@@ -2271,7 +2304,7 @@ function PortfolioRow({
               className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
             >
               {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-              Confirm
+              Approve &amp; Execute
             </button>
             <button
               onClick={() => setAcceptMode(false)}
