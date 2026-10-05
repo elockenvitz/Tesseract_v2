@@ -1496,10 +1496,43 @@ export function BatchListView({
     })
   }, [batches, batchSymbols, search])
 
+  /*
+   * Committed trades that belong to no batch.
+   *
+   * These are not an edge case and not debris: the Decision Inbox's
+   * Approve & Execute creates every trade with `batch_id = NULL` by design,
+   * because a single approval is not a batch. Batching is for trades promoted
+   * together from a simulation.
+   *
+   * Every aggregation below starts `if (!t.batch_id) continue`, and the
+   * detail pane filters `batch_id === selectedBatchId`, so before this group
+   * existed an unbatched trade rendered NOWHERE in this view — and this view
+   * is where the Trade Book opens. Production lost two that way: SHOP
+   * 2026-10-04 and GOOGL 2026-10-05 were both complete, matched, holdings
+   * applied, and invisible.
+   *
+   * Nothing here creates or assigns a batch. The trades are shown as what
+   * they are.
+   */
+  const unbatchedTrades = useMemo(
+    () => trades.filter((t) => !t.batch_id),
+    [trades],
+  )
+
+  /**
+   * Selection sentinel for the unbatched group.
+   *
+   * Not a batch id and deliberately not shaped like one, so it can never
+   * collide with a real `trade_batches.id` or be mistaken for one by
+   * `batches.find`.
+   */
+  const UNBATCHED = '__unbatched__'
+  const unbatchedSelected = selectedBatchId === UNBATCHED
+
   // Trades for the currently-selected batch. Memoed so the detail
   // panel doesn't re-filter on unrelated parent re-renders.
   const selectedBatchTrades = useMemo(() => {
-    if (!selectedBatchId) return []
+    if (!selectedBatchId || selectedBatchId === UNBATCHED) return []
     return trades.filter((t) => t.batch_id === selectedBatchId)
   }, [trades, selectedBatchId])
 
@@ -1512,20 +1545,25 @@ export function BatchListView({
   // tab) — we fall back to the first available batch instead of
   // showing an empty right panel.
   React.useEffect(() => {
-    if (batches.length === 0) return
+    if (batches.length === 0 && unbatchedTrades.length === 0) return
     // Not on a phone. There the detail replaces the list rather than filling
     // a pane beside it, so auto-selecting would drop the user straight into
     // the first batch — and immediately undo the "All batches" back button,
     // since leaving the detail sets the selection back to null.
     if (isMobileViewport) return
     const stillExists = selectedBatchId
-      ? batches.some((b) => b.id === selectedBatchId)
+      ? selectedBatchId === UNBATCHED
+        ? unbatchedTrades.length > 0
+        : batches.some((b) => b.id === selectedBatchId)
       : false
     if (!stillExists) {
-      onSelectBatch(batches[0].id)
+      // Prefer a real batch; fall back to the unbatched group so a portfolio
+      // whose only committed trades came from the Inbox does not land on an
+      // empty pane.
+      onSelectBatch(batches.length > 0 ? batches[0].id : UNBATCHED)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batches.length, selectedBatchId, isMobileViewport])
+  }, [batches.length, unbatchedTrades.length, selectedBatchId, isMobileViewport])
 
   /*
    * Phone + pilot: open the latest batch on arrival, once.
@@ -1544,7 +1582,16 @@ export function BatchListView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMobileViewport, !!guide, batches.length])
 
-  if (batches.length === 0) {
+  /*
+   * "No batches yet" is only honest when there are no trades either.
+   *
+   * This returned early on `batches.length === 0` alone, so a portfolio
+   * holding committed, executed, reconciled trades from the Decision Inbox
+   * showed an empty-state telling the reader to go promote something from
+   * the Trade Lab. The trades below are first-class records; the absence of
+   * a batch is not the absence of a trade.
+   */
+  if (batches.length === 0 && unbatchedTrades.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
@@ -1603,10 +1650,47 @@ export function BatchListView({
               </button>
             )}
           </div>
-          {filteredBatches.length === 0 && (
+          {filteredBatches.length === 0 && unbatchedTrades.length === 0 && (
             <div className="px-3 py-6 text-center text-[11px] text-gray-400 dark:text-gray-500">
               No batches match "{search}"
             </div>
+          )}
+          {/*
+            * Unbatched trades, as a first-class entry in the rail.
+            *
+            * Listed FIRST because these are the individually-approved trades
+            * — the Decision Inbox path — and a reader who just hit Approve &
+            * Execute is looking for the thing they just did.
+            *
+            * Exempt from `search`, which matches batch name, description and
+            * symbols: there is no batch here to match on, and a filter that
+            * can hide a committed trade with no way to know it did is the
+            * defect this group exists to fix. Symbol search lives in the
+            * Trades view, which searches the trades themselves.
+            */}
+          {unbatchedTrades.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onSelectBatch(UNBATCHED)}
+              className={clsx(
+                'w-full text-left px-3 py-2.5 rounded-lg border transition-colors',
+                unbatchedSelected
+                  ? 'border-primary-400 bg-white dark:bg-gray-800 ring-1 ring-primary-400'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600',
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-gray-900 dark:text-white truncate">
+                  Unbatched trades
+                </span>
+                <span className="text-[10px] tabular-nums text-gray-500 dark:text-gray-400 shrink-0">
+                  {unbatchedTrades.length}
+                </span>
+              </div>
+              <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 leading-relaxed">
+                Approved individually, not promoted as a group
+              </p>
+            </button>
           )}
           {filteredBatches.map((batch) => {
             const descTrimmed = (batch.description || '').trim()
@@ -1633,7 +1717,41 @@ export function BatchListView({
       </div>
 
       {/* Right: detail panel */}
-      {selectedBatch ? (
+      {unbatchedSelected ? (
+        /*
+          * Deliberately not `BatchDetailPanel`.
+          *
+          * That panel is about a batch: its name, its rationale, its
+          * grouped-approval story. None of those exist here, and giving this
+          * group a name or a description would be inventing the batch the
+          * user told us not to invent. So it reuses `BatchTradesList` — the
+          * same rows a batch shows — under a plain header.
+          */
+        <div className="flex-1 min-h-0 flex flex-col sm:contents">
+          <button
+            onClick={() => onSelectBatch(null)}
+            className="sm:hidden flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 shrink-0"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            All batches
+          </button>
+          <div className="flex-1 min-h-0 overflow-auto overscroll-contain p-4 sm:p-5">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+              Unbatched trades
+            </h2>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 mb-4 leading-relaxed">
+              Committed from a single approval rather than promoted as a group.
+              These are full Trade Book records — they execute, reconcile and
+              revert exactly like batched trades.
+            </p>
+            <BatchTradesList
+              trades={unbatchedTrades}
+              batchDescription={null}
+              onAddComment={onAddComment}
+            />
+          </div>
+        </div>
+      ) : selectedBatch ? (
         <div className="flex-1 min-h-0 flex flex-col sm:contents">
           {/* Back to the list — on a phone the detail replaced it, so without
               this there is no way out of a batch. */}
