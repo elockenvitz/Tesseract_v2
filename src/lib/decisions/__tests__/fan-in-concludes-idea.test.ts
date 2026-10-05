@@ -404,6 +404,27 @@ describe('a failed conclusion leaves a durable record', () => {
     expect(result.reason).toContain('valid_outcome_in_deciding_only')
   })
 
+  it('never words the reason so it reads as a failed trade', async () => {
+    /*
+     * The trade committed. Everything the PM is shown about this failure
+     * has to be unambiguous about that, including the interpolated reason —
+     * the Inbox renders it inside its own sentence, so a reason beginning
+     * "Failed to move trade" would read as the trade failing even though
+     * the surrounding copy says the opposite.
+     *
+     * `moveTradeIdea` only ever writes `trade_queue_items`, so its message
+     * says "idea". This pins that, because the wording is only load-bearing
+     * from here and would otherwise be easy to revert as a tidy-up.
+     */
+    const result = await resolveIdeaAfterDecision({
+      tradeQueueItemId: 'tqi-googl', outcome: 'executed', context, note: 'n',
+    })
+    expect(result.status).toBe('failed')
+    if (result.status !== 'failed') return
+    expect(result.reason).not.toMatch(/failed to move trade\b/i)
+    expect(result.reason).not.toMatch(/trade (failed|could not|was not)/i)
+  })
+
   it('does not record a still_open result as a failure', async () => {
     // `still_open` is a correct outcome, not a defect, and recording it
     // would turn an ordinary multi-portfolio idea into a false alarm.
