@@ -54,6 +54,11 @@ const db = vi.hoisted(() => ({
   holdingRow: { id: 'h-1', shares: 11039 } as Record<string, unknown> | null,
   /** Rows portfolio_trade_events returns for this trade: the evidence. */
   evidence: [] as Array<{ metadata: Record<string, unknown> }>,
+  /** A priceable holdings snapshot, so Inbox approvals can be sized. */
+  book: [
+    { portfolio_id: 'p1', asset_id: 'a-aapl', shares: 10500, price: 308.33, date: '2026-09-29' },
+    { portfolio_id: 'p1', asset_id: 'a-other', shares: 100000, price: 291.5, date: '2026-09-29' },
+  ] as Array<Record<string, unknown>>,
 }))
 
 /** Evidence as it would exist after a system-applied (observed) execution. */
@@ -91,6 +96,18 @@ vi.mock('../../supabase', () => ({
         let data: unknown = null
         if (table === 'portfolios') {
           data = { holdings_source: db.holdingsSource, organization_id: 'org-1' }
+        } else if (table === 'portfolio_holdings' && has(call.ops, 'select') && !has(call.ops, 'maybeSingle')) {
+          /*
+           * A priceable book, so the Inbox accept path can size.
+           *
+           * `acceptFromInboxToAcceptedTrade` now resolves executable
+           * quantities before creating anything — an approval that cannot
+           * be sized is refused outright rather than parked as an
+           * unexecutable row. The PM-modification cases below are about
+           * WHICH number gets committed, so they need a book that can
+           * price one.
+           */
+          data = db.book
         } else if (table === 'portfolio_holdings' && has(call.ops, 'maybeSingle')) {
           // A real holding for today, so a reversal that is supposed to
           // happen reaches its write instead of early-returning.
@@ -665,6 +682,50 @@ describe('pm-assumed execution evidence', () => {
       c => c.table === 'portfolio_holdings' && (has(c.ops, 'update') || has(c.ops, 'delete')),
     )
     expect(mutations).toHaveLength(0)
+  })
+
+  it('cancelling releases the name', async () => {
+    /*
+     * `idx_accepted_trades_unique_open` keys on
+     * `is_active = true AND execution_status <> 'complete'`, and
+     * 'cancelled' <> 'complete'. A cancelled trade left active therefore
+     * went on occupying the one-open-trade slot forever — while being the
+     * documented escape hatch for a trade that cannot execute. It freed
+     * nothing.
+     */
+    db.tradeRow = { ...PENDING_SIZED_TRADE, execution_status: 'not_started' }
+    db.evidence = []
+
+    await updateExecutionStatus('at-1', 'cancelled', 'not trading this', { actorId: 'u1' } as never)
+
+    const update = arg0(
+      db.calls.filter(c => c.table === 'accepted_trades' && has(c.ops, 'update'))[0].ops,
+      'update',
+    )!
+    expect(update.execution_status).toBe('cancelled')
+    expect(update.is_active).toBe(false)
+  })
+
+  it('cancelling preserves lineage rather than deleting the row', async () => {
+    db.tradeRow = { ...PENDING_SIZED_TRADE, execution_status: 'not_started' }
+    db.evidence = []
+
+    await updateExecutionStatus('at-1', 'cancelled', 'not trading this', { actorId: 'u1' } as never)
+
+    // Soft, like revert: no delete anywhere, so the decision link, the
+    // sizing and the history survive.
+    expect(db.calls.filter(c => c.table === 'accepted_trades' && has(c.ops, 'delete'))).toHaveLength(0)
+  })
+
+  it('cancelling needs no execution evidence', async () => {
+    // Completion is evidence-gated; cancellation is the opposite claim and
+    // must stay reachable for a trade that can never produce evidence.
+    db.tradeRow = { ...PENDING_SIZED_TRADE, execution_status: 'not_started', delta_shares: null, target_shares: null }
+    db.evidence = []
+
+    await expect(
+      updateExecutionStatus('at-1', 'cancelled', 'unexecutable', { actorId: 'u1' } as never),
+    ).resolves.toBeTruthy()
   })
 
   it('a second attestation is still a no-op', async () => {

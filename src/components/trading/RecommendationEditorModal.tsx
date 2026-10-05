@@ -13,6 +13,7 @@ import { submitRecommendation } from '../../lib/services/recommendation-service'
 import { FINAL_STAGE } from '../../lib/ideas/stage-model'
 import { parseSizingWithConflictCheck, mapFrameworkToLegacyMode } from '../../lib/trade-lab/proposal-sizing'
 import { ConflictBadgeV3, ConflictExplanation, SizingHelpText } from './VariantStatusBadges'
+import { invalidateAfterSubmit } from '../../lib/services/submit-invalidations'
 import type {
   TradeQueueItemWithDetails,
   TradeProposal,
@@ -211,11 +212,17 @@ export function RecommendationEditorModal({
       // Close modal immediately for perceived speed, then invalidate in background
       onSaved?.(proposal)
       onClose()
-      queryClient.invalidateQueries({ queryKey: ['proposal', tradeIdea.id] })
-      queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-ideas'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-queue'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
+      /*
+       * One list, shared with every other submit call site.
+       *
+       * This was five hand-written keys, and `trade-ideas` and
+       * `trade-queue` matched no query that exists — they read as though
+       * the Ideas surfaces were covered. The key that actually feeds the
+       * pipeline tile is `trade-queue-items`, which nothing invalidated,
+       * and which inherits the 5-minute global staleTime with
+       * refetchOnWindowFocus off. The tile could sit stale that long.
+       */
+      invalidateAfterSubmit(queryClient)
     },
     onError: (error) => {
       console.error('❌ Failed to save recommendation:', error)
