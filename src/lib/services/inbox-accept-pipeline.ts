@@ -54,6 +54,17 @@ export interface AcceptFromInboxParams {
 export interface AcceptFromInboxResult {
   acceptedTrade: AcceptedTradeWithJoins
   isModified: boolean
+  /**
+   * Whether the idea actually became terminal.
+   *
+   * Carried out to the caller rather than left on the trade object, where it
+   * was present at runtime but erased by this result type — so no UI could
+   * see it even in principle. A `concluded` accept is the full contract; a
+   * `failed` one means the trade is committed and correct while the idea is
+   * stranded in the pipeline, and the PM has to be told that rather than
+   * shown an unqualified success.
+   */
+  fanIn: FanInResult
 }
 
 export interface RevertAcceptParams {
@@ -82,7 +93,7 @@ export async function acceptFromInbox(params: AcceptFromInboxParams): Promise<Ac
     context,
   })
 
-  return { acceptedTrade, isModified }
+  return { acceptedTrade, isModified, fanIn: acceptedTrade.fanIn }
 }
 
 // ---------------------------------------------------------------------------

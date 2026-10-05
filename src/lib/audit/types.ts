@@ -50,6 +50,22 @@ export type ActionType =
   // State changes (workflow)
   | 'move_stage'
   | 'set_outcome'
+  /**
+   * A decision was committed but its idea could not be concluded.
+   *
+   * Written by `resolveIdeaAfterDecision` when the fan-in fails. It exists
+   * because the previous answer was `console.error`, and a browser console is
+   * not a record: a real production accept (SHOP 2026-10-04, GOOGL
+   * 2026-10-05) left the idea stranded with the database carrying no trace of
+   * why, so the forensics had to be reconstructed from constraint
+   * definitions. The committed trade is correct in both cases — this marks
+   * the half that did not finish, so "trade succeeded, idea stranded" is
+   * queryable instead of invisible.
+   *
+   * Same reasoning as `record_judgment` below: `action_type` is unconstrained
+   * in the database, so this needs no migration — only a member here.
+   */
+  | 'conclude_failed'
   | 'escalate'
   | 'demote'
   /**
