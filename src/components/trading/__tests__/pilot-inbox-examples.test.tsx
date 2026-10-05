@@ -78,7 +78,9 @@ async function card(symbol: string) {
 }
 
 const decisionButtons = (el: HTMLElement) =>
-  within(el).queryAllByRole('button').filter(b => /^(Accept|Reject|Defer)$/.test(b.textContent?.trim() ?? ''))
+  // "Approve & Execute", not "Accept": under the pilot contract this action
+  // moves the modeled book on click, and the label has to carry that.
+  within(el).queryAllByRole('button').filter(b => /^(Approve & Execute|Reject|Defer)$/.test(b.textContent?.trim() ?? ''))
 
 beforeEach(() => {
   pilot.effectiveIsPilot = true
@@ -104,7 +106,7 @@ describe('an active pilot', () => {
     mount()
     const lly = await card('LLY')
     expect(lly.querySelector('[data-slot="pilot-example-note"]')).toBeNull()
-    expect(decisionButtons(lly).map(b => b.textContent?.trim())).toEqual(['Accept', 'Reject', 'Defer'])
+    expect(decisionButtons(lly).map(b => b.textContent?.trim())).toEqual(['Approve & Execute', 'Reject', 'Defer'])
     // And the Example beside it still has none.
     expect(decisionButtons(await card('AAPL'))).toHaveLength(0)
   })
@@ -120,7 +122,7 @@ describe('an active pilot', () => {
     mount()
     const lly = await card('LLY')
     fireEvent.click(decisionButtons(lly)[0])
-    const confirm = within(lly).getAllByRole('button').find(b => /Accept/.test(b.textContent ?? '') && b !== decisionButtons(lly)[0])
+    const confirm = within(lly).getAllByRole('button').find(b => /Approve/.test(b.textContent ?? '') && b !== decisionButtons(lly)[0])
     if (confirm) fireEvent.click(confirm)
     for (const call of mutations.accept.mock.calls) {
       expect((call[0] as { decisionRequest: { id: string } }).decisionRequest.id).toBe('dr-lly')
@@ -139,7 +141,7 @@ describe('everyone else', () => {
     mount()
     const aapl = await card('AAPL')
     expect(aapl.querySelector('[data-slot="pilot-example-note"]')).toBeNull()
-    expect(decisionButtons(aapl).map(b => b.textContent?.trim())).toEqual(['Accept', 'Reject', 'Defer'])
+    expect(decisionButtons(aapl).map(b => b.textContent?.trim())).toEqual(['Approve & Execute', 'Reject', 'Defer'])
   })
 })
 

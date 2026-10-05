@@ -39,7 +39,9 @@ import {
   useRejectFromInbox,
   useRevertDecisionAccept,
 } from '../../hooks/useDecisionRequests'
-import type { DecisionRequest, DecisionRequestStatus, DeferralTrigger } from '../../types/trading'
+import type { DecisionRequest, DecisionRequestStatus, DeferralTrigger, TradeAction } from '../../types/trading'
+import { useCurrentBook, weightOf } from '../../hooks/useCurrentBook'
+import { ApproveExecutePreview } from './ApproveExecutePreview'
 import { usePilotMode } from '../../hooks/usePilotMode'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
 import { isPilotExampleRequest, PILOT_EXAMPLE_HINT } from '../../lib/pilot/pilot-inbox'
@@ -108,6 +110,17 @@ interface DecisionInboxProps {
 }
 
 interface IdeaGroup {
+  /**
+   * The group's unique identity: `proposal:<id>` | `pair:<id>` | `tqi:<id>`.
+   *
+   * Distinct from `tradeId`, and that distinction is load-bearing. Two
+   * competing proposals on the SAME pair produce two groups — `proposal:A`
+   * and `proposal:B` — that both carry `tradeId = pairId`. Keying the
+   * rendered card or the collapse set on `tradeId` therefore gave two
+   * sibling elements the same React key and made one collapse toggle drive
+   * both. `tradeId` is for navigation; this is for identity.
+   */
+  groupKey: string
   tradeId: string
   symbol: string
   companyName: string
@@ -599,6 +612,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
       )
 
       const group: IdeaGroup = {
+        groupKey,
         tradeId,
         // Symbol and company are current identity, not recommendation
         // content, so the live join is the right source for them.
@@ -619,10 +633,19 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
       // Collect buy/sell symbols and upgrade thesis from any leg that has one.
       requests.forEach(r => {
         const rtqi = (r.trade_queue_item as any)
-        // Upgrade the thesis only from another leg's FROZEN version. The old
-        // line here read `rtqi.thesis_text`, so a group whose seed leg had no
-        // captured thesis would quietly adopt a sibling idea's current one.
-        if (!group.thesisText && (r as any).proposal_version?.thesis_text) {
+        // Borrow a thesis from a sibling only WITHIN A PAIR, where the legs
+        // are two halves of one proposal by one author and share its
+        // reasoning.
+        //
+        // For a singleton group the siblings are a different thing entirely:
+        // the same idea recommended into other portfolios, or — because the
+        // unique index is (trade_queue_item_id, portfolio_id, requested_by) —
+        // a COMPETING recommendation from a different analyst on the very
+        // same book. Borrowing there printed analyst B's thesis under a card
+        // headed with analyst A's name and sizing, which is an unattributable
+        // claim: the PM cannot tell whose reasoning they are reading. Better
+        // to show `reasoningNote` and say it was not captured.
+        if (isPair && !group.thesisText && (r as any).proposal_version?.thesis_text) {
           group.thesisText = (r as any).proposal_version.thesis_text
         }
         if (!isPair) return
@@ -886,7 +909,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
         ) : (
           <div className="py-1">
             {grouped.map((group, gi) => {
-              const isExpanded = !collapsedGroups.has(group.tradeId)
+              const isExpanded = !collapsedGroups.has(group.groupKey)
               const isBuy = group.action === 'buy' || group.action === 'add'
               const isPair = group.isPairTrade
               const urg = URGENCY_CONFIG[group.urgency || '']
@@ -894,11 +917,11 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
               const groupIsExample = group.requests.length > 0 && group.requests.every(isExample)
 
               return (
-                <div key={group.tradeId} className={clsx("mx-2 mb-3 rounded-lg border overflow-hidden", "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/60")}>
+                <div key={group.groupKey} className={clsx("mx-2 mb-3 rounded-lg border overflow-hidden", "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/60")}>
                   {/* ── Idea Header ─────────────────────────────── */}
                   <div
                     className="px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors"
-                    onClick={() => toggleGroup(group.tradeId)}
+                    onClick={() => toggleGroup(group.groupKey)}
                   >
                     {compact ? renderCompactIdeaHeader(group, isExpanded) : (
                     /* Line 1: chevron + action/pair badge + symbol + company + urgency + count */
@@ -1773,7 +1796,31 @@ function PortfolioRow({
   const [overrideWeight, setOverrideWeight] = useState<string | null>(null)
   const effectiveWeight = overrideWeight != null ? parseFloat(overrideWeight) : analystWeight
   const targetWeight = effectiveWeight != null && !isNaN(effectiveWeight) ? effectiveWeight : analystWeight
-  const currentWeight = (snapshot?.baseline_weight as number) ?? 0
+  /**
+   * What the book holds RIGHT NOW — not what the analyst saw at submission.
+   *
+   * This read used to be `snapshot?.baseline_weight ?? 0`. Nothing writes
+   * `submission_snapshot.baseline_weight`: the one writer nests it at
+   * `submission_snapshot.sizing_context.baseline_weight`, so the lookup
+   * always missed and the `?? 0` turned "we could not find out" into the
+   * factual claim "we hold none". Measured on production: 16 of 30 pending
+   * requests rendered 0.00%.
+   *
+   * Even had the lookup hit, it would have been the wrong number. A frozen
+   * submission baseline is what the analyst believed days ago; the PM is
+   * deciding now, and `target = current + delta` is computed against this
+   * value. Stale in, stale out.
+   *
+   * Three states, and only one of them is zero — see `weightOf`. `undefined`
+   * means the book has not loaded yet.
+   */
+  const { data: currentBookData } = useCurrentBook()
+  const currentWeight = weightOf(
+    currentBookData,
+    request.portfolio_id,
+    request.trade_queue_item?.assets?.id,
+  )
+  const currentWeightKnown = typeof currentWeight === 'number'
   const sizingCtx = snapshot?.sizing_context as any
   const rawLegs = sizingCtx?.legs as Array<{ symbol?: string; action?: string; weight?: number | null; baselineWeight?: number | null; enteredValue?: string; sizingMode?: string }> | null
   // The conviction the analyst HELD WHEN THEY RECOMMENDED, not the idea's
@@ -1807,8 +1854,10 @@ function PortfolioRow({
   const sellLegs = legs?.filter(l => l.action === 'sell' || l.action === 'reduce') || []
   const isPairTrade = legs && legs.length > 0
 
-  const delta = targetWeight != null ? targetWeight - currentWeight : null
-  const tc = targetWeight != null ? classifyTrade(currentWeight, targetWeight) : null
+  // Both halves must be known. Classifying against an unknown baseline is how
+  // "Add" and "Trim" got decided by a fallback zero rather than by the book.
+  const delta = targetWeight != null && currentWeightKnown ? targetWeight - currentWeight : null
+  const tc = targetWeight != null && currentWeightKnown ? classifyTrade(currentWeight, targetWeight) : null
   const TcIcon = tc?.icon || Minus
 
   // Role-aware action logic
@@ -1910,7 +1959,20 @@ function PortfolioRow({
             <span className="font-semibold text-gray-900 dark:text-white">{portfolioName}</span>
             <span className="text-gray-300 dark:text-gray-600">|</span>
             <span className="text-gray-400 tabular-nums">
-              {currentWeight.toFixed(2)}% →{' '}
+              {currentWeightKnown ? (
+                `${currentWeight.toFixed(2)}%`
+              ) : (
+                <span
+                  title={
+                    currentWeight === undefined
+                      ? 'Reading the current book…'
+                      : 'Current weight unavailable for this book — not shown as 0%, because we do not know that we hold none.'
+                  }
+                >
+                  —
+                </span>
+              )}
+              {' → '}
               {showActions && editingSizing ? (
                 <input
                   type="text"
@@ -2078,11 +2140,59 @@ function PortfolioRow({
         )}>{request.context_note}</p>
       )}
 
-      {/* Line 3: Who recommended + when */}
+      {/*
+        Line 2b: this row's own reasoning provenance.
+
+        Rendered per request, not per idea card, because two analysts may hold
+        competing recommendations on the same idea AND the same portfolio —
+        the unique index is (trade_queue_item_id, portfolio_id, requested_by).
+        The card header can only narrate one of them, so without this a PM
+        reading the second tile has no way to tell whose thinking they are
+        looking at, or that there is none.
+
+        `reasoningFallbackNote` was already computed for every group and
+        rendered nowhere. Printing a blank where a thesis belongs is exactly
+        the gap `historical-recommendation.ts` exists to close: the reader
+        fills in the silence themselves.
+      */}
+      {history.reasoningUnavailable ? (
+        <p className="text-[11px] text-amber-700 dark:text-amber-500/90 mt-1 leading-snug">
+          {reasoningFallbackNote(history)}
+        </p>
+      ) : history.thesisText.captured && history.thesisText.value ? (
+        <p className={clsx(
+          "text-gray-600 dark:text-gray-300 mt-1 leading-snug",
+          compact ? "text-[13px] line-clamp-4" : "text-[11px] line-clamp-2",
+        )}>{history.thesisText.value}</p>
+      ) : null}
+
+      {/* Line 3: Who recommended, when, and what record it came from */}
       <div className="flex items-center gap-1.5 mt-1 text-[11px] text-gray-400 dark:text-gray-500">
         <span className="font-medium text-gray-500 dark:text-gray-400">{analyst}</span>
         <span className="text-gray-300 dark:text-gray-600">&middot;</span>
         <span>{timeAgo}</span>
+        {/*
+          Which record this row is quoting. A PM deciding needs to know
+          whether they are reading an immutable submission, a sizing-only
+          snapshot from before versioning, or nothing at all — those carry
+          very different weight and looked identical before.
+        */}
+        {history.source === 'version' && history.versionNumber != null && (
+          <>
+            <span className="text-gray-300 dark:text-gray-600">&middot;</span>
+            <span title="Immutable record of what was recommended at submission. Editing the idea cannot change it.">
+              v{history.versionNumber}
+            </span>
+          </>
+        )}
+        {history.source === 'snapshot' && (
+          <>
+            <span className="text-gray-300 dark:text-gray-600">&middot;</span>
+            <span title="Sizing-only snapshot from before recommendation versioning. The thesis at that time was not recorded.">
+              pre-versioning
+            </span>
+          </>
+        )}
       </div>
 
       {/* 5. Actions — pending tab (default state) */}
@@ -2098,7 +2208,12 @@ function PortfolioRow({
             disabled={isPending}
             className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50 transition-colors disabled:opacity-50"
           >
-            <Check className="h-3 w-3" /> Accept
+            {/*
+              "Approve & Execute", not "Accept". Under the pilot contract
+              this moves the modeled book on click — the label has to carry
+              that, because the word Accept does not.
+            */}
+            <Check className="h-3 w-3" /> Approve &amp; Execute
           </button>
           <button
             onClick={() => { setRejectReason(''); setRejectMode(true) }}
@@ -2124,13 +2239,40 @@ function PortfolioRow({
             <div className="flex items-center gap-1.5 text-xs">
               <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
               <span className="font-semibold text-green-700 dark:text-green-400">
-                Accept at {targetWeight != null ? `${targetWeight.toFixed(2)}%` : 'analyst sizing'}
+                Approve at {targetWeight != null ? `${targetWeight.toFixed(2)}%` : 'analyst sizing'}
               </span>
               {overrideWeight != null && analystWeight != null && parseFloat(overrideWeight) !== analystWeight && (
                 <span className="text-[10px] text-amber-500">(modified)</span>
               )}
             </div>
           </div>
+
+          {/*
+            What approval will actually do, before it is done. Pair legs are
+            excluded: they commit with the literal 'pair' sizing string,
+            which is not an executable instruction and must not be previewed
+            as though it were.
+          */}
+          {!isPairTrade && (
+            <ApproveExecutePreview
+              book={currentBookData}
+              portfolioId={request.portfolio_id}
+              assetId={request.trade_queue_item?.assets?.id ?? null}
+              symbol={request.trade_queue_item?.assets?.symbol ?? null}
+              sizingInput={overrideWeight ?? (analystWeight != null ? String(analystWeight) : '')}
+              action={(request.requested_action || request.trade_queue_item?.action || 'buy') as TradeAction}
+              isModified={overrideWeight != null && analystWeight != null && parseFloat(overrideWeight) !== analystWeight}
+              analystWeight={analystWeight}
+            />
+          )}
+
+          {/* The frozen thesis this decision is being made on. */}
+          {history.thesisText.captured && history.thesisText.value && (
+            <p className="text-[11px] leading-snug text-gray-600 dark:text-gray-300 mb-2 line-clamp-3">
+              {history.thesisText.value}
+            </p>
+          )}
+
           <input
             type="text"
             value={noteValue}
@@ -2162,7 +2304,7 @@ function PortfolioRow({
               className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
             >
               {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-              Confirm
+              Approve &amp; Execute
             </button>
             <button
               onClick={() => setAcceptMode(false)}

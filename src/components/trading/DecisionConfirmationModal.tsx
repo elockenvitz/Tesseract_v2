@@ -51,6 +51,24 @@ export interface RecordedDecision {
   beforeWeight: number | null
   /** Computed weight after fold (beforeWeight + deltaWeight), rounded. */
   afterWeight: number | null
+  /**
+   * Whether this leg actually executed, straight off the committed row.
+   *
+   * `finalizeTradeForHoldingsSource` writes `complete` ONLY when the holdings
+   * apply reported `applied: true`; a refusal or an unsizable trade lands at
+   * `not_started` with the reason in `execution_note`. Both outcomes return
+   * from `executeSimVariants` as successes, because the DECISION committed
+   * either way — it is the execution that did not happen.
+   *
+   * This modal did not carry the field, so it announced every committed leg
+   * under "What was executed" at the exact moment some of them were sitting
+   * at `not_started`. That is the one surface where Decision Execution
+   * Truth's invariant — claim completion only on proof — was not honoured,
+   * and it is the surface the PM reads immediately after pressing Execute.
+   */
+  executionStatus: string | null
+  /** Why execution did not occur, when it did not. Written by the service. */
+  executionNote: string | null
 }
 
 export interface DecisionRecord {
@@ -314,6 +332,19 @@ export function DecisionConfirmationModal({
   }
 
   const isMulti = record.decisions.length > 1
+
+  /**
+   * Legs that committed as decisions but did not execute.
+   *
+   * `complete` is the only status that means the holdings actually moved —
+   * it is written solely on `applied: true`. An unknown/absent status is
+   * NOT treated as executed: a leg whose outcome we cannot read must not be
+   * announced as filled.
+   */
+  const pendingExecution = useMemo(
+    () => record.decisions.filter(d => d.executionStatus !== 'complete'),
+    [record.decisions],
+  )
   const primary = record.decisions[0]
   const aggregate = computeAggregate(record.decisions)
 
@@ -420,10 +451,57 @@ export function DecisionConfirmationModal({
                 context so the shared "why this basket" story reads first. */}
             {isMulti && <BatchContextSection description={record.batchDescription ?? null} />}
 
-            {/* What was executed */}
+            {/*
+              What was DECIDED — and, separately, what of it executed.
+
+              This heading used to read "What was executed" for every
+              committed leg. Committing a decision and executing it are two
+              different events: `finalizeTradeForHoldingsSource` writes
+              `complete` only when the holdings apply reported `applied:
+              true`, and a refusal or an unsizable trade lands at
+              `not_started` with the reason in `execution_note`. Both come
+              back from `executeSimVariants` as successes — correctly, the
+              decision DID commit — so neither `result.failures` nor this
+              heading flagged the difference, and the PM was told N trades
+              executed when some had not.
+            */}
+            {pendingExecution.length > 0 && (
+              <section
+                className="rounded-md border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2"
+                data-testid="awaiting-execution"
+              >
+                {/*
+                  Under the pilot contract approval normally executes, so
+                  this block is the exception rather than the routine state
+                  it described before. When it fires, the cause is that the
+                  trade could not be SIZED — no price on the book's snapshot
+                  date, or an instruction this path cannot execute — not
+                  that a trader has yet to get to it. The wording says which,
+                  because "awaiting execution" would tell the PM to wait for
+                  something that is never coming.
+                */}
+                <p className="text-xs font-semibold text-amber-900 dark:text-amber-300">
+                  {pendingExecution.length === 1
+                    ? '1 decision recorded, but it could not be executed'
+                    : `${pendingExecution.length} decisions recorded, but they could not be executed`}
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {pendingExecution.map(d => (
+                    <li key={d.tradeId} className="text-[11px] text-amber-800 dark:text-amber-400/90">
+                      <span className="font-medium">{d.symbol}</span>
+                      {d.executionNote ? ` — ${d.executionNote}` : ' — it could not be sized, so holdings were not moved.'}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             <section>
               <div className="flex items-center justify-between mb-2">
-                <SectionHeading icon={Briefcase} label="What was executed" />
+                <SectionHeading
+                  icon={Briefcase}
+                  label={pendingExecution.length > 0 ? 'What was decided' : 'What was executed'}
+                />
                 {!showingAll && hiddenCount > 0 && (
                   <span className="text-[10px] text-gray-400 dark:text-gray-500">
                     Showing {visibleOrdered.length} of {orderedDecisions.length}
