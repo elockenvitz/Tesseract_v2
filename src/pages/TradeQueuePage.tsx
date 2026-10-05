@@ -89,6 +89,7 @@ import { submitRecommendation } from '../lib/services/recommendation-service'
 import { isCreatorOrCoAnalyst, getUserPortfolioRole, isPMForPortfolio } from '../lib/permissions/trade-idea-permissions'
 import { RESEARCH_STAGES, RESEARCH_STAGE_CONFIG } from '../lib/trade-status-semantics'
 import { IDEA_STAGES, toIdeaStage, FINAL_STAGE, missingForStage } from '../lib/ideas/stage-model'
+import { invalidateAfterSubmit } from '../lib/services/submit-invalidations'
 import type { ActionContext, TradeSizingMode, ResearchStage } from '../types/trading'
 
 const STATUS_CONFIG: Record<TradeQueueStatus, { label: string; color: string; icon: React.ElementType }> = {
@@ -2879,11 +2880,16 @@ export function TradeQueuePage({
                       // Don't move the pair trade - it stays in its current stage
                       // The proposal cards will appear in the Deciding column
 
-                      // Invalidate caches
+                      /*
+                       * The shared submit list, plus the pair's own key.
+                       *
+                       * This hand-written list omitted `decision-requests`
+                       * entirely — the singleton submit handler 160 lines
+                       * above has it — so a pair recommendation submitted
+                       * from the kanban never refreshed the Decision Inbox.
+                       */
+                      invalidateAfterSubmit(queryClient)
                       queryClient.invalidateQueries({ queryKey: ['pair-trades'] })
-                      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
-                      queryClient.invalidateQueries({ queryKey: ['deciding-proposals'] })
-                      queryClient.invalidateQueries({ queryKey: ['trade-proposals', proposalPairTrade.legs[0]?.id] })
 
                       // Close modal and reset
                       setShowProposalModal(false)

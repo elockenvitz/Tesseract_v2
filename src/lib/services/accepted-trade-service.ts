@@ -19,6 +19,11 @@ import { FINAL_STAGE } from '../ideas/stage-model'
 import { resolveAcceptSizingBasis, computeAcceptSizing, isRefusal } from '../decisions/accept-sizing'
 import { resolveIdeaAfterDecision, type FanInResult } from '../decisions/decision-fan-in'
 import {
+  ApproveExecuteError,
+  isOpenTradeConflict,
+  openTradeConflictMessage,
+} from '../decisions/approve-errors'
+import {
   recordDecisionReverted,
   recordExecutionRecorded,
   resolveOrganizationIdForPortfolio,
@@ -135,6 +140,13 @@ export interface CreateAcceptedTradeInput {
   /** Optional soft deadline for execution. Informational only. */
   execution_expected_by?: string | null
   /**
+   * Display-only, for the open-trade conflict message. Not persisted — a
+   * PM told "AAPL already has an open trade in Growth" can act; one told
+   * "asset 26003bd1 already has an open trade" cannot.
+   */
+  asset_symbol?: string | null
+  portfolio_name?: string | null
+  /**
    * Provenance for the execution evidence this create may produce.
    * Omitted means `observed`. The Inbox accept path sets `pmAssumed`.
    */
@@ -185,7 +197,32 @@ export async function createAcceptedTrade(
     .select(TRADE_SELECT)
     .single()
 
-  if (error) throw error
+  /*
+   * `idx_accepted_trades_unique_open` allows one active, non-complete
+   * accepted trade per (portfolio_id, asset_id). That invariant is correct
+   * and stays — a name cannot carry two unfinished trades at once.
+   *
+   * What was wrong is what the PM saw when they hit it: the raw string
+   * `duplicate key value violates unique constraint
+   * "idx_accepted_trades_unique_open"`. The conflict is a legitimate,
+   * explicable product state — Trade Lab or an ad-hoc entry may already
+   * hold the slot — so it gets an explicable product message, naming the
+   * asset and how to clear it.
+   *
+   * Matched on the index name, not the bare 23505, so an unrelated unique
+   * violation is not mislabelled as an open-trade conflict. The existing
+   * trade is never reused or overwritten: it belongs to a different
+   * decision and silently repurposing it would lose that.
+   */
+  if (error) {
+    if (isOpenTradeConflict(error)) {
+      throw new ApproveExecuteError(
+        'open_trade_exists',
+        openTradeConflictMessage(input.asset_symbol ?? null, input.portfolio_name ?? null),
+      )
+    }
+    throw error
+  }
   const trade = data as unknown as AcceptedTradeWithJoins
 
   // Post-insert: apply holdings_source behavior.
@@ -871,10 +908,33 @@ export async function acceptFromInboxToAcceptedTrade(
   const sized = isRefusal(basis)
     ? basis
     : computeAcceptSizing(basis, sizingInput, rawAction, assetId)
-  const computed = sized.ok ? sized.computed : null
+
+  /*
+   * No executable sizing, no accepted trade — and no decision either.
+   *
+   * This used to create the row anyway, with every quantity null, and let
+   * the finalizer park it at `not_started`. That row then occupied
+   * `idx_accepted_trades_unique_open` — one active non-complete trade per
+   * (portfolio, asset) — while representing nothing that could ever
+   * execute. Production proved the consequence: a stranded SHOP row from
+   * 2026-10-04 made the NEXT recommendation on SHOP fail with a raw
+   * `duplicate key value violates unique constraint`. An unexecutable
+   * trade is not a trade; it is a decision whose execution failed, and it
+   * must not hold the slot a real trade needs.
+   *
+   * Throwing before any write is also the only honest status. Under the
+   * pilot contract Approve & Execute is ONE promise — record the decision
+   * and move the book. Marking the request `accepted` with no trade behind
+   * it would assert a commitment that does not exist, and would let the
+   * idea conclude as `executed` when nothing executed. So the request
+   * stays `pending`, the PM is told exactly what blocked it, and they can
+   * approve again once it is resolved. Nothing to unwind, because nothing
+   * was written.
+   */
   if (!sized.ok) {
-    console.warn('[AcceptedTrade] Approval could not be sized; recording the decision only:', sized.reason)
+    throw new ApproveExecuteError('unsizable', sized.reason)
   }
+  const computed = sized.computed
 
   // Create accepted trade
   const trade = await createAcceptedTrade({
@@ -882,14 +942,14 @@ export async function acceptFromInboxToAcceptedTrade(
     asset_id: assetId,
     action: rawAction,
     sizing_input: sizingInput,
-    sizing_spec: sized.ok ? sized.spec : null,
+    sizing_spec: sized.spec,
     // Shares columns are Postgres integers; mirror the Trade Lab rounding.
-    target_weight: computed?.target_weight ?? null,
-    target_shares: roundIntOrNull(computed?.target_shares),
-    delta_weight: computed?.delta_weight ?? null,
-    delta_shares: roundIntOrNull(computed?.delta_shares),
-    notional_value: computed?.notional_value ?? null,
-    price_at_acceptance: computed?.price_used ?? null,
+    target_weight: computed.target_weight ?? null,
+    target_shares: roundIntOrNull(computed.target_shares),
+    delta_weight: computed.delta_weight ?? null,
+    delta_shares: roundIntOrNull(computed.delta_shares),
+    notional_value: computed.notional_value ?? null,
+    price_at_acceptance: computed.price_used ?? null,
     /*
      * Provenance for whatever evidence this produces. Nothing observed a
      * fill and nobody attested to one — a PM decision implied it, and the
@@ -897,7 +957,8 @@ export async function acceptFromInboxToAcceptedTrade(
      * distinguishable.
      */
     execution_origin: EXECUTION_ORIGIN.pmAssumed,
-    unexecutable_reason: sized.ok ? null : sized.reason,
+    asset_symbol: decisionRequest.trade_queue_item?.assets?.symbol ?? null,
+    portfolio_name: (decisionRequest as { portfolio?: { name?: string } }).portfolio?.name ?? null,
     source: 'inbox',
     decision_request_id: decisionRequest.id,
     trade_queue_item_id: decisionRequest.trade_queue_item_id,
@@ -1611,6 +1672,25 @@ export async function updateExecutionStatus(
   if (status === 'in_progress') {
     updates.execution_started_at = now
     updates.executed_by = context.actorId
+  } else if (status === 'cancelled') {
+    /*
+     * Cancelling must RELEASE the name, not just relabel the row.
+     *
+     * `idx_accepted_trades_unique_open` keys on
+     * `is_active = true AND execution_status <> 'complete'`, and
+     * `'cancelled' <> 'complete'`. So a cancelled trade left active went on
+     * occupying the one-open-trade slot for that (portfolio, asset) — for
+     * good. Cancellation was the documented escape hatch for a trade that
+     * cannot execute ("such a trade can still be cancelled", above) and it
+     * did not actually free anything: the next recommendation on the name
+     * still failed on the unique index.
+     *
+     * `is_active = false` is the existing terminal marker — the same one
+     * revert uses — so lineage is preserved rather than deleted. The row
+     * keeps its decision_request_id, its sizing and its history; it simply
+     * stops being an OPEN commitment, which it no longer is.
+     */
+    updates.is_active = false
   } else if (status === 'complete') {
     const { data: existing, error: readError } = await supabase
       .from('accepted_trades')

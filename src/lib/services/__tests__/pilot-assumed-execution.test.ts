@@ -54,7 +54,38 @@ const store = vi.hoisted(() => ({
   /** The price_history_cache close, for the unheld-asset path. */
   cachedClose: null as number | null,
   holdingsSource: 'manual_eod',
+  /**
+   * Rows standing in for `idx_accepted_trades_unique_open`.
+   *
+   * The double previously accepted every insert, which is exactly why the
+   * production failure got through: the real database allows ONE active,
+   * non-complete accepted trade per (portfolio_id, asset_id), and no test
+   * could reproduce that. Each entry is a live open trade.
+   */
+  openTrades: [] as Array<{ portfolio_id: string; asset_id: string }>,
 }))
+
+/**
+ * The partial unique index, enforced in the double.
+ *
+ *   UNIQUE (portfolio_id, asset_id)
+ *   WHERE is_active = true AND execution_status <> 'complete'
+ *
+ * Returns the PostgREST-shaped error Postgres produces, including the index
+ * name — the code matches on that name, so a double that invented its own
+ * message would prove nothing.
+ */
+const uniqueOpenViolation = (row: Record<string, unknown>) => {
+  const clash = store.openTrades.some(
+    t => t.portfolio_id === row.portfolio_id && t.asset_id === row.asset_id,
+  )
+  if (!clash) return null
+  return {
+    code: '23505',
+    message:
+      'duplicate key value violates unique constraint "idx_accepted_trades_unique_open"',
+  }
+}
 
 const memory = vi.hoisted(() => ({ execution: [] as Array<Record<string, unknown>> }))
 const moves = vi.hoisted(() => ({ calls: [] as Array<Record<string, unknown>> }))
@@ -116,11 +147,27 @@ vi.mock('../../supabase', () => ({
             data = store.events.map(e => ({ metadata: e.metadata }))
           }
         } else if (table === 'accepted_trades' && has(call.ops, 'insert')) {
-          store.tradeRow = { id: 'at-1', ...arg0(call.ops, 'insert') }
+          const row = arg0(call.ops, 'insert')!
+          const violation = uniqueOpenViolation(row)
+          if (violation) return Promise.resolve({ data: null, error: violation }).then(resolve)
+          // A successful insert of a non-complete trade now occupies the slot.
+          store.openTrades.push({
+            portfolio_id: row.portfolio_id as string,
+            asset_id: row.asset_id as string,
+          })
+          store.tradeRow = { id: 'at-1', ...row }
           data = store.tradeRow
         } else if (table === 'accepted_trades' && has(call.ops, 'update')) {
           const u = arg0(call.ops, 'update')!
           store.tradeUpdates.push(u)
+          // Completing or deactivating a trade releases its slot, exactly as
+          // the index's WHERE clause does.
+          if (u.execution_status === 'complete' || u.is_active === false) {
+            const row = store.tradeRow
+            store.openTrades = store.openTrades.filter(
+              t => !(t.portfolio_id === row.portfolio_id && t.asset_id === row.asset_id),
+            )
+          }
           // The real `.update(...).select(TRADE_SELECT)` returns the WHOLE
           // row, not just the changed columns. Merging matters: the service
           // returns this object, so a double that dropped the insert columns
@@ -144,7 +191,12 @@ vi.mock('../../memory/lifecycle-events', () => ({
   recordDecisionReverted: vi.fn(async () => {}),
   resolveOrganizationIdForPortfolio: vi.fn(async () => 'org-1'),
 }))
-vi.mock('../decision-request-service', () => ({ updateDecisionRequest: vi.fn(async () => {}) }))
+const drUpdates = vi.hoisted(() => ({ calls: [] as Array<Record<string, unknown>> }))
+vi.mock('../decision-request-service', () => ({
+  updateDecisionRequest: vi.fn(async (_id: string, input: Record<string, unknown>) => {
+    drUpdates.calls.push(input)
+  }),
+}))
 vi.mock('../intent-variant-service', () => ({ deleteVariant: vi.fn(async () => {}) }))
 /**
  * `moveTradeIdea` is mocked, but it WRITES — so the fan-in's read-back
@@ -164,6 +216,7 @@ vi.mock('../trade-idea-service', () => ({
 
 import { acceptFromInboxToAcceptedTrade, EXECUTION_ORIGIN } from '../accepted-trade-service'
 import { rejectFromInbox } from '../inbox-accept-pipeline'
+import { isApproveExecuteError, type ApproveExecuteError } from '../../decisions/approve-errors'
 
 /** Calls to the holdings RPC that actually carried a quantity to apply. */
 const appliedCalls = () =>
@@ -190,6 +243,16 @@ const REQUEST = {
 
 const CONTEXT = { actorId: 'u-1', actorName: 'PM' } as never
 
+/** The error an approval threw. Typed, so assertions need no casts. */
+const caught = async (sizingInput = '-0.5'): Promise<Error> => {
+  try {
+    await accept(sizingInput)
+  } catch (e) {
+    return e as Error
+  }
+  throw new Error('expected the approval to be refused, but it succeeded')
+}
+
 const accept = (sizingInput = '-0.5') =>
   acceptFromInboxToAcceptedTrade({ decisionRequest: REQUEST, sizingInput, context: CONTEXT } as never)
 
@@ -202,8 +265,10 @@ beforeEach(() => {
   store.moveWrites = true
   store.cachedClose = null
   store.holdingsSource = 'manual_eod'
+  store.openTrades = []
   memory.execution = []
   moves.calls = []
+  drUpdates.calls = []
 })
 
 describe('approve → assumed execution, end to end', () => {
@@ -276,47 +341,155 @@ describe('approve → assumed execution, end to end', () => {
 })
 
 describe('refusal is visible, and never fabricated sizing', () => {
-  it('records the decision but not an execution when the book cannot price it', async () => {
+  /*
+   * These previously asserted that a refused approval still CREATED an
+   * accepted trade, parked at `not_started` with the reason on
+   * `execution_note`. That was the behaviour, and it was the bug: the row
+   * held the one-open-trade slot for a trade that could never execute, so
+   * the next recommendation on the name failed on the unique index. The
+   * assertions now pin the opposite, which is the fix.
+   */
+  it('names the exact obstacle, not a generic placeholder', async () => {
     store.holdings = [{ portfolio_id: 'p1', asset_id: 'a-other', shares: 1, price: 10, date: '2026-09-29' }]
     store.cachedClose = null // and no close to fall back on
-    const trade = await accept()
-
-    expect(trade.delta_shares).toBeNull()
-    expect(store.events).toHaveLength(0)
-    expect(memory.execution).toHaveLength(0)
-    const final = lastUpdate()
-    expect(final.execution_status).toBe('not_started')
-  })
-
-  it('says WHY on the trade, not a generic placeholder', async () => {
-    store.holdings = [{ portfolio_id: 'p1', asset_id: 'a-other', shares: 1, price: 10, date: '2026-09-29' }]
-    store.cachedClose = null
-    await accept()
-    expect(String(lastUpdate().execution_note)).toMatch(/No price for SHOP/i)
+    await expect(accept()).rejects.toThrow(/No price for SHOP/i)
   })
 
   it('refuses the pair placeholder rather than inventing a quantity', async () => {
-    const trade = await accept('pair')
-    expect(trade.delta_shares).toBeNull()
+    await expect(accept('pair')).rejects.toThrow(/not a sizing instruction/i)
     expect(store.events).toHaveLength(0)
   })
 
   it('mutates no holdings when the sizing is refused', async () => {
-    // Stronger than "no evidence row": nothing with a quantity ever
-    // reaches the RPC, so the book cannot have moved. The RPC is still
-    // CALLED — with nulls — and returns applied:false without raising,
-    // which is precisely why this failure used to be invisible.
     store.holdings = []
-    await accept()
+    await accept().catch(() => {})
     expect(appliedCalls()).toHaveLength(0)
   })
+})
 
-  it('still records the decision when execution is refused', async () => {
-    store.holdings = []
+/**
+ * One open trade per name — the invariant, and what happens when it binds.
+ *
+ * `idx_accepted_trades_unique_open` allows a single active, non-complete
+ * accepted trade per (portfolio_id, asset_id). Production hit it on the
+ * first real Approve & Execute: a stranded SHOP row from an earlier test
+ * still held the slot, and the PM was shown
+ * `duplicate key value violates unique constraint "..."`.
+ *
+ * The invariant is correct and stays. These pin the behaviour around it.
+ */
+describe('the one-open-trade-per-name invariant', () => {
+  it('refuses in product language, never raw Postgres', async () => {
+    store.openTrades = [{ portfolio_id: 'p1', asset_id: 'a-shop' }]
+    await expect(accept()).rejects.toThrow(/SHOP already has an open trade/)
+  })
+
+  it('names how to clear the blockage', async () => {
+    store.openTrades = [{ portfolio_id: 'p1', asset_id: 'a-shop' }]
+    await expect(accept()).rejects.toThrow(/Complete, cancel or revert/)
+  })
+
+  it('never leaks the constraint name or error code to the PM', async () => {
+    store.openTrades = [{ portfolio_id: 'p1', asset_id: 'a-shop' }]
+    const err = await caught()
+    expect(err.message).not.toMatch(/23505|duplicate key|unique constraint|idx_/)
+  })
+
+  it('is typed, so a caller can branch without matching on prose', async () => {
+    store.openTrades = [{ portfolio_id: 'p1', asset_id: 'a-shop' }]
+    const err = await caught()
+    expect(isApproveExecuteError(err)).toBe(true)
+    expect((err as ApproveExecuteError).kind).toBe('open_trade_exists')
+  })
+
+  it('does not reuse or overwrite the existing trade', async () => {
+    // It belongs to a different decision. Silently repurposing it would
+    // lose that decision's link to what was actually committed.
+    store.openTrades = [{ portfolio_id: 'p1', asset_id: 'a-shop' }]
+    await accept().catch(() => {})
+    expect(store.tradeUpdates).toHaveLength(0)
+  })
+
+  it('leaves the conflict without touching holdings or evidence', async () => {
+    store.openTrades = [{ portfolio_id: 'p1', asset_id: 'a-shop' }]
+    await accept().catch(() => {})
+    expect(appliedCalls()).toHaveLength(0)
+    expect(store.events).toHaveLength(0)
+    expect(memory.execution).toHaveLength(0)
+  })
+
+  it('an open trade on a DIFFERENT name does not block', async () => {
+    store.openTrades = [{ portfolio_id: 'p1', asset_id: 'some-other-asset' }]
     const trade = await accept()
-    // The decision happened. Losing it because the book could not be priced
-    // would be far worse than withholding the execution.
-    expect(trade.id).toBe('at-1')
+    expect(trade.delta_shares).toBe(-2110)
+  })
+
+  it('completing releases the slot, so the next recommendation executes', async () => {
+    // The normal pilot flow: approve → complete → slot free. This is why a
+    // successfully executed prior recommendation can never block a later
+    // one on the same name.
+    await accept()
+    expect(store.openTrades).toHaveLength(0)
+    store.tradeUpdates = []
+    store.events = []
+    const second = await accept()
+    expect(second.delta_shares).toBe(-2110)
+    expect(lastUpdate().execution_status).toBe('complete')
+  })
+})
+
+describe('an unsizable approval occupies nothing', () => {
+  it('creates no accepted_trades row at all', async () => {
+    // The production defect: it used to create one with null quantities,
+    // which then held the open-trade slot for a trade that could never
+    // execute, permanently blocking the name.
+    store.holdings = []
+    await accept().catch(() => {})
+    const inserts = store.calls.filter(c => c.table === 'accepted_trades' && has(c.ops, 'insert'))
+    expect(inserts).toHaveLength(0)
+    expect(store.openTrades).toHaveLength(0)
+  })
+
+  it('refuses with the exact obstacle, typed', async () => {
+    store.holdings = []
+    const err = await caught()
+    expect(isApproveExecuteError(err)).toBe(true)
+    expect((err as ApproveExecuteError).kind).toBe('unsizable')
+  })
+
+  it('does not mark the recommendation accepted', async () => {
+    // Approve & Execute is one promise. Recording the decision with no
+    // trade behind it would assert a commitment that does not exist — and
+    // would let the idea conclude as `executed` when nothing executed.
+    store.holdings = []
+    await accept().catch(() => {})
+    expect(drUpdates.calls).toHaveLength(0)
+  })
+
+  it('does not conclude the idea', async () => {
+    store.holdings = []
+    await accept().catch(() => {})
+    expect(moves.calls).toHaveLength(0)
+    expect(store.idea.outcome).toBeNull()
+  })
+
+  it('writes nothing at all — no holdings, evidence or memory', async () => {
+    store.holdings = []
+    await accept().catch(() => {})
+    expect(appliedCalls()).toHaveLength(0)
+    expect(store.events).toHaveLength(0)
+    expect(memory.execution).toHaveLength(0)
+  })
+
+  it('leaves a later valid approval possible', async () => {
+    // Nothing was stranded, so once the book can price the name the same
+    // recommendation approves normally.
+    store.holdings = []
+    await accept().catch(() => {})
+    store.holdings = [...SHOP_BOOK]
+    const trade = await accept()
+    expect(trade.delta_shares).toBe(-2110)
+    expect(lastUpdate().execution_status).toBe('complete')
   })
 })
 
@@ -397,10 +570,18 @@ describe('the lifecycle transition is observable', () => {
     expect(store.idea.outcome).toBe('executed')
   })
 
-  it('a refused execution does not stop the decision concluding the idea', async () => {
-    // The PM decided. That is true whether or not we could execute it.
+  it('a refused approval concludes nothing', async () => {
+    /*
+     * This previously asserted the opposite — that the idea concluded even
+     * when execution was refused — on the reasoning that the PM had still
+     * decided. Under Approve & Execute that is wrong: the decision and the
+     * execution are one promise, and concluding the idea as `executed`
+     * while no trade exists would be the exact false terminal outcome the
+     * contract forbids. The approval fails whole.
+     */
     store.holdings = []
-    const trade = await accept()
-    expect(trade.fanIn.status).toBe('concluded')
+    await accept().catch(() => {})
+    expect(moves.calls).toHaveLength(0)
+    expect(store.idea.outcome).toBeNull()
   })
 })
