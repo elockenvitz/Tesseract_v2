@@ -945,6 +945,8 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
 function PendingReviewList() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  // For the "trade committed, idea still open" case — see `handleAccept`.
+  const { warning } = useToast()
   const updateDecision = useUpdateDecisionRequest()
   const acceptFromInbox = useAcceptFromInbox()
   // Same pilot rule as the Decision Inbox: a request that is not for the
@@ -1029,7 +1031,7 @@ function PendingReviewList() {
   const handleAccept = async (req: any) => {
     if (isExample(req)) return
     const sizingInput = req.sizing_weight != null ? String(req.sizing_weight) : '0'
-    await acceptFromInbox.mutateAsync({
+    const result = await acceptFromInbox.mutateAsync({
       decisionRequest: req as any,
       sizingInput,
       decisionNote: actionNote || undefined,
@@ -1040,6 +1042,22 @@ function PendingReviewList() {
         requestId: `quick-accept-${Date.now()}`,
       }
     })
+    /*
+     * A committed trade with a stranded idea is not full success.
+     *
+     * The trade, the holdings move and the decision are all correct and
+     * final when this fires — the only thing that did not happen is the
+     * idea leaving the pipeline. Said out loud because the alternative is
+     * what production did twice: show an unqualified success and leave the
+     * reader to notice weeks later that the card never left the board.
+     */
+    if (result?.fanIn?.status === 'failed') {
+      warning('Trade committed — idea still open', {
+        description:
+          `The trade is recorded and the book has moved. The idea could not be `
+          + `closed: ${result.fanIn.reason}`,
+      })
+    }
     setActioningId(null)
     setActionNote('')
     queryClient.invalidateQueries({ queryKey: ['pending-review-list'] })

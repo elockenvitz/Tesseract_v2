@@ -44,8 +44,47 @@
 import { supabase } from '../supabase'
 import { moveTradeIdea } from '../services/trade-idea-service'
 import { FINAL_STAGE } from '../ideas/stage-model'
+import { emitAuditEvent } from '../audit/audit-service'
 import type { TradeOutcome } from '../../types/trading'
 import type { ActionContext } from '../../types/trading'
+
+/**
+ * Leave a durable trace when a committed decision fails to conclude its idea.
+ *
+ * Returning the reason was half the job, and the half that was already done.
+ * Every caller then `console.error`'d it, so the production diagnosis for
+ * SHOP and GOOGL had to be reconstructed from constraint definitions weeks
+ * later — the database held the stranded idea and no statement of why.
+ *
+ * Best-effort and never throws: the trade is already committed and the
+ * decision already recorded, so failing to write the note about a failure
+ * must not fail the operation on top of it.
+ */
+async function recordConclusionFailure(args: {
+  tradeQueueItemId: string
+  outcome: string
+  reason: string
+  context: ActionContext
+}): Promise<void> {
+  try {
+    await emitAuditEvent({
+      entity: { type: 'trade_idea', id: args.tradeQueueItemId },
+      action: { type: 'conclude_failed', category: 'state_change' },
+      // The idea did not move, so there is no "to" state to claim.
+      state: { from: { outcome: null }, to: null },
+      metadata: {
+        intended_outcome: args.outcome,
+        reason: args.reason,
+        // The trade and the decision DID succeed. Says so explicitly, so a
+        // reader of this event does not go looking for a lost trade.
+        trade_committed: true,
+      },
+      actorName: args.context.actorName,
+    })
+  } catch (e) {
+    console.error('[FanIn] Could not record the conclusion failure:', e)
+  }
+}
 
 export type FanInResult =
   /** Every track resolved and the idea was concluded. */
@@ -72,7 +111,20 @@ export async function resolveIdeaAfterDecision(args: {
   const { tradeQueueItemId, outcome, context, note } = args
 
   if (!tradeQueueItemId) {
+    // No id to attach an audit event to, so this one stays in the result only.
     return { status: 'failed', reason: 'The decision is not linked to a trade idea.' }
+  }
+
+  /**
+   * Every failure after this point leaves a durable record before returning.
+   *
+   * One helper rather than three call sites, so a future fourth failure path
+   * cannot be added silently — which is how the original `console.error`
+   * survived as the only trace for as long as it did.
+   */
+  const fail = async (reason: string): Promise<FanInResult> => {
+    await recordConclusionFailure({ tradeQueueItemId, outcome, reason, context })
+    return { status: 'failed', reason }
   }
 
   const { data: tracks, error: tracksErr } = await supabase
@@ -81,7 +133,7 @@ export async function resolveIdeaAfterDecision(args: {
     .eq('trade_queue_item_id', tradeQueueItemId)
 
   if (tracksErr) {
-    return { status: 'failed', reason: `Could not read portfolio tracks: ${tracksErr.message}` }
+    return fail(`Could not read portfolio tracks: ${tracksErr.message}`)
   }
 
   /*
@@ -109,7 +161,7 @@ export async function resolveIdeaAfterDecision(args: {
       note,
     })
   } catch (e) {
-    return { status: 'failed', reason: e instanceof Error ? e.message : String(e) }
+    return fail(e instanceof Error ? e.message : String(e))
   }
 
   /*
@@ -128,15 +180,13 @@ export async function resolveIdeaAfterDecision(args: {
     .maybeSingle()
 
   if (readErr) {
-    return { status: 'failed', reason: `Could not confirm the idea was concluded: ${readErr.message}` }
+    return fail(`Could not confirm the idea was concluded: ${readErr.message}`)
   }
   if ((after as { outcome: string | null } | null)?.outcome !== outcome) {
-    return {
-      status: 'failed',
-      reason:
-        'The idea was not concluded: the update reported success but the row is unchanged. '
-        + 'This is usually a permissions filter or a repeated request id.',
-    }
+    return fail(
+      'The idea was not concluded: the update reported success but the row is unchanged. '
+      + 'This is usually a permissions filter or a repeated request id.',
+    )
   }
 
   return { status: 'concluded', outcome }
