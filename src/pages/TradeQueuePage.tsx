@@ -81,6 +81,7 @@ import type {
 } from '../types/trading'
 import { getDerivedUrgency, getUrgencySeverity, DERIVED_URGENCY_CONFIG, type DerivedUrgency } from '../lib/derived-urgency'
 import { isParked } from '../lib/memory/obligations'
+import { isDeferredResurfaced } from '../lib/ideas/active-work'
 import { clsx } from 'clsx'
 import { latestSnapshotRows } from '../lib/holdings/latest-snapshot'
 import { useTradeExpressionCounts, getExpressionStatus } from '../hooks/useTradeExpressionCounts'
@@ -920,31 +921,17 @@ export function TradeQueuePage({
   // Deferred status (cancelled = deferred in legacy mapping)
   const deferredStatuses: TradeQueueStatus[] = ['cancelled']
 
-  // Helper to check if a deferred item is ready to resurface
-  const isDeferredAndReady = (item: TradeQueueItemWithDetails): boolean => {
-    if (!deferredStatuses.includes(item.status)) return false
-    if (!item.deferred_until) return false // No resurface date = stays deferred
-
-    // Get the intended deferred date (stored as UTC midnight)
-    const deferredUntil = new Date(item.deferred_until)
-    const now = new Date()
-
-    // Extract the intended date from UTC (what the user picked)
-    const deferredYear = deferredUntil.getUTCFullYear()
-    const deferredMonth = deferredUntil.getUTCMonth()
-    const deferredDay = deferredUntil.getUTCDate()
-
-    // Get user's local date
-    const nowYear = now.getFullYear()
-    const nowMonth = now.getMonth()
-    const nowDay = now.getDate()
-
-    // Compare: resurface when local date >= intended deferred date
-    const deferredDateValue = new Date(deferredYear, deferredMonth, deferredDay).getTime()
-    const nowDateValue = new Date(nowYear, nowMonth, nowDay).getTime()
-
-    return nowDateValue >= deferredDateValue
-  }
+  /*
+   * Is a deferred item ready to resurface?
+   *
+   * The body of this moved to `isDeferredResurfaced` in `ideas/active-work`,
+   * because the canonical active-work predicate needs it to stay in parity
+   * with this board. It was an inline closure here, which meant every other
+   * surface asking "is this active work" silently got the answer wrong for
+   * resurfaced ideas. Same semantics, one definition.
+   */
+  const isDeferredAndReady = (item: TradeQueueItemWithDetails): boolean =>
+    isDeferredResurfaced(item)
 
   // Get the stage a resurfaced item should return to
   const getResurfaceStage = (item: TradeQueueItemWithDetails): TradeQueueStatus => {
@@ -4446,16 +4433,16 @@ function TradeQueueCard({
 
           {/* Urgency badge OR Restored badge (restored takes precedence) */}
           {(() => {
-            // Check if deferred item is ready to resurface (when local date >= intended deferred date)
-            let isResurfaced = false
-            if (item.status === 'cancelled' && item.deferred_until) {
-              const deferredUntil = new Date(item.deferred_until)
-              const now = new Date()
-              // Extract intended date from UTC, compare with local date
-              const deferredDateValue = new Date(deferredUntil.getUTCFullYear(), deferredUntil.getUTCMonth(), deferredUntil.getUTCDate()).getTime()
-              const nowDateValue = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-              isResurfaced = nowDateValue >= deferredDateValue
-            }
+            /*
+             * The "Restored" badge, from the same rule that readmits the row.
+             *
+             * This was a THIRD copy of the UTC-to-local date arithmetic —
+             * `filteredItems` decided whether to show the row, this decided
+             * whether to call it restored, and the two could disagree. Found
+             * by the guard test, not by reading: it lives 3,500 lines away
+             * from the other one.
+             */
+            const isResurfaced = isDeferredResurfaced(item)
 
             if (isResurfaced) {
               return (

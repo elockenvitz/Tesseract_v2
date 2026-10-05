@@ -11,7 +11,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
-import { usePilotProgress } from './usePilotProgress'
+import { useActiveWorkContext } from './useActiveWorkContext'
 import { operationalAfterPilot, judgeIdeaRow } from '../lib/pilot/seed-visibility'
 import { IDEA_EVIDENCE_SELECT, type IdeaLifecycleRow } from '../lib/ideas/lifecycle'
 import type { TradeQueueItemWithDetails } from '../types/trading'
@@ -34,9 +34,15 @@ export function usePipelineItems() {
    *
    * `cachedHasGraduated` covers the window before the live read resolves, so
    * the tour does not flash back onto the board on a refresh.
+   *
+   * The resolution itself lives in `useActiveWorkContext`, shared with every
+   * other surface that asks whether an idea is active work. This hook applies
+   * ONLY the seed clause of that question: it also feeds the desktop Snoozed,
+   * Archived and Committed tabs, which exist to list the parked and terminal
+   * rows the full predicate rejects. Filtering those out here would make
+   * snoozed work unrecoverable -- see the note in `MobilePipeline`.
    */
-  const { hasGraduated: liveGraduated, cachedHasGraduated } = usePilotProgress()
-  const hasGraduated = liveGraduated || cachedHasGraduated
+  const { hasGraduated } = useActiveWorkContext()
 
   return useQuery({
     // Graduation is part of the key: it changes what this list contains, so
