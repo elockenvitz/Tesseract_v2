@@ -39,6 +39,22 @@ vi.mock('@sentry/react', () => ({ withScope: vi.fn(), captureException: vi.fn() 
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
+    /**
+     * `mark_pilot_progress`, as the migration defines it.
+     *
+     * Marks go through this function rather than a whole-column `.update()`.
+     * `graduationWrites` is still counted here, because that is what this file
+     * asserts about — graduation being written durably and exactly once — and
+     * set-once makes the count exact rather than merely deduped client-side.
+     */
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn !== 'mark_pilot_progress') return { data: null, error: null }
+      const k = args.p_key as string
+      if (k in db.progress) return { data: { ...db.progress }, error: null }
+      if (k === 'graduated_at_org1') db.graduationWrites++
+      db.progress = { ...db.progress, [k]: args.p_value }
+      return { data: { ...db.progress }, error: null }
+    },
     from: (table: string) => {
       let update: { pilot_progress: Record<string, unknown> } | null = null
       const result = () => {

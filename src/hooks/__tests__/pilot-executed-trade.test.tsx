@@ -41,6 +41,30 @@ vi.mock('@sentry/react', () => ({ withScope: vi.fn(), captureException: vi.fn() 
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
+    /**
+     * `mark_pilot_progress`, as the migration defines it.
+     *
+     * Marks go through this function now rather than a whole-column
+     * `.update()`, so the double has to model it or these tests exercise
+     * nothing. Merge onto the row as it is, set-once, return the merged
+     * document — the same semantics asserted in
+     * `pilot-progress-cross-session`.
+     */
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn !== 'mark_pilot_progress') return { data: null, error: null }
+      const user = (db.tables.users ?? [])[0] as Row | undefined
+      if (!user) return { data: null, error: null }
+      const current = (user.pilot_progress ?? {}) as Record<string, unknown>
+      const k = args.p_key as string
+      const merged = k in current ? { ...current } : { ...current, [k]: args.p_value }
+      user.pilot_progress = merged
+      // Record the keys this write actually ADDED, the same thing the
+      // `.update()` path recorded, so the "writes the mark once" assertions
+      // keep measuring writes rather than the mechanism. Set-once means a
+      // repeat adds nothing and records nothing — which is the point.
+      db.progressWrites.push(k in current ? [] : [k])
+      return { data: merged, error: null }
+    },
     from: (table: string) => {
       const filters: Array<[string, unknown]> = []
       let head = false
