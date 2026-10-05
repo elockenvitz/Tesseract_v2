@@ -12,6 +12,7 @@
 import { supabase } from '../supabase'
 import { emitAuditEvent } from '../audit'
 import { moveTradeIdea } from './trade-idea-service'
+import { resolveIdeaAfterDecision } from '../decisions/decision-fan-in'
 import type {
   ActionContext,
   TradeAction,
@@ -2083,7 +2084,32 @@ export async function updatePortfolioTrackDecision(
     console.warn(`Failed to log ${eventType} event:`, e)
   }
 
-  // Check if all portfolio tracks are now decided — if so, update the idea status
+  /*
+   * Conclude the idea once every portfolio track is decided.
+   *
+   * This scanned the tracks itself and wrote a terminal `status`
+   * ('approved' / 'cancelled' / 'rejected') straight onto
+   * `trade_queue_items`, leaving `outcome` NULL — the same bypass
+   * `advanceTradeIdeaAfterExecute` had, and the second of the three
+   * implementations `decision-fan-in` was written to absorb.
+   *
+   * `status` is DERIVED from `stage` + `outcome`. A row whose status says
+   * terminal while its outcome says nothing is a row lying through its
+   * cache, and every surface that reads `outcome` — the Outcomes ledger,
+   * the active-work predicate, the pipeline — disagrees with every surface
+   * that reads `status`.
+   *
+   * `resolveIdeaAfterDecision` does the track scan and the write as one
+   * thing, derives `status`, emits the audit event, and verifies the row
+   * actually changed.
+   *
+   * The outcome vocabulary narrows here, deliberately. The fan-in records
+   * the IDEA's terminal state, which is binary: it either produced a
+   * committed trade or it did not. 'deferred' is a per-portfolio track
+   * outcome, not an idea outcome — the track row above already carries it,
+   * and an all-deferred idea is concluded as `rejected` for the same reason
+   * the old code mapped it to `cancelled`: nobody is taking it forward.
+   */
   try {
     const { data: allTracks } = await supabase
       .from('trade_idea_portfolios')
@@ -2093,17 +2119,15 @@ export async function updatePortfolioTrackDecision(
     const allDecided = allTracks?.every(t => t.decision_outcome !== null)
     if (allDecided) {
       const anyAccepted = allTracks?.some(t => t.decision_outcome === 'accepted')
-      const allDeferred = allTracks?.every(t => t.decision_outcome === 'deferred')
-      const newStatus = anyAccepted ? 'approved' : allDeferred ? 'cancelled' : 'rejected'
-      // The idea's STAGE is deliberately not touched. This used to also write
-      // `stage: 'deciding'`, which is no longer a member of the stage enum and
-      // would now be rejected outright — but the deeper reason is the same one
-      // that retired that value: recording a decision says nothing about how
-      // well understood the idea is, and must not rewrite its maturity.
-      await supabase
-        .from('trade_queue_items')
-        .update({ status: newStatus } as never)
-        .eq('id', trade_queue_item_id)
+      const fanIn = await resolveIdeaAfterDecision({
+        tradeQueueItemId: trade_queue_item_id,
+        outcome: anyAccepted ? 'executed' : 'rejected',
+        context,
+        note: 'All portfolio tracks decided — trade idea concluded',
+      })
+      if (fanIn.status === 'failed') {
+        console.error('[TradeLab] Idea not concluded after portfolio decision:', fanIn.reason)
+      }
     }
   } catch (e) {
     console.warn('Failed to sync idea status after portfolio decision:', e)

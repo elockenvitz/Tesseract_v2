@@ -311,6 +311,30 @@ export function DecisionConfirmationModal({
     return out
   }, [buckets])
 
+  /**
+   * Legs that committed as decisions but did not execute.
+   *
+   * `complete` is the only status that means the holdings actually moved —
+   * it is written solely on `applied: true`. An unknown/absent status is NOT
+   * treated as executed: a leg whose outcome we cannot read must not be
+   * announced as filled.
+   *
+   * Up here with the other two, and for the reason the comment above them
+   * already gives. This one sat BELOW the early return, so the component
+   * rendered N hooks while `record` was null and N+1 the moment a decision
+   * arrived — React #310, "Rendered more hooks than during the previous
+   * render". It fired in production on 2026-10-05 the instant a Trade Lab
+   * bulk execute succeeded and handed this modal its record, which is the
+   * one transition that flips the guard.
+   *
+   * Reads `decisions`, the already-null-safe `record?.decisions ?? []`,
+   * rather than `record.decisions` — above the guard there may be no record.
+   */
+  const pendingExecution = useMemo(
+    () => decisions.filter(d => d.executionStatus !== 'complete'),
+    [decisions],
+  )
+
   if (!record || record.decisions.length === 0) return null
 
   const handleStay = () => {
@@ -333,18 +357,6 @@ export function DecisionConfirmationModal({
 
   const isMulti = record.decisions.length > 1
 
-  /**
-   * Legs that committed as decisions but did not execute.
-   *
-   * `complete` is the only status that means the holdings actually moved —
-   * it is written solely on `applied: true`. An unknown/absent status is
-   * NOT treated as executed: a leg whose outcome we cannot read must not be
-   * announced as filled.
-   */
-  const pendingExecution = useMemo(
-    () => record.decisions.filter(d => d.executionStatus !== 'complete'),
-    [record.decisions],
-  )
   const primary = record.decisions[0]
   const aggregate = computeAggregate(record.decisions)
 

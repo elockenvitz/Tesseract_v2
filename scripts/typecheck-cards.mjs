@@ -191,7 +191,12 @@ const MAX_ERRORS = 0
 // fetcher, and two inline copies of the deferred-resurface date arithmetic
 // into `isDeferredResurfaced`, removed the duplicated rows that carried the
 // errors. Held here so the duplicates cannot come back unnoticed.
-const MAX_REPO_ERRORS = 8657
+//
+// Lowered 8657 -> 8655 by the Trade Lab lifecycle convergence, for the same
+// reason: deleting two hand-rolled fan-in implementations in favour of
+// `resolveIdeaAfterDecision` removed the loosely-typed `as any` track scans
+// they each carried.
+const MAX_REPO_ERRORS = 8655
 
 /**
  * A floor on real source files, now that they are counted as source files.

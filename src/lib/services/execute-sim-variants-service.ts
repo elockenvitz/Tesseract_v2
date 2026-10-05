@@ -45,6 +45,7 @@ import {
 } from '../memory/lifecycle-events'
 import { createAcceptedTrade, type CreateAcceptedTradeInput } from './accepted-trade-service'
 import { deleteVariant } from './intent-variant-service'
+import { resolveIdeaAfterDecision, type FanInResult } from '../decisions/decision-fan-in'
 import type {
   IntentVariantWithDetails,
   AcceptedTradeWithJoins,
@@ -594,7 +595,7 @@ async function advanceTradeIdeaAfterExecute(
   tradeQueueItemId: string,
   portfolioId: string,
   ctx: ActionContext,
-): Promise<void> {
+): Promise<FanInResult> {
   const now = new Date().toISOString()
 
   // 1. Update this portfolio's track, if one exists.
@@ -612,49 +613,45 @@ async function advanceTradeIdeaAfterExecute(
     console.warn('[ExecuteSim] Failed to update per-portfolio track', e)
   }
 
-  // 2. Check for other unresolved tracks across portfolios. If any
-  // other portfolio still has a null decision_outcome, the idea
-  // isn't globally done yet — leave the TQI status alone.
-  let hasOtherOpenTracks = false
-  try {
-    const { data: openTracks } = await supabase
-      .from('trade_idea_portfolios')
-      .select('portfolio_id, decision_outcome')
-      .eq('trade_queue_item_id', tradeQueueItemId)
-    if (openTracks && openTracks.length > 0) {
-      hasOtherOpenTracks = openTracks.some(
-        (t: any) => t.portfolio_id !== portfolioId && t.decision_outcome == null,
-      )
-    }
-  } catch (e) {
-    console.warn('[ExecuteSim] Failed to scan open tracks', e)
+  /*
+   * 2. Conclude the idea through the canonical fan-in.
+   *
+   * This used to scan the tracks itself and then write
+   * `status: 'executed'` straight onto `trade_queue_items`, leaving
+   * `outcome` NULL and `stage` untouched. Two things were wrong with that.
+   *
+   * `status` is DERIVED from `stage` + `outcome` by `stageToLegacyStatus`.
+   * Writing it directly writes to a cache: production carried AAPL
+   * `a1f81ecf` as `status='executed', outcome=NULL` after a Trade Lab bulk
+   * execute on 2026-10-05, which is a row asserting through its cache
+   * something its authoritative columns deny.
+   *
+   * And the track scan was a third copy of the fan-in rule.
+   * `decision-fan-in` exists precisely because that rule was implemented
+   * three times and the three disagreed; its own docstring names this
+   * function as one of them. The Inbox path was converted; this one was
+   * not, so it kept the behaviour the module was written to end.
+   *
+   * `resolveIdeaAfterDecision` owns both halves: it reads the tracks, holds
+   * the idea open while any portfolio still owes a decision, and when none
+   * does writes `stage` + `outcome` together through `moveTradeIdea` — which
+   * derives `status`, emits the audit event this path never wrote, and reads
+   * the row back to confirm the write landed.
+   *
+   * Still non-fatal: the accepted_trade is already committed, and losing a
+   * kanban advance must not fail an execution. But the reason is now
+   * returned and recorded rather than discarded.
+   */
+  const fanIn = await resolveIdeaAfterDecision({
+    tradeQueueItemId,
+    outcome: 'executed',
+    context: ctx,
+    note: 'All portfolios resolved — trade idea concluded after Trade Lab execute',
+  })
+  if (fanIn.status === 'failed') {
+    console.error('[ExecuteSim] Idea not concluded after execute:', fanIn.reason)
   }
-
-  if (hasOtherOpenTracks) return
-
-  // 3. No other portfolios are waiting — flip the TQI itself to
-  // 'executed' so the Decision Outcomes ledger picks it up. Also set
-  // approved_at (used by the page's date-range filter) if it hasn't
-  // been set already by an earlier stage.
-  try {
-    const { error } = await supabase
-      .from('trade_queue_items')
-      .update({
-        status: 'executed',
-        approved_at: now,
-        approved_by: ctx.actorId,
-        updated_at: now,
-      })
-      .eq('id', tradeQueueItemId)
-      // Don't step on rows that a user or another flow has already
-      // moved to a terminal state.
-      .not('status', 'in', '(executed,rejected,cancelled)')
-    if (error) {
-      console.warn('[ExecuteSim] Failed to advance TQI status', error)
-    }
-  } catch (e) {
-    console.warn('[ExecuteSim] advanceTradeIdeaAfterExecute threw', e)
-  }
+  return fanIn
 }
 
 /**
