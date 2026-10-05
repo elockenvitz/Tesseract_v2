@@ -30,6 +30,17 @@ import type { TradeAction } from '../../types/trading'
 const fmtShares = (n: number) => Math.abs(Math.round(n)).toLocaleString()
 const fmtPct = (n: number | null | undefined) =>
   n == null || !Number.isFinite(n) ? '—' : `${n.toFixed(2)}%`
+/**
+ * A share price, with cents.
+ *
+ * `fmtUsd` abbreviates and drops decimals below $1,000, which is right for
+ * a notional and wrong for a price: it rendered $82.40 as "$82" and so
+ * misstated the exact basis the trade was sized against. The PM is being
+ * asked to accept a share count derived from this number.
+ */
+const fmtPrice = (n: number | null | undefined) =>
+  n == null || !Number.isFinite(n) ? '—' : `$${n.toFixed(2)}`
+
 const fmtUsd = (n: number | null | undefined) => {
   if (n == null || !Number.isFinite(n)) return '—'
   const a = Math.abs(n)
@@ -83,7 +94,7 @@ export function ApproveExecutePreview({
       <div className="text-xs font-semibold text-gray-900 dark:text-white tabular-nums">
         {verb} {fmtShares(deltaShares)} {symbol ?? 'shares'}
         <span className="font-normal text-gray-500 dark:text-gray-400">
-          {' '}· {fmtUsd(computed.notional_value)} @ {fmtUsd(basis.price)}
+          {' '}· {fmtUsd(computed.notional_value)} @ {fmtPrice(basis.price)}
         </span>
       </div>
 

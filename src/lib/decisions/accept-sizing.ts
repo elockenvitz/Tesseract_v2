@@ -79,6 +79,24 @@ export type AcceptSizingResult =
  * rounding config is read anywhere on this path; when one exists it belongs
  * here rather than as a second literal somewhere else.
  */
+/**
+ * The position's share of the book, computed rather than read.
+ *
+ * `CurrentBook.weightPct` is deliberately null when the book holds fewer
+ * than `MIN_POSITIONS_FOR_WEIGHT` positions — a DISPLAY rule, because a
+ * percentage of a three-name book misleads a reader of a signal card. That
+ * rule has no business here: `shares × price / totalValue` is exact
+ * arithmetic at any position count, and sizing a trade is not a claim about
+ * how meaningful the percentage is.
+ *
+ * Reading `weightPct ?? 0` instead would reintroduce the exact conflation
+ * the Decision Inbox was just fixed for — "we could not say" rendered as
+ * "we hold none" — except here it would silently mis-size a real trade
+ * rather than mis-draw a label.
+ */
+const weightOf = (shares: number | null, price: number, totalValue: number): number =>
+  totalValue > 0 ? (100 * (shares ?? 0) * price) / totalValue : 0
+
 const PILOT_ROUNDING = {
   lot_size: 1,
   min_lot_behavior: 'round' as const,
@@ -136,7 +154,7 @@ export async function resolveAcceptSizingBasis(
     }
     return {
       currentShares: position.shares ?? 0,
-      currentWeight: position.weightPct ?? 0,
+      currentWeight: weightOf(position.shares, price, totals.totalValue),
       price,
       portfolioTotalValue: totals.totalValue,
       asOf: totals.asOf,
@@ -223,7 +241,7 @@ export function basisFromBook(
   }
   return {
     currentShares: position.shares ?? 0,
-    currentWeight: position.weightPct ?? 0,
+    currentWeight: weightOf(position.shares, position.price, totals.totalValue),
     price: position.price,
     portfolioTotalValue: totals.totalValue,
     asOf: totals.asOf,

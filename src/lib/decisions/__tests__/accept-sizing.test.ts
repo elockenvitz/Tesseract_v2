@@ -176,7 +176,27 @@ describe('basisFromBook — the preview uses the commit’s inputs', () => {
     const b = basisFromBook(book, 'p1', ASSET)
     expect(isRefusal(b)).toBe(false)
     if (isRefusal(b)) return
-    expect(b).toEqual(SHOP)
+    expect(b.currentShares).toBe(SHOP.currentShares)
+    expect(b.price).toBe(SHOP.price)
+    expect(b.portfolioTotalValue).toBe(SHOP.portfolioTotalValue)
+    expect(b.asOf).toBe(SHOP.asOf)
+    expect(b.isNewPosition).toBe(false)
+    // Derived from shares × price / total rather than read off the book's
+    // display weight, so compare as a number, not for bit equality.
+    expect(b.currentWeight).toBeCloseTo(SHOP.currentWeight, 10)
+  })
+
+  it('computes the weight itself rather than trusting the display rule', () => {
+    // `CurrentBook.weightPct` is null below MIN_POSITIONS_FOR_WEIGHT — a
+    // rule about whether a percentage is MEANINGFUL to show, not whether it
+    // is computable. A two-name book still sizes correctly.
+    const thin = {
+      byKey: new Map([[`p1:${ASSET}`, { shares: 100, price: 10, weightPct: null }]]),
+      byPortfolio: new Map([['p1', { totalValue: 4000, asOf: '2026-09-29' }]]),
+    }
+    const b = basisFromBook(thin, 'p1', ASSET)
+    if (isRefusal(b)) throw new Error('expected basis')
+    expect(b.currentWeight).toBeCloseTo(25, 10)
   })
 
   it('previewing and committing agree on the share count', () => {

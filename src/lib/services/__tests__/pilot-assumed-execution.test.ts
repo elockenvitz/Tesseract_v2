@@ -163,6 +163,13 @@ vi.mock('../trade-idea-service', () => ({
 }))
 
 import { acceptFromInboxToAcceptedTrade, EXECUTION_ORIGIN } from '../accepted-trade-service'
+import { rejectFromInbox } from '../inbox-accept-pipeline'
+
+/** Calls to the holdings RPC that actually carried a quantity to apply. */
+const appliedCalls = () =>
+  store.rpc.filter(r =>
+    r.fn === 'apply_trade_to_holdings'
+    && (r.args.p_target_shares != null || r.args.p_delta_shares != null))
 
 /** The live SHOP book: 12,000 sh @ $82.40 in a $34,779,457.07 portfolio. */
 const SHOP_BOOK = [
@@ -294,12 +301,66 @@ describe('refusal is visible, and never fabricated sizing', () => {
     expect(store.events).toHaveLength(0)
   })
 
+  it('mutates no holdings when the sizing is refused', async () => {
+    // Stronger than "no evidence row": nothing with a quantity ever
+    // reaches the RPC, so the book cannot have moved. The RPC is still
+    // CALLED — with nulls — and returns applied:false without raising,
+    // which is precisely why this failure used to be invisible.
+    store.holdings = []
+    await accept()
+    expect(appliedCalls()).toHaveLength(0)
+  })
+
   it('still records the decision when execution is refused', async () => {
     store.holdings = []
     const trade = await accept()
     // The decision happened. Losing it because the book could not be priced
     // would be far worse than withholding the execution.
     expect(trade.id).toBe('at-1')
+  })
+})
+
+describe('rejection decides without executing', () => {
+  const reject = () =>
+    rejectFromInbox({ decisionRequest: REQUEST, reason: 'too expensive', context: CONTEXT } as never)
+
+  it('moves no holdings', async () => {
+    await reject()
+    expect(appliedCalls()).toHaveLength(0)
+  })
+
+  it('writes no execution evidence', async () => {
+    await reject()
+    expect(store.events).toHaveLength(0)
+  })
+
+  it('emits no execution event', async () => {
+    await reject()
+    expect(memory.execution).toHaveLength(0)
+  })
+
+  it('concludes the idea as rejected when every track is resolved', async () => {
+    store.tracks = [{ portfolio_id: 'p1', decision_outcome: 'rejected' }]
+    const r = await reject()
+    expect(r.status).toBe('concluded')
+    expect(store.idea.outcome).toBe('rejected')
+  })
+
+  it('leaves the idea live while another portfolio still owes a decision', async () => {
+    // Iterative reject: the analyst can revise sizing and resubmit.
+    store.tracks = [
+      { portfolio_id: 'p1', decision_outcome: 'rejected' },
+      { portfolio_id: 'p2', decision_outcome: null },
+    ]
+    const r = await reject()
+    expect(r.status).toBe('still_open')
+    expect(store.idea.outcome).toBeNull()
+  })
+
+  it('does not move the stage when it concludes', async () => {
+    store.tracks = [{ portfolio_id: 'p1', decision_outcome: 'rejected' }]
+    await reject()
+    expect((moves.calls[0].target as Record<string, unknown>).stage).toBe('ready_to_recommend')
   })
 })
 

@@ -627,7 +627,10 @@ describe('pm-assumed execution evidence', () => {
     const mutations = db.calls.filter(
       c => c.table === 'portfolio_holdings' && (has(c.ops, 'update') || has(c.ops, 'delete')),
     )
-    expect(mutations.length).toBeGreaterThan(0)
+    // Exactly once. A reversal that ran twice would subtract the position
+    // a second time, and the append-only evidence gives nothing downstream
+    // a way to notice.
+    expect(mutations).toHaveLength(1)
   })
 
   it('does not suppress a later trader attestation', async () => {
@@ -646,6 +649,22 @@ describe('pm-assumed execution evidence', () => {
 
     const after = db.calls.filter(c => c.table === 'portfolio_trade_events' && has(c.ops, 'insert')).length
     expect(after).toBeGreaterThan(before)
+  })
+
+  it('attesting on top of an assumption does not apply holdings again', async () => {
+    // The two records coexist — the assumption and the confirmation of what
+    // it stood in for — but the book moved once, at approval. Attestation
+    // is a provenance statement, not a second trade.
+    db.tradeRow = { ...PENDING_SIZED_TRADE, execution_status: 'not_started' }
+    db.evidence = PM_ASSUMED_EVIDENCE
+
+    await updateExecutionStatus('at-1', 'complete', 'filled at the desk', { actorId: 'u1' } as never)
+
+    expect(db.rpc.filter(r => r.fn === 'apply_trade_to_holdings')).toHaveLength(0)
+    const mutations = db.calls.filter(
+      c => c.table === 'portfolio_holdings' && (has(c.ops, 'update') || has(c.ops, 'delete')),
+    )
+    expect(mutations).toHaveLength(0)
   })
 
   it('a second attestation is still a no-op', async () => {
