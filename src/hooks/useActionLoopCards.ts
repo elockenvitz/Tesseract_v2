@@ -18,6 +18,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useExpectedValue, type ViewScope } from './useExpectedValue'
+import { activeIdeaWork, type ActiveWorkRow } from '../lib/ideas/active-work'
+import { useActiveWorkContext } from './useActiveWorkContext'
 import {
   evaluateActionLoop,
   STALLED_DAYS_THRESHOLD,
@@ -54,6 +56,9 @@ export function useActionLoopCards({
 }: UseActionLoopCardsOptions): UseActionLoopCardsResult {
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  // Shared with the Ideas Pipeline, so a card cannot nudge the reader about
+  // work the board has already retired.
+  const { hasGraduated } = useActiveWorkContext()
   const isAggregated = viewFilter === 'aggregated'
   const viewUserId = isAggregated ? null : viewFilter
 
@@ -71,20 +76,37 @@ export function useActionLoopCards({
 
   // ---- Workflow state (Triggers A–D) ----
   const { data: workflowData, isLoading } = useQuery({
-    queryKey: ['action-loop-cards', assetId, viewFilter],
+    queryKey: ['action-loop-cards', assetId, viewFilter, hasGraduated],
     queryFn: async () => {
+      /*
+       * All three triggers presuppose active work, so all three select the
+       * predicate's columns and all three are filtered by it below.
+       *
+       * They ask three DIFFERENT questions on top of that — open ideas,
+       * decisions sitting at `deciding`, accepted-but-unexecuted — and those
+       * extra clauses stay exactly as they were. What they share is the
+       * premise: you cannot be "stalled" on an idea that is not active work,
+       * and nudging the reader to act on a retired pilot seed or a snoozed
+       * idea is the same defect as badging it. `outcome IS NULL` alone let
+       * both through.
+       */
+      const TRIGGER_WORK_COLS = `
+        status, outcome, visibility_tier, revisit_at, deferred_until, origin_metadata,
+        accepted_trades (id, is_active, reverted_at),
+        decision_requests (id, status, created_at)
+      `
+
       // --- Active ideas ---
       let ideaQ = supabase
         .from('trade_queue_items')
-        .select('id, action, rationale, stage, created_by')
+        .select(`id, action, rationale, stage, created_by, ${TRIGGER_WORK_COLS}`)
         .eq('asset_id', assetId)
         .eq('visibility_tier', 'active')
-        .is('outcome', null)
 
       // --- Items at 'deciding' stage with no decision (Trigger C) ---
       let stalledQ = supabase
         .from('trade_queue_items')
-        .select('id, action, updated_at, created_by, portfolios:portfolio_id (id, name)')
+        .select(`id, action, updated_at, created_by, portfolios:portfolio_id (id, name), ${TRIGGER_WORK_COLS}`)
         .eq('asset_id', assetId)
         .eq('visibility_tier', 'active')
         .eq('stage', 'deciding')
@@ -93,11 +115,10 @@ export function useActionLoopCards({
       // --- Items with accepted decision but no execution (Trigger D) ---
       let unexecQ = supabase
         .from('trade_queue_items')
-        .select('id, action, decided_at, created_by, portfolios:portfolio_id (id, name)')
+        .select(`id, action, decided_at, created_by, portfolios:portfolio_id (id, name), ${TRIGGER_WORK_COLS}`)
         .eq('asset_id', assetId)
         .eq('visibility_tier', 'active')
         .eq('decision_outcome', 'accepted')
-        .is('outcome', null)
 
       // View-scope all queries
       if (!isAggregated) {
@@ -114,7 +135,17 @@ export function useActionLoopCards({
       if (stalledRes.error) throw stalledRes.error
       if (unexecRes.error) throw unexecRes.error
 
-      const ideas = ideasRes.data || []
+      /*
+       * The shared premise, applied once to each trigger's rows.
+       *
+       * `outcome IS NULL` has been dropped from the SQL above because the
+       * predicate already rejects any non-null outcome — the clause is
+       * subsumed, not lost.
+       */
+      const onlyActive = <T,>(rows: T[] | null | undefined): T[] =>
+        activeIdeaWork(rows as unknown as ActiveWorkRow[], { hasGraduated }) as unknown as T[]
+
+      const ideas = onlyActive(ideasRes.data)
 
       // --- Detect unsimulated ideas (Trigger B) ---
       let unsimulatedIdeas = ideas
@@ -143,7 +174,7 @@ export function useActionLoopCards({
 
       // --- Compute days pending for stalled proposals ---
       const now = Date.now()
-      const stalledProposals = (stalledRes.data || []).map((item: any) => ({
+      const stalledProposals = onlyActive(stalledRes.data).map((item: any) => ({
         id: item.id,
         action: item.action as string,
         portfolio: (item.portfolios as any)?.name || 'Unknown',
@@ -152,7 +183,7 @@ export function useActionLoopCards({
         ),
       }))
 
-      const unexecutedApprovals = (unexecRes.data || []).map((item: any) => ({
+      const unexecutedApprovals = onlyActive(unexecRes.data).map((item: any) => ({
         id: item.id,
         action: item.action as string,
         portfolio: (item.portfolios as any)?.name || 'Unknown',

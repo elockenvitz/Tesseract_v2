@@ -8,11 +8,17 @@ import {
 import { supabase } from '../../lib/supabase'
 import { INITIAL_STAGE } from '../../lib/ideas/stage-model'
 import {
-  isLiveIdea,
   isCommittedIdea,
   IDEA_EVIDENCE_SELECT,
   type IdeaLifecycleRow,
 } from '../../lib/ideas/lifecycle'
+import {
+  isActiveIdeaWork,
+  activeIdeaWork,
+  ACTIVE_WORK_SELECT,
+  type ActiveWorkRow,
+} from '../../lib/ideas/active-work'
+import { useActiveWorkContext } from '../../hooks/useActiveWorkContext'
 import { useInvalidateAttention } from '../../hooks/useAttention'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useAuth } from '../../hooks/useAuth'
@@ -35,6 +41,67 @@ interface ExistingIdeaRow extends IdeaLifecycleRow {
   pair_id?: string | null
   origin_metadata?: Record<string, any> | null
   users?: { id: string; email: string | null; first_name: string | null; last_name: string | null } | null
+  /** Embedded by the detail-panel query, so the panel can name the book. */
+  portfolios?: { id: string; name: string | null } | null
+}
+
+/**
+ * Where this name is active, said precisely or not at all.
+ *
+ * The dropdown badge can only make the organization-level claim ("Active
+ * idea") because no portfolio is known until a ticker is picked. By the time
+ * this panel renders, the rows carry their `portfolios` embed, so the honest
+ * and far more useful sentence is available: *which* book is working it.
+ *
+ * An idea with no `portfolio_id` is an organization-level idea, not an idea in
+ * an unknown portfolio. Those fall back to the generic sentence rather than
+ * guessing a book — naming the wrong portfolio is worse than naming none.
+ */
+function activeContextLabel(symbol: string, ideas: readonly ExistingIdeaRow[]): string {
+  const names = Array.from(new Set(
+    ideas.map(i => i.portfolios?.name).filter((n): n is string => !!n && n.trim() !== ''),
+  ))
+  const count = ideas.length
+  const subject = count === 1 ? `${symbol} is active` : `${symbol} has ${count} active ideas`
+
+  if (names.length === 0) return count === 1 ? `${symbol} already has an active idea` : subject
+  if (names.length === 1) return `${subject} in ${names[0]}`
+  if (names.length === 2) return `${subject} in ${names[0]} and ${names[1]}`
+  return `${subject} in ${names[0]} and ${names.length - 1} other portfolios`
+}
+
+/**
+ * Which of these assets currently have active idea work in this org.
+ *
+ * One fetcher for all three dropdowns (single name, pair long, pair short).
+ * They were three byte-identical copies, each selecting `asset_id, status,
+ * outcome` and testing liveness alone — so all three told the user "In
+ * pipeline" about four untouched pilot seeds that graduation had retired from
+ * the Ideas Pipeline. The columns and the question now both come from
+ * `ideas/active-work`, which is the board's own definition.
+ *
+ * Returns a Set of asset ids so the badge lookup stays O(1) per rendered row.
+ */
+async function fetchActiveAssetIds(
+  ids: string[],
+  currentOrgId: string | null | undefined,
+  hasGraduated: boolean,
+): Promise<Set<string>> {
+  if (ids.length === 0 || !currentOrgId) return new Set<string>()
+  // Scoped by `organization_id` so the badge only reflects the CURRENT org's
+  // pipeline, not another org the user happens to belong to.
+  const { data, error } = await supabase
+    .from('trade_queue_items')
+    .select(ACTIVE_WORK_SELECT)
+    .in('asset_id', ids)
+    .eq('visibility_tier', 'active')
+    .eq('organization_id', currentOrgId)
+  if (error) throw error
+  return new Set(
+    activeIdeaWork(data as unknown as ActiveWorkRow[], { hasGraduated })
+      .map(r => (r as { asset_id?: string | null }).asset_id)
+      .filter((id): id is string => !!id),
+  )
 }
 
 /**
@@ -199,6 +266,14 @@ export function QuickTradeIdeaCapture({
   const location = useLocation()
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
+  /*
+   * The same graduation answer the Ideas Pipeline uses.
+   *
+   * Part of every active-work query key below, because it changes what those
+   * queries return — serving a pre-graduation cache entry afterwards would
+   * put the retired tour back on the badges.
+   */
+  const { hasGraduated } = useActiveWorkContext()
 
   // Trade type: single or pair
   const [tradeType, setTradeType] = useState<'single' | 'pair'>('single')
@@ -298,31 +373,11 @@ export function QuickTradeIdeaCapture({
     [assets]
   )
   const { data: assetIdsInPipeline } = useQuery({
-    queryKey: ['quick-capture-pipeline-asset-ids', visibleAssetIdsKey, currentOrgId],
-    queryFn: async () => {
-      const ids = (assets ?? []).map(a => a.id)
-      if (ids.length === 0 || !currentOrgId) return new Set<string>()
-      // Scope by trade_queue_items.organization_id so the "In pipeline"
-      // badge in the search dropdown only marks tickers already active
-      // in the CURRENT org's pipeline — not in some other org the user
-      // is a member of.
-      const { data, error } = await supabase
-        .from('trade_queue_items')
-        .select('asset_id, status, outcome')
-        .in('asset_id', ids)
-        .eq('visibility_tier', 'active')
-        .eq('organization_id', currentOrgId)
-      if (error) throw error
-      // `visibility_tier` is which drawer a row is in, not whether anyone is
-      // working it — an executed trade stays `active` until something
-      // archives it. Without the liveness test this badged every ticker the
-      // desk had ever traded as "In pipeline".
-      return new Set(
-        (data ?? [])
-          .filter(r => isLiveIdea(r as never))
-          .map(r => r.asset_id as string),
-      )
-    },
+    // Graduation is part of the key for the same reason it is part of
+    // `trade-queue-items`: it changes the answer, so it must refetch rather
+    // than serve the pre-graduation entry.
+    queryKey: ['quick-capture-active-asset-ids', 'single', visibleAssetIdsKey, currentOrgId, hasGraduated],
+    queryFn: () => fetchActiveAssetIds((assets ?? []).map(a => a.id), currentOrgId, hasGraduated),
     enabled: (assets ?? []).length > 0 && !!currentOrgId,
     staleTime: 30_000,
   })
@@ -390,56 +445,23 @@ export function QuickTradeIdeaCapture({
     [visibleShortResults]
   )
 
-  // Pipeline-status queries for the long/short dropdowns — same shape
-  // as the single-trade `assetIdsInPipeline` above, scoped to whichever
-  // tickers are currently visible in that side's dropdown.
+  /*
+   * Active-idea queries for the long/short dropdowns.
+   *
+   * Both delegate to `fetchActiveAssetIds`, the same fetcher the single-name
+   * dropdown uses. These were three byte-identical copies of the query and
+   * the filter, which is exactly how all three came to select too few columns
+   * and ask too weak a question. One copy cannot drift from itself.
+   */
   const { data: assetIdsInPipelineLong } = useQuery({
-    queryKey: ['quick-capture-pipeline-asset-ids-long', visibleLongIdsKey, currentOrgId],
-    queryFn: async () => {
-      const ids = visibleLongResults.map(a => a.id)
-      if (ids.length === 0 || !currentOrgId) return new Set<string>()
-      const { data, error } = await supabase
-        .from('trade_queue_items')
-        .select('asset_id, status, outcome')
-        .in('asset_id', ids)
-        .eq('visibility_tier', 'active')
-        .eq('organization_id', currentOrgId)
-      if (error) throw error
-      // `visibility_tier` is which drawer a row is in, not whether anyone is
-      // working it — an executed trade stays `active` until something
-      // archives it. Without the liveness test this badged every ticker the
-      // desk had ever traded as "In pipeline".
-      return new Set(
-        (data ?? [])
-          .filter(r => isLiveIdea(r as never))
-          .map(r => r.asset_id as string),
-      )
-    },
+    queryKey: ['quick-capture-active-asset-ids', 'long', visibleLongIdsKey, currentOrgId, hasGraduated],
+    queryFn: () => fetchActiveAssetIds(visibleLongResults.map(a => a.id), currentOrgId, hasGraduated),
     enabled: visibleLongResults.length > 0 && !!currentOrgId,
     staleTime: 30_000,
   })
   const { data: assetIdsInPipelineShort } = useQuery({
-    queryKey: ['quick-capture-pipeline-asset-ids-short', visibleShortIdsKey, currentOrgId],
-    queryFn: async () => {
-      const ids = visibleShortResults.map(a => a.id)
-      if (ids.length === 0 || !currentOrgId) return new Set<string>()
-      const { data, error } = await supabase
-        .from('trade_queue_items')
-        .select('asset_id, status, outcome')
-        .in('asset_id', ids)
-        .eq('visibility_tier', 'active')
-        .eq('organization_id', currentOrgId)
-      if (error) throw error
-      // `visibility_tier` is which drawer a row is in, not whether anyone is
-      // working it — an executed trade stays `active` until something
-      // archives it. Without the liveness test this badged every ticker the
-      // desk had ever traded as "In pipeline".
-      return new Set(
-        (data ?? [])
-          .filter(r => isLiveIdea(r as never))
-          .map(r => r.asset_id as string),
-      )
-    },
+    queryKey: ['quick-capture-active-asset-ids', 'short', visibleShortIdsKey, currentOrgId, hasGraduated],
+    queryFn: () => fetchActiveAssetIds(visibleShortResults.map(a => a.id), currentOrgId, hasGraduated),
     enabled: visibleShortResults.length > 0 && !!currentOrgId,
     staleTime: 30_000,
   })
@@ -552,14 +574,28 @@ export function QuickTradeIdeaCapture({
   // organization_id column on trade_queue_items (see migration
   // 20260603020000_trade_queue_items_organization_id.sql).
   const { data: assetIdeaHistory } = useQuery({
-    queryKey: ['quick-capture-existing-ideas', currentAssetId, currentOrgId],
+    queryKey: ['quick-capture-existing-ideas', currentAssetId, currentOrgId, hasGraduated],
     queryFn: async () => {
       if (!currentAssetId || !currentOrgId) return { live: [], historical: [] }
+      /*
+       * `outcome`, `revisit_at` and `deferred_until` were all missing here.
+       *
+       * The select listed `status, visibility_tier` and the filter called
+       * `isLiveIdea`, which reads `outcome` FIRST and only falls back to
+       * `status`. An unselected column arrives as `undefined`, so the
+       * authoritative signal was silently skipped on every row and a parked
+       * or concluded-by-outcome idea was reported as an open duplicate.
+       *
+       * `portfolios` is embedded so the panel can say which book the idea is
+       * active in rather than asserting it generically.
+       */
       const { data, error } = await supabase
         .from('trade_queue_items')
         .select(`
-          id, action, stage, status, visibility_tier, created_at, portfolio_id, pair_id,
+          id, action, stage, status, outcome, visibility_tier, created_at,
+          revisit_at, deferred_until, portfolio_id, pair_id,
           origin_metadata, users:created_by(id, email, first_name, last_name),
+          portfolios:portfolio_id(id, name),
           ${IDEA_EVIDENCE_SELECT}
         `)
         .eq('asset_id', currentAssetId)
@@ -579,14 +615,17 @@ export function QuickTradeIdeaCapture({
        * "AAPL is already in the pipeline" about a position the reader had
        * just put on themselves.
        *
-       * Terminal rows are not duplicates. They are the reason to write the
-       * next idea, so they stay on screen as history and stop claiming to be
-       * open work.
+       * The split is now `isActiveIdeaWork`, the Pipeline's own definition,
+       * so this panel and the board cannot disagree about the same row.
+       * Everything it rejects stays on screen as history: a retired seed or a
+       * closed trade is the reason to write the next idea, not a duplicate.
        */
       const rows = (data ?? []) as unknown as ExistingIdeaRow[]
+      const isActive = (r: ExistingIdeaRow) =>
+        isActiveIdeaWork(r as unknown as ActiveWorkRow, { hasGraduated })
       return {
-        live: rows.filter(r => isLiveIdea(r as never)),
-        historical: rows.filter(r => !isLiveIdea(r as never)),
+        live: rows.filter(isActive),
+        historical: rows.filter(r => !isActive(r)),
       }
     },
     enabled: !!currentAssetId && !!currentOrgId && tradeType === 'single',
@@ -618,7 +657,7 @@ export function QuickTradeIdeaCapture({
   // Both queries are bundled into one useQuery so a single cache
   // invalidation refreshes both views.
   const { data: pairDuplicateData } = useQuery({
-    queryKey: ['quick-capture-pair-duplicate-check', longIdsKey, shortIdsKey, currentOrgId],
+    queryKey: ['quick-capture-pair-duplicate-check', longIdsKey, shortIdsKey, currentOrgId, hasGraduated],
     queryFn: async (): Promise<{
       perAsset: Record<string, ExistingIdeaRow[]>
       exactMatches: Array<{ pair_id: string; legs: ExistingIdeaRow[] }>
@@ -630,17 +669,31 @@ export function QuickTradeIdeaCapture({
       // current org via the canonical organization_id column.
       const { data: legIdeasRaw, error } = await supabase
         .from('trade_queue_items')
-        .select('id, asset_id, action, stage, status, outcome, created_at, portfolio_id, pair_id, origin_metadata, users:created_by(id, email, first_name, last_name)')
+        .select(`
+          id, asset_id, action, stage, status, outcome, visibility_tier, created_at,
+          revisit_at, deferred_until, portfolio_id, pair_id, origin_metadata,
+          users:created_by(id, email, first_name, last_name),
+          ${IDEA_EVIDENCE_SELECT}
+        `)
         .in('asset_id', allLegIds)
         .eq('visibility_tier', 'active')
         .eq('organization_id', currentOrgId)
         .order('created_at', { ascending: false })
       if (error) throw error
 
-      // Same correction as the single path: a closed leg is history, not a
-      // duplicate. Applied before grouping so neither the per-leg warning nor
-      // the exact-pair block can be triggered by finished work.
-      const legIdeas = (legIdeasRaw ?? []).filter(r => isLiveIdea(r as never))
+      /*
+       * Same correction as the single path, and the same definition: a leg
+       * that is not active work is history, not a duplicate.
+       *
+       * Applied before grouping so neither the per-leg warning nor the
+       * exact-pair submit block can be triggered by finished work. This one
+       * matters more than the badges — a wrong answer here does not just
+       * mislabel a row, it refuses to let the user submit a legitimate pair
+       * because a retired pilot seed occupies one of its legs.
+       */
+      const legIdeas = (legIdeasRaw ?? []).filter(
+        r => isActiveIdeaWork(r as unknown as ActiveWorkRow, { hasGraduated }),
+      )
 
       const perAsset: Record<string, ExistingIdeaRow[]> = {}
       ;(legIdeas ?? []).forEach((idea: any) => {
@@ -667,7 +720,12 @@ export function QuickTradeIdeaCapture({
       // match against a cross-org pair.
       const { data: allLegs, error: legsErr } = await supabase
         .from('trade_queue_items')
-        .select('id, pair_id, asset_id, action, created_at, portfolio_id, stage, origin_metadata, users:created_by(id, email, first_name, last_name)')
+        .select(`
+          id, pair_id, asset_id, action, status, outcome, visibility_tier, created_at,
+          revisit_at, deferred_until, portfolio_id, stage, origin_metadata,
+          users:created_by(id, email, first_name, last_name),
+          ${IDEA_EVIDENCE_SELECT}
+        `)
         .in('pair_id', candidatePairIds)
         .eq('visibility_tier', 'active')
         .eq('organization_id', currentOrgId)
@@ -681,11 +739,36 @@ export function QuickTradeIdeaCapture({
         byPairId.get(pid)!.push(leg as ExistingIdeaRow)
       })
 
+      /*
+       * Which candidate pairs are still active work.
+       *
+       * Step 2 fetches every leg REGARDLESS of liveness on purpose: the
+       * comparison below is a set-equality test, and dropping a terminal leg
+       * would shrink a three-leg pair into a false match for a two-leg
+       * proposal. So completeness first, liveness second.
+       *
+       * A pair counts as active when ANY leg does, which is the convention
+       * `isRowParked` already uses for pair rows on the board — legs of one
+       * pair move together, and a pair with one open leg is open work. This
+       * query previously selected no liveness columns at all and filtered
+       * nothing, so a fully executed pair still blocked submit.
+       */
+      const activePairIds = new Set(
+        Array.from(byPairId.entries())
+          .filter(([, legs]) => legs.some(
+            l => isActiveIdeaWork(l as unknown as ActiveWorkRow, { hasGraduated }),
+          ))
+          .map(([pid]) => pid),
+      )
+
       const proposedLongs = new Set(longAssets.map(a => a.id))
       const proposedShorts = new Set(shortAssets.map(a => a.id))
       const exactMatches: Array<{ pair_id: string; legs: ExistingIdeaRow[] }> = []
 
       for (const [pid, legs] of byPairId.entries()) {
+        // A pair that is no longer active work is history, not a duplicate,
+        // and must not block a resubmission of the same expression.
+        if (!activePairIds.has(pid)) continue
         const existingLongs = new Set(
           legs.filter(l => l.action === 'buy' || l.action === 'add').map(l => l.asset_id as string)
         )
@@ -1344,7 +1427,7 @@ export function QuickTradeIdeaCapture({
                 {showAssetDropdown && assets && assets.length > 0 && (
                   <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                     {assets.map((asset, idx) => {
-                      const inPipeline = assetIdsInPipeline?.has(asset.id) ?? false
+                      const hasActiveIdea = assetIdsInPipeline?.has(asset.id) ?? false
                       const isHighlighted = idx === highlightedAssetIndex
                       return (
                         <button
@@ -1361,12 +1444,24 @@ export function QuickTradeIdeaCapture({
                             <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
                             <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">{asset.company_name}</span>
                           </span>
-                          {inPipeline && (
+                          {/*
+                            * "Active idea", not "In pipeline".
+                            *
+                            * Before a ticker is selected there is no portfolio
+                            * to speak of — the portfolio selector renders
+                            * further down this form and starts empty. So the
+                            * only true statement available here is the
+                            * organization-level one: someone is working this
+                            * name. "In pipeline" invited the reader to ask
+                            * *whose* pipeline, which this cannot answer, and
+                            * the detail panel says once a ticker is chosen.
+                            */}
+                          {hasActiveIdea && (
                             <span
                               className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
-                              title="This ticker already has an active idea in the pipeline"
+                              title="Someone in your organization is already working an idea on this ticker"
                             >
-                              In pipeline
+                              Active idea
                             </span>
                           )}
                         </button>
@@ -1387,10 +1482,14 @@ export function QuickTradeIdeaCapture({
               <div className="flex items-start gap-2 mb-2">
                 <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
+                  {/*
+                    * Names the book rather than asserting "in the pipeline".
+                    * The rows are already loaded with their portfolio, so the
+                    * reader gets the fact they actually need to decide whether
+                    * this is a duplicate — see `activeContextLabel`.
+                    */}
                   <p className="text-xs font-medium text-amber-900">
-                    {existingIdeasForAsset.length === 1
-                      ? `${selectedAsset.symbol} is already in the pipeline`
-                      : `${selectedAsset.symbol} has ${existingIdeasForAsset.length} ideas in the pipeline`}
+                    {activeContextLabel(selectedAsset.symbol, existingIdeasForAsset)}
                   </p>
                   <p className="text-[11px] text-amber-700 mt-0.5">
                     Consider working on the existing idea instead of creating a duplicate.
@@ -1538,7 +1637,7 @@ export function QuickTradeIdeaCapture({
               {showLongDropdown && visibleLongResults.length > 0 && (
                 <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                   {visibleLongResults.map((asset, idx) => {
-                    const inPipeline = assetIdsInPipelineLong?.has(asset.id) ?? false
+                    const hasActiveIdea = assetIdsInPipelineLong?.has(asset.id) ?? false
                     const isHighlighted = idx === highlightedLongIndex
                     return (
                       <button
@@ -1555,12 +1654,14 @@ export function QuickTradeIdeaCapture({
                           <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
                           <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">{asset.company_name}</span>
                         </span>
-                        {inPipeline && (
+                        {/* Same organization-level statement as the single-name
+                          * dropdown above; see the note there. */}
+                        {hasActiveIdea && (
                           <span
                             className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
-                            title="This ticker already has an active idea in the pipeline"
+                            title="Someone in your organization is already working an idea on this ticker"
                           >
-                            In pipeline
+                            Active idea
                           </span>
                         )}
                       </button>
@@ -1630,7 +1731,7 @@ export function QuickTradeIdeaCapture({
               {showShortDropdown && visibleShortResults.length > 0 && (
                 <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                   {visibleShortResults.map((asset, idx) => {
-                    const inPipeline = assetIdsInPipelineShort?.has(asset.id) ?? false
+                    const hasActiveIdea = assetIdsInPipelineShort?.has(asset.id) ?? false
                     const isHighlighted = idx === highlightedShortIndex
                     return (
                       <button
@@ -1647,12 +1748,14 @@ export function QuickTradeIdeaCapture({
                           <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
                           <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">{asset.company_name}</span>
                         </span>
-                        {inPipeline && (
+                        {/* Same organization-level statement as the single-name
+                          * dropdown above; see the note there. */}
+                        {hasActiveIdea && (
                           <span
                             className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
-                            title="This ticker already has an active idea in the pipeline"
+                            title="Someone in your organization is already working an idea on this ticker"
                           >
-                            In pipeline
+                            Active idea
                           </span>
                         )}
                       </button>

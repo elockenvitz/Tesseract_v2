@@ -203,6 +203,15 @@ export const GATED_DIRS = [
   'src/components/outcomes/__tests__',
   'src/components/trading/__tests__',
   'src/components/ops/__tests__',
+  /*
+   * The auth shell. `AuthLayout` is what dismisses the full-viewport boot
+   * loader, and three of the six pages using it never did — so a pilot user
+   * clicking their password-recovery link reached a correctly-rendered "Set
+   * your new password" form and saw "Loading…" over it indefinitely, with the
+   * recovery token already spent. Fast, deterministic, and guarding a path
+   * that locks a user out of their own account. Gated on arrival.
+   */
+  'src/components/auth/__tests__',
   // What a file type means, what a size reads as, and what the repository
   // refuses to store. Desktop and mobile both import these, so a drift here
   // is two surfaces disagreeing about the same file. Gated on arrival.

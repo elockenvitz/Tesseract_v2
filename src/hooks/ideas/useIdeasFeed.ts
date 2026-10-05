@@ -34,6 +34,8 @@ import {
 } from '../../lib/ideas/open-proposal'
 import { pairIsLive } from '../../lib/signals/pair-shape'
 import { isParked } from '../../lib/memory/obligations'
+import { isOperationalAfterPilot, judgeIdeaRow } from '../../lib/pilot/seed-visibility'
+import { useActiveWorkContext } from '../useActiveWorkContext'
 
 // ============================================================
 // Types
@@ -406,6 +408,13 @@ async function fetchFeedPage(
   offset: number,
   filters: IdeasFeedFilters,
   ctx: FeedScoringContext,
+  /**
+   * Passed alongside `ctx` rather than inside it, because `FeedScoringContext`
+   * is the shape the desktop and mobile *scorers* share. Graduation is not a
+   * scoring input — it decides candidacy — and putting it there would invite a
+   * ranker to weight by it.
+   */
+  { hasGraduated }: { hasGraduated: boolean },
 ): Promise<FeedPage> {
   // Expand time window as user scrolls deeper — starts at 90d, grows to 365d
   const baseDays = filters.timeRange === 'day' ? 1
@@ -501,7 +510,14 @@ async function fetchFeedPage(
          * how the card tells a buy somebody sketched this morning from a buy
          * sitting in front of a PM. See `lib/signals/idea-shape`.
          */
-        .select('id, action, urgency, rationale, status, outcome, stage, stage_changed_at, updated_at, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, target_price, conviction, time_horizon, thesis_text, proposed_weight, proposed_shares, assigned_to, collaborators, revisit_at, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
+        /*
+         * `origin_metadata` and the evidence embeds are here for the pilot
+         * seed rule — the one clause of the active-work question this feed
+         * was missing entirely. After graduation, four untouched seeded ideas
+         * went on appearing here as live proposals while the Ideas Pipeline
+         * had already retired them.
+         */
+        .select('id, action, urgency, rationale, status, outcome, stage, stage_changed_at, updated_at, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, target_price, conviction, time_horizon, thesis_text, proposed_weight, proposed_shares, assigned_to, collaborators, revisit_at, origin_metadata, accepted_trades (id, is_active, reverted_at), decision_requests (id, status, created_at), assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
         // Every open proposal, not only untouched ones. See `open-proposal`:
         // this used to be `status = 'idea'` while the pair source filtered on
         // nothing, and that asymmetry is what made the Ideas filter look like
@@ -563,6 +579,19 @@ async function fetchFeedPage(
          * its own.
          */
         .filter(d => !isParked(d.revisit_at))
+        /*
+         * Retired pilot seeds leave at the same boundary.
+         *
+         * Only the seed clause is applied here, not the whole
+         * `isActiveIdeaWork` predicate, because this feed deliberately asks a
+         * NARROWER liveness question than the board: `OPEN_PROPOSAL_STATUSES`
+         * plus `isOpenProposal` means "an open proposal", not merely
+         * "non-terminal", and the feed does not resurface deferred ideas at
+         * all. Swapping the whole predicate in would widen the feed, which is
+         * a different change than fixing it. So this composes the one shared
+         * clause it was missing and leaves the rest alone.
+         */
+        .filter(d => isOperationalAfterPilot(judgeIdeaRow(d), { hasGraduated }))
         .map(d => ({
         id: d.id,
         type: 'trade_idea' as const,
@@ -918,9 +947,12 @@ function generateDiscoveryItems(
 
 export function useIdeasFeed(filters: IdeasFeedFilters) {
   const ctx = useUserContext()
+  // Same graduation answer as the Ideas Pipeline, and part of the key below
+  // because it changes which candidates the feed is built from.
+  const { hasGraduated } = useActiveWorkContext()
 
   const query = useInfiniteQuery({
-    queryKey: ['ideas-feed', filters, ctx.userId, ctx.organizationId,
+    queryKey: ['ideas-feed', filters, ctx.userId, ctx.organizationId, hasGraduated,
       // The following list is a SET, so the key has to identify the set.
       //
       // This was `ctx.followedIds.length`, and a count is not an identity:
@@ -935,7 +967,7 @@ export function useIdeasFeed(filters: IdeasFeedFilters) {
       // not move until something unrelated invalidates it.
       coverageSignature(ctx.coverageIndex ?? EMPTY_COVERAGE_INDEX)],
     queryFn: async ({ pageParam = 0 }) => {
-      return fetchFeedPage(pageParam, filters, ctx)
+      return fetchFeedPage(pageParam, filters, ctx, { hasGraduated })
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextCursor,

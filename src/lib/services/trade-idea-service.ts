@@ -503,7 +503,16 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
     .eq('id', tradeId)
 
   if (error) {
-    throw new Error(`Failed to move trade: ${error.message}`)
+    /*
+     * "idea", not "trade".
+     *
+     * This function only ever writes `trade_queue_items`; it has never
+     * touched an `accepted_trade`. The old wording was harmless shorthand
+     * until this message began surfacing to a PM through the fan-in, next to
+     * a trade that HAD committed — at which point "Failed to move trade"
+     * reads as the trade failing, which is the opposite of what happened.
+     */
+    throw new Error(`Failed to update the idea: ${error.message}`)
   }
 
   // ── Post-update side-effects (fire-and-forget) ──

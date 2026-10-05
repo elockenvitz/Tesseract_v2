@@ -186,7 +186,12 @@ const MAX_ERRORS = 0
 // all of which would have silently stopped matching after the contract
 // migration rather than failing loudly. Fixing them cleared those and five
 // besides.
-const MAX_REPO_ERRORS = 8662
+// Lowered 8662 -> 8657 by the Active Idea Semantics fix. The drop is not
+// cleanup: collapsing three byte-identical pipeline-badge queries into one
+// fetcher, and two inline copies of the deferred-resurface date arithmetic
+// into `isDeferredResurfaced`, removed the duplicated rows that carried the
+// errors. Held here so the duplicates cannot come back unnoticed.
+const MAX_REPO_ERRORS = 8657
 
 /**
  * A floor on real source files, now that they are counted as source files.

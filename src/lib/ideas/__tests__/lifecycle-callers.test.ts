@@ -135,9 +135,17 @@ describe('the Trade Lab badge counts live ideas, and only ideas', () => {
 })
 
 describe('capture separates a live duplicate from history', () => {
+  /*
+   * These two assertions used to pin `isLiveIdea` here verbatim. That was the
+   * right fix at the time and is now the wrong one: liveness is ONE clause of
+   * the active-work question, and pinning it would forbid the stronger
+   * predicate that replaced it. See `active-work.test.ts` — the split now
+   * also retires pilot seeds and parked ideas, which `isLiveIdea` calls live.
+   */
   it('splits the asset query rather than warning about everything active', () => {
-    expect(capture).toContain('live: rows.filter(r => isLiveIdea(r as never))')
-    expect(capture).toContain('historical: rows.filter(r => !isLiveIdea(r as never))')
+    expect(capture).toMatch(/live: rows\.filter\(isActive\)/)
+    expect(capture).toMatch(/historical: rows\.filter\(r => !isActive\(r\)\)/)
+    expect(capture).toContain('isActiveIdeaWork')
   })
 
   /** Shown only when nothing live exists, so there is never a double panel. */
@@ -153,9 +161,21 @@ describe('capture separates a live duplicate from history', () => {
     expect(panel.slice(0, 1600)).not.toContain('disabled')
   })
 
-  /** The dropdown badge had the same fault: active tier, not live work. */
-  it('badges In pipeline from liveness, not from visibility_tier alone', () => {
-    const badges = [...capture.matchAll(/filter\(r => isLiveIdea\(r as never\)\)/g)]
-    expect(badges.length).toBeGreaterThanOrEqual(3)
+  /**
+   * The dropdown badge had the same fault, twice over.
+   *
+   * First it read `visibility_tier` alone; liveness fixed that. Then liveness
+   * alone turned out to be the same shape of error one clause further on — it
+   * badged four retired pilot seeds the Ideas Pipeline does not show. The
+   * three byte-identical copies this used to count are now one shared
+   * fetcher, which is why the assertion is about the fetcher, not a count:
+   * three copies of a filter is what let them drift in the first place.
+   */
+  it('badges from the canonical active-work predicate, through one fetcher', () => {
+    expect([...capture.matchAll(/filter\(r => isLiveIdea\(r as never\)\)/g)]).toHaveLength(0)
+    expect(capture).toContain('async function fetchActiveAssetIds')
+    expect(capture).toContain('activeIdeaWork(data as unknown as ActiveWorkRow[], { hasGraduated })')
+    // All three dropdowns reach it: single name, pair long, pair short.
+    expect([...capture.matchAll(/fetchActiveAssetIds\(/g)].length).toBeGreaterThanOrEqual(4)
   })
 })

@@ -203,7 +203,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       if (context?.previousDetail) {
         queryClient.setQueryData(['trade-detail', params.tradeId], context.previousDetail)
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to move trade')
+      toast.error(error instanceof Error ? error.message : 'Failed to move the idea')
     },
     onSuccess: (_data, params) => {
       // Surgical cache update: refetch only the moved item's detail
