@@ -394,7 +394,8 @@ export function ListRowExpansion({
       className="flex flex-col h-full max-sm:h-auto sm:overflow-hidden motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-150"
     >
       {/* ── Identity and the mode switch ──────────────────────────────── */}
-      <div className="flex-shrink-0 flex items-center justify-between gap-4 pb-2 mb-2 border-b border-gray-100 dark:border-gray-800">
+      {/* Stacks at phone width so six tabs never squeeze the ticker out. */}
+      <div className="flex-shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-4 pb-2 mb-2 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-baseline gap-2 min-w-0">
           <span className="text-[15px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">
             {asset.symbol}
@@ -415,7 +416,10 @@ export function ListRowExpansion({
 
         {/* Text tabs, not buttons in boxes: the switch is a way back, not the
             surface's main furniture. */}
-        <div className="flex items-center gap-0.5 flex-shrink-0" role="tablist">
+        <div
+          className="flex items-center gap-0.5 flex-shrink-0 -mx-0.5 px-0.5 overflow-x-auto sm:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+        >
           {availableModes.map(m => (
             <button
               key={m}
@@ -423,7 +427,7 @@ export function ListRowExpansion({
               aria-selected={activeMode === m}
               onClick={() => setMode(m)}
               className={clsx(
-                'px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
+                'px-2 py-0.5 rounded text-[11px] font-medium transition-colors flex-shrink-0',
                 activeMode === m
                   ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
                   : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800',
