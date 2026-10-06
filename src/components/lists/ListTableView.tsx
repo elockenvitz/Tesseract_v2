@@ -224,9 +224,16 @@ export function ListTableView({
       columnPreset={listColumnPreset}
       columnPresetVersion={LIST_COLUMN_PRESET_VERSION}
       expansionEntryColumns={LIST_EXPANSION_ENTRY_COLUMNS}
-      // The expansion is a two-column inspector, not a detail panel. At the
-      // default heights its context rail clipped labels mid-word.
-      expandedRowHeights={{ comfortable: 460, compact: 420, ultra: 350, micro: 290 }}
+      /*
+       * Sized for the sparse real case, not the full fixture.
+       *
+       * 420 was chosen against a name with a three-paragraph thesis, three
+       * unreviewed notes and a live idea. Most names have none of that, and the
+       * same height then opens a mostly-empty panel ten rows tall. These are
+       * tight enough that a full name still reads without scrolling and a thin
+       * one does not leave a hole.
+       */
+      expandedRowHeights={{ comfortable: 380, compact: 350, ultra: 310, micro: 270 }}
       extraSortComparators={extraSortComparators}
       renderExtraCell={renderExtraCell}
       expandedRowSlot={expandedRowSlot}

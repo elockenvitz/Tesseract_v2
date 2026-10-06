@@ -111,14 +111,17 @@ export function ListSurfaceCard({
         'group relative cursor-pointer rounded-md transition-colors',
         // One hairline underneath, no box. Hover is a surface, not a shadow and
         // a lift — thirty lifting tiles is a page that will not hold still.
-        'px-3 hover:bg-gray-50 dark:hover:bg-gray-800/50',
-        isEmpty ? 'py-1.5' : 'py-2',
+        'pl-4 pr-3 hover:bg-gray-50 dark:hover:bg-gray-800/50',
+        // A working list gets room to say what it is; an empty one stays a
+        // single quiet line. The first version gave both the same two lines and
+        // read as a column of navigation links rather than as workspaces.
+        isEmpty ? 'py-2' : 'py-3',
       )}
     >
       {/* Identity spine. 2px, and only while it has reason to be seen. */}
       <span
         aria-hidden
-        className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full opacity-60 group-hover:opacity-100 transition-opacity"
+        className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full opacity-70 group-hover:opacity-100 transition-opacity"
         style={{ backgroundColor: color }}
       />
 
@@ -128,10 +131,10 @@ export function ListSurfaceCard({
           'truncate tracking-tight',
           // An attended list is heavier and darker. That is the emphasis.
           needs > 0
-            ? 'text-[13.5px] font-semibold text-gray-900 dark:text-gray-50'
+            ? 'text-[14.5px] font-semibold text-gray-900 dark:text-gray-50'
             : isEmpty
               ? 'text-[13px] font-medium text-gray-500 dark:text-gray-400'
-              : 'text-[13.5px] font-medium text-gray-800 dark:text-gray-100',
+              : 'text-[14.5px] font-medium text-gray-800 dark:text-gray-100',
         )}>
           {list.name}
         </h3>
@@ -187,18 +190,25 @@ export function ListSurfaceCard({
         </button>
       </div>
 
-      {/* ── Line two: what is in it, and when it last moved ──────────── */}
+      {/* ── Line two: purpose, where there is one ─────────────────────── */}
+      {!isEmpty && list.description && (
+        <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400 leading-snug truncate">
+          {list.description}
+        </p>
+      )}
+
+      {/* ── Line three: what is in it, and when it last moved ─────────── */}
       {!isEmpty && (
-        <div className="flex items-baseline gap-2 min-w-0 mt-1">
+        <div className="flex items-baseline gap-3 min-w-0 mt-1.5">
           {tickers.length > 0 && (
-            <span className="flex items-baseline gap-1.5 min-w-0 flex-shrink">
+            <span className="flex items-baseline gap-2 min-w-0 flex-shrink">
               {tickers.map(t => (
-                <span key={t} className="text-[11px] font-mono text-gray-500 dark:text-gray-400 tabular-nums">
+                <span key={t} className="text-[11.5px] font-mono text-gray-600 dark:text-gray-300 tabular-nums">
                   {t}
                 </span>
               ))}
               {overflowTickers > 0 && (
-                <span className="text-[11px] font-mono text-gray-300 dark:text-gray-600">
+                <span className="text-[11.5px] font-mono text-gray-300 dark:text-gray-600">
                   +{overflowTickers}
                 </span>
               )}
@@ -207,7 +217,7 @@ export function ListSurfaceCard({
 
           <span className="flex-1" />
 
-          <span className="text-[10.5px] text-gray-400 dark:text-gray-500 truncate max-w-[45%] flex-shrink-0">
+          <span className="text-[11px] text-gray-400 dark:text-gray-500 truncate max-w-[42%] flex-shrink-0">
             {lastActivity ? (
               <>
                 {lastActivity.actor_name} {describeActivity(lastActivity)}
@@ -226,7 +236,7 @@ export function ListSurfaceCard({
                 <span
                   key={c.id}
                   title={displayName(c.user)}
-                  className="w-4 h-4 rounded-full bg-gray-100 dark:bg-gray-800 text-[8.5px] font-semibold text-gray-500 dark:text-gray-400 flex items-center justify-center -ml-1 first:ml-0 ring-1 ring-white dark:ring-gray-900"
+                  className="w-[18px] h-[18px] rounded-full bg-gray-100 dark:bg-gray-800 text-[9px] font-semibold text-gray-500 dark:text-gray-400 flex items-center justify-center -ml-1 first:ml-0 ring-1 ring-white dark:ring-gray-900"
                 >
                   {initialsOf(c.user)}
                 </span>

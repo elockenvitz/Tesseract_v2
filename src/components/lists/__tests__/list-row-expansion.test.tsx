@@ -101,6 +101,8 @@ const asset = { id: 'a-aapl', symbol: 'AAPL', company_name: 'Apple Inc.' }
 const EMPTY_SIGNAL: ListRowSignal = {
   state: null, subject: null, weightPct: null, closes: null,
   ratingValue: null, ratingColor: null, conviction: null, targetPrice: null,
+  work: { tier: 'clear', label: '', count: 0, secondary: null },
+  idea: null,
 }
 
 const section = (key: string, content: string, authorName = 'Eric L') => ({
@@ -294,10 +296,12 @@ describe('Overview shows only what exists', () => {
     expect(screen.getByText('$170.50')).toBeInTheDocument()
     expect(screen.getByText('5.14%')).toBeInTheDocument()
     expect(screen.getByText('Buy')).toBeInTheDocument()
+    // Target and its upside sit inside "What we believe", beside the view —
+    // they are the claim, not a separate metrics strip.
     expect(screen.getByText('$200.00')).toBeInTheDocument()
-    // Target carries its own upside rather than occupying a second column:
     // (200 - 170.5) / 170.5 = +17.3%
-    expect(screen.getByText('+17.3% upside')).toBeInTheDocument()
+    expect(screen.getByText('+17.3%')).toBeInTheDocument()
+    expect(screen.getByText('What we believe')).toBeInTheDocument()
   })
 
   it('omits facts entirely when the data is absent — no dashes, no placeholders', () => {
@@ -322,11 +326,9 @@ describe('Overview shows only what exists', () => {
     hooks.workspace.spot = 200
     hooks.workspace.target = 180
     renderRow()
-    const down = screen.getByText('-10.0% upside')
-    expect(down).toBeInTheDocument()
     // Direction is carried by colour on the figure it belongs to, which is the
     // one place colour is allowed to mean something on this surface.
-    expect(screen.getByText('$180.00').className).toMatch(/rose/)
+    expect(screen.getByText('-10.0%').className).toMatch(/rose/)
   })
 
   it('prefers the official rating over a more recent unofficial one', () => {
@@ -464,26 +466,33 @@ describe('reviewing evidence is recorded, not just linked', () => {
   })
 })
 
-describe('the case is the dominant content', () => {
-  it('shows thesis and where we differ, with their authors', () => {
+describe('Overview synthesises the three questions', () => {
+  it('names the three bands, in order', () => {
+    /*
+     * The bands ARE the structure. Overview used to be a metrics strip, a
+     * thesis, and a rail of list metadata, which gave owner/status/due/note
+     * more weight than the position and the open idea.
+     */
+    hooks.workspace.sections = [section('thesis', 'Services mix is underappreciated.')]
+    const { container } = renderRow()
+    const text = container.textContent ?? ''
+    expect(text.indexOf('What we believe')).toBeGreaterThanOrEqual(0)
+    expect(text.indexOf('What we believe')).toBeLessThan(text.indexOf("What's happening"))
+    expect(text.indexOf("What's happening")).toBeLessThan(text.indexOf("What we're doing"))
+  })
+
+  it('leads the belief band with the thesis and its author', () => {
     hooks.workspace.sections = [
       section('thesis', 'Services mix is underappreciated.'),
       section('where_different', 'Street models hardware cyclicality only.', 'Dana R'),
-      section('risks_to_thesis', 'China exposure.'),
     ]
     renderRow()
-    expect(screen.getByText('Thesis')).toBeInTheDocument()
     expect(screen.getByText(/Services mix is underappreciated/)).toBeInTheDocument()
-    expect(screen.getByText('Where we differ')).toBeInTheDocument()
-    expect(screen.getByText('Dana R')).toBeInTheDocument()
+    // The lead section's author; the rest of the case is one tab away.
+    expect(screen.getByText('Eric L')).toBeInTheDocument()
   })
 
-  it('puts what has changed beside the case, not below a clamp', () => {
-    /*
-     * The case used to be clamped to four lines with nothing beside it, which
-     * left roughly half a fixed-height canvas empty on a short thesis — the
-     * reason the panel read as an inserted card. Both columns now scroll.
-     */
+  it('puts what changed in its own band, unreviewed first', () => {
     hooks.workspace.caseWrittenAt = '2026-09-01T00:00:00Z'
     hooks.workspace.sections = [section('thesis', 'Services mix.')]
     hooks.workspace.evidence = [
@@ -491,19 +500,18 @@ describe('the case is the dominant content', () => {
       evidence({ title: 'New since review', createdAt: '2026-09-10T00:00:00Z', isNewSinceReview: true }),
     ]
     renderRow()
-    expect(screen.getByText('Since review')).toBeInTheDocument()
     const titles = screen.getAllByText(/Older note|New since review/).map(n => n.textContent)
     // Unreviewed leads, even though it is the older of the two.
     expect(titles[0]).toBe('New since review')
   })
 
-  it('says nothing is new rather than leaving the column blank', () => {
+  it('says nothing is new rather than leaving the band blank', () => {
     hooks.workspace.sections = [section('thesis', 'Services mix.')]
     renderRow()
-    expect(screen.getByText('Nothing new on file.')).toBeInTheDocument()
+    expect(screen.getByText('Nothing new since the case was written.')).toBeInTheDocument()
   })
 
-  it('shows at most the two leading sections, leaving the rest to Case mode', () => {
+  it('shows only the leading section, leaving the rest to Case mode', () => {
     hooks.workspace.sections = [
       section('thesis', 'A view.'),
       section('where_different', 'A differentiator.'),
@@ -681,7 +689,9 @@ describe('ownership and list fields stay reachable', () => {
     expect(screen.getByTestId('assignee')).toBeInTheDocument()
     expect(screen.getByTestId('status')).toBeInTheDocument()
     expect(screen.getByTestId('tags')).toBeInTheDocument()
-    expect(screen.getByText('List note')).toBeInTheDocument()
+    // The note lost its label when the list fields were compressed to one
+    // quiet block — the placeholder carries the meaning now.
+    expect(screen.getByPlaceholderText('Why this name is here…')).toBeInTheDocument()
   })
 })
 

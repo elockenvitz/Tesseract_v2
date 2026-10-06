@@ -43,7 +43,15 @@ const base = () => [
 const empty: ListRowSignal = {
   state: null, subject: null, weightPct: null, closes: null,
   ratingValue: null, ratingColor: null, conviction: null, targetPrice: null,
+  work: { tier: 'clear', label: '', count: 0, secondary: null },
+  idea: null,
 }
+
+/** A signal whose Work column says one thing. */
+const work = (over: Partial<ListRowSignal['work']>): ListRowSignal => ({
+  ...empty,
+  work: { tier: 'clear', label: '', count: 0, secondary: null, ...over },
+})
 
 const idsOf = (cols: Array<{ id: string }>) => cols.map(c => c.id)
 const visibleIdsOf = (cols: Array<{ id: string; visible: boolean }>) =>
@@ -186,26 +194,32 @@ describe('the signal columns can be ordered', () => {
     return Object.keys(rows).sort((a, b) => cmp({ id: b }, { id: a }))
   }
 
-  it('orders Work by urgency, unanswered research first', () => {
+  it('ranks investment work above research hygiene', () => {
+    /*
+     * The order a desk cares about, not the order the research scan produces.
+     * A name awaiting a decision outranks one with unread notes, which outranks
+     * a review clock, which outranks a filing gap. This is the ordering that
+     * was wrong: a live BUY at the final stage used to sort below "Thin
+     * evidence" because only research state was consulted.
+     */
     const order = descend('list_work', {
-      current: sig({ state: 'current' }),
       nothing: empty,
-      stale: sig({ state: 'stale' }),
-      unread: sig({ state: 'evidence-since-review', subject: { newSinceReview: 1 } as any }),
-      nocase: sig({ state: 'no-thesis' }),
+      current: work({ tier: 'clear', label: 'Current' }),
+      gap: work({ tier: 'gap', label: 'Thin evidence' }),
+      stale: work({ tier: 'review', label: 'Review due' }),
+      unread: work({ tier: 'evidence', label: 'New research', count: 1 }),
+      idea: work({ tier: 'idea', label: 'BUY · Researching' }),
+      decision: work({ tier: 'decision', label: 'BUY · Recommendation ready' }),
     })
-    // Unreviewed research leads: it is the one state where the written case may
-    // already be wrong.
-    expect(order[0]).toBe('unread')
-    expect(order.indexOf('stale')).toBeLessThan(order.indexOf('nocase'))
-    // A current case, then a name with no research subject at all, come last.
-    expect(order.slice(-2)).toEqual(['current', 'nothing'])
+    expect(order.slice(0, 5)).toEqual(['decision', 'idea', 'unread', 'stale', 'gap'])
+    // The two that owe nothing sort last, in whatever order they arrived.
+    expect(order.slice(5).sort()).toEqual(['current', 'nothing'])
   })
 
   it('breaks a Work tie on how much is unread', () => {
     const order = descend('list_work', {
-      one: sig({ state: 'evidence-since-review', subject: { newSinceReview: 1 } as any }),
-      five: sig({ state: 'evidence-since-review', subject: { newSinceReview: 5 } as any }),
+      one: { ...work({ tier: 'evidence', label: 'New research', count: 1 }), subject: { newSinceReview: 1 } as any },
+      five: { ...work({ tier: 'evidence', label: 'New research', count: 5 }), subject: { newSinceReview: 5 } as any },
     })
     expect(order).toEqual(['five', 'one'])
   })
@@ -318,34 +332,53 @@ describe('what the cells say when they do know', () => {
   })
 })
 
-describe('work state is the research lifecycle, in its own words', () => {
-  const sig = (over: Partial<ListRowSignal>): ListRowSignal => ({ ...empty, ...over })
+describe('Work says the highest-value thing happening on the name', () => {
+  it('leads with the investment workflow, not the filing state', () => {
+    /*
+     * The defect this fixes, concretely: a name carrying a live BUY awaiting a
+     * recommendation reported "Thin evidence" — true, and the least important
+     * true thing about it. The decision leads now; the hygiene is a footnote.
+     */
+    render(<>{renderSignalCell('list_work', {}, work({
+      tier: 'decision',
+      label: 'BUY · Recommendation ready',
+      secondary: 'Thin evidence',
+    }))}</>)
+    expect(screen.getByText('BUY · Recommendation ready')).toBeInTheDocument()
+    expect(screen.getByText('Thin evidence')).toBeInTheDocument()
+  })
 
   it('names unreviewed research and counts it', () => {
-    render(<>{renderSignalCell('list_work', {}, sig({
-      state: 'evidence-since-review',
-      subject: { newSinceReview: 3 } as any,
+    render(<>{renderSignalCell('list_work', {}, work({
+      tier: 'evidence', label: 'New research', count: 3,
     }))}</>)
     expect(screen.getByText('New research')).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()
   })
 
   it('uses the product vocabulary, not a status field', () => {
-    render(<>{renderSignalCell('list_work', {}, sig({ state: 'no-thesis' }))}</>)
+    render(<>{renderSignalCell('list_work', {}, work({ tier: 'gap', label: 'No thesis on file' }))}</>)
     expect(screen.getByText('No thesis on file')).toBeInTheDocument()
   })
 
-  it('gives a current case no badge — a list where every row is decorated says nothing', () => {
-    const { container } = render(<>{renderSignalCell('list_work', {}, sig({ state: 'current' }))}</>)
+  it('gives a current case no mark — a list where every row is decorated says nothing', () => {
+    const { container } = render(
+      <>{renderSignalCell('list_work', {}, work({ tier: 'clear', label: 'Current' }))}</>,
+    )
     expect(container.textContent).toBe('Current')
-    // Plain text, no attention treatment.
-    expect(container.querySelector('.bg-amber-50')).toBeNull()
-    expect(container.querySelector('.rounded')).toBeNull()
+    // No dot: the two attention marks belong to the two tiers that owe an action.
+    expect(container.querySelector('.bg-amber-500')).toBeNull()
+    expect(container.querySelector('.bg-primary-600')).toBeNull()
   })
 
   it('marks a review as due without claiming new research arrived', () => {
-    render(<>{renderSignalCell('list_work', {}, sig({ state: 'stale' }))}</>)
+    render(<>{renderSignalCell('list_work', {}, work({ tier: 'review', label: 'Review due' }))}</>)
     expect(screen.getByText('Review due')).toBeInTheDocument()
     expect(screen.queryByText('New research')).not.toBeInTheDocument()
+  })
+
+  it('says nothing at all when there is nothing known', () => {
+    const { container } = render(<>{renderSignalCell('list_work', {}, empty)}</>)
+    expect(container.textContent).toBe('')
   })
 })

@@ -97,12 +97,12 @@ const SHARED = {
 /**
  * The real expanded-row budget.
  *
- * 420px at compact density — the height `ListTableView` asks for via
+ * 350px at compact density — the height `ListTableView` asks for via
  * `expandedRowHeights` — minus the 44px collapsed row it replaces. Using the
  * real figure is the point: a fixture at a comfortable height would show a
  * layout that does not exist.
  */
-const EXPANSION_HEIGHT = 420 - 44
+const EXPANSION_HEIGHT = 350 - 44
 
 function Shot({ title, note, width = 1280, height, children }: {
   title: string

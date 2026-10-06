@@ -49,7 +49,7 @@ import { ListStatusCell } from './ListStatusCell'
 import { ListTagsCell } from './ListTagsCell'
 import {
   OverviewMode, MarketMode, CaseMode, ValuationMode, PositionMode, WorkMode,
-  ModeSkeleton, ModeLayout, RailBlock, Label, PrimaryButton, QuietButton,
+  ModeSkeleton, ModeLayout, Label, PrimaryButton, QuietButton,
   type WorkShape, type LadderRung,
 } from './ListModeViews'
 import {
@@ -498,47 +498,56 @@ export function ListRowExpansion({
 
   // The list-scoped editors, which own hooks and so cannot live in the pure
   // composition file. Passed down as a slot.
+  /*
+   * The list's own fields, deliberately compressed.
+   *
+   * Status, owner and tags are three editors on one line rather than three
+   * stacked blocks with labels, and the due date and note are only offered when
+   * they exist or the reader can set them. They answer a question about this
+   * list, not about the security, and they used to take a third of the rail.
+   */
   const listFieldsSlot = (
-    <RailBlock label="On this list">
-      <div className="space-y-2">
+    <div>
+      <Label>On this list</Label>
+      <div className="mt-1 flex items-center gap-1.5 flex-wrap">
         <ListStatusCell rowId={rowId} listId={listId} status={status} canEdit={canEdit} />
         <ListAssigneeCell rowId={rowId} listId={listId} assignee={assignee} canEdit={canEdit} />
         <ListTagsCell rowId={rowId} listId={listId} tags={tags} canEdit={canEdit} />
-        <div>
-          <Label>Due</Label>
+      </div>
+      {(canEdit || dueDate) && (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <span className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0">Due</span>
           {canEdit ? (
             <input
               type="date"
               value={dueDraft}
               onChange={e => setDueDraft(e.target.value)}
               onBlur={commitDue}
-              className="mt-1 w-full text-[11.5px] px-1.5 py-1 rounded bg-white dark:bg-gray-900 ring-1 ring-gray-900/10 dark:ring-gray-100/15 focus:outline-none focus:ring-gray-900/30"
-            />
-          ) : dueDate ? (
-            <div className="mt-1 text-[11.5px] text-gray-600 dark:text-gray-300">
-              {format(parseISO(dueDate), 'MMM d, yyyy')}
-            </div>
-          ) : <div className="mt-1 text-[11.5px] text-gray-400">Not set</div>}
-        </div>
-        <div>
-          <Label>List note</Label>
-          {canEdit ? (
-            <textarea
-              value={noteDraft}
-              onChange={e => setNoteDraft(e.target.value)}
-              onBlur={commitNote}
-              placeholder="Why this name is here…"
-              rows={2}
-              className="mt-1 w-full text-[11.5px] px-1.5 py-1 rounded bg-white dark:bg-gray-900 ring-1 ring-gray-900/10 dark:ring-gray-100/15 focus:outline-none focus:ring-gray-900/30 resize-none leading-relaxed"
+              className="min-w-0 flex-1 text-[11px] px-1 py-0.5 rounded bg-transparent ring-1 ring-gray-900/10 dark:ring-gray-100/15 focus:outline-none focus:ring-gray-900/30"
             />
           ) : (
-            <div className="mt-1 text-[11.5px] text-gray-600 dark:text-gray-400 leading-snug">
-              {listNote || '—'}
-            </div>
+            <span className="text-[11px] text-gray-600 dark:text-gray-300">
+              {format(parseISO(dueDate!), 'MMM d, yyyy')}
+            </span>
           )}
         </div>
-      </div>
-    </RailBlock>
+      )}
+      {(canEdit || listNote) && (
+        canEdit ? (
+          <input
+            value={noteDraft}
+            onChange={e => setNoteDraft(e.target.value)}
+            onBlur={commitNote}
+            placeholder="Why this name is here…"
+            className="mt-1.5 w-full text-[11px] px-1 py-0.5 rounded bg-transparent ring-1 ring-gray-900/10 dark:ring-gray-100/15 focus:outline-none focus:ring-gray-900/30"
+          />
+        ) : (
+          <p className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400 leading-snug line-clamp-2">
+            {listNote}
+          </p>
+        )
+      )}
+    </div>
   )
 
   const scaleValues = activeScale?.values as Array<{ value: string; label?: string }> | undefined

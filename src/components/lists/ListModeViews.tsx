@@ -339,6 +339,17 @@ export function EvidenceItemView({
 
 export interface CaseSectionLike { key: string; row: { content?: string | null; authorName?: string | null } | null }
 
+/**
+ * Overview answers three questions, in this order.
+ *
+ * It used to be a fact strip, a thesis, and a 212px rail of list metadata —
+ * which spent most of the canvas on prose and gave owner/status/due/note more
+ * weight than the position and the open idea. The questions are the structure
+ * now, and the list's own fields are a single quiet line at the bottom.
+ *
+ * Nothing here is summarised or generated: each band renders existing fields,
+ * and a band with nothing to say does not render.
+ */
 export function OverviewMode(p: {
   spot: number | null
   changePct: number | null
@@ -367,100 +378,110 @@ export function OverviewMode(p: {
   footer?: React.ReactNode
 }) {
   const lead = p.writtenCaseSections[0]
-  const second = p.writtenCaseSections[1]
+  const unread = p.changes.filter(c => c.isNewSinceReview)
+  const positionValue = p.weightPct != null
+    ? `${p.weightPct.toFixed(2)}%`
+    // A weight we cannot derive is not an absent position. Shares are the
+    // honest fallback; nothing at all is the honest empty.
+    : p.shares != null ? `${p.shares.toLocaleString()} sh` : null
+
   return (
     <ModeLayout
       footer={p.footer}
       main={
-        <div className="space-y-4">
-          {/* The investment state, as figures rather than a row of chips. */}
-          <div className="flex items-start gap-7 flex-wrap">
-            <Figure label="Price" value={p.spot != null ? money(p.spot) : null} size="hero"
-              sub={p.changePct != null ? pct(p.changePct) : null} />
-            {/* The direction of the upside colours the target it belongs to.
-                A target below today's price is a fact worth seeing instantly,
-                and this is one of the two places colour means anything here. */}
-            <Figure label="Target" value={p.target != null ? money(p.target) : null} size="hero"
-              tone={toneOf(p.upsidePct)}
-              sub={p.upsidePct != null ? `${pct(p.upsidePct)} upside` : null} />
-            <Figure
-              label="Position"
-              // A weight we cannot derive is not an absent position. Shares are
-              // the honest fallback; nothing at all is the honest empty.
-              value={p.weightPct != null
-                ? `${p.weightPct.toFixed(2)}%`
-                : p.shares != null ? `${p.shares.toLocaleString()} sh` : null}
-              size="hero"
-              sub={p.bookName}
-            />
-            {(p.ratingValue || p.conviction) && (
-              <div className="min-w-0">
-                <Label>View</Label>
-                <div className="mt-1.5">
-                  <ViewControl value={p.ratingValue} color={p.ratingColor}
-                    conviction={p.conviction} size="lg" />
-                </div>
-              </div>
-            )}
-            <Figure label="Open idea" value={p.ideaLabel ?? null} size="md" />
-          </div>
-
-          {lead ? (
-            <div className="space-y-3">
-              {[lead, second].filter(Boolean).map((s, i) => (
-                <div key={s!.key}>
-                  {/* Author beside the label, not under the text. Who wrote a
-                      view is provenance, and at this size it costs one line. */}
-                  <div className="flex items-baseline gap-2">
-                    <Label>{SECTION_LABEL[s!.key] ?? s!.key}</Label>
-                    {s!.row?.authorName && (
-                      <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
-                        {s!.row.authorName}
-                      </span>
-                    )}
-                  </div>
-                  <p className={clsx(
-                    'mt-1 leading-relaxed whitespace-pre-wrap',
-                    i === 0
-                      ? 'text-[13px] text-gray-700 dark:text-gray-300'
-                      : 'text-[12.5px] text-gray-500 dark:text-gray-400 line-clamp-3',
-                  )}>
-                    {s!.row?.content}
-                  </p>
-                </div>
-              ))}
+        <div className="h-full flex flex-col gap-3.5">
+          {/* ── What we believe ──────────────────────────────────────── */}
+          <section className="min-w-0">
+            <div className="flex items-baseline gap-4 flex-wrap">
+              <Label>What we believe</Label>
+              {(p.ratingValue || p.conviction) && (
+                <ViewControl value={p.ratingValue} color={p.ratingColor} conviction={p.conviction} />
+              )}
+              {p.target != null && (
+                <span className="text-[11.5px] tabular-nums text-gray-500 dark:text-gray-400">
+                  target <span className="font-semibold text-gray-900 dark:text-gray-100">{money(p.target)}</span>
+                  {p.upsidePct != null && (
+                    <span className={clsx(
+                      'ml-1 font-semibold',
+                      p.upsidePct >= 0
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-rose-600 dark:text-rose-400',
+                    )}>{pct(p.upsidePct)}</span>
+                  )}
+                </span>
+              )}
+              {lead?.row?.authorName && (
+                <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
+                  {lead.row.authorName}
+                </span>
+              )}
             </div>
-          ) : (
-            <Quiet>No case written yet.</Quiet>
-          )}
+            {lead ? (
+              <p className="mt-1.5 text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap line-clamp-4">
+                {lead.row?.content}
+              </p>
+            ) : (
+              <p className="mt-1.5"><Quiet>No case written yet.</Quiet></p>
+            )}
+          </section>
+
+          {/* ── What's happening ─────────────────────────────────────── */}
+          <section className="min-w-0 flex-1 min-h-0">
+            <div className="flex items-baseline gap-3">
+              <Label>What's happening</Label>
+              {p.caseWrittenAt && (
+                <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                  case written {formatDistanceToNow(new Date(p.caseWrittenAt), { addSuffix: true })}
+                </span>
+              )}
+            </div>
+            <div className="mt-1.5 space-y-1.5">
+              {p.changes.length > 0 ? (
+                // Unreviewed first — `changes` is already ordered that way.
+                p.changes.slice(0, 3).map(c => <EvidenceItemView key={c.id} item={c} />)
+              ) : (
+                <Quiet>Nothing new since the case was written.</Quiet>
+              )}
+            </div>
+          </section>
         </div>
       }
       rail={
         <>
-          <RailBlock label="Since review">
-            {p.caseWrittenAt && (
-              <div className="-mt-1 mb-2 text-[10px] text-gray-400 dark:text-gray-500">
-                case written {formatDistanceToNow(new Date(p.caseWrittenAt), { addSuffix: true })}
-              </div>
-            )}
-            {p.changes.length > 0 ? (
-              <div className="space-y-2">
-                {p.changes.slice(0, 4).map(c => <EvidenceItemView key={c.id} item={c} />)}
-              </div>
-            ) : <Quiet>Nothing new on file.</Quiet>}
-          </RailBlock>
+          {/* ── What we're doing ─────────────────────────────────────── */}
+          <div>
+            <Label>What we're doing</Label>
+            <div className="mt-1.5 space-y-2.5">
+              <Figure label="Price" value={p.spot != null ? money(p.spot) : null} size="md"
+                tone={toneOf(p.changePct)}
+                sub={p.changePct != null ? `${pct(p.changePct)} today` : null} />
+              <Figure label="Position" value={positionValue} size="md" sub={p.bookName} />
+              {p.ideaLabel && <Figure label="Open idea" value={p.ideaLabel} size="md" />}
+              {unread.length > 0 && !p.ideaLabel && (
+                <Figure label="Needs" size="md"
+                  value={`${unread.length} to review`} />
+              )}
+            </div>
+          </div>
 
-          {p.coverage && p.coverage.length > 0 && (
-            <RailBlock label="Covered by">
-              <div className="space-y-0.5">
-                {p.coverage.slice(0, 3).map((c, i) => (
-                  <CoverageChip key={`${c.analyst}-${i}`} analyst={c.analyst} team={c.team} isLead={c.isLead} />
-                ))}
-              </div>
-            </RailBlock>
+          {/* The list's own fields, as one quiet line. They answer a question
+              about this list rather than about the security, and used to take
+              a third of the rail. */}
+          {(p.coverage?.length || p.listFieldsSlot) && (
+            <div className="pt-2.5 border-t border-gray-200/70 dark:border-gray-700/60 space-y-2">
+              {p.coverage && p.coverage.length > 0 && (
+                <div>
+                  <Label>Covered by</Label>
+                  <div className="mt-1 space-y-0.5">
+                    {p.coverage.slice(0, 2).map((c, i) => (
+                      <CoverageChip key={`${c.analyst}-${i}`} analyst={c.analyst} team={c.team} isLead={c.isLead} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {p.listFieldsSlot}
+            </div>
           )}
-
-          {p.listFieldsSlot}
         </>
       }
     />
@@ -515,9 +536,15 @@ export function MarketMode(p: {
               value={lo != null && hi != null ? `${lo.toFixed(2)} – ${hi.toFixed(2)}` : null} />
           </div>
           {p.closes && p.closes.length > 1 ? (
-            // The target joins the chart's SCALE, so the distance to it is
-            // visible rather than implied. See `Sparkline`.
-            <div className="flex-1 min-h-[72px]">
+            /*
+             * The target joins the chart's SCALE, so the distance to it is
+             * visible rather than implied. See `Sparkline`.
+             *
+             * Capped rather than `flex-1`: left to fill, the chart took the
+             * whole canvas on a name with no other context, which is the
+             * sparkline again at four times the size.
+             */
+            <div className="min-h-[72px] max-h-[136px] flex-1">
               <Sparkline points={p.closes} reference={p.target} />
             </div>
           ) : (
@@ -529,9 +556,10 @@ export function MarketMode(p: {
         <>
           {/* No wrapper heading: the rail IS the answer to "does it matter
               here", and a label over a label costs a line the budget does not
-              have. */}
+              have. Each figure renders only with a value — an empty labelled
+              section is worse than a shorter rail. */}
           <Figure label="Position" size="md" sub={p.bookName}
-            value={p.weightPct != null ? `${p.weightPct.toFixed(2)}%` : 'Not held'} />
+            value={p.weightPct != null ? `${p.weightPct.toFixed(2)}%` : null} />
           <Figure label="Target" size="md"
             value={p.target != null ? money(p.target) : null}
             tone={toneOf(p.upsidePct)}
@@ -842,7 +870,7 @@ export function ValuationMode(p: {
       rail={
         <>
           <Figure label="Position" size="md"
-            value={p.weightPct != null ? `${p.weightPct.toFixed(2)}%` : 'Not held'} />
+            value={p.weightPct != null ? `${p.weightPct.toFixed(2)}%` : null} />
           {(p.ratingValue || p.conviction) && (
             <div>
               <Label>View</Label>
@@ -1000,7 +1028,7 @@ export function WorkMode(p: {
         </div>
       )}
       <Figure label="Position" size="md"
-        value={p.weightPct != null ? `${p.weightPct.toFixed(2)}%` : 'Not held'} />
+        value={p.weightPct != null ? `${p.weightPct.toFixed(2)}%` : null} />
       {/* The case being reviewed AGAINST, clamped. It is context for the work
           in the main column, not a second copy of Case mode. */}
       {p.leadCase && (

@@ -25,6 +25,10 @@ import { ListHeaderStrip } from '../lists/ListHeaderStrip'
 import { ListBrief } from '../lists/ListBrief'
 import { ListFilterChipBar, EMPTY_FILTERS, type ListRowFilters } from '../lists/ListFilterChipBar'
 import { ListProgressStrip } from '../lists/ListProgressStrip'
+import {
+  ListPulseStrip, pulseFrom, matchesLens, type ListLens,
+} from '../lists/ListPulseStrip'
+import { useListRowSignals } from '../../hooks/lists/useListRowSignals'
 import { ListEmptyState } from '../lists/ListEmptyState'
 import { ScreenCriteriaPanel } from '../lists/ScreenCriteriaPanel'
 import { useListStatuses } from '../../hooks/lists/useListStatuses'
@@ -120,6 +124,8 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
 
   // Row-level filters (assignee / status / tag / flagged-only)
   const [rowFilters, setRowFilters] = useState<ListRowFilters>(EMPTY_FILTERS)
+  // The investment-state lens, over and above those filters.
+  const [lens, setLens] = useState<ListLens>('all')
 
   // Statuses for the progress strip (same query as cells; React Query dedupes)
   const { statuses: listStatuses } = useListStatuses(list.id)
@@ -402,6 +408,22 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     })
   }, [unfilteredAssets, rowFilters])
 
+  /*
+   * The universe's pulse, and the lens over it.
+   *
+   * `useListRowSignals` is called here as well as inside `ListTableView`; both
+   * calls resolve through the same React Query entries, so this costs a memo
+   * rather than a read. The header needs the aggregate before the table exists,
+   * and the lens has to filter the rows the table is given.
+   */
+  const { signalFor: headerSignalFor, all: headerSignals } = useListRowSignals(unfilteredAssets)
+  const pulse = useMemo(() => pulseFrom(headerSignals), [headerSignals])
+
+  const lensedAssets = useMemo(
+    () => lens === 'all' ? assets : assets.filter(a => matchesLens(headerSignalFor(a.id), lens)),
+    [assets, lens, headerSignalFor],
+  )
+
 
 
   // Map row IDs (list_item.id) → full list item for row-specific lookups
@@ -630,6 +652,14 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
           progress strip is a set of status segments that needs the full
           width to stay readable, and the filter trigger is one chip that
           does not need a column of its own. */}
+      {/* What is happening in this universe, before the rows. Screens get it
+          too — a criteria-computed set still has work on its names. */}
+      {unfilteredAssets.length > 0 && (
+        <div className="py-1.5">
+          <ListPulseStrip pulse={pulse} lens={lens} onLensChange={setLens} />
+        </div>
+      )}
+
       {!isScreen && unfilteredAssets.length > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-1.5">
           <div className="min-w-0 sm:flex-1">
@@ -740,7 +770,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                on desktop; they need a pointer and a column to live in. */
             <MobileListRows
               listId={list.id}
-              assets={assets}
+              assets={lensedAssets}
               isLoading={isLoading}
               permissions={permissions}
               onAssetSelect={onAssetSelect}
@@ -749,7 +779,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
           ) : (
           <ListTableView
             listId={list.id}
-            assets={assets}
+            assets={lensedAssets}
             isLoading={isLoading}
             permissions={permissions}
             onAssetSelect={onAssetSelect}

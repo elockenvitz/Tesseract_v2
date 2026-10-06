@@ -60,6 +60,17 @@ export function ListProgressStrip({
     seg.count > 0 || (seg.id !== null && activeSet.has(seg.id))
   )
 
+  /*
+   * A list where nobody uses statuses has nothing to say here.
+   *
+   * It rendered exactly one chip — "7 No status" — in the place a reader looks
+   * first: a fact about an unused feature, dressed as a summary. The strip is
+   * about the SPREAD across statuses, and there is no spread until a second
+   * segment exists.
+   */
+  const onlyUnassigned = visible.length === 1 && visible[0].id === null
+  if (onlyUnassigned) return null
+
   return (
     <div className="flex items-center gap-1 flex-wrap text-[11px]">
       {visible.map(seg => {

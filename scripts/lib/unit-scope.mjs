@@ -129,6 +129,11 @@ export const GATED_DIRS = [
    */
   'src/components/lists',
   'src/hooks/lists',
+  // `work-state` decides what the Work column says. It is gated because the
+  // failure is silent and was shipped once: a name awaiting a recommendation
+  // reported "Thin evidence", so the loudest thing on the row was the least
+  // important true thing about it.
+  'src/lib/lists',
   // `columnPersistence` — whether a curated default or a reader's saved layout
   // wins. See above: it failed silently once already.
   'src/components/table',
@@ -372,7 +377,8 @@ export const DEFERRED_DIRS = [
   'src/lib/financial-data/__tests__',
   // 'src/lib/holdings/__tests__' moved UP to the gated list: it now holds the
   // row-count assertions that keep benchmark reads off the whole history.
-  'src/lib/lists',
+  // 'src/lib/lists' moved UP as well: it now holds `work-state`, which decides
+  // what the Work column says.
   'src/lib/permissions/__tests__',
   'src/lib/portfolio',
   'src/lib/portfolio/__tests__',

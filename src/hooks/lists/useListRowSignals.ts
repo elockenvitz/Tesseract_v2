@@ -29,11 +29,14 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useResearchScan } from '../useDesktopResearch'
+import { useIdeaScan } from '../useDesktopIdeas'
+import { workStateFor, type WorkState } from '../../lib/lists/work-state'
 import { useHoldingsForAssets, assetIdKey } from '../useHoldingsForAssets'
 import { largestWeightByAsset } from '../../lib/portfolio/holdings'
 import { useSparklines } from '../useSparklines'
 import { useRatingScales, type ConvictionLevel } from '../useAnalystRatings'
 import { stateOf, type ResearchState, type ResearchSubject } from '../../lib/desktop-research/model'
+import { FINAL_STAGE } from '../../lib/ideas/stage-model'
 
 /**
  * How many names one list read will resolve.
@@ -49,6 +52,16 @@ export interface ListRowSignal {
   /** Research-lifecycle state, or null when this asset is not in the scan. */
   state: ResearchState | null
   subject: ResearchSubject | null
+  /**
+   * What the Work column should say, in investment priority order.
+   *
+   * A live idea outranks a research fact — see `workStateFor`. Kept alongside
+   * `state` rather than replacing it, because the expansion still needs the
+   * raw research state for its own branching.
+   */
+  work: WorkState
+  /** The live idea on this name, if any. Already non-terminal and unparked. */
+  idea: { direction: string | null; stage: string | null; portfolioName: string | null } | null
   /** Largest single-book weight, in percent. Absent when unheld. */
   weightPct: number | null
   closes: number[] | null
@@ -61,6 +74,8 @@ export interface ListRowSignal {
 const EMPTY: ListRowSignal = {
   state: null, subject: null, weightPct: null, closes: null,
   ratingValue: null, ratingColor: null, conviction: null, targetPrice: null,
+  work: { tier: 'clear', label: '', count: 0, secondary: null },
+  idea: null,
 }
 
 interface RatingRow {
@@ -155,6 +170,9 @@ export function useListRowSignals(assets: Array<{ id?: string | null; symbol?: s
   )
 
   const { subjects } = useResearchScan()
+  // Org-wide and cached 60s, shared with Lists home's attention fold — so the
+  // Work column learns about live ideas without a query of its own.
+  const { ideas } = useIdeaScan()
   const { rows: holdingRows } = useHoldingsForAssets(ids)
   const sparklines = useSparklines(symbols)
   const { scales } = useRatingScales()
@@ -166,6 +184,30 @@ export function useListRowSignals(assets: Array<{ id?: string | null; symbol?: s
     for (const s of subjects ?? []) m.set(s.assetId, s)
     return m
   }, [subjects])
+
+  /**
+   * The idea that speaks for a name.
+   *
+   * Furthest through the lifecycle wins, so a name carrying both an exploratory
+   * idea and one awaiting a decision reports the decision. `useIdeaScan` has
+   * already dropped terminal and parked rows, so every candidate here is live.
+   */
+  const ideaByAsset = useMemo(() => {
+    const m = new Map<string, { direction: string | null; stage: string | null; portfolioName: string | null }>()
+    for (const i of ideas ?? []) {
+      if (!i.assetId) continue
+      const held = m.get(i.assetId)
+      const rank = (s: string | null) => (s === FINAL_STAGE ? 2 : 1)
+      if (!held || rank(i.stage ?? null) > rank(held.stage)) {
+        m.set(i.assetId, {
+          direction: i.direction ?? null,
+          stage: i.stage ?? null,
+          portfolioName: i.portfolioName ?? null,
+        })
+      }
+    }
+    return m
+  }, [ideas])
 
   const weights = useMemo(() => largestWeightByAsset(holdingRows), [holdingRows])
 
@@ -187,9 +229,13 @@ export function useListRowSignals(assets: Array<{ id?: string | null; symbol?: s
       const rating = ratings?.get(id) ?? null
       const target = targets?.get(id) ?? null
       const targetPrice = target?.price == null ? null : Number(target.price)
+      const state = subject ? stateOf(subject) : null
+      const idea = ideaByAsset.get(id) ?? null
       byAsset.set(id, {
-        state: subject ? stateOf(subject) : null,
+        state,
         subject,
+        idea,
+        work: workStateFor(idea, state, subject?.newSinceReview ?? 0),
         weightPct: weights[id] ?? null,
         closes: (asset?.symbol && sparklines[asset.symbol]?.closes) || null,
         ratingValue: rating?.rating_value ?? null,
@@ -204,8 +250,10 @@ export function useListRowSignals(assets: Array<{ id?: string | null; symbol?: s
       /** Never null — an unknown asset reads as "nothing known", not a crash. */
       signalFor: (assetId?: string | null) =>
         (assetId && byAsset.get(assetId)) || EMPTY,
+      /** Every resolved signal, for aggregates like the list header's pulse. */
+      all: [...byAsset.values()],
       /** True once every name in the list was inside the id cap. */
       complete: ids.length >= assetIdKey(assets.map(a => a?.id)).length,
     }
-  }, [assets, subjectByAsset, ratings, targets, weights, sparklines, colorFor, ids])
+  }, [assets, subjectByAsset, ideaByAsset, ratings, targets, weights, sparklines, colorFor, ids])
 }

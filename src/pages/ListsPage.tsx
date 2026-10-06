@@ -591,7 +591,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
           ) : (
             // ── Grid: Flat filtered view ─────────────────────────────
             flatFiltered && flatFiltered.length > 0 ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-0">
+              <div className="[&>*]:border-b [&>*]:border-gray-100 dark:[&>*]:border-gray-800/70">
                 {flatFiltered.map(list => (
                   <ListSurfaceCard
                     key={list.id}
@@ -992,10 +992,13 @@ function SurfaceSection({
             {/* Two dense columns, not a tile gallery. Each unit is one or two
                 lines, so a section of twelve lists is read without scrolling
                 instead of three tiles and a fold. */}
-            {/* A hairline between units, at both widths. Without it the rows
-                blurred into each other; with a box around each they became a
-                gallery again. One line is the whole separation budget. */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-0 [&>*]:border-b [&>*]:border-gray-100 dark:[&>*]:border-gray-800/70">
+            {/* One full-width column, not two.
+                Two columns forced every unit into a half-width strip, which is
+                why they read as navigation links — a working list needs the
+                width to carry its purpose, its names and its activity on
+                separate lines. A hairline between units is the whole separation
+                budget; a box around each would be the gallery again. */}
+            <div className="[&>*]:border-b [&>*]:border-gray-100 dark:[&>*]:border-gray-800/70">
               {visibleLists.map(list => (
                 <ListSurfaceCard
                   key={list.id}

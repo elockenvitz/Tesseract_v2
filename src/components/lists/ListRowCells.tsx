@@ -17,7 +17,7 @@ import React from 'react'
 import { clsx } from 'clsx'
 import { Sparkline } from '../signals/Sparkline'
 import { RatingPill, ConvictionBars } from './ListRowAtoms'
-import { STATE_LABEL, type ResearchState } from '../../lib/desktop-research/model'
+import { WORK_TIER_RANK, type WorkTier } from '../../lib/lists/work-state'
 import type { ListRowSignal } from '../../hooks/lists/useListRowSignals'
 import type { ColumnConfig } from '../table/AssetTableView'
 
@@ -49,15 +49,6 @@ export const LIST_SIGNAL_COLUMNS: ColumnConfig[] = [
  * written case may already be wrong. "Current" is last and `null` — no subject
  * at all — is below it, since an absent case is a gap rather than a verdict.
  */
-const WORK_URGENCY: Record<ResearchState, number> = {
-  'evidence-since-review': 6,
-  'moved-since-review': 5,
-  stale: 4,
-  'incomplete-thesis': 3,
-  'no-thesis': 2,
-  thin: 1,
-  current: 0,
-}
 
 /**
  * Comparators for the signal columns, ascending.
@@ -92,12 +83,14 @@ export function listSortComparators(
       return av.localeCompare(bv)
     },
     list_work: (a, b) => {
+      // Ranked by the same tiers the cell renders — a pending decision above a
+      // live idea above unreviewed research above a review clock above a gap.
       const sa = signalFor(a?.id)
       const sb = signalFor(b?.id)
-      const ua = sa.state ? WORK_URGENCY[sa.state] : -1
-      const ub = sb.state ? WORK_URGENCY[sb.state] : -1
+      const ua = WORK_TIER_RANK[sa.work.tier]
+      const ub = WORK_TIER_RANK[sb.work.tier]
       if (ua !== ub) return ua - ub
-      // Within the same state, more unreviewed notes is more urgent.
+      // Within a tier, more unreviewed notes is more urgent.
       return (sa.subject?.newSinceReview ?? 0) - (sb.subject?.newSinceReview ?? 0)
     },
   }
@@ -337,38 +330,57 @@ function TargetCell({ signal, price }: { signal: ListRowSignal; price: number | 
  * amber mark on the line; `open` is simply darker and heavier than the rest;
  * `calm` recedes.
  */
-const WORK_LEVEL: Record<ResearchState, 'urgent' | 'open' | 'calm'> = {
-  'evidence-since-review': 'urgent',
-  'moved-since-review': 'urgent',
-  stale: 'open',
-  'incomplete-thesis': 'open',
-  'no-thesis': 'open',
-  thin: 'calm',
-  current: 'calm',
+const WORK_LEVEL: Record<WorkTier, 'decision' | 'urgent' | 'open' | 'calm'> = {
+  decision: 'decision',
+  idea: 'urgent',
+  evidence: 'urgent',
+  review: 'open',
+  gap: 'open',
+  clear: 'calm',
 }
 
+/**
+ * The highest-value thing happening on this name, with hygiene underneath.
+ *
+ * Two lines rather than one: a name with a decision pending AND a thin file is
+ * two true facts of very different weight, and flattening them to one lost the
+ * decision. The second line is deliberately small and grey — it is a footnote,
+ * not a second badge.
+ */
 function WorkCell({ signal }: { signal: ListRowSignal }) {
-  const { state, subject } = signal
-  if (!state) return null
-  const level = WORK_LEVEL[state]
-  const count = state === 'evidence-since-review' ? subject?.newSinceReview ?? 0 : 0
+  const { work } = signal
+  if (!work.label) return null
+  const level = WORK_LEVEL[work.tier]
 
   return (
-    <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
-      {level === 'urgent' && (
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 flex-shrink-0" />
-      )}
-      <span className={clsx(
-        'text-[11.5px] leading-none truncate',
-        level === 'urgent' && 'font-semibold text-gray-900 dark:text-gray-50',
-        level === 'open' && 'font-medium text-gray-600 dark:text-gray-300',
-        level === 'calm' && 'text-gray-400 dark:text-gray-500',
-      )}>
-        {STATE_LABEL[state]}
+    <span className="inline-flex flex-col min-w-0 max-w-full gap-[1px] leading-none">
+      <span className="inline-flex items-center gap-1.5 min-w-0">
+        {/* One mark, and only for the two tiers that mean somebody owes an
+            action. A dot on every row is a column of dots. */}
+        {(level === 'decision' || level === 'urgent') && (
+          <span className={clsx(
+            'h-1.5 w-1.5 rounded-full flex-shrink-0',
+            level === 'decision' ? 'bg-primary-600 dark:bg-primary-400' : 'bg-amber-500',
+          )} />
+        )}
+        <span className={clsx(
+          'text-[11.5px] leading-none truncate',
+          level === 'decision' && 'font-semibold text-gray-900 dark:text-gray-50',
+          level === 'urgent' && 'font-semibold text-gray-900 dark:text-gray-50',
+          level === 'open' && 'font-medium text-gray-600 dark:text-gray-300',
+          level === 'calm' && 'text-gray-400 dark:text-gray-500',
+        )}>
+          {work.label}
+        </span>
+        {work.count > 0 && (
+          <span className="text-[11.5px] font-semibold tabular-nums text-amber-700 dark:text-amber-300 flex-shrink-0">
+            {work.count}
+          </span>
+        )}
       </span>
-      {count > 0 && (
-        <span className="text-[11.5px] font-semibold tabular-nums text-amber-700 dark:text-amber-300 flex-shrink-0">
-          {count}
+      {work.secondary && (
+        <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
+          {work.secondary}
         </span>
       )}
     </span>
