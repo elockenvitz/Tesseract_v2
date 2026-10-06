@@ -755,6 +755,12 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
             onAssetSelect={onAssetSelect}
             listStatuses={listStatuses}
             hideListColumns={isScreen}
+            /*
+             * The original key, deliberately. A new baseline is handled by
+             * `columnPresetVersion` inside the stored blob — bumping the key
+             * instead would also discard the widths and pins the user chose,
+             * and would have to be bumped again for every future change.
+             */
             storageKey={`listTableColumns_${list.id}`}
             onBulkAction={(!isScreen && (permissions.canRemoveAnyItem || permissions.canRemoveFromOwnSection)) ? handleBulkAction : undefined}
             bulkActionLabel="Remove from List"

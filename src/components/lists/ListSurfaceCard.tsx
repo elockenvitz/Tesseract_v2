@@ -2,6 +2,7 @@ import { Star, Edit3, Users, Clock, Filter } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import type { ListSurface, ListSurfaceMetrics, LastListActivity } from '../../hooks/lists/useListSurfaces'
+import type { ListAttention } from '../../hooks/lists/useListAttention'
 import { describeActivity } from '../../lib/lists/describeActivity'
 
 interface ListSurfaceCardProps {
@@ -15,9 +16,14 @@ interface ListSurfaceCardProps {
   symbolMap?: Map<string, string>
   /** Most recent activity event on this list */
   lastActivity?: LastListActivity
+  /**
+   * What on this list needs a person, folded from data already on the page.
+   * See `useListAttention`. Absent is fine — the card simply says less.
+   */
+  attention?: ListAttention
 }
 
-const TICKER_PREVIEW_COUNT = 5
+const TICKER_PREVIEW_COUNT = 6
 const AVATAR_PREVIEW_COUNT = 3
 
 function getTypeBadge(list: ListSurface, isOwner: boolean): { label: string; className: string } | null {
@@ -59,7 +65,8 @@ export function ListSurfaceCard({
   onClick,
   onEdit,
   symbolMap,
-  lastActivity
+  lastActivity,
+  attention
 }: ListSurfaceCardProps) {
   const typeBadge = getTypeBadge(list, isOwner)
   const hasMembers = !!list.created_by_user || list.collaborators.length > 0
@@ -148,6 +155,40 @@ export function ListSurfaceCard({
           </p>
         )}
 
+        {/* ── What needs a person ───────────────────────────────
+               The reason this page exists: which collection to open. Counts
+               come from data already in memory — see `useListAttention`. An
+               untroubled list shows nothing here rather than a row of zeroes,
+               because a page where every card is decorated says nothing about
+               where to look. */}
+        {attention && (attention.needsAttention > 0 || attention.activeIdeas > 0 || attention.noCase > 0) && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {attention.newResearch > 0 && (
+              <Signal
+                tone="attention"
+                title={`${attention.newResearchNotes} unreviewed note${attention.newResearchNotes === 1 ? '' : 's'} across ${attention.newResearch} name${attention.newResearch === 1 ? '' : 's'}`}
+              >
+                {attention.newResearch} new research
+              </Signal>
+            )}
+            {attention.reviewDue > 0 && (
+              <Signal tone="attention" title="Cases past the review clock">
+                {attention.reviewDue} review due
+              </Signal>
+            )}
+            {attention.activeIdeas > 0 && (
+              <Signal tone="active" title="Names carrying a live idea">
+                {attention.activeIdeas} active
+              </Signal>
+            )}
+            {attention.noCase > 0 && (
+              <Signal tone="quiet" title="Names with no thesis written">
+                {attention.noCase} no case
+              </Signal>
+            )}
+          </div>
+        )}
+
         {/* ── Ticker preview — conditional; an empty list still shows its
                metadata + activity so the tile doesn't look broken */}
         {tickers.length > 0 && (
@@ -205,6 +246,35 @@ export function ListSurfaceCard({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * One attention count.
+ *
+ * Three tones, not four colours: `attention` is something a person should look
+ * at, `active` is work already in hand, `quiet` is a gap worth knowing about
+ * but not acting on today. Anything beyond that and the card becomes a legend.
+ */
+function Signal({
+  children, tone, title,
+}: {
+  children: React.ReactNode
+  tone: 'attention' | 'active' | 'quiet'
+  title?: string
+}) {
+  return (
+    <span
+      title={title}
+      className={clsx(
+        'inline-flex items-center px-1.5 py-0 rounded text-[10px] font-semibold leading-[18px] tabular-nums',
+        tone === 'attention' && 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+        tone === 'active' && 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+        tone === 'quiet' && 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+      )}
+    >
+      {children}
+    </span>
   )
 }
 

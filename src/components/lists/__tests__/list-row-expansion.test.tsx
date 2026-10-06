@@ -17,9 +17,9 @@
  * the no-coverage case is a real shipping configuration rather than a defensive
  * test.
  */
-import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 const hooks = vi.hoisted(() => ({
   workspace: {
@@ -29,7 +29,9 @@ const hooks = vi.hoisted(() => ({
     coreSections: [] as string[],
     history: [] as any[],
     spot: null as number | null,
-    ladder: null,
+    // `CurrentLadder | null` in the real shape; `any` here so a test can hand
+    // in a ladder without restating the whole interface.
+    ladder: null as any,
     target: null as number | null,
     positions: [] as any[],
     liveIdeas: [] as any[],
@@ -38,14 +40,46 @@ const hooks = vi.hoisted(() => ({
   ratings: [] as any[],
   scales: [] as any[],
   updates: [] as any[],
+  /** Everything `saveRating` was called with, in order. */
+  ratingWrites: [] as any[],
+  /** Every `thesis.reviewed` outcome recorded, in order. */
+  reviews: [] as any[],
+  reviewDone: false,
+  /** Everything `saveContribution` was called with, in order. */
+  caseWrites: [] as any[],
 }))
 
 vi.mock('../../../hooks/useAssetWorkspace', () => ({
   useAssetWorkspace: () => ({ data: hooks.workspace, isLoading: false, error: null }),
 }))
 vi.mock('../../../hooks/useAnalystRatings', () => ({
-  useAnalystRatings: () => ({ ratings: hooks.ratings }),
+  useAnalystRatings: () => ({
+    ratings: hooks.ratings,
+    // The canonical writer, recorded rather than performed. What matters to
+    // this file is the ARGUMENTS — a rating written against the wrong scale is
+    // the defect worth pinning, and it is invisible if the call is swallowed.
+    saveRating: { mutate: (v: any) => hooks.ratingWrites.push(v), isPending: false },
+  }),
   useRatingScales: () => ({ scales: hooks.scales }),
+}))
+vi.mock('../../../hooks/useContributions', () => ({
+  useContributions: () => ({
+    // Canonical case-text writer, recorded rather than performed. The
+    // arguments matter: a save with the wrong sectionKey silently writes the
+    // thesis over "where we differ".
+    saveContribution: {
+      mutateAsync: async (v: any) => { hooks.caseWrites.push(v) },
+      isPending: false,
+    },
+  }),
+}))
+vi.mock('../../../hooks/useThesisReview', () => ({
+  useRecordThesisReview: () => ({
+    record: (outcome: string) => hooks.reviews.push(outcome),
+    isPending: false,
+    isDone: hooks.reviewDone,
+    error: null,
+  }),
 }))
 vi.mock('../../../hooks/lists/useUpdateListItem', () => ({
   useUpdateListItem: () => ({ mutate: (v: any) => hooks.updates.push(v) }),
@@ -57,8 +91,16 @@ vi.mock('../ListStatusCell', () => ({ ListStatusCell: () => <div data-testid="st
 vi.mock('../ListTagsCell', () => ({ ListTagsCell: () => <div data-testid="tags" /> }))
 
 import { ListRowExpansion } from '../ListRowExpansion'
+import { SECTION_LABEL } from '../../../lib/desktop-research/model'
+import type { ListRowSignal } from '../../../hooks/lists/useListRowSignals'
 
 const asset = { id: 'a-aapl', symbol: 'AAPL', company_name: 'Apple Inc.' }
+
+/** A signal that knows nothing — the batch's own "unknown asset" value. */
+const EMPTY_SIGNAL: ListRowSignal = {
+  state: null, subject: null, weightPct: null, closes: null,
+  ratingValue: null, ratingColor: null, conviction: null, targetPrice: null,
+}
 
 const section = (key: string, content: string, authorName = 'Eric L') => ({
   section: key, content, supportingDetail: null,
@@ -88,19 +130,111 @@ function renderRow(props: Record<string, unknown> = {}) {
   )
 }
 
+/**
+ * Open the row the way a reader would: by clicking a field.
+ *
+ * Passing `entryColumnId` rather than clicking a tab is deliberate — it
+ * exercises the contract the table actually uses, so a broken column→mode map
+ * fails these tests instead of only failing in the browser.
+ */
+const openFrom = (columnId: string, props: Record<string, unknown> = {}) =>
+  renderRow({ entryColumnId: columnId, ...props })
+
+const currentMode = () =>
+  screen.getByTestId('list-row-expansion').getAttribute('data-mode')
+
 beforeEach(() => {
   hooks.workspace = {
     sections: [], evidence: [], caseWrittenAt: null, coreSections: [],
-    history: [], spot: null, ladder: null, target: null,
+    history: [], spot: null, ladder: null as any, target: null,
     positions: [], liveIdeas: [], decisions: [],
   }
   hooks.ratings = []
   hooks.scales = []
   hooks.updates = []
+  hooks.ratingWrites = []
+  hooks.reviews = []
+  hooks.reviewDone = false
+  hooks.caseWrites = []
 })
 
-describe('the orientation strip shows only what exists', () => {
-  it('renders price, position, rating, conviction, target and upside when all are present', () => {
+describe('the clicked field decides the mode', () => {
+  const full = () => {
+    hooks.workspace.spot = 170.5
+    hooks.workspace.target = 200
+    hooks.workspace.positions = [
+      { portfolioId: 'p1', portfolioName: 'Tech Growth', shares: 10490, price: 170.5,
+        marketValue: 1788545, weightPct: 5.14, avgCost: null, unrealisedGain: null,
+        unrealisedPct: null, asOf: null },
+    ]
+    hooks.workspace.sections = [section('thesis', 'Services mix.')]
+  }
+
+  it.each([
+    ['ticker', 'overview'],
+    ['companyName', 'overview'],
+    ['price', 'market'],
+    ['change', 'market'],
+    ['list_spark', 'market'],
+    ['list_rating', 'case'],
+    ['list_target', 'valuation'],
+    ['list_position', 'position'],
+    ['list_work', 'work'],
+  ])('a click on %s opens %s', (columnId, expected) => {
+    full()
+    openFrom(columnId, { signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
+    expect(currentMode()).toBe(expected)
+  })
+
+  it('opens Overview when the row was opened from the chevron', () => {
+    full()
+    renderRow()
+    expect(currentMode()).toBe('overview')
+  })
+
+  it('re-enters on the newly clicked field while the row stays open', () => {
+    full()
+    const { rerender } = openFrom('list_target')
+    expect(currentMode()).toBe('valuation')
+    // The table hands in a new entryColumnId — the reader restating intent on
+    // a row that is already open.
+    rerender(
+      <ListRowExpansion listId="l-1" rowId="r-1" asset={asset} canEdit entryColumnId="list_position" />,
+    )
+    expect(currentMode()).toBe('position')
+  })
+
+  it('offers no mode the security cannot answer', () => {
+    // Nothing held, no prices, no target.
+    renderRow()
+    expect(screen.queryByRole('tab', { name: 'Position' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Market' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Valuation' })).not.toBeInTheDocument()
+    // These three always mean something — an unwritten case and unstarted work
+    // are exactly what a list is for.
+    for (const name of ['Overview', 'Case', 'Work']) {
+      expect(screen.getByRole('tab', { name })).toBeInTheDocument()
+    }
+  })
+
+  it('falls back to Overview rather than a blank canvas', () => {
+    // Opened on Position, but this name is not held.
+    openFrom('list_position')
+    expect(currentMode()).toBe('overview')
+  })
+
+  it('lets the reader move between modes without closing the row', async () => {
+    full()
+    openFrom('list_work')
+    expect(currentMode()).toBe('work')
+    await userEvent.click(screen.getByRole('tab', { name: 'Overview' }))
+    expect(currentMode()).toBe('overview')
+    expect(screen.getByTestId('list-row-expansion')).toBeInTheDocument()
+  })
+})
+
+describe('Overview shows only what exists', () => {
+  it('renders price, position, rating, target and upside when all are present', () => {
     hooks.workspace.spot = 170.5
     hooks.workspace.target = 200
     hooks.workspace.positions = [
@@ -120,13 +254,11 @@ describe('the orientation strip shows only what exists', () => {
     expect(screen.getByText('+17.3%')).toBeInTheDocument()
   })
 
-  it('omits cells entirely when the data is absent — no dashes, no placeholders', () => {
+  it('omits facts entirely when the data is absent — no dashes, no placeholders', () => {
     renderRow()
-    for (const label of ['Price', 'Position', 'Rating', 'Target', 'Upside']) {
+    for (const label of ['Price', 'Position', 'View', 'Target', 'Upside']) {
       expect(screen.queryByText(label)).not.toBeInTheDocument()
     }
-    // And specifically not the em-dash filler the old sidebar used.
-    expect(screen.queryByText('—')).not.toBeInTheDocument()
   })
 
   it('shows shares when a position exists but its weight is unknowable', () => {
@@ -153,9 +285,132 @@ describe('the orientation strip shows only what exists', () => {
       { id: 'r-off', rating_value: 'Buy', rating_scale_id: 's1', conviction: 'high', is_official: true, updated_at: '2026-01-01' },
     ]
     hooks.scales = [{ id: 's1', values: [{ value: 'Buy', color: '#10b981' }, { value: 'Hold', color: '#f59e0b' }] }]
-    renderRow()
-    expect(screen.getByText('Buy')).toBeInTheDocument()
-    expect(screen.queryByText('Hold')).not.toBeInTheDocument()
+    // Case mode, where the picker lives — scoped to the DISPLAY, because the
+    // rating is also an <option> and an unscoped query would pass even if the
+    // pill never rendered.
+    openFrom('list_rating')
+    const display = within(screen.getByTestId('row-rating-display'))
+    expect(display.getByText('Buy')).toBeInTheDocument()
+    expect(display.queryByText('Hold')).not.toBeInTheDocument()
+  })
+})
+
+describe('rating and conviction write through the canonical path', () => {
+  it('writes against the scale the existing rating already uses', async () => {
+    hooks.ratings = [{ id: 'r1', rating_value: 'Hold', rating_scale_id: 's-legacy', conviction: 'low', is_official: true, updated_at: '2026-10-01' }]
+    hooks.scales = [
+      { id: 's-default', is_default: true, values: [{ value: 'Overweight' }] },
+      { id: 's-legacy', values: [{ value: 'Hold' }, { value: 'Buy' }] },
+    ]
+    openFrom('list_rating')
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'Buy')
+    // Not the org default — a rating written against the wrong scale produces a
+    // value string that matches no configured value and silently drops out of
+    // every colour and consensus read.
+    expect(hooks.ratingWrites).toEqual([
+      { ratingValue: 'Buy', ratingScaleId: 's-legacy', conviction: 'low' },
+    ])
+  })
+
+  it('falls back to the organisation default when nothing is rated yet', async () => {
+    hooks.scales = [
+      { id: 's-other', values: [{ value: 'X' }] },
+      { id: 's-default', is_default: true, values: [{ value: 'Overweight' }] },
+    ]
+    openFrom('list_rating')
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'Overweight')
+    expect(hooks.ratingWrites).toEqual([
+      { ratingValue: 'Overweight', ratingScaleId: 's-default', conviction: null },
+    ])
+  })
+
+  it('keeps the rating value when only conviction changes', async () => {
+    hooks.ratings = [{ id: 'r1', rating_value: 'Buy', rating_scale_id: 's1', conviction: 'low', is_official: true, updated_at: '2026-10-01' }]
+    hooks.scales = [{ id: 's1', values: [{ value: 'Buy' }] }]
+    openFrom('list_rating')
+    await userEvent.click(screen.getByLabelText('Set high conviction'))
+    expect(hooks.ratingWrites).toEqual([
+      { ratingValue: 'Buy', ratingScaleId: 's1', conviction: 'high' },
+    ])
+  })
+
+  it('offers no conviction control until something is rated', () => {
+    hooks.scales = [{ id: 's1', is_default: true, values: [{ value: 'Buy' }] }]
+    openFrom('list_rating')
+    expect(screen.queryByLabelText('Set high conviction')).not.toBeInTheDocument()
+  })
+})
+
+describe('Case mode writes case text through the canonical writer', () => {
+  const scales = () => { hooks.scales = [{ id: 's1', is_default: true, values: [{ value: 'Buy' }] }] }
+
+  it('offers all three core sections, including risks', () => {
+    scales()
+    hooks.workspace.sections = [section('thesis', 'Services mix.')]
+    openFrom('list_rating')
+    // Overview deliberately shows two; the Case mode is where the whole case
+    // lives, so withholding risks here would make it unreachable from a list.
+    expect(screen.getByText('Thesis')).toBeInTheDocument()
+    expect(screen.getByText(SECTION_LABEL.where_different)).toBeInTheDocument()
+    expect(screen.getByText(SECTION_LABEL.risks_to_thesis)).toBeInTheDocument()
+  })
+
+  it('saves under the section that was edited', async () => {
+    scales()
+    hooks.workspace.sections = [section('thesis', 'Old thesis.')]
+    openFrom('list_rating')
+    await userEvent.click(screen.getByLabelText('Edit Thesis'))
+    const box = screen.getByRole('textbox')
+    await userEvent.clear(box)
+    await userEvent.type(box, 'New thesis.')
+    await userEvent.tab()
+    expect(hooks.caseWrites).toEqual([{ content: 'New thesis.', sectionKey: 'thesis' }])
+  })
+
+  it('does not write when the text was not changed', async () => {
+    scales()
+    hooks.workspace.sections = [section('thesis', 'Unchanged.')]
+    openFrom('list_rating')
+    await userEvent.click(screen.getByLabelText('Edit Thesis'))
+    await userEvent.tab()
+    // A stray focus must not create a contribution revision.
+    expect(hooks.caseWrites).toEqual([])
+  })
+
+  it('invites writing a section that does not exist yet', () => {
+    scales()
+    openFrom('list_rating')
+    expect(screen.getByText('Write thesis')).toBeInTheDocument()
+  })
+})
+
+describe('reviewing evidence is recorded, not just linked', () => {
+  const unread = () => {
+    hooks.workspace.evidence = [evidence({ isNewSinceReview: true })]
+    hooks.workspace.sections = [section('thesis', 'Services mix.')]
+  }
+
+  it('offers the three verdicts the research surface offers', () => {
+    unread()
+    renderRow({ onOpenAsset: () => {} })
+    for (const label of ['Still holds', 'Changed', 'Needs work']) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
+  })
+
+  it('records the verdict through the canonical thesis.reviewed writer', async () => {
+    unread()
+    renderRow({ onOpenAsset: () => {} })
+    await userEvent.click(screen.getByText('Still holds'))
+    expect(hooks.reviews).toEqual(['holds'])
+  })
+
+  it('collapses to a confirmation once recorded, so a second verdict is not invited', () => {
+    unread()
+    hooks.reviewDone = true
+    renderRow({ onOpenAsset: () => {} })
+    expect(screen.getByText('Review recorded')).toBeInTheDocument()
+    expect(screen.queryByText('Still holds')).not.toBeInTheDocument()
   })
 })
 
@@ -173,11 +428,16 @@ describe('the case is the dominant content', () => {
     expect(screen.getByText('Dana R')).toBeInTheDocument()
   })
 
-  it('leaves risks to the Asset page rather than carrying the whole case', () => {
-    hooks.workspace.sections = [section('risks_to_thesis', 'China exposure.')]
+  it('shows at most the two leading sections, leaving the rest to Case mode', () => {
+    hooks.workspace.sections = [
+      section('thesis', 'A view.'),
+      section('where_different', 'A differentiator.'),
+      section('risks_to_thesis', 'China exposure.'),
+    ]
     renderRow()
-    expect(screen.queryByText('Risks to thesis')).not.toBeInTheDocument()
-    expect(screen.getByText('No case written yet.')).toBeInTheDocument()
+    // Overview orients; it is not the whole case. Risks are reachable one tab
+    // away rather than crammed into a fixed-height summary.
+    expect(screen.queryByText(SECTION_LABEL.risks_to_thesis)).not.toBeInTheDocument()
   })
 
   it('says so plainly when no case is written', () => {
@@ -192,50 +452,138 @@ describe('the case is the dominant content', () => {
   })
 })
 
-describe('what changed since the case was written', () => {
-  it('leads with evidence that arrived after the review', () => {
+describe('Work mode launches the workflow the signal names', () => {
+  it('shows the unreviewed evidence itself, newest intent first', () => {
     hooks.workspace.caseWrittenAt = '2026-09-01T00:00:00Z'
+    hooks.workspace.sections = [section('thesis', 'A view.')]
     hooks.workspace.evidence = [
       evidence({ title: 'Older note', createdAt: '2026-09-20T00:00:00Z', isNewSinceReview: false }),
       evidence({ title: 'New since review', createdAt: '2026-09-10T00:00:00Z', isNewSinceReview: true }),
     ]
-    renderRow()
-    expect(screen.getByText('Since review')).toBeInTheDocument()
-    const titles = screen.getAllByText(/Older note|New since review/).map(n => n.textContent)
-    // Unreviewed first, even though it is the older of the two.
-    expect(titles[0]).toBe('New since review')
+    openFrom('list_work')
+    expect(currentMode()).toBe('work')
+    expect(screen.getByText('1 new since the case was written')).toBeInTheDocument()
+    // Only the unreviewed items — the reviewed one is not what this mode is for.
+    expect(screen.getByText('New since review')).toBeInTheDocument()
+    expect(screen.queryByText('Older note')).not.toBeInTheDocument()
   })
 
-  it('states how long ago the case was written', () => {
-    hooks.workspace.caseWrittenAt = '2026-09-01T00:00:00Z'
-    hooks.workspace.evidence = [evidence()]
-    renderRow()
-    // `getAllBy`: the phrase appears in the caption and again inside the
-    // nested relative-time span.
-    expect(screen.getAllByText(/case written/).length).toBeGreaterThan(0)
+  it('offers the verdict next to the evidence it is about', async () => {
+    hooks.workspace.sections = [section('thesis', 'A view.')]
+    hooks.workspace.evidence = [evidence({ isNewSinceReview: true })]
+    openFrom('list_work')
+    expect(screen.getByText('Does the case still hold?')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('Still holds'))
+    expect(hooks.reviews).toEqual(['holds'])
   })
 
-  it('hides the whole block when there is no evidence', () => {
-    renderRow()
-    expect(screen.queryByText('Since review')).not.toBeInTheDocument()
+  it('routes an unwritten case to writing it, in-row', async () => {
+    hooks.scales = [{ id: 's1', is_default: true, values: [{ value: 'Buy' }] }]
+    openFrom('list_work')
+    expect(screen.getByText('No thesis on file')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Write the case/ }))
+    // Stays in the row and switches mode rather than navigating away.
+    expect(currentMode()).toBe('case')
+  })
+
+  it('shows the live idea as the open work', () => {
+    hooks.workspace.sections = [section('thesis', 'A view.')]
+    hooks.workspace.liveIdeas = [
+      { id: 'i1', action: 'buy', stage: 'deciding', rationale: 'Because.', portfolioName: 'Tech Growth' },
+    ]
+    openFrom('list_work')
+    expect(screen.getByText('BUY')).toBeInTheDocument()
+    expect(screen.getByText('deciding')).toBeInTheDocument()
+    expect(screen.getByText('Tech Growth')).toBeInTheDocument()
+    expect(screen.getByText('Because.')).toBeInTheDocument()
+  })
+
+  it('does not offer to advance a stage or act on a recommendation', () => {
+    hooks.workspace.sections = [section('thesis', 'A view.')]
+    hooks.workspace.liveIdeas = [
+      { id: 'i1', action: 'buy', stage: 'deciding', rationale: null, portfolioName: null },
+    ]
+    openFrom('list_work', { onOpenAsset: () => {} })
+    // Both are gated on things a row cannot collect — a sizing decision, a
+    // rationale/thesis gate, recorded decision evidence. A row that offered
+    // them would be a second, weaker writer.
+    expect(screen.queryByText(/Advance|Accept|Approve|Reject/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Continue the idea/ })).toBeInTheDocument()
+  })
+
+  it('offers the verdict for a case that is merely due a look', () => {
+    hooks.workspace.sections = [section('thesis', 'A view.')]
+    hooks.workspace.caseWrittenAt = '2026-01-01T00:00:00Z'
+    openFrom('list_work', { signal: { ...EMPTY_SIGNAL, state: 'stale' } })
+    expect(screen.getByText('Review due')).toBeInTheDocument()
+    expect(screen.getByText('Still holds')).toBeInTheDocument()
+  })
+
+  it('says plainly when nothing is outstanding', () => {
+    hooks.workspace.sections = [section('thesis', 'A view.')]
+    openFrom('list_work', { signal: { ...EMPTY_SIGNAL, state: 'current' }, onCreateTradeIdea: () => {} })
+    expect(screen.getByText('Nothing outstanding')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Start an idea/ })).toBeInTheDocument()
   })
 })
 
-describe('active work and ownership', () => {
-  it('shows the active idea and its portfolio', () => {
+describe('Position and Valuation modes', () => {
+  it('lists every book holding it, largest weight first', () => {
+    hooks.workspace.positions = [
+      { portfolioId: 'p1', portfolioName: 'Small Book', shares: 100, weightPct: 0.4, marketValue: 1000, unrealisedPct: -3.2 },
+      { portfolioId: 'p2', portfolioName: 'Big Book', shares: 9000, weightPct: 6.1, marketValue: 90000, unrealisedPct: 12.5 },
+    ]
+    openFrom('list_position')
+    expect(currentMode()).toBe('position')
+    const names = screen.getAllByText(/Big Book|Small Book/).map(n => n.textContent)
+    expect(names[0]).toBe('Big Book')
+    expect(screen.getByText('6.10%')).toBeInTheDocument()
+    expect(screen.getByText('+12.5%')).toBeInTheDocument()
+  })
+
+  it('names the scenarios the desk configured, not Bear/Base/Bull', () => {
+    hooks.workspace.spot = 100
+    hooks.workspace.target = 130
+    hooks.workspace.ladder = {
+      assetId: 'a-aapl', symbol: 'AAPL', companyName: null, valid: true, reason: '',
+      updatedAt: '2026-10-01T00:00:00Z',
+      cases: [
+        { id: 'c1', scenarioId: 's1', name: 'Downside', price: 80, probability: 0.25, timeframe: null, reasoning: null, userId: null },
+        { id: 'c2', scenarioId: 's2', name: 'Street beat', price: 130, probability: 0.5, timeframe: null, reasoning: null, userId: null },
+      ],
+    }
+    openFrom('list_target')
+    expect(currentMode()).toBe('valuation')
+    expect(screen.getByText('Street beat')).toBeInTheDocument()
+    expect(screen.getByText('Downside')).toBeInTheDocument()
+    // Cheapest rung first, and upside measured against spot.
+    expect(screen.getByText('-20.0%')).toBeInTheDocument()
+  })
+
+  it('does not offer to write a price target from the row', () => {
+    hooks.workspace.spot = 100
+    hooks.workspace.target = 130
+    openFrom('list_target', { onOpenAsset: () => {} })
+    // `savePriceTarget` needs a resolved scenario, which a row cannot pick
+    // honestly — so this links into the case instead of writing.
+    expect(screen.getByRole('button', { name: /Set a target in the case/ })).toBeInTheDocument()
+  })
+})
+
+describe('ownership and list fields stay reachable', () => {
+  it('shows the active idea in Overview too', () => {
     hooks.workspace.liveIdeas = [
       { id: 'i1', action: 'buy', stage: 'deciding', rationale: null, portfolioName: 'Tech Growth' },
     ]
     renderRow()
-    expect(screen.getByText('Active work')).toBeInTheDocument()
+    expect(screen.getByText('Active')).toBeInTheDocument()
     expect(screen.getByText('buy')).toBeInTheDocument()
     expect(screen.getByText(/deciding/)).toBeInTheDocument()
-    expect(screen.getByText('Tech Growth')).toBeInTheDocument()
   })
 
-  it('hides the block when there is no idea and no decision', () => {
+  it('shows no Active fact when there is no idea', () => {
     renderRow()
-    expect(screen.queryByText('Active work')).not.toBeInTheDocument()
+    expect(screen.queryByText('Active')).not.toBeInTheDocument()
   })
 
   it('shows coverage when the table passed it', () => {
@@ -262,10 +610,27 @@ describe('active work and ownership', () => {
 describe('one primary action, chosen from state', () => {
   const onOpenAsset = vi.fn()
 
-  it('offers review when evidence is unread', () => {
+  it('offers review when evidence is unread, and says how much', () => {
     hooks.workspace.evidence = [evidence({ isNewSinceReview: true }), evidence({ isNewSinceReview: true })]
     renderRow({ onOpenAsset })
-    expect(screen.getByText('Review 2 new')).toBeInTheDocument()
+    expect(screen.getByText('2 new · does the case hold?')).toBeInTheDocument()
+  })
+
+  it('does not offer to start an idea when the caller cannot open the modal', () => {
+    // `onCreateTradeIdea` is how `ListTab` opens its page-level modal. Without
+    // it the button would be a dead control, so the state falls through.
+    hooks.workspace.sections = [section('thesis', 'A view.')]
+    renderRow({ onOpenAsset })
+    expect(screen.queryByText('Start an idea')).not.toBeInTheDocument()
+  })
+
+  it('offers to start an idea on a written case with nothing live', async () => {
+    const onCreateTradeIdea = vi.fn()
+    hooks.workspace.sections = [section('thesis', 'A view.')]
+    renderRow({ onOpenAsset, onCreateTradeIdea })
+    await userEvent.click(screen.getByText('Start an idea'))
+    // The asset id, so the page-level modal preselects this security.
+    expect(onCreateTradeIdea).toHaveBeenCalledWith('a-aapl')
   })
 
   it('offers the idea when there is one and nothing unread', () => {
@@ -286,6 +651,15 @@ describe('one primary action, chosen from state', () => {
     expect(screen.queryByText(/Review|Open active idea|Write the case/)).not.toBeInTheDocument()
     // The way into the full case is always there.
     expect(screen.getByText('Open full case')).toBeInTheDocument()
+  })
+
+  it('does not repeat the verdict in the footer while Work mode is showing it', () => {
+    hooks.workspace.sections = [section('thesis', 'A view.')]
+    hooks.workspace.evidence = [evidence({ isNewSinceReview: true })]
+    openFrom('list_work')
+    // One review group, not two.
+    expect(screen.getAllByText('Still holds')).toHaveLength(1)
+    expect(screen.queryByText(/does the case hold\?/)).not.toBeInTheDocument()
   })
 })
 

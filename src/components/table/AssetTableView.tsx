@@ -101,7 +101,7 @@ const PRIORITY_OPTIONS: Priority[] = ['critical', 'high', 'medium', 'low', 'none
 // Priority source types for user-specific priority columns
 export type PrioritySourceType = 'my' | 'firm' | 'user'
 
-interface ColumnConfig {
+export interface ColumnConfig {
   id: string
   label: string
   visible: boolean
@@ -120,7 +120,11 @@ interface ColumnConfig {
   sourceUserName?: string // Display name when prioritySource is 'user'
 }
 
-const DEFAULT_COLUMNS: ColumnConfig[] = [
+/**
+ * Exported so a surface's preset can be measured against the real widths.
+ * A width budget asserted against a test fixture measures the fixture.
+ */
+export const DEFAULT_COLUMNS: ColumnConfig[] = [
   // Core columns
   { id: 'select', label: '', visible: true, width: 32, minWidth: 32, sortable: false, pinned: false, category: 'core' },
   { id: 'ticker', label: 'Ticker', visible: true, width: 100, minWidth: 80, sortable: true, pinned: true, canUnpin: false, category: 'core' },
@@ -291,6 +295,33 @@ interface AssetTableViewProps {
    *  isn't handled by the built-in column set. If this returns undefined/null
    *  the cell falls through to the default empty-cell rendering. */
   renderExtraCell?: (columnId: string, asset: any) => React.ReactNode
+  /**
+   * Reshape the default column set for this surface.
+   *
+   * Receives `[...DEFAULT_COLUMNS, ...extraColumns]` and returns the array to
+   * use as the surface's baseline — reordered, re-widened, shown or hidden.
+   * It is a *default*, not a lock: the user's saved column state still wins
+   * once they touch the column settings, exactly as before.
+   *
+   * This exists so a surface can present a curated set without forking the
+   * table. Must be referentially stable (define it at module scope), since the
+   * baseline is memoised on it.
+   */
+  columnPreset?: (base: ColumnConfig[]) => ColumnConfig[]
+  /**
+   * Bump this whenever `columnPreset` changes what the default should be.
+   *
+   * Saved column state is layered over the preset, and `visible`/`width` come
+   * from storage — so without a version a new preset can never reach anyone who
+   * already has saved state, and the persist effect below writes on mount, so
+   * that is everyone after one render. Bumping the `storageKey` instead "works"
+   * once and discards every real customisation the user made.
+   *
+   * So the version travels INSIDE the blob: a mismatch discards the stored
+   * layout for the new baseline exactly once, and anything the user changes
+   * afterwards sticks.
+   */
+  columnPresetVersion?: string
   /** Replace the default expanded-row detail panel with custom content.
    *  When provided, takes over rendering inside the expanded row (the close
    *  button + outer container remain AssetTableView's). Gets the asset and
@@ -308,7 +339,24 @@ interface AssetTableViewProps {
     asset: any,
     rowId: string,
     coverage?: Array<{ analyst: string; team: string; isLead: boolean }>,
+    /**
+     * The column the reader opened the row FROM, when they opened it from a
+     * cell rather than the chevron. The field someone clicks states their
+     * intent, so the slot can open on the matching content instead of a
+     * generic summary. `undefined` means "no particular intent" — the chevron,
+     * a double-click on the row body, or a keyboard expand.
+     */
+    entryColumnId?: string,
   ) => React.ReactNode
+  /**
+   * Columns whose cells open the expanded row, keyed to the mode they mean.
+   *
+   * Opt-in per surface and deliberately narrow: a table where every click
+   * expands a row cannot be navigated. Only pass ids whose cells are inert
+   * text — a column with its own editor, popover or button keeps its own
+   * behaviour, because the click never reaches the cell wrapper.
+   */
+  expansionEntryColumns?: ReadonlySet<string>
   /** Optional slot rendered in the toolbar area, between active filters and
    *  selection actions. Use for list-scoped filter chips. */
   filterBarSlot?: React.ReactNode
@@ -363,6 +411,9 @@ export function AssetTableView({
   onAssignToKanbanLane,
   onRemoveFromKanbanLane,
   renderExtraCell,
+  columnPreset,
+  columnPresetVersion,
+  expansionEntryColumns,
   expandedRowSlot,
   filterBarSlot,
   rowAccentFn
@@ -485,19 +536,37 @@ export function AssetTableView({
   const [showLivePrices, setShowLivePrices] = useState(true)
 
   // Column state
+  //
+  // `baseColumns` is this surface's baseline: the built-in set plus any
+  // caller-provided columns, optionally reshaped by `columnPreset`. Everything
+  // that previously read DEFAULT_COLUMNS directly reads this instead, so a
+  // preset governs the initial state, the reset button and width-reset alike.
+  const baseColumns = useMemo(() => {
+    const all = [...DEFAULT_COLUMNS, ...extraColumns]
+    return columnPreset ? columnPreset(all) : all
+  }, [columnPreset, extraColumns])
+
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
     try {
       const saved = localStorage.getItem(storageKey)
       if (saved) {
-        const parsed = JSON.parse(saved) as ColumnConfig[]
-        const allColumns = [...DEFAULT_COLUMNS, ...extraColumns]
-        return allColumns.map(defaultCol => {
-          const savedCol = parsed.find(c => c.id === defaultCol.id)
-          return savedCol ? { ...defaultCol, visible: savedCol.visible, width: savedCol.width, pinned: savedCol.pinned } : defaultCol
-        })
+        const parsed = JSON.parse(saved)
+        // A bare array is the pre-versioning blob. It predates any preset, so
+        // when a preset exists it is by definition stale.
+        const storedVersion: string | null = Array.isArray(parsed) ? null : parsed?.v ?? null
+        const storedColumns: ColumnConfig[] = Array.isArray(parsed) ? parsed : parsed?.columns ?? []
+        const matches = (columnPresetVersion ?? null) === storedVersion
+        if (matches && storedColumns.length > 0) {
+          return baseColumns.map(defaultCol => {
+            const savedCol = storedColumns.find(c => c.id === defaultCol.id)
+            return savedCol ? { ...defaultCol, visible: savedCol.visible, width: savedCol.width, pinned: savedCol.pinned } : defaultCol
+          })
+        }
+        // Mismatch: the baseline moved. Take it, and let the effect below
+        // re-persist under the new version so this happens exactly once.
       }
     } catch (e) { console.warn('Failed to load columns:', e) }
-    return [...DEFAULT_COLUMNS, ...extraColumns]
+    return baseColumns
   })
   const [showColumnSettings, setShowColumnSettings] = useState(false)
   const [draftColumns, setDraftColumns] = useState<ColumnConfig[]>([])
@@ -1250,7 +1319,7 @@ export function AssetTableView({
     setDraggedColumn(null)
   }, [])
 
-  const resetColumns = useCallback(() => setColumns([...DEFAULT_COLUMNS, ...extraColumns]), [extraColumns])
+  const resetColumns = useCallback(() => setColumns(baseColumns), [baseColumns])
 
   // Add a new priority column with a specific source
   const addPriorityColumn = useCallback((source: PrioritySourceType, sourceUserId?: string, sourceUserName?: string) => {
@@ -1313,9 +1382,18 @@ export function AssetTableView({
   }, [])
 
   useEffect(() => {
-    try { localStorage.setItem(storageKey, JSON.stringify(columns)) }
-    catch (e) { console.warn('Failed to save columns:', e) }
-  }, [columns, storageKey])
+    // Stamped with the preset version that produced it, so the initializer
+    // above can tell a layout the user chose from one a stale baseline chose
+    // for them. Only id/visible/width/pinned are persisted — everything else
+    // belongs to the code, and storing it froze labels and widths that later
+    // changed.
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({
+        v: columnPresetVersion ?? null,
+        columns: columns.map(c => ({ id: c.id, visible: c.visible, width: c.width, pinned: c.pinned })),
+      }))
+    } catch (e) { console.warn('Failed to save columns:', e) }
+  }, [columns, storageKey, columnPresetVersion])
 
   // Single row expansion - only one row can be expanded at a time
   const toggleRowExpansion = useCallback((assetId: string) => {
@@ -1323,6 +1401,35 @@ export function AssetTableView({
     // Clear metric column when collapsing
     setExpandedMetricColumn(prev => prev?.assetId === assetId ? null : prev)
   }, [])
+
+  /**
+   * Open a row FROM a cell, carrying which cell it was.
+   *
+   * Deliberately not `toggleRowExpansion`: clicking a second field on a row
+   * that is already open should change what it shows, not slam it shut. Only
+   * the chevron and the row body toggle.
+   *
+   * `expandedMetricColumn` is reused as the carrier rather than adding parallel
+   * state — it is already `{assetId, columnId}`, and on a surface that supplies
+   * `expandedRowSlot` the metric panel never renders, so the field was unused
+   * there.
+   */
+  const openRowFromCell = useCallback((assetId: string, columnId: string) => {
+    setExpandedRowId(assetId)
+    setExpandedMetricColumn({ assetId, columnId })
+  }, [])
+
+  /**
+   * The entry column for one asset, or undefined.
+   *
+   * A helper rather than an inline ternary at each call site: optional chaining
+   * in the test (`x?.assetId === id`) does not narrow `x` for the branch, so the
+   * inline form read `expandedMetricColumn.columnId` off a possibly-null value.
+   */
+  const entryColumnFor = useCallback((assetId: string): string | undefined => {
+    const held = expandedMetricColumn
+    return held && held.assetId === assetId ? held.columnId : undefined
+  }, [expandedMetricColumn])
 
 
   const visibleColumns = useMemo(() => {
@@ -2181,10 +2288,10 @@ export function AssetTableView({
   // Reset column widths
   const resetColumnWidths = useCallback(() => {
     setColumns(prev => prev.map(col => {
-      const defaultCol = DEFAULT_COLUMNS.find(d => d.id === col.id)
+      const defaultCol = baseColumns.find(d => d.id === col.id)
       return defaultCol ? { ...col, width: defaultCol.width } : col
     }))
-  }, [])
+  }, [baseColumns])
 
   // Kanban columns
   const kanbanColumns = useMemo(() => {
@@ -3199,9 +3306,23 @@ export function AssetTableView({
                             return (
                               <div
                                 key={col.id}
-                                onClick={(e) => { e.stopPropagation(); handleCellClick(virtualRow.index, col.id, e) }}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleCellClick(virtualRow.index, col.id, e)
+                                  // The field states the intent — see
+                                  // `expansionEntryColumns`. Guarded on the
+                                  // event target so a control that happens to
+                                  // live inside an entry cell still wins.
+                                  if (
+                                    expansionEntryColumns?.has(col.id)
+                                    && !(e.target as HTMLElement).closest('button,a,input,select,textarea,[role="button"]')
+                                  ) {
+                                    openRowFromCell(asset.id, col.id)
+                                  }
+                                }}
                                 className={clsx(
-                                  'pro-table-cell cursor-default',
+                                  'pro-table-cell',
+                                  expansionEntryColumns?.has(col.id) ? 'cursor-pointer' : 'cursor-default',
                                   isExpanded ? 'h-auto' : 'h-full',
                                   col.wrapText && !isExpanded && 'items-start',
                                   densityConfig.padding,
@@ -3571,8 +3692,18 @@ export function AssetTableView({
                         >
                             <div className="h-full flex flex-col overflow-hidden">
                               <div className="flex-1 min-h-0 overflow-hidden">
-                                {expandedRowSlot && !(expandedMetricColumn?.assetId === asset.id)
-                                  ? expandedRowSlot(asset, asset._rowId || asset.id, coverage)
+                                {/* A surface that supplies its own expansion owns it outright.
+                                    Previously Enter-on-a-focused-cell could swap the slot for
+                                    the metric detail panel mid-expansion, so a list row would
+                                    sometimes open as a full-width price chart instead of the
+                                    working surface. */}
+                                {expandedRowSlot
+                                  ? expandedRowSlot(
+                                      asset,
+                                      asset._rowId || asset.id,
+                                      coverage,
+                                      entryColumnFor(asset.id),
+                                    )
                                   : renderMetricDetail(
                                       asset,
                                       expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',
@@ -4070,9 +4201,26 @@ export function AssetTableView({
                                   return (
                                     <div
                                       key={col.id}
-                                      onClick={(e) => { e.stopPropagation(); handleAssetClick(asset) }}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        // Grouped rows otherwise navigate away
+                                        // on any cell click. An entry column
+                                        // opens the row in place instead —
+                                        // every other column keeps navigating,
+                                        // which is what this view has always
+                                        // done.
+                                        if (
+                                          expansionEntryColumns?.has(col.id)
+                                          && !(e.target as HTMLElement).closest('button,a,input,select,textarea,[role="button"]')
+                                        ) {
+                                          openRowFromCell(asset.id, col.id)
+                                          return
+                                        }
+                                        handleAssetClick(asset)
+                                      }}
                                       className={clsx(
-                                        'pro-table-cell cursor-default',
+                                        'pro-table-cell',
+                                        expansionEntryColumns?.has(col.id) ? 'cursor-pointer' : 'cursor-default',
                                         isExpanded ? 'h-auto' : 'h-full',
                                         col.wrapText && !isExpanded && 'items-start',
                                         densityConfig.padding,
@@ -4429,8 +4577,14 @@ export function AssetTableView({
                         >
                                   <div className="h-full flex flex-col overflow-hidden">
                                     <div className="flex-1 min-h-0 overflow-hidden">
-                                      {expandedRowSlot && !(expandedMetricColumn?.assetId === asset.id)
-                                        ? expandedRowSlot(asset, asset._rowId || asset.id, coverage)
+                                      {/* See the ungrouped branch: the slot owns the expansion. */}
+                                      {expandedRowSlot
+                                        ? expandedRowSlot(
+                                            asset,
+                                            asset._rowId || asset.id,
+                                            coverage,
+                                            entryColumnFor(asset.id),
+                                          )
                                         : renderMetricDetail(
                                             asset,
                                             expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',
@@ -5326,7 +5480,7 @@ export function AssetTableView({
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setDraftColumns([...DEFAULT_COLUMNS, ...extraColumns].map(c => ({ ...c })))}
+                  onClick={() => setDraftColumns(baseColumns.map(c => ({ ...c })))}
                   className="text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
                 >
                   Reset to Default

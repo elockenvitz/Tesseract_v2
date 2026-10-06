@@ -16,6 +16,12 @@ import { ListAssigneeCell } from './ListAssigneeCell'
 import { ListStatusCell } from './ListStatusCell'
 import { ListTagsCell } from './ListTagsCell'
 import { ListRowExpansion } from './ListRowExpansion'
+import {
+  LIST_SIGNAL_COLUMNS, listColumnPreset, renderSignalCell,
+  LIST_COLUMN_PRESET_VERSION,
+} from './ListRowCells'
+import { LIST_EXPANSION_ENTRY_COLUMNS } from './listRowModes'
+import { useListRowSignals } from '../../hooks/lists/useListRowSignals'
 import type { ListPermissions } from '../../hooks/lists/useListPermissions'
 
 interface ListTableViewProps {
@@ -95,6 +101,9 @@ export function ListTableView({
   filterBarSlot,
   listStatuses,
   hideListColumns,
+  // Pulled out of `passthrough` because the expansion needs it too — it is
+  // still forwarded to the table below, so the row-menu entry is unchanged.
+  onCreateTradeIdea,
   ...passthrough
 }: ListTableViewProps) {
 
@@ -106,9 +115,19 @@ export function ListTableView({
     return permissions.canEditItemNotes({ added_by: asset._addedBy ?? null })
   }, [permissions, hideListColumns])
 
+  // One read for the whole list — work state, position, sparkline, rating and
+  // target. See `useListRowSignals`: nothing here may be per-row, because the
+  // table is virtualised and a list can hold hundreds of names.
+  const { signalFor } = useListRowSignals(assets)
+
   const renderExtraCell = useCallback((columnId: string, asset: any) => {
     const rowId: string = asset._rowId || asset.id
     const canEdit = canEditRow(asset)
+
+    // Investment-signal columns first: they apply to screens too, where the
+    // list-scoped columns below are deliberately absent.
+    const signalCell = renderSignalCell(columnId, asset, signalFor(asset.id))
+    if (signalCell !== undefined) return signalCell
 
     switch (columnId) {
       case 'list_assignee':
@@ -141,7 +160,7 @@ export function ListTableView({
       default:
         return null
     }
-  }, [listId, canEditRow])
+  }, [listId, canEditRow, signalFor])
 
   const expandedRowSlot = useCallback((
     asset: any,
@@ -149,6 +168,7 @@ export function ListTableView({
     // Already resolved by the table for the whole page — see `expandedRowSlot`
     // in AssetTableView. Passing it down avoids a per-row coverage read.
     coverage?: Array<{ analyst: string; team: string; isLead: boolean }>,
+    entryColumnId?: string,
   ) => {
     return (
       <ListRowExpansion
@@ -157,10 +177,16 @@ export function ListTableView({
         asset={asset}
         coverage={coverage}
         canEdit={canEditRow(asset)}
+        // The field the reader clicked. See `listRowModes`.
+        entryColumnId={entryColumnId}
+        // Already batched for the whole list — the expansion reuses the same
+        // sparkline and weight rather than issuing its own.
+        signal={signalFor(asset.id)}
         onOpenAsset={onAssetSelect ? () => onAssetSelect(asset) : undefined}
+        onCreateTradeIdea={onCreateTradeIdea}
       />
     )
-  }, [listId, canEditRow, onAssetSelect])
+  }, [listId, canEditRow, onAssetSelect, onCreateTradeIdea, signalFor])
 
   // Left-border accent colored by the row's status. Terminal statuses dim.
   const rowAccentFn = useCallback((asset: any): { color?: string | null; dim?: boolean } | null => {
@@ -174,7 +200,15 @@ export function ListTableView({
     }
   }, [hideListColumns])
 
-  const extraColumns = useMemo(() => hideListColumns ? [] : LIST_COLUMNS, [hideListColumns])
+  // Signal columns are about the security, so a screen gets them too. The
+  // assignee/status/tags columns are about curating THIS list, which a
+  // criteria-computed screen has no rows to curate.
+  const extraColumns = useMemo(
+    () => hideListColumns
+      ? LIST_SIGNAL_COLUMNS
+      : [...LIST_SIGNAL_COLUMNS, ...LIST_COLUMNS],
+    [hideListColumns],
+  )
 
   return (
     <AssetTableView
@@ -183,11 +217,15 @@ export function ListTableView({
       onAssetSelect={onAssetSelect}
       listId={listId}
       extraColumns={extraColumns}
+      columnPreset={listColumnPreset}
+      columnPresetVersion={LIST_COLUMN_PRESET_VERSION}
+      expansionEntryColumns={LIST_EXPANSION_ENTRY_COLUMNS}
       renderExtraCell={renderExtraCell}
       expandedRowSlot={expandedRowSlot}
       filterBarSlot={filterBarSlot}
       rowAccentFn={rowAccentFn}
       listStatusData={listStatuses}
+      onCreateTradeIdea={onCreateTradeIdea}
       {...passthrough}
     />
   )

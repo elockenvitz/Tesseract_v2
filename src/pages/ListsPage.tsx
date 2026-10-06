@@ -13,6 +13,7 @@ import { ListSurfaceCard } from '../components/lists/ListSurfaceCard'
 import { ListSurfaceControls, type ListTypeFilter, type ViewMode, type ListGroupKey } from '../components/lists/ListSurfaceControls'
 import { ListsTableView } from '../components/lists/ListsTableView'
 import { useListSurfaces, type ListSortKey, type ListSurface } from '../hooks/lists/useListSurfaces'
+import { useListAttention, type ListAttention } from '../hooks/lists/useListAttention'
 import { useMarkListOpened } from '../hooks/lists/useMarkListOpened'
 
 const VIEW_MODE_KEY = 'lists:viewMode'
@@ -100,6 +101,14 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
     symbolMap,
     sortLists: sortFn
   } = useListSurfaces(sortBy)
+
+  /*
+   * Per-list attention. No new reads: `allLists` already carries `assetIds`
+   * from the lists query, and this folds it against the org-wide research and
+   * ideas scans both of which are already cached for other surfaces. See
+   * `useListAttention`.
+   */
+  const { attentionFor } = useListAttention(allLists)
 
   const markListOpened = useMarkListOpened()
 
@@ -451,6 +460,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                 updateCountMap={updateCountMap}
                 selfUpdateCountMap={selfUpdateCountMap}
                 lastActivityMap={lastActivityMap}
+                attentionFor={attentionFor}
               />
             ) : (
               searchQuery || favoritesOnly || portfolioFilterIds.length > 0 || typeFilter !== 'all' ? (
@@ -490,6 +500,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                 onEditList={handleEditList}
                 symbolMap={symbolMap}
                 lastActivityMap={lastActivityMap}
+                attentionFor={attentionFor}
                 emptyMessage="You haven't created any lists yet."
                 emptyAction={user ? { label: 'Create First List', onClick: () => setShowListManager(true) } : undefined}
               />
@@ -510,6 +521,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                 onEditList={handleEditList}
                 symbolMap={symbolMap}
                 lastActivityMap={lastActivityMap}
+                attentionFor={attentionFor}
                 emptyMessage="No collaborative lists available."
               />
               <SurfaceSection
@@ -529,6 +541,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                 onEditList={handleEditList}
                 symbolMap={symbolMap}
                 lastActivityMap={lastActivityMap}
+                attentionFor={attentionFor}
                 emptyMessage="No one has shared lists with you yet."
               />
               {filteredMy.length === 0 && filteredCollab.length === 0 && filteredShared.length === 0 && (
@@ -562,6 +575,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                     isOwner={list.created_by === user?.id}
                     symbolMap={symbolMap}
                     lastActivity={lastActivityMap.get(list.id)}
+                    attention={attentionFor(list.id)}
                     onClick={() => handleListClick(list)}
                     onEdit={(e) => handleEditList(list, e)}
                   />
@@ -892,6 +906,8 @@ interface SurfaceSectionProps {
   onEditList: (list: any, e: React.MouseEvent) => void
   symbolMap?: Map<string, string>
   lastActivityMap?: Map<string, import('../hooks/lists/useListSurfaces').LastListActivity>
+  /** Folded on the page, passed down — the cards do not read for themselves. */
+  attentionFor?: (listId?: string | null) => ListAttention
   emptyMessage: string
   emptyAction?: { label: string; onClick: () => void }
 }
@@ -912,6 +928,7 @@ function SurfaceSection({
   onEditList,
   symbolMap,
   lastActivityMap,
+  attentionFor,
   emptyMessage,
   emptyAction
 }: SurfaceSectionProps) {
@@ -954,6 +971,7 @@ function SurfaceSection({
                   isOwner={list.created_by === userId}
                   symbolMap={symbolMap}
                   lastActivity={lastActivityMap?.get(list.id)}
+                  attention={attentionFor?.(list.id)}
                   onClick={() => onListClick(list)}
                   onEdit={(e) => onEditList(list, e)}
                 />
