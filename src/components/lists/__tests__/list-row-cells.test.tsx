@@ -81,6 +81,27 @@ describe('the curated List presentation', () => {
     expect(width).toBeLessThan(1050)
   })
 
+  it('right-aligns the numeric band so the decimals line up', () => {
+    const out = listColumnPreset([...DEFAULT_COLUMNS, ...LIST_SIGNAL_COLUMNS])
+    const align = (id: string) => out.find(c => c.id === id)?.align
+    for (const id of ['price', 'change', 'list_position', 'list_target']) {
+      expect(align(id), `${id} must be right-aligned`).toBe('right')
+    }
+    // Text and glyph columns stay left: right-aligning a company name or a
+    // rating pill reads as a mistake, not as rigour.
+    for (const id of ['ticker', 'companyName', 'list_rating', 'list_work', 'coverage']) {
+      expect(align(id), `${id} must stay left`).not.toBe('right')
+    }
+  })
+
+  it('only changes Price and Change alignment for THIS surface', () => {
+    // They are the table's own columns and are left-aligned everywhere else,
+    // which is the whole reason alignment is per-column rather than a global
+    // style. The shared default must be untouched.
+    expect(DEFAULT_COLUMNS.find(c => c.id === 'price')?.align).toBeUndefined()
+    expect(DEFAULT_COLUMNS.find(c => c.id === 'change')?.align).toBeUndefined()
+  })
+
   it('drops the list process column from the default line', () => {
     // Real, but it answers a question about this list rather than about the
     // security — and Overview shows it.

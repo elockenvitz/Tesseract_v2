@@ -116,6 +116,15 @@ export interface ColumnConfig {
   aiColumnId?: string
   wrapText?: boolean // If true, text wraps instead of truncating
   // For priority columns - specify whose priority to show
+  /**
+   * Horizontal alignment of the cell and its header. Defaults to left.
+   *
+   * Opt-in per column so existing tables are unchanged. `right` is for columns
+   * of figures: a watchlist where 5.14% and 12.3% do not line up on the decimal
+   * cannot be read down, which is most of what distinguishes a finance table
+   * from a CRUD grid.
+   */
+  align?: 'left' | 'right'
   prioritySource?: PrioritySourceType
   sourceUserId?: string // User ID when prioritySource is 'user'
   sourceUserName?: string // Display name when prioritySource is 'user'
@@ -2763,6 +2772,9 @@ export function AssetTableView({
                           }}
                           className={clsx(
                             'pro-table-header-cell relative px-3 py-2.5 group transition-all duration-75',
+                            // The label follows its column, or the heading sits
+                            // over empty space while the figures sit right.
+                            col.align === 'right' && 'text-right [&>div]:justify-end [&>button]:justify-end',
                             isLastPinned && 'border-r-2 border-slate-200',
                             isSorted && 'sorted',
                             draggedColumn === col.id && 'opacity-40 scale-[0.98]'
@@ -3327,6 +3339,7 @@ export function AssetTableView({
                                 }}
                                 className={clsx(
                                   'pro-table-cell',
+                                  col.align === 'right' && 'justify-end text-right',
                                   expansionEntryColumns?.has(col.id) ? 'cursor-pointer' : 'cursor-default',
                                   isExpanded ? 'h-auto' : 'h-full',
                                   col.wrapText && !isExpanded && 'items-start',
@@ -3960,6 +3973,9 @@ export function AssetTableView({
                           }}
                           className={clsx(
                             'pro-table-header-cell relative px-3 py-2.5 group transition-all duration-75',
+                            // The label follows its column, or the heading sits
+                            // over empty space while the figures sit right.
+                            col.align === 'right' && 'text-right [&>div]:justify-end [&>button]:justify-end',
                             isLastPinned && 'border-r-2 border-slate-200',
                             isSorted && 'sorted',
                             draggedColumn === col.id && 'opacity-40 scale-[0.98]'
@@ -4225,6 +4241,7 @@ export function AssetTableView({
                                       }}
                                       className={clsx(
                                         'pro-table-cell',
+                                        col.align === 'right' && 'justify-end text-right',
                                         expansionEntryColumns?.has(col.id) ? 'cursor-pointer' : 'cursor-default',
                                         isExpanded ? 'h-auto' : 'h-full',
                                         col.wrapText && !isExpanded && 'items-start',

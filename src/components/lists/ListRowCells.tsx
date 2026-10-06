@@ -28,12 +28,12 @@ export const LIST_SIGNAL_COLUMNS: ColumnConfig[] = [
   // comparators live with the surface that owns the data — see
   // `listSortComparators`, handed to the table as `extraSortComparators`.
   { id: 'list_spark',    label: '1M',       visible: true, width: 64,  minWidth: 48, sortable: true, pinned: false, category: 'price' },
-  { id: 'list_position', label: 'Position', visible: true, width: 68,  minWidth: 56, sortable: true, pinned: false, category: 'price' },
+  { id: 'list_position', label: 'Position', visible: true, width: 68,  minWidth: 56, sortable: true, pinned: false, category: 'price', align: 'right' },
   // "View" rather than "Rating": the cell carries the rating AND the conviction
   // behind it, which together are the house view, and two columns for one
   // judgement is what pushed this line into horizontal scroll.
   { id: 'list_rating',   label: 'View',     visible: true, width: 76,  minWidth: 64, sortable: true, pinned: false, category: 'research' },
-  { id: 'list_target',   label: 'Target',   visible: true, width: 92,  minWidth: 76, sortable: true, pinned: false, category: 'research' },
+  { id: 'list_target',   label: 'Target',   visible: true, width: 92,  minWidth: 76, sortable: true, pinned: false, category: 'research', align: 'right' },
   { id: 'list_work',     label: 'Work',     visible: true, width: 132, minWidth: 96, sortable: true, pinned: false, category: 'workflow' },
 ]
 
@@ -138,6 +138,17 @@ const WIDTH: Readonly<Record<string, number>> = {
 }
 
 /**
+ * Columns of figures, right-aligned so they can be read down.
+ *
+ * Price and Change are the table's own columns and are left-aligned everywhere
+ * else; the preset only changes them HERE, which is the point of alignment
+ * being per-column rather than a global style. With Position and Target they
+ * form one numeric band whose decimals line up — the single biggest difference
+ * between this reading as a watchlist and as a CRUD grid.
+ */
+const RIGHT_ALIGNED = new Set(['price', 'change'])
+
+/**
  * Bumped whenever ORDER, HIDDEN or WIDTH change.
  *
  * `AssetTableView` stores this alongside the saved column layout; a mismatch
@@ -145,7 +156,7 @@ const WIDTH: Readonly<Record<string, number>> = {
  * default forever — which is exactly what happened to the first version of
  * this preset, and why the columns it hid were still on screen.
  */
-export const LIST_COLUMN_PRESET_VERSION = 'lists-2026-10-05b'
+export const LIST_COLUMN_PRESET_VERSION = 'lists-2026-10-06a'
 
 /**
  * Hidden by default, not deleted.
@@ -167,8 +178,10 @@ export function listColumnPreset(base: ColumnConfig[]): ColumnConfig[] {
   const rank = new Map(ORDER.map((id, i) => [id, i]))
   const adjusted = base.map(col => {
     const width = WIDTH[col.id] ?? col.width
-    if (HIDDEN.has(col.id)) return { ...col, visible: false, width }
-    return width === col.width ? col : { ...col, width }
+    const align = RIGHT_ALIGNED.has(col.id) ? ('right' as const) : col.align
+    if (HIDDEN.has(col.id)) return { ...col, visible: false, width, align }
+    if (width === col.width && align === col.align) return col
+    return { ...col, width, align }
   })
   // Stable: equal ranks (everything off the list) keep their incoming order.
   return adjusted
