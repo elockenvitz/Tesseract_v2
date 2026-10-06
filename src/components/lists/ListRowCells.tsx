@@ -18,7 +18,6 @@ import { clsx } from 'clsx'
 import { Sparkline } from '../signals/Sparkline'
 import { RatingPill, ConvictionBars } from './ListRowAtoms'
 import { STATE_LABEL, type ResearchState } from '../../lib/desktop-research/model'
-import type { ListRowMode } from './listRowModes'
 import type { ListRowSignal } from '../../hooks/lists/useListRowSignals'
 import type { ColumnConfig } from '../table/AssetTableView'
 
@@ -27,14 +26,19 @@ export const LIST_SIGNAL_COLUMNS: ColumnConfig[] = [
   // All sortable: a watchlist whose columns cannot be ordered is a report. The
   // comparators live with the surface that owns the data — see
   // `listSortComparators`, handed to the table as `extraSortComparators`.
-  { id: 'list_spark',    label: '1M',       visible: true, width: 64,  minWidth: 48, sortable: true, pinned: false, category: 'price' },
-  { id: 'list_position', label: 'Position', visible: true, width: 68,  minWidth: 56, sortable: true, pinned: false, category: 'price', align: 'right' },
+  // The sparkline grows: a month of movement in 64px flattens everything but
+  // the extremes, which is how every name ends up looking like the same gentle
+  // slope.
+  { id: 'list_spark',    label: '1M',       visible: true, width: 80,  minWidth: 64, sortable: true, pinned: false, category: 'price', grow: 1 },
+  { id: 'list_position', label: 'Position', visible: true, width: 72,  minWidth: 60, sortable: true, pinned: false, category: 'price', align: 'right' },
   // "View" rather than "Rating": the cell carries the rating AND the conviction
   // behind it, which together are the house view, and two columns for one
   // judgement is what pushed this line into horizontal scroll.
-  { id: 'list_rating',   label: 'View',     visible: true, width: 76,  minWidth: 64, sortable: true, pinned: false, category: 'research' },
-  { id: 'list_target',   label: 'Target',   visible: true, width: 92,  minWidth: 76, sortable: true, pinned: false, category: 'research', align: 'right' },
-  { id: 'list_work',     label: 'Work',     visible: true, width: 132, minWidth: 96, sortable: true, pinned: false, category: 'workflow' },
+  { id: 'list_rating',   label: 'View',     visible: true, width: 84,  minWidth: 72, sortable: true, pinned: false, category: 'research' },
+  { id: 'list_target',   label: 'Target',   visible: true, width: 98,  minWidth: 84, sortable: true, pinned: false, category: 'research', align: 'right' },
+  // Work grows most: it is the only column whose job is to say WHY a name needs
+  // attention, and "New research" truncated to "New rese…" says nothing.
+  { id: 'list_work',     label: 'Work',     visible: true, width: 140, minWidth: 110, sortable: true, pinned: false, category: 'workflow', grow: 2 },
 ]
 
 /**
@@ -129,12 +133,45 @@ const ORDER = [
  * set to ~960px. The user can still drag any of them wider; this is only where
  * they start.
  */
+/**
+ * The FLOOR, not the final size.
+ *
+ * These widths are what the line collapses to on a narrow pane; `GROW` below
+ * spends everything a wider one offers. So the number to keep small is this
+ * total — it decides whether a 1280px laptop scrolls — while the look on a
+ * 1600px screen is decided by the growth weights.
+ */
 const WIDTH: Readonly<Record<string, number>> = {
-  ticker: 88,
-  companyName: 150,
-  price: 80,
-  change: 68,
+  ticker: 90,
+  companyName: 160,
+  price: 84,
+  change: 72,
   coverage: 110,
+}
+
+/**
+ * Who takes the pane's leftover width, and in what proportion.
+ *
+ * The identity gets the most: a truncated company name is the one thing on the
+ * line a reader cannot reconstruct from context. Work next, because it carries
+ * the reason for attention. Everything else holds a number whose width is the
+ * number's own.
+ */
+const GROW: Readonly<Record<string, number>> = {
+  companyName: 3,
+  coverage: 1,
+}
+
+/**
+ * Shorter headings, for this surface only.
+ *
+ * "Change %" wrapped to two lines in a column sized for the number rather than
+ * for the word, which put a two-line heading over a one-line table. The shared
+ * default keeps its full label everywhere else.
+ */
+const LABEL: Readonly<Record<string, string>> = {
+  change: 'Chg %',
+  coverage: 'Coverage',
 }
 
 /**
@@ -179,9 +216,11 @@ export function listColumnPreset(base: ColumnConfig[]): ColumnConfig[] {
   const adjusted = base.map(col => {
     const width = WIDTH[col.id] ?? col.width
     const align = RIGHT_ALIGNED.has(col.id) ? ('right' as const) : col.align
-    if (HIDDEN.has(col.id)) return { ...col, visible: false, width, align }
-    if (width === col.width && align === col.align) return col
-    return { ...col, width, align }
+    const grow = GROW[col.id] ?? col.grow
+    const label = LABEL[col.id] ?? col.label
+    if (HIDDEN.has(col.id)) return { ...col, visible: false, width, align, grow, label }
+    if (width === col.width && align === col.align && grow === col.grow && label === col.label) return col
+    return { ...col, width, align, grow, label }
   })
   // Stable: equal ranks (everything off the list) keep their incoming order.
   return adjusted
@@ -202,12 +241,26 @@ export function listColumnPreset(base: ColumnConfig[]): ColumnConfig[] {
 
 function SparkCell({ signal }: { signal: ListRowSignal }) {
   if (!signal.closes || signal.closes.length < 2) return null
+  /*
+   * Fills whatever width the column grew to — capped at 64px it read as a
+   * texture rather than a chart.
+   *
+   * Height is deliberately well under the row: at 28px in a 44px row the
+   * gradient fills of consecutive rows nearly touched and the column read as
+   * one continuous ribbon down the table rather than as one chart per name.
+   */
+  /*
+   * The height lives on a WRAPPER, not on the chart.
+   *
+   * `Sparkline` bakes `h-full w-full` into its own svg, so a height passed
+   * through `className` loses to it and the chart grew to fill the whole row —
+   * which is what made consecutive rows' gradient fills touch and read as one
+   * continuous ribbon down the column instead of one chart per name.
+   */
   return (
-    <Sparkline
-      points={signal.closes}
-      className="h-5 w-full max-w-[64px]"
-      reference={signal.targetPrice}
-    />
+    <span className="block h-[18px] w-full">
+      <Sparkline points={signal.closes} reference={signal.targetPrice} />
+    </span>
   )
 }
 
@@ -275,37 +328,49 @@ function TargetCell({ signal, price }: { signal: ListRowSignal; price: number | 
  * desired state and gets no badge at all — a list where every row is decorated
  * tells the reader nothing about where to look.
  */
-const WORK_TONE: Partial<Record<ResearchState, string>> = {
-  'evidence-since-review': 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30',
-  'moved-since-review':    'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30',
-  'no-thesis':             'text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800',
-  'incomplete-thesis':     'text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800',
-  stale:                   'text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800',
+/**
+ * How loudly each state speaks.
+ *
+ * Three levels, carried by WEIGHT and a single dot — not by a filled badge. A
+ * list where every row that needs attention wears a coloured pill turns into a
+ * wall of pills, and the reader stops seeing any of them. `urgent` gets the one
+ * amber mark on the line; `open` is simply darker and heavier than the rest;
+ * `calm` recedes.
+ */
+const WORK_LEVEL: Record<ResearchState, 'urgent' | 'open' | 'calm'> = {
+  'evidence-since-review': 'urgent',
+  'moved-since-review': 'urgent',
+  stale: 'open',
+  'incomplete-thesis': 'open',
+  'no-thesis': 'open',
+  thin: 'calm',
+  current: 'calm',
 }
 
 function WorkCell({ signal }: { signal: ListRowSignal }) {
   const { state, subject } = signal
   if (!state) return null
-  // Named so the count is legible without opening the row: "New research · 3".
+  const level = WORK_LEVEL[state]
   const count = state === 'evidence-since-review' ? subject?.newSinceReview ?? 0 : 0
-  const tone = WORK_TONE[state]
-  if (!tone) {
-    return (
-      <span className="text-[11px] text-gray-400 dark:text-gray-500 truncate">
+
+  return (
+    <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
+      {level === 'urgent' && (
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+      )}
+      <span className={clsx(
+        'text-[11.5px] leading-none truncate',
+        level === 'urgent' && 'font-semibold text-gray-900 dark:text-gray-50',
+        level === 'open' && 'font-medium text-gray-600 dark:text-gray-300',
+        level === 'calm' && 'text-gray-400 dark:text-gray-500',
+      )}>
         {STATE_LABEL[state]}
       </span>
-    )
-  }
-  return (
-    <span
-      className={clsx(
-        'inline-flex items-center gap-1 px-1.5 py-0.5 rounded max-w-full',
-        'text-[11px] font-medium leading-none truncate',
-        tone,
+      {count > 0 && (
+        <span className="text-[11.5px] font-semibold tabular-nums text-amber-700 dark:text-amber-300 flex-shrink-0">
+          {count}
+        </span>
       )}
-    >
-      <span className="truncate">{STATE_LABEL[state]}</span>
-      {count > 0 && <span className="tabular-nums flex-shrink-0 opacity-70">{count}</span>}
     </span>
   )
 }

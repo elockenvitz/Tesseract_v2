@@ -591,7 +591,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
           ) : (
             // ── Grid: Flat filtered view ─────────────────────────────
             flatFiltered && flatFiltered.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-0">
                 {flatFiltered.map(list => (
                   <ListSurfaceCard
                     key={list.id}
@@ -913,9 +913,9 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
 
 // ── SurfaceSection ─────────────────────────────────────────────────────
 
-// Two full rows at the widest grid, so "View more" appears at a row boundary
-// rather than mid-row.
-const DEFAULT_VISIBLE_COUNT = 8
+// The units are one or two lines now, so a section can show far more of itself
+// before asking. Even, so "View more" lands at the end of a row in two columns.
+const DEFAULT_VISIBLE_COUNT = 14
 
 interface SurfaceSectionProps {
   sectionKey: string
@@ -989,9 +989,13 @@ function SurfaceSection({
       {!isCollapsed && (
         lists.length > 0 ? (
           <div className="space-y-2">
-            {/* Four up on a wide screen: three oversized cards per row was the
-                main reason this page read as mostly empty space. */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {/* Two dense columns, not a tile gallery. Each unit is one or two
+                lines, so a section of twelve lists is read without scrolling
+                instead of three tiles and a fold. */}
+            {/* A hairline between units, at both widths. Without it the rows
+                blurred into each other; with a box around each they became a
+                gallery again. One line is the whole separation budget. */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-0 [&>*]:border-b [&>*]:border-gray-100 dark:[&>*]:border-gray-800/70">
               {visibleLists.map(list => (
                 <ListSurfaceCard
                   key={list.id}

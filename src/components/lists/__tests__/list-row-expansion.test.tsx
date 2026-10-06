@@ -295,8 +295,9 @@ describe('Overview shows only what exists', () => {
     expect(screen.getByText('5.14%')).toBeInTheDocument()
     expect(screen.getByText('Buy')).toBeInTheDocument()
     expect(screen.getByText('$200.00')).toBeInTheDocument()
+    // Target carries its own upside rather than occupying a second column:
     // (200 - 170.5) / 170.5 = +17.3%
-    expect(screen.getByText('+17.3%')).toBeInTheDocument()
+    expect(screen.getByText('+17.3% upside')).toBeInTheDocument()
   })
 
   it('omits facts entirely when the data is absent — no dashes, no placeholders', () => {
@@ -321,7 +322,11 @@ describe('Overview shows only what exists', () => {
     hooks.workspace.spot = 200
     hooks.workspace.target = 180
     renderRow()
-    expect(screen.getByText('-10.0%')).toBeInTheDocument()
+    const down = screen.getByText('-10.0% upside')
+    expect(down).toBeInTheDocument()
+    // Direction is carried by colour on the figure it belongs to, which is the
+    // one place colour is allowed to mean something on this surface.
+    expect(screen.getByText('$180.00').className).toMatch(/rose/)
   })
 
   it('prefers the official rating over a more recent unofficial one', () => {
@@ -607,7 +612,9 @@ describe('Position and Valuation modes', () => {
     expect(currentMode()).toBe('position')
     const names = screen.getAllByText(/Big Book|Small Book/).map(n => n.textContent)
     expect(names[0]).toBe('Big Book')
-    expect(screen.getByText('6.10%')).toBeInTheDocument()
+    // Twice on purpose: once as the headline weight, once in the book rows.
+    expect(screen.getAllByText('6.10%').length).toBe(2)
+    expect(screen.getByText('Largest weight')).toBeInTheDocument()
     expect(screen.getByText('+12.5%')).toBeInTheDocument()
   })
 
@@ -646,9 +653,10 @@ describe('ownership and list fields stay reachable', () => {
       { id: 'i1', action: 'buy', stage: 'deciding', rationale: null, portfolioName: 'Tech Growth' },
     ]
     renderRow()
-    expect(screen.getByText('Active')).toBeInTheDocument()
-    expect(screen.getByText('buy')).toBeInTheDocument()
-    expect(screen.getByText(/deciding/)).toBeInTheDocument()
+    // One figure, not an action label and a stage chip: an open idea is one
+    // fact about the security.
+    expect(screen.getByText('Open idea')).toBeInTheDocument()
+    expect(screen.getByText('BUY · deciding')).toBeInTheDocument()
   })
 
   it('shows no Active fact when there is no idea', () => {

@@ -33,7 +33,10 @@ import { useMarketData, useMarketStatus } from '../../hooks/useMarketData'
 import { sortCoverageDeterministically, resolveCoverageDefault, type CoverageRow } from '../../lib/coverage/resolveCoverage'
 import { formatDistanceToNow, format } from 'date-fns'
 import { clsx } from 'clsx'
-import { DENSITY_CONFIG } from '../../contexts/TableContext'
+// Aliased: this file has its own narrower local `DensityMode` that omits
+// `micro`, while the context's (and `DENSITY_CONFIG`) include it. The override
+// map below is keyed by the full set so a caller can size every density.
+import { DENSITY_CONFIG, type DensityMode as FullDensityMode } from '../../contexts/TableContext'
 import { mergeSavedColumns, serializeColumns } from './columnPersistence'
 import { DensityToggle } from './DensityToggle'
 import { useIsMobile } from '../../hooks/useMediaQuery'
@@ -125,6 +128,14 @@ export interface ColumnConfig {
    * from a CRUD grid.
    */
   align?: 'left' | 'right'
+  /**
+   * Share of the pane's leftover width this column takes. Default 0 — fixed.
+   *
+   * Opt-in per column, so a surface that wants its table to own the canvas can
+   * say which columns deserve the room (an identity, a reason for attention)
+   * and which should stay exactly as wide as the number they hold.
+   */
+  grow?: number
   prioritySource?: PrioritySourceType
   sourceUserId?: string // User ID when prioritySource is 'user'
   sourceUserName?: string // Display name when prioritySource is 'user'
@@ -368,6 +379,15 @@ interface AssetTableViewProps {
    */
   expansionEntryColumns?: ReadonlySet<string>
   /**
+   * Per-density height for an expanded row, overriding the default.
+   *
+   * The virtualiser must know row sizes up front, so this is a constant per
+   * density rather than anything measured. A surface whose expansion is a
+   * working inspector rather than a detail panel needs more room than the
+   * default allows.
+   */
+  expandedRowHeights?: Partial<Record<FullDensityMode, number>>
+  /**
    * Comparators for columns whose data the table does not hold.
    *
    * Keyed by column id. A surface computing its own columns — a research state,
@@ -433,6 +453,7 @@ export function AssetTableView({
   columnPreset,
   columnPresetVersion,
   expansionEntryColumns,
+  expandedRowHeights,
   extraSortComparators,
   expandedRowSlot,
   filterBarSlot,
@@ -537,7 +558,16 @@ export function AssetTableView({
 
   const densityConfig = DENSITY_CONFIG[effectiveDensity]
   const densityRowHeight = densityConfig.rowHeight
-  const expandedRowHeight = expandedRowHeightS[effectiveDensity]
+  /*
+   * A surface may ask for a taller expansion than the default.
+   *
+   * The default suits a metric detail panel — one chart and a caption. A
+   * two-column inspector needs more: at 320px the Lists workspace had roughly
+   * 190px of rail after its header and footer, which clipped labels mid-word.
+   * Opt-in, so no other table's rows change height.
+   */
+  const expandedRowHeight = expandedRowHeights?.[effectiveDensity]
+    ?? expandedRowHeightS[effectiveDensity]
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('')
@@ -1446,6 +1476,15 @@ export function AssetTableView({
   }, [expandedMetricColumn])
 
 
+  /*
+   * Row drag-reorder, declared here rather than beside its handlers because
+   * `visibleColumns` below needs it: the drag handle shares the row, so it is
+   * width the columns cannot spend. Reading it from further down the component
+   * is a temporal dead zone — the typecheck caught exactly that.
+   */
+  const canDragRows = !!onReorderItem && sortBy === null && groupBy === 'none'
+  const dragHandleWidth = 24
+
   const visibleColumns = useMemo(() => {
     // Pinned columns go to the left (after select), unpinned columns follow
     const selectCol = allColumns.find(c => c.id === 'select' && c.visible)
@@ -1455,12 +1494,38 @@ export function AssetTableView({
 
     // Scale column widths based on density
     const widthScale = densityConfig.widthScale
-    return ordered.map(col => ({
+    const scaled = ordered.map(col => ({
       ...col,
       width: Math.round(col.width * widthScale),
       minWidth: Math.round(col.minWidth * widthScale)
     }))
-  }, [allColumns, densityConfig.widthScale])
+
+    /*
+     * Spend the leftover width on the columns that can use it.
+     *
+     * Fixed pixel widths that happen to total less than the pane leave a dead
+     * region on the right — the watchlist was occupying roughly half a 1600px
+     * screen and the rest was blank. "No horizontal scroll" is not the same as
+     * "owns the canvas", and a table of investment state that trails off into
+     * white reads as a sparse spreadsheet rather than a workspace.
+     *
+     * Only columns the surface marked `grow` take the slack, weighted, and only
+     * when there IS slack — a narrow pane still scrolls rather than crushing
+     * anything below its `minWidth`. Surfaces that mark nothing are untouched.
+     */
+    const totalGrow = scaled.reduce((s, c) => s + (c.grow ?? 0), 0)
+    if (totalGrow <= 0 || tableVisibleWidth <= 0) return scaled
+
+    const fixed = scaled.reduce((s, c) => s + c.width, 0)
+    // The drag handle shares the row, so it is not available to the columns.
+    const available = tableVisibleWidth - (canDragRows ? dragHandleWidth : 0)
+    const slack = available - fixed
+    if (slack <= 0) return scaled
+
+    return scaled.map(col => col.grow
+      ? { ...col, width: col.width + Math.floor((slack * col.grow) / totalGrow) }
+      : col)
+  }, [allColumns, densityConfig.widthScale, tableVisibleWidth, canDragRows, dragHandleWidth])
 
   // Hidden columns for the add column menu
   const hiddenColumns = useMemo(() => allColumns.filter(c => !c.visible && c.id !== 'select'), [allColumns])
@@ -2059,10 +2124,9 @@ export function AssetTableView({
 
   const canDragKanban = kanbanOrganization === 'priority' || !!activeKanbanBoardId
 
-  // Row drag-reorder
-  const canDragRows = !!onReorderItem && sortBy === null && groupBy === 'none'
-  const dragHandleWidth = 24
-
+  // Row drag-reorder. `canDragRows` / `dragHandleWidth` are declared above
+  // `visibleColumns`, which needs them to know how much width the columns may
+  // actually spend.
   const handleRowDragStart = useCallback((e: React.DragEvent, rowIndex: number) => {
     setDragRowIndex(rowIndex)
     e.dataTransfer.effectAllowed = 'move'

@@ -224,6 +224,9 @@ export function ListTableView({
       columnPreset={listColumnPreset}
       columnPresetVersion={LIST_COLUMN_PRESET_VERSION}
       expansionEntryColumns={LIST_EXPANSION_ENTRY_COLUMNS}
+      // The expansion is a two-column inspector, not a detail panel. At the
+      // default heights its context rail clipped labels mid-word.
+      expandedRowHeights={{ comfortable: 460, compact: 420, ultra: 350, micro: 290 }}
       extraSortComparators={extraSortComparators}
       renderExtraCell={renderExtraCell}
       expandedRowSlot={expandedRowSlot}

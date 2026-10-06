@@ -1,4 +1,30 @@
-import { Star, Edit3, Users, Clock, Filter } from 'lucide-react'
+/**
+ * One List, as a dense unit rather than a tile.
+ *
+ * ── Why this is not a card any more ───────────────────────────────────────
+ *
+ * It was a bordered rectangle with a fixed interior, so a list holding nothing
+ * occupied the same several hundred pixels as a list holding forty names and
+ * three unanswered pieces of research. A page whose question is "which
+ * collection deserves my attention" spent most of its height saying nothing,
+ * and the answer was below the fold.
+ *
+ * So visual weight now follows useful information:
+ *
+ *   an empty list   one quiet line
+ *   a plain list    name, count, a few tickers, when it last moved
+ *   a loud list     the same, plus what needs a person, in the strongest ink
+ *                   on the row
+ *
+ * ── How the emphasis is made ──────────────────────────────────────────────
+ *
+ * Type, spacing and one amber dot. Not a border, not a filled badge, not a
+ * coloured background: on a page of thirty lists any of those becomes a wall
+ * of decoration, and a wall of decoration is read as texture rather than as
+ * signal. The list's own colour survives as a 2px spine, which is identity
+ * rather than status.
+ */
+import { Star, Edit3, Users, Filter } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import type { ListSurface, ListSurfaceMetrics, LastListActivity } from '../../hooks/lists/useListSurfaces'
@@ -9,38 +35,30 @@ interface ListSurfaceCardProps {
   list: ListSurface
   metrics: ListSurfaceMetrics | undefined
   isFavorite: boolean
-  isOwner: boolean
+  /**
+   * Kept in the contract, unused in the composition.
+   *
+   * Ownership used to drive a "Shared" badge. It is now carried by the
+   * collaborator faces and the collaborative glyph, which say the same thing
+   * without a third pill — but the callers still pass it and a future
+   * treatment may want it.
+   */
+  isOwner?: boolean
   onClick: () => void
   onEdit: (e: React.MouseEvent) => void
-  /** Map of asset_id → ticker, for rendering the preview strip */
+  /** Map of asset_id → ticker, for the preview strip */
   symbolMap?: Map<string, string>
   /** Most recent activity event on this list */
   lastActivity?: LastListActivity
   /**
    * What on this list needs a person, folded from data already on the page.
-   * See `useListAttention`. Absent is fine — the card simply says less.
+   * See `useListAttention`. Absent is fine — the unit simply says less.
    */
   attention?: ListAttention
 }
 
-const TICKER_PREVIEW_COUNT = 6
-const AVATAR_PREVIEW_COUNT = 3
-
-function getTypeBadge(list: ListSurface, isOwner: boolean): { label: string; className: string } | null {
-  if (list.list_type === 'collaborative') {
-    return {
-      label: 'Collaborative',
-      className: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800'
-    }
-  }
-  if (!isOwner) {
-    return {
-      label: 'Shared',
-      className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
-    }
-  }
-  return null
-}
+const TICKER_PREVIEW_COUNT = 5
+const AVATAR_PREVIEW_COUNT = 2
 
 function initialsOf(u?: { first_name?: string | null; last_name?: string | null; email?: string | null } | null) {
   if (!u) return '?'
@@ -61,17 +79,17 @@ export function ListSurfaceCard({
   list,
   metrics,
   isFavorite,
-  isOwner,
   onClick,
   onEdit,
   symbolMap,
   lastActivity,
   attention
 }: ListSurfaceCardProps) {
-  const typeBadge = getTypeBadge(list, isOwner)
-  const hasMembers = !!list.created_by_user || list.collaborators.length > 0
   const color = list.color || '#3b82f6'
   const isScreen = (list as any).content_mode === 'screen'
+  const isCollab = list.list_type === 'collaborative'
+  const assetCount = metrics?.assetCount ?? 0
+  const isEmpty = assetCount === 0
 
   const tickers = symbolMap
     ? list.assetIds.slice(0, TICKER_PREVIEW_COUNT)
@@ -80,263 +98,147 @@ export function ListSurfaceCard({
     : []
   const overflowTickers = Math.max(0, list.assetIds.length - tickers.length)
 
-  const assetCount = metrics?.assetCount ?? 0
+  const needs = attention?.needsAttention ?? 0
+  const collabs = list.collaborators ?? []
 
   return (
     <div
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter') onClick() }}
       className={clsx(
-        'group relative cursor-pointer overflow-hidden rounded-xl border bg-white transition-all duration-200 h-full dark:bg-gray-800',
-        'border-gray-200 hover:border-gray-300 hover:shadow-lg hover:-translate-y-0.5 dark:border-gray-700',
-        'dark:bg-gray-900 dark:border-gray-800 dark:hover:border-gray-700'
+        'group relative cursor-pointer rounded-md transition-colors',
+        // One hairline underneath, no box. Hover is a surface, not a shadow and
+        // a lift — thirty lifting tiles is a page that will not hold still.
+        'px-3 hover:bg-gray-50 dark:hover:bg-gray-800/50',
+        isEmpty ? 'py-1.5' : 'py-2',
       )}
-      style={{
-        // Subtle gradient bloom on hover, keyed off the list color
-        backgroundImage: `linear-gradient(to bottom right, ${color}03, transparent 40%)`
-      }}
     >
-      {/* Left color bar */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-1"
+      {/* Identity spine. 2px, and only while it has reason to be seen. */}
+      <span
+        aria-hidden
+        className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full opacity-60 group-hover:opacity-100 transition-opacity"
         style={{ backgroundColor: color }}
       />
 
-      {/* Subtle glow on hover — uses the list color */}
-      <div
-        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-        style={{
-          background: `radial-gradient(600px circle at 50% 0%, ${color}08, transparent 60%)`
-        }}
-      />
+      {/* ── Line one: name, scale, and what needs a person ───────────── */}
+      <div className="flex items-baseline gap-2 min-w-0">
+        <h3 className={clsx(
+          'truncate tracking-tight',
+          // An attended list is heavier and darker. That is the emphasis.
+          needs > 0
+            ? 'text-[13.5px] font-semibold text-gray-900 dark:text-gray-50'
+            : isEmpty
+              ? 'text-[13px] font-medium text-gray-500 dark:text-gray-400'
+              : 'text-[13.5px] font-medium text-gray-800 dark:text-gray-100',
+        )}>
+          {list.name}
+        </h3>
 
-      {/* h-full + flex-col means the footer can mt-auto to the bottom,
-          keeping the activity line aligned across tiles regardless of
-          what middle content each one has. */}
-      <div className="relative pl-4 pr-3 py-2.5 flex flex-col gap-2 h-full">
-        {/* ── Top row: name cluster · actions ────────────────── */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <h3 className="font-semibold text-[14px] tracking-tight text-gray-900 dark:text-gray-50 truncate">
-              {list.name}
-            </h3>
-            {isFavorite && (
-              <Star className="h-3 w-3 text-amber-400 fill-amber-400 flex-shrink-0" />
-            )}
-            {isScreen && (
-              <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-semibold bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900">
-                <Filter className="h-2 w-2" />
-                SCREEN
-              </span>
-            )}
-            {typeBadge && (
-              <span className={clsx(
-                'inline-flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-medium border',
-                typeBadge.className
-              )}>
-                {list.list_type === 'collaborative' && <Users className="h-2 w-2" />}
-                {typeBadge.label}
-              </span>
-            )}
-          </div>
-
-          <button
-            onClick={onEdit}
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0"
-            title="Edit list"
-          >
-            <Edit3 className="h-3 w-3" />
-          </button>
-        </div>
-
-        {/* ── Description — single line, conditional (no reserved slot) ── */}
-        {list.description && (
-          <p className="text-[11.5px] text-gray-500 dark:text-gray-400 leading-snug line-clamp-1">
-            {list.description}
-          </p>
+        {isFavorite && <Star className="h-3 w-3 text-amber-400 fill-amber-400 flex-shrink-0" />}
+        {isScreen && (
+          <span className="inline-flex items-center gap-0.5 text-[9.5px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 flex-shrink-0">
+            <Filter className="h-2.5 w-2.5" />
+            Screen
+          </span>
+        )}
+        {isCollab && (
+          <Users className="h-3 w-3 text-gray-300 dark:text-gray-600 flex-shrink-0" aria-label="Collaborative" />
         )}
 
-        {/* ── What needs a person ───────────────────────────────
-               The reason this page exists: which collection to open. Counts
-               come from data already in memory — see `useListAttention`. An
-               untroubled list shows nothing here rather than a row of zeroes,
-               because a page where every card is decorated says nothing about
-               where to look. */}
-        {attention && (attention.needsAttention > 0 || attention.activeIdeas > 0 || attention.noCase > 0) && (
-          <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[11.5px] tabular-nums text-gray-400 dark:text-gray-500 flex-shrink-0">
+          {assetCount === 0 ? 'empty' : `${assetCount} name${assetCount === 1 ? '' : 's'}`}
+        </span>
+
+        <span className="flex-1" />
+
+        {/* The reason to open this list, in the strongest ink on the row. */}
+        {attention && needs > 0 && (
+          <span className="inline-flex items-baseline gap-2 flex-shrink-0 min-w-0">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500 self-center" />
             {attention.newResearch > 0 && (
-              <Signal
-                tone="attention"
-                title={`${attention.newResearchNotes} unreviewed note${attention.newResearchNotes === 1 ? '' : 's'} across ${attention.newResearch} name${attention.newResearch === 1 ? '' : 's'}`}
+              <span
+                className="text-[11.5px] font-semibold text-gray-900 dark:text-gray-50 whitespace-nowrap"
+                title={`${attention.newResearchNotes} unreviewed note${attention.newResearchNotes === 1 ? '' : 's'}`}
               >
                 {attention.newResearch} new research
-              </Signal>
+              </span>
             )}
             {attention.reviewDue > 0 && (
-              <Signal tone="attention" title="Cases past the review clock">
+              <span className="text-[11.5px] font-medium text-gray-600 dark:text-gray-300 whitespace-nowrap">
                 {attention.reviewDue} review due
-              </Signal>
-            )}
-            {attention.activeIdeas > 0 && (
-              <Signal tone="active" title="Names carrying a live idea">
-                {attention.activeIdeas} active
-              </Signal>
-            )}
-            {attention.noCase > 0 && (
-              <Signal tone="quiet" title="Names with no thesis written">
-                {attention.noCase} no case
-              </Signal>
-            )}
-          </div>
-        )}
-
-        {/* ── Ticker preview — conditional; an empty list still shows its
-               metadata + activity so the tile doesn't look broken */}
-        {tickers.length > 0 && (
-          <div className="flex items-center gap-1 flex-wrap">
-            {tickers.map(t => (
-              <span
-                key={t}
-                className="px-1.5 py-0 rounded text-[10px] font-mono font-semibold tabular-nums border border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-gray-800/50 dark:text-gray-300"
-              >
-                {t}
-              </span>
-            ))}
-            {overflowTickers > 0 && (
-              <span className="text-[10px] font-mono text-gray-400 dark:text-gray-500 px-0.5">
-                +{overflowTickers}
               </span>
             )}
-          </div>
+          </span>
+        )}
+        {attention && needs === 0 && attention.activeIdeas > 0 && (
+          <span className="text-[11.5px] text-gray-400 dark:text-gray-500 whitespace-nowrap flex-shrink-0">
+            {attention.activeIdeas} active
+          </span>
         )}
 
-        {/* ── Metadata row — clean text, no icon pill ────────── */}
-        <div className="flex items-center justify-between gap-2 min-w-0">
-          <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400 min-w-0">
-            <span className="tabular-nums font-medium text-gray-700 dark:text-gray-300">
-              {assetCount} {assetCount === 1 ? 'asset' : 'assets'}
+        <button
+          onClick={onEdit}
+          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 -mr-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded flex-shrink-0"
+          title="Edit list"
+        >
+          <Edit3 className="h-3 w-3" />
+        </button>
+      </div>
+
+      {/* ── Line two: what is in it, and when it last moved ──────────── */}
+      {!isEmpty && (
+        <div className="flex items-baseline gap-2 min-w-0 mt-1">
+          {tickers.length > 0 && (
+            <span className="flex items-baseline gap-1.5 min-w-0 flex-shrink">
+              {tickers.map(t => (
+                <span key={t} className="text-[11px] font-mono text-gray-500 dark:text-gray-400 tabular-nums">
+                  {t}
+                </span>
+              ))}
+              {overflowTickers > 0 && (
+                <span className="text-[11px] font-mono text-gray-300 dark:text-gray-600">
+                  +{overflowTickers}
+                </span>
+              )}
             </span>
-            {metrics?.portfolioName && (
+          )}
+
+          <span className="flex-1" />
+
+          <span className="text-[10.5px] text-gray-400 dark:text-gray-500 truncate max-w-[45%] flex-shrink-0">
+            {lastActivity ? (
               <>
-                <span className="text-gray-300 dark:text-gray-700">·</span>
-                <span className="truncate max-w-[140px]">{metrics.portfolioName}</span>
+                {lastActivity.actor_name} {describeActivity(lastActivity)}
+                {' · '}
+                {formatDistanceToNow(new Date(lastActivity.created_at), { addSuffix: true })}
               </>
-            )}
-          </div>
-          {hasMembers && <CardAvatarStack list={list} />}
-        </div>
+            ) : list.updated_at ? (
+              `Updated ${formatDistanceToNow(new Date(list.updated_at), { addSuffix: true })}`
+            ) : null}
+          </span>
 
-        {/* ── Activity footer — bottom-anchored via mt-auto ───── */}
-        <div className="mt-auto flex items-center gap-1.5 text-[10.5px] text-gray-400 dark:text-gray-500 pt-1.5 border-t border-gray-100 dark:border-gray-800/50 min-w-0">
-          <Clock className="h-2.5 w-2.5 flex-shrink-0" />
-          {lastActivity ? (
-            <span className="truncate">
-              <span className="font-medium text-gray-600 dark:text-gray-400">{lastActivity.actor_name}</span>{' '}
-              {describeActivity(lastActivity)}{' '}
-              <span className="text-gray-400 dark:text-gray-600">
-                · {formatDistanceToNow(new Date(lastActivity.created_at), { addSuffix: true })}
-              </span>
-            </span>
-          ) : (
-            <span className="truncate">
-              {list.updated_at
-                ? `Updated ${formatDistanceToNow(new Date(list.updated_at), { addSuffix: true })}`
-                : 'No activity yet'}
+          {/* Ownership is visible but secondary: two faces, no ring stack. */}
+          {collabs.length > 0 && (
+            <span className="flex items-center flex-shrink-0" title={`${collabs.length} collaborator${collabs.length === 1 ? '' : 's'}`}>
+              {collabs.slice(0, AVATAR_PREVIEW_COUNT).map(c => (
+                <span
+                  key={c.id}
+                  title={displayName(c.user)}
+                  className="w-4 h-4 rounded-full bg-gray-100 dark:bg-gray-800 text-[8.5px] font-semibold text-gray-500 dark:text-gray-400 flex items-center justify-center -ml-1 first:ml-0 ring-1 ring-white dark:ring-gray-900"
+                >
+                  {initialsOf(c.user)}
+                </span>
+              ))}
+              {collabs.length > AVATAR_PREVIEW_COUNT && (
+                <span className="ml-1 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
+                  +{collabs.length - AVATAR_PREVIEW_COUNT}
+                </span>
+              )}
             </span>
           )}
         </div>
-      </div>
-    </div>
-  )
-}
-
-/**
- * One attention count.
- *
- * Three tones, not four colours: `attention` is something a person should look
- * at, `active` is work already in hand, `quiet` is a gap worth knowing about
- * but not acting on today. Anything beyond that and the card becomes a legend.
- */
-function Signal({
-  children, tone, title,
-}: {
-  children: React.ReactNode
-  tone: 'attention' | 'active' | 'quiet'
-  title?: string
-}) {
-  return (
-    <span
-      title={title}
-      className={clsx(
-        'inline-flex items-center px-1.5 py-0 rounded text-[10px] font-semibold leading-[18px] tabular-nums',
-        tone === 'attention' && 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-        tone === 'active' && 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-        tone === 'quiet' && 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-      )}
-    >
-      {children}
-    </span>
-  )
-}
-
-// ── Compact avatar stack for card footer ────────────────────────────────
-
-function CardAvatarStack({ list }: { list: ListSurface }) {
-  const owner = list.created_by_user
-  const collabs = list.collaborators ?? []
-  const visibleCollabs = collabs.slice(0, AVATAR_PREVIEW_COUNT)
-  const overflow = Math.max(0, collabs.length - AVATAR_PREVIEW_COUNT)
-
-  return (
-    <div className="flex items-center flex-shrink-0">
-      {owner && (
-        <CardAvatar
-          initials={initialsOf(owner)}
-          label={displayName(owner)}
-          className="bg-gradient-to-br from-primary-400 to-primary-600 text-white"
-          isOwner
-        />
-      )}
-      {visibleCollabs.map(c => (
-        <CardAvatar
-          key={c.id}
-          initials={initialsOf(c.user)}
-          label={displayName(c.user)}
-          className="bg-gradient-to-br from-gray-400 to-gray-600 text-white"
-        />
-      ))}
-      {overflow > 0 && (
-        <CardAvatar
-          initials={`+${overflow}`}
-          label={`${overflow} more`}
-          className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-        />
-      )}
-    </div>
-  )
-}
-
-function CardAvatar({
-  initials,
-  label,
-  className,
-  isOwner
-}: {
-  initials: string
-  label: string
-  className?: string
-  isOwner?: boolean
-}) {
-  return (
-    <div
-      title={isOwner ? `${label} · Owner` : label}
-      className={clsx(
-        'relative w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold ring-2 ring-white dark:ring-gray-900 -ml-1.5 first:ml-0',
-        className
-      )}
-    >
-      {initials}
-      {isOwner && (
-        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 border border-white dark:border-gray-900" title="Owner" />
       )}
     </div>
   )

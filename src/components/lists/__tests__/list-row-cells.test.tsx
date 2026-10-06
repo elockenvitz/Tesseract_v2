@@ -65,20 +65,36 @@ describe('the curated List presentation', () => {
     ])
   })
 
-  it('fits a normal desktop pane without horizontal scroll', () => {
+  it('has a floor narrow enough for a laptop pane', () => {
     /*
      * Measured against the REAL `DEFAULT_COLUMNS`, not the fixture above: a
      * width budget checked against invented widths measures the invention.
      *
+     * This total is the FLOOR — what the line collapses to when there is no
+     * slack. Anything wider is handled by `grow`, so this number only decides
+     * whether a 1280px laptop scrolls.
+     *
      * The first version of this preset hid five columns and still came to
-     * 1316px, which scrolls in any normal pane — hiding was the wrong lever
-     * once the remaining columns were that wide, so the preset narrows them
-     * too. 1050px leaves room for the app's own chrome at a 1440 viewport.
+     * 1316px, which scrolled in any normal pane. Hiding was the wrong lever
+     * once the remaining columns were that wide.
      */
     const width = listColumnPreset([...DEFAULT_COLUMNS, ...LIST_SIGNAL_COLUMNS])
       .filter(c => c.visible)
       .reduce((sum, c) => sum + c.width, 0)
     expect(width).toBeLessThan(1050)
+  })
+
+  it('spends a wide pane on identity and the reason for attention', () => {
+    // Without growth the table owned roughly half a 1600px screen and the rest
+    // was blank, which is what made it read as a sparse spreadsheet.
+    const out = listColumnPreset([...DEFAULT_COLUMNS, ...LIST_SIGNAL_COLUMNS])
+    const grow = (id: string) => out.find(c => c.id === id)?.grow ?? 0
+    expect(grow('companyName')).toBeGreaterThan(grow('list_work'))
+    expect(grow('list_work')).toBeGreaterThan(grow('list_spark'))
+    // Columns holding one number stay exactly as wide as the number.
+    for (const id of ['price', 'change', 'list_position', 'list_target', 'list_rating']) {
+      expect(grow(id), `${id} should not grow`).toBe(0)
+    }
   })
 
   it('right-aligns the numeric band so the decimals line up', () => {

@@ -40,7 +40,7 @@ import { dirname, resolve, relative } from 'node:path'
 const ROOT = resolve(import.meta.dirname, '..')
 
 /** Everything the gallery bundle starts from. */
-const ENTRIES = ['gallery/main.tsx']
+const ENTRIES = ['gallery/main.tsx', 'gallery/lists-entry.tsx']
 
 /**
  * The module that must stay unreachable.
