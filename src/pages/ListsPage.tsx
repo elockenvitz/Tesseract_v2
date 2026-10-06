@@ -127,9 +127,35 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
     })
   }
 
-  const filteredMy = useMemo(() => applyFilters(myLists), [myLists, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds])
-  const filteredCollab = useMemo(() => applyFilters(collaborative), [collaborative, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds])
-  const filteredShared = useMemo(() => applyFilters(sharedWithMe), [sharedWithMe, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds])
+  /**
+   * Order by what needs a person.
+   *
+   * Applied here rather than inside `useListSurfaces` because attention is
+   * folded FROM that hook's output — asking the hook to sort by it would be
+   * circular. The hook has already ordered by `sortBy`, so this is a stable
+   * re-sort: lists with equal attention keep whatever order the chosen sort
+   * gave them, which means "Attention" reads as the normal list with the loud
+   * ones lifted rather than as a different list.
+   */
+  const byAttention = useCallback((lists: ListSurface[]) => {
+    if (sortBy !== 'attention') return lists
+    return [...lists]
+      .map((list, i) => ({ list, i, at: attentionFor(list.id) }))
+      .sort((a, b) => {
+        if (b.at.needsAttention !== a.at.needsAttention) {
+          return b.at.needsAttention - a.at.needsAttention
+        }
+        // Then work in hand, then a gap worth knowing about.
+        if (b.at.activeIdeas !== a.at.activeIdeas) return b.at.activeIdeas - a.at.activeIdeas
+        if (b.at.noCase !== a.at.noCase) return b.at.noCase - a.at.noCase
+        return a.i - b.i
+      })
+      .map(x => x.list)
+  }, [sortBy, attentionFor])
+
+  const filteredMy = useMemo(() => byAttention(applyFilters(myLists)), [myLists, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds, byAttention])
+  const filteredCollab = useMemo(() => byAttention(applyFilters(collaborative)), [collaborative, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds, byAttention])
+  const filteredShared = useMemo(() => byAttention(applyFilters(sharedWithMe)), [sharedWithMe, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds, byAttention])
 
   // When typeFilter !== 'all', merge all into one flat list
   const flatFiltered = useMemo(() => {
@@ -141,8 +167,8 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
       case 'shared': source = sharedWithMe; break
       default: source = allLists
     }
-    return sortFn(applyFilters(source))
-  }, [typeFilter, myLists, collaborative, sharedWithMe, allLists, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds, sortFn])
+    return byAttention(sortFn(applyFilters(source)))
+  }, [typeFilter, myLists, collaborative, sharedWithMe, allLists, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds, sortFn, byAttention])
 
   // Unified filtered list for table view (sorting handled by the table internally)
   const tableFiltered = useMemo(() => {

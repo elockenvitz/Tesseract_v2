@@ -47,10 +47,11 @@ const hooks = vi.hoisted(() => ({
   reviewDone: false,
   /** Everything `saveContribution` was called with, in order. */
   caseWrites: [] as any[],
+  workspaceLoading: false,
 }))
 
 vi.mock('../../../hooks/useAssetWorkspace', () => ({
-  useAssetWorkspace: () => ({ data: hooks.workspace, isLoading: false, error: null }),
+  useAssetWorkspace: () => ({ data: hooks.workspace, isLoading: hooks.workspaceLoading, error: null }),
 }))
 vi.mock('../../../hooks/useAnalystRatings', () => ({
   useAnalystRatings: () => ({
@@ -156,6 +157,50 @@ beforeEach(() => {
   hooks.reviews = []
   hooks.reviewDone = false
   hooks.caseWrites = []
+  hooks.workspaceLoading = false
+})
+
+describe('loading is not an answer about the security', () => {
+  it('claims nothing while the workspace is still loading', () => {
+    hooks.workspaceLoading = true
+    renderRow({ onOpenAsset: () => {}, onCreateTradeIdea: () => {} })
+    expect(screen.getByTestId('mode-skeleton')).toBeInTheDocument()
+    // Every one of these is a CLAIM. Saying it before the answer is known is
+    // worse than saying nothing, and each used to flash on every row open.
+    for (const lie of [
+      'No case written yet.', 'No thesis on file', 'Not held in any book.',
+      'No valuation on file.', 'Nothing outstanding',
+    ]) {
+      expect(screen.queryByText(lie)).not.toBeInTheDocument()
+    }
+  })
+
+  it('proposes no action from data it has not read', () => {
+    hooks.workspaceLoading = true
+    renderRow({ onOpenAsset: () => {}, onCreateTradeIdea: () => {} })
+    expect(screen.queryByText('Write the case')).not.toBeInTheDocument()
+    expect(screen.queryByText('Start an idea')).not.toBeInTheDocument()
+    // The way into the full case is state-independent, so it stays.
+    expect(screen.getByText('Open full case')).toBeInTheDocument()
+  })
+
+  it('keeps the mode switch stable from the first frame', () => {
+    // The list-wide signal already knows the weight and target for every name,
+    // so Position and Valuation must not pop in once the workspace lands —
+    // that moves the tab the reader is aiming at.
+    hooks.workspaceLoading = true
+    renderRow({ signal: { ...EMPTY_SIGNAL, weightPct: 4.2, targetPrice: 210, closes: [1, 2, 3] } })
+    for (const name of ['Overview', 'Market', 'Case', 'Valuation', 'Position', 'Work']) {
+      expect(screen.getByRole('tab', { name })).toBeInTheDocument()
+    }
+  })
+
+  it('shows the real content once loaded', () => {
+    hooks.workspace.sections = [section('thesis', 'Services mix.')]
+    renderRow()
+    expect(screen.queryByTestId('mode-skeleton')).not.toBeInTheDocument()
+    expect(screen.getByText(/Services mix/)).toBeInTheDocument()
+  })
 })
 
 describe('the clicked field decides the mode', () => {

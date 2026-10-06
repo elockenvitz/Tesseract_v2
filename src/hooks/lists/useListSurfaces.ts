@@ -43,7 +43,16 @@ export interface ListSurface {
   portfolio: { id: string; name: string } | null
 }
 
-export type ListSortKey = 'recent' | 'alpha' | 'assets' | 'portfolio' | 'owner' | 'access'
+/**
+ * `attention` is applied by the PAGE, not by `sortLists` below.
+ *
+ * Attention is folded from this hook's own output (`assetIds` joined against
+ * the research and idea scans), so sorting by it in here would be circular.
+ * `sortLists` treats it as the fallback order and `ListsPage` re-sorts stably
+ * on top — see `byAttention` there.
+ */
+export type ListSortKey =
+  | 'recent' | 'alpha' | 'assets' | 'portfolio' | 'owner' | 'access' | 'attention'
 
 // ── Sort helpers ───────────────────────────────────────────────────────
 
@@ -73,6 +82,10 @@ function sortLists(
       case 'owner':
       case 'access':
         // Table-only sort keys; fall through to recency for grid view
+        return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime()
+      case 'attention':
+        // Recency is the tiebreaker the page's stable re-sort preserves, so a
+        // list with nothing outstanding still reads in a sensible order.
         return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime()
       default:
         return 0

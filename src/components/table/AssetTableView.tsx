@@ -34,6 +34,7 @@ import { sortCoverageDeterministically, resolveCoverageDefault, type CoverageRow
 import { formatDistanceToNow, format } from 'date-fns'
 import { clsx } from 'clsx'
 import { DENSITY_CONFIG } from '../../contexts/TableContext'
+import { mergeSavedColumns, serializeColumns } from './columnPersistence'
 import { DensityToggle } from './DensityToggle'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { useSpreadsheetNavigation } from '../../hooks/useSpreadsheetNavigation'
@@ -549,22 +550,9 @@ export function AssetTableView({
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
     try {
       const saved = localStorage.getItem(storageKey)
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        // A bare array is the pre-versioning blob. It predates any preset, so
-        // when a preset exists it is by definition stale.
-        const storedVersion: string | null = Array.isArray(parsed) ? null : parsed?.v ?? null
-        const storedColumns: ColumnConfig[] = Array.isArray(parsed) ? parsed : parsed?.columns ?? []
-        const matches = (columnPresetVersion ?? null) === storedVersion
-        if (matches && storedColumns.length > 0) {
-          return baseColumns.map(defaultCol => {
-            const savedCol = storedColumns.find(c => c.id === defaultCol.id)
-            return savedCol ? { ...defaultCol, visible: savedCol.visible, width: savedCol.width, pinned: savedCol.pinned } : defaultCol
-          })
-        }
-        // Mismatch: the baseline moved. Take it, and let the effect below
-        // re-persist under the new version so this happens exactly once.
-      }
+      // `mergeSavedColumns` owns the rules — including when a new preset is
+      // allowed to override a stored layout. See `columnPersistence`.
+      if (saved) return mergeSavedColumns(baseColumns, JSON.parse(saved), columnPresetVersion)
     } catch (e) { console.warn('Failed to load columns:', e) }
     return baseColumns
   })
@@ -1383,15 +1371,10 @@ export function AssetTableView({
 
   useEffect(() => {
     // Stamped with the preset version that produced it, so the initializer
-    // above can tell a layout the user chose from one a stale baseline chose
-    // for them. Only id/visible/width/pinned are persisted — everything else
-    // belongs to the code, and storing it froze labels and widths that later
-    // changed.
+    // above can tell a layout the reader chose from one a stale baseline chose
+    // for them.
     try {
-      localStorage.setItem(storageKey, JSON.stringify({
-        v: columnPresetVersion ?? null,
-        columns: columns.map(c => ({ id: c.id, visible: c.visible, width: c.width, pinned: c.pinned })),
-      }))
+      localStorage.setItem(storageKey, JSON.stringify(serializeColumns(columns, columnPresetVersion)))
     } catch (e) { console.warn('Failed to save columns:', e) }
   }, [columns, storageKey, columnPresetVersion])
 

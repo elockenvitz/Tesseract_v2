@@ -134,7 +134,7 @@ export function ListRowExpansion({
   // `useAssetWorkspace` returns `{ data, isLoading, error }` and `data` is
   // never undefined — it falls back to an EMPTY shape — so the fields below
   // can be read without guarding every one.
-  const { data: workspace } = useAssetWorkspace(asset?.id ?? null, asset?.symbol ?? null, 'overview')
+  const { data: workspace, isLoading: workspaceLoading } = useAssetWorkspace(asset?.id ?? null, asset?.symbol ?? null, 'overview')
   const { ratings, saveRating } = useAnalystRatings({ assetId: asset?.id })
   const { scales } = useRatingScales()
   const { saveContribution } = useContributions({ assetId: asset?.id })
@@ -232,9 +232,19 @@ export function ListRowExpansion({
 
   // ── Modes ────────────────────────────────────────────────────────────
 
-  const hasPosition = (positions ?? []).length > 0
+  /*
+   * Availability is answered from the LIST-WIDE signal first, not only from the
+   * per-row workspace.
+   *
+   * The signal is already in memory when the row opens; the workspace is still
+   * fetching. Deriving availability from the workspace alone made the Position
+   * and Valuation tabs pop into the switch a moment after opening, which moves
+   * the tab the reader is aiming at. The signal knows the weight and the target
+   * for every name on the list, so the switch is correct from the first frame.
+   */
+  const hasPosition = (positions ?? []).length > 0 || signal?.weightPct != null
   const hasMarket = (signal?.closes?.length ?? 0) > 1 || spot != null
-  const hasValuation = target != null || spot != null
+  const hasValuation = target != null || spot != null || signal?.targetPrice != null
 
   /**
    * Only the modes this security can actually answer.
@@ -328,6 +338,13 @@ export function ListRowExpansion({
      * and two "Review due" labels in one view.
      */
     if (activeMode === 'work') return null
+    /*
+     * No action proposed from unloaded data. Before the workspace lands
+     * `writtenCaseSections` is empty and `newSinceReview` is 0, so the footer
+     * confidently offered "Write the case" on a name whose case it had not yet
+     * read — and then swapped it for something else.
+     */
+    if (workspaceLoading) return null
     // Unreviewed evidence is answerable HERE — a verdict, not a trip to another
     // surface. Everything below it needs a surface this row is not.
     if (newSinceReview > 0 && !!asset?.id) return { kind: 'review' as const }
@@ -335,7 +352,7 @@ export function ListRowExpansion({
     if (writtenCaseSections.length === 0) return { kind: 'case' as const, label: 'Write the case', icon: Pencil }
     if (onCreateTradeIdea) return { kind: 'idea' as const, label: 'Start an idea', icon: Plus }
     return null
-  }, [activeMode, newSinceReview, activeIdea, writtenCaseSections.length, onCreateTradeIdea, asset?.id])
+  }, [activeMode, workspaceLoading, newSinceReview, activeIdea, writtenCaseSections.length, onCreateTradeIdea, asset?.id])
 
   const reviewGroup = (
     review.isDone ? (
@@ -420,6 +437,21 @@ export function ListRowExpansion({
 
       {/* ── The canvas ────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 sm:overflow-y-auto sm:pr-1">
+        {/*
+          * Loading is NOT "nothing on file".
+          *
+          * `useAssetWorkspace` fetches when the row opens, so for its first
+          * moment every mode had empty data and said so — "No case written
+          * yet", "Not held in any book", "No thesis on file" — and then
+          * replaced itself. Those sentences are claims about the security, and
+          * stating them before the answer is known is worse than saying
+          * nothing. The skeleton holds the same shape so the canvas does not
+          * jump when the real content arrives.
+          */}
+        {workspaceLoading ? (
+          <ModeSkeleton mode={activeMode} />
+        ) : (
+          <>
         {activeMode === 'overview' && (
           <OverviewMode
             spot={spot}
@@ -495,6 +527,8 @@ export function ListRowExpansion({
             onOpenAsset={onOpenAsset}
             onCreateTradeIdea={onCreateTradeIdea ? () => onCreateTradeIdea(asset.id) : undefined}
           />
+        )}
+          </>
         )}
       </div>
 
@@ -613,6 +647,51 @@ function Fact({
 
 const money = (n: number) => `$${n.toFixed(2)}`
 const pct = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(1)}%`
+
+/**
+ * The shape of the mode that is coming, with no claims in it.
+ *
+ * Shaped per mode rather than one generic spinner so the canvas does not jump
+ * when the content lands: a fact strip stays a fact strip, a table stays rows.
+ * `aria-busy` rather than a visible word, because a row that announces
+ * "Loading…" for 200ms is noisier than one that simply firms up.
+ */
+function ModeSkeleton({ mode }: { mode: ListRowMode }) {
+  const bar = 'rounded bg-gray-100 dark:bg-gray-800 motion-safe:animate-pulse'
+  const facts = (n: number) => (
+    <div className="flex items-start gap-6 flex-shrink-0">
+      {Array.from({ length: n }, (_, i) => (
+        <div key={i} className="flex flex-col gap-1.5">
+          <div className={clsx(bar, 'h-2 w-10')} />
+          <div className={clsx(bar, 'h-3 w-14')} />
+        </div>
+      ))}
+    </div>
+  )
+  return (
+    <div className="flex flex-col h-full gap-3" aria-busy="true" data-testid="mode-skeleton">
+      {mode !== 'position' && facts(mode === 'overview' ? 5 : 4)}
+      {mode === 'market' && <div className={clsx(bar, 'flex-1 min-h-[64px] w-full')} />}
+      {mode === 'position' && (
+        <div className="space-y-2">
+          {[0, 1, 2].map(i => <div key={i} className={clsx(bar, 'h-4 w-full')} />)}
+        </div>
+      )}
+      {(mode === 'overview' || mode === 'case' || mode === 'work') && (
+        <div className="flex-1 min-h-0 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+          {[0, 1].map(i => (
+            <div key={i} className="space-y-1.5">
+              <div className={clsx(bar, 'h-2 w-16')} />
+              <div className={clsx(bar, 'h-3 w-full')} />
+              <div className={clsx(bar, 'h-3 w-11/12')} />
+              <div className={clsx(bar, 'h-3 w-4/5')} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
