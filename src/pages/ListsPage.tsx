@@ -591,7 +591,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
           ) : (
             // ── Grid: Flat filtered view ─────────────────────────────
             flatFiltered && flatFiltered.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {flatFiltered.map(list => (
                   <ListSurfaceCard
                     key={list.id}
@@ -913,7 +913,9 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
 
 // ── SurfaceSection ─────────────────────────────────────────────────────
 
-const DEFAULT_VISIBLE_COUNT = 6
+// Two full rows at the widest grid, so "View more" appears at a row boundary
+// rather than mid-row.
+const DEFAULT_VISIBLE_COUNT = 8
 
 interface SurfaceSectionProps {
   sectionKey: string
@@ -987,7 +989,9 @@ function SurfaceSection({
       {!isCollapsed && (
         lists.length > 0 ? (
           <div className="space-y-2">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {/* Four up on a wide screen: three oversized cards per row was the
+                main reason this page read as mostly empty space. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {visibleLists.map(list => (
                 <ListSurfaceCard
                   key={list.id}

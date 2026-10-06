@@ -466,6 +466,8 @@ export function ListRowExpansion({
             ratingColor={ratingColor}
             writtenCaseSections={writtenCaseSections}
             newSinceReview={newSinceReview}
+            changes={changes}
+            caseWrittenAt={caseWrittenAt}
             activeIdea={activeIdea}
             coverage={coverage}
             listId={listId}
@@ -723,6 +725,8 @@ function OverviewMode(p: {
   ratingColor: string | null
   writtenCaseSections: Array<{ key: string; row: any }>
   newSinceReview: number
+  changes: any[]
+  caseWrittenAt: string | null
   activeIdea: any
   coverage?: ListRowCoverage[]
   listId: string
@@ -790,13 +794,26 @@ function OverviewMode(p: {
         )}
       </div>
 
-      {/* What we believe — two sections side by side, each clamped */}
-      <div className="flex-1 min-h-0">
-        {p.writtenCaseSections.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-            {p.writtenCaseSections.slice(0, 2).map(s => (
+      {/*
+        * What we believe, beside what has happened since.
+        *
+        * Two columns that both SCROLL rather than one clamped block: the first
+        * version clamped the case to four lines and left roughly half the
+        * canvas empty on a short thesis, which is what made the panel read as
+        * an inserted card. Now a long thesis fills its column and a short one
+        * is balanced by the activity beside it.
+        *
+        * The adjacency is the point, not a layout convenience: the question a
+        * list exists to answer is whether what we wrote still holds, and
+        * `isNewSinceReview` is derived from two real timestamps rather than
+        * guessed, so it can carry that weight honestly.
+        */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-x-6 gap-y-3">
+        <div className="min-w-0 sm:overflow-y-auto space-y-2.5">
+          {p.writtenCaseSections.length > 0 ? (
+            p.writtenCaseSections.slice(0, 2).map(s => (
               <div key={s.key} className="min-w-0">
-                <div className="flex items-baseline gap-2 mb-1">
+                <div className="flex items-baseline gap-2 mb-0.5">
                   <RowLabel>{SECTION_LABEL[s.key] ?? s.key}</RowLabel>
                   {s.row?.authorName && (
                     <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
@@ -804,17 +821,57 @@ function OverviewMode(p: {
                     </span>
                   )}
                 </div>
-                <p className="text-[12.5px] text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-4 whitespace-pre-wrap">
+                <p className="text-[12.5px] text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
                   {s.row.content}
                 </p>
               </div>
-            ))}
+            ))
+          ) : (
+            <div className="text-xs text-gray-400 dark:text-gray-600 italic">
+              No case written yet.
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 sm:overflow-y-auto sm:border-l border-gray-100 dark:border-gray-800 sm:pl-5">
+          <div className="flex items-baseline gap-2 mb-1">
+            <RowLabel>Since review</RowLabel>
+            {p.caseWrittenAt && (
+              <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                {formatDistanceToNow(new Date(p.caseWrittenAt), { addSuffix: true })}
+              </span>
+            )}
           </div>
-        ) : (
-          <div className="text-xs text-gray-400 dark:text-gray-600 italic">
-            No case written yet.
-          </div>
-        )}
+          {p.changes.length > 0 ? (
+            <div className="space-y-1.5">
+              {p.changes.slice(0, 6).map(c => (
+                <div key={c.id} className="flex items-start gap-1.5 text-[11.5px] leading-snug">
+                  {c.isNewSinceReview && (
+                    <span className="mt-[5px] h-1.5 w-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className={clsx(
+                      'truncate',
+                      c.isNewSinceReview
+                        ? 'text-gray-800 dark:text-gray-100 font-medium'
+                        : 'text-gray-600 dark:text-gray-400',
+                    )}>
+                      {c.title || 'Untitled note'}
+                    </div>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                      {c.authorName ? `${c.authorName} · ` : ''}
+                      {formatDistanceToNow(new Date(c.createdAt), { addSuffix: true })}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-gray-400 dark:text-gray-600 italic">
+              Nothing new on file.
+            </div>
+          )}
+        </div>
       </div>
 
       {/* The list's own fields — one wrapping row, not a column */}

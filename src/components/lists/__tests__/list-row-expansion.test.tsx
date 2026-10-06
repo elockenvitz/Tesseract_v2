@@ -473,6 +473,31 @@ describe('the case is the dominant content', () => {
     expect(screen.getByText('Dana R')).toBeInTheDocument()
   })
 
+  it('puts what has changed beside the case, not below a clamp', () => {
+    /*
+     * The case used to be clamped to four lines with nothing beside it, which
+     * left roughly half a fixed-height canvas empty on a short thesis — the
+     * reason the panel read as an inserted card. Both columns now scroll.
+     */
+    hooks.workspace.caseWrittenAt = '2026-09-01T00:00:00Z'
+    hooks.workspace.sections = [section('thesis', 'Services mix.')]
+    hooks.workspace.evidence = [
+      evidence({ title: 'Older note', createdAt: '2026-09-20T00:00:00Z', isNewSinceReview: false }),
+      evidence({ title: 'New since review', createdAt: '2026-09-10T00:00:00Z', isNewSinceReview: true }),
+    ]
+    renderRow()
+    expect(screen.getByText('Since review')).toBeInTheDocument()
+    const titles = screen.getAllByText(/Older note|New since review/).map(n => n.textContent)
+    // Unreviewed leads, even though it is the older of the two.
+    expect(titles[0]).toBe('New since review')
+  })
+
+  it('says nothing is new rather than leaving the column blank', () => {
+    hooks.workspace.sections = [section('thesis', 'Services mix.')]
+    renderRow()
+    expect(screen.getByText('Nothing new on file.')).toBeInTheDocument()
+  })
+
   it('shows at most the two leading sections, leaving the rest to Case mode', () => {
     hooks.workspace.sections = [
       section('thesis', 'A view.'),
