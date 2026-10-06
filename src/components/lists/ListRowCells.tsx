@@ -29,7 +29,7 @@ export const LIST_SIGNAL_COLUMNS: ColumnConfig[] = [
   // The sparkline grows: a month of movement in 64px flattens everything but
   // the extremes, which is how every name ends up looking like the same gentle
   // slope.
-  { id: 'list_spark',    label: '1M',       visible: true, width: 80,  minWidth: 64, sortable: true, pinned: false, category: 'price', grow: 1 },
+  { id: 'list_spark',    label: '1M',       visible: true, width: 86,  minWidth: 64, sortable: true, pinned: false, category: 'price' },
   { id: 'list_position', label: 'Position', visible: true, width: 72,  minWidth: 60, sortable: true, pinned: false, category: 'price', align: 'right' },
   // "View" rather than "Rating": the cell carries the rating AND the conviction
   // behind it, which together are the house view, and two columns for one
@@ -38,7 +38,7 @@ export const LIST_SIGNAL_COLUMNS: ColumnConfig[] = [
   { id: 'list_target',   label: 'Target',   visible: true, width: 98,  minWidth: 84, sortable: true, pinned: false, category: 'research', align: 'right' },
   // Work grows most: it is the only column whose job is to say WHY a name needs
   // attention, and "New research" truncated to "New rese…" says nothing.
-  { id: 'list_work',     label: 'Work',     visible: true, width: 140, minWidth: 110, sortable: true, pinned: false, category: 'workflow', grow: 2 },
+  { id: 'list_work',     label: 'Work',     visible: true, width: 170, minWidth: 130, sortable: true, pinned: false, category: 'workflow' },
 ]
 
 /**
@@ -109,7 +109,7 @@ export function listSortComparators(
  * (saved column state is layered over this baseline, not replaced by it).
  */
 const ORDER = [
-  'select', 'ticker', 'companyName',
+  'select', 'ticker',
   'price', 'change', 'list_spark',
   'list_position',
   'list_rating', 'list_target',
@@ -135,11 +135,11 @@ const ORDER = [
  * 1600px screen is decided by the growth weights.
  */
 const WIDTH: Readonly<Record<string, number>> = {
-  ticker: 90,
-  companyName: 160,
-  price: 84,
-  change: 72,
-  coverage: 110,
+  // One identity cell: chevron, ticker, and the company beneath it.
+  ticker: 180,
+  price: 82,
+  change: 74,
+  coverage: 112,
 }
 
 /**
@@ -150,8 +150,21 @@ const WIDTH: Readonly<Record<string, number>> = {
  * the reason for attention. Everything else holds a number whose width is the
  * number's own.
  */
+/**
+ * Who takes the pane's leftover width.
+ *
+ * Work takes the most: it is the column that says what is happening to the
+ * investment, and "BUY · Recommendation ready" over "Thin evidence" needs room
+ * to be two legible lines rather than two truncations. Identity next, because a
+ * clipped company name is the one thing on the line a reader cannot reconstruct.
+ * Everything else holds a number whose width is the number's own.
+ */
 const GROW: Readonly<Record<string, number>> = {
-  companyName: 3,
+  list_work: 2,
+  ticker: 2,
+  // The chart earns slack too: a month of movement in 86px is a texture, and
+  // this is the only column whose value IS its width.
+  list_spark: 1,
   coverage: 1,
 }
 
@@ -186,7 +199,7 @@ const RIGHT_ALIGNED = new Set(['price', 'change'])
  * default forever — which is exactly what happened to the first version of
  * this preset, and why the columns it hid were still on screen.
  */
-export const LIST_COLUMN_PRESET_VERSION = 'lists-2026-10-06a'
+export const LIST_COLUMN_PRESET_VERSION = 'lists-2026-10-06b'
 
 /**
  * Hidden by default, not deleted.
@@ -198,6 +211,13 @@ export const LIST_COLUMN_PRESET_VERSION = 'lists-2026-10-06a'
  */
 const HIDDEN = new Set([
   'priority', 'workflows', 'updated', 'list_assignee', 'list_tags',
+  /*
+   * Company is not dropped — it moves INTO the ticker cell as a second line.
+   * `AssetTableView` composes it there whenever this column is hidden, so the
+   * identity reads as one object instead of two columns of equal weight, and
+   * the width it was using goes to the investment state.
+   */
+  'companyName',
   // The list's own process state. Real, but it answers a question about this
   // list rather than about the security, and the expansion's Overview shows it.
   'list_status',

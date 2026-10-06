@@ -576,7 +576,8 @@ describe('Work mode launches the workflow the signal names', () => {
     ]
     openFrom('list_work')
     expect(screen.getByText('BUY')).toBeInTheDocument()
-    expect(screen.getByText('deciding')).toBeInTheDocument()
+    // The desk's word for the stage, not the enum value.
+    expect(screen.getByText('Deciding')).toBeInTheDocument()
     expect(screen.getByText('Tech Growth')).toBeInTheDocument()
     expect(screen.getByText('Because.')).toBeInTheDocument()
   })

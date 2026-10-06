@@ -1,0 +1,170 @@
+/**
+ * The Lists surface's own visual language.
+ *
+ * ── Why a scoped stylesheet ───────────────────────────────────────────────
+ *
+ * `AssetTableView` is shared with the Assets page and several other surfaces,
+ * and its cell classes (`pro-symbol`, `pro-price-change`, `pro-table-row`) are
+ * the only hook into how a row actually looks. Restyling them globally would
+ * change every table in the product; forking the table would duplicate the
+ * virtualiser, the keyboard model and the column engine.
+ *
+ * So everything here is scoped under `.lists-surface`, which `ListTableView`
+ * wraps around the table. Lists get a deliberate typographic treatment; no
+ * other surface moves.
+ *
+ * ── The intent ────────────────────────────────────────────────────────────
+ *
+ * Market data should read as market data: tabular, confident, aligned on the
+ * decimal, with direction carried by colour on the number itself rather than by
+ * a pill around it. Identity should be unmistakable at a glance. Everything
+ * else should recede. Hairlines are used once per boundary, never per cell.
+ */
+
+.lists-surface {
+  /* One accent for the whole surface, so interaction states agree. */
+  --lists-accent: 15 23 42;          /* slate-900 */
+  --lists-attention: 245 158 11;     /* amber-500 */
+}
+
+/* ── Header row ──────────────────────────────────────────────────────── */
+
+.lists-surface .pro-table-header-cell {
+  @apply text-[10px] font-semibold uppercase text-gray-400 dark:text-gray-500;
+  letter-spacing: 0.07em;
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+}
+
+.lists-surface .pro-table-header-cell.sorted {
+  @apply text-gray-700 dark:text-gray-200;
+}
+
+/* ── Identity ────────────────────────────────────────────────────────── */
+
+.lists-surface .pro-symbol {
+  @apply text-gray-900 dark:text-gray-50;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The company name sits UNDER the ticker as a second line, so the pair reads as
+ * one identity rather than as two columns of equal weight. Quiet enough that a
+ * scan down the column lands on tickers.
+ */
+.lists-surface .lists-company {
+  @apply text-gray-400 dark:text-gray-500 truncate;
+  font-size: 11px;
+  line-height: 1.15;
+  font-weight: 400;
+}
+
+/* ── Market data ─────────────────────────────────────────────────────── */
+
+/*
+ * No pill. A price change is a number with a direction, and a grey box around
+ * every ordinary value makes a watchlist look like a form. Colour carries the
+ * sign; weight carries the fact that it is market data.
+ */
+.lists-surface .pro-price-change {
+  @apply bg-transparent px-0 py-0 rounded-none;
+  font-size: 12.5px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+}
+
+.lists-surface .pro-price {
+  font-size: 13px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  @apply text-gray-900 dark:text-gray-50;
+}
+
+/*
+ * Absence is absence. A column of em-dashes reads as a broken import; a blank
+ * cell reads as "we do not hold this one", which is the truth.
+ */
+.lists-surface .pro-empty-cell {
+  @apply text-transparent select-none;
+}
+
+/* ── Rows ────────────────────────────────────────────────────────────── */
+
+.lists-surface .pro-table-row {
+  transition: background-color 90ms ease-out;
+}
+
+/* Neutral, not blue. Blue is reserved for selection and focus. */
+.lists-surface .pro-table-row:hover,
+.lists-surface .pro-table-row.row-even:hover {
+  background: rgb(248 250 252) !important;
+}
+.dark .lists-surface .pro-table-row:hover,
+.dark .lists-surface .pro-table-row.row-even:hover {
+  background: rgba(255, 255, 255, 0.035) !important;
+}
+
+.lists-surface .pro-table-row.selected {
+  background: rgba(15, 23, 42, 0.045) !important;
+  border-left: 2px solid rgb(15 23 42);
+}
+.dark .lists-surface .pro-table-row.selected {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border-left-color: rgb(241 245 249);
+}
+
+/*
+ * An expanded row is a different mode, and should look like one before the
+ * reader reads a word of it: the parent row goes solid and loses its zebra, so
+ * the workbench below reads as attached to it rather than inserted near it.
+ */
+.lists-surface .pro-table-row.expanded {
+  background: rgb(255 255 255) !important;
+  box-shadow:
+    inset 2px 0 0 0 rgb(15 23 42),
+    0 1px 0 0 rgba(15, 23, 42, 0.07);
+  z-index: 2;
+}
+.dark .lists-surface .pro-table-row.expanded {
+  background: rgb(17 24 39) !important;
+  box-shadow:
+    inset 2px 0 0 0 rgb(241 245 249),
+    0 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
+.lists-surface .pro-table-row.expanded .pro-symbol {
+  @apply text-gray-900 dark:text-white;
+}
+
+/*
+ * The expansion's own ground.
+ *
+ * `AssetTableView` gives the slot a padded box; this makes that box a surface.
+ * Recessed rather than raised — the workbench sits inside the list, it does not
+ * float above it.
+ */
+.lists-surface .pro-expanded-row {
+  background: rgb(250 251 253);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 0 !important;
+}
+.dark .lists-surface .pro-expanded-row {
+  background: rgb(15 20 30);
+  border-bottom-color: rgba(255, 255, 255, 0.07);
+}
+
+/* ── Focus ───────────────────────────────────────────────────────────── */
+
+/*
+ * Keyboard focus stays visible and keeps its colour — it is the one state that
+ * must never be subtle — but the heavy inset ring is replaced by a crisper
+ * one-pixel outline so a focused cell does not look like an error.
+ */
+.lists-surface .pro-table-cell.focused {
+  background: rgba(59, 130, 246, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.55);
+  border-radius: 2px;
+}

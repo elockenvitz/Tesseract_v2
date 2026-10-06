@@ -36,12 +36,13 @@
  * and the single amber mark that means somebody has not looked yet.
  */
 import React, { useState, useEffect } from 'react'
-import { ExternalLink, Plus, Pencil, ArrowUpRight, Check } from 'lucide-react'
+import { ExternalLink, Plus, Pencil, ArrowUpRight, ArrowRight, Check } from 'lucide-react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import { Sparkline } from '../signals/Sparkline'
 import { RatingPill, CoverageChip } from './ListRowAtoms'
 import { SECTION_LABEL } from '../../lib/desktop-research/model'
+import { stageLabel } from '../../lib/lists/work-state'
 import type { ListRowMode } from './listRowModes'
 
 // ── Shared vocabulary ──────────────────────────────────────────────────
@@ -110,6 +111,21 @@ export function Figure({
         <div className="text-[10.5px] text-gray-400 dark:text-gray-500 mt-0.5 truncate">{sub}</div>
       )}
     </div>
+  )
+}
+
+/**
+ * A band heading inside a mode.
+ *
+ * Heavier and darker than `Label`, and not uppercase: these name the three
+ * questions Overview answers, and 9px uppercase grey made them read as field
+ * labels floating in the canvas rather than as the structure of the page.
+ */
+export function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="text-[11.5px] font-semibold tracking-[-0.005em] text-gray-900 dark:text-gray-100 flex-shrink-0">
+      {children}
+    </h3>
   )
 }
 
@@ -220,28 +236,127 @@ export function ViewControl({
  * context on a phone is two columns of three words each.
  */
 export function ModeLayout({
-  main, rail, footer,
-}: { main: React.ReactNode; rail?: React.ReactNode; footer?: React.ReactNode }) {
+  main, rail, footer, railWidth = 'md',
+}: {
+  main: React.ReactNode
+  rail?: React.ReactNode
+  footer?: React.ReactNode
+  /**
+   * How much room the context deserves. `sm` when the main column is the whole
+   * point (Work's evidence, Case's thesis); `md` when the rail carries real
+   * investment state the reader is comparing against.
+   */
+  railWidth?: 'sm' | 'md'
+}) {
   return (
-    <div className="flex flex-col h-full min-h-0 gap-3">
+    <div className="flex flex-col h-full min-h-0">
       <div className={clsx(
-        'flex-1 min-h-0 grid gap-x-6 gap-y-4',
-        rail ? 'grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,212px)]' : 'grid-cols-1',
+        'flex-1 min-h-0 grid gap-x-7',
+        rail
+          ? railWidth === 'sm'
+            ? 'grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,196px)]'
+            : 'grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,236px)]'
+          : 'grid-cols-1',
       )}>
         <div className="min-w-0 min-h-0 sm:overflow-y-auto sm:pr-1">{main}</div>
         {rail && (
           // One hairline, not a card. The rail is the same surface as the
           // workspace; it is separated by alignment, not by a container.
-          <aside className="min-w-0 min-h-0 sm:overflow-y-auto sm:border-l border-gray-200/70 dark:border-gray-700/60 sm:pl-5 space-y-3">
+          <aside className="min-w-0 min-h-0 sm:overflow-y-auto sm:border-l border-gray-900/[0.07] dark:border-white/10 sm:pl-6 space-y-3.5">
             {rail}
           </aside>
         )}
       </div>
       {footer && (
-        <div className="flex-shrink-0 flex items-center gap-2 flex-wrap pt-2.5 border-t border-gray-200/70 dark:border-gray-700/60">
+        <div className="flex-shrink-0 flex items-center gap-2 flex-wrap pt-3 mt-3 border-t border-gray-900/[0.07] dark:border-white/10">
           {footer}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * The shell every mode sits in.
+ *
+ * One identity, one state line, one navigation, one action — established once so
+ * the modes differ in CONTENT rather than in furniture. It also carries the
+ * surface itself: the expansion bleeds to the edges of the slot
+ * `AssetTableView` gives it and paints its own ground, which is what makes an
+ * opened row read as a workbench attached to the row rather than a div dropped
+ * into a table.
+ */
+export function ExpansionShell({
+  symbol, companyName, state, lead, modes, activeMode, onModeChange, action, children,
+}: {
+  symbol: string
+  companyName?: string | null
+  /** The one-line attention state, where there is one. */
+  state?: string | null
+  /** The headline investment fact — direction and stage, price, whatever leads. */
+  lead?: React.ReactNode
+  modes: Array<{ id: string; label: string }>
+  activeMode: string
+  onModeChange: (id: string) => void
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="h-full min-h-0 flex flex-col px-6 pt-3.5 pb-3.5">
+      {/* ── Identity, state, navigation ──────────────────────────────── */}
+      <header className="flex-shrink-0 flex items-start justify-between gap-6 pb-3">
+        <div className="min-w-0 flex items-baseline gap-2.5">
+          <span className="text-[19px] font-semibold tracking-[-0.02em] text-gray-900 dark:text-white tabular-nums">
+            {symbol}
+          </span>
+          {companyName && (
+            <span className="text-[12.5px] text-gray-400 dark:text-gray-500 truncate max-w-[260px]">
+              {companyName}
+            </span>
+          )}
+          {state && (
+            <span className="text-[11.5px] font-semibold text-amber-700 dark:text-amber-300 flex-shrink-0">
+              {state}
+            </span>
+          )}
+        </div>
+
+        {/*
+          * A segmented control, not text links in a corner.
+          *
+          * The modes are workspace navigation — the main thing a reader does
+          * inside an open row — so they read as a control with a body, and the
+          * active one is a solid chip rather than a slightly darker word.
+          */}
+        <nav
+          role="tablist"
+          className="flex-shrink-0 flex items-center gap-0.5 p-[3px] rounded-lg bg-gray-900/[0.07] dark:bg-black/30 ring-1 ring-inset ring-gray-900/[0.04] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {modes.map(m => (
+            <button
+              key={m.id}
+              role="tab"
+              aria-selected={activeMode === m.id}
+              onClick={() => onModeChange(m.id)}
+              className={clsx(
+                'px-2.5 py-[3px] rounded-[6px] text-[11.5px] font-medium whitespace-nowrap transition-all duration-100',
+                activeMode === m.id
+                  ? 'bg-white text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.10)] dark:bg-gray-700 dark:text-white'
+                  : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100',
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      {/* ── The headline fact, where a mode has one ───────────────────── */}
+      {lead && <div className="flex-shrink-0 pb-3">{lead}</div>}
+
+      <div className="flex-1 min-h-0">{children}</div>
+
+      {action && <div className="flex-shrink-0 pt-3">{action}</div>}
     </div>
   )
 }
@@ -250,13 +365,21 @@ export function ModeLayout({
 export function PrimaryButton({
   children, onClick, icon: Icon,
 }: { children: React.ReactNode; onClick?: () => void; icon?: React.ElementType }) {
+  /*
+   * The continuation of the workflow, sized to say so.
+   *
+   * It was an 11.5px chip indistinguishable from the Flag button beside it; the
+   * one action the mode exists to offer should not be the same weight as a
+   * utility. Still a button, not a banner — the arrow carries the direction.
+   */
   return (
     <button
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] font-semibold rounded-md bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white transition-colors flex-shrink-0"
+      className="group/pa inline-flex items-center gap-2 pl-3 pr-2.5 py-1.5 text-[12.5px] font-semibold rounded-lg bg-gray-900 text-white hover:bg-gray-800 active:bg-gray-950 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 transition-colors flex-shrink-0 shadow-[0_1px_2px_rgba(15,23,42,0.18)]"
     >
-      {Icon && <Icon className="h-3 w-3" />}
+      {Icon && <Icon className="h-3.5 w-3.5" />}
       {children}
+      <ArrowRight className="h-3.5 w-3.5 opacity-60 transition-transform duration-150 group-hover/pa:translate-x-0.5" />
     </button>
   )
 }
@@ -388,21 +511,30 @@ export function OverviewMode(p: {
   return (
     <ModeLayout
       footer={p.footer}
+      railWidth="sm"
       main={
-        <div className="h-full flex flex-col gap-3.5">
-          {/* ── What we believe ──────────────────────────────────────── */}
-          <section className="min-w-0">
-            <div className="flex items-baseline gap-4 flex-wrap">
-              <Label>What we believe</Label>
+        <div className="h-full flex flex-col min-h-0">
+          {/*
+            * What we believe — the claim, stated once.
+            *
+            * The view, the target and the thesis are one sentence of meaning,
+            * so they sit on one band: the rating and the target read as the
+            * conclusion, the thesis as the argument underneath it.
+            */}
+          <section className="flex-shrink-0 pb-3 border-b border-gray-900/[0.06] dark:border-white/[0.07]">
+            <div className="flex items-center gap-3 flex-wrap">
+              <SectionHeading>What we believe</SectionHeading>
               {(p.ratingValue || p.conviction) && (
-                <ViewControl value={p.ratingValue} color={p.ratingColor} conviction={p.conviction} />
+                <ViewControl value={p.ratingValue} color={p.ratingColor} conviction={p.conviction} size="lg" />
               )}
               {p.target != null && (
-                <span className="text-[11.5px] tabular-nums text-gray-500 dark:text-gray-400">
-                  target <span className="font-semibold text-gray-900 dark:text-gray-100">{money(p.target)}</span>
+                <span className="flex items-baseline gap-1.5 tabular-nums">
+                  <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-50">
+                    {money(p.target)}
+                  </span>
                   {p.upsidePct != null && (
                     <span className={clsx(
-                      'ml-1 font-semibold',
+                      'text-[12px] font-semibold',
                       p.upsidePct >= 0
                         ? 'text-emerald-600 dark:text-emerald-400'
                         : 'text-rose-600 dark:text-rose-400',
@@ -410,37 +542,44 @@ export function OverviewMode(p: {
                   )}
                 </span>
               )}
+              {/* Who wrote the view. Provenance, and it costs no line. */}
               {lead?.row?.authorName && (
-                <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
+                <span className="text-[10.5px] text-gray-400 dark:text-gray-500 truncate">
                   {lead.row.authorName}
                 </span>
               )}
             </div>
+            {/* Clamped to two lines, so the evidence band below is not squeezed
+                to a single item. The whole case is one tab away. */}
             {lead ? (
-              <p className="mt-1.5 text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap line-clamp-4">
+              <p className="mt-2 text-[13.5px] text-gray-700 dark:text-gray-300 leading-[1.55] whitespace-pre-wrap line-clamp-2">
                 {lead.row?.content}
               </p>
             ) : (
-              <p className="mt-1.5"><Quiet>No case written yet.</Quiet></p>
+              <p className="mt-2 text-[13px] text-gray-400 dark:text-gray-500 italic">
+                No case written yet.
+              </p>
             )}
           </section>
 
-          {/* ── What's happening ─────────────────────────────────────── */}
-          <section className="min-w-0 flex-1 min-h-0">
-            <div className="flex items-baseline gap-3">
-              <Label>What's happening</Label>
+          {/* What's happening — the evidence the claim has to survive. */}
+          <section className="flex-1 min-h-0 pt-3 flex flex-col">
+            <div className="flex items-baseline gap-2.5 flex-shrink-0">
+              <SectionHeading>What's happening</SectionHeading>
               {p.caseWrittenAt && (
-                <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                <span className="text-[10.5px] text-gray-400 dark:text-gray-500">
                   case written {formatDistanceToNow(new Date(p.caseWrittenAt), { addSuffix: true })}
                 </span>
               )}
             </div>
-            <div className="mt-1.5 space-y-1.5">
+            <div className="mt-2 flex-1 min-h-0 overflow-y-auto space-y-2">
               {p.changes.length > 0 ? (
                 // Unreviewed first — `changes` is already ordered that way.
-                p.changes.slice(0, 3).map(c => <EvidenceItemView key={c.id} item={c} />)
+                p.changes.slice(0, 4).map(c => <EvidenceItemView key={c.id} item={c} />)
               ) : (
-                <Quiet>Nothing new since the case was written.</Quiet>
+                <p className="text-[12.5px] text-gray-400 dark:text-gray-500 italic">
+                  Nothing new since the case was written.
+                </p>
               )}
             </div>
           </section>
@@ -448,27 +587,33 @@ export function OverviewMode(p: {
       }
       rail={
         <>
-          {/* ── What we're doing ─────────────────────────────────────── */}
+          {/* What we're doing — exposure and open work, as real figures. */}
           <div>
-            <Label>What we're doing</Label>
-            <div className="mt-1.5 space-y-2.5">
+            <SectionHeading>What we're doing</SectionHeading>
+            {/*
+              * Four compact figures, not two hero ones.
+              *
+              * At hero size Position and Price alone filled the rail and pushed
+              * the open idea off the bottom — which rendered as a label with no
+              * value under it, the exact "empty labelled section" this surface
+              * is not allowed to have.
+              */}
+            <div className="mt-2 space-y-2.5">
+              <Figure label="Position" value={positionValue} size="md" sub={p.bookName} />
               <Figure label="Price" value={p.spot != null ? money(p.spot) : null} size="md"
                 tone={toneOf(p.changePct)}
                 sub={p.changePct != null ? `${pct(p.changePct)} today` : null} />
-              <Figure label="Position" value={positionValue} size="md" sub={p.bookName} />
               {p.ideaLabel && <Figure label="Open idea" value={p.ideaLabel} size="md" />}
               {unread.length > 0 && !p.ideaLabel && (
-                <Figure label="Needs" size="md"
-                  value={`${unread.length} to review`} />
+                <Figure label="Needs review" size="md" value={`${unread.length} new`} />
               )}
             </div>
           </div>
 
-          {/* The list's own fields, as one quiet line. They answer a question
-              about this list rather than about the security, and used to take
-              a third of the rail. */}
+          {/* The list's own fields, as one quiet block. They answer a question
+              about this list rather than about the security. */}
           {(p.coverage?.length || p.listFieldsSlot) && (
-            <div className="pt-2.5 border-t border-gray-200/70 dark:border-gray-700/60 space-y-2">
+            <div className="pt-3 border-t border-gray-900/[0.06] dark:border-white/[0.07] space-y-2.5">
               {p.coverage && p.coverage.length > 0 && (
                 <div>
                   <Label>Covered by</Label>
@@ -572,16 +717,21 @@ export function MarketMode(p: {
               </div>
             </div>
           )}
-          {p.ideaLabel && <Figure label="Open idea" size="sm" value={p.ideaLabel} />}
-          {/* One note, not three. The rail has a budget, and the question this
-              mode answers is whether the move matters — for which "somebody
-              wrote something two days ago" is the signal, and the rest is the
-              Case tab's job. */}
-          {p.changes.length > 0 && (
+          {/*
+            * One of these, not both.
+            *
+            * The rail has about 200px after the three figures above it, and
+            * five blocks overflowed — which clipped the last one into a label
+            * with nothing under it. An open idea outranks a recent note: it is
+            * the more decisive answer to "does this move matter here".
+            */}
+          {p.ideaLabel ? (
+            <Figure label="Open idea" size="md" value={p.ideaLabel} />
+          ) : p.changes.length > 0 ? (
             <RailBlock label="Written recently">
               <EvidenceItemView item={p.changes[0]} />
             </RailBlock>
-          )}
+          ) : null}
         </>
       }
     />
@@ -1014,6 +1164,8 @@ export function WorkMode(p: {
   ratingColor: string | null
   conviction: 'low' | 'medium' | 'high' | null
   weightPct: number | null
+  target?: number | null
+  upsidePct?: number | null
   coverage?: Array<{ analyst: string; team: string; isLead: boolean }>
   footer?: React.ReactNode
 }) {
@@ -1029,6 +1181,12 @@ export function WorkMode(p: {
       )}
       <Figure label="Position" size="md"
         value={p.weightPct != null ? `${p.weightPct.toFixed(2)}%` : null} />
+      {/* What the work is aiming at. On a decision this is the number the
+          reader is being asked to agree with, so it belongs beside it. */}
+      <Figure label="Target" size="md"
+        value={p.target != null ? money(p.target) : null}
+        tone={p.upsidePct == null ? 'flat' : p.upsidePct >= 0 ? 'up' : 'down'}
+        sub={p.upsidePct != null ? `${pct(p.upsidePct)} upside` : null} />
       {/* The case being reviewed AGAINST, clamped. It is context for the work
           in the main column, not a second copy of Case mode. */}
       {p.leadCase && (
@@ -1097,30 +1255,64 @@ export function WorkMode(p: {
   }
 
   if (p.shape === 'idea' && p.idea) {
+    const dir = (p.idea.action ?? '').toUpperCase()
+    const isBuy = dir === 'BUY'
     return (
       <ModeLayout
         footer={p.footer}
         rail={stateRail}
+        railWidth="sm"
         main={
-          <div className="space-y-4">
-            <div className="flex items-start gap-7 flex-wrap">
-              <Figure label="Idea" size="hero"
-                value={(p.idea.action ?? 'idea').toUpperCase()}
-                sub={p.idea.portfolioName} />
-              <Figure label="Stage" size="md" value={p.idea.stage ?? null} />
-              <Figure label="Conviction" size="md" value={p.idea.conviction ?? null} />
+          <div className="h-full flex flex-col gap-3 min-h-0">
+            {/*
+              * The lifecycle state, at a size that matches its importance.
+              *
+              * Direction and stage are the headline — what we are doing and how
+              * far along it is — with the book and the decision state on the
+              * line beneath. Six small labelled figures made the most decisive
+              * fact on the surface look like metadata.
+              */}
+            <div className="flex-shrink-0 flex items-baseline gap-2.5 flex-wrap">
+              {dir && (
+                <span className={clsx(
+                  'text-[15px] font-bold tracking-wide tabular-nums',
+                  isBuy
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-rose-600 dark:text-rose-400',
+                )}>
+                  {dir}
+                </span>
+              )}
+              <span className="text-[17px] font-semibold tracking-[-0.015em] text-gray-900 dark:text-gray-50">
+                {/* The desk's words. `ready_to_recommend` is a database value. */}
+                {stageLabel(p.idea.stage)}
+              </span>
             </div>
+
+            <div className="flex-shrink-0 flex items-baseline gap-2 text-[12px] text-gray-500 dark:text-gray-400 flex-wrap">
+              {p.idea.portfolioName && (
+                <span className="text-gray-700 dark:text-gray-300 font-medium">{p.idea.portfolioName}</span>
+              )}
+              {p.decisionLabel && (
+                <>
+                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                  <span>{p.decisionLabel}</span>
+                </>
+              )}
+              {p.idea.conviction && (
+                <>
+                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                  <span>{p.idea.conviction} conviction</span>
+                </>
+              )}
+            </div>
+
             {p.idea.rationale && (
-              <div>
-                <Label>Rationale</Label>
-                <p className="mt-1 text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+              <div className="flex-1 min-h-0 overflow-y-auto pt-0.5">
+                <SectionHeading>Rationale</SectionHeading>
+                <p className="mt-1.5 text-[13.5px] text-gray-700 dark:text-gray-300 leading-[1.55] whitespace-pre-wrap">
                   {p.idea.rationale}
                 </p>
-              </div>
-            )}
-            {p.decisionLabel && (
-              <div className="text-[11.5px] text-gray-500 dark:text-gray-400">
-                Decision: {p.decisionLabel}
               </div>
             )}
           </div>

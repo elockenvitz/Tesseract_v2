@@ -16,10 +16,11 @@
  */
 import {
   OverviewMode, MarketMode, CaseMode, ValuationMode, PositionMode, WorkMode,
-  RailBlock, Label, PrimaryButton, QuietButton,
+  ExpansionShell, RailBlock, Label, PrimaryButton, QuietButton,
 } from '../src/components/lists/ListModeViews'
 import { ListSurfaceCard } from '../src/components/lists/ListSurfaceCard'
 import { renderSignalCell, LIST_SIGNAL_COLUMNS, listColumnPreset } from '../src/components/lists/ListRowCells'
+import { workStateFor } from '../src/lib/lists/work-state'
 import { ExternalLink, Pencil, Plus, Flag } from 'lucide-react'
 
 // ── Fixtures ───────────────────────────────────────────────────────────
@@ -102,7 +103,7 @@ const SHARED = {
  * real figure is the point: a fixture at a comfortable height would show a
  * layout that does not exist.
  */
-const EXPANSION_HEIGHT = 350 - 44
+const EXPANSION_HEIGHT = 350 - 52
 
 function Shot({ title, note, width = 1280, height, children }: {
   title: string
@@ -124,36 +125,57 @@ function Shot({ title, note, width = 1280, height, children }: {
   )
 }
 
-/** The expansion's own padding, as `AssetTableView` applies it. */
-function Expansion({ children }: { children: React.ReactNode }) {
+/**
+ * The expansion's ground, as `lists-surface.css` paints it.
+ *
+ * The shell owns its own padding now, so this is only the recessed surface and
+ * the real height budget — plus the parent row above it, because the attachment
+ * between the two is most of what makes it read as a workbench.
+ */
+function Expansion({ children, symbol = 'AAPL' }: { children: React.ReactNode; symbol?: string }) {
   return (
-    <div className="px-5 py-3 h-full bg-gray-50/60" style={{ height: EXPANSION_HEIGHT }}>
-      {children}
+    <div>
+      <div
+        className="flex items-center px-3 bg-white text-[13px]"
+        style={{ height: 52, boxShadow: 'inset 2px 0 0 0 rgb(15 23 42), 0 1px 0 0 rgba(15,23,42,0.07)' }}
+      >
+        <span className="text-gray-400 mr-2">▾</span>
+        <span className="font-semibold text-gray-900 tabular-nums">{symbol}</span>
+      </div>
+      <div
+        className="bg-[rgb(250,251,253)] border-b border-gray-900/[0.08]"
+        style={{ height: EXPANSION_HEIGHT }}
+      >
+        {children}
+      </div>
     </div>
   )
 }
 
-function ModeHeader({ active }: { active: string }) {
-  const modes = ['Overview', 'Market', 'Case', 'Valuation', 'Position', 'Work']
+const MODES = ['Overview', 'Market', 'Case', 'Valuation', 'Position', 'Work']
+  .map(m => ({ id: m, label: m }))
+
+/** The real shell, so the fixtures show the shipping chrome. */
+function Shell({
+  active, symbol = 'AAPL', company = 'Apple Inc.', state, children,
+}: {
+  active: string
+  symbol?: string
+  company?: string
+  state?: string | null
+  children: React.ReactNode
+}) {
   return (
-    <div className="flex items-baseline justify-between gap-4 pb-2 mb-2.5">
-      <div className="flex items-baseline gap-2.5 min-w-0">
-        <span className="text-[17px] font-semibold tracking-tight text-gray-900">AAPL</span>
-        <span className="text-[12px] text-gray-400 truncate">Apple Inc.</span>
-        {active !== 'Work' && (
-          <span className="text-[11px] font-semibold text-amber-700">New research</span>
-        )}
-      </div>
-      <div className="flex items-center gap-0.5 flex-shrink-0">
-        {modes.map(m => (
-          <span key={m} className={
-            m === active
-              ? 'px-2 py-0.5 rounded text-[11.5px] font-medium text-gray-900 bg-gray-900/[0.07]'
-              : 'px-2 py-0.5 rounded text-[11.5px] font-medium text-gray-400'
-          }>{m}</span>
-        ))}
-      </div>
-    </div>
+    <ExpansionShell
+      symbol={symbol}
+      companyName={company}
+      state={state === undefined ? (active !== 'Work' ? 'New research' : null) : state}
+      modes={MODES}
+      activeMode={active}
+      onModeChange={() => {}}
+    >
+      {children}
+    </ExpansionShell>
   )
 }
 
@@ -179,7 +201,19 @@ const reviewFooter = (
 
 // ── Collapsed list ─────────────────────────────────────────────────────
 
-const ROWS = [
+type Row = {
+  symbol: string; name: string; price: number; chg: number
+  state: string; unread: number; weight: number | null
+  rating: string | null; color: string | null; conv: string | null
+  target: number | null; cover: string | null
+  idea?: { direction: string; stage: string; portfolioName: string } | null
+}
+
+const ROWS: Row[] = [
+  // TGT is the case the Work hierarchy exists for: a live recommendation on a
+  // name whose file is thin. The decision leads; the thin file is the footnote.
+  { symbol: 'TGT', name: 'Target Corporation', price: 142.8, chg: -0.64, state: 'thin', unread: 0, weight: 1.9, rating: 'Buy', color: '#059669', conv: 'medium', target: 178, cover: 'Sam Okafor',
+    idea: { direction: 'buy', stage: 'ready_to_recommend', portfolioName: 'Vision Fund 10K' } },
   { symbol: 'AAPL', name: 'Apple Inc.', price: 190.4, chg: 1.24, state: 'evidence-since-review', unread: 3, weight: 6.12, rating: 'Buy', color: '#059669', conv: 'high', target: 205, cover: 'Dana Rivera' },
   { symbol: 'MSFT', name: 'Microsoft Corporation', price: 418.1, chg: -0.42, state: 'current', unread: 0, weight: 5.4, rating: 'Buy', color: '#059669', conv: 'medium', target: 465, cover: 'Dana Rivera' },
   { symbol: 'NVDA', name: 'NVIDIA Corporation', price: 902.5, chg: 3.18, state: 'stale', unread: 0, weight: 3.85, rating: 'Hold', color: '#d97706', conv: 'low', target: 840, cover: 'Priya Shah' },
@@ -191,6 +225,10 @@ const ROWS = [
 const signalFor = (r: typeof ROWS[number]) => ({
   state: r.state as any,
   subject: { newSinceReview: r.unread } as any,
+  idea: r.idea ?? null,
+  // The real ranking function, not a hand-written label: the fixture is only
+  // useful if it shows what the shipping priority actually produces.
+  work: workStateFor(r.idea ?? null, r.state as any, r.unread),
   weightPct: r.weight,
   closes: CLOSES.map((c, i) => c * (1 + (r.symbol.length - 4) * 0.002 * Math.sin(i))),
   ratingValue: r.rating,
@@ -235,7 +273,7 @@ function CollapsedList({ width }: { width: number }) {
       {ROWS.map((r, i) => (
         <div key={r.symbol}
           className={`flex items-center border-b border-gray-100 ${i % 2 ? 'bg-gray-50/40' : ''}`}
-          style={{ height: 44 }}>
+          style={{ height: 52 }}>
           {cols.map(c => {
             const w = widthOf(c)
             const signal = signalFor(r)
@@ -246,11 +284,20 @@ function CollapsedList({ width }: { width: number }) {
                 style={{ width: w }}>
                 {cell !== undefined ? cell : (
                   c.id === 'select' ? <span className="w-3.5 h-3.5 rounded-sm ring-1 ring-gray-300 inline-block" />
-                    : c.id === 'ticker' ? <span className="font-semibold text-gray-900 tabular-nums">{r.symbol}</span>
-                      : c.id === 'companyName' ? <span className="text-gray-500 truncate">{r.name}</span>
-                        : c.id === 'price' ? <span className="tabular-nums font-medium text-gray-900 w-full text-right">{r.price.toFixed(2)}</span>
+                    : c.id === 'ticker' ? (
+                      // The composed identity `AssetTableView` renders when the
+                      // Company column is hidden: chevron, ticker, company under.
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="text-gray-300">›</span>
+                        <span className="min-w-0">
+                          <span className="block pro-symbol">{r.symbol}</span>
+                          <span className="block lists-company">{r.name}</span>
+                        </span>
+                      </span>
+                    )
+                        : c.id === 'price' ? <span className="pro-price w-full text-right">{r.price.toFixed(2)}</span>
                           : c.id === 'change' ? (
-                            <span className={`tabular-nums font-medium w-full text-right ${r.chg >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            <span className={`pro-price-change w-full text-right ${r.chg >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                               {r.chg >= 0 ? '+' : ''}{r.chg.toFixed(2)}%
                             </span>
                           )
@@ -271,7 +318,7 @@ function CollapsedList({ width }: { width: number }) {
 const LISTS: Array<{ list: any; metrics: any; attention: any; activity?: any }> = [
   {
     list: {
-      id: 'l1', name: 'Work in Process', color: '#6366f1', list_type: 'mutual',
+      id: 'l1', name: 'Work in Process', description: 'Names with live work — ideas, recommendations and anything awaiting a decision.', color: '#6366f1', list_type: 'mutual',
       assetIds: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'], updated_at: daysAgo(1),
       collaborators: [
         { id: 'c1', user: { first_name: 'Dana', last_name: 'Rivera' } },
@@ -285,7 +332,7 @@ const LISTS: Array<{ list: any; metrics: any; attention: any; activity?: any }> 
   },
   {
     list: {
-      id: 'l2', name: 'Semis — cycle watch', color: '#0ea5e9', list_type: 'collaborative',
+      id: 'l2', name: 'Semis — cycle watch', description: 'Capital-equipment and foundry exposure through the current cycle.', color: '#0ea5e9', list_type: 'collaborative',
       assetIds: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'a10', 'a11', 'a12'],
       updated_at: daysAgo(3),
       collaborators: [
@@ -301,7 +348,7 @@ const LISTS: Array<{ list: any; metrics: any; attention: any; activity?: any }> 
   },
   {
     list: {
-      id: 'l3', name: 'Core holdings', color: '#10b981', list_type: 'mutual',
+      id: 'l3', name: 'Core holdings', description: 'Positions above 3% in any book.', color: '#10b981', list_type: 'mutual',
       assetIds: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9'], updated_at: daysAgo(11),
       collaborators: [], created_by_user: { first_name: 'Eric', last_name: 'Lockenvitz' },
     },
@@ -355,7 +402,7 @@ function ListsHome() {
         <h2 className="text-[12px] font-semibold text-gray-700">My Lists</h2>
         <span className="text-[11px] text-gray-400">{LISTS.length}</span>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 [&>*]:border-b [&>*]:border-gray-100">
+      <div className="[&>*]:border-b [&>*]:border-gray-100">
         {LISTS.map(e => (
           <ListSurfaceCard
             key={e.list.id}
@@ -378,7 +425,7 @@ function ListsHome() {
 
 export function ListsGallery() {
   return (
-    <div className="p-6 bg-gray-100 min-h-screen" data-gallery="lists">
+    <div className="lists-surface p-6 bg-gray-100 min-h-screen" data-gallery="lists">
       <h1 className="text-[15px] font-bold mb-5 text-gray-900">Lists — visual review</h1>
 
       <Shot title="1 · Lists home" width={1280}
@@ -391,10 +438,9 @@ export function ListsGallery() {
         <CollapsedList width={1280} />
       </Shot>
 
-      <Shot title="3 · Market expansion" width={1280} height={EXPANSION_HEIGHT + 2}>
+      <Shot title="3 · Market expansion" width={1280} height={EXPANSION_HEIGHT + 52 + 2}>
         <Expansion>
-          <ModeHeader active="Market" />
-          <div style={{ height: EXPANSION_HEIGHT - 52 }}>
+          <Shell active="Market">
             <MarketMode
               {...SHARED}
               closes={CLOSES}
@@ -402,14 +448,13 @@ export function ListsGallery() {
               ideaLabel="BUY · ready_to_recommend"
               footer={footerCommon}
             />
-          </div>
+          </Shell>
         </Expansion>
       </Shot>
 
-      <Shot title="4 · Work expansion — new research" width={1280} height={EXPANSION_HEIGHT + 2}>
+      <Shot title="4 · Work expansion — new research" width={1280} height={EXPANSION_HEIGHT + 52 + 2}>
         <Expansion>
-          <ModeHeader active="Work" />
-          <div style={{ height: EXPANSION_HEIGHT - 52 }}>
+          <Shell active="Work">
             <WorkMode
               shape="unread"
               changes={EVIDENCE}
@@ -423,14 +468,13 @@ export function ListsGallery() {
               coverage={COVERAGE}
               footer={reviewFooter}
             />
-          </div>
+          </Shell>
         </Expansion>
       </Shot>
 
-      <Shot title="5 · Case expansion" width={1280} height={EXPANSION_HEIGHT + 2}>
+      <Shot title="5 · Case expansion" width={1280} height={EXPANSION_HEIGHT + 52 + 2}>
         <Expansion>
-          <ModeHeader active="Case" />
-          <div style={{ height: EXPANSION_HEIGHT - 52 }}>
+          <Shell active="Case">
             <CaseMode
               symbol="AAPL"
               caseSections={CASE_SECTIONS}
@@ -446,14 +490,13 @@ export function ListsGallery() {
               coverage={COVERAGE}
               footer={reviewFooter}
             />
-          </div>
+          </Shell>
         </Expansion>
       </Shot>
 
-      <Shot title="6 · Overview expansion" width={1280} height={EXPANSION_HEIGHT + 2}>
+      <Shot title="6 · Overview expansion" width={1280} height={EXPANSION_HEIGHT + 52 + 2}>
         <Expansion>
-          <ModeHeader active="Overview" />
-          <div style={{ height: EXPANSION_HEIGHT - 52 }}>
+          <Shell active="Overview">
             <OverviewMode
               {...SHARED}
               ideaLabel="BUY · ready_to_recommend"
@@ -472,14 +515,13 @@ export function ListsGallery() {
               }
               footer={<>{footerCommon}</>}
             />
-          </div>
+          </Shell>
         </Expansion>
       </Shot>
 
-      <Shot title="7 · Valuation expansion" width={1280} height={EXPANSION_HEIGHT + 2}>
+      <Shot title="7 · Valuation expansion" width={1280} height={EXPANSION_HEIGHT + 52 + 2}>
         <Expansion>
-          <ModeHeader active="Valuation" />
-          <div style={{ height: EXPANSION_HEIGHT - 52 }}>
+          <Shell active="Valuation">
             <ValuationMode
               spot={SHARED.spot}
               target={SHARED.target}
@@ -494,14 +536,13 @@ export function ListsGallery() {
                 {footerCommon}
               </>}
             />
-          </div>
+          </Shell>
         </Expansion>
       </Shot>
 
-      <Shot title="8 · Position expansion" width={1280} height={EXPANSION_HEIGHT + 2}>
+      <Shot title="8 · Position expansion" width={1280} height={EXPANSION_HEIGHT + 52 + 2}>
         <Expansion>
-          <ModeHeader active="Position" />
-          <div style={{ height: EXPANSION_HEIGHT - 52 }}>
+          <Shell active="Position">
             <PositionMode
               positions={POSITIONS}
               spot={SHARED.spot}
@@ -513,14 +554,13 @@ export function ListsGallery() {
               ideaLabel="BUY · ready_to_recommend"
               footer={footerCommon}
             />
-          </div>
+          </Shell>
         </Expansion>
       </Shot>
 
-      <Shot title="9 · Work — no thesis on file" width={1280} height={EXPANSION_HEIGHT + 2}>
+      <Shot title="9 · Work — no thesis on file" width={1280} height={EXPANSION_HEIGHT + 52 + 2}>
         <Expansion>
-          <ModeHeader active="Work" />
-          <div style={{ height: EXPANSION_HEIGHT - 52 }}>
+          <Shell active="Work">
             <WorkMode
               shape="no-case"
               changes={EVIDENCE.slice(3)}
@@ -536,14 +576,13 @@ export function ListsGallery() {
                 {footerCommon}
               </>}
             />
-          </div>
+          </Shell>
         </Expansion>
       </Shot>
 
-      <Shot title="10 · Work — live idea" width={1280} height={EXPANSION_HEIGHT + 2}>
+      <Shot title="10 · Work — live idea" width={1280} height={EXPANSION_HEIGHT + 52 + 2}>
         <Expansion>
-          <ModeHeader active="Work" />
-          <div style={{ height: EXPANSION_HEIGHT - 52 }}>
+          <Shell active="Work">
             <WorkMode
               shape="idea"
               changes={EVIDENCE}
@@ -559,13 +598,15 @@ export function ListsGallery() {
               ratingColor={SHARED.ratingColor}
               conviction={SHARED.conviction}
               weightPct={SHARED.weightPct}
+              target={SHARED.target} upsidePct={SHARED.upsidePct}
+              leadCase={{ key: 'thesis', content: CASE_SECTIONS[0].row.content }}
               coverage={COVERAGE}
               footer={<>
-                <PrimaryButton icon={Plus}>Continue the idea</PrimaryButton>
+                <PrimaryButton>Continue the idea</PrimaryButton>
                 {footerCommon}
               </>}
             />
-          </div>
+          </Shell>
         </Expansion>
       </Shot>
     </div>

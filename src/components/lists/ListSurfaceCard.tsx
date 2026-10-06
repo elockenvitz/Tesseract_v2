@@ -139,7 +139,7 @@ export function ListSurfaceCard({
           {list.name}
         </h3>
 
-        {isFavorite && <Star className="h-3 w-3 text-amber-400 fill-amber-400 flex-shrink-0" />}
+        {isFavorite && <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
         {isScreen && (
           <span className="inline-flex items-center gap-0.5 text-[9.5px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 flex-shrink-0">
             <Filter className="h-2.5 w-2.5" />
@@ -150,7 +150,8 @@ export function ListSurfaceCard({
           <Users className="h-3 w-3 text-gray-300 dark:text-gray-600 flex-shrink-0" aria-label="Collaborative" />
         )}
 
-        <span className="text-[11.5px] tabular-nums text-gray-400 dark:text-gray-500 flex-shrink-0">
+        {/* The universe's size, as a figure rather than a caption. */}
+        <span className="text-[12px] tabular-nums text-gray-400 dark:text-gray-500 flex-shrink-0">
           {assetCount === 0 ? 'empty' : `${assetCount} name${assetCount === 1 ? '' : 's'}`}
         </span>
 
@@ -200,15 +201,17 @@ export function ListSurfaceCard({
       {/* ── Line three: what is in it, and when it last moved ─────────── */}
       {!isEmpty && (
         <div className="flex items-baseline gap-3 min-w-0 mt-1.5">
+          {/* The universe itself, in the same tabular face the watchlist uses —
+              so a list reads as a set of securities rather than as a folder. */}
           {tickers.length > 0 && (
-            <span className="flex items-baseline gap-2 min-w-0 flex-shrink">
+            <span className="flex items-baseline gap-2.5 min-w-0 flex-shrink">
               {tickers.map(t => (
-                <span key={t} className="text-[11.5px] font-mono text-gray-600 dark:text-gray-300 tabular-nums">
+                <span key={t} className="text-[12px] font-semibold text-gray-500 dark:text-gray-400 tabular-nums tracking-[-0.01em]">
                   {t}
                 </span>
               ))}
               {overflowTickers > 0 && (
-                <span className="text-[11.5px] font-mono text-gray-300 dark:text-gray-600">
+                <span className="text-[12px] text-gray-300 dark:text-gray-600 tabular-nums">
                   +{overflowTickers}
                 </span>
               )}

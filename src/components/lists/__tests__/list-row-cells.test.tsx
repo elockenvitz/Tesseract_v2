@@ -61,7 +61,9 @@ describe('the curated List presentation', () => {
   it('leads with the security, the market, then what we think', () => {
     const order = visibleIdsOf(listColumnPreset(base()))
     expect(order).toEqual([
-      'select', 'ticker', 'companyName',
+      // No `companyName`: it moves INTO the ticker cell as a second line, so
+      // identity is one column rather than two of equal weight.
+      'select', 'ticker',
       'price', 'change', 'list_spark',
       'list_position',
       'list_rating', 'list_target',
@@ -97,8 +99,11 @@ describe('the curated List presentation', () => {
     // was blank, which is what made it read as a sparse spreadsheet.
     const out = listColumnPreset([...DEFAULT_COLUMNS, ...LIST_SIGNAL_COLUMNS])
     const grow = (id: string) => out.find(c => c.id === id)?.grow ?? 0
-    expect(grow('companyName')).toBeGreaterThan(grow('list_work'))
-    expect(grow('list_work')).toBeGreaterThan(grow('list_spark'))
+    // Identity and the reason for attention take the slack; the chart takes a
+    // little, because its width IS its value.
+    expect(grow('ticker')).toBeGreaterThan(0)
+    expect(grow('list_work')).toBeGreaterThan(0)
+    expect(grow('list_spark')).toBeLessThan(grow('list_work'))
     // Columns holding one number stay exactly as wide as the number.
     for (const id of ['price', 'change', 'list_position', 'list_target', 'list_rating']) {
       expect(grow(id), `${id} should not grow`).toBe(0)

@@ -49,7 +49,7 @@ import { ListStatusCell } from './ListStatusCell'
 import { ListTagsCell } from './ListTagsCell'
 import {
   OverviewMode, MarketMode, CaseMode, ValuationMode, PositionMode, WorkMode,
-  ModeSkeleton, ModeLayout, Label, PrimaryButton, QuietButton,
+  ModeSkeleton, ModeLayout, ExpansionShell, Label, PrimaryButton, QuietButton,
   type WorkShape, type LadderRung,
 } from './ListModeViews'
 import {
@@ -564,55 +564,21 @@ export function ListRowExpansion({
     <div
       data-testid="list-row-expansion"
       data-mode={activeMode}
-      className="flex flex-col h-full max-sm:h-auto sm:overflow-hidden motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-150"
+      className="h-full max-sm:h-auto motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-150"
     >
-      {/* ── Context header ───────────────────────────────────────────── */}
-      <div className="flex-shrink-0 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1.5 sm:gap-4 pb-2 mb-2.5">
-        <div className="flex items-baseline gap-2.5 min-w-0">
-          <span className="text-[17px] font-semibold tracking-tight text-gray-900 dark:text-gray-50">
-            {asset.symbol}
-          </span>
-          {asset.company_name && (
-            <span className="text-[12px] text-gray-400 dark:text-gray-500 truncate max-w-[280px]">
-              {asset.company_name}
-            </span>
-          )}
-          {/* Suppressed in Work mode, which states the same thing as its own
-              heading. Weight and colour only — not a pill. */}
-          {signal?.state && signal.state !== 'current' && activeMode !== 'work' && (
-            <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 flex-shrink-0">
-              {STATE_LABEL[signal.state]}
-            </span>
-          )}
-        </div>
-
-        {/* Text tabs, not buttons in boxes: the switch is a way back, not the
-            surface's main furniture. */}
-        <div
-          className="flex items-center gap-0.5 flex-shrink-0 -mx-0.5 px-0.5 overflow-x-auto sm:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          role="tablist"
-        >
-          {availableModes.map(m => (
-            <button
-              key={m}
-              role="tab"
-              aria-selected={activeMode === m}
-              onClick={() => setMode(m)}
-              className={clsx(
-                'px-2 py-0.5 rounded text-[11.5px] font-medium transition-colors flex-shrink-0',
-                activeMode === m
-                  ? 'text-gray-900 dark:text-gray-50 bg-gray-900/[0.07] dark:bg-gray-100/10'
-                  : 'text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200',
-              )}
-            >
-              {MODE_LABEL[m]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── The canvas ───────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0">
+      <ExpansionShell
+        symbol={asset.symbol}
+        companyName={asset.company_name}
+        // Work states the same thing as its own heading, so the chip would be
+        // a second copy of it.
+        state={signal?.state && signal.state !== 'current' && activeMode !== 'work'
+          ? STATE_LABEL[signal.state]
+          : null}
+        modes={availableModes.map(m => ({ id: m, label: MODE_LABEL[m] }))}
+        activeMode={activeMode}
+        onModeChange={m => setMode(m as ListRowMode)}
+      >
+      <div className="h-full min-h-0">
         {workspaceLoading ? (
           // The skeleton keeps the layout AND the footer: "Open full case" is
           // true regardless of what loads, so removing it made the row briefly
@@ -693,6 +659,7 @@ export function ListRowExpansion({
                 ratingValue={rating?.rating_value ?? null} ratingColor={ratingColor}
                 conviction={rating?.conviction ?? null}
                 weightPct={weightPct}
+                target={target} upsidePct={upsidePct}
                 coverage={coverage}
                 footer={footerFor('work')}
               />
@@ -700,9 +667,10 @@ export function ListRowExpansion({
           </>
         )}
       </div>
+      </ExpansionShell>
 
       {review.error && (
-        <div className="flex-shrink-0 pt-1 text-[11px] text-rose-600 dark:text-rose-400">
+        <div className="px-6 pb-2 text-[11px] text-rose-600 dark:text-rose-400">
           Review not saved
         </div>
       )}

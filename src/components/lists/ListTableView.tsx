@@ -23,6 +23,9 @@ import {
 import { LIST_EXPANSION_ENTRY_COLUMNS } from './listRowModes'
 import { useListRowSignals } from '../../hooks/lists/useListRowSignals'
 import type { ListPermissions } from '../../hooks/lists/useListPermissions'
+// Scoped under `.lists-surface` below — see the file header for why the table's
+// visual language is overridden here rather than globally or by forking it.
+import './lists-surface.css'
 
 interface ListTableViewProps {
   listId: string
@@ -215,6 +218,9 @@ export function ListTableView({
   )
 
   return (
+    // The scope for `lists-surface.css`. Everything inside gets the Lists
+    // typographic treatment; no other table moves.
+    <div className="lists-surface flex-1 min-h-0 flex flex-col">
     <AssetTableView
       assets={assets}
       isLoading={isLoading}
@@ -234,6 +240,10 @@ export function ListTableView({
        * one does not leave a hole.
        */
       expandedRowHeights={{ comfortable: 380, compact: 350, ultra: 310, micro: 270 }}
+      // The identity cell carries the company under the ticker, which the
+      // shared heights were not sized for — at 44px the second line clipped.
+      // `micro` keeps the default: it hides the company anyway.
+      rowHeights={{ comfortable: 62, compact: 52, ultra: 38 }}
       extraSortComparators={extraSortComparators}
       renderExtraCell={renderExtraCell}
       expandedRowSlot={expandedRowSlot}
@@ -243,5 +253,6 @@ export function ListTableView({
       onCreateTradeIdea={onCreateTradeIdea}
       {...passthrough}
     />
+    </div>
   )
 }

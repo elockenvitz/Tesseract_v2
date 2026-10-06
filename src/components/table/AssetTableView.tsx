@@ -388,6 +388,15 @@ interface AssetTableViewProps {
    */
   expandedRowHeights?: Partial<Record<FullDensityMode, number>>
   /**
+   * Per-density COLLAPSED row height, overriding the density default.
+   *
+   * A surface whose identity cell carries two lines — a ticker with the company
+   * under it — needs more than the shared default, which was sized for one line
+   * of text. Like the expanded override, this is a constant per density because
+   * the virtualiser must know row sizes up front.
+   */
+  rowHeights?: Partial<Record<FullDensityMode, number>>
+  /**
    * Comparators for columns whose data the table does not hold.
    *
    * Keyed by column id. A surface computing its own columns — a research state,
@@ -454,6 +463,7 @@ export function AssetTableView({
   columnPresetVersion,
   expansionEntryColumns,
   expandedRowHeights,
+  rowHeights,
   extraSortComparators,
   expandedRowSlot,
   filterBarSlot,
@@ -557,7 +567,7 @@ export function AssetTableView({
   }, [])
 
   const densityConfig = DENSITY_CONFIG[effectiveDensity]
-  const densityRowHeight = densityConfig.rowHeight
+  const densityRowHeight = rowHeights?.[effectiveDensity] ?? densityConfig.rowHeight
   /*
    * A surface may ask for a taller expansion than the default.
    *
@@ -1531,6 +1541,18 @@ export function AssetTableView({
   const hiddenColumns = useMemo(() => allColumns.filter(c => !c.visible && c.id !== 'select'), [allColumns])
 
   const totalTableWidth = useMemo(() => visibleColumns.reduce((sum, col) => sum + col.width, 0), [visibleColumns])
+
+  /**
+   * Whether the ticker cell has to carry the company name itself.
+   *
+   * A surface that hides the Company column is asking for one identity cell,
+   * not for the company to disappear — so the name moves under the symbol as a
+   * second line. The two-column default is unchanged wherever Company is shown.
+   */
+  const tickerCarriesCompany = useMemo(
+    () => !visibleColumns.some(c => c.id === 'companyName'),
+    [visibleColumns],
+  )
 
   // Check if any visible column has wrap text enabled
   const hasWrapTextColumn = useMemo(() => visibleColumns.some(col => col.wrapText), [visibleColumns])
@@ -3442,11 +3464,16 @@ export function AssetTableView({
                                           <ChevronRight className={clsx('h-3.5 w-3.5 text-gray-400 transition-transform duration-150', isExpanded && 'rotate-90')} />
                                         </button>
                                       )}
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="pro-symbol">{asset.symbol}</span>
-                                        {/* Hide price target icon in micro mode */}
-                                        {density !== 'micro' && asset.price_targets?.length > 0 && (
-                                          <Target className="h-3 w-3 text-amber-500" title={`${asset.price_targets.length} price target(s)`} />
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <span className="pro-symbol">{asset.symbol}</span>
+                                          {/* Hide price target icon in micro mode */}
+                                          {density !== 'micro' && asset.price_targets?.length > 0 && (
+                                            <Target className="h-3 w-3 text-amber-500 flex-shrink-0" title={`${asset.price_targets.length} price target(s)`} />
+                                          )}
+                                        </div>
+                                        {tickerCarriesCompany && density !== 'micro' && asset.company_name && (
+                                          <div className="lists-company">{asset.company_name}</div>
                                         )}
                                       </div>
                                     </div>
@@ -4342,10 +4369,17 @@ export function AssetTableView({
                                                 <ChevronRight className={clsx('h-3.5 w-3.5 text-gray-400 transition-transform duration-150', isExpanded && 'rotate-90')} />
                                               </button>
                                             )}
-                                            <div className="flex items-center gap-1.5">
-                                              <span className="pro-symbol">{asset.symbol}</span>
-                                              {density !== 'micro' && asset.price_targets?.length > 0 && (
-                                                <Target className="h-3 w-3 text-amber-500" title={`${asset.price_targets.length} price target(s)`} />
+                                            <div className="min-w-0 flex-1">
+                                              <div className="flex items-center gap-1.5 min-w-0">
+                                                <span className="pro-symbol">{asset.symbol}</span>
+                                                {density !== 'micro' && asset.price_targets?.length > 0 && (
+                                                  <Target className="h-3 w-3 text-amber-500 flex-shrink-0" title={`${asset.price_targets.length} price target(s)`} />
+                                                )}
+                                              </div>
+                                              {/* See the ungrouped renderer: the ticker carries the
+                                                  company when the Company column is hidden. */}
+                                              {tickerCarriesCompany && density !== 'micro' && asset.company_name && (
+                                                <div className="lists-company">{asset.company_name}</div>
                                               )}
                                             </div>
                                           </div>

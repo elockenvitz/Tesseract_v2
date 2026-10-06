@@ -6,7 +6,7 @@
  * Wires useListPermissions, useListSuggestions, useListGroups, useListReorder.
  */
 
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, X, Search, Loader2, Trash2, Check,
@@ -647,36 +647,36 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         </div>
       )}
 
-      {/* Progress and filters sit side by side with a rule between them at
-          desktop width. On a phone the rule and the row are dropped: the
-          progress strip is a set of status segments that needs the full
-          width to stay readable, and the filter trigger is one chip that
-          does not need a column of its own. */}
-      {/* What is happening in this universe, before the rows. Screens get it
-          too — a criteria-computed set still has work on its names. */}
+      {/*
+        * One command band, not three stacked ones.
+        *
+        * The pulse, the status spread and the row filters were three separate
+        * full-width rows with their own vertical padding, which put roughly
+        * 150px of mostly-empty chrome between the app tabs and the first
+        * security. They are one line now: what this universe is doing on the
+        * left, the controls that act on it on the right, separated by a rule
+        * rather than by a gap.
+        */}
       {unfilteredAssets.length > 0 && (
-        <div className="py-1.5">
-          <ListPulseStrip pulse={pulse} lens={lens} onLensChange={setLens} />
-        </div>
-      )}
-
-      {!isScreen && unfilteredAssets.length > 0 && (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-1.5">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-2 border-t border-gray-900/[0.06] dark:border-white/[0.07]">
           <div className="min-w-0 sm:flex-1">
-            <ListProgressStrip
-              statuses={listStatuses}
-              assets={unfilteredAssets}
-              onFilterByStatus={handleProgressFilter}
-              activeStatusIds={rowFilters.statusIds}
-            />
+            <ListPulseStrip pulse={pulse} lens={lens} onLensChange={setLens} />
           </div>
-          <div className="flex-shrink-0 sm:border-l sm:border-gray-200 sm:dark:border-gray-800 sm:pl-3">
-            <ListFilterChipBar
-              listId={list.id}
-              filters={rowFilters}
-              onChange={setRowFilters}
-            />
-          </div>
+          {!isScreen && (
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <ListProgressStrip
+                statuses={listStatuses}
+                assets={unfilteredAssets}
+                onFilterByStatus={handleProgressFilter}
+                activeStatusIds={rowFilters.statusIds}
+              />
+              <ListFilterChipBar
+                listId={list.id}
+                filters={rowFilters}
+                onChange={setRowFilters}
+              />
+            </div>
+          )}
         </div>
       )}
 
