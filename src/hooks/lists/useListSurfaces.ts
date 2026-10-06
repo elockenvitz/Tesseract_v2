@@ -120,7 +120,31 @@ export function useListSurfaces(sortBy: ListSortKey = 'recent') {
           updated_by_user:users!asset_lists_updated_by_fkey(id, first_name, last_name, email),
           created_by_user:users!asset_lists_created_by_fkey(id, first_name, last_name, email)
         `)
-        .or(`is_default.eq.true,organization_id.eq.${currentOrgId!}`)
+        /*
+         * Three arms, because a NULL `organization_id` means "not org-scoped",
+         * not "invisible".
+         *
+         * This was `is_default.eq.true,organization_id.eq.<org>`, and the
+         * `organization_id` column only arrived on 2026-06-03 with a trigger
+         * that stamps it from `users.current_organization_id`. Every list
+         * created before that is NULL-org and non-default, so it matched
+         * NEITHER arm and vanished from the hub — including lists that contain
+         * assets. In production that is 8 user-created lists, 3 of them
+         * populated, unreachable by the people who made them.
+         *
+         * Reading NULL as a user-global is the schema's own convention: the
+         * `is_default` lists are deliberately left NULL for exactly that
+         * reason (see 20260603160000_asset_lists_organization_id.sql). So this
+         * arm is consistent with the design rather than a new rule.
+         *
+         * Not a leak: RLS on `asset_lists` is owner-or-collaborator, so these
+         * are the reader's own lists or ones shared with them. The cost is
+         * that a pre-trigger list appears in every org this reader works in,
+         * which is strictly better than it appearing in none. Backfilling the
+         * 8 rows would scope them properly and is the follow-up; it is a data
+         * change and deliberately not made here.
+         */
+        .or(`is_default.eq.true,organization_id.eq.${currentOrgId!},organization_id.is.null`)
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: false })
 

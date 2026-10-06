@@ -1485,18 +1485,35 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
   })
 
-  // Fetch lists that contain this asset
+  /*
+   * Lists that contain this asset.
+   *
+   * This read named tables that do not exist. `list_items` and `lists` are not
+   * in the schema — the real ones are `asset_list_items` and `asset_lists` —
+   * so PostgREST answered nothing and the "Lists containing this asset" panel
+   * below has always rendered empty. It fails silently because an empty result
+   * and no result look identical here.
+   *
+   * Two other columns were wrong with it: `asset_lists` carries `list_type`,
+   * not `type`, and `asset_list_items` timestamps the membership as `added_at`,
+   * not `created_at` — so the ordering referenced a column that is not there
+   * either. Ordering by `added_at` is also the more useful answer: most
+   * recently filed first.
+   *
+   * Scope needs no filter. RLS on these tables is owner-or-collaborator, so
+   * this returns the lists this reader may see and no others.
+   */
   const { data: assetLists, isLoading: listsLoading } = useQuery({
     queryKey: ['asset-lists', asset.id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('list_items')
-        .select('lists(id, name, description, type, created_at)')
+        .from('asset_list_items')
+        .select('added_at, asset_lists(id, name, description, list_type, created_at)')
         .eq('asset_id', asset.id)
-        .order('created_at', { ascending: false })
+        .order('added_at', { ascending: false })
 
       if (error) throw error
-      return data?.map(item => item.lists).filter(Boolean) || []
+      return data?.map((item: any) => item.asset_lists).filter(Boolean) || []
     }
   })
 
@@ -4094,7 +4111,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           <div className="space-y-2">
             {(() => {
               const listsByType = (assetLists as any[] || []).reduce((acc, list) => {
-                const type = list.type || 'list'
+                // `list_type` is the column; `type` never existed, so this
+                // grouping has been collapsing everything onto 'list' for as
+                // long as the query above returned anything — which it did not.
+                const type = list.list_type || 'list'
                 if (!acc[type]) acc[type] = []
                 acc[type].push(list)
                 return acc
