@@ -258,15 +258,27 @@ export function useListSurfaces(sortBy: ListSortKey = 'recent') {
     return map
   }, [activityCounts])
 
-  // Collect all list IDs for batch activity lookup
+  // Collect all list IDs for batch activity lookup. Sorted, so the cache key
+  // below is stable under a reorder of the same set.
   const allListIds = useMemo(() => {
     if (!rawLists) return []
-    return rawLists.map(l => l.id)
+    return rawLists.map(l => l.id).sort()
   }, [rawLists])
 
-  // Query 7 — Latest activity per list (for Updated tooltip)
+  /*
+   * Query 7 — Latest activity per list.
+   *
+   * Keyed on the list IDS, not their COUNT. `allListIds.length` meant two
+   * different sets of lists of equal size shared one cache entry, so deleting
+   * one list and creating another — or switching organisation to one with the
+   * same number of lists — served the previous set's activity rows. They are
+   * then matched by `list_id` into `lastActivityMap`, so the mismatch does not
+   * throw: every card simply shows "Updated …" from `updated_at` as though
+   * nothing had ever happened on it, which reads as a quiet desk rather than a
+   * stale cache.
+   */
   const { data: latestActivities } = useQuery({
-    queryKey: ['list-latest-activities', allListIds.length],
+    queryKey: ['list-latest-activities', allListIds.join('|')],
     queryFn: async () => {
       if (allListIds.length === 0) return []
       const { data, error } = await supabase.rpc('get_latest_list_activities', { p_list_ids: allListIds })
