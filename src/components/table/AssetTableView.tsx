@@ -295,7 +295,20 @@ interface AssetTableViewProps {
    *  When provided, takes over rendering inside the expanded row (the close
    *  button + outer container remain AssetTableView's). Gets the asset and
    *  the row ID (`_rowId` in list contexts, else asset.id). */
-  expandedRowSlot?: (asset: any, rowId: string) => React.ReactNode
+  /**
+   * Custom content for an expanded row.
+   *
+   * `coverage` is handed over because this component already holds it: the
+   * `asset-coverage-all` query above builds one map for the whole table, and
+   * the slot's consumers would otherwise each issue their own per-asset read
+   * to show the same thing. Optional third argument, so existing callers are
+   * unaffected.
+   */
+  expandedRowSlot?: (
+    asset: any,
+    rowId: string,
+    coverage?: Array<{ analyst: string; team: string; isLead: boolean }>,
+  ) => React.ReactNode
   /** Optional slot rendered in the toolbar area, between active filters and
    *  selection actions. Use for list-scoped filter chips. */
   filterBarSlot?: React.ReactNode
@@ -3559,7 +3572,7 @@ export function AssetTableView({
                             <div className="h-full flex flex-col overflow-hidden">
                               <div className="flex-1 min-h-0 overflow-hidden">
                                 {expandedRowSlot && !(expandedMetricColumn?.assetId === asset.id)
-                                  ? expandedRowSlot(asset, asset._rowId || asset.id)
+                                  ? expandedRowSlot(asset, asset._rowId || asset.id, coverage)
                                   : renderMetricDetail(
                                       asset,
                                       expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',
@@ -4417,7 +4430,7 @@ export function AssetTableView({
                                   <div className="h-full flex flex-col overflow-hidden">
                                     <div className="flex-1 min-h-0 overflow-hidden">
                                       {expandedRowSlot && !(expandedMetricColumn?.assetId === asset.id)
-                                        ? expandedRowSlot(asset, asset._rowId || asset.id)
+                                        ? expandedRowSlot(asset, asset._rowId || asset.id, coverage)
                                         : renderMetricDetail(
                                             asset,
                                             expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',

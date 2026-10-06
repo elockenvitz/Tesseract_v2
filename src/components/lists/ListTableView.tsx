@@ -143,12 +143,19 @@ export function ListTableView({
     }
   }, [listId, canEditRow])
 
-  const expandedRowSlot = useCallback((asset: any, rowId: string) => {
+  const expandedRowSlot = useCallback((
+    asset: any,
+    rowId: string,
+    // Already resolved by the table for the whole page — see `expandedRowSlot`
+    // in AssetTableView. Passing it down avoids a per-row coverage read.
+    coverage?: Array<{ analyst: string; team: string; isLead: boolean }>,
+  ) => {
     return (
       <ListRowExpansion
         listId={listId}
         rowId={rowId}
         asset={asset}
+        coverage={coverage}
         canEdit={canEditRow(asset)}
         onOpenAsset={onAssetSelect ? () => onAssetSelect(asset) : undefined}
       />
