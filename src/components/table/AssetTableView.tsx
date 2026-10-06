@@ -358,6 +358,15 @@ interface AssetTableViewProps {
    * behaviour, because the click never reaches the cell wrapper.
    */
   expansionEntryColumns?: ReadonlySet<string>
+  /**
+   * Comparators for columns whose data the table does not hold.
+   *
+   * Keyed by column id. A surface computing its own columns — a research state,
+   * a portfolio weight — can make them sortable without the table learning
+   * anything about them. Ascending order; the table inverts for descending.
+   * Must be referentially stable, since the filtered list memoises on it.
+   */
+  extraSortComparators?: Record<string, (a: any, b: any) => number>
   /** Optional slot rendered in the toolbar area, between active filters and
    *  selection actions. Use for list-scoped filter chips. */
   filterBarSlot?: React.ReactNode
@@ -415,6 +424,7 @@ export function AssetTableView({
   columnPreset,
   columnPresetVersion,
   expansionEntryColumns,
+  extraSortComparators,
   expandedRowSlot,
   filterBarSlot,
   rowAccentFn
@@ -1020,6 +1030,18 @@ export function AssetTableView({
     // When sortBy is null (manual mode), sort by _sortOrder (persisted drag order)
     if (sortBy === null) {
       filtered = [...filtered].sort((a, b) => (a._sortOrder ?? 999999) - (b._sortOrder ?? 999999))
+    } else if (extraSortComparators?.[sortBy]) {
+      /*
+       * A caller-owned comparator for a caller-owned column.
+       *
+       * The switch below can only reach fields that live on the asset, and a
+       * surface's own columns are computed from data the table has never seen —
+       * a research state, a portfolio weight. Without this they could only be
+       * rendered, never sorted, which on a fifty-name list means the reader can
+       * see which securities need attention but cannot bring them together.
+       */
+      const cmp = extraSortComparators[sortBy]
+      filtered = [...filtered].sort((a, b) => sortOrder === 'asc' ? cmp(a, b) : cmp(b, a))
     } else {
       filtered = [...filtered].sort((a, b) => {
         let aValue: any, bValue: any
@@ -1049,7 +1071,7 @@ export function AssetTableView({
     }
 
     return filtered
-  }, [assets, searchQuery, selectedPriorities, selectedSectors, selectedStages, sortBy, sortOrder])
+  }, [assets, searchQuery, selectedPriorities, selectedSectors, selectedStages, sortBy, sortOrder, extraSortComparators])
 
   // Grouped assets for table view
   const groupedAssets = useMemo(() => {

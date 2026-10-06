@@ -18,7 +18,7 @@ import { ListTagsCell } from './ListTagsCell'
 import { ListRowExpansion } from './ListRowExpansion'
 import {
   LIST_SIGNAL_COLUMNS, listColumnPreset, renderSignalCell,
-  LIST_COLUMN_PRESET_VERSION,
+  LIST_COLUMN_PRESET_VERSION, listSortComparators,
 } from './ListRowCells'
 import { LIST_EXPANSION_ENTRY_COLUMNS } from './listRowModes'
 import { useListRowSignals } from '../../hooks/lists/useListRowSignals'
@@ -120,6 +120,10 @@ export function ListTableView({
   // table is virtualised and a list can hold hundreds of names.
   const { signalFor } = useListRowSignals(assets)
 
+  // Stable per `signalFor`, which is itself memoised on the batch — so the
+  // table's filtered-list memo is not invalidated on every render.
+  const extraSortComparators = useMemo(() => listSortComparators(signalFor), [signalFor])
+
   const renderExtraCell = useCallback((columnId: string, asset: any) => {
     const rowId: string = asset._rowId || asset.id
     const canEdit = canEditRow(asset)
@@ -220,6 +224,7 @@ export function ListTableView({
       columnPreset={listColumnPreset}
       columnPresetVersion={LIST_COLUMN_PRESET_VERSION}
       expansionEntryColumns={LIST_EXPANSION_ENTRY_COLUMNS}
+      extraSortComparators={extraSortComparators}
       renderExtraCell={renderExtraCell}
       expandedRowSlot={expandedRowSlot}
       filterBarSlot={filterBarSlot}

@@ -19,7 +19,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import {
-  LIST_SIGNAL_COLUMNS, listColumnPreset, renderSignalCell,
+  LIST_SIGNAL_COLUMNS, listColumnPreset, renderSignalCell, listSortComparators,
 } from '../ListRowCells'
 import { DEFAULT_COLUMNS } from '../../table/AssetTableView'
 import type { ListRowSignal } from '../../../hooks/lists/useListRowSignals'
@@ -130,6 +130,94 @@ describe('the curated List presentation', () => {
     // never silently shuffles the tail.
     const out = idsOf(listColumnPreset(base()))
     expect(out.indexOf('rating')).toBeLessThan(out.indexOf('thesis'))
+  })
+})
+
+describe('the signal columns can be ordered', () => {
+  /*
+   * These exist because a watchlist whose columns cannot be sorted is a report.
+   * The table's own sort can only reach fields on the asset, so without these
+   * the reader could see which securities need attention but not bring them
+   * together — which on a fifty-name list is the difference between the column
+   * being useful and being decoration.
+   */
+  const sig = (over: Partial<ListRowSignal>): ListRowSignal => ({ ...empty, ...over })
+
+  /** Sort descending, the way the table does on a first header click. */
+  const descend = (columnId: string, rows: Record<string, ListRowSignal>) => {
+    const cmp = listSortComparators(id => rows[id as string] ?? empty)[columnId]
+    return Object.keys(rows).sort((a, b) => cmp({ id: b }, { id: a }))
+  }
+
+  it('orders Work by urgency, unanswered research first', () => {
+    const order = descend('list_work', {
+      current: sig({ state: 'current' }),
+      nothing: empty,
+      stale: sig({ state: 'stale' }),
+      unread: sig({ state: 'evidence-since-review', subject: { newSinceReview: 1 } as any }),
+      nocase: sig({ state: 'no-thesis' }),
+    })
+    // Unreviewed research leads: it is the one state where the written case may
+    // already be wrong.
+    expect(order[0]).toBe('unread')
+    expect(order.indexOf('stale')).toBeLessThan(order.indexOf('nocase'))
+    // A current case, then a name with no research subject at all, come last.
+    expect(order.slice(-2)).toEqual(['current', 'nothing'])
+  })
+
+  it('breaks a Work tie on how much is unread', () => {
+    const order = descend('list_work', {
+      one: sig({ state: 'evidence-since-review', subject: { newSinceReview: 1 } as any }),
+      five: sig({ state: 'evidence-since-review', subject: { newSinceReview: 5 } as any }),
+    })
+    expect(order).toEqual(['five', 'one'])
+  })
+
+  it('orders Position by weight and sinks the unheld', () => {
+    const order = descend('list_position', {
+      small: sig({ weightPct: 0.4 }),
+      unheld: empty,
+      big: sig({ weightPct: 6.1 }),
+    })
+    // "Sort by Position" means show me what we own — an absent weight must not
+    // float to the top of a descending sort.
+    expect(order).toEqual(['big', 'small', 'unheld'])
+  })
+
+  it('orders 1M by the move, not by the closing price', () => {
+    const order = descend('list_spark', {
+      up: sig({ closes: [100, 110] }),       // +10%
+      down: sig({ closes: [400, 380] }),     // -5%, but a far higher price
+      flat: sig({ closes: [50, 50] }),       // 0%
+      none: empty,
+    })
+    expect(order).toEqual(['up', 'flat', 'down', 'none'])
+  })
+
+  it('orders Target by price and sinks the untargeted', () => {
+    expect(descend('list_target', {
+      low: sig({ targetPrice: 10 }),
+      none: empty,
+      high: sig({ targetPrice: 300 }),
+    })).toEqual(['high', 'low', 'none'])
+  })
+
+  it('orders View alphabetically, assuming no universal rating order', () => {
+    // Rating scales are per-organisation, so there is no Buy-beats-Hold order
+    // to hardcode. Unrated sinks.
+    expect(descend('list_rating', {
+      hold: sig({ ratingValue: 'Hold' }),
+      unrated: empty,
+      buy: sig({ ratingValue: 'Buy' }),
+    })).toEqual(['hold', 'buy', 'unrated'])
+  })
+
+  it('marks every signal column sortable', () => {
+    const cmps = listSortComparators(() => empty)
+    for (const col of LIST_SIGNAL_COLUMNS) {
+      expect(col.sortable, `${col.id} must be sortable`).toBe(true)
+      expect(cmps[col.id], `${col.id} needs a comparator`).toBeTypeOf('function')
+    }
   })
 })
 

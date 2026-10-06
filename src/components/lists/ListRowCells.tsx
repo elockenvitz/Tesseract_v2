@@ -18,20 +18,86 @@ import { clsx } from 'clsx'
 import { Sparkline } from '../signals/Sparkline'
 import { RatingPill, ConvictionBars } from './ListRowAtoms'
 import { STATE_LABEL, type ResearchState } from '../../lib/desktop-research/model'
+import type { ListRowMode } from './listRowModes'
 import type { ListRowSignal } from '../../hooks/lists/useListRowSignals'
 import type { ColumnConfig } from '../table/AssetTableView'
 
 /** Investment-signal columns. Apply to curated lists and screens alike. */
 export const LIST_SIGNAL_COLUMNS: ColumnConfig[] = [
-  { id: 'list_spark',    label: '1M',       visible: true, width: 64,  minWidth: 48, sortable: false, pinned: false, category: 'price' },
-  { id: 'list_position', label: 'Position', visible: true, width: 68,  minWidth: 56, sortable: false, pinned: false, category: 'price' },
+  // All sortable: a watchlist whose columns cannot be ordered is a report. The
+  // comparators live with the surface that owns the data — see
+  // `listSortComparators`, handed to the table as `extraSortComparators`.
+  { id: 'list_spark',    label: '1M',       visible: true, width: 64,  minWidth: 48, sortable: true, pinned: false, category: 'price' },
+  { id: 'list_position', label: 'Position', visible: true, width: 68,  minWidth: 56, sortable: true, pinned: false, category: 'price' },
   // "View" rather than "Rating": the cell carries the rating AND the conviction
   // behind it, which together are the house view, and two columns for one
   // judgement is what pushed this line into horizontal scroll.
-  { id: 'list_rating',   label: 'View',     visible: true, width: 76,  minWidth: 64, sortable: false, pinned: false, category: 'research' },
-  { id: 'list_target',   label: 'Target',   visible: true, width: 92,  minWidth: 76, sortable: false, pinned: false, category: 'research' },
-  { id: 'list_work',     label: 'Work',     visible: true, width: 132, minWidth: 96, sortable: false, pinned: false, category: 'workflow' },
+  { id: 'list_rating',   label: 'View',     visible: true, width: 76,  minWidth: 64, sortable: true, pinned: false, category: 'research' },
+  { id: 'list_target',   label: 'Target',   visible: true, width: 92,  minWidth: 76, sortable: true, pinned: false, category: 'research' },
+  { id: 'list_work',     label: 'Work',     visible: true, width: 132, minWidth: 96, sortable: true, pinned: false, category: 'workflow' },
 ]
+
+/**
+ * How urgent each research state is, for ordering the Work column.
+ *
+ * Highest first when sorted descending, which is what a reader wants on the
+ * first click: unanswered research leads, because it is the one state where the
+ * written case may already be wrong. "Current" is last and `null` — no subject
+ * at all — is below it, since an absent case is a gap rather than a verdict.
+ */
+const WORK_URGENCY: Record<ResearchState, number> = {
+  'evidence-since-review': 6,
+  'moved-since-review': 5,
+  stale: 4,
+  'incomplete-thesis': 3,
+  'no-thesis': 2,
+  thin: 1,
+  current: 0,
+}
+
+/**
+ * Comparators for the signal columns, ascending.
+ *
+ * Module scope because `extraSortComparators` is a memo dependency. They close
+ * over nothing: the signal lookup is passed in by `ListTableView`, which owns
+ * the batch.
+ */
+export function listSortComparators(
+  signalFor: (assetId?: string | null) => ListRowSignal,
+): Record<string, (a: any, b: any) => number> {
+  // Absent values sort to the BOTTOM of a descending sort rather than the top,
+  // which is what "sort by Position" means to a reader: show me what we own.
+  const num = (v: number | null | undefined) => (v == null ? -Infinity : v)
+  const oneMonth = (s: ListRowSignal) => {
+    const c = s.closes
+    if (!c || c.length < 2 || !c[0]) return -Infinity
+    return ((c[c.length - 1] - c[0]) / c[0]) * 100
+  }
+  return {
+    list_spark: (a, b) => oneMonth(signalFor(a?.id)) - oneMonth(signalFor(b?.id)),
+    list_position: (a, b) => num(signalFor(a?.id).weightPct) - num(signalFor(b?.id).weightPct),
+    list_target: (a, b) => num(signalFor(a?.id).targetPrice) - num(signalFor(b?.id).targetPrice),
+    list_rating: (a, b) => {
+      // Alphabetical by the recorded value: rating scales are per-organisation,
+      // so there is no universal Buy-beats-Hold order to assume.
+      const av = signalFor(a?.id).ratingValue ?? ''
+      const bv = signalFor(b?.id).ratingValue ?? ''
+      if (!av && !bv) return 0
+      if (!av) return -1
+      if (!bv) return 1
+      return av.localeCompare(bv)
+    },
+    list_work: (a, b) => {
+      const sa = signalFor(a?.id)
+      const sb = signalFor(b?.id)
+      const ua = sa.state ? WORK_URGENCY[sa.state] : -1
+      const ub = sb.state ? WORK_URGENCY[sb.state] : -1
+      if (ua !== ub) return ua - ub
+      // Within the same state, more unreviewed notes is more urgent.
+      return (sa.subject?.newSinceReview ?? 0) - (sb.subject?.newSinceReview ?? 0)
+    },
+  }
+}
 
 
 /**
