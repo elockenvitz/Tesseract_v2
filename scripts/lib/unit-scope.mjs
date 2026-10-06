@@ -114,6 +114,24 @@ export const GATED_DIRS = [
   // The pilot onboarding model: four steps, two of them marks and two of them
   // rows. It decides what a new pilot is shown, so it is gated on arrival.
   'src/lib/pilot',
+  /*
+   * The Lists surface: the collapsed watchlist line, the contextual expanded
+   * workspace, the mobile row, and the per-list attention counts.
+   *
+   * Gated on arrival because every failure mode here is silent. The curated
+   * column default already shipped once without reaching the screen — saved
+   * state overrode it while the new ORDER made it look applied. The attention
+   * counts are folded from org-wide scans, so a missing membership filter
+   * reports the whole organisation's backlog on every card and reads as a busy
+   * desk. And the expansion's modes claim things about a security ("No case
+   * written yet") that are wrong rather than merely missing when the data has
+   * not arrived.
+   */
+  'src/components/lists',
+  'src/hooks/lists',
+  // `columnPersistence` — whether a curated default or a reader's saved layout
+  // wins. See above: it failed silently once already.
+  'src/components/table',
   // The current-org heal decides whether a durable tenant pointer may be
   // rewritten. Getting it wrong stranded two live workspaces in another org.
   'src/lib/org',

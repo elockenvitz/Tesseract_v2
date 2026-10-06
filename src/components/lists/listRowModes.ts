@@ -50,6 +50,10 @@ export const MODE_FOR_COLUMN: Readonly<Record<string, ListRowMode>> = {
   list_target: 'valuation',
   list_position: 'position',
   list_work: 'work',
+  // Who covers it is part of orienting on the name, and Overview is where the
+  // covering analysts are shown. Without this, Coverage was the one visible
+  // column on the curated line whose cell did nothing when clicked.
+  coverage: 'overview',
 }
 
 /**
