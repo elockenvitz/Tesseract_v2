@@ -118,7 +118,7 @@ function Owed({
         {count}
       </span>
       <span className={clsx(
-        'text-[11px] leading-tight max-w-[72px]',
+        'text-[11px] leading-tight max-w-[74px]',
         tone === 'decision'
           ? 'font-semibold text-gray-700 dark:text-gray-200'
           : 'font-medium text-gray-500 dark:text-gray-400',
@@ -226,7 +226,17 @@ export function ListSurfaceCard({
         * page — scanning a column of counts is the whole point, and it only
         * works if they share an x-position across rows.
         */}
-      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1fr)_236px_minmax(0,210px)] gap-x-6 gap-y-2 items-center">
+      {/*
+        * Identity is CAPPED, not elastic.
+        *
+        * With `1fr` it absorbed every pixel of a 1440px pane, which pushed the
+        * attention figures roughly 900px away from the names they describe —
+        * the row broke into two unrelated halves with a lake between them, and
+        * that lake is what read as an admin directory. Capping identity puts the
+        * three stations side by side and lets the slack fall off the right, where
+        * it is ordinary page margin instead of a hole inside a row.
+        */}
+      <div className="grid grid-cols-1 justify-start md:grid-cols-[minmax(0,420px)_auto] lg:grid-cols-[minmax(0,420px)_minmax(0,272px)_minmax(0,340px)] gap-x-8 gap-y-2 items-center">
 
         {/* ── Identity: what this universe is, and what is in it ───────── */}
         <div className="min-w-0">
@@ -314,7 +324,7 @@ export function ListSurfaceCard({
         </div>
 
         {/* ── Provenance: who moved it, who is in it. Quiet by design. ─── */}
-        <div className="hidden lg:flex items-center gap-2 min-w-0 justify-end">
+        <div className="hidden lg:flex items-center gap-2 min-w-0">
           <span className="text-[11px] text-gray-400 dark:text-gray-500 truncate">
             {lastActivity ? (
               <>

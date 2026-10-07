@@ -315,7 +315,22 @@ interface AssetTableViewProps {
   /** Cell renderer for `extraColumns` entries. Called for any column whose id
    *  isn't handled by the built-in column set. If this returns undefined/null
    *  the cell falls through to the default empty-cell rendering. */
-  renderExtraCell?: (columnId: string, asset: any) => React.ReactNode
+  /**
+   * Render a cell for a column the table does not own.
+   *
+   * `quote` is handed over because this component already resolves it: the row
+   * computes `getQuote(asset.symbol)` for its own price cell, and a surface that
+   * composes price into a conceptual column would otherwise fall back to
+   * `asset.current_price` — the STORED price, which can be a long way from the
+   * live one. A list showing a stale price beside a target computed from it
+   * produced a visible "+1024% upside", so this is a correctness argument rather
+   * than a tidiness one. Optional, so existing callers are unaffected.
+   */
+  renderExtraCell?: (
+    columnId: string,
+    asset: any,
+    quote?: { price?: number | null; changePercent?: number | null } | null,
+  ) => React.ReactNode
   /**
    * Reshape the default column set for this surface.
    *
@@ -691,7 +706,9 @@ export function AssetTableView({
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
 
   // Refs
-  const tableContainerRef = useRef<HTMLDivElement>(null)
+  // `| null` in the type parameter, so this is a MutableRefObject: the callback
+  // ref below assigns `.current`, which a plain `useRef<T>(null)` forbids.
+  const tableContainerRef = useRef<HTMLDivElement | null>(null)
   const columnSettingsRef = useRef<HTMLDivElement>(null)
   const groupByMenuRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -700,15 +717,37 @@ export function AssetTableView({
   // size the expanded-row content so it stays pinned to the left edge of
   // the viewport regardless of horizontal scroll position (sticky + width).
   const [tableVisibleWidth, setTableVisibleWidth] = useState(0)
+  /*
+   * Observed through a CALLBACK ref, not through `tableContainerRef.current`.
+   *
+   * The scroll container is rendered only once there are rows — it sits inside
+   * the `filteredAssets.length > 0` branch — so on first paint the effect ran
+   * with a null ref, returned early, and never re-ran: its dependencies
+   * (`viewMode`, `fillHeight`) do not change when the data lands. The width
+   * therefore stayed 0 for the life of the surface.
+   *
+   * Nothing LOOKED broken, which is why it survived: a zero width only disables
+   * the slack distribution below, so every column sat at its floor and the table
+   * trailed off into several hundred pixels of white on a wide screen. That read
+   * as a sparse spreadsheet and was mistaken for a styling problem.
+   *
+   * A callback ref fires on attach and detach, so the observer is wired exactly
+   * when the element exists. The ref object is kept in sync for the virtualiser
+   * and the keyboard-navigation hook, which both want `.current`.
+   */
+  const [tableEl, setTableEl] = useState<HTMLDivElement | null>(null)
+  const attachTableContainer = useCallback((el: HTMLDivElement | null) => {
+    tableContainerRef.current = el
+    setTableEl(el)
+  }, [])
   useEffect(() => {
-    const el = tableContainerRef.current
-    if (!el) return
-    const update = () => setTableVisibleWidth(el.clientWidth)
+    if (!tableEl) { setTableVisibleWidth(0); return }
+    const update = () => setTableVisibleWidth(tableEl.clientWidth)
     update()
     const ro = new ResizeObserver(update)
-    ro.observe(el)
+    ro.observe(tableEl)
     return () => ro.disconnect()
-  }, [viewMode, fillHeight])
+  }, [tableEl])
 
   // Keyboard help modal state
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
@@ -2783,7 +2822,7 @@ export function AssetTableView({
           {/* TABLE VIEW */}
           {viewMode === 'table' && groupBy === 'none' && (
             <Card padding="none" className={clsx('overflow-hidden pro-table', fillHeight && 'flex-1 min-h-0 flex flex-col', `density-${density}`)}>
-              <div ref={tableContainerRef} className={clsx('pro-table-container overflow-auto', fillHeight && 'flex-1')}>
+              <div ref={attachTableContainer} className={clsx('pro-table-container overflow-auto', fillHeight && 'flex-1')}>
                 {/* Header */}
                 <div className="pro-table-header" style={{ minWidth: totalTableWidth + (canDragRows ? dragHandleWidth : 0) + (hiddenColumns.length > 0 ? 40 : 0) }}>
                   <div className="flex items-center">
@@ -3784,7 +3823,7 @@ export function AssetTableView({
                                 {col.id === 'actions' && renderRowActions && renderRowActions(asset)}
                                 {/* Extra-column cell renderer — for caller-provided columns
                                     not handled by any built-in col.id branch above. */}
-                                {renderExtraCell && !col.isCustomAI && col.id !== 'actions' && renderExtraCell(col.id, asset)}
+                                {renderExtraCell && !col.isCustomAI && col.id !== 'actions' && renderExtraCell(col.id, asset, quote)}
                               </div>
                             )
                           })}
@@ -4679,7 +4718,7 @@ export function AssetTableView({
                                         </div>
                                       )}
                                       {/* Extra-column cell renderer (grouped view) */}
-                                      {renderExtraCell && !col.isCustomAI && col.id !== 'actions' && renderExtraCell(col.id, asset)}
+                                      {renderExtraCell && !col.isCustomAI && col.id !== 'actions' && renderExtraCell(col.id, asset, quote)}
                                     </div>
                                   )
                                 })}

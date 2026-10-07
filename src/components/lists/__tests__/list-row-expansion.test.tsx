@@ -100,6 +100,7 @@ const asset = { id: 'a-aapl', symbol: 'AAPL', company_name: 'Apple Inc.' }
 /** A signal that knows nothing — the batch's own "unknown asset" value. */
 const EMPTY_SIGNAL: ListRowSignal = {
   state: null, subject: null, weightPct: null, closes: null,
+  bookName: null, bookCount: 0,
   ratingValue: null, ratingColor: null, conviction: null, targetPrice: null,
   work: { tier: 'clear', label: '', count: 0, secondary: null },
   idea: null,

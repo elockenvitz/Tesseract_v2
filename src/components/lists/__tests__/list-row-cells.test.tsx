@@ -337,16 +337,31 @@ describe('the market cell has stable geometry before its data exists', () => {
   })
 
   it('takes its width from the column, never from its content', () => {
-    const box = marketCell(empty)
-      .container.querySelector<HTMLElement>('[data-testid="spark-cell"]')!
+    const { container } = marketCell(empty)
     /*
-     * `flex-1 min-w-0` is the fix for the snap: as a flex item with the default
-     * `flex-basis:auto` the box sized from its CONTENT, and its content was an
-     * svg whose own width is a percentage — an indeterminate cycle the browser
-     * breaks with the intrinsic size and corrects on a later pass.
+     * The cell is the row-flex item, so `flex-1 min-w-0` belongs on IT: with the
+     * default `flex-basis:auto` it sized from its CONTENT, and that content was
+     * an svg whose own width is a percentage — an indeterminate cycle the
+     * browser breaks with the intrinsic size and corrects on a later pass.
      */
-    expect(box.className).toMatch(/\bflex-1\b/)
-    expect(box.className).toMatch(/\bmin-w-0\b/)
+    const cell = container.firstElementChild as HTMLElement
+    expect(cell.className).toMatch(/\bflex-1\b/)
+    expect(cell.className).toMatch(/\bmin-w-0\b/)
+  })
+
+  it('never puts flex-1 on the box itself, which would zero its height', () => {
+    /*
+     * The box's parent is a COLUMN flex, where `flex-1` sets `flex-basis:0%` on
+     * the MAIN axis — the height. The declared height then loses to the basis
+     * and the box computes to 0px: the chart mounts, measures zero, and is
+     * invisible. This shipped once; it must not ship twice.
+     */
+    for (const signal of [empty, { ...empty, closes: [100, 110] }]) {
+      const box = marketCell(signal)
+        .container.querySelector<HTMLElement>('[data-testid="spark-cell"]')!
+      expect(box.className).not.toMatch(/\bflex-1\b/)
+      expect(box.className).toMatch(/\bw-full\b/)
+    }
   })
 
   it('keeps the chart out of flow so it cannot size the box', () => {
@@ -411,6 +426,30 @@ describe('what the conceptual cells say when they do know', () => {
   it('MARKET reads a camelCase change too, since both shapes reach it', () => {
     render(<>{renderSignalCell('list_market', { current_price: 10, changePercent: 1.25 }, empty)}</>)
     expect(screen.getByText('+1.3%')).toBeInTheDocument()
+  })
+
+  it('prefers the table\'s live quote over the stored price, in both cells', () => {
+    /*
+     * The defect this fixes was visible: GOOGL's stored `current_price` was
+     * 142.80 while the table's own price cell showed 347.68, and VALUATION
+     * computed its upside against the stale one — rendering "+1024%".
+     */
+    const quote = { price: 347.68, changePercent: -0.62 }
+    const asset = { current_price: 142.80, change_percent: 11 }
+    render(<>{renderSignalCell('list_market', asset, empty, quote)}</>)
+    expect(screen.getByText('347.68')).toBeInTheDocument()
+    expect(screen.getByText('-0.6%')).toBeInTheDocument()
+    expect(screen.queryByText('142.80')).not.toBeInTheDocument()
+
+    render(<>{renderSignalCell('list_valuation', asset, { ...empty, targetPrice: 400 }, quote)}</>)
+    // 400 against 347.68, not against 142.80 (which would read +180.1%).
+    expect(screen.getByText('+15.0%')).toBeInTheDocument()
+    expect(screen.queryByText('+180.1%')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the stored price when there is no live quote', () => {
+    render(<>{renderSignalCell('list_market', { current_price: 154.33 }, empty, null)}</>)
+    expect(screen.getByText('154.33')).toBeInTheDocument()
   })
 
   it('EXPOSURE says what the weight is a weight OF', () => {

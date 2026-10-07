@@ -714,7 +714,13 @@ export function MarketMode(p: {
              * whole canvas on a name with no other context, which is the
              * sparkline again at four times the size.
              */
-            <div className="min-h-[72px] max-h-[128px] flex-1">
+            // Capped hard, not `flex-1`. Allowed to fill, the chart ate the
+            // whole budget and pushed the dated events below the mode's scroll
+            // fold — which rendered as two orphan "8 months ago" captions with
+            // nothing under them. The events are the half of this mode the
+            // collapsed sparkline cannot already say, so they get guaranteed
+            // room.
+            <div className="h-[92px] flex-shrink-0">
               <Sparkline points={p.closes} reference={p.target} />
             </div>
           ) : (

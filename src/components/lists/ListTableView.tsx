@@ -127,13 +127,19 @@ export function ListTableView({
   // table's filtered-list memo is not invalidated on every render.
   const extraSortComparators = useMemo(() => listSortComparators(signalFor), [signalFor])
 
-  const renderExtraCell = useCallback((columnId: string, asset: any) => {
+  const renderExtraCell = useCallback((
+    columnId: string,
+    asset: any,
+    // Resolved by the table for its own price cell; forwarded so MARKET and
+    // VALUATION quote the same number the table does.
+    quote?: { price?: number | null; changePercent?: number | null } | null,
+  ) => {
     const rowId: string = asset._rowId || asset.id
     const canEdit = canEditRow(asset)
 
     // Investment-signal columns first: they apply to screens too, where the
     // list-scoped columns below are deliberately absent.
-    const signalCell = renderSignalCell(columnId, asset, signalFor(asset.id))
+    const signalCell = renderSignalCell(columnId, asset, signalFor(asset.id), quote)
     if (signalCell !== undefined) return signalCell
 
     switch (columnId) {

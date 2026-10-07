@@ -335,7 +335,17 @@ function SparkCell({ signal }: { signal: ListRowSignal }) {
 
   return (
     <span
-      className="relative block flex-1 min-w-0 overflow-hidden"
+      /*
+       * `w-full`, never `flex-1`.
+       *
+       * This box's own parent is a COLUMN flex (`MarketCell`), where `flex-1`
+       * means `flex-basis: 0%` on the main axis — which is the height. The
+       * declared `height: 20px` then loses to the basis and the box computes to
+       * 0px: the chart was mounted, measured zero, and was invisible. Width is
+       * taken from the column through `MarketCell`'s own `flex-1 min-w-0`,
+       * which IS a row-flex item and is the right place for it.
+       */
+      className="relative block w-full min-w-0 overflow-hidden"
       style={{ height: SPARK_HEIGHT }}
       data-testid="spark-cell"
       data-state={drawn ? 'drawn' : 'quiet'}
@@ -418,7 +428,9 @@ function MarketCell({ signal, price, changePct }: {
 }) {
   if (price == null && !signal.closes) return null
   return (
-    <span className="flex flex-col min-w-0 max-w-full w-full gap-[3px] leading-none">
+    // `flex-1 min-w-0` here, as a row-flex item in `.pro-table-cell`: the cell's
+    // width is the column's, and nothing inside may size it. See `SparkCell`.
+    <span className="flex flex-col flex-1 min-w-0 max-w-full gap-[3px] leading-none">
       <span className="flex items-baseline gap-1.5 min-w-0">
         <span className="text-[13px] font-semibold tabular-nums text-gray-900 dark:text-gray-100 truncate">
           {price != null ? price.toFixed(2) : '—'}
@@ -615,23 +627,31 @@ export function renderSignalCell(
     changePercent?: number | string | null
   },
   signal: ListRowSignal,
+  /**
+   * The table's own live quote for this symbol, where it has one.
+   *
+   * MARKET and VALUATION must agree about the price or the upside is nonsense:
+   * computing a target against the STORED price while the row displays the live
+   * one produced a visible "+1024%". So one price is resolved here and both
+   * cells read it.
+   */
+  quote?: { price?: number | null; changePercent?: number | null } | null,
 ): React.ReactNode | undefined {
   const finite = (v: unknown) => {
     const n = v == null ? NaN : Number(v)
     return Number.isFinite(n) ? n : null
   }
+  // Live where we have it, stored otherwise — the same precedence the table's
+  // own price cell uses, so the two can never disagree.
+  const price = finite(quote?.price) ?? finite(asset?.current_price)
+  const changePct = finite(quote?.changePercent)
+    ?? finite(asset?.change_percent ?? asset?.changePercent)
+
   switch (columnId) {
-    case 'list_market':
-      return (
-        <MarketCell
-          signal={signal}
-          price={finite(asset?.current_price)}
-          changePct={finite(asset?.change_percent ?? asset?.changePercent)}
-        />
-      )
+    case 'list_market':    return <MarketCell signal={signal} price={price} changePct={changePct} />
     case 'list_exposure':  return <ExposureCell signal={signal} />
     case 'list_view':      return <ViewCell signal={signal} />
-    case 'list_valuation': return <ValuationCell signal={signal} price={finite(asset?.current_price)} />
+    case 'list_valuation': return <ValuationCell signal={signal} price={price} />
     case 'list_work':      return <WorkCell signal={signal} />
     default: return undefined
   }

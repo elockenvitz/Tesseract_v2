@@ -194,8 +194,36 @@ export function ListRowExpansion({
     return [...withWeight].sort((a, b) => (b.weightPct ?? 0) - (a.weightPct ?? 0))[0]
   }, [positions])
 
-  const upsidePct = spot != null && spot > 0 && target != null
-    ? ((target - spot) / spot) * 100
+  /**
+   * The price the inspector quotes, and everything computed from it.
+   *
+   * `workspace.spot` comes from `price_history_cache` and is null for any name
+   * the cache has not back-filled — which made Market open with its hero figure
+   * missing while the chart beside it was drawn and the collapsed row showed a
+   * price. The fallbacks, in order of how well they match what is on screen:
+   *
+   *   1. the workspace's own spot;
+   *   2. the LAST CLOSE of the series the chart is drawing, so the figure and
+   *      the line can never disagree;
+   *   3. the asset's stored `current_price`.
+   *
+   * No fourth: the table's live quote is not handed to an expanded row, so a
+   * name whose stored price is stale reads stale here. That is a visible gap
+   * rather than a wrong number.
+   */
+  const displaySpot = useMemo(() => {
+    if (spot != null) return spot
+    const closes = signal?.closes
+    if (closes && closes.length > 0) {
+      const last = closes[closes.length - 1]
+      if (Number.isFinite(last)) return last
+    }
+    const stored = asset?.current_price == null ? NaN : Number(asset.current_price)
+    return Number.isFinite(stored) ? stored : null
+  }, [spot, signal?.closes, asset?.current_price])
+
+  const upsidePct = displaySpot != null && displaySpot > 0 && target != null
+    ? ((target - displaySpot) / displaySpot) * 100
     : null
 
   /** Today's move, where the asset row carries it. Never computed from a guess. */
@@ -588,7 +616,7 @@ export function ListRowExpansion({
           <>
             {activeMode === 'overview' && (
               <OverviewMode
-                spot={spot} changePct={changePct} target={target} upsidePct={upsidePct}
+                spot={displaySpot} changePct={changePct} target={target} upsidePct={upsidePct}
                 weightPct={weightPct} shares={primaryPosition?.shares ?? null}
                 bookName={primaryPosition?.portfolioName}
                 ratingValue={rating?.rating_value ?? null} ratingColor={ratingColor}
@@ -603,7 +631,7 @@ export function ListRowExpansion({
             )}
             {activeMode === 'market' && (
               <MarketMode
-                symbol={asset.symbol} spot={spot} changePct={changePct}
+                symbol={asset.symbol} spot={displaySpot} changePct={changePct}
                 closes={signal?.closes ?? null} target={target} upsidePct={upsidePct}
                 weightPct={weightPct} bookName={primaryPosition?.portfolioName ?? signal?.bookName}
                 ratingValue={rating?.rating_value ?? null} ratingColor={ratingColor}
@@ -633,7 +661,7 @@ export function ListRowExpansion({
             )}
             {activeMode === 'valuation' && (
               <ValuationMode
-                spot={spot} target={target} upsidePct={upsidePct} rungs={rungs}
+                spot={displaySpot} target={target} upsidePct={upsidePct} rungs={rungs}
                 weightPct={weightPct}
                 ratingValue={rating?.rating_value ?? null} ratingColor={ratingColor}
                 conviction={rating?.conviction ?? null}
@@ -642,7 +670,7 @@ export function ListRowExpansion({
             )}
             {activeMode === 'position' && (
               <PositionMode
-                positions={positions ?? []} spot={spot} target={target} upsidePct={upsidePct}
+                positions={positions ?? []} spot={displaySpot} target={target} upsidePct={upsidePct}
                 ratingValue={rating?.rating_value ?? null} ratingColor={ratingColor}
                 conviction={rating?.conviction ?? null} ideaLabel={ideaLabel}
                 /*
