@@ -9,11 +9,12 @@ import { Badge } from '../components/ui/Badge'
 import { ListSkeleton } from '../components/common/LoadingSkeleton'
 import { EmptyState } from '../components/common/EmptyState'
 import { AssetListManager } from '../components/lists/AssetListManager'
-import { ListSurfaceCard } from '../components/lists/ListSurfaceCard'
+import { ListUniverseRow, UniverseIndexHeader } from '../components/lists/ListUniverseRow'
+import { clsx } from 'clsx'
 import { ListSurfaceControls, type ListTypeFilter, type ViewMode, type ListGroupKey } from '../components/lists/ListSurfaceControls'
 import { ListsTableView } from '../components/lists/ListsTableView'
 import { useListSurfaces, type ListSortKey, type ListSurface } from '../hooks/lists/useListSurfaces'
-import { useListAttention, type ListAttention, type ListAttentionItem } from '../hooks/lists/useListAttention'
+import { useListAttention, type ListAttention } from '../hooks/lists/useListAttention'
 import { useMarkListOpened } from '../hooks/lists/useMarkListOpened'
 
 const VIEW_MODE_KEY = 'lists:viewMode'
@@ -109,8 +110,14 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
     updateCountMap,
     selfUpdateCountMap,
     lastActivityMap,
-    symbolMap,
-    sortLists: sortFn
+    /*
+     * `symbolMap` and `sortLists` are deliberately not taken.
+     *
+     * The first fed a constituent preview — the first few tickers on each list,
+     * which said nothing about what a universe IS and is gone by design. The
+     * second ordered the removed flat view; the index orders through
+     * `byAttention` over the already-sorted arrays.
+     */
   } = useListSurfaces(sortBy)
 
   /*
@@ -224,21 +231,33 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
   }, [typeFilter, filteredMy, filteredCollab, filteredShared, byAttention, metrics])
 
   /**
-   * The page-level rollup, from the same fold the panels use.
+   * The summary describes the LIBRARY first, and work last.
    *
-   * Counted over the universes actually on screen, so it always describes what
-   * the reader is looking at rather than the whole account.
+   * How many universes, how many are shared, how many distinct securities they
+   * cover between them — then, separately and to the right, how much needs a
+   * person. A List can be a watchlist, an avoid list or a research universe, so
+   * leading with a workflow total would describe only the subset that happens
+   * to carry open work.
+   *
+   * `distinct` is the number of UNIQUE securities across the universes on
+   * screen, not the sum of their sizes: a name on three lists is one name we
+   * follow. Folded from `assetIds`, which the lists read already returns.
    */
-  const rollup = useMemo(() => {
-    let awaiting = 0
+  const summary = useMemo(() => {
+    const shown = [...activeUniverses, ...emptyUniverses]
+    const names = new Set<string>()
     let needs = 0
-    for (const l of activeUniverses) {
-      const a = attentionFor(l.id)
-      awaiting += a.awaitingDecision
-      needs += a.needsAttention
+    for (const l of shown) {
+      for (const id of l.assetIds ?? []) names.add(id)
+      needs += attentionFor(l.id).needsAttention
     }
-    return { universes: activeUniverses.length, awaiting, needs }
-  }, [activeUniverses, attentionFor])
+    return {
+      universes: shown.length,
+      collaborative: shown.filter(l => l.list_type === 'collaborative').length,
+      distinct: names.size,
+      needs,
+    }
+  }, [activeUniverses, emptyUniverses, attentionFor])
 
   // Unified filtered list for table view (sorting handled by the table internally)
   const tableFiltered = useMemo(() => {
@@ -485,26 +504,17 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
     }
   }
 
-  /**
-   * Open a universe ON the security that wanted attention.
+  /*
+   * No per-security entry from this page.
    *
-   * The same tab the list always opens in, carrying a focus: `ListTab` reads
-   * `_focus` and hands it to the table, which expands that row in the inspector
-   * mode the entry column names — a decision opens Work, research and an overdue
-   * review open Case. Deliberately NOT a different navigation path or a new
-   * route: the table stays mounted and the reader lands where they were going.
+   * An earlier version listed the individual securities wanting attention and
+   * opened the list ON one of them. Attention is secondary intelligence here
+   * now — a count and a breakdown, not a work queue — so a row opens the
+   * universe and nothing else. The `_focus` plumbing it used
+   * (`ListTab` -> `ListTableView` -> `AssetTableView.initialExpanded`) is left
+   * in place: it is a general capability of the table, tested on its own, and
+   * the next surface that wants to point at a security can use it.
    */
-  const handleOpenSecurity = (list: ListSurface, item: ListAttentionItem) => {
-    markListOpened.mutate(list.id)
-    if (onListSelect) {
-      onListSelect({
-        id: list.id,
-        title: list.name,
-        type: 'list',
-        data: { ...list, _focus: { assetId: item.assetId, columnId: item.entryColumnId } },
-      })
-    }
-  }
 
   const isListOwner = editingList && user && editingList.created_by === user.id
 
@@ -519,7 +529,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
         * bar keeps every control it had and now sits beside the title rather
         * than being the first thing on the screen.
         */}
-      <div className="max-w-7xl mx-auto flex items-start gap-6 pt-1">
+      <div className="w-full flex items-start gap-6 pt-1">
         <div className="min-w-0">
           <h1 className="text-[25px] font-bold tracking-[-0.03em] leading-none text-gray-900 dark:text-gray-50">
             Lists
@@ -531,7 +541,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
       </div>
 
       {/* Controls bar */}
-      <div className="max-w-7xl mx-auto">
+      <div className="w-full">
       <ListSurfaceControls
         search={searchQuery}
         onSearchChange={setSearchQuery}
@@ -553,45 +563,45 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
       </div>
 
       {/*
-        * ── Rollup ─────────────────────────────────────────────────────
+        * ── Library summary ────────────────────────────────────────────
         *
-        * The page's answer in one line, before any panel is read. Folded from
-        * the same `attentionFor` the panels use and counted over the universes
-        * actually on screen, so it always describes what the reader is looking
-        * at rather than the whole account. Only the two attention figures carry
-        * colour — a row where every number is coloured has no emphasis in it.
+        * What the library IS, then — independently, on the right — how much of
+        * it wants a person. A List can be a watchlist, an avoid list or a
+        * research universe, so leading with a workflow total would describe
+        * only the subset that happens to carry open work.
+        *
+        * Counted over the universes on screen, so it always describes what the
+        * reader is looking at rather than the whole account.
         */}
-      {!listsError && !isLoading && viewMode === 'grid' && rollup.universes > 0 && (
-        <div className="max-w-7xl mx-auto flex items-baseline gap-5 pb-3 border-b border-gray-900/[0.06] dark:border-white/[0.07]">
-          <span className="flex items-baseline gap-1.5">
-            <span className="text-[17px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-gray-900 dark:text-gray-50">
-              {rollup.universes}
-            </span>
-            <span className="text-[12.5px] text-gray-500 dark:text-gray-400">
-              active universe{rollup.universes === 1 ? '' : 's'}
-            </span>
-          </span>
-          {rollup.awaiting > 0 && (
-            <>
-              <span className="text-[12px] text-gray-300 dark:text-gray-600">·</span>
-              <span className="flex items-baseline gap-1.5">
-                <span className="text-[17px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-primary-800 dark:text-primary-300">
-                  {rollup.awaiting}
-                </span>
-                <span className="text-[12.5px] text-gray-500 dark:text-gray-400">awaiting decision</span>
+      {!listsError && !isLoading && viewMode === 'grid' && summary.universes > 0 && (
+        <div className="w-full flex items-baseline pb-3 border-b border-gray-900/[0.07] dark:border-white/[0.09]">
+          {[
+            { n: summary.universes, l: `universe${summary.universes === 1 ? '' : 's'}` },
+            { n: summary.collaborative, l: 'collaborative' },
+            { n: summary.distinct, l: `distinct securit${summary.distinct === 1 ? 'y' : 'ies'}` },
+          ].map((m, i) => (
+            <span
+              key={m.l}
+              className={clsx(
+                'flex items-baseline gap-1.5',
+                i > 0 && 'pl-5 ml-5 border-l border-gray-900/[0.05] dark:border-white/[0.07]',
+              )}
+            >
+              <span className="text-[15px] font-semibold tracking-[-0.028em] tabular-nums leading-none text-gray-900 dark:text-gray-50">
+                {m.n}
               </span>
-            </>
-          )}
-          {rollup.needs > 0 && (
-            <>
-              <span className="text-[12px] text-gray-300 dark:text-gray-600">·</span>
-              <span className="flex items-baseline gap-1.5">
-                <span className="text-[17px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-amber-700 dark:text-amber-400">
-                  {rollup.needs}
-                </span>
-                <span className="text-[12.5px] text-gray-500 dark:text-gray-400">need attention</span>
+              <span className="text-[12.5px] text-gray-500 dark:text-gray-400">{m.l}</span>
+            </span>
+          ))}
+          {summary.needs > 0 && (
+            // The only warm figure on the page header, and the only one that is
+            // about work rather than about the library.
+            <span className="ml-auto flex items-baseline gap-1.5">
+              <span className="text-[15px] font-semibold tracking-[-0.028em] tabular-nums leading-none text-amber-700 dark:text-amber-400">
+                {summary.needs}
               </span>
-            </>
+              <span className="text-[12.5px] text-gray-500 dark:text-gray-400">need attention</span>
+            </span>
           )}
         </div>
       )}
@@ -619,7 +629,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
           universes line up with the title above them rather than bleeding to
           the window edge. */}
       {!listsError && !isLoading && (
-        <div className="max-w-7xl mx-auto">
+        <div className="w-full">
           {viewMode === 'list' ? (
             // ── Table view (unified, no sections) ────────────────────
             tableFiltered.length > 0 ? (
@@ -674,7 +684,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
              * and sorted arrays as before, so search, favourites, the portfolio
              * filter, the type filter and every sort key still apply.
              */
-            <UniverseBoard
+            <UniverseIndex
               active={activeUniverses}
               empty={emptyUniverses}
               metrics={metrics}
@@ -682,14 +692,11 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
               userId={user?.id}
               onListClick={handleListClick}
               onEditList={handleEditList}
-              onOpenSecurity={handleOpenSecurity}
-              symbolMap={symbolMap}
               lastActivityMap={lastActivityMap}
               attentionFor={attentionFor}
               onNewList={user ? () => setShowListManager(true) : undefined}
               isFiltered={!!searchQuery || favoritesOnly || portfolioFilterIds.length > 0 || typeFilter !== 'all'}
               hasAnyList={allLists.length > 0}
-              sharedCount={filteredShared.length}
             />
           )}
         </div>
@@ -987,18 +994,21 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
   )
 }
 
-// ── UniverseBoard ──────────────────────────────────────────────────────
+// ── UniverseIndex ──────────────────────────────────────────────────────
 
 /**
- * The board: active universes, then empty ones as inventory.
+ * Every universe, as one continuous index.
  *
- * Replaces three ownership sections (My Lists / Collaborative / Shared With Me)
- * with a single activity-ordered grid. Ownership was never the question a reader
- * arrives with, and as structure it cost three headers, three empty states and a
- * dashed "Shared With Me 0" box before the first useful fact. It survives in the
- * segmented filter above and in one quiet word inside each panel.
+ * Not three ownership sections, and not a grid of panels. A List is a
+ * collection of securities and can mean anything — work in progress, an avoid
+ * list, a research universe — so the page is a LIBRARY: one row per universe,
+ * one set of columns, divided by hairlines.
+ *
+ * Empty universes are rows in the same index rather than a footnote: they are
+ * real universes that simply have nothing in them yet, and they say so in the
+ * Attention column by offering their next step.
  */
-interface UniverseBoardProps {
+interface UniverseIndexProps {
   active: ListSurface[]
   empty: ListSurface[]
   metrics: Map<string, import('../hooks/lists/useListSurfaces').ListSurfaceMetrics>
@@ -1006,24 +1016,22 @@ interface UniverseBoardProps {
   userId?: string
   onListClick: (list: ListSurface) => void
   onEditList: (list: any, e: React.MouseEvent) => void
-  onOpenSecurity: (list: ListSurface, item: ListAttentionItem) => void
-  symbolMap?: Map<string, string>
   lastActivityMap?: Map<string, import('../hooks/lists/useListSurfaces').LastListActivity>
   attentionFor: (listId?: string | null) => ListAttention
   onNewList?: () => void
   isFiltered: boolean
   hasAnyList: boolean
-  /** Only decides whether the quiet shared note is worth a line. */
-  sharedCount: number
 }
 
-function UniverseBoard({
+function UniverseIndex({
   active, empty, metrics, favoriteSet, userId,
-  onListClick, onEditList, onOpenSecurity,
-  symbolMap, lastActivityMap, attentionFor,
-  onNewList, isFiltered, hasAnyList, sharedCount,
-}: UniverseBoardProps) {
-  if (active.length === 0 && empty.length === 0) {
+  onListClick, onEditList, lastActivityMap, attentionFor,
+  onNewList, isFiltered, hasAnyList,
+}: UniverseIndexProps) {
+  // Active first, then empty — one list, one header, no section breaks.
+  const rows = [...active, ...empty]
+
+  if (rows.length === 0) {
     if (isFiltered) {
       return (
         <EmptyState
@@ -1049,81 +1057,26 @@ function UniverseBoard({
 
   return (
     <div>
-      {active.length > 0 && (
-        <>
-          <div className="text-[9px] font-bold uppercase tracking-[0.13em] text-gray-400 dark:text-gray-600 mb-2.5">
-            Active universes
-          </div>
-          {/*
-            * Two columns, each a substantial panel.
-            *
-            * One full-width column made every universe a skinny directory row —
-            * the shape that can only ever hold a name and a count. Two gives each
-            * one room for its securities, what needs a person inside it, and what
-            * moved, without the page becoming a tile gallery.
-            */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-7 gap-y-6">
-            {active.map(list => (
-              <ListSurfaceCard
-                key={list.id}
-                list={list}
-                metrics={metrics.get(list.id)}
-                isFavorite={favoriteSet.has(list.id)}
-                isOwner={list.created_by === userId}
-                symbolMap={symbolMap}
-                lastActivity={lastActivityMap?.get(list.id)}
-                attention={attentionFor(list.id)}
-                onClick={() => onListClick(list)}
-                onEdit={e => onEditList(list, e)}
-                onOpenSecurity={item => onOpenSecurity(list, item)}
-              />
-            ))}
-          </div>
-        </>
-      )}
-
-      {/*
-        * Empty lists are inventory, not work.
-        *
-        * One line of names under a hairline. As full-width rows they competed
-        * with universes that had decisions pending, which is the clearest way to
-        * make a command center read as a filesystem.
-        */}
-      {empty.length > 0 && (
-        <div className="mt-7 pt-3 border-t border-gray-900/[0.06] dark:border-white/[0.07] flex items-baseline gap-2.5 flex-wrap">
-          <span className="text-[9px] font-bold uppercase tracking-[0.13em] text-gray-400 dark:text-gray-600 flex-shrink-0">
-            Empty lists
-          </span>
-          <span className="text-[12.5px] text-gray-400 dark:text-gray-500 min-w-0">
-            {empty.map((l, i) => (
-              <span key={l.id}>
-                {i > 0 && <span className="text-gray-300 dark:text-gray-600 px-1.5">·</span>}
-                <button
-                  onClick={() => onListClick(l)}
-                  className="hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
-                >
-                  {l.name}
-                </button>
-              </span>
-            ))}
-          </span>
-          {onNewList && (
-            <button
-              onClick={onNewList}
-              className="ml-auto text-[12px] text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-gray-300 transition-colors flex-shrink-0"
-            >
-              + New list
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* A sentence, never a dashed box: nothing shared is not a thing to fix. */}
-      {sharedCount === 0 && (
-        <div className="mt-2 text-[11.5px] text-gray-300 dark:text-gray-600">
-          No one has shared a universe with you yet.
-        </div>
-      )}
+      <UniverseIndexHeader />
+      {rows.map(list => (
+        <ListUniverseRow
+          key={list.id}
+          list={list}
+          metrics={metrics.get(list.id)}
+          isFavorite={favoriteSet.has(list.id)}
+          isOwner={list.created_by === userId}
+          lastActivity={lastActivityMap?.get(list.id)}
+          attention={attentionFor(list.id)}
+          onClick={() => onListClick(list)}
+          onEdit={e => onEditList(list, e)}
+          // Adding names happens inside the list, so this is the same
+          // navigation the row itself performs — it only says why.
+          onAddSecurities={() => onListClick(list)}
+        />
+      ))}
+      <div className="px-3 pt-3 text-[11.5px] text-gray-300 dark:text-gray-600">
+        {rows.length} universe{rows.length === 1 ? '' : 's'}
+      </div>
     </div>
   )
 }

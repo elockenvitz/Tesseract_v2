@@ -133,14 +133,16 @@ describe('interrogating a security never unmounts the table', () => {
  *   4. the table honours it once                         AssetTableView
  */
 describe('a security clicked on Lists home opens inside the table', () => {
-  const PAGE = codeOf(readFileSync(resolve(SRC, 'pages/ListsPage.tsx'), 'utf8'))
   const TAB = codeOf(readFileSync(resolve(SRC, 'components/tabs/ListTab.tsx'), 'utf8'))
 
-  it('the page carries the asset and its entry column onto the tab', () => {
-    expect(PAGE).toMatch(/_focus:\s*\{\s*assetId:\s*item\.assetId,\s*columnId:\s*item\.entryColumnId\s*\}/)
-    // The SAME tab type a plain list click opens — not a second navigation path.
-    expect(PAGE).toMatch(/type:\s*'list'/)
-  })
+  /*
+   * Lists home no longer emits a focus.
+   *
+   * Attention there is secondary intelligence — a count and a breakdown, not a
+   * work queue — so a row opens the universe and nothing else. The plumbing
+   * below is kept and still asserted: it is a general capability of the table,
+   * and the surface that next wants to point at one security uses it unchanged.
+   */
 
   it('the tab forwards it and the list hands it to the table', () => {
     expect(TAB).toMatch(/focus=\{list\?\._focus\}/)
