@@ -43,8 +43,17 @@ import { describeActivity } from '../../lib/lists/describeActivity'
  * two copies of a five-column template is the classic way an index ends up
  * with headings that sit over the wrong columns.
  */
+/*
+ * Activity takes the width it needs; Universe and Access give it up.
+ *
+ * At 200px a normal event — "Eric Lockenvitz added GOOGL to the list" — was
+ * truncated mid-sentence, which makes the column decorative: the reader learns
+ * only that something happened. Universe has the most slack (a name and a
+ * purpose both truncate gracefully) and Access holds one word and an avatar, so
+ * the 92px comes from those two rather than from the overall measure.
+ */
 export const UNIVERSE_GRID =
-  'grid grid-cols-[minmax(0,1fr)_104px_176px_200px_228px] gap-x-11 items-center'
+  'grid grid-cols-[minmax(0,1fr)_104px_156px_292px_228px] gap-x-11 items-center'
 
 const AVATAR_PREVIEW_COUNT = 2
 
@@ -71,7 +80,7 @@ export function UniverseIndexHeader() {
       <span className={cell}>Universe</span>
       <span className={clsx(cell, 'text-right')}>Size</span>
       <span className={cell}>Access</span>
-      <span className={clsx(cell, 'text-right')}>Last active</span>
+      <span className={clsx(cell, 'text-right')}>Activity</span>
       <span className={clsx(cell, 'text-right')}>Attention</span>
     </div>
   )
@@ -144,8 +153,12 @@ export function ListUniverseRow({
       data-empty={isEmpty ? 'true' : 'false'}
       className={clsx(
         UNIVERSE_GRID,
-        'group cursor-pointer px-3 py-[18px] border-b border-gray-900/[0.045] dark:border-white/[0.06]',
+        'group cursor-pointer px-3 border-b border-gray-900/[0.045] dark:border-white/[0.06]',
         'transition-colors hover:bg-gray-50/70 dark:hover:bg-gray-800/40',
+        // A universe with nothing in it is still a row of the same index — same
+        // columns, same alignment — but it has less to say, so it takes less
+        // room. Density, not a different architecture.
+        isEmpty ? 'py-[13px]' : 'py-[18px]',
       )}
     >
       {/* ── Universe ─────────────────────────────────────────────────── */}
@@ -190,13 +203,15 @@ export function ListUniverseRow({
       </div>
 
       {/* ── Size ─────────────────────────────────────────────────────── */}
+      {/* Zero is a fact about the universe, not a disabled control — it sits
+          one step below a real count rather than at the edge of legibility. */}
       <div className={clsx(
         'text-right text-[12.5px] whitespace-nowrap',
-        isEmpty ? 'text-gray-300 dark:text-gray-600' : 'text-gray-500 dark:text-gray-400',
+        isEmpty ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500 dark:text-gray-400',
       )}>
         <span className={clsx(
           'tabular-nums font-semibold',
-          isEmpty ? 'text-gray-300 dark:text-gray-600' : 'text-gray-900 dark:text-gray-100',
+          isEmpty ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100',
         )}>
           {count}
         </span>
