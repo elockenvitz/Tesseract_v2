@@ -60,8 +60,23 @@ export interface ListRowSignal {
    * raw research state for its own branching.
    */
   work: WorkState
-  /** The live idea on this name, if any. Already non-terminal and unparked. */
-  idea: { direction: string | null; stage: string | null; portfolioName: string | null } | null
+  /**
+   * The live idea on this name, if any. Already non-terminal and unparked.
+   *
+   * Carries what the Decision surface needs — who proposed it, when, at what
+   * weight and why — so engaging a recommendation costs no further read.
+   */
+  idea: {
+    id: string
+    direction: string | null
+    stage: string | null
+    portfolioName: string | null
+    proposedWeight: number | null
+    rationale: string | null
+    authorName: string | null
+    createdAt: string | null
+    conviction: string | null
+  } | null
   /** Largest single-book weight, in percent. Absent when unheld. */
   weightPct: number | null
   closes: number[] | null
@@ -193,16 +208,22 @@ export function useListRowSignals(assets: Array<{ id?: string | null; symbol?: s
    * already dropped terminal and parked rows, so every candidate here is live.
    */
   const ideaByAsset = useMemo(() => {
-    const m = new Map<string, { direction: string | null; stage: string | null; portfolioName: string | null }>()
+    const m = new Map<string, NonNullable<ListRowSignal['idea']>>()
     for (const i of ideas ?? []) {
       if (!i.assetId) continue
       const held = m.get(i.assetId)
       const rank = (s: string | null) => (s === FINAL_STAGE ? 2 : 1)
       if (!held || rank(i.stage ?? null) > rank(held.stage)) {
         m.set(i.assetId, {
+          id: i.id,
           direction: i.direction ?? null,
           stage: i.stage ?? null,
           portfolioName: i.portfolioName ?? null,
+          proposedWeight: i.proposedWeight ?? null,
+          rationale: i.thesis ?? null,
+          authorName: i.authorName ?? null,
+          createdAt: i.createdAt ?? null,
+          conviction: i.conviction ?? null,
         })
       }
     }

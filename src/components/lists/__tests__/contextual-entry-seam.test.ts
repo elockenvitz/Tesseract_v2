@@ -21,6 +21,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { MODE_FOR_COLUMN, LIST_EXPANSION_ENTRY_COLUMNS, modeForEntryColumn } from '../listRowModes'
+import { benchModeForColumn } from '../ListBenchViews'
 
 const SRC = resolve(__dirname, '../../..')
 
@@ -53,7 +54,10 @@ describe('the table reports which cell was clicked', () => {
   })
 
   it('opens rather than toggles, so a second field does not slam the row shut', () => {
-    expect(TABLE).toMatch(/const openRowFromCell[\s\S]{0,200}setExpandedRowId\(assetId\)/)
+    // The window has to clear the `onEngageRow` delegation that now precedes
+    // the expansion fallback — see the engagement suite below, which asserts
+    // that delegation comes FIRST rather than merely being present.
+    expect(TABLE).toMatch(/const openRowFromCell[\s\S]{0,400}setExpandedRowId\(assetId\)/)
     // Specifically NOT the toggling setter, which is what `toggleRowExpansion`
     // uses and would close a row the reader is still reading.
     const body = TABLE.split('const openRowFromCell')[1]?.slice(0, 300) ?? ''
@@ -76,6 +80,60 @@ describe('the list forwards it to the expansion', () => {
 
   it('opts its own columns in', () => {
     expect(LIST).toMatch(/expansionEntryColumns=\{LIST_EXPANSION_ENTRY_COLUMNS\}/)
+  })
+})
+
+/**
+ * The same seam, one link longer.
+ *
+ * Desktop Lists no longer expand a row: a click ENGAGES the security and the
+ * table is replaced by the workbench. That rides on `onEngageRow`, and its
+ * failure mode is the same silent one — without the prop the table falls back to
+ * its inline expansion, which still looks like a working feature.
+ */
+describe('a click engages the security instead of expanding the row', () => {
+  it('the table delegates both open paths when the surface engages', () => {
+    // From a cell (carrying the intent) and from the chevron (carrying none).
+    expect(TABLE).toMatch(/if \(onEngageRow\) \{ onEngageRow\(assetId, columnId\); return \}/)
+    expect(TABLE).toMatch(/if \(onEngageRow\) \{ onEngageRow\(assetId, undefined\); return \}/)
+  })
+
+  it('the delegation is reached before the expansion state is set', () => {
+    for (const fn of ['openRowFromCell', 'toggleRowExpansion']) {
+      const body = TABLE.split(`const ${fn}`)[1]?.slice(0, 400) ?? ''
+      expect(body, `${fn} must delegate`).toMatch(/onEngageRow/)
+      expect(
+        body.indexOf('onEngageRow'),
+        `${fn} must delegate before it expands`,
+      ).toBeLessThan(body.indexOf('setExpandedRowId'))
+    }
+  })
+
+  it('the list actually passes it, and derives the surface from the clicked cell', () => {
+    expect(LIST).toMatch(/onEngageRow=\{engageRow\}/)
+    expect(LIST).toMatch(/benchModeForColumn\(columnId\)/)
+  })
+
+  it('maps every entry column onto a surface the bench actually has', () => {
+    const SURFACES = ['overview', 'market', 'case', 'work']
+    for (const id of LIST_EXPANSION_ENTRY_COLUMNS) {
+      expect(SURFACES, `${id} must land on a real bench surface`)
+        .toContain(benchModeForColumn(id))
+    }
+  })
+
+  it('keeps the intent the expansion map records, folding only what it must', () => {
+    // The bench has four surfaces where the expansion had six, so Valuation and
+    // Position fold onto the surface that answers them. Everything else must
+    // survive the fold, or the clicked field stops meaning anything.
+    expect(benchModeForColumn('price')).toBe('market')
+    expect(benchModeForColumn('list_spark')).toBe('market')
+    expect(benchModeForColumn('list_work')).toBe('work')
+    expect(benchModeForColumn('list_rating')).toBe('case')
+    expect(benchModeForColumn('list_target')).toBe('case')
+    expect(benchModeForColumn('list_position')).toBe('overview')
+    expect(benchModeForColumn('ticker')).toBe('overview')
+    expect(benchModeForColumn(undefined)).toBe('overview')
   })
 })
 
