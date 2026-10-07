@@ -78,6 +78,17 @@ interface ListTableViewProps {
    * attributes don't apply.
    */
   hideListColumns?: boolean
+
+  /**
+   * A security to open the list ON, and the field that states why.
+   *
+   * Set when the reader arrived from an attention row on Lists home. Forwarded
+   * to the table as its initial expansion, so the row opens in the inspector
+   * mode `MODE_FOR_COLUMN` gives that column — a decision opens Work, research
+   * and an overdue review open Case. Applied once; after that the reader's own
+   * clicks own the expansion.
+   */
+  focus?: { assetId?: string | null; columnId?: string | null } | null
 }
 
 // ── List-scoped extra columns ──────────────────────────────────────────
@@ -104,6 +115,7 @@ export function ListTableView({
   filterBarSlot,
   listStatuses,
   hideListColumns,
+  focus,
   // Pulled out of `passthrough` because the expansion needs it too — it is
   // still forwarded to the table below, so the row-menu entry is unchanged.
   onCreateTradeIdea,
@@ -236,6 +248,10 @@ export function ListTableView({
       columnPreset={listColumnPreset}
       columnPresetVersion={LIST_COLUMN_PRESET_VERSION}
       expansionEntryColumns={LIST_EXPANSION_ENTRY_COLUMNS}
+      // Arrived from an attention row on Lists home; see `focus` above.
+      initialExpanded={focus?.assetId
+        ? { assetId: focus.assetId, columnId: focus.columnId ?? undefined }
+        : undefined}
       /*
        * Sized so the table survives the inspector.
        *

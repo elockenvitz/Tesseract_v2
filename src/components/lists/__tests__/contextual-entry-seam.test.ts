@@ -119,6 +119,47 @@ describe('interrogating a security never unmounts the table', () => {
   })
 })
 
+/**
+ * Arriving from Lists home, pointed at one security.
+ *
+ * An attention row on Lists home opens the universe ON that security, in the
+ * inspector its reason names. Four parts have to agree and the failure is
+ * silent in the same way the cell seam is — the list simply opens unexpanded,
+ * which looks like a working link:
+ *
+ *   1. the page attaches `_focus` to the tab data        ListsPage
+ *   2. `ListTab` forwards it as `focus`                  ListTab
+ *   3. `ListTableView` hands it on as `initialExpanded`  ListTableView
+ *   4. the table honours it once                         AssetTableView
+ */
+describe('a security clicked on Lists home opens inside the table', () => {
+  const PAGE = codeOf(readFileSync(resolve(SRC, 'pages/ListsPage.tsx'), 'utf8'))
+  const TAB = codeOf(readFileSync(resolve(SRC, 'components/tabs/ListTab.tsx'), 'utf8'))
+
+  it('the page carries the asset and its entry column onto the tab', () => {
+    expect(PAGE).toMatch(/_focus:\s*\{\s*assetId:\s*item\.assetId,\s*columnId:\s*item\.entryColumnId\s*\}/)
+    // The SAME tab type a plain list click opens — not a second navigation path.
+    expect(PAGE).toMatch(/type:\s*'list'/)
+  })
+
+  it('the tab forwards it and the list hands it to the table', () => {
+    expect(TAB).toMatch(/focus=\{list\?\._focus\}/)
+    expect(LIST).toMatch(/initialExpanded=\{focus\?\.assetId/)
+  })
+
+  it('the table honours it once, not on every render', () => {
+    // Re-applying would spring the row back open each time the reader closed it.
+    expect(TABLE).toMatch(/honouredFocus/)
+    expect(TABLE).toMatch(/if \(honouredFocus\.current === key\) return/)
+    expect(TABLE).toMatch(/setExpandedRowId\(initialExpanded\.assetId\)/)
+  })
+
+  it('still expands in place — arriving never replaces the table', () => {
+    expect(TABLE).not.toMatch(/onEngageRow/)
+    expect(LIST).toMatch(/<AssetTableView/)
+  })
+})
+
 describe('the map covers what the curated line actually shows', () => {
   it('maps each of the six conceptual columns onto the mode that answers it', () => {
     expect(MODE_FOR_COLUMN).toMatchObject({

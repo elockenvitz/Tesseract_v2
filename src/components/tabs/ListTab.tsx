@@ -786,6 +786,16 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
             listStatuses={listStatuses}
             hideListColumns={isScreen}
             /*
+             * Where the reader was going when they opened this universe.
+             *
+             * Lists home attaches `_focus` to the tab's data when a security is
+             * clicked in a universe's attention band, so the list opens with
+             * that row already expanded on the mode its entry column names. The
+             * table is NOT replaced or navigated past — this is the same
+             * expansion a click on that cell would produce.
+             */
+            focus={list?._focus}
+            /*
              * The original key, deliberately. A new baseline is handled by
              * `columnPresetVersion` inside the stored blob — bumping the key
              * instead would also discard the widths and pins the user chose,

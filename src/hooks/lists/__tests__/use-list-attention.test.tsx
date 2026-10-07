@@ -146,11 +146,96 @@ describe('urgency is narrower than activity', () => {
 })
 
 describe('needsAttention is the sum it claims to be', () => {
-  it('adds unanswered research to overdue reviews', () => {
+  it('adds a decision owed to unanswered research and overdue reviews', () => {
     hooks.subjects = [subject('a', 'new'), subject('c', 'stale'), subject('d', 'nocase')]
     const f = attentionFor([{ id: 'l1', assetIds: ['a', 'c', 'd'] }])
     const at = f('l1')
-    expect(at.needsAttention).toBe(at.newResearch + at.reviewDue)
+    expect(at.needsAttention).toBe(at.awaitingDecision + at.newResearch + at.reviewDue)
     expect(at.needsAttention).toBe(2)
+  })
+})
+
+/**
+ * The securities behind the counts, and where each one goes.
+ *
+ * Lists home states attention as NAMED securities now, and each is a door into
+ * that security's inspector. Both halves fail silently: a wrong `entryColumnId`
+ * opens the list on Overview, which looks exactly like a working feature, and a
+ * missing item simply means a universe under-reports what is waiting in it.
+ */
+describe('attention names the securities, not just the counts', () => {
+  it('carries the security, the reason and where it goes', () => {
+    hooks.subjects = [subject('a', 'new'), subject('c', 'stale')]
+    hooks.ideas = [{
+      id: 'i1', assetId: 'b', symbol: 'TGT', companyName: 'Target Corporation',
+      direction: 'buy', stage: 'ready_to_recommend',
+      portfolioName: 'Vision Fund 10K', createdAt: daysAgo(4),
+    }]
+    const items = attentionFor([{ id: 'l1', assetIds: ['a', 'b', 'c'] }])('l1').items
+
+    const decision = items.find(i => i.symbol === 'TGT')!
+    expect(decision.tier).toBe('decision')
+    expect(decision.reason).toBe('BUY · Recommendation ready')
+    expect(decision.meta).toBe('Vision Fund 10K · 4d')
+    // A decision is reviewed in Work; `MODE_FOR_COLUMN` maps this column there.
+    expect(decision.entryColumnId).toBe('list_work')
+
+    const research = items.find(i => i.symbol === 'A')!
+    expect(research.tier).toBe('research')
+    expect(research.reason).toBe('3 new research')
+    // Research and an overdue review are both reviewed AGAINST the case.
+    expect(research.entryColumnId).toBe('list_view')
+
+    const review = items.find(i => i.symbol === 'C')!
+    expect(review.tier).toBe('review')
+    expect(review.reason).toBe('Review due')
+    expect(review.entryColumnId).toBe('list_view')
+  })
+
+  it('ranks a decision above research above a review clock', () => {
+    hooks.subjects = [subject('a', 'stale'), subject('b', 'new')]
+    hooks.ideas = [{
+      id: 'i1', assetId: 'c', symbol: 'TGT', companyName: null,
+      direction: 'buy', stage: 'ready_to_recommend', portfolioName: null, createdAt: daysAgo(1),
+    }]
+    const items = attentionFor([{ id: 'l1', assetIds: ['a', 'b', 'c'] }])('l1').items
+    expect(items.map(i => i.tier)).toEqual(['decision', 'research', 'review'])
+  })
+
+  it('never lists one security twice — a decision claims the name', () => {
+    /*
+     * A security awaiting a decision may ALSO have unreviewed research. Listing
+     * both would say the universe has more outstanding than it does, and the
+     * decision is the thing to act on.
+     */
+    hooks.subjects = [subject('a', 'new')]
+    hooks.ideas = [{
+      id: 'i1', assetId: 'a', symbol: 'A', companyName: null,
+      direction: 'buy', stage: 'ready_to_recommend', portfolioName: null, createdAt: daysAgo(1),
+    }]
+    const at = attentionFor([{ id: 'l1', assetIds: ['a'] }])('l1')
+    expect(at.items).toHaveLength(1)
+    expect(at.items[0].tier).toBe('decision')
+    expect(at.needsAttention).toBe(1)
+  })
+
+  it('counts items and needsAttention consistently', () => {
+    hooks.subjects = [subject('a', 'new'), subject('b', 'stale'), subject('d', 'nocase')]
+    hooks.ideas = [{
+      id: 'i1', assetId: 'c', symbol: 'C', companyName: null,
+      direction: 'sell', stage: 'ready_to_recommend', portfolioName: null, createdAt: daysAgo(2),
+    }]
+    const at = attentionFor([{ id: 'l1', assetIds: ['a', 'b', 'c', 'd'] }])('l1')
+    // `no-thesis` is a coverage gap, counted but never given an attention row.
+    expect(at.noCase).toBe(1)
+    expect(at.items).toHaveLength(at.needsAttention)
+    expect(at.items).toHaveLength(3)
+  })
+
+  it('says nothing rather than inventing a reason it cannot support', () => {
+    hooks.subjects = [subject('a', 'current')]
+    const at = attentionFor([{ id: 'l1', assetIds: ['a'] }])('l1')
+    expect(at.items).toEqual([])
+    expect(at.needsAttention).toBe(0)
   })
 })

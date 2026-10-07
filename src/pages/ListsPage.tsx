@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { List, Search, Plus, Star, Users, ChevronDown, ChevronRight, X, Save, Palette, UserPlus, Trash2, Eye, EditIcon, Shield } from 'lucide-react'
+import { List, Search, Plus, Users, X, Save, Palette, UserPlus, Trash2, Eye, EditIcon, Shield } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useOrgMembers } from '../hooks/useOrgMembers'
@@ -13,7 +13,7 @@ import { ListSurfaceCard } from '../components/lists/ListSurfaceCard'
 import { ListSurfaceControls, type ListTypeFilter, type ViewMode, type ListGroupKey } from '../components/lists/ListSurfaceControls'
 import { ListsTableView } from '../components/lists/ListsTableView'
 import { useListSurfaces, type ListSortKey, type ListSurface } from '../hooks/lists/useListSurfaces'
-import { useListAttention, type ListAttention } from '../hooks/lists/useListAttention'
+import { useListAttention, type ListAttention, type ListAttentionItem } from '../hooks/lists/useListAttention'
 import { useMarkListOpened } from '../hooks/lists/useMarkListOpened'
 
 const VIEW_MODE_KEY = 'lists:viewMode'
@@ -46,8 +46,6 @@ function readSort(): ListSortKey {
   } catch { /* SSR / private mode */ }
   return 'attention'
 }
-
-import { clsx } from 'clsx'
 
 interface ListsPageProps {
   onListSelect?: (list: any) => void
@@ -84,13 +82,14 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
   const [showUserDropdown, setShowUserDropdown] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
 
-  // ── Collapsed / expanded sections ──────────────────────────────────────
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
-
-  const toggleExpand = useCallback((key: string) => {
-    setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }))
-  }, [])
+  /*
+   * No collapsed/expanded section state any more.
+   *
+   * It existed for the three ownership sections (My Lists / Collaborative /
+   * Shared With Me) and their "View more" overflow. The board is one
+   * activity-ordered grid now, so there is nothing to collapse and nothing to
+   * page through — see `UniverseBoard`.
+   */
 
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -187,18 +186,59 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
   const filteredCollab = useMemo(() => byAttention(applyFilters(collaborative)), [collaborative, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds, byAttention])
   const filteredShared = useMemo(() => byAttention(applyFilters(sharedWithMe)), [sharedWithMe, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds, byAttention])
 
-  // When typeFilter !== 'all', merge all into one flat list
-  const flatFiltered = useMemo(() => {
-    if (typeFilter === 'all') return null
-    let source: ListSurface[]
-    switch (typeFilter) {
-      case 'mine': source = myLists; break
-      case 'collaborative': source = collaborative; break
-      case 'shared': source = sharedWithMe; break
-      default: source = allLists
+  /**
+   * One board, split by whether a universe holds anything.
+   *
+   * The ownership arrays stay exactly as they were — same search, same
+   * favourites, same portfolio filter, same sort, same permissions — and the
+   * segmented Mine / Collaborative / Shared filter still chooses which of them
+   * feed the board. What changed is that ownership no longer decides the
+   * LAYOUT: all three merge into one activity-ordered grid.
+   *
+   * An empty list is a container somebody made and has not filled. It is never
+   * the answer to "where do I need to go", so it leaves the grid entirely rather
+   * than taking a panel's worth of vertical space saying nothing.
+   */
+  const { activeUniverses, emptyUniverses } = useMemo(() => {
+    const sources =
+      typeFilter === 'mine' ? [filteredMy]
+        : typeFilter === 'collaborative' ? [filteredCollab]
+          : typeFilter === 'shared' ? [filteredShared]
+            : [filteredMy, filteredCollab, filteredShared]
+
+    const seen = new Set<string>()
+    const merged: ListSurface[] = []
+    for (const group of sources) {
+      for (const l of group) {
+        if (seen.has(l.id)) continue
+        seen.add(l.id)
+        merged.push(l)
+      }
     }
-    return byAttention(sortFn(applyFilters(source)))
-  }, [typeFilter, myLists, collaborative, sharedWithMe, allLists, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds, sortFn, byAttention])
+    const ordered = byAttention(merged)
+    const held = (l: ListSurface) => metrics.get(l.id)?.assetCount ?? 0
+    return {
+      activeUniverses: ordered.filter(l => held(l) > 0),
+      emptyUniverses: ordered.filter(l => held(l) === 0),
+    }
+  }, [typeFilter, filteredMy, filteredCollab, filteredShared, byAttention, metrics])
+
+  /**
+   * The page-level rollup, from the same fold the panels use.
+   *
+   * Counted over the universes actually on screen, so it always describes what
+   * the reader is looking at rather than the whole account.
+   */
+  const rollup = useMemo(() => {
+    let awaiting = 0
+    let needs = 0
+    for (const l of activeUniverses) {
+      const a = attentionFor(l.id)
+      awaiting += a.awaitingDecision
+      needs += a.needsAttention
+    }
+    return { universes: activeUniverses.length, awaiting, needs }
+  }, [activeUniverses, attentionFor])
 
   // Unified filtered list for table view (sorting handled by the table internally)
   const tableFiltered = useMemo(() => {
@@ -445,8 +485,25 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
     }
   }
 
-  const toggleSection = (key: string) => {
-    setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }))
+  /**
+   * Open a universe ON the security that wanted attention.
+   *
+   * The same tab the list always opens in, carrying a focus: `ListTab` reads
+   * `_focus` and hands it to the table, which expands that row in the inspector
+   * mode the entry column names — a decision opens Work, research and an overdue
+   * review open Case. Deliberately NOT a different navigation path or a new
+   * route: the table stays mounted and the reader lands where they were going.
+   */
+  const handleOpenSecurity = (list: ListSurface, item: ListAttentionItem) => {
+    markListOpened.mutate(list.id)
+    if (onListSelect) {
+      onListSelect({
+        id: list.id,
+        title: list.name,
+        type: 'list',
+        data: { ...list, _focus: { assetId: item.assetId, columnId: item.entryColumnId } },
+      })
+    }
   }
 
   const isListOwner = editingList && user && editingList.created_by === user.id
@@ -454,6 +511,25 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
   // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="h-full overflow-auto px-3 sm:px-6 py-4 space-y-3">
+      {/*
+        * ── Page header ────────────────────────────────────────────────
+        *
+        * The page had no title at all: it opened on a filter bar, so nothing
+        * said what the surface was for or what question it answers. The command
+        * bar keeps every control it had and now sits beside the title rather
+        * than being the first thing on the screen.
+        */}
+      <div className="max-w-7xl mx-auto flex items-start gap-6 pt-1">
+        <div className="min-w-0">
+          <h1 className="text-[25px] font-bold tracking-[-0.03em] leading-none text-gray-900 dark:text-gray-50">
+            Lists
+          </h1>
+          <p className="mt-1.5 text-[12.5px] text-gray-500 dark:text-gray-400">
+            Universes you follow, research and make decisions from.
+          </p>
+        </div>
+      </div>
+
       {/* Controls bar */}
       <div className="max-w-7xl mx-auto">
       <ListSurfaceControls
@@ -476,6 +552,50 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
       />
       </div>
 
+      {/*
+        * ── Rollup ─────────────────────────────────────────────────────
+        *
+        * The page's answer in one line, before any panel is read. Folded from
+        * the same `attentionFor` the panels use and counted over the universes
+        * actually on screen, so it always describes what the reader is looking
+        * at rather than the whole account. Only the two attention figures carry
+        * colour — a row where every number is coloured has no emphasis in it.
+        */}
+      {!listsError && !isLoading && viewMode === 'grid' && rollup.universes > 0 && (
+        <div className="max-w-7xl mx-auto flex items-baseline gap-5 pb-3 border-b border-gray-900/[0.06] dark:border-white/[0.07]">
+          <span className="flex items-baseline gap-1.5">
+            <span className="text-[17px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-gray-900 dark:text-gray-50">
+              {rollup.universes}
+            </span>
+            <span className="text-[12.5px] text-gray-500 dark:text-gray-400">
+              active universe{rollup.universes === 1 ? '' : 's'}
+            </span>
+          </span>
+          {rollup.awaiting > 0 && (
+            <>
+              <span className="text-[12px] text-gray-300 dark:text-gray-600">·</span>
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-[17px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-primary-800 dark:text-primary-300">
+                  {rollup.awaiting}
+                </span>
+                <span className="text-[12.5px] text-gray-500 dark:text-gray-400">awaiting decision</span>
+              </span>
+            </>
+          )}
+          {rollup.needs > 0 && (
+            <>
+              <span className="text-[12px] text-gray-300 dark:text-gray-600">·</span>
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-[17px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-amber-700 dark:text-amber-400">
+                  {rollup.needs}
+                </span>
+                <span className="text-[12.5px] text-gray-500 dark:text-gray-400">need attention</span>
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Error state */}
       {listsError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 sm:p-6 text-center dark:border-red-900 dark:bg-red-950/30">
@@ -495,9 +615,11 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
         </div>
       )}
 
-      {/* Main content */}
+      {/* Main content — same measure as the header and the command bar, so the
+          universes line up with the title above them rather than bleeding to
+          the window edge. */}
       {!listsError && !isLoading && (
-        <>
+        <div className="max-w-7xl mx-auto">
           {viewMode === 'list' ? (
             // ── Table view (unified, no sections) ────────────────────
             tableFiltered.length > 0 ? (
@@ -536,117 +658,41 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                 />
               ) : null
             )
-          ) : typeFilter === 'all' ? (
-            // ── Grid: Sectioned view ─────────────────────────────────
-            <div className="space-y-6">
-              <SurfaceSection
-                sectionKey="my"
-                title="My Lists"
-                description="Lists you created and manage."
-                lists={filteredMy}
-                metrics={metrics}
-                favoriteSet={favoriteSet}
-                userId={user?.id}
-                sortBy={sortBy}
-                collapsed={collapsedSections['my']}
-                onToggle={() => toggleSection('my')}
-                expanded={expandedSections['my'] ?? false}
-                onToggleExpand={() => toggleExpand('my')}
-                onListClick={handleListClick}
-                onEditList={handleEditList}
-                symbolMap={symbolMap}
-                lastActivityMap={lastActivityMap}
-                attentionFor={attentionFor}
-                emptyMessage="You haven't created any lists yet."
-                emptyAction={user ? { label: 'Create First List', onClick: () => setShowListManager(true) } : undefined}
-              />
-              <SurfaceSection
-                sectionKey="collab"
-                title="Collaborative"
-                description="Shared workspaces where members can manage their own assets in the same view."
-                lists={filteredCollab}
-                metrics={metrics}
-                favoriteSet={favoriteSet}
-                userId={user?.id}
-                sortBy={sortBy}
-                collapsed={collapsedSections['collab']}
-                onToggle={() => toggleSection('collab')}
-                expanded={expandedSections['collab'] ?? false}
-                onToggleExpand={() => toggleExpand('collab')}
-                onListClick={handleListClick}
-                onEditList={handleEditList}
-                symbolMap={symbolMap}
-                lastActivityMap={lastActivityMap}
-                attentionFor={attentionFor}
-                emptyMessage="No collaborative lists available."
-              />
-              <SurfaceSection
-                sectionKey="shared"
-                title="Shared With Me"
-                description="Lists others shared with you (read-only or editable based on permissions)."
-                lists={filteredShared}
-                metrics={metrics}
-                favoriteSet={favoriteSet}
-                userId={user?.id}
-                sortBy={sortBy}
-                collapsed={collapsedSections['shared']}
-                onToggle={() => toggleSection('shared')}
-                expanded={expandedSections['shared'] ?? false}
-                onToggleExpand={() => toggleExpand('shared')}
-                onListClick={handleListClick}
-                onEditList={handleEditList}
-                symbolMap={symbolMap}
-                lastActivityMap={lastActivityMap}
-                attentionFor={attentionFor}
-                emptyMessage="No one has shared lists with you yet."
-              />
-              {filteredMy.length === 0 && filteredCollab.length === 0 && filteredShared.length === 0 && (
-                searchQuery || favoritesOnly || portfolioFilterIds.length > 0 ? (
-                  <EmptyState
-                    icon={Search}
-                    title="No lists match your filters"
-                    description="Try adjusting your search or filter criteria."
-                    compact
-                  />
-                ) : allLists.length === 0 ? (
-                  <EmptyState
-                    icon={List}
-                    title="No lists yet"
-                    description={user ? "Create your first list to organize your assets and investment ideas." : "Sign in to access your asset lists."}
-                    action={user ? { label: 'Create First List', icon: Plus, onClick: () => setShowListManager(true) } : undefined}
-                  />
-                ) : null
-              )}
-            </div>
           ) : (
-            // ── Grid: Flat filtered view ─────────────────────────────
-            flatFiltered && flatFiltered.length > 0 ? (
-              <div className="[&>*]:border-b [&>*]:border-gray-100 dark:[&>*]:border-gray-800/70">
-                {flatFiltered.map(list => (
-                  <ListSurfaceCard
-                    key={list.id}
-                    list={list}
-                    metrics={metrics.get(list.id)}
-                    isFavorite={favoriteSet.has(list.id)}
-                    isOwner={list.created_by === user?.id}
-                    symbolMap={symbolMap}
-                    lastActivity={lastActivityMap.get(list.id)}
-                    attention={attentionFor(list.id)}
-                    onClick={() => handleListClick(list)}
-                    onEdit={(e) => handleEditList(list, e)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={Search}
-                title="No lists match your filters"
-                description="Try adjusting your search or filter criteria."
-                compact
-              />
-            )
+            /*
+             * ── Grid: universes, ordered by what needs a person ───────
+             *
+             * NOT three ownership sections any more. My Lists / Collaborative /
+             * Shared With Me organised the page by WHO a list belongs to, which
+             * is never the question a reader arrives with — and it forced three
+             * headers, three empty states and a dashed box for "Shared With Me
+             * 0" before the first useful fact. Ownership survives in two places
+             * that cost no hierarchy: the segmented filter above, and one quiet
+             * word inside each panel.
+             *
+             * `activeUniverses` / `emptyUniverses` come from the SAME filtered
+             * and sorted arrays as before, so search, favourites, the portfolio
+             * filter, the type filter and every sort key still apply.
+             */
+            <UniverseBoard
+              active={activeUniverses}
+              empty={emptyUniverses}
+              metrics={metrics}
+              favoriteSet={favoriteSet}
+              userId={user?.id}
+              onListClick={handleListClick}
+              onEditList={handleEditList}
+              onOpenSecurity={handleOpenSecurity}
+              symbolMap={symbolMap}
+              lastActivityMap={lastActivityMap}
+              attentionFor={attentionFor}
+              onNewList={user ? () => setShowListManager(true) : undefined}
+              isFiltered={!!searchQuery || favoritesOnly || portfolioFilterIds.length > 0 || typeFilter !== 'all'}
+              hasAnyList={allLists.length > 0}
+              sharedCount={filteredShared.length}
+            />
           )}
-        </>
+        </div>
       )}
 
       {/* ── Edit List Modal (unchanged) ─────────────────────────────────── */}
@@ -941,134 +987,144 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
   )
 }
 
-// ── SurfaceSection ─────────────────────────────────────────────────────
+// ── UniverseBoard ──────────────────────────────────────────────────────
 
-// The units are one or two lines now, so a section can show far more of itself
-// before asking. Even, so "View more" lands at the end of a row in two columns.
-const DEFAULT_VISIBLE_COUNT = 14
-
-interface SurfaceSectionProps {
-  sectionKey: string
-  title: string
-  description: string
-  lists: ListSurface[]
+/**
+ * The board: active universes, then empty ones as inventory.
+ *
+ * Replaces three ownership sections (My Lists / Collaborative / Shared With Me)
+ * with a single activity-ordered grid. Ownership was never the question a reader
+ * arrives with, and as structure it cost three headers, three empty states and a
+ * dashed "Shared With Me 0" box before the first useful fact. It survives in the
+ * segmented filter above and in one quiet word inside each panel.
+ */
+interface UniverseBoardProps {
+  active: ListSurface[]
+  empty: ListSurface[]
   metrics: Map<string, import('../hooks/lists/useListSurfaces').ListSurfaceMetrics>
   favoriteSet: Set<string>
-  userId: string | undefined
-  sortBy: ListSortKey
-  collapsed: boolean | undefined
-  onToggle: () => void
-  expanded: boolean
-  onToggleExpand: () => void
+  userId?: string
   onListClick: (list: ListSurface) => void
   onEditList: (list: any, e: React.MouseEvent) => void
+  onOpenSecurity: (list: ListSurface, item: ListAttentionItem) => void
   symbolMap?: Map<string, string>
   lastActivityMap?: Map<string, import('../hooks/lists/useListSurfaces').LastListActivity>
-  /** Folded on the page, passed down — the cards do not read for themselves. */
-  attentionFor?: (listId?: string | null) => ListAttention
-  emptyMessage: string
-  emptyAction?: { label: string; onClick: () => void }
+  attentionFor: (listId?: string | null) => ListAttention
+  onNewList?: () => void
+  isFiltered: boolean
+  hasAnyList: boolean
+  /** Only decides whether the quiet shared note is worth a line. */
+  sharedCount: number
 }
 
-function SurfaceSection({
-  title,
-  description,
-  lists,
-  metrics,
-  favoriteSet,
-  userId,
-  sortBy,
-  collapsed,
-  onToggle,
-  expanded,
-  onToggleExpand,
-  onListClick,
-  onEditList,
-  symbolMap,
-  lastActivityMap,
-  attentionFor,
-  emptyMessage,
-  emptyAction
-}: SurfaceSectionProps) {
-  const isCollapsed = collapsed ?? false
-  const hasOverflow = lists.length > DEFAULT_VISIBLE_COUNT
-  const visibleLists = expanded || !hasOverflow ? lists : lists.slice(0, DEFAULT_VISIBLE_COUNT)
-  const hiddenCount = lists.length - DEFAULT_VISIBLE_COUNT
+function UniverseBoard({
+  active, empty, metrics, favoriteSet, userId,
+  onListClick, onEditList, onOpenSecurity,
+  symbolMap, lastActivityMap, attentionFor,
+  onNewList, isFiltered, hasAnyList, sharedCount,
+}: UniverseBoardProps) {
+  if (active.length === 0 && empty.length === 0) {
+    if (isFiltered) {
+      return (
+        <EmptyState
+          icon={Search}
+          title="No universes match your filters"
+          description="Try adjusting your search or filter criteria."
+          compact
+        />
+      )
+    }
+    if (hasAnyList) return null
+    return (
+      <EmptyState
+        icon={List}
+        title="No lists yet"
+        description={onNewList
+          ? 'Create your first universe to organize the securities you follow.'
+          : 'Sign in to access your asset lists.'}
+        action={onNewList ? { label: 'Create First List', icon: Plus, onClick: onNewList } : undefined}
+      />
+    )
+  }
 
   return (
     <div>
-      {/* Section header */}
-      <button
-        onClick={onToggle}
-        className="flex items-center gap-2 mb-3 group"
-      >
-        {isCollapsed
-          ? <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-gray-600" />
-          : <ChevronDown className="h-4 w-4 text-gray-400 group-hover:text-gray-600" />
-        }
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">{title}</h2>
-        <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-full">
-          {lists.length}
-        </span>
-        <span className="text-[11px] text-gray-400 dark:text-gray-500 font-normal">
-          {description}
-        </span>
-      </button>
+      {active.length > 0 && (
+        <>
+          <div className="text-[9px] font-bold uppercase tracking-[0.13em] text-gray-400 dark:text-gray-600 mb-2.5">
+            Active universes
+          </div>
+          {/*
+            * Two columns, each a substantial panel.
+            *
+            * One full-width column made every universe a skinny directory row —
+            * the shape that can only ever hold a name and a count. Two gives each
+            * one room for its securities, what needs a person inside it, and what
+            * moved, without the page becoming a tile gallery.
+            */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-7 gap-y-6">
+            {active.map(list => (
+              <ListSurfaceCard
+                key={list.id}
+                list={list}
+                metrics={metrics.get(list.id)}
+                isFavorite={favoriteSet.has(list.id)}
+                isOwner={list.created_by === userId}
+                symbolMap={symbolMap}
+                lastActivity={lastActivityMap?.get(list.id)}
+                attention={attentionFor(list.id)}
+                onClick={() => onListClick(list)}
+                onEdit={e => onEditList(list, e)}
+                onOpenSecurity={item => onOpenSecurity(list, item)}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
-      {/* Section body */}
-      {!isCollapsed && (
-        lists.length > 0 ? (
-          <div className="space-y-2">
-            {/* Two dense columns, not a tile gallery. Each unit is one or two
-                lines, so a section of twelve lists is read without scrolling
-                instead of three tiles and a fold. */}
-            {/* One full-width column, not two.
-                Two columns forced every unit into a half-width strip, which is
-                why they read as navigation links — a working list needs the
-                width to carry its purpose, its names and its activity on
-                separate lines. A hairline between units is the whole separation
-                budget; a box around each would be the gallery again. */}
-            <div className="[&>*]:border-b [&>*]:border-gray-100 dark:[&>*]:border-gray-800/70">
-              {visibleLists.map(list => (
-                <ListSurfaceCard
-                  key={list.id}
-                  list={list}
-                  metrics={metrics.get(list.id)}
-                  isFavorite={favoriteSet.has(list.id)}
-                  isOwner={list.created_by === userId}
-                  symbolMap={symbolMap}
-                  lastActivity={lastActivityMap?.get(list.id)}
-                  attention={attentionFor?.(list.id)}
-                  onClick={() => onListClick(list)}
-                  onEdit={(e) => onEditList(list, e)}
-                />
-              ))}
-            </div>
-            {hasOverflow && (
-              <div className="flex justify-end">
+      {/*
+        * Empty lists are inventory, not work.
+        *
+        * One line of names under a hairline. As full-width rows they competed
+        * with universes that had decisions pending, which is the clearest way to
+        * make a command center read as a filesystem.
+        */}
+      {empty.length > 0 && (
+        <div className="mt-7 pt-3 border-t border-gray-900/[0.06] dark:border-white/[0.07] flex items-baseline gap-2.5 flex-wrap">
+          <span className="text-[9px] font-bold uppercase tracking-[0.13em] text-gray-400 dark:text-gray-600 flex-shrink-0">
+            Empty lists
+          </span>
+          <span className="text-[12.5px] text-gray-400 dark:text-gray-500 min-w-0">
+            {empty.map((l, i) => (
+              <span key={l.id}>
+                {i > 0 && <span className="text-gray-300 dark:text-gray-600 px-1.5">·</span>}
                 <button
-                  onClick={onToggleExpand}
-                  className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 font-medium transition-colors"
+                  onClick={() => onListClick(l)}
+                  className="hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
                 >
-                  {expanded ? 'View less' : `View more (${hiddenCount})`}
+                  {l.name}
                 </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 py-6 text-center">
-            <p className="text-xs text-gray-400">{emptyMessage}</p>
-            {emptyAction && (
-              <button
-                onClick={emptyAction.onClick}
-                className="mt-2 text-xs font-medium text-primary-600 hover:text-primary-700"
-              >
-                {emptyAction.label}
-              </button>
-            )}
-          </div>
-        )
+              </span>
+            ))}
+          </span>
+          {onNewList && (
+            <button
+              onClick={onNewList}
+              className="ml-auto text-[12px] text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-gray-300 transition-colors flex-shrink-0"
+            >
+              + New list
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* A sentence, never a dashed box: nothing shared is not a thing to fix. */}
+      {sharedCount === 0 && (
+        <div className="mt-2 text-[11.5px] text-gray-300 dark:text-gray-600">
+          No one has shared a universe with you yet.
+        </div>
       )}
     </div>
   )
 }
+

@@ -394,6 +394,19 @@ interface AssetTableViewProps {
    */
   expansionEntryColumns?: ReadonlySet<string>
   /**
+   * Open the table with one row already expanded.
+   *
+   * For a reader who arrived pointing at a security — from Lists home's
+   * attention band, say — so they land on the work rather than on the list and
+   * a search. `columnId` carries the same intent a click on that cell would,
+   * so the inspector opens on the mode `MODE_FOR_COLUMN` names for it.
+   *
+   * Applied once per (assetId, columnId), not on every render: after it is
+   * honoured the reader's own clicks own the expansion, and re-applying it
+   * would make the row spring back open every time they closed it.
+   */
+  initialExpanded?: { assetId: string; columnId?: string }
+  /**
    * Per-density height for an expanded row, overriding the default.
    *
    * The virtualiser must know row sizes up front, so this is a constant per
@@ -477,6 +490,7 @@ export function AssetTableView({
   columnPreset,
   columnPresetVersion,
   expansionEntryColumns,
+  initialExpanded,
   expandedRowHeights,
   rowHeights,
   extraSortComparators,
@@ -1511,6 +1525,28 @@ export function AssetTableView({
     setExpandedRowId(assetId)
     setExpandedMetricColumn({ assetId, columnId })
   }, [])
+
+  /*
+   * Honour an arriving focus exactly once per intent.
+   *
+   * Keyed on the (asset, column) pair rather than run on mount: the tab can be
+   * re-rendered, and the reader may close the row — re-applying would spring it
+   * back open under them. A fresh click on Lists home produces a new pair and
+   * is honoured again.
+   */
+  const honouredFocus = useRef<string | null>(null)
+  useEffect(() => {
+    if (!initialExpanded?.assetId) return
+    const key = `${initialExpanded.assetId}:${initialExpanded.columnId ?? ''}`
+    if (honouredFocus.current === key) return
+    honouredFocus.current = key
+    setExpandedRowId(initialExpanded.assetId)
+    setExpandedMetricColumn(
+      initialExpanded.columnId
+        ? { assetId: initialExpanded.assetId, columnId: initialExpanded.columnId }
+        : null,
+    )
+  }, [initialExpanded?.assetId, initialExpanded?.columnId])
 
   /**
    * The entry column for one asset, or undefined.
