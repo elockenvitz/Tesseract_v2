@@ -27,12 +27,24 @@ function readViewMode(): ViewMode {
   return 'grid'
 }
 
+/**
+ * Attention is the default order, and `attention` was missing from this list.
+ *
+ * The page's question is "which universe needs me", so the answer has to be at
+ * the top before the reader does anything. Two bugs kept that from happening:
+ * the default was `recent` — which answers "what did I touch", a different
+ * question — and `attention` was absent from the accepted values, so a reader
+ * who chose it had the choice silently discarded on their next visit and fell
+ * back to `recent`.
+ */
 function readSort(): ListSortKey {
   try {
     const stored = localStorage.getItem(SORT_KEY)
-    if (['recent', 'alpha', 'assets', 'portfolio', 'owner', 'access'].includes(stored || '')) return stored as ListSortKey
+    if (['attention', 'recent', 'alpha', 'assets', 'portfolio', 'owner', 'access'].includes(stored || '')) {
+      return stored as ListSortKey
+    }
   } catch { /* SSR / private mode */ }
-  return 'recent'
+  return 'attention'
 }
 
 import { clsx } from 'clsx'
@@ -138,10 +150,28 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
    * ones lifted rather than as a different list.
    */
   const byAttention = useCallback((lists: ListSurface[]) => {
-    if (sortBy !== 'attention') return lists
-    return [...lists]
+    /*
+     * Empty lists sink under EVERY sort, not only this one.
+     *
+     * An empty list is a container somebody made and has not filled. Interleaved
+     * alphabetically or by recency it breaks the column of attention figures the
+     * page is meant to be scanned down, and it is never the answer to "where do
+     * I need to go".
+     */
+    const sink = (ls: ListSurface[]) => [...ls]
+      .map((list, i) => ({ list, i, empty: (list.assetIds?.length ?? 0) === 0 }))
+      .sort((a, b) => (a.empty === b.empty ? a.i - b.i : a.empty ? 1 : -1))
+      .map(x => x.list)
+
+    if (sortBy !== 'attention') return sink(lists)
+    return sink([...lists]
       .map((list, i) => ({ list, i, at: attentionFor(list.id) }))
       .sort((a, b) => {
+        // A decision owed outranks everything: it is the only state where the
+        // list is blocking a person rather than merely holding open work.
+        if (b.at.awaitingDecision !== a.at.awaitingDecision) {
+          return b.at.awaitingDecision - a.at.awaitingDecision
+        }
         if (b.at.needsAttention !== a.at.needsAttention) {
           return b.at.needsAttention - a.at.needsAttention
         }
@@ -150,7 +180,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
         if (b.at.noCase !== a.at.noCase) return b.at.noCase - a.at.noCase
         return a.i - b.i
       })
-      .map(x => x.list)
+      .map(x => x.list))
   }, [sortBy, attentionFor])
 
   const filteredMy = useMemo(() => byAttention(applyFilters(myLists)), [myLists, searchQuery, favoritesOnly, favoriteSet, portfolioFilterIds, byAttention])

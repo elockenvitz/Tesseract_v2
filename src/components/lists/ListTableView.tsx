@@ -10,14 +10,12 @@
  * the opt-in extension points; it does not re-implement the table.
  */
 
-import React, { useMemo, useCallback, useState, useEffect } from 'react'
+import React, { useMemo, useCallback } from 'react'
 import { AssetTableView } from '../table/AssetTableView'
 import { ListAssigneeCell } from './ListAssigneeCell'
 import { ListStatusCell } from './ListStatusCell'
 import { ListTagsCell } from './ListTagsCell'
 import { ListRowExpansion } from './ListRowExpansion'
-import { ListWorkbench } from './ListWorkbench'
-import { benchModeForColumn, type BenchMode } from './ListBenchViews'
 import {
   LIST_SIGNAL_COLUMNS, listColumnPreset, renderSignalCell,
   LIST_COLUMN_PRESET_VERSION, listSortComparators,
@@ -125,40 +123,6 @@ export function ListTableView({
   // table is virtualised and a list can hold hundreds of names.
   const { signalFor } = useListRowSignals(assets)
 
-  /**
-   * The engaged security, and the surface its entry point named.
-   *
-   * ── Why this replaces the table rather than expanding a row ───────────
-   *
-   * `AssetTableView` must know every row's height before it renders one, so an
-   * expansion gets a fixed ~350px budget and the table stays the dominant
-   * object on the screen. A decision stated inside that budget reads as a
-   * detail panel. Engagement swaps the table for the workbench instead: the
-   * universe recedes to the spine, which is how the reader keeps their place.
-   *
-   * Lives here rather than in `ListTab` because this is where `signalFor`,
-   * `canEditRow` and the row-level callbacks already are. The list's header,
-   * pulse and command band sit above this component and stay put — engaging a
-   * security does not leave the list.
-   */
-  const [engaged, setEngaged] = useState<{ assetId: string; mode: BenchMode } | null>(null)
-
-  /*
-   * Engagement does not survive the list changing under it.
-   *
-   * A reader who filters, switches list or has a row removed must not be left on
-   * a bench for a name that is no longer in the universe — the spine would not
-   * contain it and the back button would return to a list without it.
-   */
-  useEffect(() => {
-    setEngaged(prev =>
-      prev && assets.some(a => a?.id === prev.assetId) ? prev : null)
-  }, [assets])
-
-  const engageRow = useCallback((assetId: string, columnId?: string) => {
-    setEngaged({ assetId, mode: benchModeForColumn(columnId) })
-  }, [])
-
   // Stable per `signalFor`, which is itself memoised on the batch — so the
   // table's filtered-list memo is not invalidated on every render.
   const extraSortComparators = useMemo(() => listSortComparators(signalFor), [signalFor])
@@ -257,23 +221,6 @@ export function ListTableView({
     // The scope for `lists-surface.css`. Everything inside gets the Lists
     // typographic treatment; no other table moves.
     <div className="lists-surface flex-1 min-h-0 flex flex-col">
-    {engaged ? (
-      <ListWorkbench
-        assets={assets}
-        assetId={engaged.assetId}
-        mode={engaged.mode}
-        signalFor={signalFor}
-        onSelectAsset={assetId => setEngaged(prev => ({
-          // Moving along the spine keeps the surface the reader is working on:
-          // somebody comparing three cases wants the next case, not its Overview.
-          assetId, mode: prev?.mode ?? 'overview',
-        }))}
-        onModeChange={mode => setEngaged(prev => prev ? { ...prev, mode } : prev)}
-        onClose={() => setEngaged(null)}
-        onOpenAsset={onAssetSelect}
-        onCreateTradeIdea={onCreateTradeIdea}
-      />
-    ) : (
     <AssetTableView
       assets={assets}
       isLoading={isLoading}
@@ -284,22 +231,19 @@ export function ListTableView({
       columnPresetVersion={LIST_COLUMN_PRESET_VERSION}
       expansionEntryColumns={LIST_EXPANSION_ENTRY_COLUMNS}
       /*
-       * Clicking a mapped cell engages the security instead of expanding the
-       * row. The inline expansion stays implemented and still runs on mobile
-       * (`MobileListRows`), where a 150px spine beside a working surface leaves
-       * neither usable.
-       */
-      onEngageRow={engageRow}
-      /*
-       * Sized for the sparse real case, not the full fixture.
+       * Sized so the table survives the inspector.
        *
-       * 420 was chosen against a name with a three-paragraph thesis, three
-       * unreviewed notes and a live idea. Most names have none of that, and the
-       * same height then opens a mostly-empty panel ten rows tall. These are
-       * tight enough that a full name still reads without scrolling and a thin
-       * one does not leave a hole.
+       * The inspector is a contextual surface unfolding from a row, not a
+       * workspace — so the constraint that matters is how many SURROUNDING
+       * securities stay on screen beside it. At 380 a 900px pane showed the
+       * opened name and about two neighbours, which is not enough context to
+       * compare against and is what made the expansion feel like a destination.
+       *
+       * 280-340 keeps roughly five or six rows visible around it, and every mode
+       * scrolls its own regions rather than growing the row — the virtualiser
+       * must know this height up front.
        */
-      expandedRowHeights={{ comfortable: 380, compact: 350, ultra: 310, micro: 270 }}
+      expandedRowHeights={{ comfortable: 340, compact: 320, ultra: 296, micro: 268 }}
       // The identity cell carries the company under the ticker, which the
       // shared heights were not sized for — at 44px the second line clipped.
       // `micro` keeps the default: it hides the company anyway.
@@ -313,7 +257,6 @@ export function ListTableView({
       onCreateTradeIdea={onCreateTradeIdea}
       {...passthrough}
     />
-    )}
     </div>
   )
 }

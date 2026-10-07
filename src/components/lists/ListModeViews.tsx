@@ -657,6 +657,9 @@ export function MarketMode(p: {
   conviction: 'low' | 'medium' | 'high' | null
   changes: EvidenceLike[]
   ideaLabel?: string | null
+  /** When the case was written. One of the dated events drawn below the chart. */
+  caseWrittenAt?: string | null
+  ideaCreatedAt?: string | null
   footer?: React.ReactNode
 }) {
   const oneMonthPct = p.closes && p.closes.length > 1 && p.closes[0]
@@ -665,11 +668,33 @@ export function MarketMode(p: {
   const lo = p.closes?.length ? Math.min(...p.closes) : null
   const hi = p.closes?.length ? Math.max(...p.closes) : null
 
+  /*
+   * What happened around the move, from events we actually hold.
+   *
+   * Only three kinds exist in the data: when the case was written, when a
+   * research note arrived, and when the idea was raised. The prototype put a
+   * PRICE against each one; we store no history keyed deeply enough to read one,
+   * so these carry dates and nothing else. A marker on the chart itself would
+   * need the same missing price to position it, which is why this is a dated
+   * strip beneath the chart rather than an overlay on it.
+   */
+  const events: Array<{ k: string; at: string; head: string; hot?: boolean }> = []
+  if (p.caseWrittenAt) events.push({ k: 'case', at: p.caseWrittenAt, head: 'Case written' })
+  for (const c of p.changes.slice(0, 3)) {
+    events.push({
+      k: c.id, at: c.createdAt, head: c.title || 'Research note', hot: c.isNewSinceReview,
+    })
+  }
+  if (p.ideaCreatedAt && p.ideaLabel) {
+    events.push({ k: 'idea', at: p.ideaCreatedAt, head: p.ideaLabel, hot: true })
+  }
+  events.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+
   return (
     <ModeLayout
       footer={p.footer}
       main={
-        <div className="flex flex-col h-full min-h-0 gap-3">
+        <div className="flex flex-col h-full min-h-0 gap-2.5">
           <div className="flex items-start gap-7 flex-shrink-0">
             <Figure label="Last" value={p.spot != null ? money(p.spot) : null} size="hero"
               tone={toneOf(p.changePct)}
@@ -689,11 +714,34 @@ export function MarketMode(p: {
              * whole canvas on a name with no other context, which is the
              * sparkline again at four times the size.
              */
-            <div className="min-h-[72px] max-h-[136px] flex-1">
+            <div className="min-h-[72px] max-h-[128px] flex-1">
               <Sparkline points={p.closes} reference={p.target} />
             </div>
           ) : (
             <Quiet>No price history on file.</Quiet>
+          )}
+
+          {/* The dated record, if we have any of it. */}
+          {events.length > 0 && (
+            <div className="flex-shrink-0 pt-2 border-t border-gray-900/[0.06] dark:border-white/[0.07]">
+              <div className="flex items-start gap-x-5 gap-y-1.5 flex-wrap">
+                {events.slice(0, 3).map(e => (
+                  <div key={e.k} className="min-w-0 max-w-[180px]">
+                    <div className="text-[9.5px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:text-gray-500">
+                      {formatDistanceToNow(new Date(e.at), { addSuffix: true })}
+                    </div>
+                    <div className={clsx(
+                      'mt-0.5 text-[12px] leading-snug truncate',
+                      e.hot
+                        ? 'font-semibold text-gray-900 dark:text-gray-50'
+                        : 'font-medium text-gray-600 dark:text-gray-300',
+                    )}>
+                      {e.head}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       }
@@ -717,21 +765,7 @@ export function MarketMode(p: {
               </div>
             </div>
           )}
-          {/*
-            * One of these, not both.
-            *
-            * The rail has about 200px after the three figures above it, and
-            * five blocks overflowed — which clipped the last one into a label
-            * with nothing under it. An open idea outranks a recent note: it is
-            * the more decisive answer to "does this move matter here".
-            */}
-          {p.ideaLabel ? (
-            <Figure label="Open idea" size="md" value={p.ideaLabel} />
-          ) : p.changes.length > 0 ? (
-            <RailBlock label="Written recently">
-              <EvidenceItemView item={p.changes[0]} />
-            </RailBlock>
-          ) : null}
+          {p.ideaLabel && <Figure label="Open idea" size="md" value={p.ideaLabel} />}
         </>
       }
     />
@@ -1046,6 +1080,78 @@ export interface PositionLike {
   unrealisedPct?: number | null
 }
 
+/**
+ * Current exposure against proposed exposure, as a change.
+ *
+ * ── Why this is a bar and not two figures ─────────────────────────────────
+ *
+ * "1.20%" beside "3.20%" is two numbers a reader has to subtract. The question
+ * Position answers is "what are we considering DOING", and a change is a shape:
+ * the filled part is what we hold, the extension is what the recommendation
+ * would add, and the arrow between the two figures says which way it goes.
+ *
+ * Both numbers are stored facts — the current weight from `portfolio_holdings`
+ * via the book's own NAV, the proposed from `trade_queue_items.proposed_weight`.
+ * Shares and a dollar amount are deliberately absent: deriving either needs the
+ * book's value, which this surface does not read.
+ */
+function ExposureDelta({
+  currentPct, proposedPct, direction,
+}: {
+  currentPct: number | null
+  proposedPct: number | null
+  direction?: string | null
+}) {
+  if (currentPct == null && proposedPct == null) return null
+  const isSell = (direction ?? '').toUpperCase() === 'SELL'
+  /*
+   * Headroom past whichever weight is larger, so both marks are comparable.
+   * Full width for the proposed weight would say a 3% position fills the book.
+   */
+  const scaleMax = Math.max(proposedPct ?? 0, currentPct ?? 0) * 1.5 || 1
+  const at = (n: number | null) => n == null ? 0 : Math.min(100, (n / scaleMax) * 100)
+  const bps = currentPct != null && proposedPct != null
+    ? Math.round((proposedPct - currentPct) * 100)
+    : null
+
+  return (
+    <div className="min-w-0" data-testid="exposure-delta">
+      <div className="flex items-end gap-3 flex-wrap">
+        <Figure label="Current" size="hero"
+          value={currentPct != null ? `${currentPct.toFixed(2)}%` : '—'} />
+        {proposedPct != null && (
+          <>
+            <ArrowRight className="h-3.5 w-3.5 text-gray-400 mb-2 flex-shrink-0" />
+            <Figure label="Proposed" size="hero"
+              value={`${proposedPct.toFixed(2)}%`}
+              tone={isSell ? 'down' : 'up'} />
+            {bps != null && (
+              <span className="mb-1.5 text-[12px] font-semibold tabular-nums text-gray-600 dark:text-gray-300">
+                {bps >= 0 ? '+' : ''}{bps} bps
+              </span>
+            )}
+          </>
+        )}
+      </div>
+      {proposedPct != null && (
+        <div className="mt-2.5 h-[6px] rounded-full bg-gray-200 dark:bg-gray-700 relative overflow-hidden">
+          <span className="absolute inset-y-0 left-0 bg-gray-800 dark:bg-gray-200 rounded-full"
+            style={{ width: `${at(currentPct)}%` }} />
+          {currentPct != null && proposedPct > currentPct && (
+            <span className="absolute inset-y-0 bg-emerald-500/60"
+              style={{ left: `${at(currentPct)}%`, width: `${at(proposedPct) - at(currentPct)}%` }} />
+          )}
+          {currentPct != null && proposedPct < currentPct && (
+            // A reduction: the part being given up, hatched out of the held bar.
+            <span className="absolute inset-y-0 bg-rose-500/50"
+              style={{ left: `${at(proposedPct)}%`, width: `${at(currentPct) - at(proposedPct)}%` }} />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function PositionMode(p: {
   positions: PositionLike[]
   spot: number | null
@@ -1055,18 +1161,40 @@ export function PositionMode(p: {
   ratingColor: string | null
   conviction: 'low' | 'medium' | 'high' | null
   ideaLabel?: string | null
+  /** The live idea's proposed weight, where one exists. A stored field. */
+  proposedWeightPct?: number | null
+  ideaDirection?: string | null
+  ideaStage?: string | null
   footer?: React.ReactNode
 }) {
   const rows = [...p.positions].sort((a, b) => (b.weightPct ?? 0) - (a.weightPct ?? 0))
   const total = rows.reduce((s, r) => s + (r.marketValue ?? 0), 0)
   const largest = rows[0]
+  const proposing = p.proposedWeightPct != null
+
+  // Nothing held and nothing proposed is the only true empty. A recommendation
+  // to open a position is the most important thing Position can say.
+  if (rows.length === 0 && !proposing) {
+    return <ModeLayout footer={p.footer} main={<Quiet>Not held in any book.</Quiet>} />
+  }
 
   return (
     <ModeLayout
       footer={p.footer}
+      railWidth={proposing ? 'sm' : 'md'}
       main={
-        rows.length === 0 ? <Quiet>Not held in any book.</Quiet> : (
           <div className="space-y-4">
+            {/*
+              * When a recommendation is live, the CHANGE leads — that is what the
+              * reader is being asked about. Otherwise the holding does.
+              */}
+            {proposing ? (
+              <ExposureDelta
+                currentPct={largest?.weightPct ?? null}
+                proposedPct={p.proposedWeightPct ?? null}
+                direction={p.ideaDirection}
+              />
+            ) : (
             <div className="flex items-start gap-7 flex-wrap">
               <Figure label="Largest weight"
                 value={largest?.weightPct != null ? `${largest.weightPct.toFixed(2)}%` : null}
@@ -1075,8 +1203,12 @@ export function PositionMode(p: {
                 value={total > 0 ? `$${Math.round(total).toLocaleString()}` : null}
                 sub={`${rows.length} book${rows.length === 1 ? '' : 's'}`} />
             </div>
+            )}
 
-            {/* No table chrome. Alignment carries the columns. */}
+            {/* No table chrome. Alignment carries the columns. Hidden entirely
+                when there is nothing held — a recommendation to OPEN a position
+                would otherwise render a header over no rows. */}
+            {rows.length > 0 && (
             <div>
               <div className="grid grid-cols-[minmax(0,1fr)_72px_72px_84px] gap-x-3 pb-1">
                 {['Book', 'Shares', 'Weight', 'Unrealised'].map((h, i) => (
@@ -1109,11 +1241,16 @@ export function PositionMode(p: {
                 ))}
               </div>
             </div>
+            )}
           </div>
-        )
       }
       rail={
         <>
+          {/* What we are proposing, named. The delta in the main column shows
+              the size of the move; this says what move it is. */}
+          {proposing && p.ideaLabel && (
+            <Figure label="Recommendation" size="md" value={p.ideaLabel} />
+          )}
           <Figure label="Price" value={p.spot != null ? money(p.spot) : null} size="md" />
           <Figure label="Target" value={p.target != null ? money(p.target) : null} size="md"
             tone={toneOf(p.upsidePct)}
@@ -1126,7 +1263,7 @@ export function PositionMode(p: {
               </div>
             </div>
           )}
-          {p.ideaLabel && <Figure label="Open idea" size="sm" value={p.ideaLabel} />}
+          {!proposing && p.ideaLabel && <Figure label="Open idea" size="sm" value={p.ideaLabel} />}
         </>
       }
     />
@@ -1158,8 +1295,14 @@ export function WorkMode(p: {
     portfolioName?: string | null
     conviction?: string | null
     rationale?: string | null
+    /** Stored on the idea. Lets Work show what the decision would change. */
+    proposedWeight?: number | null
+    authorName?: string | null
+    createdAt?: string | null
   } | null
   decisionLabel?: string | null
+  /** True when the idea is at the final stage — somebody owes a decision. */
+  awaitingDecision?: boolean
   ratingValue: string | null
   ratingColor: string | null
   conviction: 'low' | 'medium' | 'high' | null
@@ -1257,25 +1400,30 @@ export function WorkMode(p: {
   if (p.shape === 'idea' && p.idea) {
     const dir = (p.idea.action ?? '').toUpperCase()
     const isBuy = dir === 'BUY'
+    const proposed = p.idea.proposedWeight
     return (
       <ModeLayout
         footer={p.footer}
         rail={stateRail}
         railWidth="sm"
         main={
-          <div className="h-full flex flex-col gap-3 min-h-0">
+          <div className="h-full flex flex-col gap-2.5 min-h-0">
             {/*
               * The lifecycle state, at a size that matches its importance.
               *
               * Direction and stage are the headline — what we are doing and how
-              * far along it is — with the book and the decision state on the
-              * line beneath. Six small labelled figures made the most decisive
-              * fact on the surface look like metadata.
+              * far along it is — with the book and the author on the line
+              * beneath. Six small labelled figures made the most decisive fact
+              * on the surface look like metadata.
+              *
+              * When a decision is actually owed, that is said in words rather
+              * than implied by the stage: "ready to recommend" is a lifecycle
+              * value, "Awaiting a decision" is what it means to the reader.
               */}
             <div className="flex-shrink-0 flex items-baseline gap-2.5 flex-wrap">
               {dir && (
                 <span className={clsx(
-                  'text-[15px] font-bold tracking-wide tabular-nums',
+                  'text-[17px] font-bold tracking-wide tabular-nums',
                   isBuy
                     ? 'text-emerald-600 dark:text-emerald-400'
                     : 'text-rose-600 dark:text-rose-400',
@@ -1285,18 +1433,29 @@ export function WorkMode(p: {
               )}
               <span className="text-[17px] font-semibold tracking-[-0.015em] text-gray-900 dark:text-gray-50">
                 {/* The desk's words. `ready_to_recommend` is a database value. */}
-                {stageLabel(p.idea.stage)}
+                {p.awaitingDecision ? 'Awaiting a decision' : stageLabel(p.idea.stage)}
               </span>
+              {p.awaitingDecision && (
+                <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500">
+                  {stageLabel(p.idea.stage)}
+                </span>
+              )}
             </div>
 
             <div className="flex-shrink-0 flex items-baseline gap-2 text-[12px] text-gray-500 dark:text-gray-400 flex-wrap">
               {p.idea.portfolioName && (
                 <span className="text-gray-700 dark:text-gray-300 font-medium">{p.idea.portfolioName}</span>
               )}
-              {p.decisionLabel && (
+              {p.idea.authorName && (
                 <>
                   <span className="text-gray-300 dark:text-gray-600">·</span>
-                  <span>{p.decisionLabel}</span>
+                  <span>{p.idea.authorName}</span>
+                </>
+              )}
+              {p.idea.createdAt && (
+                <>
+                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                  <span>{formatDistanceToNow(new Date(p.idea.createdAt), { addSuffix: true })}</span>
                 </>
               )}
               {p.idea.conviction && (
@@ -1306,6 +1465,35 @@ export function WorkMode(p: {
                 </>
               )}
             </div>
+
+            {/*
+              * What the decision would actually change.
+              *
+              * The most concrete thing Work can show about a recommendation is
+              * the exposure it asks for against the exposure we hold. Both are
+              * stored; neither is inferred. Rendered compactly here because the
+              * rationale below is the argument and this is the ask.
+              */}
+            {proposed != null && (
+              <div className="flex-shrink-0 flex items-baseline gap-2 text-[12.5px] tabular-nums pt-0.5">
+                <span className="text-gray-400 dark:text-gray-500">Exposure</span>
+                <span className="font-semibold text-gray-700 dark:text-gray-200">
+                  {p.weightPct != null ? `${p.weightPct.toFixed(2)}%` : '—'}
+                </span>
+                <ArrowRight className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                <span className={clsx(
+                  'font-semibold',
+                  isBuy ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+                )}>
+                  {proposed.toFixed(2)}%
+                </span>
+                {p.weightPct != null && (
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                    ({proposed >= p.weightPct ? '+' : ''}{Math.round((proposed - p.weightPct) * 100)} bps)
+                  </span>
+                )}
+              </div>
+            )}
 
             {p.idea.rationale && (
               <div className="flex-1 min-h-0 overflow-y-auto pt-0.5">

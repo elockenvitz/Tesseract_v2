@@ -32,7 +32,7 @@ import { useResearchScan } from '../useDesktopResearch'
 import { useIdeaScan } from '../useDesktopIdeas'
 import { workStateFor, type WorkState } from '../../lib/lists/work-state'
 import { useHoldingsForAssets, assetIdKey } from '../useHoldingsForAssets'
-import { largestWeightByAsset } from '../../lib/portfolio/holdings'
+import { largestWeightByAsset, weightsByAsset } from '../../lib/portfolio/holdings'
 import { useSparklines } from '../useSparklines'
 import { useRatingScales, type ConvictionLevel } from '../useAnalystRatings'
 import { stateOf, type ResearchState, type ResearchSubject } from '../../lib/desktop-research/model'
@@ -79,6 +79,15 @@ export interface ListRowSignal {
   } | null
   /** Largest single-book weight, in percent. Absent when unheld. */
   weightPct: number | null
+  /**
+   * The book that carries `weightPct`, and how many others hold the name.
+   *
+   * A weight means nothing without the book it is a weight of. `bookCount` is
+   * what lets the row say "+2 more" instead of implying the largest stake is the
+   * only one.
+   */
+  bookName: string | null
+  bookCount: number
   closes: number[] | null
   ratingValue: string | null
   ratingColor: string | null
@@ -88,6 +97,7 @@ export interface ListRowSignal {
 
 const EMPTY: ListRowSignal = {
   state: null, subject: null, weightPct: null, closes: null,
+  bookName: null, bookCount: 0,
   ratingValue: null, ratingColor: null, conviction: null, targetPrice: null,
   work: { tier: 'clear', label: '', count: 0, secondary: null },
   idea: null,
@@ -232,6 +242,39 @@ export function useListRowSignals(assets: Array<{ id?: string | null; symbol?: s
 
   const weights = useMemo(() => largestWeightByAsset(holdingRows), [holdingRows])
 
+  /** portfolio id → its name, from whatever the holdings read joined. */
+  const bookNames = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const r of holdingRows) {
+      const name = r.portfolios?.name
+      if (r.portfolio_id && name) m.set(r.portfolio_id, name)
+    }
+    return m
+  }, [holdingRows])
+
+  /**
+   * Which book carries the largest stake, and how many hold the name at all.
+   *
+   * `largestWeightByAsset` answers the number but discards which book it came
+   * from, so the per-book map is read directly here rather than changing a
+   * function four other surfaces depend on.
+   */
+  const exposure = useMemo(() => {
+    const m = new Map<string, { bookName: string | null; bookCount: number }>()
+    for (const [assetId, perPortfolio] of weightsByAsset(holdingRows)) {
+      let topId: string | null = null
+      let top = -Infinity
+      for (const [pid, w] of perPortfolio) {
+        if (Number.isFinite(w) && w > top) { top = w; topId = pid }
+      }
+      m.set(assetId, {
+        bookName: topId ? bookNames.get(topId) ?? null : null,
+        bookCount: perPortfolio.size,
+      })
+    }
+    return m
+  }, [holdingRows, bookNames])
+
   /** value → colour, from whatever scale the rating was recorded against. */
   const colorFor = useMemo(() => {
     const m = new Map<string, string>()
@@ -258,6 +301,8 @@ export function useListRowSignals(assets: Array<{ id?: string | null; symbol?: s
         idea,
         work: workStateFor(idea, state, subject?.newSinceReview ?? 0),
         weightPct: weights[id] ?? null,
+        bookName: exposure.get(id)?.bookName ?? null,
+        bookCount: exposure.get(id)?.bookCount ?? 0,
         closes: (asset?.symbol && sparklines[asset.symbol]?.closes) || null,
         ratingValue: rating?.rating_value ?? null,
         ratingColor: rating
@@ -276,5 +321,5 @@ export function useListRowSignals(assets: Array<{ id?: string | null; symbol?: s
       /** True once every name in the list was inside the id cap. */
       complete: ids.length >= assetIdKey(assets.map(a => a?.id)).length,
     }
-  }, [assets, subjectByAsset, ideaByAsset, ratings, targets, weights, sparklines, colorFor, ids])
+  }, [assets, subjectByAsset, ideaByAsset, ratings, targets, weights, exposure, sparklines, colorFor, ids])
 }

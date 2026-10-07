@@ -20,8 +20,9 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { MODE_FOR_COLUMN, LIST_EXPANSION_ENTRY_COLUMNS, modeForEntryColumn } from '../listRowModes'
-import { benchModeForColumn } from '../ListBenchViews'
+import {
+  MODE_FOR_COLUMN, LIST_EXPANSION_ENTRY_COLUMNS, modeForEntryColumn, MODE_ORDER,
+} from '../listRowModes'
 
 const SRC = resolve(__dirname, '../../..')
 
@@ -54,10 +55,7 @@ describe('the table reports which cell was clicked', () => {
   })
 
   it('opens rather than toggles, so a second field does not slam the row shut', () => {
-    // The window has to clear the `onEngageRow` delegation that now precedes
-    // the expansion fallback — see the engagement suite below, which asserts
-    // that delegation comes FIRST rather than merely being present.
-    expect(TABLE).toMatch(/const openRowFromCell[\s\S]{0,400}setExpandedRowId\(assetId\)/)
+    expect(TABLE).toMatch(/const openRowFromCell[\s\S]{0,200}setExpandedRowId\(assetId\)/)
     // Specifically NOT the toggling setter, which is what `toggleRowExpansion`
     // uses and would close a row the reader is still reading.
     const body = TABLE.split('const openRowFromCell')[1]?.slice(0, 300) ?? ''
@@ -84,72 +82,76 @@ describe('the list forwards it to the expansion', () => {
 })
 
 /**
- * The same seam, one link longer.
+ * The table stays mounted. There is no engagement path.
  *
- * Desktop Lists no longer expand a row: a click ENGAGES the security and the
- * table is replaced by the workbench. That rides on `onEngageRow`, and its
- * failure mode is the same silent one — without the prop the table falls back to
- * its inline expansion, which still looks like a working feature.
+ * A full-screen workbench was built and rejected: losing the surrounding
+ * securities, the columns and the reader's place defeats the whole loop —
+ * SCAN → NOTICE → INTERROGATE → ACT → COLLAPSE → CONTINUE SCANNING. These
+ * assertions exist so it cannot come back by accident, because the regression
+ * looks like a feature.
  */
-describe('a click engages the security instead of expanding the row', () => {
-  it('the table delegates both open paths when the surface engages', () => {
-    // From a cell (carrying the intent) and from the chevron (carrying none).
-    expect(TABLE).toMatch(/if \(onEngageRow\) \{ onEngageRow\(assetId, columnId\); return \}/)
-    expect(TABLE).toMatch(/if \(onEngageRow\) \{ onEngageRow\(assetId, undefined\); return \}/)
+describe('interrogating a security never unmounts the table', () => {
+  it('neither open path delegates engagement away from the expansion', () => {
+    expect(TABLE).not.toMatch(/onEngageRow/)
+    expect(LIST).not.toMatch(/onEngageRow/)
   })
 
-  it('the delegation is reached before the expansion state is set', () => {
+  it('both open paths set the inline expansion directly', () => {
     for (const fn of ['openRowFromCell', 'toggleRowExpansion']) {
-      const body = TABLE.split(`const ${fn}`)[1]?.slice(0, 400) ?? ''
-      expect(body, `${fn} must delegate`).toMatch(/onEngageRow/)
-      expect(
-        body.indexOf('onEngageRow'),
-        `${fn} must delegate before it expands`,
-      ).toBeLessThan(body.indexOf('setExpandedRowId'))
+      const body = TABLE.split(`const ${fn}`)[1]?.slice(0, 300) ?? ''
+      expect(body, `${fn} must expand in place`).toMatch(/setExpandedRowId/)
     }
   })
 
-  it('the list actually passes it, and derives the surface from the clicked cell', () => {
-    expect(LIST).toMatch(/onEngageRow=\{engageRow\}/)
-    expect(LIST).toMatch(/benchModeForColumn\(columnId\)/)
+  it('the list renders the table unconditionally, not behind a mode switch', () => {
+    // A ternary around `<AssetTableView` is how the rejected model worked: the
+    // table became one branch of a choice rather than the surface itself.
+    expect(LIST).not.toMatch(/\?\s*\(\s*<List\w+Workbench/)
+    expect(LIST).toMatch(/<AssetTableView/)
+    expect(LIST).toMatch(/expandedRowSlot=\{expandedRowSlot\}/)
   })
 
-  it('maps every entry column onto a surface the bench actually has', () => {
-    const SURFACES = ['overview', 'market', 'case', 'work']
+  it('every entry column still lands on a mode the expansion actually has', () => {
     for (const id of LIST_EXPANSION_ENTRY_COLUMNS) {
-      expect(SURFACES, `${id} must land on a real bench surface`)
-        .toContain(benchModeForColumn(id))
+      expect(MODE_ORDER, `${id} must map to a real mode`)
+        .toContain(modeForEntryColumn(id))
     }
-  })
-
-  it('keeps the intent the expansion map records, folding only what it must', () => {
-    // The bench has four surfaces where the expansion had six, so Valuation and
-    // Position fold onto the surface that answers them. Everything else must
-    // survive the fold, or the clicked field stops meaning anything.
-    expect(benchModeForColumn('price')).toBe('market')
-    expect(benchModeForColumn('list_spark')).toBe('market')
-    expect(benchModeForColumn('list_work')).toBe('work')
-    expect(benchModeForColumn('list_rating')).toBe('case')
-    expect(benchModeForColumn('list_target')).toBe('case')
-    expect(benchModeForColumn('list_position')).toBe('overview')
-    expect(benchModeForColumn('ticker')).toBe('overview')
-    expect(benchModeForColumn(undefined)).toBe('overview')
   })
 })
 
 describe('the map covers what the curated line actually shows', () => {
-  it('maps every field the brief names', () => {
+  it('maps each of the six conceptual columns onto the mode that answers it', () => {
     expect(MODE_FOR_COLUMN).toMatchObject({
+      // SECURITY
       ticker: 'overview',
       companyName: 'overview',
-      price: 'market',
-      change: 'market',
-      list_spark: 'market',
-      list_rating: 'case',
-      list_target: 'valuation',
-      list_position: 'position',
+      list_market: 'market',
+      list_exposure: 'position',
+      list_view: 'case',
+      list_valuation: 'valuation',
       list_work: 'work',
     })
+  })
+
+  it('maps every conceptual column, and every mode is reachable from one', () => {
+    const conceptual = ['list_market', 'list_exposure', 'list_view', 'list_valuation', 'list_work']
+    for (const id of conceptual) {
+      expect(MODE_FOR_COLUMN[id], `${id} must open a mode`).toBeTruthy()
+    }
+    // Every mode must be the destination of some cell, or that mode is only
+    // reachable through the switch and the clicked field cannot express it.
+    const reached = new Set(Object.values(MODE_FOR_COLUMN))
+    for (const mode of MODE_ORDER) {
+      expect(reached, `no cell opens ${mode}`).toContain(mode)
+    }
+  })
+
+  it('still maps the scalar columns a reader can re-enable', () => {
+    // Hidden from the default line, not deleted — a visible column whose cell
+    // does nothing when clicked is the defect this map prevents.
+    expect(MODE_FOR_COLUMN.price).toBe('market')
+    expect(MODE_FOR_COLUMN.change).toBe('market')
+    expect(MODE_FOR_COLUMN.coverage).toBe('overview')
   })
 
   it('opts in exactly the mapped columns, and nothing with its own behaviour', () => {

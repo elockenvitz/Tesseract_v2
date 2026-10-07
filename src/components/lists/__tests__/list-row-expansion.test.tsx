@@ -222,10 +222,10 @@ describe('the clicked field decides the mode', () => {
     ['companyName', 'overview'],
     ['price', 'market'],
     ['change', 'market'],
-    ['list_spark', 'market'],
-    ['list_rating', 'case'],
-    ['list_target', 'valuation'],
-    ['list_position', 'position'],
+    ['list_market', 'market'],
+    ['list_view', 'case'],
+    ['list_valuation', 'valuation'],
+    ['list_exposure', 'position'],
     ['list_work', 'work'],
   ])('a click on %s opens %s', (columnId, expected) => {
     full()
@@ -241,12 +241,12 @@ describe('the clicked field decides the mode', () => {
 
   it('re-enters on the newly clicked field while the row stays open', () => {
     full()
-    const { rerender } = openFrom('list_target')
+    const { rerender } = openFrom('list_valuation')
     expect(currentMode()).toBe('valuation')
     // The table hands in a new entryColumnId — the reader restating intent on
     // a row that is already open.
     rerender(
-      <ListRowExpansion listId="l-1" rowId="r-1" asset={asset} canEdit entryColumnId="list_position" />,
+      <ListRowExpansion listId="l-1" rowId="r-1" asset={asset} canEdit entryColumnId="list_exposure" />,
     )
     expect(currentMode()).toBe('position')
   })
@@ -266,7 +266,7 @@ describe('the clicked field decides the mode', () => {
 
   it('falls back to Overview rather than a blank canvas', () => {
     // Opened on Position, but this name is not held.
-    openFrom('list_position')
+    openFrom('list_exposure')
     expect(currentMode()).toBe('overview')
   })
 
@@ -340,7 +340,7 @@ describe('Overview shows only what exists', () => {
     // Case mode, where the picker lives — scoped to the DISPLAY, because the
     // rating is also an <option> and an unscoped query would pass even if the
     // pill never rendered.
-    openFrom('list_rating')
+    openFrom('list_view')
     const display = within(screen.getByTestId('row-rating-display'))
     expect(display.getByText('Buy')).toBeInTheDocument()
     expect(display.queryByText('Hold')).not.toBeInTheDocument()
@@ -354,7 +354,7 @@ describe('rating and conviction write through the canonical path', () => {
       { id: 's-default', is_default: true, values: [{ value: 'Overweight' }] },
       { id: 's-legacy', values: [{ value: 'Hold' }, { value: 'Buy' }] },
     ]
-    openFrom('list_rating')
+    openFrom('list_view')
     await userEvent.selectOptions(screen.getByRole('combobox'), 'Buy')
     // Not the org default — a rating written against the wrong scale produces a
     // value string that matches no configured value and silently drops out of
@@ -369,7 +369,7 @@ describe('rating and conviction write through the canonical path', () => {
       { id: 's-other', values: [{ value: 'X' }] },
       { id: 's-default', is_default: true, values: [{ value: 'Overweight' }] },
     ]
-    openFrom('list_rating')
+    openFrom('list_view')
     await userEvent.selectOptions(screen.getByRole('combobox'), 'Overweight')
     expect(hooks.ratingWrites).toEqual([
       { ratingValue: 'Overweight', ratingScaleId: 's-default', conviction: null },
@@ -379,7 +379,7 @@ describe('rating and conviction write through the canonical path', () => {
   it('keeps the rating value when only conviction changes', async () => {
     hooks.ratings = [{ id: 'r1', rating_value: 'Buy', rating_scale_id: 's1', conviction: 'low', is_official: true, updated_at: '2026-10-01' }]
     hooks.scales = [{ id: 's1', values: [{ value: 'Buy' }] }]
-    openFrom('list_rating')
+    openFrom('list_view')
     await userEvent.click(screen.getByLabelText('Set high conviction'))
     expect(hooks.ratingWrites).toEqual([
       { ratingValue: 'Buy', ratingScaleId: 's1', conviction: 'high' },
@@ -388,7 +388,7 @@ describe('rating and conviction write through the canonical path', () => {
 
   it('offers no conviction control until something is rated', () => {
     hooks.scales = [{ id: 's1', is_default: true, values: [{ value: 'Buy' }] }]
-    openFrom('list_rating')
+    openFrom('list_view')
     expect(screen.queryByLabelText('Set high conviction')).not.toBeInTheDocument()
   })
 })
@@ -399,7 +399,7 @@ describe('Case mode writes case text through the canonical writer', () => {
   it('offers all three core sections, including risks', () => {
     scales()
     hooks.workspace.sections = [section('thesis', 'Services mix.')]
-    openFrom('list_rating')
+    openFrom('list_view')
     // Overview deliberately shows two; the Case mode is where the whole case
     // lives, so withholding risks here would make it unreachable from a list.
     expect(screen.getByText('Thesis')).toBeInTheDocument()
@@ -410,7 +410,7 @@ describe('Case mode writes case text through the canonical writer', () => {
   it('saves under the section that was edited', async () => {
     scales()
     hooks.workspace.sections = [section('thesis', 'Old thesis.')]
-    openFrom('list_rating')
+    openFrom('list_view')
     await userEvent.click(screen.getByLabelText('Edit Thesis'))
     const box = screen.getByRole('textbox')
     await userEvent.clear(box)
@@ -422,7 +422,7 @@ describe('Case mode writes case text through the canonical writer', () => {
   it('does not write when the text was not changed', async () => {
     scales()
     hooks.workspace.sections = [section('thesis', 'Unchanged.')]
-    openFrom('list_rating')
+    openFrom('list_view')
     await userEvent.click(screen.getByLabelText('Edit Thesis'))
     await userEvent.tab()
     // A stray focus must not create a contribution revision.
@@ -431,7 +431,7 @@ describe('Case mode writes case text through the canonical writer', () => {
 
   it('invites writing a section that does not exist yet', () => {
     scales()
-    openFrom('list_rating')
+    openFrom('list_view')
     expect(screen.getByText('Write thesis')).toBeInTheDocument()
   })
 })
@@ -617,7 +617,7 @@ describe('Position and Valuation modes', () => {
       { portfolioId: 'p1', portfolioName: 'Small Book', shares: 100, weightPct: 0.4, marketValue: 1000, unrealisedPct: -3.2 },
       { portfolioId: 'p2', portfolioName: 'Big Book', shares: 9000, weightPct: 6.1, marketValue: 90000, unrealisedPct: 12.5 },
     ]
-    openFrom('list_position')
+    openFrom('list_exposure')
     expect(currentMode()).toBe('position')
     const names = screen.getAllByText(/Big Book|Small Book/).map(n => n.textContent)
     expect(names[0]).toBe('Big Book')
@@ -638,7 +638,7 @@ describe('Position and Valuation modes', () => {
         { id: 'c2', scenarioId: 's2', name: 'Street beat', price: 130, probability: 0.5, timeframe: null, reasoning: null, userId: null },
       ],
     }
-    openFrom('list_target')
+    openFrom('list_valuation')
     expect(currentMode()).toBe('valuation')
     expect(screen.getByText('Street beat')).toBeInTheDocument()
     expect(screen.getByText('Downside')).toBeInTheDocument()
@@ -649,7 +649,7 @@ describe('Position and Valuation modes', () => {
   it('does not offer to write a price target from the row', () => {
     hooks.workspace.spot = 100
     hooks.workspace.target = 130
-    openFrom('list_target', { onOpenAsset: () => {} })
+    openFrom('list_valuation', { onOpenAsset: () => {} })
     // `savePriceTarget` needs a resolved scenario, which a row cannot pick
     // honestly — so this links into the case instead of writing.
     expect(screen.getByRole('button', { name: /Set a target in the case/ })).toBeInTheDocument()

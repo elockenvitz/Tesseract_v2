@@ -605,10 +605,13 @@ export function ListRowExpansion({
               <MarketMode
                 symbol={asset.symbol} spot={spot} changePct={changePct}
                 closes={signal?.closes ?? null} target={target} upsidePct={upsidePct}
-                weightPct={weightPct} bookName={primaryPosition?.portfolioName}
+                weightPct={weightPct} bookName={primaryPosition?.portfolioName ?? signal?.bookName}
                 ratingValue={rating?.rating_value ?? null} ratingColor={ratingColor}
                 conviction={rating?.conviction ?? null}
                 changes={changes} ideaLabel={ideaLabel}
+                // The dated record around the move, from events we hold.
+                caseWrittenAt={caseWrittenAt}
+                ideaCreatedAt={signal?.idea?.createdAt ?? null}
                 footer={footerFor('market')}
               />
             )}
@@ -642,6 +645,14 @@ export function ListRowExpansion({
                 positions={positions ?? []} spot={spot} target={target} upsidePct={upsidePct}
                 ratingValue={rating?.rating_value ?? null} ratingColor={ratingColor}
                 conviction={rating?.conviction ?? null} ideaLabel={ideaLabel}
+                /*
+                 * What we are considering doing. `proposedWeight` is a stored
+                 * field on the idea, so "current → proposed" is two facts rather
+                 * than one fact and an inference.
+                 */
+                proposedWeightPct={signal?.idea?.proposedWeight ?? null}
+                ideaDirection={signal?.idea?.direction ?? activeIdea?.action ?? null}
+                ideaStage={signal?.idea?.stage ?? activeIdea?.stage ?? null}
                 footer={footerFor('position')}
               />
             )}
@@ -652,7 +663,28 @@ export function ListRowExpansion({
                 caseWrittenAt={caseWrittenAt}
                 stateLabel={signal?.state ? STATE_LABEL[signal.state] : null}
                 leadCase={leadCase}
-                idea={activeIdea}
+                /*
+                 * The list-wide scan's idea, not the workspace's.
+                 *
+                 * `useIdeaScan` already carries the proposed weight, the author
+                 * and the raise date; `AssetWorkspaceData.liveIdeas` carries
+                 * none of those. Same rows, more of them, and no second read.
+                 * Falls back to the workspace's so a name outside the scan's
+                 * window still states its idea.
+                 */
+                idea={signal?.idea
+                  ? {
+                      action: signal.idea.direction,
+                      stage: signal.idea.stage,
+                      portfolioName: signal.idea.portfolioName,
+                      conviction: signal.idea.conviction,
+                      rationale: signal.idea.rationale,
+                      proposedWeight: signal.idea.proposedWeight,
+                      authorName: signal.idea.authorName,
+                      createdAt: signal.idea.createdAt,
+                    }
+                  : activeIdea}
+                awaitingDecision={signal?.work.tier === 'decision'}
                 decisionLabel={latestDecision
                   ? latestDecision.status
                   : null}

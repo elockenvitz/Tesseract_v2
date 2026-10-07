@@ -379,16 +379,6 @@ interface AssetTableViewProps {
    */
   expansionEntryColumns?: ReadonlySet<string>
   /**
-   * Engage a security instead of expanding a row.
-   *
-   * When provided, a click on an `expansionEntryColumns` cell — and the row
-   * chevron — hands the asset and the clicked column to the caller rather than
-   * opening the inline expansion. The surface above decides what engagement
-   * means; for Lists it replaces the table with a workbench, which no inserted
-   * row can be. Without it, expansion behaves exactly as before.
-   */
-  onEngageRow?: (assetId: string, columnId?: string) => void
-  /**
    * Per-density height for an expanded row, overriding the default.
    *
    * The virtualiser must know row sizes up front, so this is a constant per
@@ -472,7 +462,6 @@ export function AssetTableView({
   columnPreset,
   columnPresetVersion,
   expansionEntryColumns,
-  onEngageRow,
   expandedRowHeights,
   rowHeights,
   extraSortComparators,
@@ -1462,12 +1451,10 @@ export function AssetTableView({
 
   // Single row expansion - only one row can be expanded at a time
   const toggleRowExpansion = useCallback((assetId: string) => {
-    // The chevron is "open this security" on a surface that engages.
-    if (onEngageRow) { onEngageRow(assetId, undefined); return }
     setExpandedRowId(prev => prev === assetId ? null : assetId)
     // Clear metric column when collapsing
     setExpandedMetricColumn(prev => prev?.assetId === assetId ? null : prev)
-  }, [onEngageRow])
+  }, [])
 
   /**
    * Open a row FROM a cell, carrying which cell it was.
@@ -1482,11 +1469,9 @@ export function AssetTableView({
    * there.
    */
   const openRowFromCell = useCallback((assetId: string, columnId: string) => {
-    // A surface that engages instead of expanding takes the click whole.
-    if (onEngageRow) { onEngageRow(assetId, columnId); return }
     setExpandedRowId(assetId)
     setExpandedMetricColumn({ assetId, columnId })
-  }, [onEngageRow])
+  }, [])
 
   /**
    * The entry column for one asset, or undefined.

@@ -39,20 +39,35 @@ export const MODE_LABEL: Record<ListRowMode, string> = {
   work: 'Work',
 }
 
-/** Which mode a cell means when the reader clicks it. */
+/**
+ * Which mode a cell means when the reader clicks it.
+ *
+ * The six conceptual columns map one-to-one onto the six modes, because they are
+ * the same six questions: the column states the answer in one line and the mode
+ * is where that answer is interrogated. That correspondence is the reason the
+ * collapsed line is composed into conceptual groups at all — see
+ * `LIST_SIGNAL_COLUMNS`.
+ */
 export const MODE_FOR_COLUMN: Readonly<Record<string, ListRowMode>> = {
+  // SECURITY — who is this. The table's own identity cell, plus the company
+  // column for anyone who splits it back out.
   ticker: 'overview',
   companyName: 'overview',
+  list_market: 'market',
+  list_exposure: 'position',
+  list_view: 'case',
+  list_valuation: 'valuation',
+  list_work: 'work',
+  /*
+   * The scalar columns, still mapped.
+   *
+   * Price, Change and Coverage are hidden from the default line now that MARKET
+   * composes the first two, but a reader can turn any of them back on in the
+   * picker — and a visible column whose cell does nothing when clicked is the
+   * defect this map exists to prevent.
+   */
   price: 'market',
   change: 'market',
-  list_spark: 'market',
-  list_rating: 'case',
-  list_target: 'valuation',
-  list_position: 'position',
-  list_work: 'work',
-  // Who covers it is part of orienting on the name, and Overview is where the
-  // covering analysts are shown. Without this, Coverage was the one visible
-  // column on the curated line whose cell did nothing when clicked.
   coverage: 'overview',
 }
 
