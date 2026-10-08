@@ -81,6 +81,17 @@ interface ListRowExpansionProps {
   coverage?: ListRowCoverage[]
   /** The column the row was opened from. Decides the initial mode. */
   entryColumnId?: string
+  /**
+   * Tell the table which mode is showing, so the row is sized for it.
+   *
+   * The table sizes an expanded row from its ENTRY and never hears about the
+   * tab switcher inside, so opening on a rating and moving to the chart left
+   * a chart in a rating-sized row. The mode names and the entry tokens are
+   * the same six strings, so echoing the active mode is exactly the entry
+   * that would have opened it — and `modeForEntryColumn` maps it straight
+   * back, which is what makes the handshake stable.
+   */
+  onEntryChange?: (entryColumnId: string) => void
   /** Batched for the whole list by `useListRowSignals`. */
   signal?: ListRowSignal
   onOpenAsset?: () => void
@@ -115,6 +126,7 @@ export function ListRowExpansion({
   canEdit,
   coverage,
   entryColumnId,
+  onEntryChange,
   signal,
   onOpenAsset,
   onCreateTradeIdea,
@@ -132,7 +144,9 @@ export function ListRowExpansion({
   // undefined — it falls back to an EMPTY shape — so the fields below can be
   // read without guarding every one.
   const { data: workspace, isLoading: workspaceLoading } =
-    useAssetWorkspace(asset?.id ?? null, asset?.symbol ?? null, 'overview')
+    // Overview by focus, but it draws a real chart — so it needs the real
+    // history, not the twelve-day floor a chartless focus gets.
+    useAssetWorkspace(asset?.id ?? null, asset?.symbol ?? null, 'overview', { deepHistory: true })
   const { ratings, saveRating } = useAnalystRatings({ assetId: asset?.id })
   const { scales } = useRatingScales()
   const { saveContribution } = useContributions({ assetId: asset?.id })
@@ -357,6 +371,16 @@ export function ListRowExpansion({
 
   /** A mode that stopped being available must not leave a blank canvas. */
   const activeMode = availableModes.includes(mode) ? mode : 'overview'
+
+  /*
+   * Keep the row's height in step with what is actually showing.
+   *
+   * `activeMode` is itself a valid entry token, so this round-trips: the
+   * table stores it, hands it back as `entryColumnId`, and the effect above
+   * resolves it to the same mode. No oscillation, and clicking a different
+   * cell still wins because that writes a different entry.
+   */
+  useEffect(() => { onEntryChange?.(activeMode) }, [activeMode, onEntryChange])
 
   // ── Writes ───────────────────────────────────────────────────────────
 

@@ -240,6 +240,9 @@ export function ListTableView({
     // in AssetTableView. Passing it down avoids a per-row coverage read.
     coverage?: Array<{ analyst: string; team: string; isLead: boolean }>,
     entryColumnId?: string,
+    // Lets the inspector restate its entry when the reader switches mode, so
+    // the row re-measures. See `onEntryChange` in AssetTableView.
+    onEntryChange?: (entryColumnId: string) => void,
   ) => {
     return (
       <ListRowExpansion
@@ -250,6 +253,7 @@ export function ListTableView({
         canEdit={canEditRow(asset)}
         // The field the reader clicked. See `listRowModes`.
         entryColumnId={entryColumnId}
+        onEntryChange={onEntryChange}
         // Already batched for the whole list — the expansion reuses the same
         // sparkline and weight rather than issuing its own.
         signal={signalFor(asset.id)}

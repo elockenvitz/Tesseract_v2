@@ -383,6 +383,23 @@ interface AssetTableViewProps {
      * a double-click on the row body, or a keyboard expand.
      */
     entryColumnId?: string,
+    /**
+     * Restate the entry from inside the slot, so the row can be re-measured.
+     *
+     * A row's height comes from its ENTRY — the field that opened it — which
+     * is right at the moment of the click and wrong forever after, because an
+     * inspector with its own navigation changes what it is showing without
+     * the table hearing about it. Opening Lists on a rating and switching to
+     * the price chart left a chart-sized panel in a rating-sized row: the plot
+     * came out at 13:1, which looked like a broken component rather than a
+     * mis-sized one.
+     *
+     * Calling this with the entry token for whatever the slot now shows makes
+     * the table recompute `expandedRowHeightFor` and resize. Idempotent by
+     * construction: the token a slot reports maps back to the same view, so a
+     * slot that echoes its own state cannot oscillate.
+     */
+    onEntryChange?: (entryColumnId: string) => void,
   ) => React.ReactNode
   /**
    * Columns whose cells open the expanded row, keyed to the mode they mean.
@@ -770,10 +787,42 @@ export function AssetTableView({
   }, [])
   useEffect(() => {
     if (!tableEl) { setTableVisibleWidth(0); return }
-    const update = () => setTableVisibleWidth(tableEl.clientWidth)
+
+    /*
+     * The visible width is the SCROLLPORT's, which is not always this element.
+     *
+     * `clientWidth` is the visible width only when the element is the thing
+     * that scrolls. On Lists it is not: `fillHeight` is never passed, so
+     * `.pro-table-container` grows to its content in both axes and a page
+     * ancestor does the scrolling. `clientWidth` there is the table's full
+     * content width — 1,791px on a 1,568px window — and the expanded row,
+     * which is sized from this, rendered 223px wider than the screen. The
+     * inspector's rail hung off the right edge where it could only be reached
+     * by scrolling the table sideways, and the chart beside it stretched to
+     * fill a width nobody could see.
+     *
+     * So walk up to whatever actually clips horizontally and measure that.
+     * When this element IS the scrollport the walk stops immediately and the
+     * behaviour is unchanged, which is every other surface using this table.
+     */
+    const portOf = (el: HTMLElement): HTMLElement => {
+      for (let n: HTMLElement | null = el; n && n !== document.body; n = n.parentElement) {
+        const ox = getComputedStyle(n).overflowX
+        if (ox === 'auto' || ox === 'scroll' || ox === 'hidden') return n
+      }
+      return document.documentElement
+    }
+    const update = () => {
+      const port = portOf(tableEl)
+      // Never wider than the element itself: a narrow table inside a wide
+      // page should not have its expansion stretched out to the page.
+      setTableVisibleWidth(Math.min(tableEl.clientWidth, port.clientWidth))
+    }
     update()
     const ro = new ResizeObserver(update)
     ro.observe(tableEl)
+    const port = portOf(tableEl)
+    if (port !== tableEl && port instanceof HTMLElement) ro.observe(port)
     return () => ro.disconnect()
   }, [tableEl])
 
@@ -1611,6 +1660,34 @@ export function AssetTableView({
     const held = expandedMetricColumn
     return held && held.assetId === assetId ? held.columnId : undefined
   }, [expandedMetricColumn])
+
+  /**
+   * An open inspector restating what it is showing. See `onEntryChange`.
+   *
+   * Guarded on both the asset and the value so a slot that reports on every
+   * render cannot loop: an unchanged entry sets no state.
+   */
+  /*
+   * Cached per asset so the slot receives a STABLE function.
+   *
+   * A fresh arrow on every render is a new prop identity, and the slot puts
+   * this in an effect's dependency list — a new identity each render is an
+   * effect that runs each render, which is how a resize handshake becomes an
+   * infinite loop.
+   */
+  const entryReporters = useRef(new Map<string, (entry: string) => void>())
+  const reportEntryFor = useCallback((assetId: string) => {
+    const cached = entryReporters.current.get(assetId)
+    if (cached) return cached
+    const fn = (entry: string) => {
+      setExpandedMetricColumn(prev =>
+        prev && prev.assetId === assetId && prev.columnId === entry
+          ? prev
+          : { assetId, columnId: entry })
+    }
+    entryReporters.current.set(assetId, fn)
+    return fn
+  }, [])
 
 
   /*
@@ -3976,6 +4053,7 @@ export function AssetTableView({
                                       asset._rowId || asset.id,
                                       coverage,
                                       entryColumnFor(asset.id),
+                                      reportEntryFor(asset.id),
                                     )
                                   : renderMetricDetail(
                                       asset,
@@ -4868,6 +4946,7 @@ export function AssetTableView({
                                             asset._rowId || asset.id,
                                             coverage,
                                             entryColumnFor(asset.id),
+                                            reportEntryFor(asset.id),
                                           )
                                         : renderMetricDetail(
                                             asset,
