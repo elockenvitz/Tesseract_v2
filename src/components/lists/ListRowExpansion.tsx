@@ -651,6 +651,8 @@ export function ListRowExpansion({
                 spot={displaySpot} changePct={changePct} target={target} upsidePct={upsidePct}
                 oneMonthPct={oneMonthPct}
                 closes={signal?.closes ?? null}
+                // Overview's thumbnail is the door to the real chart.
+                onOpenMarket={() => setMode('market')}
                 weightPct={weightPct} shares={primaryPosition?.shares ?? null}
                 bookName={primaryPosition?.portfolioName ?? signal?.bookName}
                 proposedWeightPct={signal?.idea?.proposedWeight ?? null}
@@ -708,7 +710,15 @@ export function ListRowExpansion({
             )}
             {activeMode === 'valuation' && (
               <ValuationMode
+                symbol={asset.symbol}
                 spot={displaySpot} target={target} upsidePct={upsidePct} rungs={rungs}
+                /*
+                 * The same history Market reads, so the scenario rungs are
+                 * drawn as bands on the price scale rather than as ticks on a
+                 * bare rule. A scenario is only assessable against where the
+                 * stock has actually traded.
+                 */
+                series={history?.length ? history : null}
                 weightPct={weightPct}
                 ratingValue={rating?.rating_value ?? null} ratingColor={ratingColor}
                 conviction={rating?.conviction ?? null}

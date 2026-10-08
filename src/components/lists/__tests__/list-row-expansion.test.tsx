@@ -285,6 +285,67 @@ describe('the clicked field decides the mode', () => {
       openFrom('list_market', { signal: { ...EMPTY_SIGNAL, closes: null } })
       expect(screen.getByText('No price history on file.')).toBeInTheDocument()
     })
+
+    /**
+     * Nothing stands above the chart.
+     *
+     * Market opened with three hero figures — Last, 1 month, Range — stacked
+     * ABOVE the plot, which cost about a third of a fixed-height panel to
+     * restate what `PriceContext` already draws in its own header: the last
+     * price and today's change. The chart came out roughly 1,100 × 230, where
+     * a 3% move is a flat line.
+     *
+     * This asserts the SHAPE, not the absence of the words: `1 month` and
+     * `Range` still exist, in the rail. What must never come back is a
+     * `Last` figure, because that one is pure duplication of the readout.
+     */
+    it('does not restate the chart readout above the chart', () => {
+      full()
+      hooks.workspace.history = dated(120)
+      openFrom('list_market', { signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
+      expect(screen.getByTestId('price-readout')).toBeInTheDocument()
+      expect(screen.queryByText('Last')).not.toBeInTheDocument()
+      // The two facts the chart's header does NOT carry survive, in the rail.
+      expect(screen.getByText('1 month')).toBeInTheDocument()
+      expect(screen.getByText('Range')).toBeInTheDocument()
+    })
+
+    /**
+     * Valuation draws its scenarios on the price history.
+     *
+     * The rungs were ticks on a bare 26px rule, which says where each case
+     * sits relative to the others and nothing about whether any of them is
+     * plausible. `PriceContext` already places a price level as a labelled
+     * band on its own scale, so the rungs go there — a bear case is only
+     * assessable against where the stock has actually traded.
+     */
+    it('draws the scenario rungs as bands on the real chart', () => {
+      full()
+      hooks.workspace.history = dated(120)
+      hooks.workspace.spot = 100
+      hooks.workspace.target = 130
+      hooks.workspace.ladder = {
+        assetId: 'a-aapl', symbol: 'AAPL', companyName: null, valid: true, reason: '',
+        updatedAt: '2026-10-01T00:00:00Z',
+        cases: [
+          { id: 'c1', scenarioId: 's1', name: 'Downside', price: 80, probability: 0.25, timeframe: null, reasoning: null, userId: null },
+          { id: 'c2', scenarioId: 's2', name: 'Street beat', price: 130, probability: 0.5, timeframe: null, reasoning: null, userId: null },
+        ],
+      }
+      openFrom('list_valuation')
+      expect(currentMode()).toBe('valuation')
+      // The chart's own range control — proof this is PriceContext and not the
+      // static axis fallback.
+      expect(screen.getByRole('button', { name: '3M' })).toBeInTheDocument()
+      /*
+       * One band per distinct level, never two for the same number.
+       *
+       * `Street beat` is priced at the target, so it must not be drawn as both
+       * a `target` band and a `case` band: two dashed rules at the same y with
+       * two labels fighting for the same pixels. Downside + the target = 2.
+       */
+      expect(screen.getAllByTestId('price-band')).toHaveLength(2)
+    })
   })
 
   it('re-enters on the newly clicked field while the row stays open', () => {
@@ -316,6 +377,23 @@ describe('the clicked field decides the mode', () => {
     // Opened on Position, but this name is not held.
     openFrom('list_exposure')
     expect(currentMode()).toBe('overview')
+  })
+
+  /**
+   * Overview's thumbnail is a DOOR, not a chart.
+   *
+   * The Market band in Overview is about 170px wide. An interactive
+   * `PriceContext` needs room for range chips, a readout and an axis and would
+   * get none of them there, so the shape stays flat — but it must still lead
+   * somewhere, because a picture of a price that cannot be interrogated is the
+   * thing the reader is being asked to interrogate.
+   */
+  it('opens Market from the Overview price thumbnail', async () => {
+    full()
+    openFrom('ticker', { signal: { ...EMPTY_SIGNAL, closes: [100, 103, 99, 107] } })
+    expect(currentMode()).toBe('overview')
+    await userEvent.click(screen.getByTestId('overview-open-chart'))
+    expect(currentMode()).toBe('market')
   })
 
   it('lets the reader move between modes without closing the row', async () => {

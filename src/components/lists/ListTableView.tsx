@@ -159,9 +159,26 @@ export function ListTableView({
      * shrinking them buys dead space at the bottom in exchange for an inner
      * scrollbar, which is the worse trade.
      */
+    /*
+     * Market and Valuation get MORE than the budget, because a chart is the
+     * one piece of content whose usefulness is a function of its height.
+     *
+     * Their panels are a single full-width interactive chart. At the shared
+     * height the plot measured 1,074 × 139 on a 1,456px window — better than
+     * 7:1, the aspect ratio of a banner, where a 3% move is a flat line and
+     * the crosshair has no vertical room to resolve anything.
+     *
+     * Half again of vertical, with a wider rail taking width off the other
+     * axis, brings the plot to roughly 4:1. That is still wide — a price
+     * chart is a wide object — but it is the band where movement reads as
+     * movement rather than as a horizon. Every other mode is text and
+     * tables, which gain nothing from the extra and would show it as dead
+     * space at the bottom.
+     */
     const share: Record<string, number> = {
-      overview: 1, case: 1, market: 1, position: 1,
-      valuation: 0.92,
+      overview: 1, case: 1, position: 1,
+      market: 1.5,
+      valuation: 1.45,
       work: 0.8,
     }
     const mode = modeForEntryColumn(entry)

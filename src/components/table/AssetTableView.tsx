@@ -1821,20 +1821,47 @@ export function AssetTableView({
       if (!container) return
 
       /*
-       * Measured from the virtualiser's own cache, which covers EVERY index —
-       * not from `getVirtualItems()`, which only covers the rendered window.
+       * ── Whichever element actually scrolls ──────────────────────────────
        *
-       * The window path had a fallback that called `scrollToIndex` and bailed,
-       * admitting "the next keystroke will correct any final offset". That is
-       * the stutter: one keystroke moved the focus and left the scroll wrong,
-       * and the correction only arrived if the reader pressed again. Reading
-       * the cache means every keystroke lands in one synchronous assignment,
-       * whether the destination was rendered or not.
+       * This used to assign `container.scrollTop` unconditionally. That only
+       * works when `.pro-table-container` is the scrollport, which it is ONLY
+       * under `fillHeight` — and the List surface never passes it. There the
+       * container grows to its content and the PAGE scrolls, so every
+       * assignment was a no-op and arrowing past the last visible row moved
+       * the focus off screen with no scroll at all.
+       *
+       * The browser already knows which ancestor scrolls, so for the common
+       * single-step case the row element is asked directly. `block: 'nearest'`
+       * is the minimal correction — a no-op when the row is already visible,
+       * so holding an arrow across visible rows does not drag the viewport.
        */
-      const measured = rowVirtualizer.measurementsCache?.[rowIndex]
-      const item = measured
+      const rowEl = container.querySelector<HTMLElement>(`[data-row-index="${rowIndex}"]`)
+      if (rowEl) {
+        rowEl.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+        return
+      }
+
+      /*
+       * The row is not mounted — a jump past the overscan window (Home, End,
+       * PageDown). Measure instead, from the virtualiser's cache, which covers
+       * EVERY index rather than only the rendered ones.
+       *
+       * Only meaningful when the container is genuinely scrollable; when the
+       * page is the scrollport there is nothing to measure against, so hand it
+       * to the virtualiser and let it mount the row.
+       */
+      const scrolls = container.scrollHeight > container.clientHeight + 1
+      if (!scrolls) {
+        rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
+        return
+      }
+
+      const item = rowVirtualizer.measurementsCache?.[rowIndex]
         ?? rowVirtualizer.getVirtualItems().find(i => i.index === rowIndex)
-      if (!item) return
+      if (!item) {
+        rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
+        return
+      }
 
       const headerEl = container.querySelector<HTMLElement>('.pro-table-header')
       const headerHeight = headerEl?.offsetHeight ?? 0
