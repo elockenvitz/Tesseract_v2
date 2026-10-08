@@ -1531,9 +1531,15 @@ export function AssetTableView({
     // above can tell a layout the reader chose from one a stale baseline chose
     // for them.
     try {
-      localStorage.setItem(storageKey, JSON.stringify(serializeColumns(columns, columnPresetVersion)))
+      // `baseColumns` goes in too: the next preset bump diffs against it to
+      // tell what the reader actually chose from what the default happened to
+      // be. See `columnPersistence`.
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify(serializeColumns(columns, columnPresetVersion, baseColumns)),
+      )
     } catch (e) { console.warn('Failed to save columns:', e) }
-  }, [columns, storageKey, columnPresetVersion])
+  }, [columns, storageKey, columnPresetVersion, baseColumns])
 
   // Single row expansion - only one row can be expanded at a time
   const toggleRowExpansion = useCallback((assetId: string) => {

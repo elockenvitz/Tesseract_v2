@@ -722,7 +722,20 @@ export function OverviewMode(p: {
               * band, never a heading of its own.
               */}
             {p.listFieldsSlot && (
-              <div className="mt-3 pt-2.5 border-t border-gray-900/[0.05] dark:border-white/[0.06]">
+              <div className={clsx(
+                'mt-3 pt-2.5 border-t border-gray-900/[0.05] dark:border-white/[0.06]',
+                /*
+                 * Subordinate by construction, not by discipline.
+                 *
+                 * Scaled down and dimmed until touched: status, owner and tags
+                 * are facts about THIS LIST, not about the investment, and the
+                 * band above them is the synthesis the mode exists for. They
+                 * come back to full presence on hover and on keyboard focus, so
+                 * the demotion costs nothing to anyone actually using them.
+                 */
+                'origin-top-left scale-[0.92] opacity-60',
+                'transition-opacity hover:opacity-100 focus-within:opacity-100',
+              )}>
                 {p.listFieldsSlot}
               </div>
             )}
