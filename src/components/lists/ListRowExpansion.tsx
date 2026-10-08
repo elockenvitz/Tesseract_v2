@@ -50,6 +50,7 @@ import { ListTagsCell } from './ListTagsCell'
 import {
   OverviewMode, MarketMode, CaseMode, ValuationMode, PositionMode, WorkMode,
   ModeSkeleton, ModeLayout, ExpansionShell, Label, PrimaryButton, QuietButton,
+  VerdictBand,
   type WorkShape, type LadderRung,
 } from './ListModeViews'
 import {
@@ -252,15 +253,15 @@ export function ListRowExpansion({
    * idea date. Nothing is synthesised and nothing is dated by guess.
    */
   const chartMarkers = useMemo(() => {
-    const out: Array<{ date: string; label: string; kind: 'event' }> = []
-    if (caseWrittenAt) out.push({ date: caseWrittenAt, label: 'Case written', kind: 'event' })
+    const out: Array<{ date: string; label: string; kind: 'case' | 'research' | 'idea' }> = []
+    if (caseWrittenAt) out.push({ date: caseWrittenAt, label: 'Case written', kind: 'case' })
     for (const c of (evidence ?? []).slice(0, 4)) {
-      out.push({ date: c.createdAt, label: c.title || 'Research', kind: 'event' })
+      out.push({ date: c.createdAt, label: c.title || 'Research', kind: 'research' })
     }
     const raised = signal?.idea?.createdAt
     if (raised) {
       const dir = (signal?.idea?.direction ?? '').toUpperCase()
-      out.push({ date: raised, label: dir ? `${dir} raised` : 'Idea raised', kind: 'event' })
+      out.push({ date: raised, label: dir ? `${dir} raised` : 'Idea raised', kind: 'idea' })
     }
     return out
   }, [caseWrittenAt, evidence, signal?.idea?.createdAt, signal?.idea?.direction])
@@ -661,6 +662,31 @@ export function ListRowExpansion({
         modes={availableModes.map(m => ({ id: m, label: MODE_LABEL[m] }))}
         activeMode={activeMode}
         onModeChange={m => setMode(m as ListRowMode)}
+        /*
+         * The desk's stance, stated once above every mode.
+         *
+         * Identical in all six — the view does not change because the reader
+         * clicked a tab — which is what lets each mode below be evidence
+         * rather than another arrangement of the same five figures.
+         */
+        lead={
+          <VerdictBand
+            ratingValue={rating?.rating_value ?? null}
+            ratingColor={ratingColor}
+            conviction={rating?.conviction ?? null}
+            target={target}
+            upsidePct={upsidePct}
+            weightPct={weightPct}
+            shares={primaryPosition?.shares ?? null}
+            bookName={primaryPosition?.portfolioName ?? signal?.bookName}
+            bookCount={signal?.bookCount ?? (positions?.length ?? null)}
+            workLabel={signal?.work.tier === 'clear' ? null : signal?.work.label || null}
+            workSince={signal?.idea?.createdAt ?? null}
+            awaitingDecision={signal?.work.tier === 'decision'}
+            ideaLabel={ideaLabel}
+            caseWrittenAt={caseWrittenAt}
+          />
+        }
       >
       <div className="h-full min-h-0">
         {workspaceLoading ? (
@@ -711,7 +737,7 @@ export function ListRowExpansion({
                  * same `useAssetWorkspace` call this mode already makes.
                  */
                 series={history?.length ? history : null}
-                markers={chartMarkers}
+                chartEvents={chartMarkers}
                 footer={footerFor('market')}
               />
             )}

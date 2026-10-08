@@ -41,8 +41,8 @@ import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import { Sparkline } from '../signals/Sparkline'
 import {
-  PriceContext, type PricePoint, type PriceMarker, type PriceBand, type RangeKey,
-} from '../signals/PriceContext'
+  PriceChart, type PricePoint, type PriceEvent, type PriceLevel,
+} from '../charts/PriceChart'
 import { RatingPill, CoverageChip } from './ListRowAtoms'
 import { SECTION_LABEL } from '../../lib/desktop-research/model'
 import { stageLabel } from '../../lib/lists/work-state'
@@ -148,6 +148,158 @@ export function StatRow({
         {value}
       </span>
     </div>
+  )
+}
+
+/**
+ * The investment verdict, as a sentence.
+ *
+ * ── Why a sentence and not more figures ───────────────────────────────────
+ *
+ * Every mode used to open with a row of labelled figures, and a labelled
+ * figure is a field: it states a value and leaves the reader to assemble the
+ * position. Six modes of that is a form with six tabs, which is what made the
+ * inspector feel like a database row rather than an opinion.
+ *
+ * What a reader actually wants on opening a name is the desk's current stance
+ * in one breath — what we believe, what we think it is worth, what we own,
+ * and what is outstanding. That is a sentence, so it is written as one. The
+ * numbers inside it stay tabular and heavy so the line is still scannable;
+ * the connective tissue is quiet so it reads rather than tabulates.
+ *
+ * Every clause is a stored field and a clause with nothing behind it is not
+ * written. A name with no rating and no position produces "Not yet rated.",
+ * which is the honest verdict rather than a row of em-dashes.
+ *
+ * It sits above the mode body in `ExpansionShell`, identical in all six
+ * modes: the stance does not change because the reader clicked a tab, and
+ * repeating it is what lets each mode below be pure evidence.
+ */
+export function VerdictBand(p: {
+  ratingValue: string | null
+  ratingColor: string | null
+  conviction: 'low' | 'medium' | 'high' | null
+  target: number | null
+  upsidePct: number | null
+  weightPct: number | null
+  shares?: number | null
+  bookName?: string | null
+  bookCount?: number | null
+  /** `workStateFor`'s own words — the row and the verdict say the same thing. */
+  workLabel?: string | null
+  workSince?: string | null
+  awaitingDecision?: boolean
+  /** The open recommendation, for a caller with no work signal to hand. */
+  ideaLabel?: string | null
+  caseWrittenAt?: string | null
+}) {
+  const num = 'font-semibold tabular-nums text-gray-900 dark:text-gray-50'
+  const quiet = 'text-gray-500 dark:text-gray-400'
+
+  const position = p.weightPct != null
+    ? `${p.weightPct.toFixed(2)}%`
+    : p.shares != null ? `${p.shares.toLocaleString()} sh` : null
+  const book = p.bookName
+    ? (p.bookCount && p.bookCount > 1 ? `${p.bookName} +${p.bookCount - 1}` : p.bookName)
+    : null
+
+  const clauses: React.ReactNode[] = []
+
+  if (p.ratingValue || p.conviction) {
+    clauses.push(
+      <span key="view" className="inline-flex items-baseline gap-1.5">
+        {p.ratingValue && <RatingPill value={p.ratingValue} color={p.ratingColor} />}
+        {p.conviction && (
+          <span className={quiet}>
+            {p.ratingValue ? 'at ' : ''}<span className="font-semibold text-gray-700 dark:text-gray-200">{p.conviction}</span> conviction
+          </span>
+        )}
+      </span>,
+    )
+  }
+
+  if (p.target != null) {
+    clauses.push(
+      <span key="tgt" className={quiet}>
+        worth <span className={num}>{money(p.target)}</span>
+        {p.upsidePct != null && (
+          <>
+            {', '}
+            <span className={clsx(
+              'font-semibold tabular-nums',
+              p.upsidePct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+            )}>{pct(p.upsidePct)}</span>
+            {' from here'}
+          </>
+        )}
+      </span>,
+    )
+  }
+
+  /*
+   * "not held" is a clause, not a verdict.
+   *
+   * It only earns a place in the sentence when there is a sentence: a name
+   * with no rating, no target, no position and no open work should fall
+   * through to the empty state below rather than produce a two-word line
+   * reading "not held", which states the least interesting of the four
+   * absences and implies the other three were checked and omitted.
+   */
+  const stated = clauses.length > 0
+  if (position) {
+    clauses.push(
+      <span key="pos" className={quiet}>
+        <span className={num}>{position}</span>{book ? <> of {book}</> : ' held'}
+      </span>,
+    )
+  } else if (stated) {
+    clauses.push(<span key="pos" className={quiet}>not held</span>)
+  }
+
+  if (p.awaitingDecision) {
+    clauses.push(
+      <span key="work" className="font-semibold text-primary-700 dark:text-primary-300">
+        awaiting a decision
+        {p.workSince && (
+          <span className="font-normal text-primary-600/80 dark:text-primary-400/80">
+            {' '}since {formatDistanceToNow(new Date(p.workSince))} ago
+          </span>
+        )}
+      </span>,
+    )
+  } else if (p.workLabel) {
+    clauses.push(<span key="work" className="font-medium text-amber-700 dark:text-amber-300">{p.workLabel}</span>)
+  } else if (p.ideaLabel) {
+    // An open recommendation is part of the stance even where no work signal
+    // reached this caller — mobile, and the fixture gallery.
+    clauses.push(<span key="work" className="font-medium text-gray-700 dark:text-gray-200">{p.ideaLabel}</span>)
+  }
+
+  if (!clauses.length) {
+    return (
+      <p className="text-[13.5px] italic text-gray-400 dark:text-gray-500" data-testid="verdict-band">
+        Not yet rated, and not held. Nothing has been decided about this name.
+      </p>
+    )
+  }
+
+  return (
+    <p
+      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-[13.5px] leading-relaxed"
+      data-testid="verdict-band"
+    >
+      {clauses.map((c, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <span className="text-gray-300 dark:text-gray-600" aria-hidden>·</span>}
+          {c}
+        </React.Fragment>
+      ))}
+      {p.caseWrittenAt && (
+        <span className="ml-1 text-[11.5px] text-gray-400 dark:text-gray-500">
+          case written {formatDistanceToNow(new Date(p.caseWrittenAt), { addSuffix: true })}
+        </span>
+      )}
+    </p>
   )
 }
 
@@ -410,8 +562,21 @@ export function ExpansionShell({
         </nav>
       </header>
 
-      {/* ── The headline fact, where a mode has one ───────────────────── */}
-      {lead && <div className="flex-shrink-0 pb-3">{lead}</div>}
+      {/*
+        * ── The verdict, above every mode ──────────────────────────────
+        *
+        * Identical in all six: the desk's stance does not change because
+        * the reader clicked a tab. Carrying it here is what lets each mode
+        * below be evidence rather than another arrangement of the same
+        * figures — Market is a chart, Case is the writing, Position is the
+        * books, and none of them has to re-answer "so what do we think".
+        */}
+      {lead && (
+        <div className="flex-shrink-0 border-b border-gray-900/[0.07] pb-2.5 dark:border-white/10">
+          {lead}
+        </div>
+      )}
+      {lead && <div className="h-3 flex-shrink-0" />}
 
       <div className="flex-1 min-h-0">{children}</div>
 
@@ -574,263 +739,134 @@ export function OverviewMode(p: {
   listFieldsSlot?: React.ReactNode
   footer?: React.ReactNode
 }) {
-  const lead = p.writtenCaseSections[0]
   const unread = p.changes.filter(c => c.isNewSinceReview)
-  const positionValue = p.weightPct != null
-    ? `${p.weightPct.toFixed(2)}%`
-    // A weight we cannot derive is not an absent position. Shares are the
-    // honest fallback; nothing at all is the honest empty.
-    : p.shares != null ? `${p.shares.toLocaleString()} sh` : null
 
-  const proposing = p.proposedWeightPct != null
-  const scaleMax = proposing && p.weightPct != null
-    ? Math.max(p.proposedWeightPct!, p.weightPct) * 1.5 || 1
-    : 1
-  const at = (n: number) => Math.min(100, (n / scaleMax) * 100)
+  /** Divided by one hairline each, never by a box: the columns are one object. */
+  const band ='min-w-0 border-l border-gray-900/[0.06] dark:border-white/[0.07] pl-4 first:border-0 first:pl-0'
 
   /*
-   * Five bands, left to right, in the order a reader asks.
+   * Overview is the ARGUMENT, not the dashboard.
    *
-   * Overview was two stacked sections over a rail, which answered "what do we
-   * believe" twice and "what do we own" not at all until the eye reached the
-   * far column. The question this mode exists for — what is the STATE of this
-   * name — is five short answers, and five short answers belong side by side
-   * where they are taken in at once rather than read in sequence.
+   * It used to be five bands — Market, Investment view, Position, The case,
+   * Work — which was a readable arrangement of the same five numbers the
+   * collapsed row already shows, one row above. Opening a security to be told
+   * again what its price and weight are is not interrogation; it is the row,
+   * larger.
    *
-   * Divided by one hairline each, never by a box: the bands are one object.
+   * Those five facts are now the verdict sentence that stands above every
+   * mode, stated once. What is left for Overview is the thing the row cannot
+   * carry and the reason the desk holds a view at all: the written case —
+   * thesis, where we differ, risks — beside what has changed since anyone
+   * last looked at it. Three columns of somebody's reasoning, not three
+   * columns of fields.
+   *
+   * An unwritten section still gets its column and says so. A case with a
+   * thesis and no risks is a real and important state, and collapsing the
+   * column hides exactly the gap worth seeing.
    */
-  const band = 'min-w-0 border-l border-gray-900/[0.06] dark:border-white/[0.07] pl-4 first:border-0 first:pl-0'
+  const caseColumns = p.writtenCaseSections.length
+    ? p.writtenCaseSections.slice(0, 3)
+    : []
 
   return (
     <ModeLayout
       footer={p.footer}
+      railWidth="md"
       main={
-        <div
-          data-testid="overview-bands"
-          className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,0.8fr)_minmax(0,0.95fr)_minmax(0,1.5fr)_minmax(0,1.15fr)] gap-x-4"
-        >
-
-          {/* ── Market ─────────────────────────────────────────── */}
-          <div className={band}>
-            <Label>Market</Label>
-            <div className="mt-1.5 text-[20px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-gray-900 dark:text-gray-50">
-              {p.spot != null ? money(p.spot) : '—'}
-            </div>
-            <div className="mt-1.5 flex items-baseline gap-2.5 text-[11.5px] font-semibold tabular-nums">
-              {p.changePct != null && (
-                <span className={toneOf(p.changePct) === 'up'
-                  ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                  {pct(p.changePct)} today
-                </span>
-              )}
-              {p.oneMonthPct != null && (
-                <span className={toneOf(p.oneMonthPct) === 'up'
-                  ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                  {pct(p.oneMonthPct)} 1M
-                </span>
-              )}
-            </div>
-            {/*
-              * The thumbnail is a DOOR to the chart, not a chart.
-              *
-              * This band is about 170px wide. An interactive `PriceContext`
-              * needs room for range chips, a readout and an axis, and at this
-              * width it would get none of them — a crosshair over 170px of
-              * 36px-tall path points at nothing. So the shape stays flat and
-              * the whole thing becomes the control that opens Market, where
-              * the real chart has the width and height to be interrogated.
-              * Pressable, focusable, and labelled for a screen reader;
-              * inert only when the caller has no mode to switch to.
-              */}
-            {p.closes && p.closes.length > 1 && (
-              p.onOpenMarket ? (
-                <button
-                  type="button"
-                  onClick={p.onOpenMarket}
-                  aria-label="Open the price chart"
-                  data-testid="overview-open-chart"
-                  className="group/spark mt-2 block w-full h-[36px] rounded-[3px] -mx-1 px-1 transition-colors hover:bg-gray-900/[0.04] dark:hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-500"
-                >
-                  <Sparkline points={p.closes} reference={p.target} />
-                </button>
-              ) : (
-                <div className="mt-2 h-[36px]">
-                  <Sparkline points={p.closes} reference={p.target} />
-                </div>
-              )
-            )}
-          </div>
-
-          {/* ── Investment view ────────────────────────────────── */}
-          <div className={band}>
-            <Label>Investment view</Label>
-            {p.ratingValue || p.conviction ? (
-              <>
-                <div className="mt-2">
-                  <ViewControl value={p.ratingValue} color={p.ratingColor} conviction={p.conviction} size="lg" />
-                </div>
-                {p.conviction && (
-                  <div className="mt-1.5 text-[10.5px] text-gray-400 dark:text-gray-500">
-                    {p.conviction} conviction
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="mt-2 text-[12px] text-gray-400 dark:text-gray-500 italic">Not rated</div>
-            )}
-            {p.target != null && (
-              <>
-                <div className="mt-3 flex items-baseline gap-2 tabular-nums">
-                  <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-50">{money(p.target)}</span>
-                  {p.upsidePct != null && (
-                    <span className={clsx(
-                      'text-[12px] font-semibold',
-                      p.upsidePct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
-                    )}>{pct(p.upsidePct)}</span>
+        <div data-testid="overview-bands" className="h-full min-h-0 flex flex-col">
+          {caseColumns.length ? (
+            <div className={clsx(
+              'min-h-0 flex-1 grid gap-x-5',
+              caseColumns.length === 1 ? 'grid-cols-1'
+                : caseColumns.length === 2 ? 'grid-cols-2'
+                  : 'grid-cols-3',
+            )}>
+              {caseColumns.map(s => (
+                <div key={s.key} className={band}>
+                  <SectionHeading>{SECTION_LABEL[s.key] ?? s.key}</SectionHeading>
+                  <p className="mt-2 text-[12.5px] leading-[1.5] text-gray-700 line-clamp-[7] dark:text-gray-300">
+                    {s.row?.content}
+                  </p>
+                  {s.row?.authorName && (
+                    <div className="mt-2 truncate text-[10.5px] text-gray-400 dark:text-gray-500">
+                      {s.row.authorName}
+                    </div>
                   )}
                 </div>
-                <div className="mt-1 text-[10.5px] text-gray-400 dark:text-gray-500">target</div>
-              </>
-            )}
-          </div>
-
-          {/* ── Position ───────────────────────────────────────── */}
-          <div className={band}>
-            <Label>Position</Label>
-            {positionValue ? (
-              <>
-                <div className="mt-1.5 flex items-baseline gap-2">
-                  <span className="text-[20px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-gray-900 dark:text-gray-50">
-                    {positionValue}
-                  </span>
-                  {proposing && (
-                    <>
-                      <ArrowRight className="h-3 w-3 text-gray-400 flex-shrink-0 self-center" />
-                      <span className="text-[20px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-emerald-600 dark:text-emerald-400">
-                        {p.proposedWeightPct!.toFixed(2)}%
-                      </span>
-                    </>
-                  )}
-                </div>
-                <div className="mt-1.5 text-[10.5px] text-gray-400 dark:text-gray-500 truncate">
-                  {[
-                    p.bookName,
-                    proposing && p.weightPct != null
-                      ? `${p.proposedWeightPct! >= p.weightPct ? '+' : ''}${Math.round((p.proposedWeightPct! - p.weightPct) * 100)}bps proposed`
-                      : null,
-                  ].filter(Boolean).join(' · ')}
-                </div>
-                {proposing && p.weightPct != null && (
-                  <div className="mt-2.5 h-[5px] rounded-full bg-gray-200 dark:bg-gray-700 relative overflow-hidden">
-                    <span className="absolute inset-y-0 left-0 bg-gray-800 dark:bg-gray-200 rounded-full"
-                      style={{ width: `${at(p.weightPct)}%` }} />
-                    {p.proposedWeightPct! > p.weightPct && (
-                      <span className="absolute inset-y-0 bg-emerald-500/50"
-                        style={{ left: `${at(p.weightPct)}%`, width: `${at(p.proposedWeightPct!) - at(p.weightPct)}%` }} />
-                    )}
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="mt-2 text-[12px] text-gray-400 dark:text-gray-500 italic">Not held</div>
-            )}
-          </div>
-
-          {/* ── The case ───────────────────────────────────────── */}
-          <div className={band}>
-            <Label>The case</Label>
-            {lead ? (
-              <>
-                <p className="mt-1.5 text-[12.5px] text-gray-700 dark:text-gray-300 leading-[1.45] line-clamp-4">
-                  {lead.row?.content}
-                </p>
-                <div className="mt-2 text-[10.5px] text-gray-400 dark:text-gray-500 truncate">
-                  {[
-                    lead.row?.authorName,
-                    p.caseWrittenAt && `written ${formatDistanceToNow(new Date(p.caseWrittenAt), { addSuffix: true })}`,
-                  ].filter(Boolean).join(' · ')}
-                </div>
-              </>
-            ) : (
-              <p className="mt-2 text-[12.5px] text-gray-400 dark:text-gray-500 italic">
-                No case written yet.
+              ))}
+            </div>
+          ) : (
+            /*
+             * An unwritten case is the single most actionable state in a
+             * list, so it is stated as a prompt rather than as an empty
+             * column. The footer already carries the button that writes one.
+             */
+            <div className="flex flex-1 flex-col justify-center">
+              <p className="text-[14px] font-semibold text-gray-700 dark:text-gray-200">
+                No case has been written for this name.
               </p>
-            )}
-          </div>
-
-          {/* ── Work ───────────────────────────────────────────── */}
-          <div className={band}>
-            <Label>Work</Label>
-            {/* `workLabel` is the row signal's own wording and leads where it
-                exists; an open idea is the fallback for a caller that has no
-                signal to hand (mobile, and the fixture gallery). */}
-            {(p.workLabel ?? p.ideaLabel) ? (
-              <>
-                <div className={clsx(
-                  'mt-1.5 text-[14px] font-semibold tracking-[-0.02em] leading-tight',
-                  p.awaitingDecision
-                    ? 'text-primary-800 dark:text-primary-300'
-                    : 'text-gray-900 dark:text-gray-50',
-                )}>
-                  {p.awaitingDecision ? 'Awaiting a decision' : (p.workLabel ?? p.ideaLabel)}
-                </div>
-                <div className="mt-1 text-[10.5px] text-gray-400 dark:text-gray-500 truncate">
-                  {(p.awaitingDecision ? p.ideaLabel ?? p.workLabel : p.workSecondary) ?? ''}
-                </div>
-              </>
-            ) : (
-              <div className="mt-2 text-[12px] text-gray-400 dark:text-gray-500 italic">
-                Nothing outstanding
-              </div>
-            )}
-            {unread.length > 0 ? (
-              <div className="mt-3">
-                <Label>Changed since review</Label>
-                <div className="mt-1.5">
-                  <EvidenceItemView item={unread[0]} />
-                </div>
-              </div>
-            ) : p.coverage && p.coverage.length > 0 ? (
-              <div className="mt-3">
-                <Label>Covered by</Label>
-                <div className="mt-1 space-y-0.5">
-                  {p.coverage.slice(0, 2).map((c, i) => (
-                    <CoverageChip key={`${c.analyst}-${i}`} analyst={c.analyst} team={c.team} isLead={c.isLead} />
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {/*
-              * The list's own fields, kept but demoted.
-              *
-              * Status, owner and tags are not investment state and have no
-              * band of their own — but Overview is the ONLY place they can be
-              * edited now that their columns are off the default line, and
-              * silently removing the write path would be a regression dressed
-              * as a simplification. One quiet row at the foot of the last
-              * band, never a heading of its own.
-              */}
-            {p.listFieldsSlot && (
-              <div className={clsx(
-                'mt-3 pt-2.5 border-t border-gray-900/[0.05] dark:border-white/[0.06]',
-                /*
-                 * Subordinate by construction, not by discipline.
-                 *
-                 * Scaled down and dimmed until touched: status, owner and tags
-                 * are facts about THIS LIST, not about the investment, and the
-                 * band above them is the synthesis the mode exists for. They
-                 * come back to full presence on hover and on keyboard focus, so
-                 * the demotion costs nothing to anyone actually using them.
-                 */
-                'origin-top-left scale-[0.92] opacity-60',
-                'transition-opacity hover:opacity-100 focus-within:opacity-100',
-              )}>
-                {p.listFieldsSlot}
-              </div>
-            )}
-          </div>
+              <p className="mt-1 text-[12.5px] text-gray-500 dark:text-gray-400">
+                Nothing records why the desk holds this view, what it disagrees with, or what would break it.
+              </p>
+            </div>
+          )}
         </div>
+      }
+      rail={
+        <>
+          {/*
+            * What changed, and who owns it.
+            *
+            * The rail is the only part of Overview that is not the case, and
+            * both things in it answer "is what I just read still current".
+            */}
+          <div>
+            <Label>{unread.length > 0 ? 'Changed since review' : 'Latest research'}</Label>
+            <div className="mt-1.5 space-y-2">
+              {p.changes.length > 0
+                ? p.changes.slice(0, 3).map(c => <EvidenceItemView key={c.id} item={c} />)
+                : <Quiet>Nothing filed since the case was written.</Quiet>}
+            </div>
+          </div>
+
+          {p.coverage && p.coverage.length > 0 && (
+            <div>
+              <Label>Covered by</Label>
+              <div className="mt-1 space-y-0.5">
+                {p.coverage.slice(0, 3).map((c, i) => (
+                  <CoverageChip key={`${c.analyst}-${i}`} analyst={c.analyst} team={c.team} isLead={c.isLead} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/*
+            * The list's own fields, kept but demoted.
+            *
+            * Status, owner and tags are not investment state — but Overview
+            * is the ONLY place they can be edited now that their columns are
+            * off the default line, and silently removing the write path would
+            * be a regression dressed as a simplification. The foot of the
+            * rail, never a heading of its own.
+            */}
+          {p.listFieldsSlot && (
+            <div className={clsx(
+              'border-t border-gray-900/[0.05] pt-2.5 dark:border-white/[0.06]',
+              /*
+               * Subordinate by construction, not by discipline.
+               *
+               * Scaled down and dimmed until touched: these are facts about
+               * THIS LIST, not about the investment. They come back to full
+               * presence on hover and on keyboard focus, so the demotion
+               * costs nothing to anyone actually using them.
+               */
+              'origin-top-left scale-[0.92] opacity-60',
+              'transition-opacity hover:opacity-100 focus-within:opacity-100',
+            )}>
+              {p.listFieldsSlot}
+            </div>
+          )}
+        </>
       }
     />
   )
@@ -873,9 +909,7 @@ export function MarketMode(p: {
    */
   series?: PricePoint[] | null
   /** Case written, research arrived, idea raised — drawn on the line. */
-  markers?: PriceMarker[]
-  /** Offered as the chart's expand control when the surface can host one. */
-  onExpandChart?: (activeRange: RangeKey | null) => void
+  chartEvents?: PriceEvent[]
   footer?: React.ReactNode
 }) {
   /*
@@ -967,16 +1001,12 @@ export function MarketMode(p: {
             */}
           {p.series && p.series.length > 1 ? (
             <div className="flex-1 min-h-0">
-              <PriceContext
+              <PriceChart
                 symbol={p.symbol ?? ''}
                 series={p.series}
-                bands={p.target != null ? [{ label: 'Target', price: p.target, kind: 'target' }] : []}
-                markers={p.markers ?? []}
+                levels={p.target != null ? [{ label: 'Target', price: p.target, kind: 'target' }] : []}
+                events={p.chartEvents ?? []}
                 initialRange="3M"
-                plot="fill"
-                // Research states a fact about the price; it does not grade it.
-                directionNeutral
-                onExpand={p.onExpandChart}
               />
             </div>
           ) : p.closes && p.closes.length > 1 ? (
@@ -1306,7 +1336,6 @@ export function ValuationMode(p: {
    * (mobile, the fixture gallery), which fall back to the bare price axis.
    */
   series?: PricePoint[] | null
-  onExpandChart?: (activeRange: RangeKey | null) => void
   footer?: React.ReactNode
 }) {
   const prices = [...p.rungs.map(r => r.price), p.spot, p.target]
@@ -1326,7 +1355,7 @@ export function ValuationMode(p: {
    * a bear case is only assessable against where the stock has actually
    * traded, which a standalone axis cannot show at all.
    */
-  const bands: PriceBand[] = []
+  const bands: PriceLevel[] = []
   if (p.target != null) bands.push({ label: 'Target', price: p.target, kind: 'target' })
   for (const r of p.rungs) {
     // The target is usually also a rung; one band per level, not two.
@@ -1344,14 +1373,11 @@ export function ValuationMode(p: {
         <div className="flex flex-col h-full min-h-0 gap-3">
           {hasChart ? (
             <div className="flex-1 min-h-0">
-              <PriceContext
+              <PriceChart
                 symbol={p.symbol ?? ''}
                 series={p.series!}
-                bands={bands}
+                levels={bands}
                 initialRange="1Y"
-                plot="fill"
-                directionNeutral
-                onExpand={p.onExpandChart}
               />
             </div>
           ) : p.rungs.length > 0 && lo != null ? (

@@ -303,11 +303,34 @@ describe('the clicked field decides the mode', () => {
       full()
       hooks.workspace.history = dated(120)
       openFrom('list_market', { signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
-      expect(screen.getByTestId('price-readout')).toBeInTheDocument()
+      expect(screen.getByTestId('price-chart-readout')).toBeInTheDocument()
       expect(screen.queryByText('Last')).not.toBeInTheDocument()
       // The two facts the chart's header does NOT carry survive, in the rail.
       expect(screen.getByText('1 month')).toBeInTheDocument()
       expect(screen.getByText('Range')).toBeInTheDocument()
+    })
+
+    /**
+     * The desktop chart, not the feed's.
+     *
+     * `PriceContext` draws into a non-uniformly stretched viewBox, which is
+     * right for a 92px feed card and cannot carry text, a circle or a crisp
+     * 1px rule at 1,050px. These are the things only a pixel-space chart can
+     * render, so their presence is the proof the right component is mounted.
+     */
+    it('draws gridlines, an axis and a crosshair readout', async () => {
+      full()
+      hooks.workspace.history = dated(120)
+      openFrom('list_market', { signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
+      const chart = screen.getByTestId('price-chart')
+      expect(within(chart).getByTestId('price-chart-line')).toBeInTheDocument()
+      expect(within(chart).getByTestId('price-chart-area')).toBeInTheDocument()
+      // Range chips are the chart's own, and only ranges the data can fill.
+      const chips = within(screen.getByTestId('price-chart-ranges'))
+        .getAllByRole('button').map(b => b.textContent)
+      expect(chips).toContain('1M')
+      expect(chips).toContain('3M')
+      expect(chips).not.toContain('1Y')
     })
 
     /**
@@ -334,17 +357,17 @@ describe('the clicked field decides the mode', () => {
       }
       openFrom('list_valuation')
       expect(currentMode()).toBe('valuation')
-      // The chart's own range control — proof this is PriceContext and not the
-      // static axis fallback.
+      // The chart's own range control — proof this is the real chart and not
+      // the static axis fallback.
       expect(screen.getByRole('button', { name: '3M' })).toBeInTheDocument()
       /*
-       * One band per distinct level, never two for the same number.
+       * One level per distinct price, never two for the same number.
        *
        * `Street beat` is priced at the target, so it must not be drawn as both
-       * a `target` band and a `case` band: two dashed rules at the same y with
-       * two labels fighting for the same pixels. Downside + the target = 2.
+       * a `target` level and a `case` level: two dashed rules at the same y
+       * with two labels fighting for the same pixels. Downside + target = 2.
        */
-      expect(screen.getAllByTestId('price-band')).toHaveLength(2)
+      expect(screen.getAllByTestId('price-chart-level')).toHaveLength(2)
     })
   })
 
@@ -380,20 +403,21 @@ describe('the clicked field decides the mode', () => {
   })
 
   /**
-   * Overview's thumbnail is a DOOR, not a chart.
+   * Overview carries no price thumbnail at all.
    *
-   * The Market band in Overview is about 170px wide. An interactive
-   * `PriceContext` needs room for range chips, a readout and an axis and would
-   * get none of them there, so the shape stays flat — but it must still lead
-   * somewhere, because a picture of a price that cannot be interrogated is the
-   * thing the reader is being asked to interrogate.
+   * It had one — a 36px sparkline in a 170px band — directly beneath the
+   * collapsed row's own sparkline for the same security. Two pictures of the
+   * same series, neither interrogable, an inch apart. The row keeps its
+   * sparkline and Market keeps the real chart; Overview's space goes to the
+   * written case, which is the thing the row genuinely cannot carry.
    */
-  it('opens Market from the Overview price thumbnail', async () => {
+  it('does not draw a second sparkline under the row’s own', () => {
     full()
     openFrom('ticker', { signal: { ...EMPTY_SIGNAL, closes: [100, 103, 99, 107] } })
     expect(currentMode()).toBe('overview')
-    await userEvent.click(screen.getByTestId('overview-open-chart'))
-    expect(currentMode()).toBe('market')
+    const body = screen.getByTestId('overview-bands')
+    expect(within(body).queryByTestId('overview-open-chart')).not.toBeInTheDocument()
+    expect(body.querySelector('svg')).toBeNull()
   })
 
   it('lets the reader move between modes without closing the row', async () => {
@@ -406,8 +430,17 @@ describe('the clicked field decides the mode', () => {
   })
 })
 
-describe('Overview shows only what exists', () => {
-  it('renders price, position, rating, target and upside when all are present', () => {
+/**
+ * The verdict band: the desk's stance, as a sentence, above every mode.
+ *
+ * These used to assert a five-band Overview — Market, Investment view,
+ * Position, The case, Work — which was a readable arrangement of the same
+ * five numbers the collapsed row already shows one row above. The facts did
+ * not move out of the product; they moved into one line that stands over all
+ * six modes, which is what frees Overview to be the written case.
+ */
+describe('the verdict states the stance in one line', () => {
+  it('reads rating, conviction, target, upside and position as a sentence', () => {
     hooks.workspace.spot = 170.5
     hooks.workspace.target = 200
     hooks.workspace.positions = [
@@ -419,28 +452,41 @@ describe('Overview shows only what exists', () => {
     hooks.scales = [{ id: 's1', values: [{ value: 'Buy', label: 'Buy', color: '#10b981', sort: 1 }] }]
 
     renderRow()
-    expect(screen.getByText('$170.50')).toBeInTheDocument()
-    expect(screen.getByText('5.14%')).toBeInTheDocument()
-    expect(screen.getByText('Buy')).toBeInTheDocument()
-    // Target and its upside sit inside Investment view, beside the rating —
-    // they are the same judgement priced, not a separate metrics strip.
-    expect(screen.getByText('$200.00')).toBeInTheDocument()
+    const verdict = within(screen.getByTestId('verdict-band'))
+    expect(verdict.getByText('Buy')).toBeInTheDocument()
+    expect(verdict.getByText('high')).toBeInTheDocument()
+    expect(verdict.getByText('$200.00')).toBeInTheDocument()
     // (200 - 170.5) / 170.5 = +17.3%
-    expect(screen.getByText('+17.3%')).toBeInTheDocument()
-    expect(screen.getByText('Investment view')).toBeInTheDocument()
+    expect(verdict.getByText('+17.3%')).toBeInTheDocument()
+    expect(verdict.getByText('5.14%')).toBeInTheDocument()
+    expect(screen.getByTestId('verdict-band').textContent).toContain('Tech Growth')
   })
 
-  it('omits facts entirely when the data is absent — no dashes, no placeholders', () => {
+  it('stands over every mode, not just Overview', async () => {
+    hooks.workspace.spot = 100
+    hooks.workspace.target = 130
+    renderRow()
+    const read = () => screen.getByTestId('verdict-band').textContent
+    const onOverview = read()
+    await userEvent.click(screen.getByRole('tab', { name: 'Case' }))
+    // Identical, not merely present: the stance does not change because the
+    // reader clicked a tab, which is the whole reason each mode below can be
+    // pure evidence.
+    expect(read()).toBe(onOverview)
+    await userEvent.click(screen.getByRole('tab', { name: 'Work' }))
+    expect(read()).toBe(onOverview)
+  })
+
+  it('says what is true rather than rendering a row of dashes', () => {
     renderRow()
     /*
-     * The bands are always named — they ARE the structure of the mode — but a
-     * band with nothing to say says so in words rather than rendering a dash
-     * or an empty figure under its heading.
+     * Nothing rated, nothing held, nothing decided is a real state and the
+     * honest rendering of it is a sentence — not five headings over five
+     * em-dashes.
      */
-    expect(screen.getByText('Not rated')).toBeInTheDocument()
-    expect(screen.getByText('Not held')).toBeInTheDocument()
-    expect(screen.getByText('No case written yet.')).toBeInTheDocument()
-    expect(screen.getByText('Nothing outstanding')).toBeInTheDocument()
+    expect(screen.getByTestId('verdict-band').textContent)
+      .toMatch(/Not yet rated, and not held/)
+    expect(screen.getByText('No case has been written for this name.')).toBeInTheDocument()
   })
 
   it('shows shares when a position exists but its weight is unknowable', () => {
@@ -598,24 +644,47 @@ describe('reviewing evidence is recorded, not just linked', () => {
   })
 })
 
-describe('Overview synthesises the three questions', () => {
-  it('names the three bands, in order', () => {
-    /*
-     * The bands ARE the structure. Overview used to be a metrics strip, a
-     * thesis, and a rail of list metadata, which gave owner/status/due/note
-     * more weight than the position and the open idea.
-     */
+describe('Overview is the written case, not a second dashboard', () => {
+  /**
+   * Overview must not restate the collapsed row.
+   *
+   * This is the invariant the five-band version violated: price, change,
+   * weight and rating are all visible in the row the reader just clicked, so
+   * repeating them an inch below is the row again, larger. They belong to the
+   * verdict line now, which is stated once for all six modes.
+   */
+  it('does not repeat the row’s own figures in its body', () => {
+    hooks.workspace.spot = 170.5
+    hooks.workspace.positions = [
+      { portfolioId: 'p1', portfolioName: 'Tech Growth', shares: 10, price: 170.5,
+        marketValue: 1705, weightPct: 5.14, avgCost: null, unrealisedGain: null,
+        unrealisedPct: null, asOf: null },
+    ]
     hooks.workspace.sections = [section('thesis', 'Services mix is underappreciated.')]
     renderRow()
-    // Scoped to the bands: the mode switch above them carries every mode name,
-    // so searching the whole panel finds the tab labels instead.
-    const text = screen.getByTestId('overview-bands').textContent ?? ''
-    const order = ['Market', 'Investment view', 'Position', 'The case', 'Work']
-    const at = order.map(b => text.indexOf(b))
-    for (let i = 0; i < at.length; i++) {
-      expect(at[i], `${order[i]} must be present`).toBeGreaterThanOrEqual(0)
-      if (i > 0) expect(at[i - 1], `${order[i - 1]} before ${order[i]}`).toBeLessThan(at[i])
+    const body = screen.getByTestId('overview-bands').textContent ?? ''
+    for (const heading of ['Market', 'Investment view', 'Position']) {
+      expect(body, `${heading} belongs to the verdict line, not the body`).not.toContain(heading)
     }
+    // The weight is stated — once, in the verdict.
+    expect(screen.getByTestId('verdict-band').textContent).toContain('5.14%')
+    expect(body).not.toContain('5.14%')
+  })
+
+  it('gives each written section of the case its own column', () => {
+    hooks.workspace.sections = [
+      section('thesis', 'Services mix is underappreciated.'),
+      section('where_different', 'Street models hardware cyclicality only.'),
+      section('risks_to_thesis', 'China exposure.'),
+    ]
+    renderRow()
+    const body = screen.getByTestId('overview-bands')
+    // The whole argument, side by side — the reader is not sent to another
+    // tab to find out what would break the thesis.
+    for (const key of ['thesis', 'where_different', 'risks_to_thesis'] as const) {
+      expect(within(body).getByText(SECTION_LABEL[key])).toBeInTheDocument()
+    }
+    expect(within(body).getByText(/China exposure/)).toBeInTheDocument()
   })
 
   it('leads the belief band with the thesis and its author', () => {
@@ -642,35 +711,28 @@ describe('Overview synthesises the three questions', () => {
     expect(titles[0]).toBe('New since review')
   })
 
-  it('says nothing is new rather than leaving the band blank', () => {
+  it('says nothing is new rather than leaving the rail blank', () => {
     hooks.workspace.sections = [section('thesis', 'Services mix.')]
     renderRow()
-    // Work is the band that reports what has changed; with nothing open and
-    // nothing unread it states the calm rather than leaving a heading alone.
-    expect(screen.getByText('Nothing outstanding')).toBeInTheDocument()
+    expect(screen.getByText('Nothing filed since the case was written.')).toBeInTheDocument()
   })
 
-  it('shows only the leading section, leaving the rest to Case mode', () => {
-    hooks.workspace.sections = [
-      section('thesis', 'A view.'),
-      section('where_different', 'A differentiator.'),
-      section('risks_to_thesis', 'China exposure.'),
-    ]
-    renderRow()
-    // Overview orients; it is not the whole case. Risks are reachable one tab
-    // away rather than crammed into a fixed-height summary.
-    expect(screen.queryByText(SECTION_LABEL.risks_to_thesis)).not.toBeInTheDocument()
-  })
-
+  /**
+   * An unwritten case is a prompt, not an empty column.
+   *
+   * It is the single most actionable state a list surfaces — nothing records
+   * why the desk holds the view — so it is stated in words, and the footer
+   * already carries the button that writes one.
+   */
   it('says so plainly when no case is written', () => {
     renderRow()
-    expect(screen.getByText('No case written yet.')).toBeInTheDocument()
+    expect(screen.getByText('No case has been written for this name.')).toBeInTheDocument()
   })
 
   it('ignores a section that exists but is blank', () => {
     hooks.workspace.sections = [section('thesis', '   ')]
     renderRow()
-    expect(screen.getByText('No case written yet.')).toBeInTheDocument()
+    expect(screen.getByText('No case has been written for this name.')).toBeInTheDocument()
   })
 })
 
@@ -758,10 +820,14 @@ describe('Position and Valuation modes', () => {
     ]
     openFrom('list_exposure')
     expect(currentMode()).toBe('position')
-    const names = screen.getAllByText(/Big Book|Small Book/).map(n => n.textContent)
+    // Scoped to the mode body: the verdict line above it also names the
+    // largest book, so an unscoped query finds that first.
+    const body = screen.getByTestId('list-row-expansion')
+    const names = within(body).getAllByText(/^(Big|Small) Book$/).map(n => n.textContent)
     expect(names[0]).toBe('Big Book')
-    // Twice on purpose: once as the headline weight, once in the book rows.
-    expect(screen.getAllByText('6.10%').length).toBe(2)
+    // Twice in the mode itself — the headline weight and the book row — plus
+    // once more in the verdict line above it.
+    expect(screen.getAllByText('6.10%').length).toBe(3)
     expect(screen.getByText('Largest weight')).toBeInTheDocument()
     expect(screen.getByText('+12.5%')).toBeInTheDocument()
   })
@@ -796,15 +862,15 @@ describe('Position and Valuation modes', () => {
 })
 
 describe('ownership and list fields stay reachable', () => {
-  it('shows the active idea in Overview too', () => {
+  it('names the open recommendation in the verdict', () => {
     hooks.workspace.liveIdeas = [
       { id: 'i1', action: 'buy', stage: 'deciding', rationale: null, portfolioName: 'Tech Growth' },
     ]
     renderRow()
-    // One figure, not an action label and a stage chip: an open idea is one
-    // fact about the security.
-    // The Work band names it. An open idea is one fact about the security.
-    expect(screen.getByText('BUY · deciding')).toBeInTheDocument()
+    // An open idea is part of the stance, so it is a clause of the verdict
+    // rather than a band of its own — one fact about the security, stated
+    // once, wherever the reader happens to be.
+    expect(within(screen.getByTestId('verdict-band')).getByText('BUY · deciding')).toBeInTheDocument()
   })
 
   it('shows no Active fact when there is no idea', () => {
