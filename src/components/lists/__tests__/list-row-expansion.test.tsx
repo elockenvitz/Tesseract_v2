@@ -297,19 +297,25 @@ describe('Overview shows only what exists', () => {
     expect(screen.getByText('$170.50')).toBeInTheDocument()
     expect(screen.getByText('5.14%')).toBeInTheDocument()
     expect(screen.getByText('Buy')).toBeInTheDocument()
-    // Target and its upside sit inside "What we believe", beside the view —
-    // they are the claim, not a separate metrics strip.
+    // Target and its upside sit inside Investment view, beside the rating —
+    // they are the same judgement priced, not a separate metrics strip.
     expect(screen.getByText('$200.00')).toBeInTheDocument()
     // (200 - 170.5) / 170.5 = +17.3%
     expect(screen.getByText('+17.3%')).toBeInTheDocument()
-    expect(screen.getByText('What we believe')).toBeInTheDocument()
+    expect(screen.getByText('Investment view')).toBeInTheDocument()
   })
 
   it('omits facts entirely when the data is absent — no dashes, no placeholders', () => {
     renderRow()
-    for (const label of ['Price', 'Position', 'View', 'Target', 'Upside']) {
-      expect(screen.queryByText(label)).not.toBeInTheDocument()
-    }
+    /*
+     * The bands are always named — they ARE the structure of the mode — but a
+     * band with nothing to say says so in words rather than rendering a dash
+     * or an empty figure under its heading.
+     */
+    expect(screen.getByText('Not rated')).toBeInTheDocument()
+    expect(screen.getByText('Not held')).toBeInTheDocument()
+    expect(screen.getByText('No case written yet.')).toBeInTheDocument()
+    expect(screen.getByText('Nothing outstanding')).toBeInTheDocument()
   })
 
   it('shows shares when a position exists but its weight is unknowable', () => {
@@ -475,11 +481,16 @@ describe('Overview synthesises the three questions', () => {
      * more weight than the position and the open idea.
      */
     hooks.workspace.sections = [section('thesis', 'Services mix is underappreciated.')]
-    const { container } = renderRow()
-    const text = container.textContent ?? ''
-    expect(text.indexOf('What we believe')).toBeGreaterThanOrEqual(0)
-    expect(text.indexOf('What we believe')).toBeLessThan(text.indexOf("What's happening"))
-    expect(text.indexOf("What's happening")).toBeLessThan(text.indexOf("What we're doing"))
+    renderRow()
+    // Scoped to the bands: the mode switch above them carries every mode name,
+    // so searching the whole panel finds the tab labels instead.
+    const text = screen.getByTestId('overview-bands').textContent ?? ''
+    const order = ['Market', 'Investment view', 'Position', 'The case', 'Work']
+    const at = order.map(b => text.indexOf(b))
+    for (let i = 0; i < at.length; i++) {
+      expect(at[i], `${order[i]} must be present`).toBeGreaterThanOrEqual(0)
+      if (i > 0) expect(at[i - 1], `${order[i - 1]} before ${order[i]}`).toBeLessThan(at[i])
+    }
   })
 
   it('leads the belief band with the thesis and its author', () => {
@@ -509,7 +520,9 @@ describe('Overview synthesises the three questions', () => {
   it('says nothing is new rather than leaving the band blank', () => {
     hooks.workspace.sections = [section('thesis', 'Services mix.')]
     renderRow()
-    expect(screen.getByText('Nothing new since the case was written.')).toBeInTheDocument()
+    // Work is the band that reports what has changed; with nothing open and
+    // nothing unread it states the calm rather than leaving a heading alone.
+    expect(screen.getByText('Nothing outstanding')).toBeInTheDocument()
   })
 
   it('shows only the leading section, leaving the rest to Case mode', () => {
@@ -665,7 +678,7 @@ describe('ownership and list fields stay reachable', () => {
     renderRow()
     // One figure, not an action label and a stage chip: an open idea is one
     // fact about the security.
-    expect(screen.getByText('Open idea')).toBeInTheDocument()
+    // The Work band names it. An open idea is one fact about the security.
     expect(screen.getByText('BUY · deciding')).toBeInTheDocument()
   })
 

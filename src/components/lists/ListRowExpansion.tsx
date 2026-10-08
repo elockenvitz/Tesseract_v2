@@ -226,6 +226,13 @@ export function ListRowExpansion({
     ? ((target - displaySpot) / displaySpot) * 100
     : null
 
+  /** The month, from the same series the sparkline draws. */
+  const oneMonthPct = useMemo(() => {
+    const c = signal?.closes
+    if (!c || c.length < 2 || !c[0]) return null
+    return ((c[c.length - 1] - c[0]) / c[0]) * 100
+  }, [signal?.closes])
+
   /** Today's move, where the asset row carries it. Never computed from a guess. */
   const changePct = useMemo(() => {
     const raw = asset?.change_percent ?? asset?.changePercent ?? null
@@ -617,11 +624,17 @@ export function ListRowExpansion({
             {activeMode === 'overview' && (
               <OverviewMode
                 spot={displaySpot} changePct={changePct} target={target} upsidePct={upsidePct}
+                oneMonthPct={oneMonthPct}
+                closes={signal?.closes ?? null}
                 weightPct={weightPct} shares={primaryPosition?.shares ?? null}
-                bookName={primaryPosition?.portfolioName}
+                bookName={primaryPosition?.portfolioName ?? signal?.bookName}
+                proposedWeightPct={signal?.idea?.proposedWeight ?? null}
                 ratingValue={rating?.rating_value ?? null} ratingColor={ratingColor}
                 conviction={rating?.conviction ?? null}
                 ideaLabel={ideaLabel}
+                workLabel={signal?.work.tier === 'clear' ? null : signal?.work.label || null}
+                workSecondary={signal?.work.secondary}
+                awaitingDecision={signal?.work.tier === 'decision'}
                 writtenCaseSections={writtenCaseSections}
                 changes={changes} caseWrittenAt={caseWrittenAt}
                 coverage={coverage}
@@ -656,6 +669,7 @@ export function ListRowExpansion({
                 busy={saveRating.isPending}
                 onSaveSection={commitSection}
                 coverage={coverage}
+                target={target} upsidePct={upsidePct}
                 footer={footerFor('case')}
               />
             )}

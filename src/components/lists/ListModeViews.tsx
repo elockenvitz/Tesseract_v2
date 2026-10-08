@@ -486,6 +486,14 @@ export function OverviewMode(p: {
   ratingColor: string | null
   conviction: 'low' | 'medium' | 'high' | null
   ideaLabel?: string | null
+  oneMonthPct?: number | null
+  closes?: number[] | null
+  /** The live idea's proposed weight, where one exists. A stored field. */
+  proposedWeightPct?: number | null
+  /** `workStateFor`'s own words, so Overview names the work as the row does. */
+  workLabel?: string | null
+  workSecondary?: string | null
+  awaitingDecision?: boolean
   writtenCaseSections: CaseSectionLike[]
   changes: EvidenceLike[]
   caseWrittenAt: string | null
@@ -508,126 +516,218 @@ export function OverviewMode(p: {
     // honest fallback; nothing at all is the honest empty.
     : p.shares != null ? `${p.shares.toLocaleString()} sh` : null
 
+  const proposing = p.proposedWeightPct != null
+  const scaleMax = proposing && p.weightPct != null
+    ? Math.max(p.proposedWeightPct!, p.weightPct) * 1.5 || 1
+    : 1
+  const at = (n: number) => Math.min(100, (n / scaleMax) * 100)
+
+  /*
+   * Five bands, left to right, in the order a reader asks.
+   *
+   * Overview was two stacked sections over a rail, which answered "what do we
+   * believe" twice and "what do we own" not at all until the eye reached the
+   * far column. The question this mode exists for — what is the STATE of this
+   * name — is five short answers, and five short answers belong side by side
+   * where they are taken in at once rather than read in sequence.
+   *
+   * Divided by one hairline each, never by a box: the bands are one object.
+   */
+  const band = 'min-w-0 border-l border-gray-900/[0.06] dark:border-white/[0.07] pl-4 first:border-0 first:pl-0'
+
   return (
     <ModeLayout
       footer={p.footer}
-      railWidth="sm"
       main={
-        <div className="h-full flex flex-col min-h-0">
-          {/*
-            * What we believe — the claim, stated once.
-            *
-            * The view, the target and the thesis are one sentence of meaning,
-            * so they sit on one band: the rating and the target read as the
-            * conclusion, the thesis as the argument underneath it.
-            */}
-          <section className="flex-shrink-0 pb-3 border-b border-gray-900/[0.06] dark:border-white/[0.07]">
-            <div className="flex items-center gap-3 flex-wrap">
-              <SectionHeading>What we believe</SectionHeading>
-              {(p.ratingValue || p.conviction) && (
-                <ViewControl value={p.ratingValue} color={p.ratingColor} conviction={p.conviction} size="lg" />
+        <div
+          data-testid="overview-bands"
+          className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,0.8fr)_minmax(0,0.95fr)_minmax(0,1.5fr)_minmax(0,1.15fr)] gap-x-4"
+        >
+
+          {/* ── Market ─────────────────────────────────────────── */}
+          <div className={band}>
+            <Label>Market</Label>
+            <div className="mt-1.5 text-[20px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-gray-900 dark:text-gray-50">
+              {p.spot != null ? money(p.spot) : '—'}
+            </div>
+            <div className="mt-1.5 flex items-baseline gap-2.5 text-[11.5px] font-semibold tabular-nums">
+              {p.changePct != null && (
+                <span className={toneOf(p.changePct) === 'up'
+                  ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                  {pct(p.changePct)} today
+                </span>
               )}
-              {p.target != null && (
-                <span className="flex items-baseline gap-1.5 tabular-nums">
-                  <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-50">
-                    {money(p.target)}
-                  </span>
+              {p.oneMonthPct != null && (
+                <span className={toneOf(p.oneMonthPct) === 'up'
+                  ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                  {pct(p.oneMonthPct)} 1M
+                </span>
+              )}
+            </div>
+            {p.closes && p.closes.length > 1 && (
+              <div className="mt-2 h-[36px]">
+                <Sparkline points={p.closes} reference={p.target} />
+              </div>
+            )}
+          </div>
+
+          {/* ── Investment view ────────────────────────────────── */}
+          <div className={band}>
+            <Label>Investment view</Label>
+            {p.ratingValue || p.conviction ? (
+              <>
+                <div className="mt-2">
+                  <ViewControl value={p.ratingValue} color={p.ratingColor} conviction={p.conviction} size="lg" />
+                </div>
+                {p.conviction && (
+                  <div className="mt-1.5 text-[10.5px] text-gray-400 dark:text-gray-500">
+                    {p.conviction} conviction
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="mt-2 text-[12px] text-gray-400 dark:text-gray-500 italic">Not rated</div>
+            )}
+            {p.target != null && (
+              <>
+                <div className="mt-3 flex items-baseline gap-2 tabular-nums">
+                  <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-50">{money(p.target)}</span>
                   {p.upsidePct != null && (
                     <span className={clsx(
                       'text-[12px] font-semibold',
-                      p.upsidePct >= 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-rose-600 dark:text-rose-400',
+                      p.upsidePct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
                     )}>{pct(p.upsidePct)}</span>
                   )}
-                </span>
-              )}
-              {/* Who wrote the view. Provenance, and it costs no line. */}
-              {lead?.row?.authorName && (
-                <span className="text-[10.5px] text-gray-400 dark:text-gray-500 truncate">
-                  {lead.row.authorName}
-                </span>
-              )}
-            </div>
-            {/* Clamped to two lines, so the evidence band below is not squeezed
-                to a single item. The whole case is one tab away. */}
-            {lead ? (
-              <p className="mt-2 text-[13.5px] text-gray-700 dark:text-gray-300 leading-[1.55] whitespace-pre-wrap line-clamp-2">
-                {lead.row?.content}
-              </p>
+                </div>
+                <div className="mt-1 text-[10.5px] text-gray-400 dark:text-gray-500">target</div>
+              </>
+            )}
+          </div>
+
+          {/* ── Position ───────────────────────────────────────── */}
+          <div className={band}>
+            <Label>Position</Label>
+            {positionValue ? (
+              <>
+                <div className="mt-1.5 flex items-baseline gap-2">
+                  <span className="text-[20px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-gray-900 dark:text-gray-50">
+                    {positionValue}
+                  </span>
+                  {proposing && (
+                    <>
+                      <ArrowRight className="h-3 w-3 text-gray-400 flex-shrink-0 self-center" />
+                      <span className="text-[20px] font-semibold tracking-[-0.03em] tabular-nums leading-none text-emerald-600 dark:text-emerald-400">
+                        {p.proposedWeightPct!.toFixed(2)}%
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="mt-1.5 text-[10.5px] text-gray-400 dark:text-gray-500 truncate">
+                  {[
+                    p.bookName,
+                    proposing && p.weightPct != null
+                      ? `${p.proposedWeightPct! >= p.weightPct ? '+' : ''}${Math.round((p.proposedWeightPct! - p.weightPct) * 100)}bps proposed`
+                      : null,
+                  ].filter(Boolean).join(' · ')}
+                </div>
+                {proposing && p.weightPct != null && (
+                  <div className="mt-2.5 h-[5px] rounded-full bg-gray-200 dark:bg-gray-700 relative overflow-hidden">
+                    <span className="absolute inset-y-0 left-0 bg-gray-800 dark:bg-gray-200 rounded-full"
+                      style={{ width: `${at(p.weightPct)}%` }} />
+                    {p.proposedWeightPct! > p.weightPct && (
+                      <span className="absolute inset-y-0 bg-emerald-500/50"
+                        style={{ left: `${at(p.weightPct)}%`, width: `${at(p.proposedWeightPct!) - at(p.weightPct)}%` }} />
+                    )}
+                  </div>
+                )}
+              </>
             ) : (
-              <p className="mt-2 text-[13px] text-gray-400 dark:text-gray-500 italic">
+              <div className="mt-2 text-[12px] text-gray-400 dark:text-gray-500 italic">Not held</div>
+            )}
+          </div>
+
+          {/* ── The case ───────────────────────────────────────── */}
+          <div className={band}>
+            <Label>The case</Label>
+            {lead ? (
+              <>
+                <p className="mt-1.5 text-[12.5px] text-gray-700 dark:text-gray-300 leading-[1.45] line-clamp-4">
+                  {lead.row?.content}
+                </p>
+                <div className="mt-2 text-[10.5px] text-gray-400 dark:text-gray-500 truncate">
+                  {[
+                    lead.row?.authorName,
+                    p.caseWrittenAt && `written ${formatDistanceToNow(new Date(p.caseWrittenAt), { addSuffix: true })}`,
+                  ].filter(Boolean).join(' · ')}
+                </div>
+              </>
+            ) : (
+              <p className="mt-2 text-[12.5px] text-gray-400 dark:text-gray-500 italic">
                 No case written yet.
               </p>
             )}
-          </section>
-
-          {/* What's happening — the evidence the claim has to survive. */}
-          <section className="flex-1 min-h-0 pt-3 flex flex-col">
-            <div className="flex items-baseline gap-2.5 flex-shrink-0">
-              <SectionHeading>What's happening</SectionHeading>
-              {p.caseWrittenAt && (
-                <span className="text-[10.5px] text-gray-400 dark:text-gray-500">
-                  case written {formatDistanceToNow(new Date(p.caseWrittenAt), { addSuffix: true })}
-                </span>
-              )}
-            </div>
-            <div className="mt-2 flex-1 min-h-0 overflow-y-auto space-y-2">
-              {p.changes.length > 0 ? (
-                // Unreviewed first — `changes` is already ordered that way.
-                p.changes.slice(0, 4).map(c => <EvidenceItemView key={c.id} item={c} />)
-              ) : (
-                <p className="text-[12.5px] text-gray-400 dark:text-gray-500 italic">
-                  Nothing new since the case was written.
-                </p>
-              )}
-            </div>
-          </section>
-        </div>
-      }
-      rail={
-        <>
-          {/* What we're doing — exposure and open work, as real figures. */}
-          <div>
-            <SectionHeading>What we're doing</SectionHeading>
-            {/*
-              * Four compact figures, not two hero ones.
-              *
-              * At hero size Position and Price alone filled the rail and pushed
-              * the open idea off the bottom — which rendered as a label with no
-              * value under it, the exact "empty labelled section" this surface
-              * is not allowed to have.
-              */}
-            <div className="mt-2 space-y-2.5">
-              <Figure label="Position" value={positionValue} size="md" sub={p.bookName} />
-              <Figure label="Price" value={p.spot != null ? money(p.spot) : null} size="md"
-                tone={toneOf(p.changePct)}
-                sub={p.changePct != null ? `${pct(p.changePct)} today` : null} />
-              {p.ideaLabel && <Figure label="Open idea" value={p.ideaLabel} size="md" />}
-              {unread.length > 0 && !p.ideaLabel && (
-                <Figure label="Needs review" size="md" value={`${unread.length} new`} />
-              )}
-            </div>
           </div>
 
-          {/* The list's own fields, as one quiet block. They answer a question
-              about this list rather than about the security. */}
-          {(p.coverage?.length || p.listFieldsSlot) && (
-            <div className="pt-3 border-t border-gray-900/[0.06] dark:border-white/[0.07] space-y-2.5">
-              {p.coverage && p.coverage.length > 0 && (
-                <div>
-                  <Label>Covered by</Label>
-                  <div className="mt-1 space-y-0.5">
-                    {p.coverage.slice(0, 2).map((c, i) => (
-                      <CoverageChip key={`${c.analyst}-${i}`} analyst={c.analyst} team={c.team} isLead={c.isLead} />
-                    ))}
-                  </div>
+          {/* ── Work ───────────────────────────────────────────── */}
+          <div className={band}>
+            <Label>Work</Label>
+            {/* `workLabel` is the row signal's own wording and leads where it
+                exists; an open idea is the fallback for a caller that has no
+                signal to hand (mobile, and the fixture gallery). */}
+            {(p.workLabel ?? p.ideaLabel) ? (
+              <>
+                <div className={clsx(
+                  'mt-1.5 text-[14px] font-semibold tracking-[-0.02em] leading-tight',
+                  p.awaitingDecision
+                    ? 'text-primary-800 dark:text-primary-300'
+                    : 'text-gray-900 dark:text-gray-50',
+                )}>
+                  {p.awaitingDecision ? 'Awaiting a decision' : (p.workLabel ?? p.ideaLabel)}
                 </div>
-              )}
-              {p.listFieldsSlot}
-            </div>
-          )}
-        </>
+                <div className="mt-1 text-[10.5px] text-gray-400 dark:text-gray-500 truncate">
+                  {(p.awaitingDecision ? p.ideaLabel ?? p.workLabel : p.workSecondary) ?? ''}
+                </div>
+              </>
+            ) : (
+              <div className="mt-2 text-[12px] text-gray-400 dark:text-gray-500 italic">
+                Nothing outstanding
+              </div>
+            )}
+            {unread.length > 0 ? (
+              <div className="mt-3">
+                <Label>Changed since review</Label>
+                <div className="mt-1.5">
+                  <EvidenceItemView item={unread[0]} />
+                </div>
+              </div>
+            ) : p.coverage && p.coverage.length > 0 ? (
+              <div className="mt-3">
+                <Label>Covered by</Label>
+                <div className="mt-1 space-y-0.5">
+                  {p.coverage.slice(0, 2).map((c, i) => (
+                    <CoverageChip key={`${c.analyst}-${i}`} analyst={c.analyst} team={c.team} isLead={c.isLead} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {/*
+              * The list's own fields, kept but demoted.
+              *
+              * Status, owner and tags are not investment state and have no
+              * band of their own — but Overview is the ONLY place they can be
+              * edited now that their columns are off the default line, and
+              * silently removing the write path would be a regression dressed
+              * as a simplification. One quiet row at the foot of the last
+              * band, never a heading of its own.
+              */}
+            {p.listFieldsSlot && (
+              <div className="mt-3 pt-2.5 border-t border-gray-900/[0.05] dark:border-white/[0.06]">
+                {p.listFieldsSlot}
+              </div>
+            )}
+          </div>
+        </div>
       }
     />
   )
@@ -869,71 +969,107 @@ export function CaseMode(p: {
   busy?: boolean
   onSaveSection?: (sectionKey: string, content: string) => Promise<void>
   coverage?: Array<{ analyst: string; team: string; isLead: boolean }>
+  /** The price the view implies. Part of the conclusion, so it sits with it. */
+  target?: number | null
+  upsidePct?: number | null
   footer?: React.ReactNode
 }) {
-  const [leadKey, ...restKeys] = p.caseSections
+  /*
+   * The whole argument as one strip: VIEW | THESIS | WHERE WE DIFFER | RISKS |
+   * CHANGED SINCE.
+   *
+   * It was a hero paragraph over a two-up grid with the evidence in a rail,
+   * which meant the three parts of the case were read in three different
+   * places and at two different sizes. They are one argument. Side by side at
+   * one size, a reader takes the position in seconds and sees immediately
+   * which part is missing — and an unwritten `risks` column is the single most
+   * useful thing this mode can show a reviewer.
+   */
+  const [thesis, differ, risks] = p.caseSections
+  const unread = p.changes.filter(c => c.isNewSinceReview)
+  const band = 'min-w-0 border-l border-gray-900/[0.06] dark:border-white/[0.07] pl-4 first:border-0 first:pl-0'
+
   return (
     <ModeLayout
       footer={p.footer}
       main={
-        <div className="space-y-4">
-          {leadKey && (
-            <CaseSectionEditor
-              hero
-              sectionKey={leadKey.key}
-              label={SECTION_LABEL[leadKey.key] ?? leadKey.key}
-              content={leadKey.row?.content ?? ''}
-              authorName={leadKey.row?.authorName}
-              onSave={p.onSaveSection}
-            />
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-            {restKeys.map(s => (
+        <div className="grid grid-cols-[150px_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.78fr)_minmax(0,0.95fr)] gap-x-4">
+
+          {/* ── View: the conclusion the argument reaches ───────── */}
+          <div className={band}>
+            <Label>View</Label>
+            <div className="mt-2">
+              <ViewControl
+                value={p.ratingValue} color={p.ratingColor} conviction={p.conviction}
+                scaleValues={p.scaleValues} onRate={p.onRate} onConviction={p.onConviction}
+                busy={p.busy} symbol={p.symbol} size="lg"
+              />
+            </div>
+            {p.conviction && (
+              <div className="mt-1.5 text-[10.5px] text-gray-400 dark:text-gray-500">
+                {p.conviction} conviction
+              </div>
+            )}
+            {p.target != null && (
+              <div className="mt-3 flex items-baseline gap-2 tabular-nums">
+                <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-50">{money(p.target)}</span>
+                {p.upsidePct != null && (
+                  <span className={clsx(
+                    'text-[12px] font-semibold',
+                    p.upsidePct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+                  )}>{pct(p.upsidePct)}</span>
+                )}
+              </div>
+            )}
+            <div className="mt-2 text-[10.5px] text-gray-400 dark:text-gray-500 leading-snug">
+              {thesis?.row?.authorName && <>{thesis.row.authorName}<br /></>}
+              {p.caseWrittenAt
+                ? `written ${formatDistanceToNow(new Date(p.caseWrittenAt), { addSuffix: true })}`
+                : 'never written'}
+            </div>
+          </div>
+
+          {/* ── The three sections, side by side and at one size ── */}
+          {[thesis, differ, risks].map((s, i) => s && (
+            <div key={s.key} className={band}>
               <CaseSectionEditor
-                key={s.key}
                 sectionKey={s.key}
                 label={SECTION_LABEL[s.key] ?? s.key}
                 content={s.row?.content ?? ''}
-                authorName={s.row?.authorName}
+                authorName={i === 0 ? null : s.row?.authorName}
                 onSave={p.onSaveSection}
               />
-            ))}
+              {/* The gap a reviewer reaches for first, named as a gap. */}
+              {s.key === 'risks_to_thesis' && !(s.row?.content ?? '').trim() && (
+                <div className="mt-2 text-[10.5px] text-gray-400 dark:text-gray-500 leading-snug">
+                  The one section a reviewer would reach for first.
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* ── What has happened to the argument since ─────────── */}
+          <div className={band}>
+            <Label>
+              {unread.length > 0 ? `Changed since review · ${unread.length}` : 'Since review'}
+            </Label>
+            <div className="mt-2 space-y-2">
+              {p.changes.length > 0
+                ? p.changes.slice(0, 3).map(c => <EvidenceItemView key={c.id} item={c} />)
+                : <Quiet>Nothing new on file.</Quiet>}
+            </div>
+            {p.coverage && p.coverage.length > 0 && (
+              <div className="mt-3">
+                <Label>Covered by</Label>
+                <div className="mt-1 space-y-0.5">
+                  {p.coverage.slice(0, 2).map((c, i) => (
+                    <CoverageChip key={`${c.analyst}-${i}`} analyst={c.analyst} team={c.team} isLead={c.isLead} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
-      }
-      rail={
-        <>
-          <RailBlock label="How strongly">
-            <ViewControl
-              value={p.ratingValue} color={p.ratingColor} conviction={p.conviction}
-              scaleValues={p.scaleValues} onRate={p.onRate} onConviction={p.onConviction}
-              busy={p.busy} symbol={p.symbol} size="lg"
-            />
-            <div className="mt-2 text-[10.5px] text-gray-400 dark:text-gray-500">
-              {p.caseWrittenAt
-                ? `Written ${formatDistanceToNow(new Date(p.caseWrittenAt), { addSuffix: true })}`
-                : 'Never written'}
-            </div>
-          </RailBlock>
-
-          <RailBlock label={p.newSinceReview > 0 ? `${p.newSinceReview} new since review` : 'Since review'}>
-            {p.changes.length > 0 ? (
-              <div className="space-y-2">
-                {p.changes.slice(0, 4).map(c => <EvidenceItemView key={c.id} item={c} />)}
-              </div>
-            ) : <Quiet>Nothing new on file.</Quiet>}
-          </RailBlock>
-
-          {p.coverage && p.coverage.length > 0 && (
-            <RailBlock label="Covered by">
-              <div className="space-y-0.5">
-                {p.coverage.slice(0, 3).map((c, i) => (
-                  <CoverageChip key={`${c.analyst}-${i}`} analyst={c.analyst} team={c.team} isLead={c.isLead} />
-                ))}
-              </div>
-            </RailBlock>
-          )}
-        </>
       }
     />
   )

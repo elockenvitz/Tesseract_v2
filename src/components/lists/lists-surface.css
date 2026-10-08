@@ -168,3 +168,36 @@
   box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.55);
   border-radius: 2px;
 }
+
+/* ── The clicked datum keeps a quiet ring ─────────────────────────────────
+ *
+ * `AssetTableView` stamps the expanded row with `data-open-entry`, and each
+ * clickable datum carries its own `data-entry` (see `Hit` in ListRowCells).
+ * Matching the two here means no cell has to be told whether its row is open,
+ * and the inspector reads as having unfolded from the exact figure the reader
+ * pointed at rather than from the row in general.
+ *
+ * One rule per entry because CSS cannot compare two attributes for equality.
+ * That is six lines, and they are the whole mechanism.
+ */
+.lists-surface .list-hit {
+  transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+.lists-surface [data-open-entry="overview"]  .list-hit[data-entry="overview"],
+.lists-surface [data-open-entry="market"]    .list-hit[data-entry="market"],
+.lists-surface [data-open-entry="case"]      .list-hit[data-entry="case"],
+.lists-surface [data-open-entry="valuation"] .list-hit[data-entry="valuation"],
+.lists-surface [data-open-entry="position"]  .list-hit[data-entry="position"],
+.lists-surface [data-open-entry="work"]      .list-hit[data-entry="work"] {
+  background: rgba(59, 130, 246, 0.07);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.28);
+}
+
+/* The ticker cell is the Overview entry, and the table owns its markup — so
+   the ring goes on the cell there rather than on a `Hit`. */
+.lists-surface [data-open-entry="ticker"] .pro-table-cell:nth-child(2),
+.lists-surface [data-open-entry="overview"] .pro-table-cell:nth-child(2) {
+  background: rgba(59, 130, 246, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.22);
+  border-radius: 3px;
+}

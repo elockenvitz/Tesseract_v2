@@ -83,7 +83,47 @@ export const MODE_FOR_COLUMN: Readonly<Record<string, ListRowMode>> = {
 export const LIST_EXPANSION_ENTRY_COLUMNS: ReadonlySet<string> =
   new Set(Object.keys(MODE_FOR_COLUMN))
 
-/** The mode a cell opens, or `overview` for the chevron and the row body. */
-export function modeForEntryColumn(columnId?: string): ListRowMode {
-  return (columnId && MODE_FOR_COLUMN[columnId]) || 'overview'
+/**
+ * Entry points finer than a column.
+ *
+ * A conceptual column can hold two questions. Investment View carries the
+ * rating AND the target: the rating asks what we believe, the target asks what
+ * it is worth, and they open different modes. A column-level map cannot say
+ * that, and showing a reader the rating because they clicked the target is the
+ * kind of near-miss that teaches them the surface is guessing.
+ *
+ * So each datum stamps `data-entry` with one of these, `AssetTableView` reads
+ * the nearest one on click, and the column id is only the fallback for a cell
+ * that has not been broken into parts.
+ */
+export const ENTRY_TOKENS = [
+  'overview', 'market', 'case', 'valuation', 'position', 'work',
+] as const
+export type EntryToken = typeof ENTRY_TOKENS[number]
+
+const ENTRY_MODE: Readonly<Record<EntryToken, ListRowMode>> = {
+  overview: 'overview',
+  market: 'market',
+  case: 'case',
+  valuation: 'valuation',
+  position: 'position',
+  work: 'work',
+}
+
+/** True for a string the table may treat as a sub-element entry point. */
+export function isEntryToken(v?: string | null): v is EntryToken {
+  return !!v && (ENTRY_TOKENS as readonly string[]).includes(v)
+}
+
+/**
+ * The mode an entry opens.
+ *
+ * Accepts either a `data-entry` token or a column id, because the table hands
+ * over whichever it found: the token when the reader hit a specific datum, the
+ * column id when they hit the cell around it or the chevron. Unknown input
+ * falls back to Overview — no particular intent stated.
+ */
+export function modeForEntryColumn(entry?: string): ListRowMode {
+  if (isEntryToken(entry)) return ENTRY_MODE[entry]
+  return (entry && MODE_FOR_COLUMN[entry]) || 'overview'
 }

@@ -38,8 +38,19 @@ describe('the table reports which cell was clicked', () => {
     // Ungrouped and grouped. The grouped one was the asymmetric case: a cell
     // click there navigates away, so the entry-column branch has to come first
     // and return.
-    const calls = TABLE.match(/openRowFromCell\(asset\.id,\s*col\.id\)/g) ?? []
+    const calls = TABLE.match(/openRowFromCell\(asset\.id,\s*entryFrom\(e,\s*col\.id\)\)/g) ?? []
     expect(calls.length).toBe(2)
+  })
+
+  it('prefers the sub-element the reader hit over the column around it', () => {
+    /*
+     * A conceptual cell can hold two questions — Investment View carries both
+     * the rating and the target — so the datum states its own entry and the
+     * nearest one wins. Without this the target opens Case, which is a
+     * near-miss: plausible, wrong, and invisible in review.
+     */
+    expect(TABLE).toMatch(/closest<HTMLElement>\('\[data-entry\]'\)/)
+    expect(TABLE).toMatch(/hit\?\.dataset\.entry \|\| columnId/)
   })
 
   it('gates it on the surface opting the column in', () => {
@@ -63,8 +74,11 @@ describe('the table reports which cell was clicked', () => {
   })
 
   it('hands the entry column to the slot at both call sites', () => {
+    // Twice for the slot, plus once more to stamp `data-open-entry` on the
+    // expanded row so the clicked datum keeps its ring.
     const passes = TABLE.match(/entryColumnFor\(asset\.id\)/g) ?? []
-    expect(passes.length).toBe(2)
+    expect(passes.length).toBe(3)
+    expect(TABLE).toMatch(/data-open-entry=\{isExpanded \? entryColumnFor\(asset\.id\) : undefined\}/)
     // And narrows before reading, which optional chaining in the test does not.
     expect(TABLE).toMatch(/held && held\.assetId === assetId \? held\.columnId : undefined/)
   })

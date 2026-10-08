@@ -18,6 +18,7 @@ import { clsx } from 'clsx'
 import { Sparkline } from '../signals/Sparkline'
 import { RatingPill, ConvictionBars } from './ListRowAtoms'
 import { WORK_TIER_RANK, type WorkTier } from '../../lib/lists/work-state'
+import type { EntryToken } from './listRowModes'
 import type { ListRowSignal } from '../../hooks/lists/useListRowSignals'
 import type { ColumnConfig } from '../table/AssetTableView'
 
@@ -33,34 +34,53 @@ import type { ColumnConfig } from '../table/AssetTableView'
  * out of two — and the result read as a database grid, because that is what a
  * row of equally-weighted scalar columns IS.
  *
- * A security is six questions, so the line is six columns:
+ * A security is four questions beyond its identity, so the line is five
+ * columns:
  *
- *   SECURITY   who is this                      (the table's own identity cell)
- *   MARKET     what has the market done
- *   EXPOSURE   what do we own, and of what
- *   VIEW       what do we think, how strongly
- *   VALUATION  what do we think it is worth
- *   WORK       what needs to happen
+ *   SECURITY         who is this        (the table's own identity cell)
+ *   MARKET           what has the market done
+ *   INVESTMENT VIEW  what do we think, how strongly, and what is it worth
+ *   POSITION         what do we own, and of what
+ *   WORK             what needs to happen
  *
  * Each composes its own fields with internal hierarchy — a figure and a
  * qualifier, not two equal values — which is what lets a calm name recede and
  * an urgent one stand out without a single badge or pill being added.
  *
- * Each is also an ENTRY POINT: clicking one opens the inspector on the mode
- * that answers that question. See `MODE_FOR_COLUMN`.
+ * ── Why the target lives inside Investment View ───────────────────────────
+ *
+ * It had its own Valuation column, which split one judgement across two
+ * headings: a rating is what we think and a target is the same thought priced.
+ * Read together they are a sentence — "BUY, medium conviction, worth $178" —
+ * and read apart they are two numbers the eye has to join. Valuation is still
+ * a MODE, reached by clicking the target itself; it is no longer a column.
+ *
+ * ── Entry points are sub-elements, not whole cells ────────────────────────
+ *
+ * Each datum carries `data-entry`, and the table opens the inspector on the
+ * mode that datum names: the rating opens Case, the target beneath it opens
+ * Valuation, the price opens Market. A cell-level map could not express that,
+ * and clicking a target to be shown a rating is the kind of near-miss that
+ * teaches a reader the surface does not understand them. See `ENTRY_MODE`.
  *
  * All sortable: a watchlist whose columns cannot be ordered is a report. The
  * comparators live with the surface that owns the data — see
  * `listSortComparators`, handed to the table as `extraSortComparators`.
  */
 export const LIST_SIGNAL_COLUMNS: ColumnConfig[] = [
-  { id: 'list_market',    label: 'Market',    visible: true, width: 128, minWidth: 104, sortable: true, pinned: false, category: 'price' },
-  { id: 'list_exposure',  label: 'Exposure',  visible: true, width: 108, minWidth: 84,  sortable: true, pinned: false, category: 'price' },
-  { id: 'list_view',      label: 'View',      visible: true, width: 104, minWidth: 88,  sortable: true, pinned: false, category: 'research' },
-  { id: 'list_valuation', label: 'Valuation', visible: true, width: 104, minWidth: 88,  sortable: true, pinned: false, category: 'research' },
+  { id: 'list_market',    label: 'Market',          visible: true, width: 148, minWidth: 118, sortable: true, pinned: false, category: 'price' },
+  { id: 'list_view',      label: 'Investment view', visible: true, width: 140, minWidth: 116, sortable: true, pinned: false, category: 'research' },
+  { id: 'list_exposure',  label: 'Position',        visible: true, width: 122, minWidth: 96,  sortable: true, pinned: false, category: 'price' },
   // Work grows most: it is the only column whose job is to say WHY a name needs
   // attention, and "Recommendation re…" says nothing.
-  { id: 'list_work',      label: 'Work',      visible: true, width: 190, minWidth: 150, sortable: true, pinned: false, category: 'workflow' },
+  { id: 'list_work',      label: 'Work',            visible: true, width: 196, minWidth: 156, sortable: true, pinned: false, category: 'workflow' },
+  /*
+   * Off the default line, kept for anyone who wants the scalar back.
+   *
+   * Investment View carries the target now. This column still sorts and still
+   * opens Valuation, so turning it on costs nothing.
+   */
+  { id: 'list_valuation', label: 'Target',          visible: true, width: 104, minWidth: 88,  sortable: true, pinned: false, category: 'research' },
 ]
 
 /**
@@ -135,10 +155,10 @@ export function listSortComparators(
 const ORDER = [
   'select', 'ticker',
   'list_market',
-  'list_exposure',
   'list_view',
-  'list_valuation',
+  'list_exposure',
   'list_work',
+  'list_valuation',
 ]
 
 /**
@@ -223,7 +243,7 @@ const RIGHT_ALIGNED = new Set<string>([])
  * default forever — which is exactly what happened to the first version of
  * this preset, and why the columns it hid were still on screen.
  */
-export const LIST_COLUMN_PRESET_VERSION = 'lists-monitor-2026-10-06'
+export const LIST_COLUMN_PRESET_VERSION = 'lists-five-zone-2026-10-07'
 
 /**
  * Hidden by default, not deleted.
@@ -259,6 +279,9 @@ const HIDDEN = new Set([
    * the inspector shows it wherever it exists.
    */
   'coverage',
+  // Folded into Investment View — see `LIST_SIGNAL_COLUMNS`. Still sortable and
+  // still opens Valuation when a reader turns it back on.
+  'list_valuation',
 ])
 
 /** Module scope: `columnPreset` is memoised on identity. */
@@ -385,6 +408,46 @@ function SparkCell({ signal }: { signal: ListRowSignal }) {
  * thin list look broken, and on a dense surface absence reads faster than a
  * placeholder does.
  */
+/**
+ * One clickable datum, and the mode it opens.
+ *
+ * The selection ring sits on THIS, not on the cell, so the inspector reads as
+ * having unfolded from the exact figure the reader pointed at. `data-entry` is
+ * what the table reads on click — see `ENTRY_MODE` and `AssetTableView`'s cell
+ * handler, which prefers the nearest `[data-entry]` over the column id.
+ */
+export function Hit({
+  entry, children, block, title,
+}: {
+  entry: EntryToken
+  children: React.ReactNode
+  /** Stack the contents instead of sitting them on one baseline. */
+  block?: boolean
+  title?: string
+}) {
+  return (
+    <span
+      data-entry={entry}
+      title={title}
+      /*
+       * The ring is applied by CSS, not by a prop.
+       *
+       * `AssetTableView` stamps `data-open-entry` on the expanded row, and
+       * `lists-surface.css` matches the row's token against each datum's own.
+       * That keeps the cells pure — no cell has to be told whether its row is
+       * open — and costs one rule per entry instead of threading expansion
+       * state through `renderExtraCell`.
+       */
+      className={clsx(
+        'list-hit rounded-[3px] -mx-1.5 px-1.5 max-w-full min-w-0',
+        block ? 'flex flex-col gap-[2px]' : 'inline-flex items-center gap-1.5',
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
 function Stack({
   lead, qualifier, title, quiet,
 }: {
@@ -431,7 +494,7 @@ function MarketCell({ signal, price, changePct }: {
     // `flex-1 min-w-0` here, as a row-flex item in `.pro-table-cell`: the cell's
     // width is the column's, and nothing inside may size it. See `SparkCell`.
     <span className="flex flex-col flex-1 min-w-0 max-w-full gap-[3px] leading-none">
-      <span className="flex items-baseline gap-1.5 min-w-0">
+      <Hit entry="market">
         <span className="text-[13px] font-semibold tabular-nums text-gray-900 dark:text-gray-100 truncate">
           {price != null ? price.toFixed(2) : '—'}
         </span>
@@ -447,8 +510,13 @@ function MarketCell({ signal, price, changePct }: {
             {changePct >= 0 ? '+' : ''}{changePct.toFixed(1)}%
           </span>
         )}
-      </span>
-      <SparkCell signal={signal} />
+      </Hit>
+      {/* The month is the same question as the price, so it opens the same
+          mode — but it is its own target, because it is what a reader is
+          pointing at when they click the shape rather than the number. */}
+      <Hit entry="market" block>
+        <SparkCell signal={signal} />
+      </Hit>
     </span>
   )
 }
@@ -465,43 +533,76 @@ function ExposureCell({ signal }: { signal: ListRowSignal }) {
     // Held somewhere but un-weighable (the book's NAV did not resolve) is a
     // different fact from not held, and only the first deserves ink.
     return signal.bookCount > 0
-      ? <Stack quiet lead="held" qualifier={signal.bookName} />
+      ? <Hit entry="position" block><Stack quiet lead="held" qualifier={signal.bookName} /></Hit>
       : null
   }
   const w = signal.weightPct
   const extra = signal.bookCount - 1
   return (
-    <Stack
-      lead={`${w.toFixed(w >= 10 ? 1 : 2)}%`}
-      qualifier={
-        signal.bookName
-          ? extra > 0 ? `${signal.bookName} +${extra}` : signal.bookName
-          : signal.bookCount > 1 ? `${signal.bookCount} books` : null
-      }
-      title="Largest single-portfolio weight"
-    />
+    <Hit entry="position" block title="Largest single-portfolio weight">
+      <Stack
+        lead={`${w.toFixed(w >= 10 ? 1 : 2)}%`}
+        qualifier={
+          signal.bookName
+            ? extra > 0 ? `${signal.bookName} +${extra}` : signal.bookName
+            : signal.bookCount > 1 ? `${signal.bookCount} books` : null
+        }
+      />
+    </Hit>
   )
 }
 
 /**
- * VIEW — what we think, and how strongly.
+ * INVESTMENT VIEW — what we think, how strongly, and what it is worth.
  *
- * The rating and the conviction behind it are one judgement, so they share a
- * baseline, and the conviction is spelled out underneath. A pill beside a
- * separate meter read as two unrelated facts.
+ * One judgement on two lines: the rating and the conviction behind it share a
+ * baseline, and the price that thought implies sits beneath. They were two
+ * columns, which made a reader assemble "BUY, medium, worth $178" out of two
+ * headings.
+ *
+ * TWO entry points, because they are two questions. The rating opens Case —
+ * what do we believe and has anything challenged it. The target opens
+ * Valuation — what do we think it is worth. Sending both to the same mode is
+ * the near-miss this whole scheme exists to avoid.
  */
-function ViewCell({ signal }: { signal: ListRowSignal }) {
-  if (!signal.ratingValue) return null
+function ViewCell({ signal, price }: { signal: ListRowSignal; price: number | null }) {
+  const upside = signal.targetPrice != null && price != null && price > 0
+    ? (signal.targetPrice - price) / price * 100
+    : null
+  if (!signal.ratingValue && signal.targetPrice == null) return null
+
   return (
     <span className="flex flex-col min-w-0 max-w-full gap-[3px] leading-none">
-      <span className="inline-flex items-center gap-1.5 min-w-0">
-        <RatingPill value={signal.ratingValue} color={signal.ratingColor} />
-        {signal.conviction && <ConvictionBars level={signal.conviction} />}
-      </span>
-      {signal.conviction && (
-        <span className="text-[10.5px] leading-none text-gray-400 dark:text-gray-500 truncate">
-          {signal.conviction}
-        </span>
+      {signal.ratingValue ? (
+        <Hit entry="case" title={signal.conviction ? `${signal.conviction} conviction` : undefined}>
+          <RatingPill value={signal.ratingValue} color={signal.ratingColor} />
+          {signal.conviction && <ConvictionBars level={signal.conviction} />}
+        </Hit>
+      ) : (
+        <span className="text-[10.5px] leading-none text-gray-300 dark:text-gray-600">not rated</span>
+      )}
+
+      {signal.targetPrice != null ? (
+        <Hit
+          entry="valuation"
+          title={price != null ? `Against the last stored price of ${price.toFixed(2)}` : undefined}
+        >
+          <span className="text-[11.5px] font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+            ${signal.targetPrice.toFixed(2)}
+          </span>
+          {upside != null && (
+            <span className={clsx(
+              'text-[11.5px] font-semibold tabular-nums',
+              upside >= 0
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-rose-600 dark:text-rose-400',
+            )}>
+              {upside >= 0 ? '+' : ''}{upside.toFixed(1)}%
+            </span>
+          )}
+        </Hit>
+      ) : (
+        <span className="text-[10.5px] leading-none text-gray-300 dark:text-gray-600">no target</span>
       )}
     </span>
   )
@@ -523,20 +624,25 @@ function ValuationCell({ signal, price }: { signal: ListRowSignal; price: number
     ? (signal.targetPrice - price) / price * 100
     : null
   return (
-    <Stack
-      lead={`$${signal.targetPrice.toFixed(2)}`}
+    <Hit
+      entry="valuation"
+      block
       title={price != null ? `Against the last stored price of ${price.toFixed(2)}` : undefined}
-      qualifier={upside != null && (
-        <span className={clsx(
-          'font-semibold tabular-nums',
-          upside >= 0
-            ? 'text-emerald-600 dark:text-emerald-400'
-            : 'text-rose-600 dark:text-rose-400',
-        )}>
-          {upside >= 0 ? '+' : ''}{upside.toFixed(1)}%
-        </span>
-      )}
-    />
+    >
+      <Stack
+        lead={`$${signal.targetPrice.toFixed(2)}`}
+        qualifier={upside != null && (
+          <span className={clsx(
+            'font-semibold tabular-nums',
+            upside >= 0
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : 'text-rose-600 dark:text-rose-400',
+          )}>
+            {upside >= 0 ? '+' : ''}{upside.toFixed(1)}%
+          </span>
+        )}
+      />
+    </Hit>
   )
 }
 
@@ -579,7 +685,7 @@ function WorkCell({ signal }: { signal: ListRowSignal }) {
   const level = WORK_LEVEL[work.tier]
 
   return (
-    <span className="inline-flex flex-col min-w-0 max-w-full gap-[1px] leading-none">
+    <Hit entry="work" block>
       <span className="inline-flex items-center gap-1.5 min-w-0">
         {/* One mark, and only for the two tiers that mean somebody owes an
             action. A dot on every row is a column of dots. */}
@@ -609,7 +715,7 @@ function WorkCell({ signal }: { signal: ListRowSignal }) {
           {work.secondary}
         </span>
       )}
-    </span>
+    </Hit>
   )
 }
 
@@ -650,7 +756,7 @@ export function renderSignalCell(
   switch (columnId) {
     case 'list_market':    return <MarketCell signal={signal} price={price} changePct={changePct} />
     case 'list_exposure':  return <ExposureCell signal={signal} />
-    case 'list_view':      return <ViewCell signal={signal} />
+    case 'list_view':      return <ViewCell signal={signal} price={price} />
     case 'list_valuation': return <ValuationCell signal={signal} price={price} />
     case 'list_work':      return <WorkCell signal={signal} />
     default: return undefined

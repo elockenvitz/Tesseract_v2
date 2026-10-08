@@ -20,7 +20,7 @@ import {
   LIST_SIGNAL_COLUMNS, listColumnPreset, renderSignalCell,
   LIST_COLUMN_PRESET_VERSION, listSortComparators,
 } from './ListRowCells'
-import { LIST_EXPANSION_ENTRY_COLUMNS } from './listRowModes'
+import { LIST_EXPANSION_ENTRY_COLUMNS, modeForEntryColumn } from './listRowModes'
 import { useListRowSignals } from '../../hooks/lists/useListRowSignals'
 import type { ListPermissions } from '../../hooks/lists/useListPermissions'
 // Scoped under `.lists-surface` below — see the file header for why the table's
@@ -138,6 +138,35 @@ export function ListTableView({
   // Stable per `signalFor`, which is itself memoised on the batch — so the
   // table's filtered-list memo is not invalidated on every render.
   const extraSortComparators = useMemo(() => listSortComparators(signalFor), [signalFor])
+
+  /**
+   * How tall each inspector needs to be, by the mode its entry opens.
+   *
+   * Scaled off the density's own expanded height so Comfortable / Compact /
+   * Ultra keep their relationship: a mode that needs 85% of the budget needs
+   * 85% of it at every density. Module-level constants would have pinned one
+   * density and squeezed the others.
+   */
+  const expandedHeightFor = useCallback((entry: string | undefined, density: string) => {
+    const base = ({ comfortable: 340, compact: 320, ultra: 296, micro: 268 } as Record<string, number>)[density] ?? 320
+    /*
+     * Measured against real rows, not guessed.
+     *
+     * Only Work is reliably short: it is one headline, one metadata line and a
+     * paragraph, and giving it the full budget left a third of the panel
+     * empty. Everything else holds content whose length is the DATA's — a
+     * holdings table with three books, a thesis somebody wrote at length — so
+     * shrinking them buys dead space at the bottom in exchange for an inner
+     * scrollbar, which is the worse trade.
+     */
+    const share: Record<string, number> = {
+      overview: 1, case: 1, market: 1, position: 1,
+      valuation: 0.92,
+      work: 0.8,
+    }
+    const mode = modeForEntryColumn(entry)
+    return Math.round(base * (share[mode] ?? 1))
+  }, [])
 
   const renderExtraCell = useCallback((
     columnId: string,
@@ -266,6 +295,19 @@ export function ListTableView({
        * must know this height up front.
        */
       expandedRowHeights={{ comfortable: 340, compact: 320, ultra: 296, micro: 268 }}
+      /*
+       * Each mode gets the height ITS content needs.
+       *
+       * The virtualiser has to know a row's height before the inspector inside
+       * it renders, so this cannot be measured — but the entry point already
+       * names the mode, and each mode's shape is known. Giving all six the
+       * tallest one's budget is what left Work and Position with a third of
+       * their panel empty.
+       *
+       * The five-band strips (Overview, Case) need the most; Work and Position
+       * lead with one figure and a paragraph and need the least.
+       */
+      expandedRowHeightFor={expandedHeightFor}
       // The identity cell carries the company under the ticker, which the
       // shared heights were not sized for — at 44px the second line clipped.
       // `micro` keeps the default: it hides the company anyway.

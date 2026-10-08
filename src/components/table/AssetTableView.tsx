@@ -409,12 +409,24 @@ interface AssetTableViewProps {
   /**
    * Per-density height for an expanded row, overriding the default.
    *
-   * The virtualiser must know row sizes up front, so this is a constant per
-   * density rather than anything measured. A surface whose expansion is a
-   * working inspector rather than a detail panel needs more room than the
-   * default allows.
+   * The virtualiser must know row sizes up front, so this cannot be measured
+   * from the rendered content. A surface whose expansion is a working
+   * inspector rather than a detail panel needs more room than the default.
    */
   expandedRowHeights?: Partial<Record<FullDensityMode, number>>
+  /**
+   * Height for an expanded row, by the entry it was opened from.
+   *
+   * The honest answer to "size the inspector to its content" given a
+   * virtualiser that must know the height BEFORE the content renders: the
+   * surface declares what each mode needs, and the entry point already names
+   * the mode. A thesis strip and a one-figure recommendation are different
+   * shapes, and giving both the tallest of them is what leaves the dead space.
+   *
+   * Takes precedence over `expandedRowHeights`; returning undefined falls back
+   * to it, so a mode with no opinion keeps the density default.
+   */
+  expandedRowHeightFor?: (entry: string | undefined, density: FullDensityMode) => number | undefined
   /**
    * Per-density COLLAPSED row height, overriding the density default.
    *
@@ -492,6 +504,7 @@ export function AssetTableView({
   expansionEntryColumns,
   initialExpanded,
   expandedRowHeights,
+  expandedRowHeightFor,
   rowHeights,
   extraSortComparators,
   expandedRowSlot,
@@ -607,6 +620,7 @@ export function AssetTableView({
    */
   const expandedRowHeight = expandedRowHeights?.[effectiveDensity]
     ?? expandedRowHeightS[effectiveDensity]
+
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('')
@@ -768,6 +782,25 @@ export function AssetTableView({
 
   // Track which column triggered row expansion (for showing metric-specific details)
   const [expandedMetricColumn, setExpandedMetricColumn] = useState<{ assetId: string; columnId: string } | null>(null)
+
+  /**
+   * The height THIS expansion needs, given what opened it.
+   *
+   * Declared per mode by the surface rather than measured, because the
+   * virtualiser asks for a row's height before the inspector inside it
+   * exists. Recomputed when the reader switches entry, so moving from a
+   * one-figure Work panel to the Case strip resizes the row instead of
+   * padding the short one out to the tallest mode's budget.
+   *
+   * Declared HERE, after `expandedMetricColumn` — reading that state above its
+   * own declaration is a temporal dead zone, which is a documented recurring
+   * defect in this codebase and broke the feed once already.
+   */
+  const activeExpandedHeight = useMemo(() => {
+    if (!expandedRowHeightFor) return expandedRowHeight
+    return expandedRowHeightFor(expandedMetricColumn?.columnId, effectiveDensity)
+      ?? expandedRowHeight
+  }, [expandedRowHeightFor, expandedMetricColumn?.columnId, effectiveDensity, expandedRowHeight])
 
   // Asset flags for row highlighting
   const { getFlagColor, getFlagStyles, cycleFlag } = useAssetFlags()
@@ -1526,6 +1559,19 @@ export function AssetTableView({
     setExpandedMetricColumn({ assetId, columnId })
   }, [])
 
+  /**
+   * What the reader actually pointed at.
+   *
+   * A conceptual cell can hold two questions — a rating and the target beneath
+   * it — so the surface marks each datum with `data-entry` and the nearest one
+   * wins. Falls back to the column id for a cell that was never broken into
+   * parts, which is every column outside Lists.
+   */
+  const entryFrom = useCallback((e: React.MouseEvent, columnId: string) => {
+    const hit = (e.target as HTMLElement).closest<HTMLElement>('[data-entry]')
+    return hit?.dataset.entry || columnId
+  }, [])
+
   /*
    * Honour an arriving focus exactly once per intent.
    *
@@ -1667,7 +1713,7 @@ export function AssetTableView({
     estimateSize: useCallback((index: number) => {
       const asset = filteredAssets[index]
       // Expanded rows always get fixed height
-      if (expandedRows.has(asset?.id)) return expandedRowHeight
+      if (expandedRows.has(asset?.id)) return activeExpandedHeight
       // Wrap text rows get estimated larger height
       if (hasWrapTextColumn) return densityRowHeight * 2
       return densityRowHeight
@@ -1679,7 +1725,7 @@ export function AssetTableView({
       const asset = index !== null ? filteredAssets[parseInt(index)] : null
       // Don't dynamically measure expanded rows - they use fixed expandedRowHeight
       if (asset && expandedRows.has(asset.id)) {
-        return expandedRowHeight
+        return activeExpandedHeight
       }
       return element.getBoundingClientRect().height
     } : undefined,
@@ -3438,13 +3484,16 @@ export function AssetTableView({
                           accent?.dim && !isExpanded && 'opacity-55'
                         )}
                         data-row-index={virtualRow.index}
+                        // The datum this row was opened from, so the collapsed
+                        // cell keeps a quiet ring. Styled in lists-surface.css.
+                        data-open-entry={isExpanded ? entryColumnFor(asset.id) : undefined}
                         draggable={canDragRows}
                         onDragStart={canDragRows ? (e) => handleRowDragStart(e, virtualRow.index) : undefined}
                         onDragOver={canDragRows ? (e) => handleRowDragOver(e, virtualRow.index) : undefined}
                         onDrop={canDragRows ? handleRowDrop : undefined}
                         onDragEnd={canDragRows ? handleRowDragEnd : undefined}
                         style={{
-                          height: isExpanded ? expandedRowHeight : (hasWrapTextColumn ? 'auto' : densityRowHeight),
+                          height: isExpanded ? activeExpandedHeight : (hasWrapTextColumn ? 'auto' : densityRowHeight),
                           minHeight: hasWrapTextColumn && !isExpanded ? densityRowHeight : undefined,
                           transform: `translateY(${virtualRow.start + insertOffset}px)`,
                           boxShadow: accent?.color ? `inset 3px 0 0 0 ${accent.color}` : 'inset 0 0 0 0 transparent',
@@ -3495,7 +3544,7 @@ export function AssetTableView({
                                     expansionEntryColumns?.has(col.id)
                                     && !(e.target as HTMLElement).closest('button,a,input,select,textarea,[role="button"]')
                                   ) {
-                                    openRowFromCell(asset.id, col.id)
+                                    openRowFromCell(asset.id, entryFrom(e, col.id))
                                   }
                                 }}
                                 className={clsx(
@@ -3868,7 +3917,7 @@ export function AssetTableView({
                           <div
                           className="pro-expanded-row px-5 py-2 overflow-hidden"
                           style={{
-                            height: expandedRowHeight - densityRowHeight,
+                            height: activeExpandedHeight - densityRowHeight,
                             position: 'sticky',
                             left: 0,
                             width: tableVisibleWidth || '100%'
@@ -4400,7 +4449,7 @@ export function AssetTableView({
                                           expansionEntryColumns?.has(col.id)
                                           && !(e.target as HTMLElement).closest('button,a,input,select,textarea,[role="button"]')
                                         ) {
-                                          openRowFromCell(asset.id, col.id)
+                                          openRowFromCell(asset.id, entryFrom(e, col.id))
                                           return
                                         }
                                         handleAssetClick(asset)
@@ -4764,7 +4813,7 @@ export function AssetTableView({
                                 <div
                           className="pro-expanded-row px-5 py-2 overflow-hidden"
                           style={{
-                            height: expandedRowHeight - densityRowHeight,
+                            height: activeExpandedHeight - densityRowHeight,
                             position: 'sticky',
                             left: 0,
                             width: tableVisibleWidth || '100%'

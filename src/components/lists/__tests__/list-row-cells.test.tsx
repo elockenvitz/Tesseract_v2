@@ -71,21 +71,31 @@ const visibleIdsOf = (cols: Array<{ id: string; visible: boolean }>) =>
   cols.filter(c => c.visible).map(c => c.id)
 
 describe('the line is six conceptual columns', () => {
-  it('reads security, market, exposure, view, valuation, work', () => {
+  it('reads security, market, investment view, position, work', () => {
     const order = visibleIdsOf(listColumnPreset(base()))
     expect(order).toEqual([
       // No `companyName`: it moves INTO the ticker cell as a second line, so
       // identity is one column rather than two of equal weight.
       'select', 'ticker',
       'list_market',
-      'list_exposure',
       'list_view',
-      'list_valuation',
+      'list_exposure',
       'list_work',
       // Unranked and visible, so it lands after the curated run rather than
       // disappearing. See "keeps a column it was never told about".
       'ai_custom_1',
     ])
+  })
+
+  it('folds the target into Investment View rather than giving it a column', () => {
+    /*
+     * A rating is what we think and a target is the same thought priced. Split
+     * across two headings a reader has to join them; together they are one
+     * sentence. Valuation survives as a MODE reached by clicking the target.
+     */
+    const out = listColumnPreset(base())
+    expect(visibleIdsOf(out)).not.toContain('list_valuation')
+    expect(idsOf(out)).toContain('list_valuation')
   })
 
   it('shows no scalar price or change column — MARKET composes them', () => {
@@ -484,12 +494,46 @@ describe('what the conceptual cells say when they do know', () => {
     expect(container.textContent).toBe('')
   })
 
-  it('VIEW keeps the rating and its conviction as one judgement', () => {
-    render(<>{renderSignalCell('list_view', {}, {
-      ...empty, ratingValue: 'BUY', conviction: 'medium',
+  it('INVESTMENT VIEW states the judgement and the price it implies', () => {
+    const { container } = render(<>{renderSignalCell('list_view', { current_price: 154.33 }, {
+      ...empty, ratingValue: 'BUY', conviction: 'medium', targetPrice: 178,
     })}</>)
     expect(screen.getByText('BUY')).toBeInTheDocument()
-    expect(screen.getByText('medium')).toBeInTheDocument()
+    expect(screen.getByText('$178.00')).toBeInTheDocument()
+    expect(screen.getByText('+15.3%')).toBeInTheDocument()
+    // Conviction is the bar glyph plus a tooltip here; the word belongs to the
+    // inspectors, where there is room for it.
+    expect(container.querySelector('[title="medium conviction"]')).not.toBeNull()
+  })
+
+  it('gives the rating and the target SEPARATE entry points', () => {
+    /*
+     * They are two questions inside one column — what do we believe, and what
+     * is it worth — and they open Case and Valuation respectively. Sending
+     * both to one mode is the near-miss `data-entry` exists to prevent.
+     */
+    const { container } = render(<>{renderSignalCell('list_view', { current_price: 154.33 }, {
+      ...empty, ratingValue: 'BUY', conviction: 'medium', targetPrice: 178,
+    })}</>)
+    expect(container.querySelector('[data-entry="case"]')).not.toBeNull()
+    expect(container.querySelector('[data-entry="valuation"]')).not.toBeNull()
+  })
+
+  it('marks every conceptual datum with the mode it opens', () => {
+    const sig = {
+      ...empty, ratingValue: 'BUY', conviction: 'medium', targetPrice: 178,
+      weightPct: 1.2, bookName: 'Vision Fund 10K', bookCount: 1,
+      closes: [163, 160, 158, 154],
+      work: { tier: 'decision' as const, label: 'BUY · Recommendation ready', count: 0, secondary: null },
+    }
+    const entryOf = (col: string) => {
+      const { container } = render(<>{renderSignalCell(col, { current_price: 154.33 }, sig)}</>)
+      return [...container.querySelectorAll('[data-entry]')].map(e => e.getAttribute('entry') ?? (e as HTMLElement).dataset.entry)
+    }
+    expect(entryOf('list_market')).toContain('market')
+    expect(entryOf('list_exposure')).toContain('position')
+    expect(entryOf('list_work')).toContain('work')
+    expect(entryOf('list_valuation')).toContain('valuation')
   })
 
   it('VALUATION computes upside against the stored price and names both inputs', () => {
