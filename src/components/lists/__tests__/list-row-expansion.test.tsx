@@ -240,6 +240,53 @@ describe('the clicked field decides the mode', () => {
     expect(currentMode()).toBe('overview')
   })
 
+  /**
+   * Market draws the REAL chart when it has dated history.
+   *
+   * `PriceContext` is the interactive chart the Ideas feed and the dashboard
+   * use — ranges, hover crosshair, scrub, target as a band, events as markers.
+   * This is pinned because the fixture carried an empty `history` for the
+   * whole life of the mode, so the flat-sparkline fallback was the only path
+   * any test ever exercised: the integration could have thrown on first
+   * contact with real data and every test would still have passed.
+   */
+  describe('Market uses the interactive chart, not an enlarged sparkline', () => {
+    const dated = (n: number) => Array.from({ length: n }, (_, i) => ({
+      date: new Date(Date.UTC(2026, 0, i + 1)).toISOString().slice(0, 10),
+      close: 100 + Math.sin(i / 3) * 8,
+    }))
+
+    it('renders range controls once a dated series exists', () => {
+      full()
+      hooks.workspace.history = dated(120)
+      hooks.workspace.target = 140
+      openFrom('list_market', { signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
+      /*
+       * The range switcher is the chart's own; the flat sparkline has none.
+       * Only ranges the series can actually fill are offered, so a 120-day
+       * history shows 1M and 3M and withholds 1Y — asserting on a range the
+       * data cannot support would be asserting on invented history.
+       */
+      expect(screen.getByRole('button', { name: '1M' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '3M' })).toBeInTheDocument()
+    })
+
+    it('falls back to the flat path when there is no dated history', () => {
+      full()
+      hooks.workspace.history = []
+      openFrom('list_market', { signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
+      expect(screen.queryByRole('button', { name: '3M' })).not.toBeInTheDocument()
+      expect(currentMode()).toBe('market')
+    })
+
+    it('says so plainly when there is neither', () => {
+      full()
+      hooks.workspace.history = []
+      openFrom('list_market', { signal: { ...EMPTY_SIGNAL, closes: null } })
+      expect(screen.getByText('No price history on file.')).toBeInTheDocument()
+    })
+  })
+
   it('re-enters on the newly clicked field while the row stays open', () => {
     full()
     const { rerender } = openFrom('list_valuation')

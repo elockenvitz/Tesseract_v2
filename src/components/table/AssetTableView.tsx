@@ -1820,14 +1820,21 @@ export function AssetTableView({
       const container = tableContainerRef.current
       if (!container) return
 
-      const item = rowVirtualizer.getVirtualItems().find(i => i.index === rowIndex)
-      if (!item) {
-        // Row is outside the virtualized range (unlikely for single-row
-        // nav with default overscan). Let the virtualizer bring it in,
-        // then bail — the next keystroke will correct any final offset.
-        rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
-        return
-      }
+      /*
+       * Measured from the virtualiser's own cache, which covers EVERY index —
+       * not from `getVirtualItems()`, which only covers the rendered window.
+       *
+       * The window path had a fallback that called `scrollToIndex` and bailed,
+       * admitting "the next keystroke will correct any final offset". That is
+       * the stutter: one keystroke moved the focus and left the scroll wrong,
+       * and the correction only arrived if the reader pressed again. Reading
+       * the cache means every keystroke lands in one synchronous assignment,
+       * whether the destination was rendered or not.
+       */
+      const measured = rowVirtualizer.measurementsCache?.[rowIndex]
+      const item = measured
+        ?? rowVirtualizer.getVirtualItems().find(i => i.index === rowIndex)
+      if (!item) return
 
       const headerEl = container.querySelector<HTMLElement>('.pro-table-header')
       const headerHeight = headerEl?.offsetHeight ?? 0

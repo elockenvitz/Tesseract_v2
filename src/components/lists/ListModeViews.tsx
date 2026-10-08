@@ -40,6 +40,9 @@ import { ExternalLink, Plus, Pencil, ArrowUpRight, ArrowRight, Check } from 'luc
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import { Sparkline } from '../signals/Sparkline'
+import {
+  PriceContext, type PricePoint, type PriceMarker, type RangeKey,
+} from '../signals/PriceContext'
 import { RatingPill, CoverageChip } from './ListRowAtoms'
 import { SECTION_LABEL } from '../../lib/desktop-research/model'
 import { stageLabel } from '../../lib/lists/work-state'
@@ -258,11 +261,27 @@ export function ModeLayout({
             : 'grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,236px)]'
           : 'grid-cols-1',
       )}>
-        <div className="min-w-0 min-h-0 sm:overflow-y-auto sm:pr-1">{main}</div>
+        {/*
+          * `overflow-hidden`, never `auto`.
+          *
+          * An inspector is a fixed-height region inside a virtualised row, so
+          * overflowing content used to grow a scrollbar — which put a second
+          * scroll surface inside the one the reader is already scrolling, and
+          * meant a mode could silently hide half its content behind a
+          * 4px-wide bar nobody looks for.
+          *
+          * The honest alternative is to CLAMP: every mode states as much as
+          * fits and links to the workspace for the rest. So the containers
+          * clip, and each mode is responsible for not overrunning its budget
+          * (see the `line-clamp` rules and the per-mode heights in
+          * `ListTableView`). A clipped line is a bug to fix in the mode, not
+          * a scrollbar to add here.
+          */}
+        <div className="min-w-0 min-h-0 overflow-hidden sm:pr-1">{main}</div>
         {rail && (
           // One hairline, not a card. The rail is the same surface as the
           // workspace; it is separated by alignment, not by a container.
-          <aside className="min-w-0 min-h-0 sm:overflow-y-auto sm:border-l border-gray-900/[0.07] dark:border-white/10 sm:pl-6 space-y-3.5">
+          <aside className="min-w-0 min-h-0 overflow-hidden sm:border-l border-gray-900/[0.07] dark:border-white/10 sm:pl-6 space-y-3.5">
             {rail}
           </aside>
         )}
@@ -773,6 +792,19 @@ export function MarketMode(p: {
   /** When the case was written. One of the dated events drawn below the chart. */
   caseWrittenAt?: string | null
   ideaCreatedAt?: string | null
+  /**
+   * Dated closes, for the interactive chart.
+   *
+   * `closes` is the flat array the collapsed sparkline uses; this is the same
+   * history with its dates, which is what makes scrubbing, ranges and dated
+   * markers possible. Absent on callers that only have the flat array (mobile),
+   * which fall back to the sparkline.
+   */
+  series?: PricePoint[] | null
+  /** Case written, research arrived, idea raised — drawn on the line. */
+  markers?: PriceMarker[]
+  /** Offered as the chart's expand control when the surface can host one. */
+  onExpandChart?: (activeRange: RangeKey | null) => void
   footer?: React.ReactNode
 }) {
   const oneMonthPct = p.closes && p.closes.length > 1 && p.closes[0]
@@ -818,21 +850,38 @@ export function MarketMode(p: {
             <Figure label="Range" size="sm"
               value={lo != null && hi != null ? `${lo.toFixed(2)} – ${hi.toFixed(2)}` : null} />
           </div>
-          {p.closes && p.closes.length > 1 ? (
-            /*
-             * The target joins the chart's SCALE, so the distance to it is
-             * visible rather than implied. See `Sparkline`.
-             *
-             * Capped rather than `flex-1`: left to fill, the chart took the
-             * whole canvas on a name with no other context, which is the
-             * sparkline again at four times the size.
-             */
-            // Capped hard, not `flex-1`. Allowed to fill, the chart ate the
-            // whole budget and pushed the dated events below the mode's scroll
-            // fold — which rendered as two orphan "8 months ago" captions with
-            // nothing under them. The events are the half of this mode the
-            // collapsed sparkline cannot already say, so they get guaranteed
-            // room.
+          {/*
+            * The real chart, not a bigger sparkline.
+            *
+            * `PriceContext` is the interactive price chart the Ideas feed and
+            * the dashboard use: ranges, axis labels, hover crosshair and
+            * press-and-hold scrub, target drawn as a BAND on the scale, and
+            * the dated events drawn as MARKERS on the line rather than as a
+            * caption strip underneath it. Every input is already in this
+            * mode — the history, the target, the case and research dates — so
+            * this is the same facts in a component that can be interrogated.
+            *
+            * The collapsed row keeps its flat `Sparkline`: at 20px a crosshair
+            * has nothing to point at, and a virtualised table would mount one
+            * pointer-capture region per visible row to no purpose.
+            */}
+          {p.series && p.series.length > 1 ? (
+            <div className="flex-1 min-h-0">
+              <PriceContext
+                symbol={p.symbol ?? ''}
+                series={p.series}
+                bands={p.target != null ? [{ label: 'Target', price: p.target, kind: 'target' }] : []}
+                markers={p.markers ?? []}
+                initialRange="3M"
+                plot="fill"
+                // Research states a fact about the price; it does not grade it.
+                directionNeutral
+                onExpand={p.onExpandChart}
+              />
+            </div>
+          ) : p.closes && p.closes.length > 1 ? (
+            // No dated series, but we do have closes — the flat path is all
+            // that can honestly be drawn without dates to scrub against.
             <div className="h-[92px] flex-shrink-0">
               <Sparkline points={p.closes} reference={p.target} />
             </div>
@@ -841,7 +890,16 @@ export function MarketMode(p: {
           )}
 
           {/* The dated record, if we have any of it. */}
-          {events.length > 0 && (
+          {/*
+            * The dated strip only survives where the chart cannot carry it.
+            *
+            * With a real series the events are MARKERS on the line, which is
+            * strictly better: they say when relative to the price rather than
+            * relative to each other, and they cost no vertical space in a
+            * fixed-height panel. Without dates there is no line to put them
+            * on, so the strip is the fallback.
+            */}
+          {!p.series && events.length > 0 && (
             <div className="flex-shrink-0 pt-2 border-t border-gray-900/[0.06] dark:border-white/[0.07]">
               <div className="flex items-start gap-x-5 gap-y-1.5 flex-wrap">
                 {events.slice(0, 3).map(e => (
@@ -1651,9 +1709,12 @@ export function WorkMode(p: {
             )}
 
             {p.idea.rationale && (
-              <div className="flex-1 min-h-0 overflow-y-auto pt-0.5">
+              <div className="flex-1 min-h-0 overflow-hidden pt-0.5">
                 <SectionHeading>Rationale</SectionHeading>
-                <p className="mt-1.5 text-[13.5px] text-gray-700 dark:text-gray-300 leading-[1.55] whitespace-pre-wrap">
+                {/* Clamped, not scrolled. The whole rationale is one click
+                    away in the idea workspace; a scrollbar here would hide
+                    the rest behind a bar nobody looks for. */}
+                <p className="mt-1.5 text-[13.5px] text-gray-700 dark:text-gray-300 leading-[1.55] whitespace-pre-wrap line-clamp-4">
                   {p.idea.rationale}
                 </p>
               </div>

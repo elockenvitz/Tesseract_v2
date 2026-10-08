@@ -147,6 +147,8 @@ export function ListRowExpansion({
 
   const {
     spot, target, positions, liveIdeas, decisions, sections, evidence, caseWrittenAt, ladder,
+    // `{ date, close }[]`, already the shape `PriceContext` wants.
+    history,
   } = workspace
 
   // ── Derived investment state ─────────────────────────────────────────
@@ -225,6 +227,29 @@ export function ListRowExpansion({
   const upsidePct = displaySpot != null && displaySpot > 0 && target != null
     ? ((target - displaySpot) / displaySpot) * 100
     : null
+
+  /**
+   * The dated events, as markers on the price line.
+   *
+   * Same three kinds the caption strip used to list — when the case was
+   * written, when research arrived, when the idea was raised — but positioned
+   * against the price instead of against each other. All canonical: the
+   * workspace's own `caseWrittenAt`, `evidence[].createdAt` and the scan's
+   * idea date. Nothing is synthesised and nothing is dated by guess.
+   */
+  const chartMarkers = useMemo(() => {
+    const out: Array<{ date: string; label: string; kind: 'event' }> = []
+    if (caseWrittenAt) out.push({ date: caseWrittenAt, label: 'Case written', kind: 'event' })
+    for (const c of (evidence ?? []).slice(0, 4)) {
+      out.push({ date: c.createdAt, label: c.title || 'Research', kind: 'event' })
+    }
+    const raised = signal?.idea?.createdAt
+    if (raised) {
+      const dir = (signal?.idea?.direction ?? '').toUpperCase()
+      out.push({ date: raised, label: dir ? `${dir} raised` : 'Idea raised', kind: 'event' })
+    }
+    return out
+  }, [caseWrittenAt, evidence, signal?.idea?.createdAt, signal?.idea?.direction])
 
   /** The month, from the same series the sparkline draws. */
   const oneMonthPct = useMemo(() => {
@@ -653,6 +678,14 @@ export function ListRowExpansion({
                 // The dated record around the move, from events we hold.
                 caseWrittenAt={caseWrittenAt}
                 ideaCreatedAt={signal?.idea?.createdAt ?? null}
+                /*
+                 * The real series, so Market gets the interactive chart rather
+                 * than an enlarged sparkline. `workspace.history` is already
+                 * `{date, close}[]` — exactly `PricePoint` — and is read by the
+                 * same `useAssetWorkspace` call this mode already makes.
+                 */
+                series={history?.length ? history : null}
+                markers={chartMarkers}
                 footer={footerFor('market')}
               />
             )}
