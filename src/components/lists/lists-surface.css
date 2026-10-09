@@ -40,6 +40,50 @@
   @apply text-gray-700 dark:text-gray-200;
 }
 
+/* ── Density ─────────────────────────────────────────────────────────────
+ *
+ * The density config's own padding is `px-4 py-3` at comfortable — 24px of
+ * vertical padding, which cannot fit two lines of identity inside a 44px
+ * row. `rowHeights` in `ListTableView` sets the row; this makes the cells
+ * actually fit it instead of overflowing and forcing the row taller.
+ */
+.lists-surface .pro-table-cell {
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+}
+
+/* ── The attention rail ──────────────────────────────────────────────────
+ *
+ * Drawn INSIDE the first cell, not on the row.
+ *
+ * `AssetTableView` puts an `inset 3px 0 0` box-shadow on the virtualised row
+ * container, which is correct and invisible: the identity column is frozen,
+ * so it is a positioned, opaque-backgrounded cell painted directly over the
+ * row's own left edge. The rail was in the DOM and behind the ticker the
+ * whole time — the computed style was right and the screen was wrong, which
+ * is exactly the failure mode that makes "verified in the DOM" worthless on
+ * its own.
+ *
+ * `--row-accent` is set as an inline custom property alongside the shadow,
+ * so the colour still comes from `rowAccentFn` and there is one source for
+ * it. No accent means the variable is absent and the bar is transparent.
+ */
+.lists-surface .pro-table-cell[data-col="ticker"] {
+  position: relative;
+}
+.lists-surface .pro-table-cell[data-col="ticker"]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--row-accent, transparent);
+  /* Square against the table edge, rounded into the row. */
+  border-radius: 0 2px 2px 0;
+  pointer-events: none;
+}
+
 /* ── Identity ────────────────────────────────────────────────────────── */
 
 .lists-surface .pro-symbol {

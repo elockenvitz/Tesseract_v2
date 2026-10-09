@@ -3655,8 +3655,20 @@ export function AssetTableView({
                           minHeight: hasWrapTextColumn && !isExpanded ? densityRowHeight : undefined,
                           transform: `translateY(${virtualRow.start + insertOffset}px)`,
                           boxShadow: accent?.color ? `inset 3px 0 0 0 ${accent.color}` : 'inset 0 0 0 0 transparent',
+                          /*
+                           * The same colour as a custom property, for surfaces
+                           * with a FROZEN first column.
+                           *
+                           * The inset shadow above paints on this row box and
+                           * is then covered by the pinned identity cell, which
+                           * is positioned and opaque — so on Lists the rail was
+                           * in the DOM, had the right computed style, and was
+                           * invisible. `lists-surface.css` reads this variable
+                           * to draw the bar inside that cell instead.
+                           */
+                          ...(accent?.color ? { ['--row-accent' as string]: accent.color } : null),
                           transition: 'box-shadow 200ms ease-out, opacity 200ms ease-out'
-                        }}>
+                        } as React.CSSProperties}>
                         {/* Drop indicator line */}
                         {canDragRows && dropTargetIndex === virtualRow.index && dragRowIndex !== null && dragRowIndex !== virtualRow.index && (
                           <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 z-10" style={{ transform: 'translateY(-1px)' }} />

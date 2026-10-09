@@ -17,7 +17,8 @@ import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ShareListDialog } from '../lists/ShareListDialog'
-import { ListTableView } from '../lists/ListTableView'
+import { ListTableView, ListViewSwitch } from '../lists/ListTableView'
+import { DEFAULT_LIST_VIEW, type ListView } from '../lists/listViewPresets'
 import { MobileListRows } from '../lists/MobileListRows'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { AddTradeIdeaModal } from '../trading/AddTradeIdeaModal'
@@ -126,6 +127,9 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const [rowFilters, setRowFilters] = useState<ListRowFilters>(EMPTY_FILTERS)
   // The investment-state lens, over and above those filters.
   const [lens, setLens] = useState<ListLens>('all')
+  /* Which preset the table shows. Held here because the switch lives on the
+     command band beside the pulse; the table consumes it. */
+  const [listView, setListView] = useState<ListView>(DEFAULT_LIST_VIEW)
 
   // Statuses for the progress strip (same query as cells; React Query dedupes)
   const { statuses: listStatuses } = useListStatuses(list.id)
@@ -658,7 +662,11 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         * rather than by a gap.
         */}
       {unfilteredAssets.length > 0 && (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-2 border-t border-gray-900/[0.06] dark:border-white/[0.07]">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-1.5 border-t border-gray-900/[0.06] dark:border-white/[0.07]">
+          {/* The preset switch leads the command band.
+              It had a full-width row of its own, which was the fourth stacked
+              band above the first security. */}
+          {!isScreen && <ListViewSwitch view={listView} onChange={setListView} />}
           <div className="min-w-0 sm:flex-1">
             <ListPulseStrip pulse={pulse} lens={lens} onLensChange={setLens} />
           </div>
@@ -802,6 +810,8 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
              * and would have to be bumped again for every future change.
              */
             storageKey={`listTableColumns_${list.id}`}
+            view={isScreen ? undefined : listView}
+            onViewChange={setListView}
             onBulkAction={(!isScreen && (permissions.canRemoveAnyItem || permissions.canRemoveFromOwnSection)) ? handleBulkAction : undefined}
             bulkActionLabel="Remove from List"
             bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}

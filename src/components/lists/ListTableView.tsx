@@ -44,6 +44,9 @@ interface ListTableViewProps {
 
   // Pass-throughs forwarded to AssetTableView
   storageKey?: string
+  /** Controlled preset, when the caller renders the switch itself. */
+  view?: ListView
+  onViewChange?: (v: ListView) => void
   fillHeight?: boolean
   onBulkAction?: (assetIds: string[]) => void
   bulkActionLabel?: string
@@ -119,7 +122,7 @@ const TERMINAL_STATUS_NAMES = new Set(['passed', 'rejected', 'archived', 'done',
  * because the names alone do not distinguish Research from Decide for someone
  * seeing the surface for the first time.
  */
-function ListViewSwitch({ view, onChange }: { view: ListView; onChange: (v: ListView) => void }) {
+export function ListViewSwitch({ view, onChange }: { view: ListView; onChange: (v: ListView) => void }) {
   const ids = LIST_VIEWS.map(v => v.id)
   const move = (delta: number) => {
     const next = ids[(ids.indexOf(view) + delta + ids.length) % ids.length]
@@ -186,19 +189,28 @@ export function ListTableView({
   // Destructured so the spread below cannot put the un-suffixed key back:
   // each preset persists its own layout. See `storageKeyFor`.
   storageKey,
+  view: controlledView,
+  onViewChange,
   ...passthrough
 }: ListTableViewProps) {
 
   /*
    * Which reading of the list is on screen.
    *
-   * Local state, not a route or a query param: a preset is a presentation
-   * choice over rows that are already loaded, so switching must not remount
-   * the table, refetch anything, or disturb the reader's scroll position and
-   * selection. All three views read the same `signalFor` and the same
-   * `marketFor`. See `listViewPresets`.
+   * A preset is a presentation choice over rows that are already loaded, so
+   * switching must not remount the table, refetch anything, or disturb the
+   * reader's scroll position and selection. All three views read the same
+   * `signalFor` and the same `marketFor`. See `listViewPresets`.
+   *
+   * Controlled by `ListTab` where it supplies one, because the switcher
+   * belongs on the command band beside the pulse rather than on a row of its
+   * own — four stacked bands put ~200px of chrome above the first security.
+   * Uncontrolled otherwise, so a caller that only wants the table still gets
+   * a working switch.
    */
-  const [view, setView] = React.useState<ListView>(DEFAULT_LIST_VIEW)
+  const [ownView, setOwnView] = React.useState<ListView>(DEFAULT_LIST_VIEW)
+  const view = controlledView ?? ownView
+  const setView = onViewChange ?? setOwnView
   const viewPreset = useMemo(() => presetFor(view), [view])
 
   // Per-row edit gate — mirrors canEditItemNotes for list-scoped fields.
@@ -383,7 +395,8 @@ export function ListTableView({
     // The scope for `lists-surface.css`. Everything inside gets the Lists
     // typographic treatment; no other table moves.
     <div className="lists-surface flex-1 min-h-0 flex flex-col">
-    <ListViewSwitch view={view} onChange={setView} />
+    {/* Only when uncontrolled. `ListTab` renders it on the command band. */}
+    {controlledView === undefined && <ListViewSwitch view={view} onChange={setView} />}
     <AssetTableView
       assets={assets}
       isLoading={isLoading}
@@ -436,7 +449,19 @@ export function ListTableView({
       // The identity cell carries the company under the ticker, which the
       // shared heights were not sized for — at 44px the second line clipped.
       // `micro` keeps the default: it hides the company anyway.
-      rowHeights={{ comfortable: 62, compact: 52, ultra: 38 }}
+      /*
+       * ~44px, which is the V2 line.
+       *
+       * These were 62 / 52 / 38 and they OVERRIDE `DENSITY_CONFIG`, whose
+       * compact row is already 44 — so the surface shipped a 62px row while
+       * the density control said Compact, and about nine names fitted where
+       * fourteen should. A watchlist is read by scanning, and scanning is a
+       * function of how many rows are on screen.
+       *
+       * Two lines of identity need ~34px of content, so the floor is set by
+       * the vertical padding, which `lists-surface.css` tightens to match.
+       */
+      rowHeights={{ comfortable: 44, compact: 38, ultra: 32, micro: 26 }}
       extraSortComparators={extraSortComparators}
       renderExtraCell={renderExtraCell}
       expandedRowSlot={expandedRowSlot}

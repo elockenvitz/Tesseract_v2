@@ -156,19 +156,29 @@ const WIDTH: Record<string, number> = {
  * columns carrying WORDS take the most; a figure needs only its digits.
  */
 const GROW: Record<string, number> = {
-  ticker: 3,
-  list_work: 3,
-  list_changed: 3,
+  /*
+   * Slack goes to the columns that carry WORDS, not to the ones that carry a
+   * short figure.
+   *
+   * Measured at 1440px before this: ticker 325px for a six-character symbol,
+   * and VIEW 209px standing empty on every row because almost nothing in the
+   * corpus is rated. Roughly a third of the table was reserved for content
+   * that is either tiny or absent. A watchlist earns its width by showing
+   * more names and longer reasons, not wider gaps.
+   */
+  ticker: 1.2,
+  list_work: 4,
+  list_changed: 4,
   list_market: 2,
-  list_view: 1.5,
-  list_exposure: 1.5,
-  list_sizing: 1.5,
-  list_case: 1,
-  list_owner: 1,
-  list_stage: 1,
-  list_valuation: 1,
-  list_evidence: 0.5,
-  list_age: 0.5,
+  list_view: 0.5,
+  list_exposure: 0.8,
+  list_sizing: 1.2,
+  list_case: 0.6,
+  list_owner: 0.6,
+  list_stage: 0.8,
+  list_valuation: 0.5,
+  list_evidence: 0.3,
+  list_age: 0.3,
 }
 
 /*
