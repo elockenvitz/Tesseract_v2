@@ -1072,7 +1072,33 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       const quote = await financialDataService.getQuote(asset.symbol)
       return quote
     },
-    enabled: !!asset.symbol && portfolioHoldings && portfolioHoldings.length > 0,
+    /*
+     * A price does not depend on owning the thing.
+     *
+     * This read `&& portfolioHoldings.length > 0`, so the quote was fetched
+     * only for names already in a book. For every other security — a
+     * research candidate, a watchlist name, anything being worked up before
+     * a position exists — `currentQuote` stayed undefined, and three things
+     * went quiet with it:
+     *
+     *   • `PriceTargetsSummary` computes upside as
+     *     `currentPrice && aggregatedPrice ? … : …` (PriceTargetsSummary.tsx:77),
+     *     so every upside figure rendered blank;
+     *   • `useRatingDivergence` bails on `!currentPrice`
+     *     (useRatingDivergence.ts:234) and returns no warning — the
+     *     rating-versus-expected-value check was SUPPRESSED rather than
+     *     deferred, on exactly the assets where a view is still forming;
+     *   • the capital bar's market value fell back to the holdings price.
+     *
+     * Meanwhile the header rendered a live price the whole time, because
+     * `StockQuote` (:2436) fetches its own and is ungated. So the symptom was
+     * a header quoting a price above a price-target panel showing dashes,
+     * with its integrity warnings off and nothing saying why.
+     *
+     * The holdings dependency was never a correctness condition. It was a
+     * cost control, and the cost it saved is one quote per asset page.
+     */
+    enabled: !!asset.symbol,
     staleTime: 15000, // Cache for 15 seconds
     refetchInterval: 30000, // Auto-refresh every 30 seconds
   })
