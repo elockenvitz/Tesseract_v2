@@ -199,6 +199,36 @@ full suite -> failure X -> npm run test:phone -- <spec> -g "X" -> fix
            -> targeted passes -> affected spec passes -> full guard once
 ```
 
+### Two failures that are not yours
+
+Both are environmental. Check against this list before spending time on a
+red full-suite run; neither blocks CI, which runs in a clean checkout.
+
+**Storybook browser-mode suites fail to collect in a git worktree.**
+`EmptyState.stories.tsx`, `Toast.stories.tsx` and `Button.stories.tsx` fail
+with `Failed to fetch dynamically imported module:
+@storybook/addon-vitest/.../setup-file.js`. Worktrees junction their
+`node_modules` from the primary checkout (see the worktree setup notes), so
+the module resolves to a path outside the worktree root and the browser-mode
+server will not serve it. Three *files* fail to collect; no test fails. Run
+the suite from the primary checkout if you need these.
+
+**A few unit suites are order-dependent under full-suite parallelism.**
+Observed across four consecutive full runs on one unchanged tree, the failing
+set differed every time — none, then `DecisionsWorkspace` +
+`benchmark-read-paths`, then `benchmark-read-paths` alone, then
+`outcomes-detail-mobile` + `benchmark-read-paths`. Every one passes in
+isolation. If a suite fails in a full run, re-run that file alone before
+treating it as a real failure:
+
+```
+npx vitest run <path/to/the.test.ts>
+```
+
+If it passes alone and your change does not touch its files, it is this.
+Neither limitation has been chased down; both are worth their own lane if
+they start costing review time.
+
 ## 4. Wait for CI
 
 Three checks run on every PR:

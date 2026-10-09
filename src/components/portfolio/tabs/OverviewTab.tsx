@@ -5,6 +5,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { useMarketData, useMarketStatus } from '../../../hooks/useMarketData'
 import { usePendingRationaleCount } from '../../../hooks/useTradeJournal'
 import { supabase } from '../../../lib/supabase'
+import { sumDayPnl, dayReturnPct } from '../../../lib/portfolio/day-pnl'
 import type { PortfolioHolding, CombinedUniverse, NavigateHandler } from './portfolio-tab-types'
 
 // ---------------------------------------------------------------------------
@@ -28,7 +29,11 @@ interface OverviewTabProps {
 // Formatting
 // ---------------------------------------------------------------------------
 
-function fmtCcy(value: number, opts?: { compact?: boolean; sign?: boolean }) {
+/* Null-aware at the formatter, not at each call site: every day-change figure
+   on this tab became nullable at once, and a guard per render is a guard per
+   render that someone writes as `?? 0`. See `EnrichedHolding.dayChange`. */
+function fmtCcy(value: number | null, opts?: { compact?: boolean; sign?: boolean }) {
+  if (value == null) return '—'
   const abs = Math.abs(value)
   const prefix = opts?.sign ? (value >= 0 ? '+' : '') : (value < 0 ? '-' : '')
   if (opts?.compact && abs >= 1_000_000) return `${prefix}$${(abs / 1_000_000).toFixed(1)}M`
@@ -37,12 +42,14 @@ function fmtCcy(value: number, opts?: { compact?: boolean; sign?: boolean }) {
   return `${prefix}$${abs.toFixed(2)}`
 }
 
-function fmtPct(value: number, opts?: { sign?: boolean }) {
+function fmtPct(value: number | null, opts?: { sign?: boolean }) {
+  if (value == null) return '—'
   const prefix = opts?.sign ? (value >= 0 ? '+' : '') : ''
   return `${prefix}${value.toFixed(2)}%`
 }
 
-function clr(v: number) {
+function clr(v: number | null) {
+  if (v == null) return 'text-gray-400 dark:text-gray-500'
   if (v > 0) return 'text-emerald-600'
   if (v < 0) return 'text-red-600'
   return 'text-gray-500 dark:text-gray-400'
@@ -63,9 +70,17 @@ interface Holding {
   weight: number
   gainLoss: number
   returnPct: number
-  dayChange: number
-  dayChangePct: number
-  dayPnl: number
+  /**
+   * Today's move, null when the quote carried no previous close.
+   *
+   * These were `number` filled with `?? 0`, so `todayPnl` summed unpriced
+   * holdings as contributing nothing and the hero figure read a confident
+   * $0.00. See `deriveChange` in `browser-client` for where the zero came
+   * from, and `PositionsTab` for the same correction on the same data.
+   */
+  dayChange: number | null
+  dayChangePct: number | null
+  dayPnl: number | null
   processStage?: string
   thesisAge?: number
 }
@@ -171,8 +186,8 @@ export function OverviewTab({
       const gl = mv - cb
       const ret = cb > 0 ? (gl / cb) * 100 : 0
       const q = quotes.get(symbol)
-      const dc = q?.change ?? 0
-      const dcp = q?.changePercent ?? 0
+      const dc = q?.change ?? null
+      const dcp = q?.changePercent ?? null
       let thesisAge: number | undefined
       if (h.assets?.updated_at) thesisAge = Math.floor((Date.now() - new Date(h.assets.updated_at).getTime()) / 86400000)
       return {
@@ -181,7 +196,7 @@ export function OverviewTab({
         shares, price, cost, marketValue: mv,
         weight: totalValue > 0 ? (mv / totalValue) * 100 : 0,
         gainLoss: gl, returnPct: ret,
-        dayChange: dc, dayChangePct: dcp, dayPnl: shares * dc,
+        dayChange: dc, dayChangePct: dcp, dayPnl: dc == null ? null : shares * dc,
         processStage: h.assets?.process_stage, thesisAge,
       }
     }).sort((a, b) => b.weight - a.weight)
@@ -194,17 +209,32 @@ export function OverviewTab({
   const ytdReturnPct = returnPercentage
 
   // ── Today ────────────────────────────────────────────────
-  const todayPnl = useMemo(() => enriched.reduce((s, h) => s + h.dayPnl, 0), [enriched])
-  const todayReturnPct = totalValue > 0 ? (todayPnl / (totalValue - todayPnl || 1)) * 100 : 0
+  /*
+   * Over PRICED holdings only, with the gap counted rather than summed.
+   *
+   * `reduce((s, h) => s + h.dayPnl, 0)` could not fail and could not be
+   * right: a book with no usable previous closes produced $0.00 and the hero
+   * tile presented it as today's result. Null means "no figure", and the
+   * tile says so instead of showing a number.
+   */
+  const { total: todayPnl, unpricedCount, pricedMarketValue } = useMemo(
+    () => sumDayPnl(enriched.map(h => ({ pnl: h.dayPnl, marketValue: h.marketValue }))),
+    [enriched],
+  )
+
+  // Against the priced holdings' own NAV, not the book's. See `dayReturnPct`.
+  const todayReturnPct = dayReturnPct(todayPnl, pricedMarketValue)
   const hasQuotes = quotes.size > 0
 
   // ── Movers ───────────────────────────────────────────────
   const contributors = useMemo(() =>
-    [...enriched].sort((a, b) => b.dayPnl - a.dayPnl).filter(h => h.dayPnl > 0).slice(0, 3),
+    [...enriched].sort((a, b) => (b.dayPnl ?? -Infinity) - (a.dayPnl ?? -Infinity))
+      .filter(h => h.dayPnl != null && h.dayPnl > 0).slice(0, 3),
     [enriched],
   )
   const detractors = useMemo(() =>
-    [...enriched].sort((a, b) => a.dayPnl - b.dayPnl).filter(h => h.dayPnl < 0).slice(0, 3),
+    [...enriched].sort((a, b) => (a.dayPnl ?? Infinity) - (b.dayPnl ?? Infinity))
+      .filter(h => h.dayPnl != null && h.dayPnl < 0).slice(0, 3),
     [enriched],
   )
   const hasMovers = contributors.length > 0 || detractors.length > 0
@@ -351,6 +381,17 @@ export function OverviewTab({
               <p className={`text-[9px] font-medium mt-0.5 tabular-nums leading-none ${clr(todayReturnPct)}`}>
                 {fmtPct(todayReturnPct, { sign: true })}
               </p>
+              {/* The figure above is over priced holdings only. A partial
+                  total is useful; a partial total presented as complete is
+                  the defect this whole change exists to remove. */}
+              {unpricedCount > 0 && (
+                <p
+                  className="text-[8px] font-medium mt-0.5 leading-none text-amber-600 dark:text-amber-500"
+                  title={`${unpricedCount} holding${unpricedCount === 1 ? '' : 's'} had no previous close, so no day change could be computed.`}
+                >
+                  {unpricedCount} unpriced
+                </p>
+              )}
             </>
           ) : (
             <p className="text-[17px] font-semibold text-gray-300 mt-1 tabular-nums leading-none">&mdash;</p>

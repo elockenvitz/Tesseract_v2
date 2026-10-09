@@ -167,16 +167,22 @@ function CommandInput({
 // ─── Quote Header (always visible in asset popup) ───────────────────
 
 function QuoteHeader({ quote, symbol }: { quote: Quote | null | undefined; symbol: string }) {
-  const isPositive = (quote?.changePercent ?? 0) >= 0
+  // `?? 0` here read an unknown change as "up". A quote can carry a price and
+  // no change at all — see `deriveChange` — so the percentage is shown only
+  // when there is one.
+  const pct = quote?.changePercent ?? null
+  const isPositive = pct != null && pct >= 0
   return (
     <div className="flex items-center gap-2 px-3 pt-2 pb-1">
       <span className="font-semibold text-gray-900 text-sm dark:text-white">{symbol}</span>
       {quote && (
         <>
           <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{formatPrice(quote.price)}</span>
-          <span className={`text-xs font-medium ${isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
-            {isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%
-          </span>
+          {pct != null && (
+            <span className={`text-xs font-medium ${isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
+              {isPositive ? '+' : ''}{pct.toFixed(2)}%
+            </span>
+          )}
         </>
       )}
     </div>
@@ -273,14 +279,19 @@ function ChartView({ symbol, quote }: { symbol: string; quote: Quote | null | un
 
 function PriceView({ quote }: { quote: Quote | null | undefined }) {
   if (!quote) return <NoDataMsg />
-  const isPositive = quote.changePercent >= 0
+  const hasChange = quote.change != null && quote.changePercent != null
+  const isPositive = hasChange && quote.changePercent! >= 0
   return (
     <div className="px-3 py-2 space-y-2 text-sm">
       <div className="flex items-baseline gap-2">
         <span className="text-2xl font-semibold text-gray-900 dark:text-white">{formatPrice(quote.price)}</span>
-        <span className={`text-sm font-medium ${isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
-          {isPositive ? '+' : ''}{quote.change.toFixed(2)} ({isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%)
-        </span>
+        {hasChange ? (
+          <span className={`text-sm font-medium ${isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
+            {isPositive ? '+' : ''}{quote.change!.toFixed(2)} ({isPositive ? '+' : ''}{quote.changePercent!.toFixed(2)}%)
+          </span>
+        ) : (
+          <span className="text-sm font-medium text-gray-400 dark:text-gray-500">no previous close</span>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
         <div>Open <span className="text-gray-700 float-right dark:text-gray-300">{formatPrice(quote.open)}</span></div>
@@ -320,6 +331,18 @@ function MarketCapView({ quote }: { quote: Quote | null | undefined }) {
 
 function ChangeView({ quote }: { quote: Quote | null | undefined }) {
   if (!quote) return <NoDataMsg />
+  // This whole view IS the change, so with no previous close there is nothing
+  // to show — and a 0.00 here would be the most emphatic version of the lie.
+  if (quote.change == null || quote.changePercent == null) {
+    return (
+      <div className="px-3 py-3 text-center">
+        <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Change</div>
+        <div className="text-sm text-gray-400 dark:text-gray-500">
+          No previous close on file for {quote.symbol}.
+        </div>
+      </div>
+    )
+  }
   const isPositive = quote.changePercent >= 0
   const color = isPositive ? 'text-emerald-600' : 'text-red-500'
   return (

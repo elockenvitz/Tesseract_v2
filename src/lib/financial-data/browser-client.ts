@@ -6,18 +6,59 @@
 // Simple client that works in the browser
 export interface Quote {
   symbol: string
+  /** Always known. A quote without a price is not a quote; `getQuote` refuses. */
   price: number
-  change: number
-  changePercent: number
+  /**
+   * Today's move, or null when the previous close is not known.
+   *
+   * ── Why these three are nullable and `price` is not ───────────────────────
+   *
+   * A change is a DERIVED figure: it needs two observations, and a provider
+   * that gives us one is common. The old type required a number, so every
+   * construction site invented one — `previousClose || currentPrice`, which
+   * makes the change exactly 0. That is not a flat tape, it is a missing
+   * previous close wearing the costume of a measurement, and nothing
+   * downstream could tell the two apart because the type did not let them.
+   *
+   * Measured consequence: `PositionsTab` and `OverviewTab` compute
+   * `dailyPnl = shares * (q?.change ?? 0)` and sum it, so a book whose quotes
+   * all lacked a previous close reported a confident session P&L of exactly
+   * $0.00 — a fabricated aggregate, not a blank cell.
+   *
+   * null means "not known". A genuine 0 — the price did close unchanged, and
+   * we have both observations to prove it — is still a 0 and is still shown.
+   */
+  change: number | null
+  changePercent: number | null
   open: number
   high: number
   low: number
-  previousClose: number
+  /** Null when the provider did not supply one. Never the current price. */
+  previousClose: number | null
   volume: number
   marketCap?: number
   timestamp: string
   dayHigh: number
   dayLow: number
+}
+
+/**
+ * The one place a change is derived, so the three providers cannot disagree.
+ *
+ * Returns nulls rather than zeros when the previous close is absent or
+ * unusable. A previous close of 0 is unusable: it is not a price, and
+ * dividing by it is how a provider gap becomes an infinite return.
+ */
+export function deriveChange(
+  currentPrice: number,
+  rawPreviousClose: unknown,
+): Pick<Quote, 'change' | 'changePercent' | 'previousClose'> {
+  const prev = rawPreviousClose == null ? NaN : Number(rawPreviousClose)
+  if (!Number.isFinite(prev) || prev <= 0) {
+    return { change: null, changePercent: null, previousClose: null }
+  }
+  const change = currentPrice - prev
+  return { change, changePercent: (change / prev) * 100, previousClose: prev }
 }
 
 export interface NewsItem {
@@ -218,15 +259,31 @@ export class BrowserFinancialService {
         return null
       }
 
+      /*
+       * Alpha Vantage states the change itself, so it is read rather than
+       * derived — but `|| '0'` turned an absent field into a measured zero
+       * exactly as the other two providers did. A missing field is parsed as
+       * NaN and normalised to null.
+       *
+       * This path is dormant (`alphaVantageKey` is permanently null, see the
+       * constructor) and is corrected anyway: the next person to wire a key in
+       * must not reintroduce the defect by inheriting it.
+       */
+      const num = (v: unknown): number | null => {
+        const n = v == null ? NaN : Number(v)
+        return Number.isFinite(n) ? n : null
+      }
+      const avPrice = parseFloat(quote['05. price'] || '0')
+      const avPrev = num(quote['08. previous close'])
       const result = {
         symbol: quote['01. symbol'] || symbol,
-        price: parseFloat(quote['05. price'] || '0'),
-        change: parseFloat(quote['09. change'] || '0'),
-        changePercent: parseFloat(quote['10. change percent']?.replace('%', '') || '0'),
+        price: avPrice,
+        change: num(quote['09. change']),
+        changePercent: num(quote['10. change percent']?.replace('%', '')),
+        previousClose: avPrev,
         open: parseFloat(quote['02. open'] || '0'),
         high: parseFloat(quote['03. high'] || '0'),
         low: parseFloat(quote['04. low'] || '0'),
-        previousClose: parseFloat(quote['08. previous close'] || '0'),
         volume: parseInt(quote['06. volume'] || '0'),
         timestamp: quote['07. latest trading day'],
         dayHigh: parseFloat(quote['03. high'] || '0'),
@@ -316,19 +373,41 @@ export class BrowserFinancialService {
     // Bar-level fields index the last SETTLED bar; a padded tail has none.
     if (latestIndex < 0) latestIndex = prices.length - 1
 
-    const previousClose = meta.previousClose || currentPrice
-    const change = currentPrice - previousClose
-    const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0
+    /**
+     * `chartPreviousClose` FIRST, because that is what a daily range sends.
+     *
+     * ── The bug this fixes, observed on every row ─────────────────────────
+     *
+     * This read `meta.previousClose || currentPrice`. The request one method
+     * below asks for `range=5d&interval=1d`, and on a DAILY interval Yahoo's
+     * chart meta carries `chartPreviousClose`, not `previousClose`. So the
+     * field was permanently undefined, the fallback made the previous close
+     * equal to the current price, and the derived change was exactly 0 — on a
+     * successful parse, with a real price and an honest timestamp.
+     *
+     * That is why the whole product showed `+0.00%`. It was never the
+     * provider-failure path — `getQuote` has returned null correctly since
+     * `createPlaceholderQuote` was deleted (see its note below). It was this
+     * line, reading a field name that payload never contains.
+     *
+     * The repo already knew the right name in another lane:
+     * `usePriceHistory.ts:210` parses the SAME payload and reads
+     * `meta.chartPreviousClose`, and `providers/yahoo-finance.ts` types it.
+     *
+     * `??` not `||`, both here and in `deriveChange`: a previous close of 0 is
+     * a bad observation that must be refused, not silently replaced by a
+     * number that makes the change look measured.
+     */
+    const rawPrev = meta.chartPreviousClose ?? meta.previousClose
+    const derived = deriveChange(currentPrice, rawPrev)
 
     return {
       symbol: meta.symbol || symbol.toUpperCase(),
       price: currentPrice,
-      change,
-      changePercent,
+      ...derived,
       open: opens[latestIndex] || currentPrice,
       high: highs[latestIndex] || currentPrice,
       low: lows[latestIndex] || currentPrice,
-      previousClose,
       volume: meta.regularMarketVolume || 0,
       marketCap: meta.marketCap,
       timestamp: new Date(meta.regularMarketTime * 1000).toISOString(),
@@ -436,19 +515,18 @@ export class BrowserFinancialService {
       }
 
       const currentPrice = quoteData.c
-      const previousClose = quoteData.pc || currentPrice
-      const change = currentPrice - previousClose
-      const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0
+      // `pc` is Finnhub's previous close. It was `|| currentPrice`, the same
+      // defect as the Yahoo path: an absent previous close became a measured
+      // zero change. Absent is now absent. See `deriveChange`.
+      const derived = deriveChange(currentPrice, quoteData.pc)
 
       const result = {
         symbol: symbol.toUpperCase(),
         price: currentPrice,
-        change: change,
-        changePercent: changePercent,
+        ...derived,
         open: quoteData.o || currentPrice,
         high: quoteData.h || currentPrice,
         low: quoteData.l || currentPrice,
-        previousClose: previousClose,
         volume: volume,
         timestamp: new Date(quoteData.t * 1000).toISOString(),
         dayHigh: quoteData.h || currentPrice,
