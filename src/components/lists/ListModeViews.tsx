@@ -885,11 +885,21 @@ export function OverviewMode(p: {
             * The rail is the only part of Overview that is not the case, and
             * both things in it answer "is what I just read still current".
             */}
+          {/*
+            * Two research items, not three, and two coverage chips, not
+            * three.
+            *
+            * The rail stacks three blocks into a panel that CLIPS, so its
+            * worst case has to fit rather than its typical one: at three
+            * apiece the list-scoped fields below were cut through the
+            * middle. The counts are the budget, and the full set is one
+            * click away in Research.
+            */}
           <div>
             <Label>{unread.length > 0 ? 'Changed since review' : 'Latest research'}</Label>
-            <div className="mt-1.5 space-y-2">
+            <div className="mt-1.5 space-y-1.5">
               {p.changes.length > 0
-                ? p.changes.slice(0, 3).map(c => <EvidenceItemView key={c.id} item={c} />)
+                ? p.changes.slice(0, 2).map(c => <EvidenceItemView key={c.id} item={c} />)
                 : <Quiet>Nothing filed since the case was written.</Quiet>}
             </div>
           </div>
@@ -898,7 +908,7 @@ export function OverviewMode(p: {
             <div>
               <Label>Covered by</Label>
               <div className="mt-1 space-y-0.5">
-                {p.coverage.slice(0, 3).map((c, i) => (
+                {p.coverage.slice(0, 2).map((c, i) => (
                   <CoverageChip key={`${c.analyst}-${i}`} analyst={c.analyst} team={c.team} isLead={c.isLead} />
                 ))}
               </div>

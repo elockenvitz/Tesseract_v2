@@ -35,6 +35,9 @@ interface CollaboratorUser {
 
 interface ListHeaderStripProps {
   list: ListLite
+  /** Clicking the title discloses the brief. Absent leaves the title inert. */
+  onTitleClick?: () => void
+  briefOpen?: boolean
   assetCount: number
   collaborators: CollaboratorUser[]
   ownerName?: string | null
@@ -62,6 +65,8 @@ const LIFECYCLE_CONFIG: Record<Lifecycle, { label: string; Icon: React.Component
 
 export function ListHeaderStrip({
   list,
+  onTitleClick,
+  briefOpen,
   assetCount,
   collaborators,
   ownerName,
@@ -99,9 +104,36 @@ export function ListHeaderStrip({
         />
 
         {/* Name */}
-        <h1 className="text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100 truncate">
-          {list.name}
-        </h1>
+        {/*
+          * The title opens the brief.
+          *
+          * The brief had a band of its own above the table — a line of
+          * placeholder text ("Add a brief…") occupying full width on every
+          * list that has not written one, which is most of them. It is
+          * reference material about the list, not about any security, so it
+          * belongs behind the thing it describes.
+          */}
+        {onTitleClick ? (
+          <button
+            type="button"
+            onClick={onTitleClick}
+            aria-expanded={!!briefOpen}
+            title={briefOpen ? 'Hide the brief' : 'Show the brief'}
+            className="group flex items-baseline gap-1.5 min-w-0 text-left"
+          >
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100 truncate group-hover:underline decoration-gray-300 underline-offset-4">
+              {list.name}
+            </h1>
+            <ChevronDown className={clsx(
+              'h-3.5 w-3.5 flex-shrink-0 text-gray-400 transition-transform',
+              briefOpen && 'rotate-180',
+            )} />
+          </button>
+        ) : (
+          <h1 className="text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100 truncate">
+            {list.name}
+          </h1>
+        )}
 
         {/* Favorite */}
         <button

@@ -235,7 +235,13 @@
 .lists-surface [data-open-entry="case"]      .pro-table-cell:has(.list-hit[data-entry="case"]),
 .lists-surface [data-open-entry="valuation"] .pro-table-cell:has(.list-hit[data-entry="valuation"]),
 .lists-surface [data-open-entry="position"]  .pro-table-cell:has(.list-hit[data-entry="position"]),
-.lists-surface [data-open-entry="work"]      .pro-table-cell:has(.list-hit[data-entry="work"]) {
+.lists-surface [data-open-entry="work"]      .pro-table-cell:has(.list-hit[data-entry="work"]),
+/* Monitor's split market line: one token per column, so clicking 1M does
+   not also light Last, 6M and Trend. */
+.lists-surface [data-open-entry="last"]      .pro-table-cell:has(.list-hit[data-entry="last"]),
+.lists-surface [data-open-entry="m1"]        .pro-table-cell:has(.list-hit[data-entry="m1"]),
+.lists-surface [data-open-entry="m6"]        .pro-table-cell:has(.list-hit[data-entry="m6"]),
+.lists-surface [data-open-entry="trend"]     .pro-table-cell:has(.list-hit[data-entry="trend"]) {
   background: rgba(37, 99, 235, 0.05);
 }
 /*
@@ -284,7 +290,11 @@
 .lists-surface [data-open-entry="case"]      .pro-table-cell:has(.list-hit[data-entry="case"])::after,
 .lists-surface [data-open-entry="valuation"] .pro-table-cell:has(.list-hit[data-entry="valuation"])::after,
 .lists-surface [data-open-entry="position"]  .pro-table-cell:has(.list-hit[data-entry="position"])::after,
-.lists-surface [data-open-entry="work"]      .pro-table-cell:has(.list-hit[data-entry="work"])::after {
+.lists-surface [data-open-entry="work"]      .pro-table-cell:has(.list-hit[data-entry="work"])::after,
+.lists-surface [data-open-entry="last"]      .pro-table-cell:has(.list-hit[data-entry="last"])::after,
+.lists-surface [data-open-entry="m1"]        .pro-table-cell:has(.list-hit[data-entry="m1"])::after,
+.lists-surface [data-open-entry="m6"]        .pro-table-cell:has(.list-hit[data-entry="m6"])::after,
+.lists-surface [data-open-entry="trend"]     .pro-table-cell:has(.list-hit[data-entry="trend"])::after {
   opacity: 1;
 }
 

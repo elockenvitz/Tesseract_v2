@@ -814,7 +814,7 @@ function LastCell({ price, liveQuotePrice, market }: {
   const fromClose = liveQuotePrice == null && close != null
   const stale = fromClose && (market?.ageDays ?? 0) > 4
   return (
-    <Hit entry="market" block>
+    <Hit entry="last" block>
       <span
         className="text-[13px] font-semibold tabular-nums text-gray-900 dark:text-gray-100"
         title={fromClose && close ? `Close of ${close.date}` : undefined}
@@ -837,7 +837,7 @@ function LastCell({ price, liveQuotePrice, market }: {
  * records no split factor, so a window spanning a discontinuity genuinely
  * cannot be compared, and an em-dash would read as "flat". See `price-metrics`.
  */
-function ReturnCell({ r }: { r?: WindowReturn }) {
+function ReturnCell({ r, entry }: { r?: WindowReturn; entry: EntryToken }) {
   if (!r || r.refused === 'no-series') return null
   if (r.refused === 'short-lookback') {
     return <span className="text-[10.5px] text-gray-300 dark:text-gray-600">no history</span>
@@ -851,7 +851,7 @@ function ReturnCell({ r }: { r?: WindowReturn }) {
   }
   if (r.pct == null) return null
   return (
-    <Hit entry="market">
+    <Hit entry={entry}>
       <span className={clsx(
         'text-[12.5px] font-semibold tabular-nums',
         r.pct >= 0
@@ -886,7 +886,7 @@ function TrendCell({ market, domain }: { market?: RowMarket; domain?: { lo: numb
    */
   return (
     <span
-      data-entry="market"
+      data-entry="trend"
       className="list-hit relative block flex-1 min-w-0 self-center"
       style={{ height: SPARK_HEIGHT }}
       data-testid="spark-cell"
@@ -1132,8 +1132,8 @@ export function renderSignalCell(
     case 'list_valuation': return <ValuationCell signal={signal} price={price} />
     case 'list_work':      return <WorkCell signal={signal} />
     case 'list_last':      return <LastCell price={finite(asset?.current_price)} liveQuotePrice={finite(quote?.price)} market={market} />
-    case 'list_1m':        return <ReturnCell r={market?.m1} />
-    case 'list_6m':        return <ReturnCell r={market?.m6} />
+    case 'list_1m':        return <ReturnCell r={market?.m1} entry="m1" />
+    case 'list_6m':        return <ReturnCell r={market?.m6} entry="m6" />
     case 'list_trend':     return <TrendCell market={market} domain={domain} />
     case 'list_case':      return <CaseCell signal={signal} />
     case 'list_evidence':  return <EvidenceCell signal={signal} />

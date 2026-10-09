@@ -66,6 +66,19 @@ export const MODE_FOR_COLUMN: Readonly<Record<string, ListRowMode>> = {
   ticker: 'overview',
   companyName: 'overview',
   list_market: 'market',
+  /*
+   * Monitor's split market line. All four open the chart.
+   *
+   * These were added to the preset and to `LIST_SIGNAL_COLUMNS` but not
+   * here — and `LIST_EXPANSION_ENTRY_COLUMNS` is derived from the keys of
+   * this map, so the table's click handler never opted them in. Clicking a
+   * price, a return or the sparkline did nothing at all: the cell was not a
+   * registered entry point, so `openRowFromCell` was never called.
+   */
+  list_last: 'market',
+  list_1m: 'market',
+  list_6m: 'market',
+  list_trend: 'market',
   list_exposure: 'position',
   list_view: 'research',
   list_valuation: 'market',
@@ -119,6 +132,15 @@ export const LIST_EXPANSION_ENTRY_COLUMNS: ReadonlySet<string> =
  */
 export const ENTRY_TOKENS = [
   'overview', 'market', 'valuation', 'case', 'research', 'position', 'work',
+  /*
+   * Monitor's four market cells each get their OWN token.
+   *
+   * They all open the chart, so a single `market` token would have served
+   * the routing — and did, by lighting all four cells at once when any one
+   * was clicked. The ring is keyed on the token, so a token shared by four
+   * columns is a ring that cannot say which one the reader touched.
+   */
+  'last', 'm1', 'm6', 'trend',
 ] as const
 export type EntryToken = typeof ENTRY_TOKENS[number]
 
@@ -140,6 +162,10 @@ const ENTRY_MODE: Readonly<Record<EntryToken, ListRowMode>> = {
   // and both open the one chart that draws them together.
   market: 'market',
   valuation: 'market',
+  last: 'market',
+  m1: 'market',
+  m6: 'market',
+  trend: 'market',
   // The rating cell and the Research preset's case columns both interrogate
   // the written case. `case` is the token the cells stamp; `research` is the
   // mode, and the token the mode echoes back for the ring.
@@ -213,8 +239,17 @@ export function expandedRowHeightForDensity(density: string): number {
  * deliberate click is what the approved design asks for.
  */
 const MODE_HEIGHT: Readonly<Record<ListRowMode, number>> = {
-  // Three short columns and a verdict line.
-  overview: 270,
+  /*
+   * Three short columns and a verdict line — plus the RAIL, which is what
+   * 270 forgot.
+   *
+   * The main columns fit easily; the rail stacks Latest research, Covered by
+   * and the list-scoped fields, and at 270 the last of those was cut through
+   * the middle. `ModeLayout` clips rather than scrolls, by design, so a rail
+   * taller than the panel is a silently truncated rail. 310 holds all three
+   * with the rail's own gaps tightened (see `OverviewMode`).
+   */
+  overview: 310,
   // The chart is the mode; 360 leaves it ~300px after the shell, which is
   // the band where a 6-month path reads as a trend rather than a horizon.
   market: 360,
@@ -256,6 +291,11 @@ const COLUMN_ENTRY: Readonly<Record<string, EntryToken>> = {
   companyName: 'overview',
   coverage: 'overview',
   list_market: 'market',
+  /* One token per column, so the ring names the cell that was clicked. */
+  list_last: 'last',
+  list_1m: 'm1',
+  list_6m: 'm6',
+  list_trend: 'trend',
   price: 'market',
   change: 'market',
   list_valuation: 'valuation',

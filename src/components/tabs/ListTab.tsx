@@ -130,6 +130,9 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
   /* Which preset the table shows. Held here because the switch lives on the
      command band beside the pulse; the table consumes it. */
   const [listView, setListView] = useState<ListView>(DEFAULT_LIST_VIEW)
+  /* The brief is reference material about the LIST, so it hides behind the
+     title rather than taking a band above every security. */
+  const [briefOpen, setBriefOpen] = useState(false)
 
   // Statuses for the progress strip (same query as cells; React Query dedupes)
   const { statuses: listStatuses } = useListStatuses(list.id)
@@ -615,6 +618,8 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     <div className="h-full flex flex-col">
       <ListHeaderStrip
         list={displayList}
+        onTitleClick={() => setBriefOpen(o => !o)}
+        briefOpen={briefOpen}
         assetCount={assets.length}
         collaborators={collaborators as any}
         ownerName={ownerName}
@@ -629,11 +634,17 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         addAssetSlot={(!isScreen && canAdd) ? <InlineAssetAdder listId={list.id} existingAssetIds={existingAssetIds} /> : null}
       />
 
-      <ListBrief
-        listId={list.id}
-        brief={listDetail?.brief ?? null}
-        canEdit={permissions.canWrite}
-      />
+      {/* Disclosed from the title, not a permanent band. See
+          `ListHeaderStrip`'s title button. */}
+      {briefOpen && (
+        <div className="border-b border-gray-900/[0.06] pb-1.5 dark:border-white/[0.07]">
+          <ListBrief
+            listId={list.id}
+            brief={listDetail?.brief ?? null}
+            canEdit={permissions.canWrite}
+          />
+        </div>
+      )}
 
       {isScreen && (
         <div className="py-1.5">
