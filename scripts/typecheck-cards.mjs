@@ -196,7 +196,7 @@ const MAX_ERRORS = 0
 // reason: deleting two hand-rolled fan-in implementations in favour of
 // `resolveIdeaAfterDecision` removed the loosely-typed `as any` track scans
 // they each carried.
-const MAX_REPO_ERRORS = 8655
+const MAX_REPO_ERRORS = 8653
 
 /**
  * A floor on real source files, now that they are counted as source files.
