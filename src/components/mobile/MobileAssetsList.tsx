@@ -204,7 +204,9 @@ function WatchRow({
   onSelect,
 }: {
   asset: any
-  quote?: { price?: number; change?: number; changePercent?: number }
+  // Nullable, because a quote can carry a price and no change at all —
+  // the provider gave one observation, not two. See `deriveChange`.
+  quote?: { price?: number | null; change?: number | null; changePercent?: number | null }
   spark?: Sparkline
   onSelect: () => void
 }) {

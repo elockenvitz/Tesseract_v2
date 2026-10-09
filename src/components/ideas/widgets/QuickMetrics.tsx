@@ -59,7 +59,10 @@ export function QuickMetrics({
 
   const metrics = []
 
-  if (showChange) {
+  // A change the provider could not give us is omitted, not shown as 0%.
+  // A metric chip with a trend arrow is a claim about direction, and there is
+  // no direction without a previous close. See `deriveChange`.
+  if (showChange && quote.change != null && quote.changePercent != null) {
     const isPositive = quote.change >= 0
     metrics.push({
       icon: isPositive ? TrendingUp : TrendingDown,
