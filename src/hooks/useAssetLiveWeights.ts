@@ -213,7 +213,9 @@ async function fetchPrices(symbols: string[]): Promise<Map<string, number>> {
  * Before the open, `price` is often the previous close anyway; after a failed
  * intraday fetch, yesterday's close is still the honest answer.
  */
-export function pickPrice(quote: { price?: number; previousClose?: number } | null): number | null {
+export function pickPrice(
+  quote: { price?: number | null; previousClose?: number | null } | null,
+): number | null {
   if (!quote) return null
   if (typeof quote.price === 'number' && quote.price > 0) return quote.price
   if (typeof quote.previousClose === 'number' && quote.previousClose > 0) return quote.previousClose

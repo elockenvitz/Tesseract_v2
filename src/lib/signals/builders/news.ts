@@ -43,7 +43,14 @@ export interface NewsInput {
   /** Largest weight the name takes in any one of them, percent. */
   maxWeightPct?: number | null
   /** Today's move for the primary symbol, if a quote is on hand. */
-  quote?: { changePercent: number; asOf: string } | null
+  /**
+   * `changePercent` is nullable because the quote layer's is: a provider can
+   * give a price and no previous close, and `deriveChange` reports that as
+   * null rather than 0. `isDisplayableNumber` below already rejects null, so
+   * the gate is unchanged — the type just stops callers having to launder a
+   * null into a zero to satisfy it, which is how the zero got in last time.
+   */
+  quote?: { changePercent: number | null; asOf: string } | null
 }
 
 /**

@@ -173,14 +173,21 @@ export function FinancialChart({
                 <span className="text-gray-600 dark:text-gray-400">Current:</span>
                 <span className="ml-1 font-medium">${currentQuote.price.toFixed(2)}</span>
               </div>
+              {/* A change needs a previous close. Without one there is no
+                  figure to colour, so the row says so rather than showing a
+                  green zero. See `deriveChange` in browser-client. */}
               <div>
                 <span className="text-gray-600 dark:text-gray-400">Change:</span>
-                <span className={`ml-1 font-medium ${
-                  currentQuote.change >= 0 ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {currentQuote.change >= 0 ? '+' : ''}${currentQuote.change.toFixed(2)}
-                  ({currentQuote.change >= 0 ? '+' : ''}{currentQuote.changePercent.toFixed(2)}%)
-                </span>
+                {currentQuote.change == null || currentQuote.changePercent == null ? (
+                  <span className="ml-1 font-medium text-gray-400 dark:text-gray-500">—</span>
+                ) : (
+                  <span className={`ml-1 font-medium ${
+                    currentQuote.change >= 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {currentQuote.change >= 0 ? '+' : ''}${currentQuote.change.toFixed(2)}
+                    ({currentQuote.change >= 0 ? '+' : ''}{currentQuote.changePercent.toFixed(2)}%)
+                  </span>
+                )}
               </div>
             </div>
           )}

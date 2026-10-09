@@ -92,8 +92,20 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
     )
   }
 
-  const changeColor = quote.change >= 0 ? 'text-green-600' : 'text-red-600'
-  const changeSymbol = quote.change >= 0 ? '+' : ''
+  /*
+   * A quote may have a price and no change: the provider gave us one
+   * observation, not two. `deriveChange` in `browser-client` returns null
+   * rather than inventing a zero, so every change render here has to be
+   * prepared for "we do not know" — which is an em-dash in neutral ink, not
+   * a green `+0.00`.
+   */
+  const hasChange = quote.change != null && quote.changePercent != null
+  const changeColor = !hasChange
+    ? 'text-gray-400 dark:text-gray-500'
+    : quote.change! >= 0 ? 'text-green-600' : 'text-red-600'
+  const changeSymbol = hasChange && quote.change! >= 0 ? '+' : ''
+  const changeAbs = hasChange ? `${changeSymbol}${quote.change!.toFixed(2)}` : '—'
+  const changePct = hasChange ? `(${changeSymbol}${quote.changePercent!.toFixed(2)}%)` : ''
 
   // Price only mode for table cells
   if (showOnlyPrice) {
@@ -108,8 +120,8 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
   if (showOnlyChange) {
     return (
       <div className={`${changeColor} ${className} flex items-center gap-2`}>
-        <span>{changeSymbol}{quote.change.toFixed(2)}</span>
-        <span>({changeSymbol}{quote.changePercent.toFixed(2)}%)</span>
+        <span>{changeAbs}</span>
+        {changePct && <span>{changePct}</span>}
       </div>
     )
   }
@@ -121,7 +133,7 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
         <div className="flex flex-col">
           <div className="text-2xl font-bold text-gray-900 dark:text-white">${quote.price.toFixed(2)}</div>
           <div className={`text-sm font-medium ${changeColor}`}>
-            {changeSymbol}{quote.change.toFixed(2)} ({changeSymbol}{quote.changePercent.toFixed(2)}%)
+            {changeAbs} {changePct}
           </div>
           <div className="text-xs text-gray-400 mt-1">
             {new Date(quote.timestamp).toLocaleTimeString()}
@@ -141,12 +153,8 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
       </div>
 
       <div className={`flex items-center gap-2 text-sm ${changeColor}`}>
-        <span>
-          {changeSymbol}{quote.change.toFixed(2)}
-        </span>
-        <span>
-          ({changeSymbol}{quote.changePercent.toFixed(2)}%)
-        </span>
+        <span>{changeAbs}</span>
+        {changePct && <span>{changePct}</span>}
       </div>
 
       {showDetails && (
@@ -157,7 +165,7 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
           </div>
           <div>
             <span className="block font-medium">Prev Close</span>
-            <span>${quote.previousClose.toFixed(2)}</span>
+            <span>{quote.previousClose == null ? '—' : `$${quote.previousClose.toFixed(2)}`}</span>
           </div>
           <div>
             <span className="block font-medium">Day High</span>

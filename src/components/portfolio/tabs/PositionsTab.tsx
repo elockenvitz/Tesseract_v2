@@ -3,13 +3,24 @@ import { TrendingUp, ChevronUp, ChevronDown, ArrowRight } from 'lucide-react'
 import { useMarketData } from '../../../hooks/useMarketData'
 import { useIsMobile } from '../../../hooks/useMediaQuery'
 import { OptionPicker } from '../../ui/OptionPicker'
+import { sumDayPnl, dayReturnPct } from '../../../lib/portfolio/day-pnl'
 import type { PortfolioHolding, NavigateHandler } from './portfolio-tab-types'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function fmtPnl(val: number): string {
+/**
+ * A P&L figure, or an em-dash when there is no figure.
+ *
+ * Null-aware at the formatter rather than at thirty call sites: every
+ * day-change number on this tab became nullable at once (a quote with no
+ * previous close yields no change — see `deriveChange`), and threading a
+ * guard through each render would have been thirty chances to write `?? 0`
+ * and put the fabricated zero back.
+ */
+function fmtPnl(val: number | null): string {
+  if (val == null) return '—'
   const abs = Math.abs(val)
   const sign = val >= 0 ? '+' : '-'
   if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`
@@ -30,7 +41,18 @@ function freshnessInfo(daysAgo: number | null) {
   return { label: `${daysAgo}d`, cls: 'text-red-600', dotCls: 'bg-red-500' }
 }
 
-function clr(v: number) { return v > 0 ? 'text-green-600' : v < 0 ? 'text-red-600' : 'text-gray-500 dark:text-gray-400' }
+/** Unknown is grey, like flat — but it is reached by a different branch, and
+ *  the figure beside it reads "—" rather than a number. */
+function clr(v: number | null) {
+  if (v == null) return 'text-gray-400 dark:text-gray-500'
+  return v > 0 ? 'text-green-600' : v < 0 ? 'text-red-600' : 'text-gray-500 dark:text-gray-400'
+}
+
+/** A signed percentage, or an em-dash. Same reasoning as `fmtPnl`. */
+function fmtPct(v: number | null, dp = 1): string {
+  if (v == null) return '—'
+  return `${v >= 0 ? '+' : ''}${v.toFixed(dp)}%`
+}
 
 // ---------------------------------------------------------------------------
 // View presets & grouping
@@ -106,9 +128,20 @@ interface EnrichedRow {
   gainLoss: number
   returnPct: number
   weightPct: number
-  dayChange: number
-  dayChangePct: number
-  dailyPnl: number
+  /**
+   * Today's move, and null when we do not have one.
+   *
+   * These were `number`, filled with `q?.change ?? 0`. A holding whose quote
+   * carried no previous close therefore contributed a confident `0` to
+   * `totalDailyPnl` and rendered `+0.0%` in its own row — so a book with no
+   * usable quotes reported a session P&L of exactly $0.00 as if measured.
+   * Null is the only value that distinguishes "flat" from "unknown", and the
+   * aggregates below count what they could not price rather than summing it
+   * as nothing. Cash is a real 0, not an unknown.
+   */
+  dayChange: number | null
+  dayChangePct: number | null
+  dailyPnl: number | null
   daysAgo: number | null
   processStage: string | null
   priority: string | null
@@ -219,9 +252,11 @@ export function PositionsTab({
       const returnPct = isCash || costBasis <= 0 ? 0 : (gainLoss / costBasis) * 100
       const weightPct = totalValue > 0 ? (marketValue / totalValue) * 100 : 0
       const q = quotes.get(symbol)
-      const dayChange = q?.change ?? 0
-      const dayChangePct = q?.changePercent ?? 0
-      const dailyPnl = isCash ? 0 : shares * dayChange
+      // Cash does not move, which is a measurement. Everything else needs a
+      // quote that actually carried a previous close — see `deriveChange`.
+      const dayChange = isCash ? 0 : (q?.change ?? null)
+      const dayChangePct = isCash ? 0 : (q?.changePercent ?? null)
+      const dailyPnl = isCash ? 0 : (dayChange == null ? null : shares * dayChange)
       let daysAgo: number | null = null
       if (h.assets?.updated_at) {
         daysAgo = Math.floor((Date.now() - new Date(h.assets.updated_at).getTime()) / 86400000)
@@ -240,32 +275,52 @@ export function PositionsTab({
     })
   }, [sortedHoldings, quotes, totalValue])
 
-  // ── Session summary ────────────────────────────────────────
-  const totalDailyPnl = useMemo(() => enrichedRows.reduce((s, r) => s + r.dailyPnl, 0), [enrichedRows])
-  const totalDailyReturnPct = useMemo(() => {
-    const prevNav = totalValue - totalDailyPnl
-    return prevNav > 0 ? (totalDailyPnl / prevNav) * 100 : 0
-  }, [totalValue, totalDailyPnl])
+  /*
+   * ── Session summary, and what it refuses to claim ─────────────────────
+   *
+   * `reduce((s, r) => s + r.dailyPnl, 0)` over rows whose `dailyPnl` was
+   * `?? 0` could not fail and could not be right: an unpriced book summed to
+   * a clean $0.00 and the header presented it as the day's result.
+   *
+   * So the total is over PRICED rows only, and `unpricedCount` travels with
+   * it. A partial total is still useful — it is the part of the book we can
+   * actually price — but it must be labelled as partial, which is what the
+   * header does with this count. When nothing is priced there is no total at
+   * all, rather than a zero.
+   */
+  const { total: totalDailyPnl, unpricedCount } = useMemo(
+    () => sumDayPnl(enrichedRows.map(r => r.dailyPnl)),
+    [enrichedRows],
+  )
+
+  const totalDailyReturnPct = useMemo(
+    () => dayReturnPct(totalDailyPnl, totalValue),
+    [totalValue, totalDailyPnl],
+  )
 
   // ── Display rows (filtered/sorted by active view, then grouped) ──
   const displayRows = useMemo<EnrichedRow[]>(() => {
     let rows: EnrichedRow[]
     switch (activeView) {
       case 'contributors':
-        rows = [...enrichedRows].filter(r => r.dailyPnl > 0).sort((a, b) => b.dailyPnl - a.dailyPnl)
+        // `> 0` and `< 0` are both false for null, so an unpriced row simply
+        // is not a contributor or a detractor — which is correct: we do not
+        // know that it contributed nothing, we know we cannot say.
+        rows = [...enrichedRows].filter(r => (r.dailyPnl ?? 0) > 0).sort((a, b) => (b.dailyPnl ?? 0) - (a.dailyPnl ?? 0))
         break
       case 'detractors':
-        rows = [...enrichedRows].filter(r => r.dailyPnl < 0).sort((a, b) => a.dailyPnl - b.dailyPnl)
+        rows = [...enrichedRows].filter(r => (r.dailyPnl ?? 0) < 0).sort((a, b) => (a.dailyPnl ?? 0) - (b.dailyPnl ?? 0))
         break
       case 'largest':
         rows = [...enrichedRows].sort((a, b) => b.weightPct - a.weightPct)
         break
       case 'big-movers':
-        rows = [...enrichedRows].sort((a, b) => Math.abs(b.dailyPnl) - Math.abs(a.dailyPnl))
+        // Unpriced sinks rather than sorting as "did not move".
+        rows = [...enrichedRows].sort((a, b) => Math.abs(b.dailyPnl ?? -Infinity) - Math.abs(a.dailyPnl ?? -Infinity))
         break
       case 'gainers-losers':
         // Split view handles rendering; flat list ordered gainers-first for keyboard nav
-        rows = [...enrichedRows].sort((a, b) => b.dayChangePct - a.dayChangePct)
+        rows = [...enrichedRows].sort((a, b) => (b.dayChangePct ?? -Infinity) - (a.dayChangePct ?? -Infinity))
         break
       case 'stale':
         rows = [...enrichedRows]
@@ -298,9 +353,13 @@ export function PositionsTab({
 
   // ── Group metadata for section headers ──────────────────────
   interface GroupMeta {
-    count: number; weight: number; dailyPnl: number
+    count: number; weight: number
+    /** Null when no member of the group could be priced. */
+    dailyPnl: number | null
+    /** Members we could not price — the group total is partial by this many. */
+    unpriced: number
     marketValue: number; costBasis: number; unrealizedPnl: number
-    shares: number; returnPct: number; dailyReturnPct: number
+    shares: number; returnPct: number; dailyReturnPct: number | null
   }
   const groupMeta = useMemo(() => {
     if (isSplitView || groupBy === 'none') return new Map<string, GroupMeta>()
@@ -308,10 +367,12 @@ export function PositionsTab({
     for (const row of displayRows) {
       const key = rowGroupKey(row, groupBy)
       if (key === null) continue
-      const g = meta.get(key) || { count: 0, weight: 0, dailyPnl: 0, marketValue: 0, costBasis: 0, unrealizedPnl: 0, shares: 0, returnPct: 0, dailyReturnPct: 0 }
+      const g = meta.get(key) || { count: 0, weight: 0, dailyPnl: null, unpriced: 0, marketValue: 0, costBasis: 0, unrealizedPnl: 0, shares: 0, returnPct: 0, dailyReturnPct: null }
       g.count++
       g.weight += row.weightPct
-      g.dailyPnl += row.dailyPnl
+      // Same rule as the book total: sum what is priced, count what is not.
+      if (row.dailyPnl == null) g.unpriced++
+      else g.dailyPnl = (g.dailyPnl ?? 0) + row.dailyPnl
       g.marketValue += row.marketValue
       g.costBasis += row.costBasis
       g.unrealizedPnl += row.gainLoss
@@ -321,8 +382,9 @@ export function PositionsTab({
     // Compute proper group-level returns
     for (const g of meta.values()) {
       g.returnPct = g.costBasis > 0 ? (g.unrealizedPnl / g.costBasis) * 100 : 0
+      if (g.dailyPnl == null) { g.dailyReturnPct = null; continue }
       const prevNav = g.marketValue - g.dailyPnl
-      g.dailyReturnPct = prevNav > 0 ? (g.dailyPnl / prevNav) * 100 : 0
+      g.dailyReturnPct = prevNav > 0 ? (g.dailyPnl / prevNav) * 100 : null
     }
     return meta
   }, [displayRows, groupBy, isSplitView])
@@ -355,10 +417,13 @@ export function PositionsTab({
     const sorted = [...enrichedRows].sort((a, b) => b.weightPct - a.weightPct)
     const rank = sorted.findIndex(r => r.symbol === selectedRow.symbol) + 1
     const top3Wt = sorted.slice(0, 3).reduce((s, r) => s + r.weightPct, 0)
-    const contributionPct = totalDailyPnl !== 0 ? (selectedRow.dailyPnl / totalDailyPnl) * 100 : 0
+    // A share of a total nobody could compute is not a share of anything.
+    const contributionPct = selectedRow.dailyPnl != null && totalDailyPnl != null && totalDailyPnl !== 0
+      ? (selectedRow.dailyPnl / totalDailyPnl) * 100
+      : null
     const sectorPeers = enrichedRows.filter(r => r.sector === selectedRow.sector)
     const sectorWt = sectorPeers.reduce((s, r) => s + r.weightPct, 0)
-    const byAbsDailyPnl = [...enrichedRows].sort((a, b) => Math.abs(b.dailyPnl) - Math.abs(a.dailyPnl))
+    const byAbsDailyPnl = [...enrichedRows].sort((a, b) => Math.abs(b.dailyPnl ?? -Infinity) - Math.abs(a.dailyPnl ?? -Infinity))
     const dailyImpactRank = byAbsDailyPnl.findIndex(r => r.symbol === selectedRow.symbol) + 1
     return { rank, top3Wt, totalDailyPnl, contributionPct, sectorPeers, sectorWt, totalPositions: enrichedRows.length, dailyImpactRank }
   }, [selectedRow, enrichedRows, totalDailyPnl])
@@ -461,8 +526,18 @@ export function PositionsTab({
               {fmtPnl(totalDailyPnl)}
             </span>
             <span className={`text-[10px] tabular-nums ${clr(totalDailyReturnPct)}`}>
-              {totalDailyReturnPct >= 0 ? '+' : ''}{totalDailyReturnPct.toFixed(2)}%
+              {fmtPct(totalDailyReturnPct, 2)}
             </span>
+            {/* The total is over priced rows only. Saying how many it skipped
+                is the difference between a partial figure and a wrong one. */}
+            {unpricedCount > 0 && (
+              <span
+                className="text-[10px] text-amber-600 dark:text-amber-500"
+                title={`${unpricedCount} holding${unpricedCount === 1 ? '' : 's'} had no previous close, so no day change could be computed for ${unpricedCount === 1 ? 'it' : 'them'}.`}
+              >
+                {unpricedCount} unpriced
+              </span>
+            )}
           </div>
         )}
 
@@ -593,7 +668,7 @@ export function PositionsTab({
                             <div className="leading-tight">
                               <span className={`text-[11px] font-semibold tabular-nums ${clr(gMeta.dailyPnl)}`}>{fmtPnl(gMeta.dailyPnl)}</span>
                               <span className={`text-[9px] tabular-nums ml-0.5 ${clr(gMeta.dailyReturnPct)}`}>
-                                {gMeta.dailyReturnPct >= 0 ? '+' : ''}{gMeta.dailyReturnPct.toFixed(1)}%
+                                {fmtPct(gMeta.dailyReturnPct)}
                               </span>
                             </div>
                           ) : (
@@ -661,8 +736,8 @@ export function PositionsTab({
                         {q ? (
                           <div className="leading-tight">
                             <span className={`text-[13px] font-medium tabular-nums ${clr(row.dailyPnl)}`}>{fmtPnl(row.dailyPnl)}</span>
-                            <span className={`text-[10px] tabular-nums ml-0.5 ${row.dayChangePct >= 0 ? 'text-green-500/60' : 'text-red-500/60'}`}>
-                              {row.dayChangePct >= 0 ? '+' : ''}{row.dayChangePct.toFixed(1)}%
+                            <span className={`text-[10px] tabular-nums ml-0.5 ${row.dayChangePct == null ? 'text-gray-400' : row.dayChangePct >= 0 ? 'text-green-500/60' : 'text-red-500/60'}`}>
+                              {fmtPct(row.dayChangePct)}
                             </span>
                           </div>
                         ) : (
@@ -774,18 +849,16 @@ function GainersLosersView({ rows, hasQuotes, selectedAssetId, selectedCol, expa
   quotes: Map<string, any>
   onNavigate?: NavigateHandler
 }) {
-  const gainers = useMemo(
-    () => rows.filter(r => r.dailyPnl > 0),
-    [rows],
-  )
-  const losers = useMemo(
-    () => rows.filter(r => r.dailyPnl < 0),
-    [rows],
-  )
+  const gainers = useMemo(() => rows.filter(r => r.dailyPnl != null && r.dailyPnl > 0), [rows])
+  const losers = useMemo(() => rows.filter(r => r.dailyPnl != null && r.dailyPnl < 0), [rows])
+  /* `=== 0` is now genuinely "did not move", because an unpriced row is null
+     and is counted separately. Previously the two were the same value and
+     this number silently counted both. */
   const unchanged = useMemo(() => rows.filter(r => r.dailyPnl === 0).length, [rows])
+  const unpriced = useMemo(() => rows.filter(r => r.dailyPnl == null).length, [rows])
 
-  const gainersPnl = useMemo(() => gainers.reduce((s, r) => s + r.dailyPnl, 0), [gainers])
-  const losersPnl = useMemo(() => losers.reduce((s, r) => s + r.dailyPnl, 0), [losers])
+  const gainersPnl = useMemo(() => gainers.reduce((s, r) => s + (r.dailyPnl ?? 0), 0), [gainers])
+  const losersPnl = useMemo(() => losers.reduce((s, r) => s + (r.dailyPnl ?? 0), 0), [losers])
 
   if (!hasQuotes) {
     return (
@@ -875,10 +948,18 @@ function GainersLosersView({ rows, hasQuotes, selectedAssetId, selectedCol, expa
         </div>
       </div>
 
-      {/* Unchanged footer */}
-      {unchanged > 0 && (
+      {/* Unchanged and unpriced are different facts and are stated apart. */}
+      {(unchanged > 0 || unpriced > 0) && (
         <div className="px-2.5 py-1 border-t border-gray-200 text-center dark:border-gray-700">
-          <span className="text-[9px] text-gray-400">{unchanged} position{unchanged !== 1 ? 's' : ''} unchanged</span>
+          {unchanged > 0 && (
+            <span className="text-[9px] text-gray-400">{unchanged} position{unchanged !== 1 ? 's' : ''} unchanged</span>
+          )}
+          {unchanged > 0 && unpriced > 0 && <span className="text-[9px] text-gray-300 mx-1">·</span>}
+          {unpriced > 0 && (
+            <span className="text-[9px] text-amber-600 dark:text-amber-500">
+              {unpriced} with no previous close
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -939,7 +1020,7 @@ function SplitRow({ row, variant, isSelected, selectedCol, onCellClick }: {
         className={`text-[11px] font-semibold tabular-nums px-0.5 ${colorCls} ${splitCellCls(1)}`}
         onClick={() => onCellClick(row.holding.asset_id, 1)}
       >
-        {row.dayChangePct >= 0 ? '+' : ''}{row.dayChangePct.toFixed(1)}%
+        {fmtPct(row.dayChangePct)}
       </span>
       {/* Cell 2: Daily P&L */}
       <span
@@ -964,7 +1045,11 @@ function SplitRow({ row, variant, isSelected, selectedCol, onCellClick }: {
 // ---------------------------------------------------------------------------
 
 interface InspectorCtx {
-  rank: number; top3Wt: number; totalDailyPnl: number; contributionPct: number
+  rank: number; top3Wt: number
+  /** Null when no holding in the book could be priced. */
+  totalDailyPnl: number | null
+  /** Null when this row, or the book total, could not be computed. */
+  contributionPct: number | null
   sectorPeers: EnrichedRow[]; sectorWt: number; totalPositions: number; dailyImpactRank: number
 }
 
@@ -990,7 +1075,7 @@ function renderFieldDetail(col: ColKey, row: EnrichedRow, ctx: InspectorCtx, q: 
               <>
                 {(row.priority || row.processStage || row.daysAgo !== null) && <>{sep}</>}
                 <span className={clr(row.dailyPnl)}>
-                  Today {fmtPnl(row.dailyPnl)} ({row.dayChangePct >= 0 ? '+' : ''}{row.dayChangePct.toFixed(1)}%)
+                  Today {fmtPnl(row.dailyPnl)} ({fmtPct(row.dayChangePct)})
                 </span>
               </>
             )}
@@ -1011,9 +1096,12 @@ function renderFieldDetail(col: ColKey, row: EnrichedRow, ctx: InspectorCtx, q: 
       return (
         <p className={kvCls}>
           <span className={`font-medium ${clr(row.dailyPnl)}`}>{fmtPnl(row.dailyPnl)}</span>
-          <span className={`${labelCls} ml-1`}>({row.dayChangePct >= 0 ? '+' : ''}{row.dayChangePct.toFixed(2)}%)</span>
-          {q && q.previousClose > 0 && (<>{sep}<span className={labelCls}>Prev</span> <span className={valCls}>${q.previousClose.toFixed(2)}</span></>)}
-          {ctx.totalDailyPnl !== 0 && (
+          <span className={`${labelCls} ml-1`}>({fmtPct(row.dayChangePct, 2)})</span>
+          {q && q.previousClose != null && q.previousClose > 0 && (<>{sep}<span className={labelCls}>Prev</span> <span className={valCls}>${q.previousClose.toFixed(2)}</span></>)}
+          {row.dailyPnl == null && (
+            <>{sep}<span className="text-amber-600 dark:text-amber-500">no previous close, so no day change</span></>
+          )}
+          {row.dailyPnl != null && ctx.contributionPct != null && (
             <>
               {sep}<span className={labelCls}>{Math.abs(ctx.contributionPct).toFixed(0)}% of book P&L</span>
               {sep}<span className={row.dailyPnl > 0 ? 'text-green-600' : row.dailyPnl < 0 ? 'text-red-600' : labelCls}>
