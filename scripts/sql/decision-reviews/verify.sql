@@ -253,4 +253,86 @@ BEGIN
   RAISE NOTICE 'OK 6g: rightful reviewer can write';
 END $$;
 
+\echo '== 7. POST: the pre-flight hardening, each as its own assertion =='
+
+-- 7a. AMBIGUITY FAILS CLOSED. A decision_id owned by two distinct portfolios
+--     must resolve to NULL, not to whichever table was checked first.
+DO $$
+DECLARE
+  v_p1 uuid; v_p2 uuid; v_res uuid; v_id text := 'verify-ambiguous-' || gen_random_uuid()::text;
+BEGIN
+  SELECT id INTO v_p1 FROM public.portfolios ORDER BY id LIMIT 1;
+  SELECT id INTO v_p2 FROM public.portfolios WHERE id <> v_p1 ORDER BY id LIMIT 1;
+  IF v_p2 IS NULL THEN RAISE NOTICE 'SKIP 7a: needs two portfolios'; RETURN; END IF;
+
+  -- Two parents, same id, different owners. Rolled back at the end.
+  INSERT INTO public.trade_queue_items (id, portfolio_id) VALUES (v_id::uuid, v_p1);
+  INSERT INTO public.decision_requests (id, portfolio_id) VALUES (v_id::uuid, v_p2);
+  v_res := public.decision_review_portfolio(v_id);
+  IF v_res IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 7a: ambiguous decision_id resolved to %, expected NULL', v_res;
+  END IF;
+  RAISE NOTICE 'OK 7a: two distinct owners resolve to NULL';
+  RAISE EXCEPTION 'rollback_7a';     -- undo the fixtures
+EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM <> 'rollback_7a' THEN RAISE; END IF;
+END $$;
+
+-- 7b. decision_id IS IMMUTABLE. Changing it would migrate a row between
+--     organizations under the guise of an edit.
+DO $$
+DECLARE ok boolean := false; v_id uuid;
+BEGIN
+  SELECT id INTO v_id FROM public.decision_reviews WHERE organization_id IS NOT NULL LIMIT 1;
+  IF v_id IS NULL THEN RAISE NOTICE 'SKIP 7b: no owned row'; RETURN; END IF;
+  BEGIN
+    UPDATE public.decision_reviews SET decision_id = decision_id || '-moved' WHERE id = v_id;
+  EXCEPTION WHEN check_violation THEN ok := true;
+  END;
+  IF NOT ok THEN RAISE EXCEPTION 'FAIL 7b: decision_id was mutable'; END IF;
+  RAISE NOTICE 'OK 7b: decision_id is immutable';
+END $$;
+
+-- 7c. AN OPERATOR CAN STILL REPAIR A QUARANTINED ROW. The trigger must not
+--     raise on UPDATE of an unresolvable row, or the only repair path for
+--     the six orphans is bricked. Runs as the migration role (RLS bypassed),
+--     which is how a repair would actually be performed.
+DO $$
+DECLARE v_id uuid; n int;
+BEGIN
+  SELECT id INTO v_id FROM public.decision_reviews WHERE organization_id IS NULL LIMIT 1;
+  IF v_id IS NULL THEN RAISE NOTICE 'SKIP 7c: no quarantined row'; RETURN; END IF;
+  UPDATE public.decision_reviews SET process_note = process_note WHERE id = v_id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN RAISE EXCEPTION 'FAIL 7c: could not touch a quarantined row'; END IF;
+  -- and it is still quarantined, not silently adopted
+  PERFORM 1 FROM public.decision_reviews WHERE id = v_id AND organization_id IS NULL;
+  IF NOT FOUND THEN RAISE EXCEPTION 'FAIL 7c: a quarantined row acquired an owner'; END IF;
+  RAISE NOTICE 'OK 7c: quarantined rows remain repairable and still quarantined';
+END $$;
+
+-- 7d. FUNCTION PRIVILEGE BOUNDARY. anon must hold no EXECUTE on either
+--     resolver, and the trigger function must be callable by nobody.
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n
+    FROM information_schema.role_routine_grants
+   WHERE routine_schema = 'public'
+     AND routine_name IN ('decision_review_portfolio', 'can_review_decision',
+                          'decision_reviews_set_owner')
+     AND grantee IN ('anon', 'PUBLIC');
+  IF n > 0 THEN RAISE EXCEPTION 'FAIL 7d: % anon/PUBLIC execute grant(s)', n; END IF;
+
+  SELECT count(*) INTO n
+    FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+   WHERE ns.nspname = 'public'
+     AND p.proname IN ('decision_review_portfolio', 'can_review_decision',
+                       'decision_reviews_set_owner')
+     AND p.prosecdef
+     AND NOT (coalesce(array_to_string(p.proconfig, ','), '') LIKE '%search_path=%');
+  IF n > 0 THEN RAISE EXCEPTION 'FAIL 7d: % SECURITY DEFINER function(s) with no pinned search_path', n; END IF;
+  RAISE NOTICE 'OK 7d: execute grants and search_path pinning are correct';
+END $$;
+
 \echo '== done =='

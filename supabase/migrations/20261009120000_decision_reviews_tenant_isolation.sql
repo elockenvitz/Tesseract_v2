@@ -97,31 +97,47 @@ CREATE INDEX IF NOT EXISTS idx_decision_reviews_organization_id
 --    portfolio id, never row contents.
 -- ---------------------------------------------------------------------------
 
+--    AMBIGUITY FAILS CLOSED. The first version of this ordered the three
+--    candidate tables by preference and took `LIMIT 1`, which is the
+--    opposite of fail-closed: a decision_id present in two tables, or
+--    matching two rows with different owners, would silently resolve to
+--    whichever table was ranked first. `decision_id` is unconstrained TEXT
+--    with no FK, so nothing in the schema prevents a collision. Here, two
+--    DISTINCT owning portfolios means ownership is unknown, and unknown
+--    ownership resolves to NULL — which quarantines rather than guesses.
+--
+--    `search_path = ''` with fully-qualified names, rather than the
+--    `= public` the older functions here use. For SECURITY DEFINER that is
+--    the difference between a pinned resolution and one a caller can
+--    influence; the cost is verbosity.
+
 CREATE OR REPLACE FUNCTION public.decision_review_portfolio(p_decision_id text)
 RETURNS uuid
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
-  SELECT portfolio_id FROM (
-    SELECT t.portfolio_id, 1 AS rank
-      FROM trade_queue_items t
+  WITH candidates AS (
+    SELECT t.portfolio_id
+      FROM public.trade_queue_items t
      WHERE t.id::text = p_decision_id
        AND t.portfolio_id IS NOT NULL
-    UNION ALL
-    SELECT d.portfolio_id, 2
-      FROM decision_requests d
+    UNION
+    SELECT d.portfolio_id
+      FROM public.decision_requests d
      WHERE d.id::text = p_decision_id
        AND d.portfolio_id IS NOT NULL
-    UNION ALL
-    SELECT e.portfolio_id, 3
-      FROM portfolio_trade_events e
+    UNION
+    SELECT e.portfolio_id
+      FROM public.portfolio_trade_events e
      WHERE e.id::text = p_decision_id
        AND e.portfolio_id IS NOT NULL
-  ) candidates
-   ORDER BY rank
-   LIMIT 1;
+  )
+  -- UNION (not UNION ALL) already collapses the same owner seen twice, so
+  -- this returns a portfolio only when exactly one distinct owner exists.
+  SELECT CASE WHEN count(*) = 1 THEN min(portfolio_id) END
+    FROM candidates;
 $$;
 
 REVOKE ALL ON FUNCTION public.decision_review_portfolio(text) FROM public, anon;
@@ -158,7 +174,7 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
   SELECT EXISTS (
     SELECT 1
@@ -181,38 +197,72 @@ CREATE OR REPLACE FUNCTION public.decision_reviews_set_owner()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
 DECLARE
   v_portfolio uuid;
   v_org uuid;
 BEGIN
-  v_portfolio := public.decision_review_portfolio(NEW.decision_id);
-
-  IF v_portfolio IS NULL THEN
-    -- Refused rather than quarantined. A quarantined row is a historical
-    -- artefact we are preserving; a NEW one would be a row nobody can see,
-    -- holding a UNIQUE lock on a decision_id, created by someone who could
-    -- not demonstrate ownership of it. That is the squat.
+  /*
+   * A review is about one decision, for its whole life.
+   *
+   * Allowing `decision_id` to change would let a row MIGRATE BETWEEN
+   * ORGANIZATIONS: the recompute below would re-stamp it, and an edit would
+   * silently become a transfer. Nothing in the product edits this column —
+   * the client upserts on it as the conflict key — so forbidding it costs
+   * nothing and removes the question.
+   */
+  IF TG_OP = 'UPDATE' AND NEW.decision_id IS DISTINCT FROM OLD.decision_id THEN
     RAISE EXCEPTION
-      'decision_reviews: decision_id % resolves to no portfolio; cannot establish ownership',
-      NEW.decision_id
+      'decision_reviews: decision_id is immutable (% -> %)', OLD.decision_id, NEW.decision_id
       USING ERRCODE = 'check_violation';
   END IF;
 
-  SELECT p.organization_id INTO v_org
-    FROM portfolios p WHERE p.id = v_portfolio;
+  v_portfolio := public.decision_review_portfolio(NEW.decision_id);
+
+  IF v_portfolio IS NOT NULL THEN
+    SELECT p.organization_id INTO v_org
+      FROM public.portfolios p WHERE p.id = v_portfolio;
+  END IF;
 
   IF v_org IS NULL THEN
-    RAISE EXCEPTION
-      'decision_reviews: portfolio % has no organization', v_portfolio
-      USING ERRCODE = 'check_violation';
+    IF TG_OP = 'INSERT' THEN
+      /*
+       * Refused, not quarantined. A quarantined row is a historical artefact
+       * being preserved; a NEW one would be invisible to everyone while
+       * holding the UNIQUE lock on a decision_id, created by someone who
+       * could not demonstrate ownership of it. That is the squat.
+       *
+       * This also covers AMBIGUITY: the resolver returns NULL when two
+       * distinct portfolios claim the id, so a colliding decision_id cannot
+       * be reviewed by anyone until the collision is resolved.
+       */
+      RAISE EXCEPTION
+        'decision_reviews: decision_id % resolves to no single owning portfolio; cannot establish ownership',
+        NEW.decision_id
+        USING ERRCODE = 'check_violation';
+    END IF;
+
+    /*
+     * On UPDATE, keep whatever ownership the row already had.
+     *
+     * Raising here instead would brick the only repair path for the six
+     * quarantined rows: an operator reassigning one (through service_role,
+     * which bypasses RLS but NOT triggers) would be blocked by this very
+     * function. Since `decision_id` is now immutable, a row's ownership
+     * cannot drift, so preserving it is safe.
+     */
+    NEW.organization_id := OLD.organization_id;
+    RETURN NEW;
   END IF;
 
   NEW.organization_id := v_org;
   RETURN NEW;
 END;
 $$;
+
+-- A trigger function is invoked by the trigger, never called directly.
+REVOKE ALL ON FUNCTION public.decision_reviews_set_owner() FROM public, anon, authenticated;
 
 DROP TRIGGER IF EXISTS decision_reviews_owner ON public.decision_reviews;
 CREATE TRIGGER decision_reviews_owner
@@ -263,13 +313,33 @@ CREATE POLICY decision_reviews_insert ON public.decision_reviews
     AND public.can_review_decision(decision_id)
   );
 
+/*
+ * UPDATE, with one deliberate exception for adoption.
+ *
+ * `decision_id` is globally UNIQUE, so a quarantined row holds the key for
+ * its decision. If that decision later becomes resolvable — the parent row
+ * is restored, or a collision is cleaned up — the rightful reviewer's upsert
+ * resolves to an UPDATE against a row they cannot see. Requiring
+ * `organization_id IS NOT NULL` in USING would refuse it, and the symptom
+ * would be a unique-violation on an invisible row: the exact class of
+ * "legitimate reviewer blocked by a row they cannot do anything about" that
+ * this work exists to remove.
+ *
+ * So an ownerless row may be ADOPTED by someone who can prove ownership of
+ * the decision now. The trigger then stamps the correct organization. Both
+ * halves of the proof are required — `can_review_decision` is false while
+ * the decision is unresolvable, so this cannot be used to reach the six
+ * current orphans, and `reviewed_by = auth.uid()` still applies.
+ */
 CREATE POLICY decision_reviews_update ON public.decision_reviews
   FOR UPDATE TO authenticated
   USING (
     reviewed_by = auth.uid()
-    AND organization_id IS NOT NULL
-    AND public.is_member_of_org(organization_id)
     AND public.can_review_decision(decision_id)
+    AND (
+      organization_id IS NULL
+      OR public.is_member_of_org(organization_id)
+    )
   )
   WITH CHECK (
     reviewed_by = auth.uid()

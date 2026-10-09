@@ -72,7 +72,50 @@ describe('the migration exists and replaces the unconditional policy', () => {
   it('refuses a new review whose decision resolves to nothing', () => {
     // Quarantine is for historical rows. A NEW unresolvable row would be
     // invisible to everyone while holding the UNIQUE lock on a decision_id.
-    expect(SQL).toMatch(/IF v_portfolio IS NULL THEN[\s\S]*?RAISE EXCEPTION/)
+    // Scoped to INSERT: on UPDATE the row keeps the ownership it had, so the
+    // repair path for the existing orphans stays open.
+    expect(SQL).toMatch(
+      /IF v_org IS NULL THEN[\s\S]*?IF TG_OP = 'INSERT' THEN[\s\S]*?RAISE EXCEPTION/,
+    )
+  })
+})
+
+describe('the pre-flight hardening is present', () => {
+  it('fails closed on an ambiguous decision_id', () => {
+    // The first draft ranked the three candidate tables and took LIMIT 1,
+    // which silently picks an owner when two tables claim the same id.
+    expect(SQL).not.toMatch(/ORDER BY rank\s*\n?\s*LIMIT 1/)
+    expect(SQL).toMatch(/CASE WHEN count\(\*\) = 1 THEN min\(portfolio_id\) END/)
+  })
+
+  it('pins search_path on every SECURITY DEFINER function', () => {
+    const defs = SQL.match(/SECURITY DEFINER\s*\n\s*SET search_path = ''/g) ?? []
+    const total = SQL.match(/SECURITY DEFINER/g) ?? []
+    expect(defs.length).toBe(total.length)
+    expect(total.length).toBe(3)
+  })
+
+  it('revokes execute from anon on the resolvers and from everyone on the trigger', () => {
+    expect(SQL).toMatch(/REVOKE ALL ON FUNCTION public\.decision_review_portfolio\(text\) FROM public, anon/)
+    expect(SQL).toMatch(/REVOKE ALL ON FUNCTION public\.can_review_decision\(text\) FROM public, anon/)
+    expect(SQL).toMatch(/REVOKE ALL ON FUNCTION public\.decision_reviews_set_owner\(\) FROM public, anon, authenticated/)
+  })
+
+  it('makes decision_id immutable so a row cannot change organization', () => {
+    expect(SQL).toMatch(/NEW\.decision_id IS DISTINCT FROM OLD\.decision_id/)
+  })
+
+  it('does not brick the repair path for quarantined rows', () => {
+    // Raising on an unresolvable UPDATE would block the only way to fix the
+    // six orphans, because service_role bypasses RLS but not triggers.
+    expect(SQL).toMatch(/IF TG_OP = 'INSERT' THEN/)
+    expect(SQL).toMatch(/NEW\.organization_id := OLD\.organization_id/)
+  })
+
+  it('lets a provable owner adopt an ownerless row', () => {
+    // decision_id is globally UNIQUE, so an orphan holds the key. Without
+    // this the rightful reviewer hits a unique violation on an invisible row.
+    expect(SQL).toMatch(/organization_id IS NULL\s*\n\s*OR public\.is_member_of_org\(organization_id\)/)
   })
 })
 
