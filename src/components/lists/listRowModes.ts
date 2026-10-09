@@ -185,6 +185,54 @@ export function expandedRowHeightForDensity(density: string): number {
   return EXPANDED_HEIGHT[density] ?? EXPANDED_HEIGHT.compact
 }
 
+/**
+ * How tall each mode's panel actually needs to be.
+ *
+ * ── Why this is per MODE and not per CONTENT ──────────────────────────
+ *
+ * One frame for all five was sized for the chart, which is the tallest, so
+ * Position and Work — a two-line books table, one recommendation card — sat
+ * in two hundred pixels of nothing. That is the "large blank container" this
+ * removes.
+ *
+ * True content-driven height would mean measuring the panel in the
+ * virtualiser. That was tried and reverted: the panel chain is built on
+ * `h-full` (`ExpansionShell` → `ModeLayout` → each mode), so a row with
+ * `height: auto` gives those a parent with no height and the whole panel
+ * collapses. Making it work means rewriting the flex contract of five
+ * layouts, which is a larger change than this pass should carry.
+ *
+ * So: each mode gets the height ITS content needs, measured against real
+ * rows at 1440px. The figures are the panel, not the row — `ModeLayout`'s
+ * own padding, header, verdict line and footer are inside them.
+ *
+ * Switching tabs therefore resizes the row again. That is deliberate and is
+ * NOT the defect reported earlier: the flashing was an infinite render loop
+ * between the panel and the table (`ListRowExpansion`'s mode is now derived
+ * during render, never synced in an effect), and a single clean resize on a
+ * deliberate click is what the approved design asks for.
+ */
+const MODE_HEIGHT: Readonly<Record<ListRowMode, number>> = {
+  // Three short columns and a verdict line.
+  overview: 270,
+  // The chart is the mode; 360 leaves it ~300px after the shell, which is
+  // the band where a 6-month path reads as a trend rather than a horizon.
+  market: 360,
+  // Thesis, differentiation and risks at reading width, beside the review.
+  research: 340,
+  // Heroes, a column header and up to three books.
+  position: 268,
+  // One recommendation card, or a review prompt.
+  work: 300,
+}
+
+/** The panel height for a mode, scaled by density. */
+export function expandedRowHeightFor(mode: ListRowMode, density: string): number {
+  // Density scales the whole surface; the modes keep their proportions.
+  const scale = (EXPANDED_HEIGHT[density] ?? EXPANDED_HEIGHT.compact) / EXPANDED_HEIGHT.compact
+  return Math.round(MODE_HEIGHT[mode] * scale)
+}
+
 /** True for a string the table may treat as a sub-element entry point. */
 export function isEntryToken(v?: string | null): v is EntryToken {
   return !!v && (ENTRY_TOKENS as readonly string[]).includes(v)

@@ -55,9 +55,21 @@ export const DEFAULT_LIST_VIEW: ListView = 'monitor'
  * turns one back on keeps it (saved state layers over this baseline).
  */
 const VIEW_ORDER: Record<ListView, string[]> = {
+  /*
+   * Monitor's market is FOUR columns, not one composed cell.
+   *
+   * `list_market` held price, change and the shape together. That reads well
+   * alone and badly in a watchlist: the three cannot be sorted
+   * independently, and the numbers sit at a different offset on every row so
+   * they cannot be scanned down a column. Separate columns put each figure
+   * on its own axis, which is what comparing twenty names actually needs.
+   */
   monitor: [
     'select', 'ticker',
-    'list_market',
+    'list_last',
+    'list_1m',
+    'list_6m',
+    'list_trend',
     'list_view',
     'list_exposure',
     'list_work',
@@ -87,6 +99,7 @@ const VIEW_ORDER: Record<ListView, string[]> = {
 /** Every list-owned column, so anything off a view can be hidden explicitly. */
 const ALL_LIST_COLUMNS = [
   'list_market', 'list_view', 'list_exposure', 'list_work', 'list_valuation',
+  'list_last', 'list_1m', 'list_6m', 'list_trend',
   'list_case', 'list_evidence', 'list_changed', 'list_owner',
   'list_stage', 'list_age', 'list_sizing',
 ]
@@ -124,9 +137,13 @@ const ALWAYS_HIDDEN = new Set([
 ])
 
 const WIDTH: Record<string, number> = {
-  ticker: 206,
+  ticker: 190,
   list_market: 168,
-  list_view: 150,
+  list_last: 90,
+  list_1m: 85,
+  list_6m: 85,
+  list_trend: 135,
+  list_view: 180,
   list_exposure: 150,
   list_work: 210,
   list_valuation: 118,
@@ -166,12 +183,19 @@ const GROW: Record<string, number> = {
    * that is either tiny or absent. A watchlist earns its width by showing
    * more names and longer reasons, not wider gaps.
    */
-  ticker: 1.2,
-  list_work: 4,
+  ticker: 0.6,
+  list_work: 8,
   list_changed: 4,
   list_market: 2,
-  list_view: 0.5,
-  list_exposure: 0.8,
+  /* The numeric columns barely grow: a price needs its digits and nothing
+     more, and every pixel they take is a pixel off the reason a name needs
+     attention. Trend takes a little so the shape stays legible. */
+  list_last: 0.15,
+  list_1m: 0.15,
+  list_6m: 0.15,
+  list_trend: 0.5,
+  list_view: 0.4,
+  list_exposure: 0.5,
   list_sizing: 1.2,
   list_case: 0.6,
   list_owner: 0.6,
@@ -194,6 +218,10 @@ const RIGHT: ReadonlySet<string> = new Set<string>()
 const LABEL: Record<string, string> = {
   ticker: 'Security',
   list_market: 'Market',
+  list_last: 'Last',
+  list_1m: '1M',
+  list_6m: '6M',
+  list_trend: 'Trend',
   list_view: 'View',
   list_exposure: 'Exposure',
   list_work: 'Attention',
@@ -250,7 +278,7 @@ export function presetFor(view: ListView) {
  * product moved this", so a stale token silently keeps an old layout. See
  * `columnPersistence.ts`.
  */
-export const LIST_COLUMN_PRESET_VERSION = 'lists-v2-presets-2026-10-09'
+export const LIST_COLUMN_PRESET_VERSION = 'lists-v2-market-split-2026-10-09'
 
 /**
  * One saved layout per view.

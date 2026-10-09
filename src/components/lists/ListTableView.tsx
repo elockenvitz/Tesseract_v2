@@ -20,7 +20,9 @@ import { ListRowExpansion } from './ListRowExpansion'
 import {
   LIST_SIGNAL_COLUMNS, renderSignalCell, listSortComparators,
 } from './ListRowCells'
-import { LIST_EXPANSION_ENTRY_COLUMNS, expandedRowHeightForDensity } from './listRowModes'
+import {
+  LIST_EXPANSION_ENTRY_COLUMNS, expandedRowHeightFor, modeForEntryColumn,
+} from './listRowModes'
 import { useListRowSignals } from '../../hooks/lists/useListRowSignals'
 import { useListPriceHistory } from '../../hooks/lists/useListPriceHistory'
 import {
@@ -241,15 +243,28 @@ export function ListTableView({
 
   // Stable per `signalFor`, which is itself memoised on the batch — so the
   // table's filtered-list memo is not invalidated on every render.
-  const extraSortComparators = useMemo(() => listSortComparators(signalFor), [signalFor])
+  // `marketFor` too, so Last / 1M / 6M / Trend sort by what they display
+  // rather than by the dead proxy series `signal.closes` still carries.
+  const extraSortComparators = useMemo(
+    () => listSortComparators(signalFor, marketFor),
+    [signalFor, marketFor],
+  )
 
   /*
    * One frame for the inspector, whatever mode is showing — the entry is
    * deliberately ignored. See `expandedRowHeightForDensity`, which owns the
    * reasoning and the numbers.
    */
+  /*
+   * Each mode gets the height its content needs.
+   *
+   * The entry the table hands in resolves to the mode on screen — the panel
+   * echoes its own state back through `onEntryChange`, so this follows a tab
+   * switch as well as a cell click. See `expandedRowHeightFor`.
+   */
   const expandedHeightFor = useCallback(
-    (_entry: string | undefined, density: string) => expandedRowHeightForDensity(density),
+    (entry: string | undefined, density: string) =>
+      expandedRowHeightFor(modeForEntryColumn(entry), density),
     [],
   )
 

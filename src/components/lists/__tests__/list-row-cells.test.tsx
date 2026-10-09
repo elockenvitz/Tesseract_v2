@@ -85,7 +85,13 @@ describe('the line is six conceptual columns', () => {
       // No `companyName`: it moves INTO the ticker cell as a second line, so
       // identity is one column rather than two of equal weight.
       'select', 'ticker',
-      'list_market',
+      /* The market is four columns, not one composed cell: each figure on
+         its own axis, each independently sortable. `list_market` survives
+         hidden for anyone who preferred the composed version. */
+      'list_last',
+      'list_1m',
+      'list_6m',
+      'list_trend',
       'list_view',
       'list_exposure',
       'list_work',
@@ -131,11 +137,17 @@ describe('the line is six conceptual columns', () => {
      * This total is the FLOOR — what the line collapses to when there is no
      * slack. Anything wider is handled by `grow`, so this number only decides
      * whether a 1280px laptop scrolls.
+     *
+     * The bound moved from 1000 to 1240 when MARKET became four columns.
+     * That is not the gate going soft: nine columns have eight gutters and
+     * four of them hold a figure that cannot be narrower than its digits.
+     * 1240 is what actually matters — it is the budget that fits a 1280px
+     * pane without horizontal scroll.
      */
     const width = listColumnPreset([...DEFAULT_COLUMNS, ...LIST_SIGNAL_COLUMNS])
       .filter(c => c.visible)
       .reduce((sum, c) => sum + c.width, 0)
-    expect(width).toBeLessThan(1000)
+    expect(width).toBeLessThan(1240)
   })
 
   it('spends a wide pane on identity, the reason for attention, and the chart', () => {

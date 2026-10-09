@@ -20,6 +20,7 @@ import { WORK_TIER_RANK, stageLabel, type WorkTier } from '../../lib/lists/work-
 import type { EntryToken } from './listRowModes'
 import type { ListRowSignal } from '../../hooks/lists/useListRowSignals'
 import type { RowMarket } from '../../hooks/lists/useListPriceHistory'
+import type { WindowReturn } from '../../lib/lists/price-metrics'
 import type { ColumnConfig } from '../table/AssetTableView'
 
 /**
@@ -93,6 +94,24 @@ export const LIST_SIGNAL_COLUMNS: ColumnConfig[] = [
    * All sortable with a comparator below, which `list-row-cells.test.tsx`
    * asserts for every entry here.
    */
+  /*
+   * ── Monitor's market line, split ───────────────────────────────────────
+   *
+   * `list_market` composed price, change and the sparkline into one cell.
+   * That reads well in isolation and badly in a watchlist: the three facts
+   * cannot be sorted independently, the numbers cannot be scanned down a
+   * column because each sits at a different offset, and the cell needed
+   * ~270px to hold them. Four narrow columns put every figure on its own
+   * axis, which is what a reader comparing twenty names actually does.
+   *
+   * `list_market` is kept, hidden, so a reader who preferred the composed
+   * cell can turn it back on.
+   */
+  { id: 'list_last',      label: 'Last',            visible: false, width: 90,  minWidth: 78,  sortable: true, pinned: false, category: 'price' },
+  { id: 'list_1m',        label: '1M',              visible: false, width: 85,  minWidth: 68,  sortable: true, pinned: false, category: 'price' },
+  { id: 'list_6m',        label: '6M',              visible: false, width: 85,  minWidth: 68,  sortable: true, pinned: false, category: 'price' },
+  { id: 'list_trend',     label: 'Trend',           visible: false, width: 135, minWidth: 96,  sortable: true, pinned: false, category: 'price' },
+
   { id: 'list_case',      label: 'Case',            visible: false, width: 124, minWidth: 104, sortable: true, pinned: false, category: 'research' },
   { id: 'list_evidence',  label: 'Evidence',        visible: false, width: 84,  minWidth: 72,  sortable: true, pinned: false, category: 'research' },
   { id: 'list_changed',   label: 'Changed since review', visible: false, width: 230, minWidth: 150, sortable: true, pinned: false, category: 'research' },
@@ -120,6 +139,13 @@ export const LIST_SIGNAL_COLUMNS: ColumnConfig[] = [
  */
 export function listSortComparators(
   signalFor: (assetId?: string | null) => ListRowSignal,
+  /**
+   * Cached-history metrics, so the split market columns sort by the figure
+   * they display. Optional: a caller without history still gets every other
+   * comparator, and the three price columns sort everything equal rather
+   * than inventing an order.
+   */
+  marketFor?: (symbol?: string | null) => RowMarket,
 ): Record<string, (a: any, b: any) => number> {
   // Absent values sort to the BOTTOM of a descending sort rather than the top,
   // which is what "sort by Position" means to a reader: show me what we own.
@@ -156,6 +182,19 @@ export function listSortComparators(
       // Within a tier, more unreviewed notes is more urgent.
       return (sa.subject?.newSinceReview ?? 0) - (sb.subject?.newSinceReview ?? 0)
     },
+
+    /* ── Monitor's split market columns ────────────────────────────────
+     * Each sorts by the figure it shows, out of the same cached series the
+     * cell draws from. A refused return (`short-lookback`, `not-comparable`)
+     * sorts to the bottom of a descending click rather than as a zero —
+     * "we cannot say" is not "it did not move". */
+    list_last: (a, b) =>
+      num(marketFor?.(a?.symbol)?.lastClose?.close ?? a?.current_price)
+      - num(marketFor?.(b?.symbol)?.lastClose?.close ?? b?.current_price),
+    list_1m: (a, b) => num(marketFor?.(a?.symbol)?.m1.pct) - num(marketFor?.(b?.symbol)?.m1.pct),
+    list_6m: (a, b) => num(marketFor?.(a?.symbol)?.m6.pct) - num(marketFor?.(b?.symbol)?.m6.pct),
+    // The shape sorts by the move it draws, which is the month.
+    list_trend: (a, b) => num(marketFor?.(a?.symbol)?.m1.pct) - num(marketFor?.(b?.symbol)?.m1.pct),
 
     // ── Research ──────────────────────────────────────────────────────
     // Oldest case first on a descending click, which is what "sort by Case"
@@ -761,6 +800,105 @@ function WorkCell({ signal }: { signal: ListRowSignal }) {
  * Returns `undefined` — not `null` — for ids it does not own, so the caller can
  * distinguish "not mine" from "mine, and empty".
  */
+// ── Monitor's split market cells ───────────────────────────────────────
+
+/** LAST — the price, and what it is allowed to be called. */
+function LastCell({ price, liveQuotePrice, market }: {
+  price: number | null
+  liveQuotePrice: number | null
+  market?: RowMarket
+}) {
+  const close = market?.lastClose ?? null
+  const shown = liveQuotePrice ?? close?.close ?? price ?? null
+  if (shown == null) return null
+  const fromClose = liveQuotePrice == null && close != null
+  const stale = fromClose && (market?.ageDays ?? 0) > 4
+  return (
+    <Hit entry="market" block>
+      <span
+        className="text-[13px] font-semibold tabular-nums text-gray-900 dark:text-gray-100"
+        title={fromClose && close ? `Close of ${close.date}` : undefined}
+      >
+        {shown.toFixed(2)}
+      </span>
+      {stale && (
+        <span className="text-[10px] tabular-nums text-amber-700 dark:text-amber-500">
+          {market!.ageDays}d old
+        </span>
+      )}
+    </Hit>
+  )
+}
+
+/**
+ * A window return, or the reason there is not one.
+ *
+ * Refusals are rendered as a mark rather than a number: `price_history_cache`
+ * records no split factor, so a window spanning a discontinuity genuinely
+ * cannot be compared, and an em-dash would read as "flat". See `price-metrics`.
+ */
+function ReturnCell({ r }: { r?: WindowReturn }) {
+  if (!r || r.refused === 'no-series') return null
+  if (r.refused === 'short-lookback') {
+    return <span className="text-[10.5px] text-gray-300 dark:text-gray-600">no history</span>
+  }
+  if (r.refused === 'not-comparable') {
+    return (
+      <span className="text-[10.5px] text-amber-700 dark:text-amber-500" title="A gap in the series — no split factor is recorded, so the ends cannot be compared">
+        n/c
+      </span>
+    )
+  }
+  if (r.pct == null) return null
+  return (
+    <Hit entry="market">
+      <span className={clsx(
+        'text-[12.5px] font-semibold tabular-nums',
+        r.pct >= 0
+          ? 'text-emerald-600 dark:text-emerald-400'
+          : 'text-rose-600 dark:text-rose-400',
+      )}>
+        {r.pct >= 0 ? '+' : ''}{r.pct.toFixed(1)}%
+      </span>
+    </Hit>
+  )
+}
+
+/**
+ * TREND — the shape, subordinate to the numbers beside it.
+ *
+ * Six months rather than the month, because the two return columns already
+ * state the short end and the shape is here to say what the path looked like.
+ * Drawn on the list's shared return domain so two rows are comparable.
+ */
+function TrendCell({ market, domain }: { market?: RowMarket; domain?: { lo: number; hi: number } }) {
+  const path = market?.path6 ?? []
+  const drawn = path.length > 1 && !!domain
+  /*
+   * `flex-1 min-w-0` on the OUTER span, and the chart absolutely positioned
+   * inside it.
+   *
+   * `.pro-table-cell` is a row flex, so this span is the flex item and is
+   * the only thing allowed to take the column's width. Wrapping it in `Hit`
+   * — which is `inline-flex` with no width — collapsed it to zero and the
+   * sparkline rendered into nothing: present in the DOM, 0px wide, invisible.
+   * The same shape of mistake as the rail behind the frozen column.
+   */
+  return (
+    <span
+      data-entry="market"
+      className="list-hit relative block flex-1 min-w-0 self-center"
+      style={{ height: SPARK_HEIGHT }}
+      data-testid="spark-cell"
+      data-state={drawn ? 'drawn' : 'quiet'}
+    >
+      {drawn
+        ? <span className="absolute inset-0"><ReturnSpark path={path} domain={domain!} /></span>
+        : <span aria-hidden className="absolute inset-x-0 top-1/2 border-t border-dotted border-gray-200 dark:border-gray-700" />}
+    </span>
+  )
+}
+
 // ── Research and Decide cells ──────────────────────────────────────────
 
 /** Whole months, then days. "10 mo" reads faster than "304d" at this size. */
@@ -993,6 +1131,10 @@ export function renderSignalCell(
     case 'list_view':      return <ViewCell signal={signal} price={price} />
     case 'list_valuation': return <ValuationCell signal={signal} price={price} />
     case 'list_work':      return <WorkCell signal={signal} />
+    case 'list_last':      return <LastCell price={finite(asset?.current_price)} liveQuotePrice={finite(quote?.price)} market={market} />
+    case 'list_1m':        return <ReturnCell r={market?.m1} />
+    case 'list_6m':        return <ReturnCell r={market?.m6} />
+    case 'list_trend':     return <TrendCell market={market} domain={domain} />
     case 'list_case':      return <CaseCell signal={signal} />
     case 'list_evidence':  return <EvidenceCell signal={signal} />
     case 'list_changed':   return <ChangedCell signal={signal} />

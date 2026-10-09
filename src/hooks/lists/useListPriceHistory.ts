@@ -45,13 +45,16 @@ import {
  */
 
 /**
- * Six months plus a margin, which is the longest window the row quotes.
+ * Six months plus a real margin, which is the longest window the row quotes.
  *
- * The row shows 1M and 6M. 130 trading days covers both with room for market
- * holidays; asking for the full ~260 would double the request count to draw
- * exactly the same two figures.
+ * The row shows 1M and 6M. A 6M return is refused unless the series actually
+ * spans 186 calendar days (`windowReturn`, minus a week of slack), and 130
+ * trading days is only ~182 — close enough to the floor that a few market
+ * holidays would silently turn the whole 6M column into "no history". 145
+ * gives ~203 days, which clears it. Asking for the full ~260 would raise the
+ * request count to draw exactly the same two figures.
  */
-const POINTS = 130
+const POINTS = 145
 
 /**
  * Names per list that carry a series.
@@ -70,6 +73,8 @@ export interface RowMarket {
   m6: WindowReturn
   /** 1-month path in percentage-return space, for the shared-axis sparkline. */
   path: number[]
+  /** 6-month path, for Monitor's Trend column. Same return space and domain. */
+  path6: number[]
   lastClose: LatestClose | null
   ageDays: number | null
   /** False when the symbol fell outside the fetch budget — not "no data". */
@@ -92,6 +97,7 @@ const EMPTY_MARKET: RowMarket = {
   m1: { pct: null, refused: 'no-series', slice: [] },
   m6: { pct: null, refused: 'no-series', slice: [] },
   path: [],
+  path6: [],
   lastClose: null,
   ageDays: null,
   covered: false,
@@ -141,13 +147,18 @@ export function useListPriceHistory(
     for (const { display, traded } of budgeted) {
       const points = data?.get(traded) ?? null
       const path = points ? returnPath(points, SPARK_DAYS) : []
-      if (path.length > 1) paths.push(path)
+      const path6 = points ? returnPath(points, WINDOW_DAYS['6M']) : []
+      /* The DOMAIN is built from the 6-month paths, because that is what the
+         Trend column draws. Mixing both windows into one domain would scale
+         every line to the longer one's excursion and flatten the month. */
+      if (path6.length > 1) paths.push(path6)
       const last = latestClose(points)
       markets.set(display, {
         points,
         m1: windowReturn(points, '1M'),
         m6: windowReturn(points, '6M'),
         path,
+        path6,
         lastClose: last,
         ageDays: closeAgeDays(last?.date),
         covered: true,

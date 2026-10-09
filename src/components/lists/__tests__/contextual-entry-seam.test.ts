@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   MODE_FOR_COLUMN, LIST_EXPANSION_ENTRY_COLUMNS, modeForEntryColumn, MODE_ORDER,
-  ENTRY_TOKENS, expandedRowHeightForDensity,
+  ENTRY_TOKENS, expandedRowHeightFor,
 } from '../listRowModes'
 
 const SRC = resolve(__dirname, '../../..')
@@ -196,26 +196,44 @@ describe('the expanded row is one fixed frame', () => {
    * `ListTableView` reintroducing a per-mode branch in the callback it hands
    * the table, so that is what is pinned.
    */
-  it('derives no height from the mode or the clicked entry', () => {
-    const src = codeOf(readFileSync(resolve(SRC, 'components/lists/ListTableView.tsx'), 'utf8'))
-    const fn = src.slice(src.indexOf('expandedHeightFor'), src.indexOf('renderExtraCell'))
-    expect(fn).toMatch(/expandedRowHeightForDensity\(density\)/)
-    expect(fn, 'a share map is a per-mode height').not.toMatch(/share/)
-    expect(fn, 'the entry must not reach the height').not.toMatch(/modeForEntryColumn/)
+  /*
+   * Each mode gets the height ITS content needs.
+   *
+   * This reverses an earlier fixed-frame rule. The frame was introduced to
+   * stop the row resizing on a tab switch, but the defect that motivated it
+   * was an infinite render loop between the panel and the table, not the
+   * resize — and the loop is fixed independently (the mode is derived during
+   * render, never synced in an effect). What the single frame cost was a
+   * panel sized for the chart on every mode, so Position and Work sat in
+   * hundreds of pixels of nothing.
+   */
+  it('gives each mode the height its content needs', () => {
+    const h = (m: Parameters<typeof expandedRowHeightFor>[0]) => expandedRowHeightFor(m, 'compact')
+    // The chart is the tallest; the two compact modes are well under it.
+    expect(h('market')).toBeGreaterThan(h('overview'))
+    expect(h('market')).toBeGreaterThan(h('position'))
+    // And the difference is worth having — a few pixels would not be.
+    expect(h('market') - h('position')).toBeGreaterThan(60)
   })
 
-  it('offers the table a height for every entry, and the same one', () => {
-    // The callback's real signature, exercised the way the table calls it.
-    const callback = (_entry: string | undefined, density: string) =>
-      expandedRowHeightForDensity(density)
-    const entries: Array<string | undefined> = [...ENTRY_TOKENS, ...Object.keys(MODE_FOR_COLUMN), undefined]
-    const heights = new Set(entries.map(e => callback(e, 'compact')))
-    expect(heights.size).toBe(1)
+  it('keeps every mode inside a usable band', () => {
+    for (const m of MODE_ORDER) {
+      const v = expandedRowHeightFor(m, 'compact')
+      expect(v, `${m} too short`).toBeGreaterThan(200)
+      // Half a 900px laptop viewport plus a margin: a row taller than this
+      // is a page, and a list you cannot see around is not a list.
+      expect(v, `${m} too tall`).toBeLessThan(520)
+    }
+  })
+
+  it('scales with density rather than ignoring it', () => {
+    expect(expandedRowHeightFor('market', 'comfortable'))
+      .toBeGreaterThan(expandedRowHeightFor('market', 'micro'))
   })
 
   it('still differs BETWEEN densities, or the control does nothing', () => {
     const byDensity = ['comfortable', 'compact', 'ultra', 'micro']
-      .map(expandedRowHeightForDensity)
+      .map(d => expandedRowHeightFor('market', d))
     expect(new Set(byDensity).size).toBe(4)
     // Monotonic: a tighter density is never taller than a looser one.
     expect([...byDensity].sort((a, b) => b - a)).toEqual(byDensity)
@@ -236,14 +254,25 @@ describe('the expanded row is one fixed frame', () => {
    */
   const SHELL = 164 // padding + header + verdict + footer
 
+  /*
+   * The floor moved from 240 to 180, deliberately.
+   *
+   * 240 came from the single-frame era, when Market's budget was the whole
+   * 472px panel. The per-mode budget is ~360, which is what the approved
+   * design asks of the chart mode — so the plot is shorter, and the cost is
+   * paid in WIDTH instead: `PriceChart`'s `MAX_ASPECT` centres the plot
+   * rather than stretching it flat. Below 180 that trade stops working and
+   * the chart gutters itself to a strip, which is the regression this
+   * guards.
+   */
   it('leaves a plot tall enough to read a trend in', () => {
-    expect(expandedRowHeightForDensity('compact') - SHELL).toBeGreaterThan(240)
+    expect(expandedRowHeightFor('market', 'compact') - SHELL).toBeGreaterThan(180)
   })
 
   it('leaves the list visible around the row it opened', () => {
     // Half of a 900px laptop viewport, the common case. A row taller than
     // this is a page, and a list you cannot see is not a list.
-    expect(expandedRowHeightForDensity('comfortable')).toBeLessThan(900 / 2 + 60)
+    expect(expandedRowHeightFor('market', 'comfortable')).toBeLessThan(900 / 2 + 60)
   })
 })
 
