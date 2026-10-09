@@ -41,7 +41,6 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
-import { Sparkline } from '../signals/Sparkline'
 import {
   PriceChart, type PricePoint, type PriceEvent, type PriceLevel,
 } from '../charts/PriceChart'
@@ -1047,7 +1046,6 @@ export function MarketMode(p: {
   /** What `spot` is — "live", "Close of 2026-10-07". Passed straight through
    *  to the chart's headline, which must not guess. See `PriceChart`. */
   spotLabel?: string | null
-  closes: number[] | null
   target: number | null
   upsidePct: number | null
   /** The scenario ladder, drawn as levels on the chart and priced beneath it. */
@@ -1115,8 +1113,29 @@ export function MarketMode(p: {
             *
             * `1Y` by default: the levels drawn on this scale are a target and
             * a set of scenarios, and a quarter of history is not enough
-            * context to judge either. `PriceChart` caps its own aspect, so
-            * the extra panel height cannot be converted back into flatness.
+            * context to judge either.
+            *
+            * ── Why there is no `closes` fallback ─────────────────────────
+            *
+            * There was one: when `series` was absent this drew `signal.closes`
+            * as a full-panel `Sparkline`. Two things were wrong with it, and
+            * the second only became visible once this panel grew.
+            *
+            * `signal.closes` comes from the `yahoo-chart-proxy` edge
+            * function, which answers 502 in this deployment and which the
+            * COLLAPSED ROW already refuses to draw — deliberately, so that
+            * one column is never drawn under two different rules. The panel
+            * kept using it, so a row could show no 1M, no 6M and a quiet
+            * Trend cell while the panel below it drew a confident curve from
+            * a source the row had rejected. Observed on TGT.
+            *
+            * And a flat array has no dates, so it rendered as a large
+            * untitled shape with no price axis, no date axis, no range chips
+            * and no as-of stamp — a sparkline at chart size, which reads as a
+            * chart. At 360px that was merely weak; at 480px it is a provenance
+            * failure. Its only caller always supplies `series`, so no surface
+            * loses anything: a name with no dated history now falls to the
+            * scenario axis, or says it has none.
             */}
           {p.series && p.series.length > 1 ? (
             <div className="flex-1 min-h-0">
@@ -1129,12 +1148,6 @@ export function MarketMode(p: {
                 spotLabel={p.spotLabel ?? null}
                 initialRange="1Y"
               />
-            </div>
-          ) : p.closes && p.closes.length > 1 ? (
-            // No dated series, but we do have closes — the flat path is all
-            // that can honestly be drawn without dates to scrub against.
-            <div className="flex-1 min-h-0">
-              <Sparkline points={p.closes} reference={p.target} />
             </div>
           ) : p.rungs.length > 0 && axisLo != null ? (
             /*

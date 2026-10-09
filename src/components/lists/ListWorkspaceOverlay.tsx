@@ -34,6 +34,31 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 
+/**
+ * Put focus back on the control that opened this, AFTER the row has redrawn.
+ *
+ * ── Why not the captured `document.activeElement` ─────────────────────────
+ *
+ * That is the textbook pattern and it silently does nothing here. Restoring
+ * unmounts the expansion and mounts a fresh one (the overlay re-parents it,
+ * which changes its depth), so the element captured on open is detached by
+ * the time the cleanup runs — and `focus()` on a detached node is a no-op
+ * that throws nothing. Measured: after Escape, `document.activeElement` was
+ * `<body>` at every viewport, so a keyboard reader was dropped out of the
+ * table entirely and had to tab back in from the top of the page.
+ *
+ * So the control is looked up fresh, on the frame after the row has
+ * re-rendered. Exactly one row is expanded at a time, so there is exactly
+ * one of these; if the row closed rather than restored there is none, and
+ * nothing is stolen.
+ */
+function returnFocus() {
+  requestAnimationFrame(() => {
+    const btn = document.querySelector<HTMLElement>('[data-testid="expansion-maximize"]')
+    btn?.focus({ preventScroll: true })
+  })
+}
+
 export function ListWorkspaceOverlay({
   label, onClose, children,
 }: {
@@ -72,7 +97,11 @@ export function ListWorkspaceOverlay({
     alive.current = true
     return () => {
       alive.current = false
-      const t = setTimeout(() => { if (!alive.current) closeRef.current() }, 0)
+      const t = setTimeout(() => {
+        if (alive.current) return
+        closeRef.current()
+        returnFocus()
+      }, 0)
       // Cleared by the next mount's own cleanup chain if one arrives first.
       queueMicrotask(() => { if (alive.current) clearTimeout(t) })
     }
@@ -109,20 +138,15 @@ export function ListWorkspaceOverlay({
   }, [onClose])
 
   /*
-   * Focus moves in, and the browser's own focus restoration puts it back.
+   * Focus moves in on open.
    *
-   * On open, focus goes to the panel itself rather than to the first control:
-   * the reader asked for more room to look at something, not to be dropped
-   * onto a button. It is `tabIndex={-1}` so it can receive focus
-   * programmatically without joining the tab order.
-   *
-   * On close, focus returns to whatever had it when this opened — the
-   * maximize control, which is now the restore control in the row.
+   * To the panel itself rather than to the first control: the reader asked
+   * for more room to look at something, not to be dropped onto a button. It
+   * is `tabIndex={-1}` so it can receive focus programmatically without
+   * joining the tab order.
    */
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null
     panelRef.current?.focus({ preventScroll: true })
-    return () => previous?.focus?.({ preventScroll: true })
   }, [])
 
   /*

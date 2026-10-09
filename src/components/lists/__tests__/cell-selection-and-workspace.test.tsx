@@ -138,9 +138,22 @@ describe('the maximized workspace is a shell around the same expansion', () => {
     expect(OVERLAY_CODE).toMatch(/stopPropagation\(\)/)
   })
 
-  it('moves focus in and gives it back', () => {
+  it('moves focus in on open', () => {
     expect(OVERLAY_CODE).toMatch(/panelRef\.current\?\.focus/)
-    expect(OVERLAY_CODE).toMatch(/previous\?\.focus/)
+  })
+
+  it('gives focus back by LOOKING UP the control, not by holding a reference', () => {
+    /*
+     * Restoring remounts the expansion, so an element captured on open is
+     * detached when the cleanup runs and `focus()` on it is a silent no-op.
+     * Measured: `document.activeElement` was `<body>` after Escape at every
+     * viewport. A captured reference here is the regression.
+     */
+    expect(OVERLAY_CODE).not.toMatch(/const previous = document\.activeElement/)
+    expect(OVERLAY_CODE).toMatch(
+      /querySelector<HTMLElement>\('\[data-testid="expansion-maximize"\]'\)/,
+    )
+    expect(OVERLAY_CODE).toMatch(/returnFocus\(\)/)
   })
 
   it('traps Tab inside the dialog', () => {
@@ -154,7 +167,7 @@ describe('the maximized workspace is a shell around the same expansion', () => {
      * in the frame it opened and never appeared. Observed, not theorised.
      */
     expect(OVERLAY_CODE).toMatch(/alive\.current = true/)
-    expect(OVERLAY_CODE).toMatch(/if \(!alive\.current\) closeRef\.current\(\)/)
+    expect(OVERLAY_CODE).toMatch(/if \(alive\.current\) return\s*\n\s*closeRef\.current\(\)/)
   })
 
   it('holds the mode above the component that the transition remounts', () => {
@@ -205,6 +218,26 @@ describe('the chart does not call a cached close live', () => {
 
   it('labels a cached close with its own date', () => {
     expect(EXPANSION).toMatch(/`Close of \$\{last\.date\}`/)
+  })
+})
+
+describe('Market draws from the source the row draws from, or says it cannot', () => {
+  const VIEWS = codeOf(readFileSync(resolve(SRC, 'components/lists/ListModeViews.tsx'), 'utf8'))
+
+  it('never falls back to the proxy series the collapsed row rejects', () => {
+    /*
+     * `signal.closes` comes from `yahoo-chart-proxy`, which answers 502 here
+     * and which the collapsed row deliberately refuses to draw. The panel
+     * used to draw it when the cached series was missing, so TGT showed no
+     * 1M, no 6M and a quiet Trend cell above a confident full-panel curve.
+     * One subject must not be drawn under two rules on one screen.
+     */
+    expect(VIEWS).not.toMatch(/<Sparkline/)
+    expect(VIEWS).not.toMatch(/closes: number\[\]/)
+  })
+
+  it('states the absence instead of drawing an undated shape', () => {
+    expect(VIEWS).toMatch(/No price history on file\./)
   })
 })
 

@@ -982,7 +982,7 @@ export function ListRowExpansion({
                 /* What that number IS. Never "live" unless a live quote
                    actually produced it — see `displaySpotLabel`. */
                 spotLabel={displaySpotLabel}
-                closes={signal?.closes ?? null} target={target} upsidePct={upsidePct}
+                target={target} upsidePct={upsidePct}
                 rungs={rungs}
                 /*
                  * The real series, so PRICE gets the interactive chart rather
