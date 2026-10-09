@@ -8,6 +8,7 @@ import { useListStatuses } from '../../hooks/lists/useListStatuses'
 import { useListTags } from '../../hooks/lists/useListTags'
 import { useListMembers } from '../../hooks/lists/useListMembers'
 import { useAuth } from '../../hooks/useAuth'
+import { PortalPopover } from './PortalPopover'
 
 export interface ListRowFilters {
   assigneeIds: string[]
@@ -49,26 +50,18 @@ export function ListFilterChipBar({ listId, filters, onChange }: ListFilterChipB
   const { statuses } = useListStatuses(listId)
   const { tags } = useListTags(listId)
 
-  // Close on outside click; reset query when opening
+  /*
+   * Opening resets the query and focuses search. Nothing more.
+   *
+   * Dismissal — outside click and Escape — belongs to `PortalPopover` now
+   * that the panel lives in `document.body`. The local outside-click handler
+   * tested `ref.current.contains(target)`, and `ref` is the TRIGGER: once the
+   * panel was portalled, every click inside it counted as outside and shut
+   * the panel on the first checkbox.
+   */
   useEffect(() => {
     if (!open) { setQuery(''); return }
-    // Focus search when opening
     requestAnimationFrame(() => searchRef.current?.focus())
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); setOpen(false) }
-    }
-    document.addEventListener('keydown', handler, true)
-    return () => document.removeEventListener('keydown', handler, true)
   }, [open])
 
   const membersMap = useMemo(() => new Map(members.map(m => [m.user_id, m])), [members])
@@ -233,9 +226,30 @@ export function ListFilterChipBar({ listId, filters, onChange }: ListFilterChipB
           </button>
         )}
 
-        {open && (
+        {/*
+          * Portalled, not absolutely positioned.
+          *
+          * This panel used to be an `absolute` child of the filter bar, which
+          * sits inside `.pro-table-container` — an `overflow: auto` element.
+          * An absolutely-positioned box still contributes to its scroll
+          * container's scrollable area, so opening a 288px panel grew the
+          * table's scroll width, a horizontal scrollbar appeared, and the
+          * whole surface shifted sideways. Nothing about the panel looked
+          * wrong; the container moved underneath it.
+          *
+          * `PortalPopover` exists for exactly this and is what the other list
+          * cells use: it renders into `document.body`, anchors to the trigger,
+          * and repositions on scroll and resize.
+          */}
+        <PortalPopover
+          anchorRef={ref}
+          open={open}
+          onClose={() => setOpen(false)}
+          width={288}
+          className="flex flex-col overflow-hidden"
+        >
           <div
-            className="absolute top-full left-0 mt-1.5 w-72 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col"
+            className="flex flex-col overflow-hidden"
             style={{ maxHeight: '24rem' }}
           >
             {/* Search */}
@@ -305,7 +319,7 @@ export function ListFilterChipBar({ listId, filters, onChange }: ListFilterChipB
               </div>
             )}
           </div>
-        )}
+        </PortalPopover>
       </div>
 
       {/* ── Applied pills (grouped) ────────────────────────────── */}

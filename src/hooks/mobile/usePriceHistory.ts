@@ -109,11 +109,21 @@ export function usePriceHistory(
      * Reported as Explore taking too long for its sparklines to appear.
      */
     points?: number
+    /**
+     * How many names may carry a series. Defaults to the feed's 24.
+     *
+     * Raised by Lists, which is a bounded working set rather than an endless
+     * scroller: a list is a page of names the reader chose, so the budget can
+     * be spent on covering it. The cost is request count — see `PAGE` — so
+     * this is a deliberate per-surface choice, not a default worth raising.
+     */
+    maxSymbols?: number
   },
 ) {
   const maxPoints = options?.points ?? MAX_POINTS
+  const maxSymbols = options?.maxSymbols ?? MAX_SYMBOLS
   const wanted = Array.from(new Set(symbols.map(s => s.toUpperCase()).filter(Boolean)))
-    .slice(0, MAX_SYMBOLS)
+    .slice(0, maxSymbols)
     .sort()
 
   return useQuery({

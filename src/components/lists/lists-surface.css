@@ -1,0 +1,337 @@
+/**
+ * The Lists surface's own visual language.
+ *
+ * ── Why a scoped stylesheet ───────────────────────────────────────────────
+ *
+ * `AssetTableView` is shared with the Assets page and several other surfaces,
+ * and its cell classes (`pro-symbol`, `pro-price-change`, `pro-table-row`) are
+ * the only hook into how a row actually looks. Restyling them globally would
+ * change every table in the product; forking the table would duplicate the
+ * virtualiser, the keyboard model and the column engine.
+ *
+ * So everything here is scoped under `.lists-surface`, which `ListTableView`
+ * wraps around the table. Lists get a deliberate typographic treatment; no
+ * other surface moves.
+ *
+ * ── The intent ────────────────────────────────────────────────────────────
+ *
+ * Market data should read as market data: tabular, confident, aligned on the
+ * decimal, with direction carried by colour on the number itself rather than by
+ * a pill around it. Identity should be unmistakable at a glance. Everything
+ * else should recede. Hairlines are used once per boundary, never per cell.
+ */
+
+.lists-surface {
+  /* One accent for the whole surface, so interaction states agree. */
+  --lists-accent: 15 23 42;          /* slate-900 */
+  --lists-attention: 245 158 11;     /* amber-500 */
+}
+
+/* ── Header row ──────────────────────────────────────────────────────── */
+
+.lists-surface .pro-table-header-cell {
+  @apply text-[10px] font-semibold uppercase text-gray-400 dark:text-gray-500;
+  letter-spacing: 0.07em;
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+}
+
+.lists-surface .pro-table-header-cell.sorted {
+  @apply text-gray-700 dark:text-gray-200;
+}
+
+/* ── Density ─────────────────────────────────────────────────────────────
+ *
+ * The density config's own padding is `px-4 py-3` at comfortable — 24px of
+ * vertical padding, which cannot fit two lines of identity inside a 44px
+ * row. `rowHeights` in `ListTableView` sets the row; this makes the cells
+ * actually fit it instead of overflowing and forcing the row taller.
+ */
+.lists-surface .pro-table-cell {
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+}
+
+/* ── The attention rail ──────────────────────────────────────────────────
+ *
+ * Drawn INSIDE the first cell, not on the row.
+ *
+ * `AssetTableView` puts an `inset 3px 0 0` box-shadow on the virtualised row
+ * container, which is correct and invisible: the identity column is frozen,
+ * so it is a positioned, opaque-backgrounded cell painted directly over the
+ * row's own left edge. The rail was in the DOM and behind the ticker the
+ * whole time — the computed style was right and the screen was wrong, which
+ * is exactly the failure mode that makes "verified in the DOM" worthless on
+ * its own.
+ *
+ * `--row-accent` is set as an inline custom property alongside the shadow,
+ * so the colour still comes from `rowAccentFn` and there is one source for
+ * it. No accent means the variable is absent and the bar is transparent.
+ */
+.lists-surface .pro-table-cell[data-col="ticker"] {
+  position: relative;
+}
+.lists-surface .pro-table-cell[data-col="ticker"]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--row-accent, transparent);
+  /* Square against the table edge, rounded into the row. */
+  border-radius: 0 2px 2px 0;
+  pointer-events: none;
+}
+
+/* ── Identity ────────────────────────────────────────────────────────── */
+
+.lists-surface .pro-symbol {
+  @apply text-gray-900 dark:text-gray-50;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The company name sits UNDER the ticker as a second line, so the pair reads as
+ * one identity rather than as two columns of equal weight. Quiet enough that a
+ * scan down the column lands on tickers.
+ */
+.lists-surface .lists-company {
+  @apply text-gray-400 dark:text-gray-500 truncate;
+  font-size: 11px;
+  line-height: 1.15;
+  font-weight: 400;
+}
+
+/* ── Market data ─────────────────────────────────────────────────────── */
+
+/*
+ * No pill. A price change is a number with a direction, and a grey box around
+ * every ordinary value makes a watchlist look like a form. Colour carries the
+ * sign; weight carries the fact that it is market data.
+ */
+.lists-surface .pro-price-change {
+  @apply bg-transparent px-0 py-0 rounded-none;
+  font-size: 12.5px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+}
+
+.lists-surface .pro-price {
+  font-size: 13px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  @apply text-gray-900 dark:text-gray-50;
+}
+
+/*
+ * Absence is absence. A column of em-dashes reads as a broken import; a blank
+ * cell reads as "we do not hold this one", which is the truth.
+ */
+.lists-surface .pro-empty-cell {
+  @apply text-transparent select-none;
+}
+
+/* ── Rows ────────────────────────────────────────────────────────────── */
+
+.lists-surface .pro-table-row {
+  transition: background-color 90ms ease-out;
+}
+
+/* ── Hover ───────────────────────────────────────────────────────────────
+ *
+ * Light blue, and it has to be.
+ *
+ * It was slate-50 — `rgb(248 250 252)` — chosen to keep blue for selection.
+ * That is the EXACT colour `AssetTableView` paints even rows with
+ * (`--table-row-even`, `#f8fafc`), so hovering an even row changed nothing at
+ * all: half the table had no hover state and the reader could not tell which
+ * row the pointer was on. A hover tint has to differ from the zebra it sits
+ * on, so it is a blue one; selection is still distinguishable because
+ * selection is a RING on one cell, not a row wash.
+ *
+ * The `!important` and the pinned-cell rule are both load-bearing. The frozen
+ * identity cell carries an INLINE `backgroundColor` (white / slate-50 /
+ * blue-100, set per row in `AssetTableView`), and an inline style beats any
+ * stylesheet declaration that is not `!important`. Without the second rule the
+ * hover stopped dead at the frozen column.
+ */
+.lists-surface .pro-table-row:hover,
+.lists-surface .pro-table-row.row-even:hover {
+  background: rgb(239 246 255) !important;   /* blue-50 */
+}
+.lists-surface .pro-table-row:hover .pro-table-cell[data-col="ticker"] {
+  background-color: rgb(239 246 255) !important;
+}
+.dark .lists-surface .pro-table-row:hover,
+.dark .lists-surface .pro-table-row.row-even:hover {
+  background: rgba(59, 130, 246, 0.09) !important;
+}
+.dark .lists-surface .pro-table-row:hover .pro-table-cell[data-col="ticker"] {
+  background-color: rgb(23 32 48) !important;
+}
+
+.lists-surface .pro-table-row.selected {
+  background: rgba(15, 23, 42, 0.045) !important;
+  border-left: 2px solid rgb(15 23 42);
+}
+.dark .lists-surface .pro-table-row.selected {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border-left-color: rgb(241 245 249);
+}
+
+/*
+ * An expanded row is a different mode, and should look like one before the
+ * reader reads a word of it: the parent row goes solid and loses its zebra, so
+ * the workbench below reads as attached to it rather than inserted near it.
+ */
+.lists-surface .pro-table-row.expanded {
+  background: rgb(255 255 255) !important;
+  box-shadow:
+    inset 2px 0 0 0 rgb(15 23 42),
+    0 1px 0 0 rgba(15, 23, 42, 0.07);
+  z-index: 2;
+}
+.dark .lists-surface .pro-table-row.expanded {
+  background: rgb(17 24 39) !important;
+  box-shadow:
+    inset 2px 0 0 0 rgb(241 245 249),
+    0 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
+.lists-surface .pro-table-row.expanded .pro-symbol {
+  @apply text-gray-900 dark:text-white;
+}
+
+/*
+ * The expansion's own ground.
+ *
+ * `AssetTableView` gives the slot a padded box; this makes that box a surface.
+ * Recessed rather than raised — the workbench sits inside the list, it does not
+ * float above it.
+ */
+.lists-surface .pro-expanded-row {
+  background: rgb(250 251 253);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 0 !important;
+}
+.dark .lists-surface .pro-expanded-row {
+  background: rgb(15 20 30);
+  border-bottom-color: rgba(255, 255, 255, 0.07);
+}
+
+/* ── Selection is a property of the CELL ──────────────────────────────────
+ *
+ * ── What this replaced, and why the replacement is smaller ────────────────
+ *
+ * There were two independent mechanisms painting one selection:
+ *
+ *   1. `.pro-table-cell.focused` — the table's own focus ring: a background
+ *      plus `inset 0 0 0 1px`, flush with the cell's bounds, so on the frozen
+ *      identity column it ran under a 2px right border and on every other cell
+ *      it touched its neighbour. Half a box.
+ *   2. twenty-two `[data-open-entry="x"] … :has(.list-hit[data-entry="x"])`
+ *      selectors painting a second, inset ring on the cell containing the
+ *      datum the panel says it is showing.
+ *
+ * Both fired on a click, so a selected cell wore two concentric outlines in
+ * two blues. And (2) was wrong in a way no amount of extra selectors fixes:
+ * it keys off the MODE THE PANEL RESOLVED TO, not the cell the reader clicked.
+ * `ListRowExpansion` falls back to Overview whenever the requested mode is
+ * unavailable (Position on a name we do not hold, for instance) and echoes
+ * `overview` back — which lit the frozen TICKER cell while the cell actually
+ * clicked stayed plain. That is the "it highlights the ticker too" defect, and
+ * its cause is that selection was being derived from panel state.
+ *
+ * So: the cell the reader interacted with is the cell the table already tracks
+ * as focused — `handleCellClick` sets it on click and the arrow keys set it on
+ * keyboard navigation. ONE source, ONE ring, no per-column rules, and nothing
+ * for a new column to be forgotten by. `data-open-entry` keeps its other job
+ * (it still chooses the panel's mode and height); it no longer decides what
+ * looks selected.
+ */
+.lists-surface .pro-table-cell {
+  position: relative;
+  transition: background-color 120ms ease-out;
+}
+
+/*
+ * The tint, strong enough to survive the hover wash underneath it.
+ *
+ * `!important` on the pinned variant for the same reason hover needs it: the
+ * identity cell's background is an inline style.
+ */
+.lists-surface .pro-table-cell.focused {
+  background: rgba(37, 99, 235, 0.10);
+  /* Overrides the table's own flush `inset 0 0 0 1px` focus ring, which the
+     inset `::after` below supersedes. Without this the cell wears both. */
+  box-shadow: none;
+  border-radius: 0;
+}
+.lists-surface .pro-table-row:hover .pro-table-cell.focused,
+.lists-surface .pro-table-cell.focused[data-col="ticker"] {
+  background-color: rgba(37, 99, 235, 0.13) !important;
+}
+.dark .lists-surface .pro-table-cell.focused {
+  background: rgba(96, 165, 250, 0.16);
+}
+.dark .lists-surface .pro-table-row:hover .pro-table-cell.focused,
+.dark .lists-surface .pro-table-cell.focused[data-col="ticker"] {
+  background-color: rgba(96, 165, 250, 0.2) !important;
+}
+
+/*
+ * The outline is a pseudo-element INSET from the cell, never a shadow on it.
+ *
+ * A shadow is painted on the cell's own bounds, which are flush against the
+ * next cell and, on the identity column, under a 2px right border — clipped on
+ * one side and touching on two. Inset 3px vertically and 2px horizontally it
+ * sits clear of the column rules, the radius has room to round, and the cell's
+ * padding no longer decides where the outline lands.
+ *
+ * It covers the whole cell because the cell is now the whole row stripe in both
+ * the collapsed and expanded states — see the cells band in `AssetTableView`,
+ * which used to let each cell shrink to its content.
+ */
+.lists-surface .pro-table-cell.focused::after {
+  content: '';
+  position: absolute;
+  inset: 3px 2px;
+  border-radius: 5px;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1.5px rgba(37, 99, 235, 0.65);
+}
+.dark .lists-surface .pro-table-cell.focused::after {
+  box-shadow: inset 0 0 0 1.5px rgba(96, 165, 250, 0.75);
+}
+
+/*
+ * A cell click selects a cell, not a word.
+ *
+ * Clicking a price twice — or clicking and dragging a pixel — put the browser's
+ * text selection over the number, so the cell showed a blue ring AND blue
+ * highlighted text. The figures here are targets, not prose; nothing in a
+ * collapsed row is meant to be selected for copying, and the inspector below
+ * carries the same values as real text.
+ */
+.lists-surface .pro-table-cell {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/*
+ * Keyboard scrolling clears the sticky header.
+ *
+ * `scrollIntoView({ block: 'nearest' })` stops as soon as the row's box is in
+ * the scrollport, which on an upward arrow leaves it tucked under the sticky
+ * column header. `scroll-margin` is the standard way to tell the browser the
+ * row needs more room than its own box — the bottom value keeps the last row
+ * clear of the "Add ticker" affordance.
+ */
+.lists-surface [data-row-index] {
+  scroll-margin-top: 44px;
+  scroll-margin-bottom: 12px;
+}

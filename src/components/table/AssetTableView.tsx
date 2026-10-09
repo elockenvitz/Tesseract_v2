@@ -33,7 +33,11 @@ import { useMarketData, useMarketStatus } from '../../hooks/useMarketData'
 import { sortCoverageDeterministically, resolveCoverageDefault, type CoverageRow } from '../../lib/coverage/resolveCoverage'
 import { formatDistanceToNow, format } from 'date-fns'
 import { clsx } from 'clsx'
-import { DENSITY_CONFIG } from '../../contexts/TableContext'
+// Aliased: this file has its own narrower local `DensityMode` that omits
+// `micro`, while the context's (and `DENSITY_CONFIG`) include it. The override
+// map below is keyed by the full set so a caller can size every density.
+import { DENSITY_CONFIG, type DensityMode as FullDensityMode } from '../../contexts/TableContext'
+import { mergeSavedColumns, serializeColumns } from './columnPersistence'
 import { DensityToggle } from './DensityToggle'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { useSpreadsheetNavigation } from '../../hooks/useSpreadsheetNavigation'
@@ -101,7 +105,7 @@ const PRIORITY_OPTIONS: Priority[] = ['critical', 'high', 'medium', 'low', 'none
 // Priority source types for user-specific priority columns
 export type PrioritySourceType = 'my' | 'firm' | 'user'
 
-interface ColumnConfig {
+export interface ColumnConfig {
   id: string
   label: string
   visible: boolean
@@ -115,12 +119,33 @@ interface ColumnConfig {
   aiColumnId?: string
   wrapText?: boolean // If true, text wraps instead of truncating
   // For priority columns - specify whose priority to show
+  /**
+   * Horizontal alignment of the cell and its header. Defaults to left.
+   *
+   * Opt-in per column so existing tables are unchanged. `right` is for columns
+   * of figures: a watchlist where 5.14% and 12.3% do not line up on the decimal
+   * cannot be read down, which is most of what distinguishes a finance table
+   * from a CRUD grid.
+   */
+  align?: 'left' | 'right'
+  /**
+   * Share of the pane's leftover width this column takes. Default 0 — fixed.
+   *
+   * Opt-in per column, so a surface that wants its table to own the canvas can
+   * say which columns deserve the room (an identity, a reason for attention)
+   * and which should stay exactly as wide as the number they hold.
+   */
+  grow?: number
   prioritySource?: PrioritySourceType
   sourceUserId?: string // User ID when prioritySource is 'user'
   sourceUserName?: string // Display name when prioritySource is 'user'
 }
 
-const DEFAULT_COLUMNS: ColumnConfig[] = [
+/**
+ * Exported so a surface's preset can be measured against the real widths.
+ * A width budget asserted against a test fixture measures the fixture.
+ */
+export const DEFAULT_COLUMNS: ColumnConfig[] = [
   // Core columns
   { id: 'select', label: '', visible: true, width: 32, minWidth: 32, sortable: false, pinned: false, category: 'core' },
   { id: 'ticker', label: 'Ticker', visible: true, width: 100, minWidth: 80, sortable: true, pinned: true, canUnpin: false, category: 'core' },
@@ -290,12 +315,164 @@ interface AssetTableViewProps {
   /** Cell renderer for `extraColumns` entries. Called for any column whose id
    *  isn't handled by the built-in column set. If this returns undefined/null
    *  the cell falls through to the default empty-cell rendering. */
-  renderExtraCell?: (columnId: string, asset: any) => React.ReactNode
+  /**
+   * Render a cell for a column the table does not own.
+   *
+   * `quote` is handed over because this component already resolves it: the row
+   * computes `getQuote(asset.symbol)` for its own price cell, and a surface that
+   * composes price into a conceptual column would otherwise fall back to
+   * `asset.current_price` — the STORED price, which can be a long way from the
+   * live one. A list showing a stale price beside a target computed from it
+   * produced a visible "+1024% upside", so this is a correctness argument rather
+   * than a tidiness one. Optional, so existing callers are unaffected.
+   */
+  renderExtraCell?: (
+    columnId: string,
+    asset: any,
+    quote?: { price?: number | null; changePercent?: number | null } | null,
+  ) => React.ReactNode
+  /**
+   * Reshape the default column set for this surface.
+   *
+   * Receives `[...DEFAULT_COLUMNS, ...extraColumns]` and returns the array to
+   * use as the surface's baseline — reordered, re-widened, shown or hidden.
+   * It is a *default*, not a lock: the user's saved column state still wins
+   * once they touch the column settings, exactly as before.
+   *
+   * This exists so a surface can present a curated set without forking the
+   * table. Must be referentially stable (define it at module scope), since the
+   * baseline is memoised on it.
+   */
+  columnPreset?: (base: ColumnConfig[]) => ColumnConfig[]
+  /**
+   * Bump this whenever `columnPreset` changes what the default should be.
+   *
+   * Saved column state is layered over the preset, and `visible`/`width` come
+   * from storage — so without a version a new preset can never reach anyone who
+   * already has saved state, and the persist effect below writes on mount, so
+   * that is everyone after one render. Bumping the `storageKey` instead "works"
+   * once and discards every real customisation the user made.
+   *
+   * So the version travels INSIDE the blob: a mismatch discards the stored
+   * layout for the new baseline exactly once, and anything the user changes
+   * afterwards sticks.
+   */
+  columnPresetVersion?: string
   /** Replace the default expanded-row detail panel with custom content.
    *  When provided, takes over rendering inside the expanded row (the close
    *  button + outer container remain AssetTableView's). Gets the asset and
    *  the row ID (`_rowId` in list contexts, else asset.id). */
-  expandedRowSlot?: (asset: any, rowId: string) => React.ReactNode
+  /**
+   * Custom content for an expanded row.
+   *
+   * `coverage` is handed over because this component already holds it: the
+   * `asset-coverage-all` query above builds one map for the whole table, and
+   * the slot's consumers would otherwise each issue their own per-asset read
+   * to show the same thing. Optional third argument, so existing callers are
+   * unaffected.
+   */
+  expandedRowSlot?: (
+    asset: any,
+    rowId: string,
+    coverage?: Array<{ analyst: string; team: string; isLead: boolean }>,
+    /**
+     * The column the reader opened the row FROM, when they opened it from a
+     * cell rather than the chevron. The field someone clicks states their
+     * intent, so the slot can open on the matching content instead of a
+     * generic summary. `undefined` means "no particular intent" — the chevron,
+     * a double-click on the row body, or a keyboard expand.
+     */
+    entryColumnId?: string,
+    /**
+     * Restate the entry from inside the slot, so the row can be re-measured.
+     *
+     * A row's height comes from its ENTRY — the field that opened it — which
+     * is right at the moment of the click and wrong forever after, because an
+     * inspector with its own navigation changes what it is showing without
+     * the table hearing about it. Opening Lists on a rating and switching to
+     * the price chart left a chart-sized panel in a rating-sized row: the plot
+     * came out at 13:1, which looked like a broken component rather than a
+     * mis-sized one.
+     *
+     * Calling this with the entry token for whatever the slot now shows makes
+     * the table recompute `expandedRowHeightFor` and resize. Idempotent by
+     * construction: the token a slot reports maps back to the same view, so a
+     * slot that echoes its own state cannot oscillate.
+     */
+    onEntryChange?: (entryColumnId: string) => void,
+    /**
+     * The same live quote the table's own price cell resolved for this row.
+     *
+     * Without it an expanded row has to re-derive a price from whatever it can
+     * reach — the workspace cache, a stored `current_price` — and the two
+     * disagree: a List row read 1169.60 while the inspector two pixels below it
+     * read 1,149.85 for the same name, because one had the live quote and the
+     * other had the last cached close. A panel that contradicts the row that
+     * opened it is worse than one that admits it has no price.
+     */
+    quote?: { price?: number | null; changePercent?: number | null } | null,
+  ) => React.ReactNode
+  /**
+   * Columns whose cells open the expanded row, keyed to the mode they mean.
+   *
+   * Opt-in per surface and deliberately narrow: a table where every click
+   * expands a row cannot be navigated. Only pass ids whose cells are inert
+   * text — a column with its own editor, popover or button keeps its own
+   * behaviour, because the click never reaches the cell wrapper.
+   */
+  expansionEntryColumns?: ReadonlySet<string>
+  /**
+   * Open the table with one row already expanded.
+   *
+   * For a reader who arrived pointing at a security — from Lists home's
+   * attention band, say — so they land on the work rather than on the list and
+   * a search. `columnId` carries the same intent a click on that cell would,
+   * so the inspector opens on the mode `MODE_FOR_COLUMN` names for it.
+   *
+   * Applied once per (assetId, columnId), not on every render: after it is
+   * honoured the reader's own clicks own the expansion, and re-applying it
+   * would make the row spring back open every time they closed it.
+   */
+  initialExpanded?: { assetId: string; columnId?: string }
+  /**
+   * Per-density height for an expanded row, overriding the default.
+   *
+   * The virtualiser must know row sizes up front, so this cannot be measured
+   * from the rendered content. A surface whose expansion is a working
+   * inspector rather than a detail panel needs more room than the default.
+   */
+  expandedRowHeights?: Partial<Record<FullDensityMode, number>>
+  /**
+   * Height for an expanded row, by the entry it was opened from.
+   *
+   * The honest answer to "size the inspector to its content" given a
+   * virtualiser that must know the height BEFORE the content renders: the
+   * surface declares what each mode needs, and the entry point already names
+   * the mode. A thesis strip and a one-figure recommendation are different
+   * shapes, and giving both the tallest of them is what leaves the dead space.
+   *
+   * Takes precedence over `expandedRowHeights`; returning undefined falls back
+   * to it, so a mode with no opinion keeps the density default.
+   */
+  expandedRowHeightFor?: (entry: string | undefined, density: FullDensityMode) => number | undefined
+  /**
+   * Per-density COLLAPSED row height, overriding the density default.
+   *
+   * A surface whose identity cell carries two lines — a ticker with the company
+   * under it — needs more than the shared default, which was sized for one line
+   * of text. Like the expanded override, this is a constant per density because
+   * the virtualiser must know row sizes up front.
+   */
+  rowHeights?: Partial<Record<FullDensityMode, number>>
+  /**
+   * Comparators for columns whose data the table does not hold.
+   *
+   * Keyed by column id. A surface computing its own columns — a research state,
+   * a portfolio weight — can make them sortable without the table learning
+   * anything about them. Ascending order; the table inverts for descending.
+   * Must be referentially stable, since the filtered list memoises on it.
+   */
+  extraSortComparators?: Record<string, (a: any, b: any) => number>
   /** Optional slot rendered in the toolbar area, between active filters and
    *  selection actions. Use for list-scoped filter chips. */
   filterBarSlot?: React.ReactNode
@@ -350,6 +527,14 @@ export function AssetTableView({
   onAssignToKanbanLane,
   onRemoveFromKanbanLane,
   renderExtraCell,
+  columnPreset,
+  columnPresetVersion,
+  expansionEntryColumns,
+  initialExpanded,
+  expandedRowHeights,
+  expandedRowHeightFor,
+  rowHeights,
+  extraSortComparators,
   expandedRowSlot,
   filterBarSlot,
   rowAccentFn
@@ -452,8 +637,18 @@ export function AssetTableView({
   }, [])
 
   const densityConfig = DENSITY_CONFIG[effectiveDensity]
-  const densityRowHeight = densityConfig.rowHeight
-  const expandedRowHeight = expandedRowHeightS[effectiveDensity]
+  const densityRowHeight = rowHeights?.[effectiveDensity] ?? densityConfig.rowHeight
+  /*
+   * A surface may ask for a taller expansion than the default.
+   *
+   * The default suits a metric detail panel — one chart and a caption. A
+   * two-column inspector needs more: at 320px the Lists workspace had roughly
+   * 190px of rail after its header and footer, which clipped labels mid-word.
+   * Opt-in, so no other table's rows change height.
+   */
+  const expandedRowHeight = expandedRowHeights?.[effectiveDensity]
+    ?? expandedRowHeightS[effectiveDensity]
+
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('')
@@ -472,20 +667,55 @@ export function AssetTableView({
   const [showLivePrices, setShowLivePrices] = useState(true)
 
   // Column state
+  //
+  // `baseColumns` is this surface's baseline: the built-in set plus any
+  // caller-provided columns, optionally reshaped by `columnPreset`. Everything
+  // that previously read DEFAULT_COLUMNS directly reads this instead, so a
+  // preset governs the initial state, the reset button and width-reset alike.
+  const baseColumns = useMemo(() => {
+    const all = [...DEFAULT_COLUMNS, ...extraColumns]
+    return columnPreset ? columnPreset(all) : all
+  }, [columnPreset, extraColumns])
+
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
     try {
       const saved = localStorage.getItem(storageKey)
-      if (saved) {
-        const parsed = JSON.parse(saved) as ColumnConfig[]
-        const allColumns = [...DEFAULT_COLUMNS, ...extraColumns]
-        return allColumns.map(defaultCol => {
-          const savedCol = parsed.find(c => c.id === defaultCol.id)
-          return savedCol ? { ...defaultCol, visible: savedCol.visible, width: savedCol.width, pinned: savedCol.pinned } : defaultCol
-        })
-      }
+      // `mergeSavedColumns` owns the rules — including when a new preset is
+      // allowed to override a stored layout. See `columnPersistence`.
+      if (saved) return mergeSavedColumns(baseColumns, JSON.parse(saved), columnPresetVersion)
     } catch (e) { console.warn('Failed to load columns:', e) }
-    return [...DEFAULT_COLUMNS, ...extraColumns]
+    return baseColumns
   })
+  /*
+   * Re-seed when the surface swaps its preset.
+   *
+   * `columns` is initialised once, which is right for a surface with a fixed
+   * layout and wrong for one with presets: Lists' Monitor / Research / Decide
+   * switch changes `columnPreset` AND `storageKey` together, and without this
+   * the table kept the first preset's columns forever — the control moved,
+   * the headings did not.
+   *
+   * Keyed on `storageKey` rather than on `columnPreset`'s identity, because a
+   * preset built inline would be a new function every render and this would
+   * then discard the reader's layout on every keystroke. One key per preset is
+   * already the contract (see `storageKeyFor`), so a changed key is exactly
+   * "a different saved layout applies now" — and the merge below is the same
+   * one the initialiser runs, so a reader's widths come back with it.
+   */
+  const seededKey = useRef(storageKey)
+  useEffect(() => {
+    if (seededKey.current === storageKey) return
+    seededKey.current = storageKey
+    try {
+      const saved = localStorage.getItem(storageKey)
+      setColumns(saved
+        ? mergeSavedColumns(baseColumns, JSON.parse(saved), columnPresetVersion)
+        : baseColumns)
+    } catch {
+      setColumns(baseColumns)
+    }
+  }, [storageKey, baseColumns, columnPresetVersion])
+
   const [showColumnSettings, setShowColumnSettings] = useState(false)
   const [draftColumns, setDraftColumns] = useState<ColumnConfig[]>([])
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
@@ -562,7 +792,9 @@ export function AssetTableView({
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
 
   // Refs
-  const tableContainerRef = useRef<HTMLDivElement>(null)
+  // `| null` in the type parameter, so this is a MutableRefObject: the callback
+  // ref below assigns `.current`, which a plain `useRef<T>(null)` forbids.
+  const tableContainerRef = useRef<HTMLDivElement | null>(null)
   const columnSettingsRef = useRef<HTMLDivElement>(null)
   const groupByMenuRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -571,21 +803,94 @@ export function AssetTableView({
   // size the expanded-row content so it stays pinned to the left edge of
   // the viewport regardless of horizontal scroll position (sticky + width).
   const [tableVisibleWidth, setTableVisibleWidth] = useState(0)
+  /*
+   * Observed through a CALLBACK ref, not through `tableContainerRef.current`.
+   *
+   * The scroll container is rendered only once there are rows — it sits inside
+   * the `filteredAssets.length > 0` branch — so on first paint the effect ran
+   * with a null ref, returned early, and never re-ran: its dependencies
+   * (`viewMode`, `fillHeight`) do not change when the data lands. The width
+   * therefore stayed 0 for the life of the surface.
+   *
+   * Nothing LOOKED broken, which is why it survived: a zero width only disables
+   * the slack distribution below, so every column sat at its floor and the table
+   * trailed off into several hundred pixels of white on a wide screen. That read
+   * as a sparse spreadsheet and was mistaken for a styling problem.
+   *
+   * A callback ref fires on attach and detach, so the observer is wired exactly
+   * when the element exists. The ref object is kept in sync for the virtualiser
+   * and the keyboard-navigation hook, which both want `.current`.
+   */
+  const [tableEl, setTableEl] = useState<HTMLDivElement | null>(null)
+  const attachTableContainer = useCallback((el: HTMLDivElement | null) => {
+    tableContainerRef.current = el
+    setTableEl(el)
+  }, [])
   useEffect(() => {
-    const el = tableContainerRef.current
-    if (!el) return
-    const update = () => setTableVisibleWidth(el.clientWidth)
+    if (!tableEl) { setTableVisibleWidth(0); return }
+
+    /*
+     * The visible width is the SCROLLPORT's, which is not always this element.
+     *
+     * `clientWidth` is the visible width only when the element is the thing
+     * that scrolls. On Lists it is not: `fillHeight` is never passed, so
+     * `.pro-table-container` grows to its content in both axes and a page
+     * ancestor does the scrolling. `clientWidth` there is the table's full
+     * content width — 1,791px on a 1,568px window — and the expanded row,
+     * which is sized from this, rendered 223px wider than the screen. The
+     * inspector's rail hung off the right edge where it could only be reached
+     * by scrolling the table sideways, and the chart beside it stretched to
+     * fill a width nobody could see.
+     *
+     * So walk up to whatever actually clips horizontally and measure that.
+     * When this element IS the scrollport the walk stops immediately and the
+     * behaviour is unchanged, which is every other surface using this table.
+     */
+    const portOf = (el: HTMLElement): HTMLElement => {
+      for (let n: HTMLElement | null = el; n && n !== document.body; n = n.parentElement) {
+        const ox = getComputedStyle(n).overflowX
+        if (ox === 'auto' || ox === 'scroll' || ox === 'hidden') return n
+      }
+      return document.documentElement
+    }
+    const update = () => {
+      const port = portOf(tableEl)
+      // Never wider than the element itself: a narrow table inside a wide
+      // page should not have its expansion stretched out to the page.
+      setTableVisibleWidth(Math.min(tableEl.clientWidth, port.clientWidth))
+    }
     update()
     const ro = new ResizeObserver(update)
-    ro.observe(el)
+    ro.observe(tableEl)
+    const port = portOf(tableEl)
+    if (port !== tableEl && port instanceof HTMLElement) ro.observe(port)
     return () => ro.disconnect()
-  }, [viewMode, fillHeight])
+  }, [tableEl])
 
   // Keyboard help modal state
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
 
   // Track which column triggered row expansion (for showing metric-specific details)
   const [expandedMetricColumn, setExpandedMetricColumn] = useState<{ assetId: string; columnId: string } | null>(null)
+
+  /**
+   * The height THIS expansion needs, given what opened it.
+   *
+   * Declared per mode by the surface rather than measured, because the
+   * virtualiser asks for a row's height before the inspector inside it
+   * exists. Recomputed when the reader switches entry, so moving from a
+   * one-figure Work panel to the Case strip resizes the row instead of
+   * padding the short one out to the tallest mode's budget.
+   *
+   * Declared HERE, after `expandedMetricColumn` — reading that state above its
+   * own declaration is a temporal dead zone, which is a documented recurring
+   * defect in this codebase and broke the feed once already.
+   */
+  const activeExpandedHeight = useMemo(() => {
+    if (!expandedRowHeightFor) return expandedRowHeight
+    return expandedRowHeightFor(expandedMetricColumn?.columnId, effectiveDensity)
+      ?? expandedRowHeight
+  }, [expandedRowHeightFor, expandedMetricColumn?.columnId, effectiveDensity, expandedRowHeight])
 
   // Asset flags for row highlighting
   const { getFlagColor, getFlagStyles, cycleFlag } = useAssetFlags()
@@ -950,6 +1255,18 @@ export function AssetTableView({
     // When sortBy is null (manual mode), sort by _sortOrder (persisted drag order)
     if (sortBy === null) {
       filtered = [...filtered].sort((a, b) => (a._sortOrder ?? 999999) - (b._sortOrder ?? 999999))
+    } else if (extraSortComparators?.[sortBy]) {
+      /*
+       * A caller-owned comparator for a caller-owned column.
+       *
+       * The switch below can only reach fields that live on the asset, and a
+       * surface's own columns are computed from data the table has never seen —
+       * a research state, a portfolio weight. Without this they could only be
+       * rendered, never sorted, which on a fifty-name list means the reader can
+       * see which securities need attention but cannot bring them together.
+       */
+      const cmp = extraSortComparators[sortBy]
+      filtered = [...filtered].sort((a, b) => sortOrder === 'asc' ? cmp(a, b) : cmp(b, a))
     } else {
       filtered = [...filtered].sort((a, b) => {
         let aValue: any, bValue: any
@@ -979,7 +1296,7 @@ export function AssetTableView({
     }
 
     return filtered
-  }, [assets, searchQuery, selectedPriorities, selectedSectors, selectedStages, sortBy, sortOrder])
+  }, [assets, searchQuery, selectedPriorities, selectedSectors, selectedStages, sortBy, sortOrder, extraSortComparators])
 
   // Grouped assets for table view
   const groupedAssets = useMemo(() => {
@@ -1237,7 +1554,7 @@ export function AssetTableView({
     setDraggedColumn(null)
   }, [])
 
-  const resetColumns = useCallback(() => setColumns([...DEFAULT_COLUMNS, ...extraColumns]), [extraColumns])
+  const resetColumns = useCallback(() => setColumns(baseColumns), [baseColumns])
 
   // Add a new priority column with a specific source
   const addPriorityColumn = useCallback((source: PrioritySourceType, sourceUserId?: string, sourceUserName?: string) => {
@@ -1300,9 +1617,19 @@ export function AssetTableView({
   }, [])
 
   useEffect(() => {
-    try { localStorage.setItem(storageKey, JSON.stringify(columns)) }
-    catch (e) { console.warn('Failed to save columns:', e) }
-  }, [columns, storageKey])
+    // Stamped with the preset version that produced it, so the initializer
+    // above can tell a layout the reader chose from one a stale baseline chose
+    // for them.
+    try {
+      // `baseColumns` goes in too: the next preset bump diffs against it to
+      // tell what the reader actually chose from what the default happened to
+      // be. See `columnPersistence`.
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify(serializeColumns(columns, columnPresetVersion, baseColumns)),
+      )
+    } catch (e) { console.warn('Failed to save columns:', e) }
+  }, [columns, storageKey, columnPresetVersion, baseColumns])
 
   // Single row expansion - only one row can be expanded at a time
   const toggleRowExpansion = useCallback((assetId: string) => {
@@ -1311,6 +1638,107 @@ export function AssetTableView({
     setExpandedMetricColumn(prev => prev?.assetId === assetId ? null : prev)
   }, [])
 
+  /**
+   * Open a row FROM a cell, carrying which cell it was.
+   *
+   * Deliberately not `toggleRowExpansion`: clicking a second field on a row
+   * that is already open should change what it shows, not slam it shut. Only
+   * the chevron and the row body toggle.
+   *
+   * `expandedMetricColumn` is reused as the carrier rather than adding parallel
+   * state — it is already `{assetId, columnId}`, and on a surface that supplies
+   * `expandedRowSlot` the metric panel never renders, so the field was unused
+   * there.
+   */
+  const openRowFromCell = useCallback((assetId: string, columnId: string) => {
+    setExpandedRowId(assetId)
+    setExpandedMetricColumn({ assetId, columnId })
+  }, [])
+
+  /**
+   * What the reader actually pointed at.
+   *
+   * A conceptual cell can hold two questions — a rating and the target beneath
+   * it — so the surface marks each datum with `data-entry` and the nearest one
+   * wins. Falls back to the column id for a cell that was never broken into
+   * parts, which is every column outside Lists.
+   */
+  const entryFrom = useCallback((e: React.MouseEvent, columnId: string) => {
+    const hit = (e.target as HTMLElement).closest<HTMLElement>('[data-entry]')
+    return hit?.dataset.entry || columnId
+  }, [])
+
+  /*
+   * Honour an arriving focus exactly once per intent.
+   *
+   * Keyed on the (asset, column) pair rather than run on mount: the tab can be
+   * re-rendered, and the reader may close the row — re-applying would spring it
+   * back open under them. A fresh click on Lists home produces a new pair and
+   * is honoured again.
+   */
+  const honouredFocus = useRef<string | null>(null)
+  useEffect(() => {
+    if (!initialExpanded?.assetId) return
+    const key = `${initialExpanded.assetId}:${initialExpanded.columnId ?? ''}`
+    if (honouredFocus.current === key) return
+    honouredFocus.current = key
+    setExpandedRowId(initialExpanded.assetId)
+    setExpandedMetricColumn(
+      initialExpanded.columnId
+        ? { assetId: initialExpanded.assetId, columnId: initialExpanded.columnId }
+        : null,
+    )
+  }, [initialExpanded?.assetId, initialExpanded?.columnId])
+
+  /**
+   * The entry column for one asset, or undefined.
+   *
+   * A helper rather than an inline ternary at each call site: optional chaining
+   * in the test (`x?.assetId === id`) does not narrow `x` for the branch, so the
+   * inline form read `expandedMetricColumn.columnId` off a possibly-null value.
+   */
+  const entryColumnFor = useCallback((assetId: string): string | undefined => {
+    const held = expandedMetricColumn
+    return held && held.assetId === assetId ? held.columnId : undefined
+  }, [expandedMetricColumn])
+
+  /**
+   * An open inspector restating what it is showing. See `onEntryChange`.
+   *
+   * Guarded on both the asset and the value so a slot that reports on every
+   * render cannot loop: an unchanged entry sets no state.
+   */
+  /*
+   * Cached per asset so the slot receives a STABLE function.
+   *
+   * A fresh arrow on every render is a new prop identity, and the slot puts
+   * this in an effect's dependency list — a new identity each render is an
+   * effect that runs each render, which is how a resize handshake becomes an
+   * infinite loop.
+   */
+  const entryReporters = useRef(new Map<string, (entry: string) => void>())
+  const reportEntryFor = useCallback((assetId: string) => {
+    const cached = entryReporters.current.get(assetId)
+    if (cached) return cached
+    const fn = (entry: string) => {
+      setExpandedMetricColumn(prev =>
+        prev && prev.assetId === assetId && prev.columnId === entry
+          ? prev
+          : { assetId, columnId: entry })
+    }
+    entryReporters.current.set(assetId, fn)
+    return fn
+  }, [])
+
+
+  /*
+   * Row drag-reorder, declared here rather than beside its handlers because
+   * `visibleColumns` below needs it: the drag handle shares the row, so it is
+   * width the columns cannot spend. Reading it from further down the component
+   * is a temporal dead zone — the typecheck caught exactly that.
+   */
+  const canDragRows = !!onReorderItem && sortBy === null && groupBy === 'none'
+  const dragHandleWidth = 24
 
   const visibleColumns = useMemo(() => {
     // Pinned columns go to the left (after select), unpinned columns follow
@@ -1321,17 +1749,55 @@ export function AssetTableView({
 
     // Scale column widths based on density
     const widthScale = densityConfig.widthScale
-    return ordered.map(col => ({
+    const scaled = ordered.map(col => ({
       ...col,
       width: Math.round(col.width * widthScale),
       minWidth: Math.round(col.minWidth * widthScale)
     }))
-  }, [allColumns, densityConfig.widthScale])
+
+    /*
+     * Spend the leftover width on the columns that can use it.
+     *
+     * Fixed pixel widths that happen to total less than the pane leave a dead
+     * region on the right — the watchlist was occupying roughly half a 1600px
+     * screen and the rest was blank. "No horizontal scroll" is not the same as
+     * "owns the canvas", and a table of investment state that trails off into
+     * white reads as a sparse spreadsheet rather than a workspace.
+     *
+     * Only columns the surface marked `grow` take the slack, weighted, and only
+     * when there IS slack — a narrow pane still scrolls rather than crushing
+     * anything below its `minWidth`. Surfaces that mark nothing are untouched.
+     */
+    const totalGrow = scaled.reduce((s, c) => s + (c.grow ?? 0), 0)
+    if (totalGrow <= 0 || tableVisibleWidth <= 0) return scaled
+
+    const fixed = scaled.reduce((s, c) => s + c.width, 0)
+    // The drag handle shares the row, so it is not available to the columns.
+    const available = tableVisibleWidth - (canDragRows ? dragHandleWidth : 0)
+    const slack = available - fixed
+    if (slack <= 0) return scaled
+
+    return scaled.map(col => col.grow
+      ? { ...col, width: col.width + Math.floor((slack * col.grow) / totalGrow) }
+      : col)
+  }, [allColumns, densityConfig.widthScale, tableVisibleWidth, canDragRows, dragHandleWidth])
 
   // Hidden columns for the add column menu
   const hiddenColumns = useMemo(() => allColumns.filter(c => !c.visible && c.id !== 'select'), [allColumns])
 
   const totalTableWidth = useMemo(() => visibleColumns.reduce((sum, col) => sum + col.width, 0), [visibleColumns])
+
+  /**
+   * Whether the ticker cell has to carry the company name itself.
+   *
+   * A surface that hides the Company column is asking for one identity cell,
+   * not for the company to disappear — so the name moves under the symbol as a
+   * second line. The two-column default is unchanged wherever Company is shown.
+   */
+  const tickerCarriesCompany = useMemo(
+    () => !visibleColumns.some(c => c.id === 'companyName'),
+    [visibleColumns],
+  )
 
   // Check if any visible column has wrap text enabled
   const hasWrapTextColumn = useMemo(() => visibleColumns.some(col => col.wrapText), [visibleColumns])
@@ -1371,7 +1837,7 @@ export function AssetTableView({
     estimateSize: useCallback((index: number) => {
       const asset = filteredAssets[index]
       // Expanded rows always get fixed height
-      if (expandedRows.has(asset?.id)) return expandedRowHeight
+      if (expandedRows.has(asset?.id)) return activeExpandedHeight
       // Wrap text rows get estimated larger height
       if (hasWrapTextColumn) return densityRowHeight * 2
       return densityRowHeight
@@ -1383,7 +1849,7 @@ export function AssetTableView({
       const asset = index !== null ? filteredAssets[parseInt(index)] : null
       // Don't dynamically measure expanded rows - they use fixed expandedRowHeight
       if (asset && expandedRows.has(asset.id)) {
-        return expandedRowHeight
+        return activeExpandedHeight
       }
       return element.getBoundingClientRect().height
     } : undefined,
@@ -1472,11 +1938,45 @@ export function AssetTableView({
       const container = tableContainerRef.current
       if (!container) return
 
-      const item = rowVirtualizer.getVirtualItems().find(i => i.index === rowIndex)
+      /*
+       * ── Whichever element actually scrolls ──────────────────────────────
+       *
+       * This used to assign `container.scrollTop` unconditionally. That only
+       * works when `.pro-table-container` is the scrollport, which it is ONLY
+       * under `fillHeight` — and the List surface never passes it. There the
+       * container grows to its content and the PAGE scrolls, so every
+       * assignment was a no-op and arrowing past the last visible row moved
+       * the focus off screen with no scroll at all.
+       *
+       * The browser already knows which ancestor scrolls, so for the common
+       * single-step case the row element is asked directly. `block: 'nearest'`
+       * is the minimal correction — a no-op when the row is already visible,
+       * so holding an arrow across visible rows does not drag the viewport.
+       */
+      const rowEl = container.querySelector<HTMLElement>(`[data-row-index="${rowIndex}"]`)
+      if (rowEl) {
+        rowEl.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+        return
+      }
+
+      /*
+       * The row is not mounted — a jump past the overscan window (Home, End,
+       * PageDown). Measure instead, from the virtualiser's cache, which covers
+       * EVERY index rather than only the rendered ones.
+       *
+       * Only meaningful when the container is genuinely scrollable; when the
+       * page is the scrollport there is nothing to measure against, so hand it
+       * to the virtualiser and let it mount the row.
+       */
+      const scrolls = container.scrollHeight > container.clientHeight + 1
+      if (!scrolls) {
+        rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
+        return
+      }
+
+      const item = rowVirtualizer.measurementsCache?.[rowIndex]
+        ?? rowVirtualizer.getVirtualItems().find(i => i.index === rowIndex)
       if (!item) {
-        // Row is outside the virtualized range (unlikely for single-row
-        // nav with default overscan). Let the virtualizer bring it in,
-        // then bail — the next keystroke will correct any final offset.
         rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
         return
       }
@@ -1925,10 +2425,9 @@ export function AssetTableView({
 
   const canDragKanban = kanbanOrganization === 'priority' || !!activeKanbanBoardId
 
-  // Row drag-reorder
-  const canDragRows = !!onReorderItem && sortBy === null && groupBy === 'none'
-  const dragHandleWidth = 24
-
+  // Row drag-reorder. `canDragRows` / `dragHandleWidth` are declared above
+  // `visibleColumns`, which needs them to know how much width the columns may
+  // actually spend.
   const handleRowDragStart = useCallback((e: React.DragEvent, rowIndex: number) => {
     setDragRowIndex(rowIndex)
     e.dataTransfer.effectAllowed = 'move'
@@ -2168,10 +2667,10 @@ export function AssetTableView({
   // Reset column widths
   const resetColumnWidths = useCallback(() => {
     setColumns(prev => prev.map(col => {
-      const defaultCol = DEFAULT_COLUMNS.find(d => d.id === col.id)
+      const defaultCol = baseColumns.find(d => d.id === col.id)
       return defaultCol ? { ...col, width: defaultCol.width } : col
     }))
-  }, [])
+  }, [baseColumns])
 
   // Kanban columns
   const kanbanColumns = useMemo(() => {
@@ -2563,7 +3062,7 @@ export function AssetTableView({
           {/* TABLE VIEW */}
           {viewMode === 'table' && groupBy === 'none' && (
             <Card padding="none" className={clsx('overflow-hidden pro-table', fillHeight && 'flex-1 min-h-0 flex flex-col', `density-${density}`)}>
-              <div ref={tableContainerRef} className={clsx('pro-table-container overflow-auto', fillHeight && 'flex-1')}>
+              <div ref={attachTableContainer} className={clsx('pro-table-container overflow-auto', fillHeight && 'flex-1')}>
                 {/* Header */}
                 <div className="pro-table-header" style={{ minWidth: totalTableWidth + (canDragRows ? dragHandleWidth : 0) + (hiddenColumns.length > 0 ? 40 : 0) }}>
                   <div className="flex items-center">
@@ -2638,6 +3137,9 @@ export function AssetTableView({
                           }}
                           className={clsx(
                             'pro-table-header-cell relative px-3 py-2.5 group transition-all duration-75',
+                            // The label follows its column, or the heading sits
+                            // over empty space while the figures sit right.
+                            col.align === 'right' && 'text-right [&>div]:justify-end [&>button]:justify-end',
                             isLastPinned && 'border-r-2 border-slate-200',
                             isSorted && 'sorted',
                             draggedColumn === col.id && 'opacity-40 scale-[0.98]'
@@ -3140,25 +3642,63 @@ export function AssetTableView({
                           accent?.dim && !isExpanded && 'opacity-55'
                         )}
                         data-row-index={virtualRow.index}
+                        // The datum this row was opened from, so the collapsed
+                        // cell keeps a quiet ring. Styled in lists-surface.css.
+                        data-open-entry={isExpanded ? entryColumnFor(asset.id) : undefined}
                         draggable={canDragRows}
                         onDragStart={canDragRows ? (e) => handleRowDragStart(e, virtualRow.index) : undefined}
                         onDragOver={canDragRows ? (e) => handleRowDragOver(e, virtualRow.index) : undefined}
                         onDrop={canDragRows ? handleRowDrop : undefined}
                         onDragEnd={canDragRows ? handleRowDragEnd : undefined}
                         style={{
-                          height: isExpanded ? expandedRowHeight : (hasWrapTextColumn ? 'auto' : densityRowHeight),
+                          height: isExpanded ? activeExpandedHeight : (hasWrapTextColumn ? 'auto' : densityRowHeight),
                           minHeight: hasWrapTextColumn && !isExpanded ? densityRowHeight : undefined,
                           transform: `translateY(${virtualRow.start + insertOffset}px)`,
                           boxShadow: accent?.color ? `inset 3px 0 0 0 ${accent.color}` : 'inset 0 0 0 0 transparent',
+                          /*
+                           * The same colour as a custom property, for surfaces
+                           * with a FROZEN first column.
+                           *
+                           * The inset shadow above paints on this row box and
+                           * is then covered by the pinned identity cell, which
+                           * is positioned and opaque — so on Lists the rail was
+                           * in the DOM, had the right computed style, and was
+                           * invisible. `lists-surface.css` reads this variable
+                           * to draw the bar inside that cell instead.
+                           */
+                          ...(accent?.color ? { ['--row-accent' as string]: accent.color } : null),
                           transition: 'box-shadow 200ms ease-out, opacity 200ms ease-out'
-                        }}>
+                        } as React.CSSProperties}>
                         {/* Drop indicator line */}
                         {canDragRows && dropTargetIndex === virtualRow.index && dragRowIndex !== null && dragRowIndex !== virtualRow.index && (
                           <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 z-10" style={{ transform: 'translateY(-1px)' }} />
                         )}
                         <div
-                          className={clsx('flex items-center', isExpanded ? 'h-auto' : 'h-full')}
-                          style={{ minWidth: totalTableWidth + (canDragRows ? dragHandleWidth : 0), minHeight: densityRowHeight }}
+                          /*
+                           * The cells band is one row high in BOTH states.
+                           *
+                           * It used to be `h-auto` when expanded, because the
+                           * row becomes a column flex and `h-full` against an
+                           * auto-height parent resolves to nothing. The cost
+                           * was that every cell then sized to its own content:
+                           * measured in the running app, an expanded row's
+                           * cells were 42, 30, 30, 30, 30, 10, 35 and 10px tall
+                           * inside a 44px stripe. Anything drawn to a cell's
+                           * box — the selection ring, a hover tint — therefore
+                           * covered a fraction of the stripe and looked like it
+                           * had been drawn around the text instead of the cell.
+                           *
+                           * Pinning the band to the row height fixes all of
+                           * them at once, and makes the expansion's own budget
+                           * deterministic: the panel below gets the row height
+                           * subtracted, not "whatever the tallest cell did".
+                           */
+                          className={clsx('flex items-center', isExpanded ? 'flex-shrink-0' : 'h-full')}
+                          style={{
+                            minWidth: totalTableWidth + (canDragRows ? dragHandleWidth : 0),
+                            minHeight: densityRowHeight,
+                            height: isExpanded ? densityRowHeight : undefined,
+                          }}
                           onDoubleClick={() => toggleRowExpansion(asset.id)}
                           onContextMenu={(e) => {
                             e.preventDefault()
@@ -3186,10 +3726,35 @@ export function AssetTableView({
                             return (
                               <div
                                 key={col.id}
-                                onClick={(e) => { e.stopPropagation(); handleCellClick(virtualRow.index, col.id, e) }}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleCellClick(virtualRow.index, col.id, e)
+                                  // The field states the intent — see
+                                  // `expansionEntryColumns`. Guarded on the
+                                  // event target so a control that happens to
+                                  // live inside an entry cell still wins.
+                                  if (
+                                    expansionEntryColumns?.has(col.id)
+                                    && !(e.target as HTMLElement).closest('button,a,input,select,textarea,[role="button"]')
+                                  ) {
+                                    openRowFromCell(asset.id, entryFrom(e, col.id))
+                                  }
+                                }}
+                                // Which column this cell is, so a stylesheet can
+                                // address one by NAME. `lists-surface.css` used
+                                // `:nth-child(2)` to reach the ticker cell and
+                                // reached the price cell instead, which put the
+                                // open-row ring on the chart whenever a row was
+                                // opened from the chevron.
+                                data-col={col.id}
                                 className={clsx(
-                                  'pro-table-cell cursor-default',
-                                  isExpanded ? 'h-auto' : 'h-full',
+                                  'pro-table-cell',
+                                  col.align === 'right' && 'justify-end text-right',
+                                  expansionEntryColumns?.has(col.id) ? 'cursor-pointer' : 'cursor-default',
+                                  // Always the band's full height — see the band
+                                  // above. A content-sized cell cannot carry a
+                                  // selection outline that reads as a cell.
+                                  'h-full',
                                   col.wrapText && !isExpanded && 'items-start',
                                   densityConfig.padding,
                                   densityConfig.fontSize,
@@ -3226,11 +3791,16 @@ export function AssetTableView({
                                           <ChevronRight className={clsx('h-3.5 w-3.5 text-gray-400 transition-transform duration-150', isExpanded && 'rotate-90')} />
                                         </button>
                                       )}
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="pro-symbol">{asset.symbol}</span>
-                                        {/* Hide price target icon in micro mode */}
-                                        {density !== 'micro' && asset.price_targets?.length > 0 && (
-                                          <Target className="h-3 w-3 text-amber-500" title={`${asset.price_targets.length} price target(s)`} />
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <span className="pro-symbol">{asset.symbol}</span>
+                                          {/* Hide price target icon in micro mode */}
+                                          {density !== 'micro' && asset.price_targets?.length > 0 && (
+                                            <Target className="h-3 w-3 text-amber-500 flex-shrink-0" title={`${asset.price_targets.length} price target(s)`} />
+                                          )}
+                                        </div>
+                                        {tickerCarriesCompany && density !== 'micro' && asset.company_name && (
+                                          <div className="lists-company">{asset.company_name}</div>
                                         )}
                                       </div>
                                     </div>
@@ -3541,7 +4111,7 @@ export function AssetTableView({
                                 {col.id === 'actions' && renderRowActions && renderRowActions(asset)}
                                 {/* Extra-column cell renderer — for caller-provided columns
                                     not handled by any built-in col.id branch above. */}
-                                {renderExtraCell && !col.isCustomAI && col.id !== 'actions' && renderExtraCell(col.id, asset)}
+                                {renderExtraCell && !col.isCustomAI && col.id !== 'actions' && renderExtraCell(col.id, asset, quote)}
                               </div>
                             )
                           })}
@@ -3550,7 +4120,7 @@ export function AssetTableView({
                           <div
                           className="pro-expanded-row px-5 py-2 overflow-hidden"
                           style={{
-                            height: expandedRowHeight - densityRowHeight,
+                            height: activeExpandedHeight - densityRowHeight,
                             position: 'sticky',
                             left: 0,
                             width: tableVisibleWidth || '100%'
@@ -3558,8 +4128,20 @@ export function AssetTableView({
                         >
                             <div className="h-full flex flex-col overflow-hidden">
                               <div className="flex-1 min-h-0 overflow-hidden">
-                                {expandedRowSlot && !(expandedMetricColumn?.assetId === asset.id)
-                                  ? expandedRowSlot(asset, asset._rowId || asset.id)
+                                {/* A surface that supplies its own expansion owns it outright.
+                                    Previously Enter-on-a-focused-cell could swap the slot for
+                                    the metric detail panel mid-expansion, so a list row would
+                                    sometimes open as a full-width price chart instead of the
+                                    working surface. */}
+                                {expandedRowSlot
+                                  ? expandedRowSlot(
+                                      asset,
+                                      asset._rowId || asset.id,
+                                      coverage,
+                                      entryColumnFor(asset.id),
+                                      reportEntryFor(asset.id),
+                                      quote,
+                                    )
                                   : renderMetricDetail(
                                       asset,
                                       expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',
@@ -3811,6 +4393,9 @@ export function AssetTableView({
                           }}
                           className={clsx(
                             'pro-table-header-cell relative px-3 py-2.5 group transition-all duration-75',
+                            // The label follows its column, or the heading sits
+                            // over empty space while the figures sit right.
+                            col.align === 'right' && 'text-right [&>div]:justify-end [&>button]:justify-end',
                             isLastPinned && 'border-r-2 border-slate-200',
                             isSorted && 'sorted',
                             draggedColumn === col.id && 'opacity-40 scale-[0.98]'
@@ -4029,8 +4614,13 @@ export function AssetTableView({
                               }}
                             >
                               <div
-                                className={clsx('flex items-center', isExpanded ? 'h-auto' : 'h-full')}
-                                style={{ minHeight: densityRowHeight }}
+                                // One row high in both states — see the
+                                // ungrouped branch, which owns the reasoning.
+                                className={clsx('flex items-center', isExpanded ? 'flex-shrink-0' : 'h-full')}
+                                style={{
+                                  minHeight: densityRowHeight,
+                                  height: isExpanded ? densityRowHeight : undefined,
+                                }}
                                 onDoubleClick={() => toggleRowExpansion(asset.id)}
                                 onContextMenu={(e) => {
                                   e.preventDefault()
@@ -4057,10 +4647,34 @@ export function AssetTableView({
                                   return (
                                     <div
                                       key={col.id}
-                                      onClick={(e) => { e.stopPropagation(); handleAssetClick(asset) }}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        // Grouped rows otherwise navigate away
+                                        // on any cell click. An entry column
+                                        // opens the row in place instead —
+                                        // every other column keeps navigating,
+                                        // which is what this view has always
+                                        // done.
+                                        if (
+                                          expansionEntryColumns?.has(col.id)
+                                          && !(e.target as HTMLElement).closest('button,a,input,select,textarea,[role="button"]')
+                                        ) {
+                                          openRowFromCell(asset.id, entryFrom(e, col.id))
+                                          return
+                                        }
+                                        handleAssetClick(asset)
+                                      }}
+                                      // See the ungrouped branch: the column id
+                                      // so a stylesheet can name a cell.
+                                      data-col={col.id}
                                       className={clsx(
-                                        'pro-table-cell cursor-default',
-                                        isExpanded ? 'h-auto' : 'h-full',
+                                        'pro-table-cell',
+                                        col.align === 'right' && 'justify-end text-right',
+                                        expansionEntryColumns?.has(col.id) ? 'cursor-pointer' : 'cursor-default',
+                                        // Always the band's height. A cell sized
+                                        // to its content cannot carry a selection
+                                        // outline that reads as a cell.
+                                        'h-full',
                                         col.wrapText && !isExpanded && 'items-start',
                                         densityConfig.padding,
                                         densityConfig.fontSize,
@@ -4095,10 +4709,17 @@ export function AssetTableView({
                                                 <ChevronRight className={clsx('h-3.5 w-3.5 text-gray-400 transition-transform duration-150', isExpanded && 'rotate-90')} />
                                               </button>
                                             )}
-                                            <div className="flex items-center gap-1.5">
-                                              <span className="pro-symbol">{asset.symbol}</span>
-                                              {density !== 'micro' && asset.price_targets?.length > 0 && (
-                                                <Target className="h-3 w-3 text-amber-500" title={`${asset.price_targets.length} price target(s)`} />
+                                            <div className="min-w-0 flex-1">
+                                              <div className="flex items-center gap-1.5 min-w-0">
+                                                <span className="pro-symbol">{asset.symbol}</span>
+                                                {density !== 'micro' && asset.price_targets?.length > 0 && (
+                                                  <Target className="h-3 w-3 text-amber-500 flex-shrink-0" title={`${asset.price_targets.length} price target(s)`} />
+                                                )}
+                                              </div>
+                                              {/* See the ungrouped renderer: the ticker carries the
+                                                  company when the Company column is hidden. */}
+                                              {tickerCarriesCompany && density !== 'micro' && asset.company_name && (
+                                                <div className="lists-company">{asset.company_name}</div>
                                               )}
                                             </div>
                                           </div>
@@ -4398,7 +5019,7 @@ export function AssetTableView({
                                         </div>
                                       )}
                                       {/* Extra-column cell renderer (grouped view) */}
-                                      {renderExtraCell && !col.isCustomAI && col.id !== 'actions' && renderExtraCell(col.id, asset)}
+                                      {renderExtraCell && !col.isCustomAI && col.id !== 'actions' && renderExtraCell(col.id, asset, quote)}
                                     </div>
                                   )
                                 })}
@@ -4408,7 +5029,7 @@ export function AssetTableView({
                                 <div
                           className="pro-expanded-row px-5 py-2 overflow-hidden"
                           style={{
-                            height: expandedRowHeight - densityRowHeight,
+                            height: activeExpandedHeight - densityRowHeight,
                             position: 'sticky',
                             left: 0,
                             width: tableVisibleWidth || '100%'
@@ -4416,8 +5037,16 @@ export function AssetTableView({
                         >
                                   <div className="h-full flex flex-col overflow-hidden">
                                     <div className="flex-1 min-h-0 overflow-hidden">
-                                      {expandedRowSlot && !(expandedMetricColumn?.assetId === asset.id)
-                                        ? expandedRowSlot(asset, asset._rowId || asset.id)
+                                      {/* See the ungrouped branch: the slot owns the expansion. */}
+                                      {expandedRowSlot
+                                        ? expandedRowSlot(
+                                            asset,
+                                            asset._rowId || asset.id,
+                                            coverage,
+                                            entryColumnFor(asset.id),
+                                            reportEntryFor(asset.id),
+                                            quote,
+                                          )
                                         : renderMetricDetail(
                                             asset,
                                             expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',
@@ -5313,7 +5942,7 @@ export function AssetTableView({
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setDraftColumns([...DEFAULT_COLUMNS, ...extraColumns].map(c => ({ ...c })))}
+                  onClick={() => setDraftColumns(baseColumns.map(c => ({ ...c })))}
                   className="text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
                 >
                   Reset to Default

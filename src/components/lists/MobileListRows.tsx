@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { ChevronDown, Flag, Search, X } from 'lucide-react'
 import { ListRowExpansion } from './ListRowExpansion'
+import { useListRowSignals } from '../../hooks/lists/useListRowSignals'
+import { STATE_LABEL } from '../../lib/desktop-research/model'
 import type { ListPermissions } from '../../hooks/lists/useListPermissions'
 
 interface MobileListRowsProps {
@@ -38,6 +40,16 @@ export function MobileListRows({
 }: MobileListRowsProps) {
   const [query, setQuery] = useState('')
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
+
+  /*
+   * The same batched signals the desktop list uses.
+   *
+   * Mobile previously showed status, assignee and tags and no investment state
+   * at all — so the one thing a list is for, knowing which name needs a look,
+   * was only available by opening every row. One read for the whole list; see
+   * `useListRowSignals`.
+   */
+  const { signalFor } = useListRowSignals(assets)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -100,6 +112,20 @@ export function MobileListRows({
               ? (assignee.first_name || assignee.email || '?')
               : null
 
+            const signal = signalFor(asset.id)
+            const closes = signal.closes
+            // The stored price, same source the desktop Target cell uses. The
+            // live quote is not available on this surface.
+            const price = asset.current_price == null ? null : Number(asset.current_price)
+            const oneMonthPct = closes && closes.length > 1
+              ? ((closes[closes.length - 1] - closes[0]) / closes[0]) * 100
+              : null
+            // Only states that mean somebody should do something. "Current" is
+            // the desired state and earns no chip.
+            const workLabel = signal.state && signal.state !== 'current'
+              ? STATE_LABEL[signal.state]
+              : null
+
             return (
               <div key={rowId}>
                 <button
@@ -125,8 +151,54 @@ export function MobileListRows({
                       {isFlagged && <Flag className="h-3 w-3 text-amber-500 fill-current shrink-0" />}
                     </span>
 
-                    {(status || assigneeLabel || tags.length > 0) && (
+                    {/*
+                      * Investment state first, the same priority the desktop
+                      * line carries: what the market did, what we own, what we
+                      * think. Status and tags moved below it — they answer a
+                      * question about the list, not about the security, and the
+                      * expansion's Overview still shows both.
+                      */}
+                    <span className="flex items-baseline gap-2.5 mt-1 min-w-0 tabular-nums">
+                      {price != null && (
+                        <span className="shrink-0 text-[12px] font-semibold text-gray-900 dark:text-gray-100">
+                          {price.toFixed(2)}
+                        </span>
+                      )}
+                      {oneMonthPct != null && (
+                        <span className={clsx(
+                          'shrink-0 text-[11px] font-semibold',
+                          oneMonthPct >= 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400',
+                        )}>
+                          {oneMonthPct >= 0 ? '+' : ''}{oneMonthPct.toFixed(1)}%
+                        </span>
+                      )}
+                      {signal.weightPct != null && (
+                        <span className="shrink-0 text-[11px] text-gray-600 dark:text-gray-300">
+                          {signal.weightPct.toFixed(1)}% wt
+                        </span>
+                      )}
+                      {signal.ratingValue && (
+                        <span
+                          className="shrink-0 text-[11px] font-semibold"
+                          style={{ color: signal.ratingColor ?? undefined }}
+                        >
+                          {signal.ratingValue}
+                        </span>
+                      )}
+                    </span>
+
+                    {(workLabel || status || assigneeLabel || tags.length > 0) && (
                       <span className="flex items-center gap-1.5 mt-1 min-w-0">
+                        {workLabel && (
+                          <span className="shrink-0 px-1.5 py-px rounded text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                            {workLabel}
+                            {signal.state === 'evidence-since-review' && signal.subject?.newSinceReview
+                              ? ` ${signal.subject.newSinceReview}`
+                              : ''}
+                          </span>
+                        )}
                         {status && (
                           <span
                             className="shrink-0 px-1.5 py-px rounded text-[10px] font-medium"
@@ -171,6 +243,7 @@ export function MobileListRows({
                       rowId={rowId}
                       asset={asset}
                       canEdit={!hideListColumns && permissions.canEditItemNotes({ added_by: asset._addedBy ?? null })}
+                      signal={signal}
                       onOpenAsset={onAssetSelect ? () => onAssetSelect(asset) : undefined}
                     />
                   </div>

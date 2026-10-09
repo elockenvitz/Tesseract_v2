@@ -43,7 +43,16 @@ export interface ListSurface {
   portfolio: { id: string; name: string } | null
 }
 
-export type ListSortKey = 'recent' | 'alpha' | 'assets' | 'portfolio' | 'owner' | 'access'
+/**
+ * `attention` is applied by the PAGE, not by `sortLists` below.
+ *
+ * Attention is folded from this hook's own output (`assetIds` joined against
+ * the research and idea scans), so sorting by it in here would be circular.
+ * `sortLists` treats it as the fallback order and `ListsPage` re-sorts stably
+ * on top — see `byAttention` there.
+ */
+export type ListSortKey =
+  | 'recent' | 'alpha' | 'assets' | 'portfolio' | 'owner' | 'access' | 'attention'
 
 // ── Sort helpers ───────────────────────────────────────────────────────
 
@@ -73,6 +82,10 @@ function sortLists(
       case 'owner':
       case 'access':
         // Table-only sort keys; fall through to recency for grid view
+        return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime()
+      case 'attention':
+        // Recency is the tiebreaker the page's stable re-sort preserves, so a
+        // list with nothing outstanding still reads in a sensible order.
         return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime()
       default:
         return 0
@@ -120,7 +133,31 @@ export function useListSurfaces(sortBy: ListSortKey = 'recent') {
           updated_by_user:users!asset_lists_updated_by_fkey(id, first_name, last_name, email),
           created_by_user:users!asset_lists_created_by_fkey(id, first_name, last_name, email)
         `)
-        .or(`is_default.eq.true,organization_id.eq.${currentOrgId!}`)
+        /*
+         * Three arms, because a NULL `organization_id` means "not org-scoped",
+         * not "invisible".
+         *
+         * This was `is_default.eq.true,organization_id.eq.<org>`, and the
+         * `organization_id` column only arrived on 2026-06-03 with a trigger
+         * that stamps it from `users.current_organization_id`. Every list
+         * created before that is NULL-org and non-default, so it matched
+         * NEITHER arm and vanished from the hub — including lists that contain
+         * assets. In production that is 8 user-created lists, 3 of them
+         * populated, unreachable by the people who made them.
+         *
+         * Reading NULL as a user-global is the schema's own convention: the
+         * `is_default` lists are deliberately left NULL for exactly that
+         * reason (see 20260603160000_asset_lists_organization_id.sql). So this
+         * arm is consistent with the design rather than a new rule.
+         *
+         * Not a leak: RLS on `asset_lists` is owner-or-collaborator, so these
+         * are the reader's own lists or ones shared with them. The cost is
+         * that a pre-trigger list appears in every org this reader works in,
+         * which is strictly better than it appearing in none. Backfilling the
+         * 8 rows would scope them properly and is the follow-up; it is a data
+         * change and deliberately not made here.
+         */
+        .or(`is_default.eq.true,organization_id.eq.${currentOrgId!},organization_id.is.null`)
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: false })
 
@@ -221,15 +258,27 @@ export function useListSurfaces(sortBy: ListSortKey = 'recent') {
     return map
   }, [activityCounts])
 
-  // Collect all list IDs for batch activity lookup
+  // Collect all list IDs for batch activity lookup. Sorted, so the cache key
+  // below is stable under a reorder of the same set.
   const allListIds = useMemo(() => {
     if (!rawLists) return []
-    return rawLists.map(l => l.id)
+    return rawLists.map(l => l.id).sort()
   }, [rawLists])
 
-  // Query 7 — Latest activity per list (for Updated tooltip)
+  /*
+   * Query 7 — Latest activity per list.
+   *
+   * Keyed on the list IDS, not their COUNT. `allListIds.length` meant two
+   * different sets of lists of equal size shared one cache entry, so deleting
+   * one list and creating another — or switching organisation to one with the
+   * same number of lists — served the previous set's activity rows. They are
+   * then matched by `list_id` into `lastActivityMap`, so the mismatch does not
+   * throw: every card simply shows "Updated …" from `updated_at` as though
+   * nothing had ever happened on it, which reads as a quiet desk rather than a
+   * stale cache.
+   */
   const { data: latestActivities } = useQuery({
-    queryKey: ['list-latest-activities', allListIds.length],
+    queryKey: ['list-latest-activities', allListIds.join('|')],
     queryFn: async () => {
       if (allListIds.length === 0) return []
       const { data, error } = await supabase.rpc('get_latest_list_activities', { p_list_ids: allListIds })

@@ -44,6 +44,9 @@ const TYPE_OPTIONS: { value: ListTypeFilter; label: string }[] = [
 ]
 
 const SORT_OPTIONS: { value: ListSortKey; label: string }[] = [
+  // First, because it is the question this page exists to answer: which
+  // collection deserves attention. Applied by `ListsPage` — see `byAttention`.
+  { value: 'attention', label: 'Needs attention' },
   { value: 'recent', label: 'Recently updated' },
   { value: 'alpha', label: 'Name (A\u2192Z)' },
   { value: 'assets', label: 'Most assets' },

@@ -9,6 +9,7 @@ import { formatDistanceToNow, format } from 'date-fns'
 import { clsx } from 'clsx'
 import type { ListSurface, ListSurfaceMetrics, ListSortKey, LastListActivity } from '../../hooks/lists/useListSurfaces'
 import type { ListGroupKey } from './ListSurfaceControls'
+import type { ListAttention } from '../../hooks/lists/useListAttention'
 import { useListActivity, type ListActivity } from '../../hooks/lists/useListActivity'
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -46,6 +47,8 @@ interface ListsTableViewProps {
   updateCountMap: Map<string, number>
   selfUpdateCountMap: Map<string, number>
   lastActivityMap: Map<string, LastListActivity>
+  /** Folded on the page — see `useListAttention`. */
+  attentionFor?: (listId?: string | null) => ListAttention
 }
 
 // ── Access helpers ──────────────────────────────────────────────────────
@@ -100,7 +103,8 @@ const rUpdatedBy = 'hidden lg:table-cell'   // show ≥1024
 export function ListsTableView({
   lists, metrics, favoriteSet, userId,
   sortBy, onSortByChange, onListClick, onEditList, onToggleFavorite,
-  groupBy, lastOpenedMap, updateCountMap, selfUpdateCountMap, lastActivityMap
+  groupBy, lastOpenedMap, updateCountMap, selfUpdateCountMap, lastActivityMap,
+  attentionFor
 }: ListsTableViewProps) {
   const activeSortCol = SORT_TO_COL[sortBy] ?? 'updated'
   const [sortDir, setSortDir] = useState<TableSortDir>(sortBy === 'alpha' ? 'asc' : 'desc')
@@ -243,6 +247,7 @@ export function ListsTableView({
                     selfUpdateCountMap={selfUpdateCountMap}
                     lastOpenedMap={lastOpenedMap}
                     lastActivityMap={lastActivityMap}
+                    attentionFor={attentionFor}
                     onListClick={onListClick}
                     onEditList={onEditList}
                     onToggleFavorite={onToggleFavorite}
@@ -264,6 +269,7 @@ export function ListsTableView({
                     selfUpdateCountMap={selfUpdateCountMap}
                     lastOpenedMap={lastOpenedMap}
                     lastActivityMap={lastActivityMap}
+                    attentionFor={attentionFor}
                     onListClick={onListClick}
                     onEditList={onEditList}
                     onToggleFavorite={onToggleFavorite}
@@ -302,6 +308,7 @@ interface ListRowProps {
   selfUpdateCountMap: Map<string, number>
   lastOpenedMap: Map<string, string>
   lastActivityMap: Map<string, LastListActivity>
+  attentionFor?: (listId?: string | null) => ListAttention
   onListClick: (list: ListSurface) => void
   onEditList: (list: ListSurface, e: React.MouseEvent) => void
   onToggleFavorite: (listId: string) => void
@@ -331,7 +338,7 @@ function formatLastActivity(a: LastListActivity): string {
 
 function ListRow({
   list, index: i, metrics, favoriteSet, userId, selected, menuOpenId,
-  updateCountMap, selfUpdateCountMap, lastOpenedMap, lastActivityMap,
+  updateCountMap, selfUpdateCountMap, lastOpenedMap, lastActivityMap, attentionFor,
   onListClick, onEditList, onToggleFavorite, toggleSelect, setMenuOpenId
 }: ListRowProps) {
   const m = metrics.get(list.id)
@@ -347,6 +354,7 @@ function ListRow({
   const shared = isSharedList(list, userId)
   const lastOpened = lastOpenedMap.get(list.id)
   const lastActivity = lastActivityMap.get(list.id)
+  const attention = attentionFor?.(list.id)
 
   return (
     <tr onClick={() => onListClick(list)}
@@ -369,7 +377,29 @@ function ListRow({
             <p className="text-[13px] font-medium text-gray-900 dark:text-gray-100 truncate leading-tight">
               {list.name}
             </p>
-            {list.description && (
+            {/* Attention under the name rather than in a twelfth column: the
+                row is already eleven wide, and this belongs to the list's
+                identity, not to a separate axis. Silent when nothing is
+                outstanding. */}
+            {attention && (attention.needsAttention > 0 || attention.activeIdeas > 0) ? (
+              <p className="flex items-center gap-1.5 mt-0.5 text-[10px] font-semibold leading-tight">
+                {attention.newResearch > 0 && (
+                  <span className="text-amber-700 dark:text-amber-300">
+                    {attention.newResearch} new research
+                  </span>
+                )}
+                {attention.reviewDue > 0 && (
+                  <span className="text-amber-700 dark:text-amber-300">
+                    {attention.reviewDue} review due
+                  </span>
+                )}
+                {attention.activeIdeas > 0 && (
+                  <span className="text-primary-700 dark:text-primary-300">
+                    {attention.activeIdeas} active
+                  </span>
+                )}
+              </p>
+            ) : list.description && (
               <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate leading-tight mt-0.5">
                 {list.description}
               </p>

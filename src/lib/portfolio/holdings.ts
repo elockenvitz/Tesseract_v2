@@ -46,6 +46,14 @@ export interface HoldingRow {
   cost: number | string | null
   date: string | null
   assets?: { id?: string; symbol?: string | null; company_name?: string | null; sector?: string | null; industry?: string | null } | null
+  /**
+   * The book this line belongs to, where the caller joined it.
+   *
+   * Optional because most callers do not select it. A weight is a number about a
+   * book, so a surface showing exposure needs the book's name to say what the
+   * number is a weight OF — see `useHoldingsForAssets`.
+   */
+  portfolios?: { name?: string | null } | null
 }
 
 export interface Position {

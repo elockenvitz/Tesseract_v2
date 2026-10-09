@@ -37,9 +37,22 @@ export function useRelevanceScoring(items: FeedItem[]) {
           .select('following_id')
           .eq('follower_id', user?.id),
 
-        // Get watchlist assets
+        /*
+         * Assets the reader has put on a list.
+         *
+         * This read `watchlist_items`, which does not exist — no migration
+         * creates it and it is absent from the generated types — so the 0.8
+         * relevance boost below has never once fired. Lists are the mechanism
+         * that actually expresses "I am tracking this name", and
+         * `asset_list_items` is where that lives.
+         *
+         * No explicit owner filter: RLS on `asset_list_items` is
+         * owner-or-collaborator through the parent list, so this returns the
+         * assets on lists this reader can see. A collaborator's list counts,
+         * which is the right answer — being invited onto a list is interest.
+         */
         supabase
-          .from('watchlist_items')
+          .from('asset_list_items')
           .select('asset_id'),
 
         // Get portfolio holdings

@@ -6,7 +6,7 @@
  * Wires useListPermissions, useListSuggestions, useListGroups, useListReorder.
  */
 
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, X, Search, Loader2, Trash2, Check,
@@ -17,7 +17,8 @@ import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ShareListDialog } from '../lists/ShareListDialog'
-import { ListTableView } from '../lists/ListTableView'
+import { ListTableView, ListViewSwitch } from '../lists/ListTableView'
+import { DEFAULT_LIST_VIEW, type ListView } from '../lists/listViewPresets'
 import { MobileListRows } from '../lists/MobileListRows'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { AddTradeIdeaModal } from '../trading/AddTradeIdeaModal'
@@ -25,6 +26,10 @@ import { ListHeaderStrip } from '../lists/ListHeaderStrip'
 import { ListBrief } from '../lists/ListBrief'
 import { ListFilterChipBar, EMPTY_FILTERS, type ListRowFilters } from '../lists/ListFilterChipBar'
 import { ListProgressStrip } from '../lists/ListProgressStrip'
+import {
+  ListPulseStrip, pulseFrom, matchesLens, type ListLens,
+} from '../lists/ListPulseStrip'
+import { useListRowSignals } from '../../hooks/lists/useListRowSignals'
 import { ListEmptyState } from '../lists/ListEmptyState'
 import { ScreenCriteriaPanel } from '../lists/ScreenCriteriaPanel'
 import { useListStatuses } from '../../hooks/lists/useListStatuses'
@@ -120,6 +125,14 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
 
   // Row-level filters (assignee / status / tag / flagged-only)
   const [rowFilters, setRowFilters] = useState<ListRowFilters>(EMPTY_FILTERS)
+  // The investment-state lens, over and above those filters.
+  const [lens, setLens] = useState<ListLens>('all')
+  /* Which preset the table shows. Held here because the switch lives on the
+     command band beside the pulse; the table consumes it. */
+  const [listView, setListView] = useState<ListView>(DEFAULT_LIST_VIEW)
+  /* The brief is reference material about the LIST, so it hides behind the
+     title rather than taking a band above every security. */
+  const [briefOpen, setBriefOpen] = useState(false)
 
   // Statuses for the progress strip (same query as cells; React Query dedupes)
   const { statuses: listStatuses } = useListStatuses(list.id)
@@ -402,6 +415,22 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     })
   }, [unfilteredAssets, rowFilters])
 
+  /*
+   * The universe's pulse, and the lens over it.
+   *
+   * `useListRowSignals` is called here as well as inside `ListTableView`; both
+   * calls resolve through the same React Query entries, so this costs a memo
+   * rather than a read. The header needs the aggregate before the table exists,
+   * and the lens has to filter the rows the table is given.
+   */
+  const { signalFor: headerSignalFor, all: headerSignals } = useListRowSignals(unfilteredAssets)
+  const pulse = useMemo(() => pulseFrom(headerSignals), [headerSignals])
+
+  const lensedAssets = useMemo(
+    () => lens === 'all' ? assets : assets.filter(a => matchesLens(headerSignalFor(a.id), lens)),
+    [assets, lens, headerSignalFor],
+  )
+
 
 
   // Map row IDs (list_item.id) → full list item for row-specific lookups
@@ -589,6 +618,8 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
     <div className="h-full flex flex-col">
       <ListHeaderStrip
         list={displayList}
+        onTitleClick={() => setBriefOpen(o => !o)}
+        briefOpen={briefOpen}
         assetCount={assets.length}
         collaborators={collaborators as any}
         ownerName={ownerName}
@@ -603,11 +634,17 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         addAssetSlot={(!isScreen && canAdd) ? <InlineAssetAdder listId={list.id} existingAssetIds={existingAssetIds} /> : null}
       />
 
-      <ListBrief
-        listId={list.id}
-        brief={listDetail?.brief ?? null}
-        canEdit={permissions.canWrite}
-      />
+      {/* Disclosed from the title, not a permanent band. See
+          `ListHeaderStrip`'s title button. */}
+      {briefOpen && (
+        <div className="border-b border-gray-900/[0.06] pb-1.5 dark:border-white/[0.07]">
+          <ListBrief
+            listId={list.id}
+            brief={listDetail?.brief ?? null}
+            canEdit={permissions.canWrite}
+          />
+        </div>
+      )}
 
       {isScreen && (
         <div className="py-1.5">
@@ -625,28 +662,40 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         </div>
       )}
 
-      {/* Progress and filters sit side by side with a rule between them at
-          desktop width. On a phone the rule and the row are dropped: the
-          progress strip is a set of status segments that needs the full
-          width to stay readable, and the filter trigger is one chip that
-          does not need a column of its own. */}
-      {!isScreen && unfilteredAssets.length > 0 && (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-1.5">
+      {/*
+        * One command band, not three stacked ones.
+        *
+        * The pulse, the status spread and the row filters were three separate
+        * full-width rows with their own vertical padding, which put roughly
+        * 150px of mostly-empty chrome between the app tabs and the first
+        * security. They are one line now: what this universe is doing on the
+        * left, the controls that act on it on the right, separated by a rule
+        * rather than by a gap.
+        */}
+      {unfilteredAssets.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-1.5 border-t border-gray-900/[0.06] dark:border-white/[0.07]">
+          {/* The preset switch leads the command band.
+              It had a full-width row of its own, which was the fourth stacked
+              band above the first security. */}
+          {!isScreen && <ListViewSwitch view={listView} onChange={setListView} />}
           <div className="min-w-0 sm:flex-1">
-            <ListProgressStrip
-              statuses={listStatuses}
-              assets={unfilteredAssets}
-              onFilterByStatus={handleProgressFilter}
-              activeStatusIds={rowFilters.statusIds}
-            />
+            <ListPulseStrip pulse={pulse} lens={lens} onLensChange={setLens} />
           </div>
-          <div className="flex-shrink-0 sm:border-l sm:border-gray-200 sm:dark:border-gray-800 sm:pl-3">
-            <ListFilterChipBar
-              listId={list.id}
-              filters={rowFilters}
-              onChange={setRowFilters}
-            />
-          </div>
+          {!isScreen && (
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <ListProgressStrip
+                statuses={listStatuses}
+                assets={unfilteredAssets}
+                onFilterByStatus={handleProgressFilter}
+                activeStatusIds={rowFilters.statusIds}
+              />
+              <ListFilterChipBar
+                listId={list.id}
+                filters={rowFilters}
+                onChange={setRowFilters}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -740,7 +789,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                on desktop; they need a pointer and a column to live in. */
             <MobileListRows
               listId={list.id}
-              assets={assets}
+              assets={lensedAssets}
               isLoading={isLoading}
               permissions={permissions}
               onAssetSelect={onAssetSelect}
@@ -749,13 +798,31 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
           ) : (
           <ListTableView
             listId={list.id}
-            assets={assets}
+            assets={lensedAssets}
             isLoading={isLoading}
             permissions={permissions}
             onAssetSelect={onAssetSelect}
             listStatuses={listStatuses}
             hideListColumns={isScreen}
+            /*
+             * Where the reader was going when they opened this universe.
+             *
+             * Lists home attaches `_focus` to the tab's data when a security is
+             * clicked in a universe's attention band, so the list opens with
+             * that row already expanded on the mode its entry column names. The
+             * table is NOT replaced or navigated past — this is the same
+             * expansion a click on that cell would produce.
+             */
+            focus={list?._focus}
+            /*
+             * The original key, deliberately. A new baseline is handled by
+             * `columnPresetVersion` inside the stored blob — bumping the key
+             * instead would also discard the widths and pins the user chose,
+             * and would have to be bumped again for every future change.
+             */
             storageKey={`listTableColumns_${list.id}`}
+            view={isScreen ? undefined : listView}
+            onViewChange={setListView}
             onBulkAction={(!isScreen && (permissions.canRemoveAnyItem || permissions.canRemoveFromOwnSection)) ? handleBulkAction : undefined}
             bulkActionLabel="Remove from List"
             bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}

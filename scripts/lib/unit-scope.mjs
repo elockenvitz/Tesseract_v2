@@ -114,6 +114,29 @@ export const GATED_DIRS = [
   // The pilot onboarding model: four steps, two of them marks and two of them
   // rows. It decides what a new pilot is shown, so it is gated on arrival.
   'src/lib/pilot',
+  /*
+   * The Lists surface: the collapsed watchlist line, the contextual expanded
+   * workspace, the mobile row, and the per-list attention counts.
+   *
+   * Gated on arrival because every failure mode here is silent. The curated
+   * column default already shipped once without reaching the screen — saved
+   * state overrode it while the new ORDER made it look applied. The attention
+   * counts are folded from org-wide scans, so a missing membership filter
+   * reports the whole organisation's backlog on every card and reads as a busy
+   * desk. And the expansion's modes claim things about a security ("No case
+   * written yet") that are wrong rather than merely missing when the data has
+   * not arrived.
+   */
+  'src/components/lists',
+  'src/hooks/lists',
+  // `work-state` decides what the Work column says. It is gated because the
+  // failure is silent and was shipped once: a name awaiting a recommendation
+  // reported "Thin evidence", so the loudest thing on the row was the least
+  // important true thing about it.
+  'src/lib/lists',
+  // `columnPersistence` — whether a curated default or a reader's saved layout
+  // wins. See above: it failed silently once already.
+  'src/components/table',
   // The current-org heal decides whether a durable tenant pointer may be
   // rewritten. Getting it wrong stranded two live workspaces in another org.
   'src/lib/org',
@@ -354,7 +377,8 @@ export const DEFERRED_DIRS = [
   'src/lib/financial-data/__tests__',
   // 'src/lib/holdings/__tests__' moved UP to the gated list: it now holds the
   // row-count assertions that keep benchmark reads off the whole history.
-  'src/lib/lists',
+  // 'src/lib/lists' moved UP as well: it now holds `work-state`, which decides
+  // what the Work column says.
   'src/lib/permissions/__tests__',
   'src/lib/portfolio',
   'src/lib/portfolio/__tests__',

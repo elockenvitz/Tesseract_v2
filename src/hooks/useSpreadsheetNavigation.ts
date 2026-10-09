@@ -179,12 +179,21 @@ export function useSpreadsheetNavigation({
       return
     }
 
-    // Prevent rapid-fire navigation
+    /*
+     * No throttle on arrow keys.
+     *
+     * This used to DROP any arrow keystroke within 50ms of the last one. A
+     * held arrow repeats faster than that on every platform (Windows and
+     * macOS both settle around 30ms), so roughly every other repeat was
+     * swallowed: the focus skipped rows and the scroll stuttered, which read
+     * as the table being laggy when it was actually ignoring input.
+     *
+     * Throttling is the wrong tool for a keystroke. A key press is a discrete
+     * intention and must always move exactly one cell; if moving is expensive
+     * the fix is to make the move cheap — see `scrollToRow` in
+     * `AssetTableView`, which is a single synchronous assignment.
+     */
     const now = Date.now()
-    if (now - lastNavigationTime.current < 50 &&
-        ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-      return
-    }
 
     switch (e.key) {
       // Arrow navigation

@@ -70,9 +70,23 @@ export function useHoldingsForAssets(assetIds: string[]): HoldingsForAssets {
       const books = [...new Set(((mine ?? []) as any[]).map(r => r.portfolio_id))]
       if (!books.length) return []
 
+      /*
+       * The book's NAME comes along for the ride.
+       *
+       * A weight without the book it is a weight OF is not an exposure a reader
+       * can act on -- "1.9%" answers nothing until it says 1.9% of what. Both
+       * existing lenses ignore the extra field, so this is additive: same query
+       * key, same rows, one more column on each.
+       *
+       * RLS posture: unchanged, and deliberately not widened. `portfolios` is
+       * already org-and-membership gated and is read by name on the Portfolio,
+       * Ideas and Research surfaces; a reader who cannot see a book gets a null
+       * join here exactly as they get no holding rows from it, and the exposure
+       * then renders without a name rather than failing.
+       */
       const { data: rows, error: e2 } = await supabase
         .from('portfolio_holdings')
-        .select('portfolio_id, asset_id, shares, price, cost, date')
+        .select('portfolio_id, asset_id, shares, price, cost, date, portfolios(name)')
         .in('portfolio_id', books)
       if (e2) throw new Error(e2.message)
 

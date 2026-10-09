@@ -128,8 +128,28 @@ export function useAssetWorkspace(
   assetId: string | null,
   symbol: string | null,
   focus: AssetFocus = 'overview',
+  /**
+   * Draw a chart regardless of focus.
+   *
+   * `historyDaysFor` ties depth to focus, which was right while only the
+   * Asset page read this hook: a reader checking a weight should not pull
+   * four hundred closes to render nothing.
+   *
+   * The Lists inspector broke that assumption. It opens on `overview` — it
+   * genuinely is an overview — but it draws a real interactive chart in
+   * three of its six modes. With the shallow floor it asked for twelve
+   * CALENDAR days, which after weekends and a stale cache resolved to four
+   * closes, and every chart in the product's new price surface rendered as a
+   * four-point diagonal: no ranges to offer, no shape to read, indefensibly
+   * like a placeholder. The names were never thin — all 137 symbols in the
+   * cache carry 250+ days.
+   *
+   * So depth becomes the caller's to state when it knows better, rather than
+   * something inferred from a focus that is describing a different axis.
+   */
+  opts?: { deepHistory?: boolean },
 ) {
-  const days = historyDaysFor(focus)
+  const days = opts?.deepHistory ? DEEP_HISTORY_DAYS : historyDaysFor(focus)
   /*
    * An asset is shared across organisations; the thesis, evidence, targets and
    * ideas recorded against it are not. Every read below filtered on `asset_id`
