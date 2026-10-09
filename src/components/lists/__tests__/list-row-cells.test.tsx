@@ -367,12 +367,11 @@ describe('the market cell has stable geometry before its data exists', () => {
     ageDays: 1,
     covered: true,
   }
-  const DOMAIN = { lo: -20, hi: 20 }
-
+  /* The vertical range is no longer handed in: each cell derives it from the
+     security's own path (`localDomain`). See `price-metrics`. */
   const marketCell = (signal: ListRowSignal, market?: unknown) =>
     render(<>{renderSignalCell(
-      'list_market', { current_price: 154.33 }, signal, undefined,
-      market as never, market ? DOMAIN : undefined,
+      'list_market', { current_price: 154.33 }, signal, undefined, market as never,
     )}</>)
 
   it('reserves the sparkline box while the month is still loading', () => {

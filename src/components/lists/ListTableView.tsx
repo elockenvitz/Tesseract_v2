@@ -16,7 +16,8 @@ import { AssetTableView } from '../table/AssetTableView'
 import { ListAssigneeCell } from './ListAssigneeCell'
 import { ListStatusCell } from './ListStatusCell'
 import { ListTagsCell } from './ListTagsCell'
-import { ListRowExpansion } from './ListRowExpansion'
+import { ListRowExpansion, type ModeOverride } from './ListRowExpansion'
+import { ListWorkspaceOverlay } from './ListWorkspaceOverlay'
 import {
   LIST_SIGNAL_COLUMNS, renderSignalCell, listSortComparators,
 } from './ListRowCells'
@@ -237,9 +238,36 @@ export function ListTableView({
    * `price_history_cache`, the same table the opened inspector charts, so the
    * row and the panel below it cannot show different history.
    */
-  const { marketFor, domain: priceDomain } = useListPriceHistory(
+  const { marketFor } = useListPriceHistory(
     useMemo(() => assets.map(a => a?.symbol), [assets]),
   )
+
+  /*
+   * Which open row, if any, is filling the viewport.
+   *
+   * Held here rather than inside the expansion because the expansion is
+   * virtualised: the table owns the row's lifetime, so the table owns the
+   * question of whether that row is maximized. One at a time by construction —
+   * it is a row id, not a set — which matches the table's own single-expansion
+   * model and means there is no state to reconcile when the open row changes.
+   *
+   * It is deliberately NOT persisted. Maximizing is a momentary request for
+   * room, not a preference; restoring a list into a modal nobody asked for
+   * would hide the list the reader came back to.
+   */
+  const [maximizedRowId, setMaximizedRowId] = React.useState<string | null>(null)
+
+  /*
+   * The open row's tab choice, held above the thing that gets remounted.
+   *
+   * Maximizing re-parents the expansion into an overlay, and React remounts a
+   * subtree whose depth changes — so a mode chosen in the row would be thrown
+   * away by the act of asking for more room to look at it. Keyed by row id so
+   * it cannot leak onto the next security the reader opens, and the entry
+   * stamp inside the value does the rest (see `ModeOverride`).
+   */
+  const [modeOverride, setModeOverride] =
+    React.useState<{ rowId: string; value: ModeOverride | null } | null>(null)
 
   // Stable per `signalFor`, which is itself memoised on the batch — so the
   // table's filtered-list memo is not invalidated on every render.
@@ -282,7 +310,7 @@ export function ListTableView({
     // list-scoped columns below are deliberately absent.
     const signalCell = renderSignalCell(
       columnId, asset, signalFor(asset.id), quote,
-      marketFor(asset.symbol), priceDomain,
+      marketFor(asset.symbol),
     )
     if (signalCell !== undefined) return signalCell
 
@@ -317,7 +345,7 @@ export function ListTableView({
       default:
         return null
     }
-  }, [listId, canEditRow, signalFor, marketFor, priceDomain])
+  }, [listId, canEditRow, signalFor, marketFor])
 
   const expandedRowSlot = useCallback((
     asset: any,
@@ -333,7 +361,8 @@ export function ListTableView({
     // panel and the row above it can never state two different prices.
     quote?: { price?: number | null; changePercent?: number | null } | null,
   ) => {
-    return (
+    const isMax = maximizedRowId === rowId
+    const panel = (
       <ListRowExpansion
         listId={listId}
         rowId={rowId}
@@ -349,9 +378,46 @@ export function ListTableView({
         signal={signalFor(asset.id)}
         onOpenAsset={onAssetSelect ? () => onAssetSelect(asset) : undefined}
         onCreateTradeIdea={onCreateTradeIdea}
+        maximized={isMax}
+        onToggleMaximize={() => setMaximizedRowId(cur => (cur === rowId ? null : rowId))}
+        modeOverride={modeOverride?.rowId === rowId ? modeOverride.value : null}
+        onModeOverride={next => setModeOverride({ rowId, value: next })}
       />
     )
-  }, [listId, canEditRow, onAssetSelect, onCreateTradeIdea, signalFor])
+
+    if (!isMax) return panel
+
+    /*
+     * Maximized: the same COMPONENT, re-parented into a full-viewport shell.
+     *
+     * Not a second workspace — `panel` above is built once and used by both
+     * branches, so the overlay shows the same five modes, the same hooks, the
+     * same canonical actions and the same permission checks. The expansion
+     * does remount on the way in (the depth changes); that is why the mode
+     * override is held up here rather than inside it.
+     *
+     * The row keeps its slot and its height — the placeholder below holds it
+     * open — so the list underneath is untouched: same preset, same filters,
+     * same selection, same scroll offset to come back to.
+     */
+    return (
+      <>
+        <div
+          aria-hidden
+          data-testid="expansion-placeholder"
+          className="flex h-full items-center justify-center text-[12px] text-gray-400 dark:text-gray-500"
+        >
+          {asset.symbol} is open in the maximized workspace
+        </div>
+        <ListWorkspaceOverlay
+          label={asset.symbol}
+          onClose={() => setMaximizedRowId(null)}
+        >
+          {panel}
+        </ListWorkspaceOverlay>
+      </>
+    )
+  }, [listId, canEditRow, onAssetSelect, onCreateTradeIdea, signalFor, maximizedRowId, modeOverride])
 
   /**
    * The attention rail: one 3px mark at the left edge of a row.

@@ -112,6 +112,36 @@ interface ListRowExpansionProps {
    * scroll.
    */
   onCreateTradeIdea?: (assetId: string) => void
+  /**
+   * The maximize handshake, owned by `ListTableView`.
+   *
+   * This component renders identically in the row and in the full-viewport
+   * overlay — same modes, same data, same canonical actions — because it IS
+   * the same mounted component, portalled. It only needs to know which state
+   * it is in so the control reads "Maximize" or "Restore".
+   */
+  maximized?: boolean
+  onToggleMaximize?: () => void
+  /**
+   * The tab-switcher override, when the caller wants to own it.
+   *
+   * Supplied together with `onModeOverride` or not at all. See the override
+   * block in the body for why maximizing needs it hoisted.
+   */
+  modeOverride?: ModeOverride | null
+  onModeOverride?: (next: ModeOverride | null) => void
+}
+
+/**
+ * A mode the reader chose, stamped with the field they chose it against.
+ *
+ * The stamp is what makes it safe: point at a different field and the
+ * override is stale by construction and ignored, so there is never a second
+ * source of truth racing the entry column.
+ */
+export interface ModeOverride {
+  entry?: string
+  mode: ListRowMode
 }
 
 /**
@@ -140,6 +170,10 @@ export function ListRowExpansion({
   signal,
   onOpenAsset,
   onCreateTradeIdea,
+  maximized,
+  onToggleMaximize,
+  modeOverride,
+  onModeOverride,
 }: ListRowExpansionProps) {
   const status = asset._status ?? null
   const assignee = asset._assignee ?? null
@@ -237,19 +271,65 @@ export function ListRowExpansion({
    *   3. the LAST CLOSE of the series the chart is drawing, so the figure and
    *      the line can never disagree;
    *   4. the asset's stored `current_price`.
+   *
+   * ── The value and its provenance are resolved TOGETHER ────────────────
+   *
+   * They have to be. The chart used to print the word `live` beside this
+   * figure whenever one was supplied, which was true of source 1 and false of
+   * the other three — and in this deployment the quote provider is refused by
+   * the page's own CSP, so source 1 never fires and the chart stamped `live`
+   * over an eight-day-old close on every row. Returning the label from the
+   * same branch that chose the number is the only arrangement in which they
+   * cannot drift apart. Sources 3 and 4 carry no date, so they make no claim.
    */
-  const displaySpot = useMemo(() => {
+  const { displaySpot, displaySpotLabel } = useMemo(() => {
     const live = quote?.price == null ? NaN : Number(quote.price)
-    if (Number.isFinite(live) && live > 0) return live
-    if (spot != null) return spot
+    if (Number.isFinite(live) && live > 0) {
+      /*
+       * The price is used; the word "live" has to be earned separately.
+       *
+       * This deployment's quote layer hands back a zero-FILLED object when
+       * its providers fail — a real-looking `price` with `changePercent: 0`
+       * — which is why `ListRowCells` refuses to render a zero change from
+       * any source. The same evidence has to govern the same claim here: a
+       * quote that cannot produce a day's move has not demonstrated it came
+       * from a tape, so the figure is shown — it is what the row shows, and
+       * the two must agree — and is named `undated` rather than `live`.
+       *
+       * `undated`, not blank. Leaving the slot empty was the first attempt
+       * and it is a quieter version of the same problem: a price with no
+       * stamp beside a chart whose other states all carry one reads as
+       * current. Naming the absence is the only honest option, since the
+       * alternative — falling back to the dated cached close — would put a
+       * different number in the panel from the one in the row above it, which
+       * is the defect that made LLY read 1169.60 and 1,149.85 at once.
+       *
+       * Keep this in step with `changePct` in `ListRowCells`.
+       */
+      const move = quote?.changePercent == null ? NaN : Number(quote.changePercent)
+      const corroborated = Number.isFinite(move) && move !== 0
+      return { displaySpot: live, displaySpotLabel: corroborated ? 'live' : 'undated' }
+    }
+    if (spot != null) {
+      const last = history?.length ? history[history.length - 1] : null
+      return {
+        displaySpot: spot,
+        displaySpotLabel: last?.date ? `Close of ${last.date}` : null,
+      }
+    }
+    // Sources 3 and 4 carry no date either — the flat `closes` array has none
+    // and `assets.current_price` has none in the schema — so they say so.
     const closes = signal?.closes
     if (closes && closes.length > 0) {
       const last = closes[closes.length - 1]
-      if (Number.isFinite(last)) return last
+      if (Number.isFinite(last)) return { displaySpot: last, displaySpotLabel: 'undated' }
     }
     const stored = asset?.current_price == null ? NaN : Number(asset.current_price)
-    return Number.isFinite(stored) ? stored : null
-  }, [quote?.price, spot, signal?.closes, asset?.current_price])
+    return {
+      displaySpot: Number.isFinite(stored) ? stored : null,
+      displaySpotLabel: Number.isFinite(stored) ? 'undated' : null,
+    }
+  }, [quote?.price, quote?.changePercent, spot, history, signal?.closes, asset?.current_price])
 
   const upsidePct = displaySpot != null && displaySpot > 0 && target != null
     ? ((target - displaySpot) / displaySpot) * 100
@@ -445,7 +525,25 @@ export function ListRowExpansion({
    * different field and the override is stale by construction and ignored;
    * there is no second state to fall behind.
    */
-  const [override, setOverride] = useState<{ entry?: string; mode: ListRowMode } | null>(null)
+  /*
+   * ── Why the override may be owned from outside ────────────────────────
+   *
+   * Maximizing moves this panel into a full-viewport overlay, which is a
+   * different DOM parent at a different depth — and React remounts across a
+   * depth change, whatever a portal does about the DOM. A local override
+   * would therefore be discarded exactly when the reader asked for more room
+   * to keep looking at the same thing: switch to Position, maximize, and the
+   * workspace opens on the chart.
+   *
+   * So `ListTableView` may hold it (it outlives the maximize transition) and
+   * pass it back. The shape and the rules are identical either way — it is
+   * still `{entry, mode}`, still invalidated by a change of entry — so there
+   * is one set of semantics, not two. Callers with no overlay (mobile, the
+   * fixture gallery, the tests) pass nothing and keep the local state.
+   */
+  const [localOverride, setLocalOverride] = useState<ModeOverride | null>(null)
+  const override = modeOverride !== undefined ? modeOverride : localOverride
+  const setOverride = onModeOverride ?? setLocalOverride
 
   const entryMode = modeForEntryColumn(entryColumnId)
   const chosen = override && override.entry === entryColumnId ? override.mode : entryMode
@@ -456,7 +554,7 @@ export function ListRowExpansion({
   /** The tab switcher. Scoped to the field the reader is currently on. */
   const setMode = useCallback(
     (next: ListRowMode) => setOverride({ entry: entryColumnId, mode: next }),
-    [entryColumnId],
+    [entryColumnId, setOverride],
   )
 
   /*
@@ -793,7 +891,13 @@ export function ListRowExpansion({
     <div
       data-testid="list-row-expansion"
       data-mode={activeMode}
-      className="h-full max-sm:h-auto motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-150"
+      data-maximized={maximized ? 'true' : undefined}
+      className={clsx(
+        'h-full max-sm:h-auto',
+        // The entrance belongs to the row. Replaying a slide-in every time the
+        // reader maximizes or restores would animate a resize, not an arrival.
+        !maximized && 'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-150',
+      )}
     >
       <ExpansionShell
         symbol={asset.symbol}
@@ -806,6 +910,8 @@ export function ListRowExpansion({
         modes={availableModes.map(m => ({ id: m, label: MODE_LABEL[m] }))}
         activeMode={activeMode}
         onModeChange={m => setMode(m as ListRowMode)}
+        maximized={maximized}
+        onToggleMaximize={onToggleMaximize}
         /*
          * The desk's stance, stated once above every mode.
          *
@@ -873,6 +979,9 @@ export function ListRowExpansion({
                  * figure so the two cannot disagree.
                  */
                 spot={displaySpot}
+                /* What that number IS. Never "live" unless a live quote
+                   actually produced it — see `displaySpotLabel`. */
+                spotLabel={displaySpotLabel}
                 closes={signal?.closes ?? null} target={target} upsidePct={upsidePct}
                 rungs={rungs}
                 /*

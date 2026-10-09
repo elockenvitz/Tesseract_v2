@@ -148,10 +148,10 @@ export function windowReturn(
  * drifted 2% and one that fell 30% draw the same picture, and the column
  * becomes decoration — which is what it was.
  *
- * Indexing to the first close puts every row on ONE axis: percent change over
- * the window. `domain` is then shared across the visible rows by the caller
- * (see `sharedDomain`), so height means the same thing on every line and two
- * rows can be compared by eye. That is the entire point of the column.
+ * Indexing to the first close puts the row on one axis — percent change over
+ * the window — so the zero line is a real reference and the caller can state
+ * the range it drew. The vertical range itself is per security (`localDomain`);
+ * cross-security comparison is the job of the 1M and 6M numbers beside it.
  */
 export function returnPath(points: PricePoint[], days: number): number[] {
   const slice = windowSlice(points, days)
@@ -162,16 +162,37 @@ export function returnPath(points: PricePoint[], days: number): number[] {
 }
 
 /**
- * One y-domain for every row on screen, padded and symmetric about zero.
+ * One security's own vertical range, for a sparkline that shows its PATH.
  *
- * Symmetric so that zero sits on the same pixel in every row — a reader
- * scanning the column is comparing against "flat", and a baseline that moves
- * per row would make that impossible.
+ * ── Why this is not the shared domain ─────────────────────────────────────
+ *
+ * The shared domain was built so two rows could be compared by eye. It does
+ * that, and the cost is that it is set by the loudest name on screen: with a
+ * +180% security in the list, everything else is drawn inside a few pixels
+ * and the column becomes a row of flat lines. Comparability was already
+ * available — 1M and 6M sit right beside the shape as exact, comparable
+ * numbers — so the sparkline's job is the one thing those cannot show:
+ * the SHAPE of how the name got there.
+ *
+ * `MIN_RANGE` is the guard against the opposite failure. Fitting a security
+ * that moved 0.3% to the full box draws noise as if it were a trend, so the
+ * domain never narrows below ±3%: a genuinely quiet name reads as quiet.
  */
-export function sharedDomain(series: number[][]): { lo: number; hi: number } {
-  let m = 0
-  for (const s of series) for (const v of s) if (Number.isFinite(v)) m = Math.max(m, Math.abs(v))
-  // A floor, so a list of very quiet names does not amplify noise to full scale.
-  const bound = Math.max(m * 1.15, 5)
-  return { lo: -bound, hi: bound }
+const MIN_RANGE = 3
+
+export function localDomain(path: number[]): { lo: number; hi: number } {
+  let lo = Infinity
+  let hi = -Infinity
+  for (const v of path) {
+    if (!Number.isFinite(v)) continue
+    if (v < lo) lo = v
+    if (v > hi) hi = v
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return { lo: -MIN_RANGE, hi: MIN_RANGE }
+  // Always include zero: the line starts there, and a baseline the path
+  // never crosses is a baseline the reader cannot place.
+  lo = Math.min(lo, 0)
+  hi = Math.max(hi, 0)
+  const pad = Math.max((hi - lo) * 0.18, MIN_RANGE - (hi - lo) / 2, 0.5)
+  return { lo: lo - pad, hi: hi + pad }
 }

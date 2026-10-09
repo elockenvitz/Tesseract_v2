@@ -77,18 +77,31 @@ const RANGE_ORDER: RangeKey[] = ['5D', '1M', '3M', '6M', '1Y', 'ALL']
 const PAD = { top: 10, right: 62, bottom: 22, left: 8 }
 
 /**
- * The flattest this chart will let itself be drawn.
+ * The flattest this chart will let itself be drawn — and when that stops
+ * being the right question.
  *
  * A price chart is a wide object, but past about 4:1 the vertical resolution
  * runs out and a real move stops looking like one: the List inspector handed
  * this component a 1,439 × 230 box — better than 6:1 — and a 6% range over
  * three months came out as a jagged horizontal ribbon that reads as noise.
+ * Beyond the cap the plot keeps its height and stops taking width, centred.
  *
- * Beyond the cap the plot keeps its height and stops taking width, centred in
- * the box. Empty gutters on an unusually wide panel are a smaller lie than a
- * trend drawn flat.
+ * ── Why aspect alone was the wrong invariant ──────────────────────────────
+ *
+ * What actually makes a move legible is PIXELS OF HEIGHT for it to occupy, and
+ * aspect only tracks that while the box is short. Applied unconditionally the
+ * cap produced the opposite defect: measured in the running List, a 1,322 ×
+ * 145 region drew a 579px plot — 44% of its width — with 740px of empty panel
+ * either side. That is not a well-proportioned chart with margins; it is a
+ * small chart in a large blank area, which is what it was reported as.
+ *
+ * So the cap governs SHORT boxes, where flatness is a real risk, and releases
+ * once the plot has `TALL_ENOUGH` pixels to resolve a move. At 240px a 6% range
+ * still has fourteen pixels per percent — more vertical resolution than the 4:1
+ * plot it replaces had at any width.
  */
 const MAX_ASPECT = 4
+const TALL_ENOUGH = 240
 
 /** Half-pixel offsets make a 1px line land on one device pixel, not two. */
 const crisp = (n: number) => Math.round(n) + 0.5
@@ -155,6 +168,18 @@ export interface PriceChartProps {
    * is using. Scrubbing still reports the point under the cursor.
    */
   spot?: number | null
+  /**
+   * What `spot` IS, in the caller's own words — "live", "Close of 2026-10-07".
+   *
+   * The headline used to print the literal word `live` whenever a spot was
+   * supplied, on the reasoning that a spot is newer than the last drawn close.
+   * In this deployment it is not: the quote provider is CSP-refused, so every
+   * caller's "spot" is itself a cached close, and the chart was stamping
+   * `live` over a price that was eight days old. A component cannot know the
+   * provenance of a number handed to it, so it stops guessing and prints what
+   * the caller says. No label and no cursor means no claim is made at all.
+   */
+  spotLabel?: string | null
   /** Reported whenever the reader changes the window. */
   onRangeChange?: (range: RangeKey) => void
   /** Rendered beside the range chips — an expand control, usually. */
@@ -163,7 +188,8 @@ export interface PriceChartProps {
 }
 
 export function PriceChart({
-  symbol, series, levels = [], events = [], initialRange = '3M', spot, onRangeChange, action, className,
+  symbol, series, levels = [], events = [], initialRange = '3M', spot, spotLabel,
+  onRangeChange, action, className,
 }: PriceChartProps) {
   // ── The window ───────────────────────────────────────────────────────
 
@@ -249,9 +275,9 @@ export function PriceChart({
   }, [boxEl])
 
   const H = box.h || 200
-  // Width is what the box offers, up to the point where the plot would go
-  // flatter than `MAX_ASPECT`. See the constant.
-  const W = Math.min(box.w || 720, H * MAX_ASPECT)
+  // All of the width once the box is tall enough to resolve a move; otherwise
+  // capped at `MAX_ASPECT` so a short box is not stretched into a ribbon.
+  const W = H >= TALL_ENOUGH ? (box.w || 720) : Math.min(box.w || 720, H * MAX_ASPECT)
   /** Half the width the cap gave back, so the plot sits centred in its box. */
   const gutter = Math.max(0, ((box.w || 720) - W) / 2)
   const plotW = Math.max(1, W - PAD.left - PAD.right)
@@ -382,10 +408,11 @@ export function PriceChart({
    *
    * Scrubbing always wins — the reader is pointing at a day and wants that
    * day. Otherwise a caller-supplied `spot` wins over the last close, so the
-   * figure agrees with whatever is quoting the price around this chart. When
-   * it does, the date line says `live` rather than the last close's date: the
-   * spot is not a reading from that day and labelling it with that day's date
-   * would be the quieter version of the same lie.
+   * figure agrees with whatever is quoting the price around this chart. The
+   * date line then shows `spotLabel`, because the spot is not a reading from
+   * the last drawn day and stamping it with that day's date would be the
+   * quieter version of the same lie — and so would stamping it `live` when
+   * nobody told this component it was. See `spotLabel`.
    */
   const liveSpot = !cursor && spot != null && Number.isFinite(spot) && spot > 0 ? spot : null
   const readoutPrice = cursor ? cursor.close : (liveSpot ?? readout?.close ?? null)
@@ -498,7 +525,9 @@ export function PriceChart({
           </span>
         )}
         <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
-          {liveSpot != null ? 'live' : readout ? fmtDate(readout.date, true) : ''}
+          {liveSpot != null
+            ? (spotLabel ?? '')
+            : readout ? fmtDate(readout.date, true) : ''}
         </span>
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5" data-testid="price-chart-ranges">

@@ -13,14 +13,14 @@
  * are facts about the case; `list_status` is a fact about this list's process,
  * and both are worth seeing, so both are here and they are not merged.
  */
-import React from 'react'
+import React, { useMemo } from 'react'
 import { clsx } from 'clsx'
 import { RatingPill, ConvictionBars } from './ListRowAtoms'
 import { WORK_TIER_RANK, stageLabel, type WorkTier } from '../../lib/lists/work-state'
 import type { EntryToken } from './listRowModes'
 import type { ListRowSignal } from '../../hooks/lists/useListRowSignals'
 import type { RowMarket } from '../../hooks/lists/useListPriceHistory'
-import type { WindowReturn } from '../../lib/lists/price-metrics'
+import { localDomain, type WindowReturn } from '../../lib/lists/price-metrics'
 import type { ColumnConfig } from '../table/AssetTableView'
 
 /**
@@ -275,12 +275,17 @@ function sizingDelta(s: ListRowSignal): number {
 export const SPARK_HEIGHT = 20
 
 /**
- * A one-month path drawn on a domain it shares with every other row.
+ * A return path drawn on the security's own vertical range.
  *
- * Deliberately not `Sparkline`: that one fits its own min and max to the box,
- * which is right for a lone chart and wrong for a column. Here `domain` comes
- * from the list, zero sits on the same pixel in every row, and the amplitude
- * of a line is the size of the move.
+ * Deliberately not `Sparkline`: that one fits its own min and max tight to the
+ * box, so a 0.2% drift and a 40% drawdown draw the same picture. `localDomain`
+ * fits the security's own path but never narrows past ±3%, so a quiet name
+ * still reads as quiet — and the zero line is drawn, so the reader can see
+ * which side of flat the path is on without reading a number.
+ *
+ * The range is NOT shared across rows. It was, and the loudest name on screen
+ * set the scale for everything else; the comparable measures are the 1M and 6M
+ * figures in the columns beside this one.
  */
 function ReturnSpark({ path, domain }: { path: number[]; domain: { lo: number; hi: number } }) {
   const span = domain.hi - domain.lo || 1
@@ -344,10 +349,7 @@ function ReturnSpark({ path, domain }: { path: number[]; domain: { lo: number; h
  * Loading, empty and resolved therefore occupy byte-identical geometry, and no
  * state here animates a dimension.
  */
-function SparkCell({ market, domain }: {
-  market?: RowMarket
-  domain?: { lo: number; hi: number }
-}) {
+function SparkCell({ market }: { market?: RowMarket }) {
   /*
    * The cached series wins over `signal.closes`.
    *
@@ -357,18 +359,19 @@ function SparkCell({ market, domain }: {
    * both exist they are the same instrument and the cached one is the one the
    * panel below will show, so the row and the panel cannot disagree.
    *
-   * And it is drawn in PERCENTAGE-RETURN space on a domain shared across the
-   * visible rows — see `price-metrics`. In price space each row auto-scaled to
-   * its own extremes, so every line filled its box and the column said nothing.
+   * And it is drawn in PERCENTAGE-RETURN space on the security's own floored
+   * range — see `localDomain`. Not price space, where the line's height has no
+   * unit at all; and not a list-wide range, which made every line flat.
    *
    * There is deliberately NO fallback to the proxy series when the cache has
-   * nothing. Drawing some rows on a shared return axis and others on their own
-   * price extremes puts two scales in one column, which is worse than a gap:
-   * the reader cannot see which rule a given line was drawn under. A name with
-   * no cached history shows the quiet rule and no 1M figure, which is true.
+   * nothing. A name with no cached history shows the quiet rule and no 1M
+   * figure, which is true.
    */
+  // Memoised on the array the caller actually owns. Deriving `path` first and
+  // depending on THAT makes the dependency a fresh `[]` on every quiet render.
+  const domain = useMemo(() => localDomain(market?.path ?? []), [market?.path])
   const path = market?.path ?? []
-  const drawn = path.length > 1 && !!domain
+  const drawn = path.length > 1
 
   return (
     <span
@@ -389,7 +392,7 @@ function SparkCell({ market, domain }: {
     >
       {drawn ? (
         <span className="absolute inset-0">
-          <ReturnSpark path={path} domain={domain!} />
+          <ReturnSpark path={path} domain={domain} />
         </span>
       ) : (
         /*
@@ -498,14 +501,13 @@ function Stack({
  * shape rather than a number. Three former columns, one answer: a reader
  * scanning for "what moved" reads one cell instead of assembling three.
  */
-function MarketCell({ price, liveQuotePrice, changePct, market, domain }: {
+function MarketCell({ price, liveQuotePrice, changePct, market }: {
   /** The stored `assets.current_price`. Undated, weakest source. */
   price: number | null
   /** A genuine live quote, where one exists. None do in this deployment. */
   liveQuotePrice: number | null
   changePct: number | null
   market?: RowMarket
-  domain?: { lo: number; hi: number }
 }) {
   /*
    * The price shown, and what it is allowed to be called.
@@ -590,7 +592,7 @@ function MarketCell({ price, liveQuotePrice, changePct, market, domain }: {
         ) : null}
       </Hit>
       <Hit entry="market" block>
-        <SparkCell market={market} domain={domain} />
+        <SparkCell market={market} />
       </Hit>
     </span>
   )
@@ -869,11 +871,22 @@ function ReturnCell({ r, entry }: { r?: WindowReturn; entry: EntryToken }) {
  *
  * Six months rather than the month, because the two return columns already
  * state the short end and the shape is here to say what the path looked like.
- * Drawn on the list's shared return domain so two rows are comparable.
+ *
+ * Scaled to THIS security's own path (`localDomain`), not to the list. The
+ * shared axis was comparable and illegible: a single +180% name flattened every
+ * other line in the column to a few pixels. 1M and 6M remain the comparable
+ * measures — they are exact numbers two columns to the left — so the only thing
+ * lost is a comparison that was already available in a better form, and what is
+ * gained is the one thing a number cannot show: the path.
+ *
+ * `title` states the drawn range, so the scale is never implicit.
  */
-function TrendCell({ market, domain }: { market?: RowMarket; domain?: { lo: number; hi: number } }) {
+function TrendCell({ market }: { market?: RowMarket }) {
   const path = market?.path6 ?? []
+  const domain = market?.domain
   const drawn = path.length > 1 && !!domain
+  const lo = Math.min(...(drawn ? path : [0]))
+  const hi = Math.max(...(drawn ? path : [0]))
   /*
    * `flex-1 min-w-0` on the OUTER span, and the chart absolutely positioned
    * inside it.
@@ -891,6 +904,9 @@ function TrendCell({ market, domain }: { market?: RowMarket; domain?: { lo: numb
       style={{ height: SPARK_HEIGHT }}
       data-testid="spark-cell"
       data-state={drawn ? 'drawn' : 'quiet'}
+      title={drawn
+        ? `6-month path, scaled to this security: ${lo.toFixed(1)}% to ${hi.toFixed(1)}%`
+        : undefined}
     >
       {drawn
         ? <span className="absolute inset-0"><ReturnSpark path={path} domain={domain!} /></span>
@@ -1079,8 +1095,6 @@ export function renderSignalCell(
    * batched once for the list rather than fetched per row.
    */
   market?: RowMarket,
-  /** The list's shared sparkline domain, so rows are comparable. */
-  domain?: { lo: number; hi: number },
 ): React.ReactNode | undefined {
   const finite = (v: unknown) => {
     const n = v == null ? NaN : Number(v)
@@ -1126,7 +1140,7 @@ export function renderSignalCell(
     : (stored != null && stored !== 0 ? stored : null)
 
   switch (columnId) {
-    case 'list_market':    return <MarketCell price={finite(asset?.current_price)} liveQuotePrice={finite(quote?.price)} changePct={changePct} market={market} domain={domain} />
+    case 'list_market':    return <MarketCell price={finite(asset?.current_price)} liveQuotePrice={finite(quote?.price)} changePct={changePct} market={market} />
     case 'list_exposure':  return <ExposureCell signal={signal} />
     case 'list_view':      return <ViewCell signal={signal} price={price} />
     case 'list_valuation': return <ValuationCell signal={signal} price={price} />
@@ -1134,7 +1148,7 @@ export function renderSignalCell(
     case 'list_last':      return <LastCell price={finite(asset?.current_price)} liveQuotePrice={finite(quote?.price)} market={market} />
     case 'list_1m':        return <ReturnCell r={market?.m1} entry="m1" />
     case 'list_6m':        return <ReturnCell r={market?.m6} entry="m6" />
-    case 'list_trend':     return <TrendCell market={market} domain={domain} />
+    case 'list_trend':     return <TrendCell market={market} />
     case 'list_case':      return <CaseCell signal={signal} />
     case 'list_evidence':  return <EvidenceCell signal={signal} />
     case 'list_changed':   return <ChangedCell signal={signal} />

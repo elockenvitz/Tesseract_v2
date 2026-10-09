@@ -36,7 +36,9 @@
  * and the single amber mark that means somebody has not looked yet.
  */
 import React, { useState, useEffect } from 'react'
-import { ExternalLink, Plus, Pencil, ArrowUpRight, ArrowRight, Check } from 'lucide-react'
+import {
+  ExternalLink, Plus, Pencil, ArrowUpRight, ArrowRight, Check, Maximize2, Minimize2,
+} from 'lucide-react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import { Sparkline } from '../signals/Sparkline'
@@ -104,7 +106,16 @@ export function Figure({
     <div className="min-w-0" title={title}>
       <Label>{label}</Label>
       <div className={clsx(
-        'leading-none truncate mt-1',
+        /*
+         * `leading-[1.15]`, not `leading-none`.
+         *
+         * `truncate` is `overflow:hidden`, and at `leading-none` the line box
+         * is exactly the font size — so a 26px figure's descenders and the
+         * `$` of a currency value were clipped by four pixels. Visible in the
+         * running app on "$42,056". The extra two pixels of leading cost the
+         * panel nothing and stop the figures being shaved.
+         */
+        'leading-[1.15] truncate mt-1',
         numeric && 'tabular-nums',
         size === 'hero' && 'text-[26px] font-semibold tracking-tight',
         size === 'md' && 'text-[15px] font-semibold',
@@ -478,7 +489,17 @@ export function ModeLayout({
         {rail && (
           // One hairline, not a card. The rail is the same surface as the
           // workspace; it is separated by alignment, not by a container.
-          <aside className="min-w-0 min-h-0 overflow-hidden sm:border-l border-gray-900/[0.07] dark:border-white/10 sm:pl-6 space-y-3.5">
+          /*
+             * `space-y-2.5`, measured rather than chosen.
+             *
+             * Overview's rail stacks three blocks into a clipping box and was
+             * overrunning it by 29px at 1440px — the list-scoped fields at the
+             * foot were cut. Three gaps at 14px were 42 of those pixels; at
+             * 10px they are 30, and the blocks themselves were already capped
+             * (two research items, two coverage chips). Tightening the gaps is
+             * the composition fix; the panel height did not move.
+             */
+          <aside className="min-w-0 min-h-0 overflow-hidden sm:border-l border-gray-900/[0.07] dark:border-white/10 sm:pl-6 space-y-2.5">
             {rail}
           </aside>
         )}
@@ -504,6 +525,7 @@ export function ModeLayout({
  */
 export function ExpansionShell({
   symbol, companyName, state, lead, modes, activeMode, onModeChange, action, children,
+  maximized, onToggleMaximize,
 }: {
   symbol: string
   companyName?: string | null
@@ -516,6 +538,16 @@ export function ExpansionShell({
   onModeChange: (id: string) => void
   action?: React.ReactNode
   children: React.ReactNode
+  /**
+   * Whether this shell is currently filling the viewport.
+   *
+   * The shell does not own the overlay — `ListTableView` does, and it keeps
+   * THIS component mounted and portals it, so the mode, the scroll position of
+   * every inner region and any half-typed edit survive the transition. All the
+   * shell contributes is the control and the label on it.
+   */
+  maximized?: boolean
+  onToggleMaximize?: () => void
 }) {
   return (
     <div className="h-full min-h-0 flex flex-col px-6 pt-3.5 pb-3.5">
@@ -544,6 +576,7 @@ export function ExpansionShell({
           * inside an open row — so they read as a control with a body, and the
           * active one is a solid chip rather than a slightly darker word.
           */}
+        <div className="flex-shrink-0 flex items-center gap-2">
         <nav
           role="tablist"
           className="flex-shrink-0 flex items-center gap-0.5 p-[3px] rounded-lg bg-gray-900/[0.07] dark:bg-black/30 ring-1 ring-inset ring-gray-900/[0.04] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -565,6 +598,33 @@ export function ExpansionShell({
             </button>
           ))}
         </nav>
+
+        {/*
+          * Maximize, beside the modes rather than inside them.
+          *
+          * It is not a sixth mode — it changes how much room the current mode
+          * gets, not what the reader is looking at — so it sits outside the
+          * segmented control. `data-testid` because the control is the thing
+          * the acceptance pass clicks.
+          */}
+        {onToggleMaximize && (
+          <button
+            type="button"
+            data-testid="expansion-maximize"
+            onClick={onToggleMaximize}
+            aria-pressed={!!maximized}
+            aria-label={maximized
+              ? `Restore ${symbol} to the list`
+              : `Maximize the ${symbol} workspace`}
+            title={maximized ? 'Restore (Esc)' : 'Maximize'}
+            className="flex-shrink-0 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-900/[0.06] hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-gray-500 dark:hover:bg-white/10 dark:hover:text-gray-100"
+          >
+            {maximized
+              ? <Minimize2 className="h-[15px] w-[15px]" aria-hidden />
+              : <Maximize2 className="h-[15px] w-[15px]" aria-hidden />}
+          </button>
+        )}
+        </div>
       </header>
 
       {/*
@@ -984,6 +1044,9 @@ export function MarketMode(p: {
    * collapsed row that opened this panel — see `spot` on `PriceChart`.
    */
   spot: number | null
+  /** What `spot` is — "live", "Close of 2026-10-07". Passed straight through
+   *  to the chart's headline, which must not guess. See `PriceChart`. */
+  spotLabel?: string | null
   closes: number[] | null
   target: number | null
   upsidePct: number | null
@@ -1063,6 +1126,7 @@ export function MarketMode(p: {
                 levels={bands}
                 events={p.chartEvents ?? []}
                 spot={p.spot}
+                spotLabel={p.spotLabel ?? null}
                 initialRange="1Y"
               />
             </div>
@@ -1518,10 +1582,20 @@ export function PositionMode(p: {
       footer={p.footer}
       railWidth="sm"
       main={
-          // `h-full min-h-0 flex flex-col`, so the list below can be the part
-          // that gives: a plain `space-y-4` block has no height of its own and
-          // simply overran the clip.
-          <div className="h-full min-h-0 flex flex-col gap-4">
+          /*
+           * The heroes sit BESIDE the books, not above them.
+           *
+           * Stacked, this column asked for 151px inside a 77px clip — measured
+           * in the running app, with the second book sliced through the middle
+           * of its own row. The fix is composition, not budget: the two hero
+           * figures are a narrow, fixed-height pair and the books table is a
+           * list, so side by side the column's height is the TALLER of the two
+           * rather than their sum, and it nearly halves.
+           *
+           * It collapses back to a stack below `sm`, where two 26px figures and
+           * a four-column table cannot share a line.
+           */
+          <div className="h-full min-h-0 grid gap-x-7 gap-y-3 grid-cols-1 sm:grid-cols-[minmax(0,300px)_minmax(0,1fr)] sm:items-start">
             {/*
               * When a recommendation is live, the CHANGE leads — that is what the
               * reader is being asked about. Otherwise the holding does.
@@ -1533,7 +1607,10 @@ export function PositionMode(p: {
                 direction={p.ideaDirection}
               />
             ) : (
-            <div className="flex items-start gap-7 flex-wrap">
+            // Side by side, not stacked: two 56px figures one above the other
+            // were the tallest thing in this column and put it 27px over the
+            // clip on their own. In a row the pair is one figure tall.
+            <div className="min-w-0 flex items-start gap-7">
               <Figure label="Largest weight"
                 value={largest?.weightPct != null ? `${largest.weightPct.toFixed(2)}%` : null}
                 size="hero" sub={largest?.portfolioName} />
@@ -1547,7 +1624,7 @@ export function PositionMode(p: {
                 when there is nothing held — a recommendation to OPEN a position
                 would otherwise render a header over no rows. */}
             {rows.length > 0 && (
-            <div className="min-h-0">
+            <div className="min-w-0 min-h-0">
               <div className="grid grid-cols-[minmax(0,1fr)_72px_72px_84px] gap-x-3 pb-1">
                 {['Book', 'Shares', 'Weight', 'Unrealised'].map((h, i) => (
                   <div key={h} className={i === 0 ? '' : 'text-right'}><Label>{h}</Label></div>

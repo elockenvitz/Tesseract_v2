@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  windowReturn, latestClose, closeAgeDays, hasDiscontinuity, returnPath, sharedDomain, clean,
+  windowReturn, latestClose, closeAgeDays, hasDiscontinuity, returnPath, localDomain, clean,
 } from '../price-metrics'
 
 /** `n` daily closes ending today, moving `pct` in total, linearly. */
@@ -91,11 +91,11 @@ describe('a close carries its date', () => {
   })
 })
 
-describe('sparklines share one axis', () => {
+describe('sparklines are scaled per security, with a floor', () => {
   /**
-   * The defect this encodes: price-space sparklines auto-scale to their own
-   * extremes, so every row fills its box and a 2% drift draws the same picture
-   * as a 30% drawdown.
+   * The path is in return space so the zero line is real and the drawn range
+   * can be stated. The RANGE is per security; the cross-security comparison
+   * lives in the 1M and 6M numbers beside the line.
    */
   it('indexes to the first close, so height means percent', () => {
     const p = returnPath(series(40, 400, 10), 31)
@@ -103,22 +103,49 @@ describe('sparklines share one axis', () => {
     expect(p[p.length - 1]).toBeGreaterThan(0)
   })
 
-  it('gives a quiet name a visibly smaller excursion than a loud one', () => {
-    const quiet = returnPath(series(40, 100, 2), 31)
+  /*
+   * The scaling the Trend column now uses, and the two failures it sits
+   * between. A range shared across rows was set by the loudest name and drew
+   * everything else flat; a range fitted tight to each path draws a 0.2%
+   * wobble as a mountain. `localDomain` fits the path but never narrows past
+   * ±MIN_RANGE, and always contains zero.
+   */
+  it('fills the box for a security that actually moved', () => {
     const loud = returnPath(series(40, 100, 30), 31)
-    const d = sharedDomain([quiet, loud])
-    const amp = (s: number[]) => Math.max(...s.map(Math.abs)) / d.hi
-    expect(amp(quiet)).toBeLessThan(amp(loud) / 3)
+    const d = localDomain(loud)
+    const amp = Math.max(...loud.map(Math.abs)) / Math.max(d.hi, -d.lo)
+    expect(amp).toBeGreaterThan(0.6)
   })
 
-  it('keeps zero on the same pixel for every row', () => {
-    const d = sharedDomain([[0, 5], [0, -40]])
-    expect(d.lo).toBe(-d.hi)
+  it('does not amplify a flat security to full scale', () => {
+    // 0.2% of drift must not draw like a trend. The floored range is what
+    // keeps it small; without it this amplitude would be ~0.85.
+    const flat = [0, 0.1, -0.05, 0.2]
+    const d = localDomain(flat)
+    const amp = Math.max(...flat.map(Math.abs)) / Math.max(d.hi, -d.lo)
+    expect(amp).toBeLessThan(0.2)
   })
 
-  it('does not amplify a list of flat names to full scale', () => {
-    // Without a floor, a list where nothing moved would draw full-height noise.
-    expect(sharedDomain([[0, 0.2, -0.1]]).hi).toBeGreaterThanOrEqual(5)
+  it('always contains zero, so the baseline is on the chart', () => {
+    // A path that only ever rose still needs the line it rose from.
+    const up = localDomain([0, 4, 9, 14])
+    expect(up.lo).toBeLessThan(0)
+    const down = localDomain([0, -4, -9, -14])
+    expect(down.hi).toBeGreaterThan(0)
+  })
+
+  it('does not scale a quiet name to a loud one, by construction', () => {
+    // The whole point of the change: one row's range cannot depend on another.
+    const quiet = returnPath(series(40, 100, 2), 31)
+    const loud = returnPath(series(40, 100, 180), 31)
+    const before = localDomain(quiet)
+    expect(localDomain(quiet)).toEqual(before)
+    expect(localDomain(loud).hi).toBeGreaterThan(before.hi * 5)
+  })
+
+  it('survives an empty or non-finite path', () => {
+    expect(localDomain([]).hi).toBeGreaterThan(0)
+    expect(Number.isFinite(localDomain([NaN, Infinity]).lo)).toBe(true)
   })
 })
 

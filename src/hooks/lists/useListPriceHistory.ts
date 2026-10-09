@@ -4,7 +4,7 @@ import { usePriceHistory } from '../mobile/usePriceHistory'
 import { useTickerAliases, tradedSymbol } from '../mobile/useTickerAliases'
 import type { PricePoint } from '../../components/signals/PriceContext'
 import {
-  windowReturn, returnPath, sharedDomain, latestClose, closeAgeDays,
+  windowReturn, returnPath, localDomain, latestClose, closeAgeDays,
   WINDOW_DAYS, type WindowReturn, type LatestClose,
 } from '../../lib/lists/price-metrics'
 
@@ -71,10 +71,12 @@ export interface RowMarket {
   /** The 1M and 6M moves, or the reason there is no number. */
   m1: WindowReturn
   m6: WindowReturn
-  /** 1-month path in percentage-return space, for the shared-axis sparkline. */
+  /** 1-month path in percentage-return space. */
   path: number[]
-  /** 6-month path, for Monitor's Trend column. Same return space and domain. */
+  /** 6-month path, for Monitor's Trend column. */
   path6: number[]
+  /** This security's own vertical range over `path6`. See `localDomain`. */
+  domain: { lo: number; hi: number }
   lastClose: LatestClose | null
   ageDays: number | null
   /** False when the symbol fell outside the fetch budget — not "no data". */
@@ -85,8 +87,6 @@ export interface ListPriceHistory {
   /** Ascending daily closes for a DISPLAY symbol, or null. */
   historyFor: (symbol?: string | null) => PricePoint[] | null
   marketFor: (symbol?: string | null) => RowMarket
-  /** One y-domain across every drawn row, so heights are comparable. */
-  domain: { lo: number; hi: number }
   isLoading: boolean
 }
 
@@ -98,6 +98,7 @@ const EMPTY_MARKET: RowMarket = {
   m6: { pct: null, refused: 'no-series', slice: [] },
   path: [],
   path6: [],
+  domain: { lo: -3, hi: 3 },
   lastClose: null,
   ageDays: null,
   covered: false,
@@ -142,16 +143,11 @@ export function useListPriceHistory(
 
   return useMemo(() => {
     const markets = new Map<string, RowMarket>()
-    const paths: number[][] = []
 
     for (const { display, traded } of budgeted) {
       const points = data?.get(traded) ?? null
       const path = points ? returnPath(points, SPARK_DAYS) : []
       const path6 = points ? returnPath(points, WINDOW_DAYS['6M']) : []
-      /* The DOMAIN is built from the 6-month paths, because that is what the
-         Trend column draws. Mixing both windows into one domain would scale
-         every line to the longer one's excursion and flatten the month. */
-      if (path6.length > 1) paths.push(path6)
       const last = latestClose(points)
       markets.set(display, {
         points,
@@ -159,27 +155,23 @@ export function useListPriceHistory(
         m6: windowReturn(points, '6M'),
         path,
         path6,
+        /* Per security, over the window the Trend column actually draws.
+           A domain shared across rows was comparable and unreadable: one
+           +180% name set the scale and flattened everything else to a
+           pixel. The comparable measures are the 1M and 6M numbers in the
+           two columns beside it; the line's job is the shape. */
+        domain: localDomain(path6),
         lastClose: last,
         ageDays: closeAgeDays(last?.date),
         covered: true,
       })
     }
 
-    /*
-     * One domain for the whole visible set, computed once here.
-     *
-     * Each row cannot decide its own: that is precisely the auto-scaling that
-     * made the old column meaningless. Computing it per render over the drawn
-     * paths means adding a name with a large move rescales every line, which
-     * is correct — they are being compared.
-     */
-    const domain = sharedDomain(paths)
     const key = (s?: string | null) => (s ?? '').trim().toUpperCase()
 
     return {
       historyFor: (s) => markets.get(key(s))?.points ?? null,
       marketFor: (s) => markets.get(key(s)) ?? EMPTY_MARKET,
-      domain,
       isLoading,
     }
   }, [data, isLoading, budgeted])

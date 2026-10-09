@@ -3674,8 +3674,31 @@ export function AssetTableView({
                           <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 z-10" style={{ transform: 'translateY(-1px)' }} />
                         )}
                         <div
-                          className={clsx('flex items-center', isExpanded ? 'h-auto' : 'h-full')}
-                          style={{ minWidth: totalTableWidth + (canDragRows ? dragHandleWidth : 0), minHeight: densityRowHeight }}
+                          /*
+                           * The cells band is one row high in BOTH states.
+                           *
+                           * It used to be `h-auto` when expanded, because the
+                           * row becomes a column flex and `h-full` against an
+                           * auto-height parent resolves to nothing. The cost
+                           * was that every cell then sized to its own content:
+                           * measured in the running app, an expanded row's
+                           * cells were 42, 30, 30, 30, 30, 10, 35 and 10px tall
+                           * inside a 44px stripe. Anything drawn to a cell's
+                           * box — the selection ring, a hover tint — therefore
+                           * covered a fraction of the stripe and looked like it
+                           * had been drawn around the text instead of the cell.
+                           *
+                           * Pinning the band to the row height fixes all of
+                           * them at once, and makes the expansion's own budget
+                           * deterministic: the panel below gets the row height
+                           * subtracted, not "whatever the tallest cell did".
+                           */
+                          className={clsx('flex items-center', isExpanded ? 'flex-shrink-0' : 'h-full')}
+                          style={{
+                            minWidth: totalTableWidth + (canDragRows ? dragHandleWidth : 0),
+                            minHeight: densityRowHeight,
+                            height: isExpanded ? densityRowHeight : undefined,
+                          }}
                           onDoubleClick={() => toggleRowExpansion(asset.id)}
                           onContextMenu={(e) => {
                             e.preventDefault()
@@ -3728,7 +3751,10 @@ export function AssetTableView({
                                   'pro-table-cell',
                                   col.align === 'right' && 'justify-end text-right',
                                   expansionEntryColumns?.has(col.id) ? 'cursor-pointer' : 'cursor-default',
-                                  isExpanded ? 'h-auto' : 'h-full',
+                                  // Always the band's full height — see the band
+                                  // above. A content-sized cell cannot carry a
+                                  // selection outline that reads as a cell.
+                                  'h-full',
                                   col.wrapText && !isExpanded && 'items-start',
                                   densityConfig.padding,
                                   densityConfig.fontSize,
@@ -4588,8 +4614,13 @@ export function AssetTableView({
                               }}
                             >
                               <div
-                                className={clsx('flex items-center', isExpanded ? 'h-auto' : 'h-full')}
-                                style={{ minHeight: densityRowHeight }}
+                                // One row high in both states — see the
+                                // ungrouped branch, which owns the reasoning.
+                                className={clsx('flex items-center', isExpanded ? 'flex-shrink-0' : 'h-full')}
+                                style={{
+                                  minHeight: densityRowHeight,
+                                  height: isExpanded ? densityRowHeight : undefined,
+                                }}
                                 onDoubleClick={() => toggleRowExpansion(asset.id)}
                                 onContextMenu={(e) => {
                                   e.preventDefault()
@@ -4640,7 +4671,10 @@ export function AssetTableView({
                                         'pro-table-cell',
                                         col.align === 'right' && 'justify-end text-right',
                                         expansionEntryColumns?.has(col.id) ? 'cursor-pointer' : 'cursor-default',
-                                        isExpanded ? 'h-auto' : 'h-full',
+                                        // Always the band's height. A cell sized
+                                        // to its content cannot carry a selection
+                                        // outline that reads as a cell.
+                                        'h-full',
                                         col.wrapText && !isExpanded && 'items-start',
                                         densityConfig.padding,
                                         densityConfig.fontSize,

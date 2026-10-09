@@ -249,14 +249,44 @@ const MODE_HEIGHT: Readonly<Record<ListRowMode, number>> = {
    * taller than the panel is a silently truncated rail. 310 holds all three
    * with the rail's own gaps tightened (see `OverviewMode`).
    */
-  overview: 310,
-  // The chart is the mode; 360 leaves it ~300px after the shell, which is
-  // the band where a 6-month path reads as a trend rather than a horizon.
-  market: 360,
+  /*
+   * 310 held the three main columns and clipped the RAIL by 25px.
+   *
+   * The rail stacks three genuinely separate blocks — latest research, the
+   * coverage chips, and the list-scoped editors that have no other home now
+   * that their columns are off the default line — and all three were already
+   * capped at their worst case (two items, two chips). Tightening their gaps
+   * recovered 12px of the 37 (see `OverviewMode`); the remaining 25 is
+   * content that exists and has to be shown, so the panel pays for it.
+   */
+  overview: 344,
+  /*
+   * The chart is the mode, and 360 was not enough for it to be one.
+   *
+   * Measured in the running List at 1440px, 360 gave the plot a 1,322 × 145
+   * box — and at 145px tall `PriceChart`'s aspect cap holds it to 579px wide,
+   * so the chart drew across 44% of its region with 740px of blank panel
+   * beside it. That is the "small chart in a large blank area" this fixes.
+   *
+   * 480 puts roughly 260px under the plot, which clears the height at which
+   * the cap releases (`TALL_ENOUGH`) and the chart takes the full width. It
+   * is the tallest mode by a distance, which is correct — it is the only one
+   * whose content is a continuous two-dimensional object — and the list still
+   * shows four other names around it at a 950px viewport. Anything larger is
+   * the maximized workspace's job, not the row's.
+   */
+  market: 480,
   // Thesis, differentiation and risks at reading width, beside the review.
   research: 340,
-  // Heroes, a column header and up to three books.
-  position: 268,
+  /*
+   * Two heroes beside the books table, not stacked above it.
+   *
+   * At 268, stacked, the main column needed 151px of a 77px budget and the
+   * second book was sliced through its own row. The composition changed
+   * (see `PositionMode`) rather than the budget tripling; 300 is the margin
+   * the reflowed layout needs for a four-book name plus the "+N more" line.
+   */
+  position: 300,
   // One recommendation card, or a review prompt.
   work: 300,
 }
