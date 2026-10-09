@@ -20,6 +20,10 @@ let originalRect: typeof Element.prototype.getBoundingClientRect
 let observers: Array<{ el: Element; cb: ResizeObserverCallback }> = []
 
 beforeEach(() => {
+  // Reset, because the aspect-cap tests below write to it and a box that
+  // leaked between tests would make every later measurement a guess.
+  BOX.width = 900
+  BOX.height = 300
   originalRect = Element.prototype.getBoundingClientRect
   Element.prototype.getBoundingClientRect = function () {
     return {
@@ -85,6 +89,36 @@ describe('the chart measures the box it was given', () => {
     const svg = svgOf('price-chart-line')
     expect(svg.getAttribute('height')).toBe(String(BOX.height))
     expect(svg.getAttribute('width')).toBe(String(BOX.width))
+  })
+
+  /**
+   * The chart refuses to be drawn as a horizon.
+   *
+   * The List inspector handed this component a 1,439 × 230 box — a 320px rail
+   * beside it took the width, and a fixed row height capped the height — so a
+   * 6% quarter came out as a jagged ribbon that reads as noise rather than as
+   * a trend. Past about 4:1 there is no vertical resolution left to spend.
+   *
+   * Beyond the cap the plot keeps its height and stops taking width. The
+   * leftover is a gutter, and `mx-auto` centres the plot in it: empty margins
+   * on an unusually wide panel are a smaller lie than a flat trend.
+   */
+  it('stops taking width rather than be drawn flatter than 4:1', () => {
+    BOX.width = 1440
+    BOX.height = 230
+    render(<PriceChart symbol="LLY" series={series(120)} />)
+    const svg = svgOf('price-chart-line')
+    expect(Number(svg.getAttribute('height'))).toBe(230)
+    expect(Number(svg.getAttribute('width'))).toBe(920) // 230 × 4, not 1440
+    expect(svg.getAttribute('class')).toContain('mx-auto')
+  })
+
+  it('takes the whole box when the box is not pathologically wide', () => {
+    BOX.width = 800
+    BOX.height = 400
+    render(<PriceChart symbol="LLY" series={series(120)} />)
+    const svg = svgOf('price-chart-line')
+    expect(Number(svg.getAttribute('width'))).toBe(800)
   })
 
   it('keeps observing, so a resize after mount still redraws', () => {

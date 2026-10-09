@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   MODE_FOR_COLUMN, LIST_EXPANSION_ENTRY_COLUMNS, modeForEntryColumn, MODE_ORDER,
+  ENTRY_TOKENS, expandedRowHeightForDensity,
 } from '../listRowModes'
 
 const SRC = resolve(__dirname, '../../..')
@@ -176,16 +177,89 @@ describe('a security clicked on Lists home opens inside the table', () => {
   })
 })
 
+/**
+ * The inspector's frame does not move.
+ *
+ * Per-mode heights meant switching tabs inside an open row resized the row:
+ * chart to the written view halved it from 672px to 320px, every row below
+ * jumped, and the scroll position lurched under the reader's cursor. This is
+ * asserted on the pure function rather than through the virtualised table,
+ * because it is a property of the number, not of the render.
+ */
+describe('the expanded row is one fixed frame', () => {
+  /*
+   * Asserted against the SOURCE, like the rest of this file.
+   *
+   * Feeding entries to `expandedRowHeightForDensity` would prove nothing —
+   * it does not take one, so a test that loops over tokens and collects one
+   * distinct height is asserting its own loop. The thing that can regress is
+   * `ListTableView` reintroducing a per-mode branch in the callback it hands
+   * the table, so that is what is pinned.
+   */
+  it('derives no height from the mode or the clicked entry', () => {
+    const src = codeOf(readFileSync(resolve(SRC, 'components/lists/ListTableView.tsx'), 'utf8'))
+    const fn = src.slice(src.indexOf('expandedHeightFor'), src.indexOf('renderExtraCell'))
+    expect(fn).toMatch(/expandedRowHeightForDensity\(density\)/)
+    expect(fn, 'a share map is a per-mode height').not.toMatch(/share/)
+    expect(fn, 'the entry must not reach the height').not.toMatch(/modeForEntryColumn/)
+  })
+
+  it('offers the table a height for every entry, and the same one', () => {
+    // The callback's real signature, exercised the way the table calls it.
+    const callback = (_entry: string | undefined, density: string) =>
+      expandedRowHeightForDensity(density)
+    const entries: Array<string | undefined> = [...ENTRY_TOKENS, ...Object.keys(MODE_FOR_COLUMN), undefined]
+    const heights = new Set(entries.map(e => callback(e, 'compact')))
+    expect(heights.size).toBe(1)
+  })
+
+  it('still differs BETWEEN densities, or the control does nothing', () => {
+    const byDensity = ['comfortable', 'compact', 'ultra', 'micro']
+      .map(expandedRowHeightForDensity)
+    expect(new Set(byDensity).size).toBe(4)
+    // Monotonic: a tighter density is never taller than a looser one.
+    expect([...byDensity].sort((a, b) => b - a)).toEqual(byDensity)
+  })
+
+  /*
+   * Both ends of the tradeoff, pinned.
+   *
+   * The first single frame was 608px — derived from the height a chart needs
+   * to stay under `PriceChart`'s 4:1 cap at full table width. The arithmetic
+   * was right and the row was unusable: it ate two thirds of a laptop
+   * viewport, so the reader lost the list they had opened it from.
+   *
+   * The chart now gives up WIDTH instead (it centres itself at the cap), and
+   * the frame answers to the viewport. These two assertions are the floor and
+   * the ceiling; a change that breaks either is a change that re-opens the
+   * argument rather than a tuning tweak.
+   */
+  const SHELL = 164 // padding + header + verdict + footer
+
+  it('leaves a plot tall enough to read a trend in', () => {
+    expect(expandedRowHeightForDensity('compact') - SHELL).toBeGreaterThan(240)
+  })
+
+  it('leaves the list visible around the row it opened', () => {
+    // Half of a 900px laptop viewport, the common case. A row taller than
+    // this is a page, and a list you cannot see is not a list.
+    expect(expandedRowHeightForDensity('comfortable')).toBeLessThan(900 / 2 + 60)
+  })
+})
+
 describe('the map covers what the curated line actually shows', () => {
-  it('maps each of the six conceptual columns onto the mode that answers it', () => {
+  it('maps each conceptual column onto the mode that answers it', () => {
     expect(MODE_FOR_COLUMN).toMatchObject({
       // SECURITY
       ticker: 'overview',
       companyName: 'overview',
+      // MARKET and the target both ask what it is worth against what it
+      // costs, and both now open PRICE — one chart with the target and the
+      // scenarios drawn on it. See `listRowModes`.
       list_market: 'market',
+      list_valuation: 'market',
       list_exposure: 'position',
-      list_view: 'case',
-      list_valuation: 'valuation',
+      list_view: 'research',
       list_work: 'work',
     })
   })

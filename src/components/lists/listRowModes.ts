@@ -17,24 +17,36 @@
  * the List workspace, which replaced that panel on list surfaces.
  */
 
+/*
+ * ── Why Market and Valuation are one mode ─────────────────────────────────
+ *
+ * They drew the same chart. Market plotted the history with the target as a
+ * level; Valuation plotted the same history with the target AND the scenario
+ * rungs as levels. The second is the first plus more information, so a reader
+ * comparing the two tabs was comparing a chart against itself with some lines
+ * missing — and the switcher spent two of its six slots asking them to.
+ *
+ * One PRICE mode draws it once, with everything the desk decided on the
+ * scale. `market` and `valuation` survive as ENTRY tokens because the
+ * collapsed row still stamps them on two different cells, and which cell was
+ * clicked is still real intent; they just resolve to the same place now.
+ */
 export type ListRowMode =
   | 'overview'
   | 'market'
-  | 'case'
-  | 'valuation'
+  | 'research'
   | 'position'
   | 'work'
 
 /** Tab order. Stable — a switch whose items move is a switch you re-read. */
 export const MODE_ORDER: readonly ListRowMode[] = [
-  'overview', 'market', 'case', 'valuation', 'position', 'work',
+  'overview', 'market', 'research', 'position', 'work',
 ]
 
 export const MODE_LABEL: Record<ListRowMode, string> = {
   overview: 'Overview',
   market: 'Market',
-  case: 'Case',
-  valuation: 'Valuation',
+  research: 'Research',
   position: 'Position',
   work: 'Work',
 }
@@ -55,9 +67,18 @@ export const MODE_FOR_COLUMN: Readonly<Record<string, ListRowMode>> = {
   companyName: 'overview',
   list_market: 'market',
   list_exposure: 'position',
-  list_view: 'case',
-  list_valuation: 'valuation',
+  list_view: 'research',
+  list_valuation: 'market',
   list_work: 'work',
+  // The Research preset's own columns all interrogate the written case.
+  list_case: 'research',
+  list_evidence: 'research',
+  list_changed: 'research',
+  // The Decide preset's columns are all about the outstanding recommendation.
+  list_owner: 'work',
+  list_stage: 'work',
+  list_age: 'work',
+  list_sizing: 'position',
   /*
    * The scalar columns, still mapped.
    *
@@ -97,22 +118,114 @@ export const LIST_EXPANSION_ENTRY_COLUMNS: ReadonlySet<string> =
  * that has not been broken into parts.
  */
 export const ENTRY_TOKENS = [
-  'overview', 'market', 'case', 'valuation', 'position', 'work',
+  'overview', 'market', 'valuation', 'case', 'research', 'position', 'work',
 ] as const
 export type EntryToken = typeof ENTRY_TOKENS[number]
 
+/*
+ * Seven tokens, five modes.
+ *
+ * `market` and `valuation` are the two cells that both ask what it is worth
+ * against what it costs, and they now open the same PRICE mode. They stay
+ * distinct here rather than being collapsed in `ListRowCells`, because the
+ * ring that highlights the clicked datum is keyed on the token: merging them
+ * would light the Target cell when the reader clicked the price.
+ *
+ * `price` is the token the mode reports back through `onEntryChange`, so the
+ * table can re-measure the row. See `MODE_ORDER`.
+ */
 const ENTRY_MODE: Readonly<Record<EntryToken, ListRowMode>> = {
   overview: 'overview',
+  // Price and the target both ask what it is worth against what it costs,
+  // and both open the one chart that draws them together.
   market: 'market',
-  case: 'case',
-  valuation: 'valuation',
+  valuation: 'market',
+  // The rating cell and the Research preset's case columns both interrogate
+  // the written case. `case` is the token the cells stamp; `research` is the
+  // mode, and the token the mode echoes back for the ring.
+  case: 'research',
+  research: 'research',
   position: 'position',
   work: 'work',
+}
+
+/**
+ * The inspector's frame: one height per density, the same for every mode.
+ *
+ * Each mode used to claim a share of the row — PRICE 2.1, POSITION 1.35,
+ * WORK 0.8 — so switching tabs inside an open row resized the row. Chart to
+ * the written view halved it from 672px to 320px, every row below jumped
+ * 352px up the screen, and the scroll position lurched under the cursor
+ * mid-click. A workspace does not change size because the reader looked at a
+ * different part of it.
+ *
+ * ── Why it is not taller ──────────────────────────────────────────────
+ *
+ * The first attempt at a single frame was 608px at compact, derived from
+ * what a full-table-width chart needs to stay under `PriceChart`'s 4:1
+ * aspect cap: shell + a 360px plot. The arithmetic was right and the result
+ * was wrong — an expanded row that eats two thirds of a laptop viewport
+ * stops being a row and becomes a page, and the reader loses the list they
+ * opened it from.
+ *
+ * The list has to stay visible around the thing it opened. ~470px at compact
+ * leaves roughly half the viewport showing other names. The chart gives up
+ * the difference in WIDTH rather than height: `MAX_ASPECT` holds its
+ * proportions and centres it, so it reads as a well-proportioned plot with
+ * margins instead of a horizon stretched across the table.
+ *
+ * A pure function in this module, not a closure inside `ListTableView`, so
+ * "the frame does not move" is a property a test can assert directly.
+ */
+const EXPANDED_HEIGHT: Readonly<Record<string, number>> = {
+  comfortable: 500, compact: 472, ultra: 440, micro: 400,
+}
+
+export function expandedRowHeightForDensity(density: string): number {
+  return EXPANDED_HEIGHT[density] ?? EXPANDED_HEIGHT.compact
 }
 
 /** True for a string the table may treat as a sub-element entry point. */
 export function isEntryToken(v?: string | null): v is EntryToken {
   return !!v && (ENTRY_TOKENS as readonly string[]).includes(v)
+}
+
+/**
+ * The datum a column id names, for the ring on the collapsed row.
+ *
+ * Distinct from `modeForEntryColumn`, and the distinction matters now that two
+ * cells open one mode: MARKET and the target both open PRICE, so a mode name
+ * can no longer say which cell the reader clicked. The expansion echoes its
+ * state back to the table for re-measurement, and echoing the MODE overwrote
+ * that — click the target on a row already open on the chart and the ring
+ * stayed on the price cell, pointing at a field nobody had touched.
+ *
+ * So the echo carries a TOKEN. `modeForEntryColumn` maps every token back to
+ * the same mode, which is what keeps the handshake from oscillating.
+ */
+const COLUMN_ENTRY: Readonly<Record<string, EntryToken>> = {
+  ticker: 'overview',
+  companyName: 'overview',
+  coverage: 'overview',
+  list_market: 'market',
+  price: 'market',
+  change: 'market',
+  list_valuation: 'valuation',
+  list_exposure: 'position',
+  list_view: 'case',
+  list_work: 'work',
+  list_case: 'case',
+  list_evidence: 'case',
+  list_changed: 'case',
+  list_owner: 'work',
+  list_stage: 'work',
+  list_age: 'work',
+  list_sizing: 'position',
+}
+
+export function entryTokenFor(entry: string | undefined, fallback: EntryToken): EntryToken {
+  if (isEntryToken(entry)) return entry
+  return (entry && COLUMN_ENTRY[entry]) || fallback
 }
 
 /**

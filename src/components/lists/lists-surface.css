@@ -192,10 +192,19 @@
 .lists-surface [data-open-entry="valuation"] .pro-table-cell:has(.list-hit[data-entry="valuation"]),
 .lists-surface [data-open-entry="position"]  .pro-table-cell:has(.list-hit[data-entry="position"]),
 .lists-surface [data-open-entry="work"]      .pro-table-cell:has(.list-hit[data-entry="work"]),
-/* The ticker cell is the Overview entry and the table owns its markup, so it
-   is addressed by position rather than by a `Hit`. */
-.lists-surface [data-open-entry="ticker"] .pro-table-cell:nth-child(2),
-.lists-surface [data-open-entry="overview"] .pro-table-cell:nth-child(2) {
+/*
+ * The ticker cell is the Overview entry and the table owns its markup, so it
+ * carries no `Hit`. It is addressed by COLUMN NAME (`data-col`, stamped on
+ * every cell by `AssetTableView`), never by child position.
+ *
+ * It was `:nth-child(2)`, written when a leading select cell made the ticker
+ * the second child. There is none in this configuration, so `nth-child(2)` is
+ * the MARKET cell — and every row opened from the chevron, the ticker, the
+ * company name or a coverage chip resolves to Overview and lit up the price
+ * chart cell instead. A selector that counts siblings is a selector that is
+ * one column change away from pointing at the wrong field.
+ */
+.lists-surface [data-open-entry="overview"] .pro-table-cell[data-col="ticker"] {
   background: rgba(59, 130, 246, 0.055);
   box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.3);
   border-radius: 3px;

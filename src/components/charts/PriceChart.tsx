@@ -76,6 +76,20 @@ const RANGE_ORDER: RangeKey[] = ['5D', '1M', '3M', '6M', '1Y', 'ALL']
  */
 const PAD = { top: 10, right: 62, bottom: 22, left: 8 }
 
+/**
+ * The flattest this chart will let itself be drawn.
+ *
+ * A price chart is a wide object, but past about 4:1 the vertical resolution
+ * runs out and a real move stops looking like one: the List inspector handed
+ * this component a 1,439 × 230 box — better than 6:1 — and a 6% range over
+ * three months came out as a jagged horizontal ribbon that reads as noise.
+ *
+ * Beyond the cap the plot keeps its height and stops taking width, centred in
+ * the box. Empty gutters on an unusually wide panel are a smaller lie than a
+ * trend drawn flat.
+ */
+const MAX_ASPECT = 4
+
 /** Half-pixel offsets make a 1px line land on one device pixel, not two. */
 const crisp = (n: number) => Math.round(n) + 0.5
 
@@ -130,6 +144,17 @@ export interface PriceChartProps {
   levels?: PriceLevel[]
   events?: PriceEvent[]
   initialRange?: RangeKey
+  /**
+   * The live price, when the caller has one better than the last close.
+   *
+   * The readout defaults to the last point of the drawn window, which is the
+   * right answer for a chart on its own and the wrong one beside a row that
+   * is showing a live quote: the List inspector read 1,149.85 under a row
+   * reading 1169.60 for the same name. Pass it and the headline figure and
+   * the window's change are stated against the price the rest of the surface
+   * is using. Scrubbing still reports the point under the cursor.
+   */
+  spot?: number | null
   /** Reported whenever the reader changes the window. */
   onRangeChange?: (range: RangeKey) => void
   /** Rendered beside the range chips — an expand control, usually. */
@@ -138,7 +163,7 @@ export interface PriceChartProps {
 }
 
 export function PriceChart({
-  symbol, series, levels = [], events = [], initialRange = '3M', onRangeChange, action, className,
+  symbol, series, levels = [], events = [], initialRange = '3M', spot, onRangeChange, action, className,
 }: PriceChartProps) {
   // ── The window ───────────────────────────────────────────────────────
 
@@ -223,8 +248,12 @@ export function PriceChart({
     return () => ro.disconnect()
   }, [boxEl])
 
-  const W = box.w || 720
   const H = box.h || 200
+  // Width is what the box offers, up to the point where the plot would go
+  // flatter than `MAX_ASPECT`. See the constant.
+  const W = Math.min(box.w || 720, H * MAX_ASPECT)
+  /** Half the width the cap gave back, so the plot sits centred in its box. */
+  const gutter = Math.max(0, ((box.w || 720) - W) / 2)
   const plotW = Math.max(1, W - PAD.left - PAD.right)
   const plotH = Math.max(1, H - PAD.top - PAD.bottom)
 
@@ -294,9 +323,11 @@ export function PriceChart({
     const el = boxRef.current
     if (!el || windowed.length < 2) return null
     const r = el.getBoundingClientRect()
-    const t = (clientX - r.left - PAD.left) / plotW
+    // `gutter`, because the plot is centred when the aspect cap gives width
+    // back: without it the crosshair lands half a gutter from the pointer.
+    const t = (clientX - r.left - gutter - PAD.left) / plotW
     return Math.max(0, Math.min(windowed.length - 1, Math.round(t * (windowed.length - 1))))
-  }, [plotW, windowed.length])
+  }, [plotW, gutter, windowed.length])
 
   const onMove = useCallback((e: React.PointerEvent) => {
     const i = indexAt(e.clientX)
@@ -345,8 +376,21 @@ export function PriceChart({
 
   const cursor = hover != null && windowed[hover] ? windowed[hover] : null
   const readout = cursor ?? windowed[windowed.length - 1] ?? null
-  const readoutChange = readout && windowed.length > 1 && windowed[0].close
-    ? ((readout.close - windowed[0].close) / windowed[0].close) * 100
+
+  /*
+   * What the headline figure states, and what date it belongs to.
+   *
+   * Scrubbing always wins — the reader is pointing at a day and wants that
+   * day. Otherwise a caller-supplied `spot` wins over the last close, so the
+   * figure agrees with whatever is quoting the price around this chart. When
+   * it does, the date line says `live` rather than the last close's date: the
+   * spot is not a reading from that day and labelling it with that day's date
+   * would be the quieter version of the same lie.
+   */
+  const liveSpot = !cursor && spot != null && Number.isFinite(spot) && spot > 0 ? spot : null
+  const readoutPrice = cursor ? cursor.close : (liveSpot ?? readout?.close ?? null)
+  const readoutChange = readoutPrice != null && windowed.length > 1 && windowed[0].close
+    ? ((readoutPrice - windowed[0].close) / windowed[0].close) * 100
     : null
 
   // ── Ticks ────────────────────────────────────────────────────────────
@@ -437,16 +481,24 @@ export function PriceChart({
       <div className="flex shrink-0 items-baseline gap-2.5 pb-1.5">
         <span className="text-[19px] font-semibold tabular-nums leading-none tracking-[-0.02em] text-gray-900 dark:text-white"
           data-testid="price-chart-readout">
-          {readout ? fmtPricePrecise(readout.close) : '—'}
+          {readoutPrice != null ? fmtPricePrecise(readoutPrice) : '—'}
         </span>
         {readoutChange != null && (
           <span className={clsx('text-[12.5px] font-semibold tabular-nums leading-none',
             readoutChange >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
             {readoutChange >= 0 ? '+' : ''}{readoutChange.toFixed(2)}%
+            {/* The window the move is measured over, attached to the move.
+                A bare percentage beside a chart whose range chips can be
+                changed is a number with no period — and this panel used to
+                show three of them, over three different windows, none of
+                them saying so. */}
+            <span className="ml-1 font-medium text-gray-400 dark:text-gray-500">
+              {zoom ? 'selection' : effectiveRange}
+            </span>
           </span>
         )}
         <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
-          {readout ? fmtDate(readout.date, true) : ''}
+          {liveSpot != null ? 'live' : readout ? fmtDate(readout.date, true) : ''}
         </span>
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5" data-testid="price-chart-ranges">
@@ -493,7 +545,7 @@ export function PriceChart({
         onKeyDown={onKeyDown}
         style={{ touchAction: 'pan-y' }}
       >
-        <svg width={W} height={H} className="block overflow-visible">
+        <svg width={W} height={H} className="mx-auto block overflow-visible">
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={stroke} stopOpacity={0.18} />

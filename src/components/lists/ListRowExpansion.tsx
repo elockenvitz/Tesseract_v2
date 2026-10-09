@@ -48,13 +48,13 @@ import { ListAssigneeCell } from './ListAssigneeCell'
 import { ListStatusCell } from './ListStatusCell'
 import { ListTagsCell } from './ListTagsCell'
 import {
-  OverviewMode, MarketMode, CaseMode, ValuationMode, PositionMode, WorkMode,
+  OverviewMode, MarketMode, ResearchMode, PositionMode, WorkMode,
   ModeSkeleton, ModeLayout, ExpansionShell, Label, PrimaryButton, QuietButton,
   VerdictBand,
   type WorkShape, type LadderRung,
 } from './ListModeViews'
 import {
-  MODE_ORDER, MODE_LABEL, modeForEntryColumn, type ListRowMode,
+  MODE_ORDER, MODE_LABEL, modeForEntryColumn, entryTokenFor, type ListRowMode,
 } from './listRowModes'
 import { useUpdateListItem } from '../../hooks/lists/useUpdateListItem'
 import { useAssetWorkspace } from '../../hooks/useAssetWorkspace'
@@ -65,6 +65,7 @@ import {
 import { useRecordThesisReview, type ThesisReviewOutcome } from '../../hooks/useThesisReview'
 import { useContributions } from '../../hooks/useContributions'
 import { CORE_SECTIONS, STATE_LABEL } from '../../lib/desktop-research/model'
+import { windowReturn } from '../../lib/lists/price-metrics'
 import type { ListRowSignal } from '../../hooks/lists/useListRowSignals'
 
 export interface ListRowCoverage {
@@ -80,6 +81,13 @@ interface ListRowExpansionProps {
   canEdit: boolean
   /** Resolved by the table for the whole page. Absent on mobile, which is fine. */
   coverage?: ListRowCoverage[]
+  /**
+   * The live quote the table already resolved for this row.
+   *
+   * The authority for the price and today's move, ahead of anything this
+   * component can reach on its own — see `displaySpot`.
+   */
+  quote?: { price?: number | null; changePercent?: number | null } | null
   /** The column the row was opened from. Decides the initial mode. */
   entryColumnId?: string
   /**
@@ -126,6 +134,7 @@ export function ListRowExpansion({
   asset,
   canEdit,
   coverage,
+  quote,
   entryColumnId,
   onEntryChange,
   signal,
@@ -214,21 +223,24 @@ export function ListRowExpansion({
   /**
    * The price the inspector quotes, and everything computed from it.
    *
-   * `workspace.spot` comes from `price_history_cache` and is null for any name
-   * the cache has not back-filled — which made Market open with its hero figure
-   * missing while the chart beside it was drawn and the collapsed row showed a
-   * price. The fallbacks, in order of how well they match what is on screen:
+   * The table's live quote leads, because it is what the collapsed row is
+   * displaying one line above. This panel used to start from
+   * `workspace.spot` — the last close in `price_history_cache` — and so LLY
+   * read 1169.60 in the row and 1,149.85 in the inspector opened from it. Two
+   * prices for one name, both sourced, neither wrong on its own, and no way
+   * for a reader to tell which one the desk acts on.
    *
-   *   1. the workspace's own spot;
-   *   2. the LAST CLOSE of the series the chart is drawing, so the figure and
+   * After the quote, in order of how well each matches what is on screen:
+   *
+   *   1. the live quote the table resolved;
+   *   2. the workspace's own spot;
+   *   3. the LAST CLOSE of the series the chart is drawing, so the figure and
    *      the line can never disagree;
-   *   3. the asset's stored `current_price`.
-   *
-   * No fourth: the table's live quote is not handed to an expanded row, so a
-   * name whose stored price is stale reads stale here. That is a visible gap
-   * rather than a wrong number.
+   *   4. the asset's stored `current_price`.
    */
   const displaySpot = useMemo(() => {
+    const live = quote?.price == null ? NaN : Number(quote.price)
+    if (Number.isFinite(live) && live > 0) return live
     if (spot != null) return spot
     const closes = signal?.closes
     if (closes && closes.length > 0) {
@@ -237,7 +249,7 @@ export function ListRowExpansion({
     }
     const stored = asset?.current_price == null ? NaN : Number(asset.current_price)
     return Number.isFinite(stored) ? stored : null
-  }, [spot, signal?.closes, asset?.current_price])
+  }, [quote?.price, spot, signal?.closes, asset?.current_price])
 
   const upsidePct = displaySpot != null && displaySpot > 0 && target != null
     ? ((target - displaySpot) / displaySpot) * 100
@@ -266,19 +278,44 @@ export function ListRowExpansion({
     return out
   }, [caseWrittenAt, evidence, signal?.idea?.createdAt, signal?.idea?.direction])
 
-  /** The month, from the same series the sparkline draws. */
-  const oneMonthPct = useMemo(() => {
-    const c = signal?.closes
-    if (!c || c.length < 2 || !c[0]) return null
-    return ((c[c.length - 1] - c[0]) / c[0]) * 100
-  }, [signal?.closes])
+  /**
+   * The month, from the same table the collapsed row and the chart use.
+   *
+   * It read `signal.closes`, which comes from the `yahoo-chart-proxy` edge
+   * function — dead in this deployment, and a DIFFERENT series from the one
+   * the row draws. Overview said "+4.0% over 1M" directly under a row
+   * reading "-0.6% 1M" for the same name and the same window.
+   *
+   * `workspace.history` is `price_history_cache`, which is what
+   * `useListPriceHistory` batches for the row, so the two cannot disagree.
+   * `windowReturn` also refuses the figure outright when the series is too
+   * short to support a month — see `price-metrics`.
+   */
+  const oneMonthPct = useMemo(
+    () => windowReturn(history ?? null, '1M').pct,
+    [history],
+  )
 
-  /** Today's move, where the asset row carries it. Never computed from a guess. */
+  /**
+   * Today's move. Never computed from a guess, and never a default dressed as
+   * a reading.
+   *
+   * A live quote is authoritative including a genuine `0` — a flat tape is a
+   * fact. A STORED `change_percent` of exactly zero is not: every asset in the
+   * corpus carries one, so the List rendered a green `+0.0%` against all
+   * twenty-one names at once. That is a column-wide default being painted as
+   * twenty-one measurements. Zero from storage is treated as absent, which
+   * costs us the rare genuinely-flat stored day and buys back a column that
+   * means something.
+   */
   const changePct = useMemo(() => {
+    const live = quote?.changePercent == null ? NaN : Number(quote.changePercent)
+    if (Number.isFinite(live) && live !== 0) return live
     const raw = asset?.change_percent ?? asset?.changePercent ?? null
     const n = raw == null ? null : Number(raw)
-    return n != null && Number.isFinite(n) ? n : null
-  }, [asset])
+    if (n == null || !Number.isFinite(n) || n === 0) return null
+    return n
+  }, [quote, asset])
 
   /**
    * The case, core sections in the product's own order.
@@ -333,8 +370,22 @@ export function ListRowExpansion({
   }, [ladder])
 
   const weightPct = primaryPosition?.weightPct ?? signal?.weightPct ?? null
+  /*
+   * The open recommendation, in words rather than in column values.
+   *
+   * `stage` is a database enum and was being concatenated straight onto the
+   * action, so the panel read `BUY · ready_for_decision` — the storage format
+   * shown to a portfolio manager. Underscores to spaces, first letter up:
+   * no mapping table, so a stage added to the enum reads correctly here
+   * without this file being edited, which a lookup would not.
+   */
   const ideaLabel = activeIdea
-    ? [(activeIdea.action ?? 'idea').toUpperCase(), activeIdea.stage].filter(Boolean).join(' · ')
+    ? [
+      (activeIdea.action ?? 'idea').toUpperCase(),
+      activeIdea.stage
+        ? String(activeIdea.stage).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
+        : null,
+    ].filter(Boolean).join(' · ')
     : null
 
   // ── Modes ────────────────────────────────────────────────────────────
@@ -343,45 +394,97 @@ export function ListRowExpansion({
    * Availability is answered from the LIST-WIDE signal first, not only from the
    * per-row workspace. The signal is already in memory when the row opens; the
    * workspace is still fetching. Deriving availability from the workspace alone
-   * made the Position and Valuation tabs pop into the switch a moment after
+   * made the Position and Price tabs pop into the switch a moment after
    * opening, which moves the tab the reader is aiming at.
    */
   const hasPosition = (positions ?? []).length > 0 || signal?.weightPct != null
-  const hasMarket = (signal?.closes?.length ?? 0) > 1 || spot != null
-  const hasValuation = target != null || spot != null || signal?.targetPrice != null
+  /*
+   * PRICE is offered for history OR a valuation — the union of what used to
+   * gate Market and Valuation separately. A name with a target and no history
+   * still has something to draw (the fallback axis); a name with history and
+   * no target still has the line.
+   */
+  const hasPrice = (signal?.closes?.length ?? 0) > 1
+    || spot != null
+    || target != null
+    || signal?.targetPrice != null
 
   const availableModes = useMemo(
     () => MODE_ORDER.filter(m => {
-      if (m === 'market') return hasMarket
-      if (m === 'valuation') return hasValuation
+      if (m === 'market') return hasPrice
       if (m === 'position') return hasPosition
       return true
     }),
-    [hasMarket, hasValuation, hasPosition],
+    [hasPrice, hasPosition],
   )
 
-  const [mode, setMode] = useState<ListRowMode>(() => modeForEntryColumn(entryColumnId))
-
   /*
-   * Re-enter on the clicked field. Clicking a second cell on a row that is
-   * ALREADY open changes `entryColumnId`, which is the reader restating their
-   * intent — so the mode follows. Switching tabs by hand does not change it, so
-   * this does not fight the switch.
+   * The mode is DERIVED during render, never synced in an effect.
+   *
+   * ── The loop this replaces ────────────────────────────────────────────
+   *
+   * `mode` was state, pushed by `useEffect(..., [entryColumnId])`. An effect
+   * runs after the render that caused it, so on the frame where the entry
+   * changed, `activeMode` still held the PREVIOUS mode — and the echo below
+   * published that stale value to the table, which handed it straight back
+   * as the next entry. Two derived values chasing each other one frame
+   * apart, which is not a glitch but a fixed cycle:
+   *
+   *   entry=list_view  mode=price (stale) -> echoes 'price'
+   *   entry=price      mode=case          -> echoes 'case'
+   *   entry=case       mode=price         -> echoes 'price'  ... forever
+   *
+   * Pressing Enter on the sparkline cell and then on the investment-case
+   * cell put the inspector into exactly that cycle, flashing between the
+   * chart and the written case until the row was closed. Clicking a tab did
+   * not, because that sets the mode in the same commit as the event — which
+   * is why it survived the tests.
+   *
+   * So the entry is the single source of truth, and the tab switcher is an
+   * OVERRIDE stamped with the entry it was chosen against. Point at a
+   * different field and the override is stale by construction and ignored;
+   * there is no second state to fall behind.
    */
-  useEffect(() => { setMode(modeForEntryColumn(entryColumnId)) }, [entryColumnId])
+  const [override, setOverride] = useState<{ entry?: string; mode: ListRowMode } | null>(null)
+
+  const entryMode = modeForEntryColumn(entryColumnId)
+  const chosen = override && override.entry === entryColumnId ? override.mode : entryMode
 
   /** A mode that stopped being available must not leave a blank canvas. */
-  const activeMode = availableModes.includes(mode) ? mode : 'overview'
+  const activeMode = availableModes.includes(chosen) ? chosen : 'overview'
+
+  /** The tab switcher. Scoped to the field the reader is currently on. */
+  const setMode = useCallback(
+    (next: ListRowMode) => setOverride({ entry: entryColumnId, mode: next }),
+    [entryColumnId],
+  )
 
   /*
-   * Keep the row's height in step with what is actually showing.
+   * Keep the ring on the collapsed row in step with what is showing.
    *
-   * `activeMode` is itself a valid entry token, so this round-trips: the
-   * table stores it, hands it back as `entryColumnId`, and the effect above
-   * resolves it to the same mode. No oscillation, and clicking a different
-   * cell still wins because that writes a different entry.
+   * The ring ONLY. This echo used to drive the row's height too, which meant
+   * switching tabs resized the panel the reader was working in — see
+   * `expandedHeightFor` in `ListTableView`, now one fixed frame. What is left
+   * is cosmetic and cannot move the layout, which is the point: a feedback
+   * loop across two components is survivable when it paints a highlight and
+   * is not when it re-measures a virtualised row.
+   *
+   * The echo is a TOKEN, not the mode. When the clicked field already resolves
+   * to the mode on screen, the field wins: MARKET and the target both open
+   * PRICE, and echoing `price` over `valuation` moved the ring off the cell
+   * the reader had just clicked and onto the price. Only a mode the reader
+   * reached some other way — the tab switcher, or a mode that fell back
+   * because it was unavailable — echoes its own name.
+   *
+   * `modeForEntryColumn` maps every token back to one mode, so this
+   * round-trips to a fixed point: the table stores the token, hands it back
+   * as `entryColumnId`, and the effect above resolves it to the same mode.
+   * `renderWithTable` in the tests drives both halves and asserts it settles.
    */
-  useEffect(() => { onEntryChange?.(activeMode) }, [activeMode, onEntryChange])
+  const echoEntry = modeForEntryColumn(entryColumnId) === activeMode
+    ? entryTokenFor(entryColumnId, activeMode)
+    : activeMode
+  useEffect(() => { onEntryChange?.(echoEntry) }, [echoEntry, onEntryChange])
 
   // ── Writes ───────────────────────────────────────────────────────────
 
@@ -508,10 +611,15 @@ export function ListRowExpansion({
     const common = <>{flagButton}{openFullCase}</>
 
     if (m === 'work') return <>{workFooter()}{common}</>
-    if (m === 'case') {
+    if (m === 'research') {
       return <>{reviewPrompt}{common}</>
     }
-    if (m === 'valuation') {
+    /*
+     * PRICE, with no target on file: the chart has a line and no levels, so
+     * the thing to do is give it some. With a target it falls through to the
+     * state-chosen move below, same as Overview.
+     */
+    if (m === 'market' && target == null) {
       return (
         <>
           {onOpenAsset && (
@@ -522,7 +630,7 @@ export function ListRowExpansion({
       )
     }
     if (m === 'position') return common
-    // Overview and Market: the state-chosen next move.
+    // Overview and Price: the state-chosen next move.
     return (
       <>
         {reviewPrompt}
@@ -530,7 +638,7 @@ export function ListRowExpansion({
           <PrimaryButton onClick={onOpenAsset} icon={ArrowUpRight}>Open active idea</PrimaryButton>
         )}
         {!reviewPrompt && !activeIdea && writtenCaseSections.length === 0 && (
-          <PrimaryButton onClick={() => setMode('case')} icon={Pencil}>Write the case</PrimaryButton>
+          <PrimaryButton onClick={() => setMode('research')} icon={Pencil}>Write the case</PrimaryButton>
         )}
         {!reviewPrompt && !activeIdea && writtenCaseSections.length > 0 && onCreateTradeIdea && (
           <PrimaryButton onClick={() => onCreateTradeIdea(asset.id)} icon={Plus}>Start an idea</PrimaryButton>
@@ -549,6 +657,42 @@ export function ListRowExpansion({
             : 'clear'
 
   function workFooter(): React.ReactNode {
+    /*
+     * An owed decision outranks every other work state.
+     *
+     * Checked before the shape branches because `workShape` resolves
+     * `no-case` and `unread` first — so a name with a decision outstanding
+     * AND no written case offered "Write the case" and said nothing about
+     * the decision. Writing the case is good advice; it is not the thing
+     * somebody is waiting on.
+     *
+     * ── Why this hands off rather than deciding ──────────────────────────
+     *
+     * A decision is one answer per (idea, PORTFOLIO) track — `useIdeaDecision`
+     * is explicit — so a row-level Approve would silently decide for every
+     * other book holding the name. Authorisation is per portfolio too:
+     * `canMakeDecision` is PM-only and async, and a button rendered before it
+     * resolves offers an action the reader may not have.
+     *
+     * Both are solvable only by reproducing the inbox's portfolio picker, its
+     * permission gate and its fan-in to `resolveIdeaAfterDecision` — which IS
+     * the duplicate decision engine this must not become. So the row routes to
+     * the canonical surface and the reader decides there with every track in
+     * front of them. `decision-engine-action` / `trade-queue` is the existing
+     * navigation the rest of the product uses for this; see `DecisionDetail`.
+     */
+    if (signal?.work.tier === 'decision') {
+      return (
+        <PrimaryButton
+          icon={ArrowUpRight}
+          onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
+            detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
+          }))}
+        >
+          Decide in Pipeline
+        </PrimaryButton>
+      )
+    }
     if (workShape === 'unread') {
       return (
         <>
@@ -556,12 +700,12 @@ export function ListRowExpansion({
             Does the case still hold?
           </span>
           {reviewGroup}
-          <QuietButton onClick={() => setMode('case')} icon={Pencil}>Update the case</QuietButton>
+          <QuietButton onClick={() => setMode('research')} icon={Pencil}>Update the case</QuietButton>
         </>
       )
     }
     if (workShape === 'no-case') {
-      return <PrimaryButton onClick={() => setMode('case')} icon={Pencil}>Write the case</PrimaryButton>
+      return <PrimaryButton onClick={() => setMode('research')} icon={Pencil}>Write the case</PrimaryButton>
     }
     if (workShape === 'idea') {
       return onOpenAsset
@@ -572,7 +716,7 @@ export function ListRowExpansion({
       return (
         <>
           {reviewGroup}
-          <QuietButton onClick={() => setMode('case')} icon={Pencil}>Update the case</QuietButton>
+          <QuietButton onClick={() => setMode('research')} icon={Pencil}>Update the case</QuietButton>
         </>
       )
     }
@@ -721,17 +865,18 @@ export function ListRowExpansion({
             )}
             {activeMode === 'market' && (
               <MarketMode
-                symbol={asset.symbol} spot={displaySpot} changePct={changePct}
-                closes={signal?.closes ?? null} target={target} upsidePct={upsidePct}
-                weightPct={weightPct} bookName={primaryPosition?.portfolioName ?? signal?.bookName}
-                ratingValue={rating?.rating_value ?? null} ratingColor={ratingColor}
-                conviction={rating?.conviction ?? null}
-                changes={changes} ideaLabel={ideaLabel}
-                // The dated record around the move, from events we hold.
-                caseWrittenAt={caseWrittenAt}
-                ideaCreatedAt={signal?.idea?.createdAt ?? null}
+                symbol={asset.symbol}
                 /*
-                 * The real series, so Market gets the interactive chart rather
+                 * `displaySpot`, not the series' last close. It leads with the
+                 * table's live quote, which is what the collapsed row one line
+                 * above is showing — `PriceChart` states it as the headline
+                 * figure so the two cannot disagree.
+                 */
+                spot={displaySpot}
+                closes={signal?.closes ?? null} target={target} upsidePct={upsidePct}
+                rungs={rungs}
+                /*
+                 * The real series, so PRICE gets the interactive chart rather
                  * than an enlarged sparkline. `workspace.history` is already
                  * `{date, close}[]` — exactly `PricePoint` — and is read by the
                  * same `useAssetWorkspace` call this mode already makes.
@@ -741,8 +886,8 @@ export function ListRowExpansion({
                 footer={footerFor('market')}
               />
             )}
-            {activeMode === 'case' && (
-              <CaseMode
+            {activeMode === 'research' && (
+              <ResearchMode
                 symbol={asset.symbol}
                 caseSections={caseSections} caseWrittenAt={caseWrittenAt}
                 changes={changes} newSinceReview={newSinceReview}
@@ -755,24 +900,7 @@ export function ListRowExpansion({
                 onSaveSection={commitSection}
                 coverage={coverage}
                 target={target} upsidePct={upsidePct}
-                footer={footerFor('case')}
-              />
-            )}
-            {activeMode === 'valuation' && (
-              <ValuationMode
-                symbol={asset.symbol}
-                spot={displaySpot} target={target} upsidePct={upsidePct} rungs={rungs}
-                /*
-                 * The same history Market reads, so the scenario rungs are
-                 * drawn as bands on the price scale rather than as ticks on a
-                 * bare rule. A scenario is only assessable against where the
-                 * stock has actually traded.
-                 */
-                series={history?.length ? history : null}
-                weightPct={weightPct}
-                ratingValue={rating?.rating_value ?? null} ratingColor={ratingColor}
-                conviction={rating?.conviction ?? null}
-                footer={footerFor('valuation')}
+                footer={footerFor('research')}
               />
             )}
             {activeMode === 'position' && (

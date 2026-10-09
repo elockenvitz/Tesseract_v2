@@ -15,11 +15,11 @@
  */
 import React from 'react'
 import { clsx } from 'clsx'
-import { Sparkline } from '../signals/Sparkline'
 import { RatingPill, ConvictionBars } from './ListRowAtoms'
-import { WORK_TIER_RANK, type WorkTier } from '../../lib/lists/work-state'
+import { WORK_TIER_RANK, stageLabel, type WorkTier } from '../../lib/lists/work-state'
 import type { EntryToken } from './listRowModes'
 import type { ListRowSignal } from '../../hooks/lists/useListRowSignals'
+import type { RowMarket } from '../../hooks/lists/useListPriceHistory'
 import type { ColumnConfig } from '../table/AssetTableView'
 
 /**
@@ -81,6 +81,25 @@ export const LIST_SIGNAL_COLUMNS: ColumnConfig[] = [
    * opens Valuation, so turning it on costs nothing.
    */
   { id: 'list_valuation', label: 'Target',          visible: true, width: 104, minWidth: 88,  sortable: true, pinned: false, category: 'research' },
+
+  /*
+   * ── The Research and Decide columns ────────────────────────────────────
+   *
+   * Off Monitor's line and on their own view's. Every one reads a field the
+   * row signal already carries, so adding a view costs no query: `subject`
+   * for the case and its evidence, `idea` for the recommendation's stage,
+   * author, age and proposed weight.
+   *
+   * All sortable with a comparator below, which `list-row-cells.test.tsx`
+   * asserts for every entry here.
+   */
+  { id: 'list_case',      label: 'Case',            visible: false, width: 124, minWidth: 104, sortable: true, pinned: false, category: 'research' },
+  { id: 'list_evidence',  label: 'Evidence',        visible: false, width: 84,  minWidth: 72,  sortable: true, pinned: false, category: 'research' },
+  { id: 'list_changed',   label: 'Changed since review', visible: false, width: 230, minWidth: 150, sortable: true, pinned: false, category: 'research' },
+  { id: 'list_owner',     label: 'Owner',           visible: false, width: 112, minWidth: 92,  sortable: true, pinned: false, category: 'workflow' },
+  { id: 'list_stage',     label: 'Stage',           visible: false, width: 138, minWidth: 112, sortable: true, pinned: false, category: 'workflow' },
+  { id: 'list_age',       label: 'Age',             visible: false, width: 64,  minWidth: 56,  sortable: true, pinned: false, category: 'workflow' },
+  { id: 'list_sizing',    label: 'Sizing change',   visible: false, width: 170, minWidth: 140, sortable: true, pinned: false, category: 'workflow' },
 ]
 
 /**
@@ -137,176 +156,70 @@ export function listSortComparators(
       // Within a tier, more unreviewed notes is more urgent.
       return (sa.subject?.newSinceReview ?? 0) - (sb.subject?.newSinceReview ?? 0)
     },
+
+    // ── Research ──────────────────────────────────────────────────────
+    // Oldest case first on a descending click, which is what "sort by Case"
+    // means to someone looking for stale work. A name with no case written
+    // sorts below one that has one: an absent case is a gap, not an age.
+    list_case: (a, b) => {
+      const at = Date.parse(signalFor(a?.id).subject?.thesisUpdatedAt ?? '')
+      const bt = Date.parse(signalFor(b?.id).subject?.thesisUpdatedAt ?? '')
+      return (Number.isFinite(bt) ? bt : Infinity) - (Number.isFinite(at) ? at : Infinity)
+    },
+    list_evidence: (a, b) =>
+      num(signalFor(a?.id).subject?.evidenceCount) - num(signalFor(b?.id).subject?.evidenceCount),
+    // By how much is unanswered, not by the words.
+    list_changed: (a, b) =>
+      num(signalFor(a?.id).subject?.newSinceReview) - num(signalFor(b?.id).subject?.newSinceReview),
+    list_owner: (a, b) => {
+      const av = signalFor(a?.id).idea?.authorName ?? ''
+      const bv = signalFor(b?.id).idea?.authorName ?? ''
+      if (!av && !bv) return 0
+      if (!av) return -1
+      if (!bv) return 1
+      return av.localeCompare(bv)
+    },
+
+    // ── Decide ────────────────────────────────────────────────────────
+    // Stage by how far through the lifecycle, so "ready" outranks "exploring"
+    // rather than sorting alphabetically into the middle.
+    list_stage: (a, b) => STAGE_RANK(signalFor(a?.id)) - STAGE_RANK(signalFor(b?.id)),
+    // Oldest outstanding first on a descending click — the thing that has been
+    // waiting longest is the thing a PM is being asked about.
+    list_age: (a, b) => {
+      const at = Date.parse(signalFor(a?.id).idea?.createdAt ?? '')
+      const bt = Date.parse(signalFor(b?.id).idea?.createdAt ?? '')
+      return (Number.isFinite(bt) ? bt : Infinity) - (Number.isFinite(at) ? at : Infinity)
+    },
+    // By the SIZE of the change, signed — a 270bp add and a 270bp trim are
+    // opposite answers to the same question and must not sort together.
+    list_sizing: (a, b) => sizingDelta(signalFor(a?.id)) - sizingDelta(signalFor(b?.id)),
   }
 }
 
-
-/**
- * The curated list presentation.
- *
- * Ordered, not merely filtered: the point is the reading order. Columns absent
- * from `ORDER` keep their own relative position after it, so a caller-supplied
- * or AI column still appears rather than vanishing.
- *
- * Nothing is removed — `HIDDEN` only clears `visible`, so every column stays
- * one click away in the picker and a user who turns Processes back on keeps it
- * (saved column state is layered over this baseline, not replaced by it).
- */
-const ORDER = [
-  'select', 'ticker',
-  'list_market',
-  'list_view',
-  'list_exposure',
-  'list_work',
-  'list_valuation',
-]
-
-/**
- * Narrower than the table's own defaults, because the default List must fit.
- *
- * The first version of this preset hid five columns and still came to 1316px,
- * which scrolls horizontally in any normal pane — hiding columns was the wrong
- * lever once the remaining ones were this wide. These widths bring the curated
- * set to ~960px. The user can still drag any of them wider; this is only where
- * they start.
- */
-/**
- * The FLOOR, not the final size.
- *
- * These widths are what the line collapses to on a narrow pane; `GROW` below
- * spends everything a wider one offers. So the number to keep small is this
- * total — it decides whether a 1280px laptop scrolls — while the look on a
- * 1600px screen is decided by the growth weights.
- */
-const WIDTH: Readonly<Record<string, number>> = {
-  // One identity cell: chevron, ticker, and the company beneath it.
-  ticker: 196,
-  coverage: 112,
+/** How far through the idea lifecycle, for ordering Stage. */
+function STAGE_RANK(s: ListRowSignal): number {
+  const order = ['exploring', 'researching', 'developing', 'ready_to_recommend']
+  const i = order.indexOf(String(s.idea?.stage ?? ''))
+  return i < 0 ? -1 : i
 }
 
-/**
- * Who takes the pane's leftover width, and in what proportion.
- *
- * The identity gets the most: a truncated company name is the one thing on the
- * line a reader cannot reconstruct from context. Work next, because it carries
- * the reason for attention. Everything else holds a number whose width is the
- * number's own.
- */
-/**
- * Who takes the pane's leftover width.
- *
- * Work takes the most: it is the column that says what is happening to the
- * investment, and "BUY · Recommendation ready" over "Thin evidence" needs room
- * to be two legible lines rather than two truncations. Identity next, because a
- * clipped company name is the one thing on the line a reader cannot reconstruct.
- * Everything else holds a number whose width is the number's own.
- */
-const GROW: Readonly<Record<string, number>> = {
-  list_work: 3,
-  ticker: 3,
-  // Market earns slack because it contains the sparkline, and this is the only
-  // column whose value IS partly its width: a month of movement in 100px is a
-  // texture, in 180px it is a shape.
-  list_market: 2,
-  list_exposure: 1,
-  list_view: 1,
-  list_valuation: 1,
+/** Proposed minus current weight, in basis points. `-Infinity` when absent. */
+function sizingDelta(s: ListRowSignal): number {
+  const proposed = s.idea?.proposedWeight
+  if (proposed == null || !Number.isFinite(proposed)) return -Infinity
+  return (proposed - (s.weightPct ?? 0)) * 100
 }
 
-/**
- * Shorter headings, for this surface only.
+/*
+ * The five-zone preset lived here.
  *
- * "Change %" wrapped to two lines in a column sized for the number rather than
- * for the word, which put a two-line heading over a one-line table. The shared
- * default keeps its full label everywhere else.
+ * It has been replaced by `presetFor(view)` in `listViewPresets.ts`, which
+ * expresses the same thing for each of Monitor, Research and Decide. Keeping
+ * a second copy for Monitor alone would be two sources of truth for one
+ * column order, and the version token that guards saved layouts can only
+ * belong to one of them.
  */
-const LABEL: Readonly<Record<string, string>> = {
-  coverage: 'Coverage',
-}
-
-/**
- * Columns of figures, right-aligned so they can be read down.
- *
- * Price and Change are the table's own columns and are left-aligned everywhere
- * else; the preset only changes them HERE, which is the point of alignment
- * being per-column rather than a global style. With Position and Target they
- * form one numeric band whose decimals line up — the single biggest difference
- * between this reading as a watchlist and as a CRUD grid.
- */
-const RIGHT_ALIGNED = new Set<string>([])
-
-/**
- * Bumped whenever ORDER, HIDDEN or WIDTH change.
- *
- * `AssetTableView` stores this alongside the saved column layout; a mismatch
- * re-seeds from the preset once. Without it a saved layout pins the old
- * default forever — which is exactly what happened to the first version of
- * this preset, and why the columns it hid were still on screen.
- */
-export const LIST_COLUMN_PRESET_VERSION = 'lists-five-zone-2026-10-07'
-
-/**
- * Hidden by default, not deleted.
- *
- * `priority` (My Priority) and `workflows` (Processes) are generic
- * project-management columns that were dominating a line about securities.
- * `updated`, `list_assignee` and `list_tags` are real but secondary — the
- * expansion shows all three in its right rail.
- */
-const HIDDEN = new Set([
-  'priority', 'workflows', 'updated', 'list_assignee', 'list_tags',
-  /*
-   * Company is not dropped — it moves INTO the ticker cell as a second line.
-   * `AssetTableView` composes it there whenever this column is hidden, so the
-   * identity reads as one object instead of two columns of equal weight, and
-   * the width it was using goes to the investment state.
-   */
-  'companyName',
-  // The list's own process state. Real, but it answers a question about this
-  // list rather than about the security, and the inspector's Overview shows it.
-  'list_status',
-  /*
-   * Absorbed into MARKET, which now carries price, the day's move and the month
-   * as one answer. Still in the picker for anyone who wants the scalar back.
-   */
-  'price', 'change',
-  /*
-   * Coverage is off the default line.
-   *
-   * Not because it does not matter, but because it is empty for almost every
-   * name in practice — and a 112px column of em-dashes is the clearest possible
-   * signal that a table is a database grid. One click away in the picker, and
-   * the inspector shows it wherever it exists.
-   */
-  'coverage',
-  // Folded into Investment View — see `LIST_SIGNAL_COLUMNS`. Still sortable and
-  // still opens Valuation when a reader turns it back on.
-  'list_valuation',
-])
-
-/** Module scope: `columnPreset` is memoised on identity. */
-export function listColumnPreset(base: ColumnConfig[]): ColumnConfig[] {
-  const rank = new Map(ORDER.map((id, i) => [id, i]))
-  const adjusted = base.map(col => {
-    const width = WIDTH[col.id] ?? col.width
-    const align = RIGHT_ALIGNED.has(col.id) ? ('right' as const) : col.align
-    const grow = GROW[col.id] ?? col.grow
-    const label = LABEL[col.id] ?? col.label
-    if (HIDDEN.has(col.id)) return { ...col, visible: false, width, align, grow, label }
-    if (width === col.width && align === col.align && grow === col.grow && label === col.label) return col
-    return { ...col, width, align, grow, label }
-  })
-  // Stable: equal ranks (everything off the list) keep their incoming order.
-  return adjusted
-    .map((col, i) => ({ col, i }))
-    .sort((a, b) => {
-      const ra = rank.get(a.col.id) ?? ORDER.length + a.i
-      const rb = rank.get(b.col.id) ?? ORDER.length + b.i
-      return ra - rb
-    })
-    .map(x => x.col)
-}
-
 // ── Cells ──────────────────────────────────────────────────────────────
 //
 // Each renders nothing when it knows nothing. A column of "—" makes a thin
@@ -321,6 +234,46 @@ export function listColumnPreset(base: ColumnConfig[]): ColumnConfig[] {
  * continuous ribbon down the table rather than one chart per name.
  */
 export const SPARK_HEIGHT = 20
+
+/**
+ * A one-month path drawn on a domain it shares with every other row.
+ *
+ * Deliberately not `Sparkline`: that one fits its own min and max to the box,
+ * which is right for a lone chart and wrong for a column. Here `domain` comes
+ * from the list, zero sits on the same pixel in every row, and the amplitude
+ * of a line is the size of the move.
+ */
+function ReturnSpark({ path, domain }: { path: number[]; domain: { lo: number; hi: number } }) {
+  const span = domain.hi - domain.lo || 1
+  const y = (v: number) => {
+    const t = (v - domain.lo) / span
+    // 1px inset so a line at the extreme is not clipped by the box edge.
+    return (1 + (1 - Math.min(1, Math.max(0, t))) * (SPARK_HEIGHT - 2)).toFixed(2)
+  }
+  const d = path
+    .map((v, i) => `${i ? 'L' : 'M'}${((i / (path.length - 1)) * 100).toFixed(3)},${y(v)}`)
+    .join('')
+  const last = path[path.length - 1]
+  const up = last >= 0
+  const stroke = up ? 'rgb(21 128 61)' : 'rgb(185 28 28)'
+  const zero = y(0)
+  return (
+    <svg
+      className="block h-full w-full"
+      viewBox={`0 0 100 ${SPARK_HEIGHT}`}
+      preserveAspectRatio="none"
+      aria-hidden
+    >
+      {/* Flat, drawn once, so the eye has a baseline to read height against. */}
+      <line x1="0" x2="100" y1={zero} y2={zero}
+        stroke="currentColor" strokeWidth="0.5" className="text-gray-200 dark:text-gray-700" />
+      {/* `vector-effect` because the viewBox is stretched non-uniformly; without
+          it the stroke thins to nothing horizontally. */}
+      <path d={d} fill="none" stroke={stroke} strokeWidth="1.25"
+        strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  )
+}
 
 /**
  * A price path in a box whose geometry never depends on the price path.
@@ -352,9 +305,31 @@ export const SPARK_HEIGHT = 20
  * Loading, empty and resolved therefore occupy byte-identical geometry, and no
  * state here animates a dimension.
  */
-function SparkCell({ signal }: { signal: ListRowSignal }) {
-  const closes = signal.closes
-  const drawn = !!closes && closes.length > 1
+function SparkCell({ market, domain }: {
+  market?: RowMarket
+  domain?: { lo: number; hi: number }
+}) {
+  /*
+   * The cached series wins over `signal.closes`.
+   *
+   * `signal.closes` comes from `useSparklines` → the `yahoo-chart-proxy` edge
+   * function, which answers 502 in this deployment; `market.path` comes from
+   * `price_history_cache`, the same table the inspector's chart draws. Where
+   * both exist they are the same instrument and the cached one is the one the
+   * panel below will show, so the row and the panel cannot disagree.
+   *
+   * And it is drawn in PERCENTAGE-RETURN space on a domain shared across the
+   * visible rows — see `price-metrics`. In price space each row auto-scaled to
+   * its own extremes, so every line filled its box and the column said nothing.
+   *
+   * There is deliberately NO fallback to the proxy series when the cache has
+   * nothing. Drawing some rows on a shared return axis and others on their own
+   * price extremes puts two scales in one column, which is worse than a gap:
+   * the reader cannot see which rule a given line was drawn under. A name with
+   * no cached history shows the quiet rule and no 1M figure, which is true.
+   */
+  const path = market?.path ?? []
+  const drawn = path.length > 1 && !!domain
 
   return (
     <span
@@ -375,7 +350,7 @@ function SparkCell({ signal }: { signal: ListRowSignal }) {
     >
       {drawn ? (
         <span className="absolute inset-0">
-          <Sparkline points={closes!} reference={signal.targetPrice} />
+          <ReturnSpark path={path} domain={domain!} />
         </span>
       ) : (
         /*
@@ -484,21 +459,68 @@ function Stack({
  * shape rather than a number. Three former columns, one answer: a reader
  * scanning for "what moved" reads one cell instead of assembling three.
  */
-function MarketCell({ signal, price, changePct }: {
-  signal: ListRowSignal
+function MarketCell({ price, liveQuotePrice, changePct, market, domain }: {
+  /** The stored `assets.current_price`. Undated, weakest source. */
   price: number | null
+  /** A genuine live quote, where one exists. None do in this deployment. */
+  liveQuotePrice: number | null
   changePct: number | null
+  market?: RowMarket
+  domain?: { lo: number; hi: number }
 }) {
-  if (price == null && !signal.closes) return null
+  /*
+   * The price shown, and what it is allowed to be called.
+   *
+   * A live quote wins where there is one. Where there is not — which is every
+   * row in this deployment, the provider being CSP-refused — the last cached
+   * close stands in, and the cell says WHEN rather than implying "now". That
+   * distinction is `price-snapshot.ts`'s rule and the reason a GOOGL card once
+   * showed two prices 2.4x apart under one word.
+   */
+  const close = market?.lastClose ?? null
+  /*
+   * Precedence: live quote → cached close → stored `current_price`.
+   *
+   * The cached close outranks `assets.current_price` deliberately. The close
+   * is a dated market observation from the table the chart below draws; the
+   * stored field is of unknown vintage and has no date to show, and it is
+   * exactly the kind of undated number that let a GOOGL target compute
+   * "+360.9%" off a pre-split price. `price-snapshot.ts` draws the same order
+   * for the rest of the product.
+   */
+  const live = liveQuotePrice
+  const shown = live ?? close?.close ?? price ?? null
+  const fromClose = live == null && close != null
+  if (shown == null && !market?.points) return null
+
+  /* The move the row quotes is the 1-month return out of the cached series —
+     real, auditable, and refused outright when the lookback is not there.
+     The day change stays separate: it needs a quote, and there isn't one. */
+  const m1 = market?.m1
+
   return (
     // `flex-1 min-w-0` here, as a row-flex item in `.pro-table-cell`: the cell's
     // width is the column's, and nothing inside may size it. See `SparkCell`.
     <span className="flex flex-col flex-1 min-w-0 max-w-full gap-[3px] leading-none">
       <Hit entry="market">
-        <span className="text-[13px] font-semibold tabular-nums text-gray-900 dark:text-gray-100 truncate">
-          {price != null ? price.toFixed(2) : '—'}
+        <span
+          className="text-[13px] font-semibold tabular-nums text-gray-900 dark:text-gray-100 truncate"
+          /* The provenance of the figure, on hover. A close is named as a
+             close with its date; nothing here is ever called "current". */
+          title={fromClose && close ? `Close of ${close.date}` : undefined}
+        >
+          {shown != null ? shown.toFixed(2) : '—'}
         </span>
-        {changePct != null && (
+        {/* A close more than a few days old is stated as such in the cell, not
+            only on hover: a reader scanning a column of prices has no way to
+            know the tape stopped unless the surface says so. Four days covers
+            a long weekend without nagging. */}
+        {fromClose && (market?.ageDays ?? 0) > 4 && (
+          <span className="text-[10px] tabular-nums text-amber-700 dark:text-amber-500 flex-shrink-0">
+            {market!.ageDays}d old
+          </span>
+        )}
+        {changePct != null ? (
           <span className={clsx(
             'text-[11px] font-semibold tabular-nums flex-shrink-0',
             // The one place colour is unconditional: the direction of a move is
@@ -509,13 +531,27 @@ function MarketCell({ signal, price, changePct }: {
           )}>
             {changePct >= 0 ? '+' : ''}{changePct.toFixed(1)}%
           </span>
-        )}
+        ) : m1?.pct != null ? (
+          <span className={clsx(
+            'text-[11px] font-semibold tabular-nums flex-shrink-0',
+            m1.pct >= 0
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : 'text-rose-600 dark:text-rose-400',
+          )}>
+            {m1.pct >= 0 ? '+' : ''}{m1.pct.toFixed(1)}%
+            <span className="ml-1 font-medium text-gray-400 dark:text-gray-500">1M</span>
+          </span>
+        ) : m1?.refused === 'not-comparable' ? (
+          /* A break in the series, not a move. `price_history_cache` records
+             no split factor, so the two ends genuinely cannot be compared —
+             which is a different statement from "the price fell". */
+          <span className="text-[10px] text-amber-700 dark:text-amber-500 flex-shrink-0">
+            not comparable
+          </span>
+        ) : null}
       </Hit>
-      {/* The month is the same question as the price, so it opens the same
-          mode — but it is its own target, because it is what a reader is
-          pointing at when they click the shape rather than the number. */}
       <Hit entry="market" block>
-        <SparkCell signal={signal} />
+        <SparkCell market={market} domain={domain} />
       </Hit>
     </span>
   )
@@ -725,6 +761,164 @@ function WorkCell({ signal }: { signal: ListRowSignal }) {
  * Returns `undefined` — not `null` — for ids it does not own, so the caller can
  * distinguish "not mine" from "mine, and empty".
  */
+// ── Research and Decide cells ──────────────────────────────────────────
+
+/** Whole months, then days. "10 mo" reads faster than "304d" at this size. */
+function ago(iso?: string | null): string | null {
+  if (!iso) return null
+  const t = Date.parse(iso)
+  if (!Number.isFinite(t)) return null
+  const d = Math.max(0, Math.floor((Date.now() - t) / 86_400_000))
+  if (d < 1) return 'today'
+  if (d < 31) return `${d}d`
+  const mo = Math.round(d / 30.44)
+  return mo < 18 ? `${mo} mo` : `${Math.round(d / 365)}y`
+}
+
+/** CASE — is there a written case, and how old is it. */
+function CaseCell({ signal }: { signal: ListRowSignal }) {
+  const written = ago(signal.subject?.thesisUpdatedAt)
+  if (!written) {
+    // An unwritten case is the most actionable state this column has, so it
+    // is stated rather than left blank — but quietly, because it is an
+    // absence and the row may have nothing wrong with it.
+    return <Hit entry="case" block><Stack quiet lead="none written" /></Hit>
+  }
+  return (
+    <Hit entry="case" block>
+      <Stack lead={written} qualifier="since written" />
+    </Hit>
+  )
+}
+
+/** EVIDENCE — how much is behind the case. */
+function EvidenceCell({ signal }: { signal: ListRowSignal }) {
+  const n = signal.subject?.evidenceCount
+  if (n == null) return null
+  if (n === 0) return <Hit entry="case" block><Stack quiet lead="none" /></Hit>
+  return (
+    <Hit entry="case" block>
+      <Stack lead={n} qualifier={n === 1 ? 'note' : 'notes'} />
+    </Hit>
+  )
+}
+
+/**
+ * CHANGED SINCE REVIEW — the column Research exists for.
+ *
+ * A case nobody has revisited while the facts moved is the failure this
+ * product is meant to catch, so the cell leads with WHAT landed rather than
+ * a count. "Nothing since review" is said plainly: it is the good state and
+ * a reader scanning for work needs to skip it without reading twice.
+ */
+function ChangedCell({ signal }: { signal: ListRowSignal }) {
+  const n = signal.subject?.newSinceReview ?? 0
+  const title = signal.subject?.newestEvidenceTitle
+  if (n <= 0) {
+    return <Hit entry="case" block><Stack quiet lead="nothing since review" /></Hit>
+  }
+  return (
+    <Hit entry="case" block>
+      <span className="flex items-baseline gap-2 min-w-0">
+        <span className="h-[5px] w-[5px] flex-shrink-0 rounded-full bg-amber-500" aria-hidden />
+        <Stack
+          lead={title || `${n} new ${n === 1 ? 'note' : 'notes'}`}
+          qualifier={title && n > 1 ? `and ${n - 1} more` : undefined}
+          title={title ?? undefined}
+        />
+      </span>
+    </Hit>
+  )
+}
+
+/** OWNER — who raised the open recommendation. Not a coverage assignment. */
+function OwnerCell({ signal }: { signal: ListRowSignal }) {
+  const who = signal.idea?.authorName
+  if (!who) return <Hit entry="work" block><Stack quiet lead="—" /></Hit>
+  return <Hit entry="work" block><Stack lead={who} /></Hit>
+}
+
+/** STAGE — where the recommendation is, in the desk's own wording. */
+function StageCell({ signal }: { signal: ListRowSignal }) {
+  const stage = signal.idea?.stage
+  if (!stage) return null
+  const owed = signal.work.tier === 'decision'
+  return (
+    <Hit entry="work" block>
+      <span
+        className={clsx(
+          'text-[12px] leading-none truncate',
+          owed
+            ? 'font-semibold text-amber-700 dark:text-amber-400'
+            : 'font-medium text-gray-600 dark:text-gray-300',
+        )}
+        // The full label on hover, so a narrow pane still gives up the state.
+        title={stageLabel(stage)}
+      >
+        {stageLabel(stage)}
+      </span>
+    </Hit>
+  )
+}
+
+/** AGE — how long the outstanding item has been waiting. */
+function AgeCell({ signal }: { signal: ListRowSignal }) {
+  const a = ago(signal.idea?.createdAt)
+  if (!a) return null
+  const owed = signal.work.tier === 'decision'
+  return (
+    <Hit entry="work">
+      {/* `whitespace-nowrap`: "8 mo" is one fact and wrapped onto two lines
+          at the old width, which made the row taller than its neighbours. */}
+      <span className={clsx(
+        'text-[12px] tabular-nums leading-none whitespace-nowrap',
+        owed
+          ? 'font-semibold text-amber-700 dark:text-amber-400'
+          : 'font-medium text-gray-500 dark:text-gray-400',
+      )}>{a}</span>
+    </Hit>
+  )
+}
+
+/**
+ * SIZING CHANGE — current weight against what the recommendation proposes.
+ *
+ * Both numbers are stored facts: the current weight from `portfolio_holdings`
+ * via the book's own NAV, the proposed from `trade_queue_items.proposed_weight`.
+ * The basis-point delta is the figure a PM is actually deciding on, so it
+ * carries the colour; the bar is the same two numbers as a shape.
+ */
+function SizingCell({ signal }: { signal: ListRowSignal }) {
+  const proposed = signal.idea?.proposedWeight
+  if (proposed == null || !Number.isFinite(proposed)) return null
+  const current = signal.weightPct ?? 0
+  const bps = Math.round((proposed - current) * 100)
+  const up = bps >= 0
+  const scale = Math.max(current, proposed) * 1.3 || 1
+  const pct = (n: number) => `${Math.min(100, (n / scale) * 100).toFixed(1)}%`
+  return (
+    <Hit entry="position" block>
+      <span className="flex items-baseline gap-1.5 text-[12px] tabular-nums leading-none">
+        <span className="text-gray-500 dark:text-gray-400">{current.toFixed(2)}%</span>
+        <span className="text-gray-300 dark:text-gray-600" aria-hidden>→</span>
+        <span className="font-semibold text-gray-900 dark:text-gray-100">{proposed.toFixed(2)}%</span>
+        <span className={clsx(
+          'font-semibold',
+          up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+        )}>{up ? '+' : ''}{bps}bp</span>
+      </span>
+      <span className="relative mt-[3px] block h-[4px] w-full overflow-hidden rounded-sm bg-gray-150 dark:bg-gray-800">
+        <span className="absolute inset-y-0 left-0 rounded-sm bg-gray-400 dark:bg-gray-500"
+          style={{ width: pct(current) }} />
+        <span
+          className={clsx('absolute inset-y-0 rounded-sm', up ? 'bg-emerald-500/80' : 'bg-rose-500/80')}
+          style={{ left: pct(Math.min(current, proposed)), width: pct(Math.abs(proposed - current)) }}
+        />
+      </span>
+    </Hit>
+  )
+}
+
 export function renderSignalCell(
   columnId: string,
   asset: {
@@ -742,6 +936,13 @@ export function renderSignalCell(
    * cells read it.
    */
   quote?: { price?: number | null; changePercent?: number | null } | null,
+  /**
+   * Cached history for this row, already reduced. From `useListPriceHistory`,
+   * batched once for the list rather than fetched per row.
+   */
+  market?: RowMarket,
+  /** The list's shared sparkline domain, so rows are comparable. */
+  domain?: { lo: number; hi: number },
 ): React.ReactNode | undefined {
   const finite = (v: unknown) => {
     const n = v == null ? NaN : Number(v)
@@ -750,15 +951,55 @@ export function renderSignalCell(
   // Live where we have it, stored otherwise — the same precedence the table's
   // own price cell uses, so the two can never disagree.
   const price = finite(quote?.price) ?? finite(asset?.current_price)
-  const changePct = finite(quote?.changePercent)
-    ?? finite(asset?.change_percent ?? asset?.changePercent)
+  /*
+   * A change of exactly zero is UNKNOWN, whatever claims to have measured it.
+   *
+   * Observed in the running app: every row read a green `+0.0%`. Neither
+   * source is reporting a flat tape —
+   *
+   *   • `assets.change_percent` does not exist as a column at all (the REST
+   *     API answers `42703 column assets.change_percent does not exist`), so
+   *     the stored fallback is permanently undefined;
+   *   • the live quote path is dead. The console shows `finnhub.io/...
+   *     token=demo` refused by the page's own CSP, and the chart proxy
+   *     answering 502. The provider hands back a zero-FILLED quote object
+   *     rather than nothing, so `changePercent === 0` is a failure mode
+   *     wearing the shape of a measurement.
+   *
+   * Two earlier attempts at this rule were too generous and both still
+   * painted the zeros. Trusting a live zero failed because the live zero is
+   * the failure. Trusting one that a previous close corroborated failed too:
+   * the quote this deployment produces carries `previousClose === price`, so
+   * the corroboration passed on exactly the rows it was meant to catch.
+   *
+   * So: a change of zero is never rendered, from any source. A genuinely flat
+   * close is real but vanishingly rare, and showing nothing on that one day
+   * costs a reader nothing — while a column that reads `+0.0%` on every row
+   * costs them the column. `createPlaceholderQuote` was deleted from
+   * `browser-client.ts` for the same reason; this is the display-side half of
+   * that defect, and the quote layer feeding the table still has it.
+   *
+   * Keep this in step with `changePct` in `ListRowExpansion`.
+   */
+  const live = finite(quote?.changePercent)
+  const stored = finite(asset?.change_percent ?? asset?.changePercent)
+  const changePct = live != null && live !== 0
+    ? live
+    : (stored != null && stored !== 0 ? stored : null)
 
   switch (columnId) {
-    case 'list_market':    return <MarketCell signal={signal} price={price} changePct={changePct} />
+    case 'list_market':    return <MarketCell price={finite(asset?.current_price)} liveQuotePrice={finite(quote?.price)} changePct={changePct} market={market} domain={domain} />
     case 'list_exposure':  return <ExposureCell signal={signal} />
     case 'list_view':      return <ViewCell signal={signal} price={price} />
     case 'list_valuation': return <ValuationCell signal={signal} price={price} />
     case 'list_work':      return <WorkCell signal={signal} />
+    case 'list_case':      return <CaseCell signal={signal} />
+    case 'list_evidence':  return <EvidenceCell signal={signal} />
+    case 'list_changed':   return <ChangedCell signal={signal} />
+    case 'list_owner':     return <OwnerCell signal={signal} />
+    case 'list_stage':     return <StageCell signal={signal} />
+    case 'list_age':       return <AgeCell signal={signal} />
+    case 'list_sizing':    return <SizingCell signal={signal} />
     default: return undefined
   }
 }

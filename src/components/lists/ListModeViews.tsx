@@ -52,8 +52,13 @@ import type { ListRowMode } from './listRowModes'
 
 export const money = (n: number) => `$${n.toFixed(2)}`
 export const pct = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(1)}%`
-const toneOf = (n: number | null | undefined) =>
-  n == null ? 'flat' : n >= 0 ? 'up' : 'down'
+/*
+ * `toneOf` lived here and is gone with its last caller.
+ *
+ * It coloured the `Target` / upside figures in the Market, Valuation and
+ * Position rails. Those rails restated the verdict line above them and were
+ * removed; the verdict colours its own upside clause inline.
+ */
 
 /**
  * A label above a value, small-caps.
@@ -741,8 +746,6 @@ export function OverviewMode(p: {
 }) {
   const unread = p.changes.filter(c => c.isNewSinceReview)
 
-  /** Divided by one hairline each, never by a box: the columns are one object. */
-  const band ='min-w-0 border-l border-gray-900/[0.06] dark:border-white/[0.07] pl-4 first:border-0 first:pl-0'
 
   /*
    * Overview is the ARGUMENT, not the dashboard.
@@ -764,52 +767,114 @@ export function OverviewMode(p: {
    * thesis and no risks is a real and important state, and collapsing the
    * column hides exactly the gap worth seeing.
    */
-  const caseColumns = p.writtenCaseSections.length
-    ? p.writtenCaseSections.slice(0, 3)
-    : []
+  /* Overview quotes ONE section — the thesis if there is one, else whatever
+     was written first. The full case is Research's job; repeating three
+     columns of it here is what made the two modes indistinguishable. */
+  const lead = p.writtenCaseSections[0] ?? null
 
   return (
     <ModeLayout
       footer={p.footer}
       railWidth="md"
       main={
-        <div data-testid="overview-bands" className="h-full min-h-0 flex flex-col">
-          {caseColumns.length ? (
-            <div className={clsx(
-              'min-h-0 flex-1 grid gap-x-5',
-              caseColumns.length === 1 ? 'grid-cols-1'
-                : caseColumns.length === 2 ? 'grid-cols-2'
-                  : 'grid-cols-3',
-            )}>
-              {caseColumns.map(s => (
-                <div key={s.key} className={band}>
-                  <SectionHeading>{SECTION_LABEL[s.key] ?? s.key}</SectionHeading>
-                  <p className="mt-2 text-[12.5px] leading-[1.5] text-gray-700 line-clamp-[7] dark:text-gray-300">
-                    {s.row?.content}
-                  </p>
-                  {s.row?.authorName && (
-                    <div className="mt-2 truncate text-[10.5px] text-gray-400 dark:text-gray-500">
-                      {s.row.authorName}
-                    </div>
-                  )}
+        /*
+         * Three questions, three columns.
+         *
+         * ── Why Overview is not a short Research ──────────────────────
+         *
+         * It used to be the written case in up to three columns, which is
+         * what RESEARCH is for — so opening a row from the ticker and
+         * opening it from the rating showed the same thing at different
+         * lengths, and the switch between them did nothing a reader could
+         * name. Overview is the only mode asked for before the reader knows
+         * what they want, so it answers the three things that decide where
+         * they go next: what the desk believes, what has happened to the
+         * name, and what is owed on it. Each column is a door to the mode
+         * that owns it.
+         */
+        <div data-testid="overview-bands" className="h-full min-h-0 grid grid-cols-3 gap-x-7">
+          <div className="min-w-0">
+            <SectionHeading>What we believe</SectionHeading>
+            {lead ? (
+              <>
+                <p className="mt-2 text-[12.5px] leading-[1.5] text-gray-700 line-clamp-[6] dark:text-gray-300">
+                  {lead.row?.content}
+                </p>
+                {lead.row?.authorName && (
+                  <div className="mt-2 truncate text-[10.5px] text-gray-400 dark:text-gray-500">
+                    {lead.row.authorName}
+                    {p.caseWrittenAt && ` · ${formatDistanceToNow(new Date(p.caseWrittenAt))} ago`}
+                  </div>
+                )}
+              </>
+            ) : (
+              /* An unwritten case is the most actionable state a list row
+                 has, so it is stated rather than left blank. The footer
+                 carries the button that writes one. */
+              <p className="mt-2 text-[12.5px] leading-[1.5] text-gray-500 dark:text-gray-400">
+                No case written. Nothing records why the desk holds this view,
+                what it disagrees with, or what would break it.
+              </p>
+            )}
+          </div>
+
+          <div className="min-w-0">
+            <SectionHeading>What has happened</SectionHeading>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {p.oneMonthPct != null && (
+                <div className="flex items-baseline gap-2 text-[12px]">
+                  <span className="text-gray-600 dark:text-gray-300">Price</span>
+                  <span className={clsx(
+                    'font-semibold tabular-nums',
+                    p.oneMonthPct >= 0
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-rose-600 dark:text-rose-400',
+                  )}>{pct(p.oneMonthPct)}</span>
+                  <span className="text-gray-400 dark:text-gray-500">over 1M</span>
                 </div>
-              ))}
+              )}
+              {p.changes.length > 0
+                ? p.changes.slice(0, 3).map(c => (
+                  <div key={c.id} className="flex items-baseline justify-between gap-2 min-w-0 text-[12px]">
+                    <span className={clsx(
+                      'truncate',
+                      c.isNewSinceReview
+                        ? 'font-semibold text-gray-900 dark:text-gray-50'
+                        : 'text-gray-600 dark:text-gray-300',
+                    )}>{c.title || 'Research note'}</span>
+                    <span className="flex-shrink-0 text-[10.5px] tabular-nums text-gray-400 dark:text-gray-500">
+                      {formatDistanceToNow(new Date(c.createdAt))}
+                    </span>
+                  </div>
+                ))
+                : <Quiet>Nothing filed since the case was written.</Quiet>}
             </div>
-          ) : (
-            /*
-             * An unwritten case is the single most actionable state in a
-             * list, so it is stated as a prompt rather than as an empty
-             * column. The footer already carries the button that writes one.
-             */
-            <div className="flex flex-1 flex-col justify-center">
-              <p className="text-[14px] font-semibold text-gray-700 dark:text-gray-200">
-                No case has been written for this name.
-              </p>
-              <p className="mt-1 text-[12.5px] text-gray-500 dark:text-gray-400">
-                Nothing records why the desk holds this view, what it disagrees with, or what would break it.
-              </p>
+          </div>
+
+          <div className="min-w-0">
+            <SectionHeading>What is owed</SectionHeading>
+            <div className="mt-2 flex flex-col gap-1.5 text-[12px]">
+              {p.awaitingDecision ? (
+                <span className="font-semibold text-amber-700 dark:text-amber-400">
+                  A decision is outstanding{p.ideaLabel ? ` — ${p.ideaLabel}` : ''}
+                </span>
+              ) : p.workLabel ? (
+                <span className="font-medium text-gray-700 dark:text-gray-200">{p.workLabel}</span>
+              ) : p.ideaLabel ? (
+                <span className="font-medium text-gray-700 dark:text-gray-200">{p.ideaLabel}</span>
+              ) : (
+                <Quiet>Nothing outstanding.</Quiet>
+              )}
+              {p.workSecondary && (
+                <span className="text-gray-500 dark:text-gray-400">{p.workSecondary}</span>
+              )}
+              {unread.length > 0 && (
+                <span className="text-amber-700 dark:text-amber-400">
+                  {unread.length} {unread.length === 1 ? 'note' : 'notes'} unreviewed
+                </span>
+              )}
             </div>
-          )}
+          </div>
         </div>
       }
       rail={
@@ -872,33 +937,48 @@ export function OverviewMode(p: {
   )
 }
 
-// ── Market ─────────────────────────────────────────────────────────────
+// ── Price ──────────────────────────────────────────────────────────────
 
 /**
- * What happened, and whether it matters to this investment.
+ * Where it has traded, against everything the desk decided about it.
  *
- * The chart is the hero but not the canvas: a month of movement on its own is
- * what the collapsed sparkline already said. What makes it an investment answer
- * is the rail beside it — what we own, what we think it is worth, and whether
- * anything was written about it recently.
+ * ── Why there is no rail ──────────────────────────────────────────────
+ *
+ * There was one, 320px of it, and every figure in it was already in the
+ * verdict line directly above: rating, conviction, target, upside, position,
+ * book, the open idea. The reader was being told the same seven facts twice,
+ * forty pixels apart, and the second telling cost the chart a fifth of the
+ * panel's width — which it spent going flatter, not taller. A column that
+ * restates the line above it is not context, it is an echo.
+ *
+ * What the rail held that the verdict does not — `1 month` and the window's
+ * high/low — the chart answers better: the range chips set the window and
+ * the move is now labelled with it, and the high and low are the y-axis.
+ *
+ * So the panel is the chart, the scenario prices beneath it, and the dated
+ * record beneath that. Everything that is not the chart is one line tall.
+ *
+ * ── Why this is one mode and not two ──────────────────────────────────
+ *
+ * It was Market and Valuation. Both drew this chart from the same series;
+ * Valuation added the scenario rungs as levels. One mode that always draws
+ * them is strictly more informative than two that disagree about whether to,
+ * and it gives the switcher back a slot. See `listRowModes`.
  */
 export function MarketMode(p: {
   symbol?: string
+  /**
+   * The price the rest of the surface is quoting.
+   *
+   * Handed to the chart so its headline figure cannot disagree with the
+   * collapsed row that opened this panel — see `spot` on `PriceChart`.
+   */
   spot: number | null
-  changePct: number | null
   closes: number[] | null
   target: number | null
   upsidePct: number | null
-  weightPct: number | null
-  bookName?: string | null
-  ratingValue: string | null
-  ratingColor: string | null
-  conviction: 'low' | 'medium' | 'high' | null
-  changes: EvidenceLike[]
-  ideaLabel?: string | null
-  /** When the case was written. One of the dated events drawn below the chart. */
-  caseWrittenAt?: string | null
-  ideaCreatedAt?: string | null
+  /** The scenario ladder, drawn as levels on the chart and priced beneath it. */
+  rungs: LadderRung[]
   /**
    * Dated closes, for the interactive chart.
    *
@@ -913,193 +993,171 @@ export function MarketMode(p: {
   footer?: React.ReactNode
 }) {
   /*
-   * One source per panel.
+   * Every price the desk committed to, on the scale the stock trades on.
    *
-   * `closes` is the row signal's flat sparkline array and `series` is the
-   * dated history the chart draws; they are fetched separately and do not
-   * agree. The rail read `closes` while the chart read `series`, so the same
-   * panel showed "1 month +5.8%" beside a plot ending at -2.9%, and a Range
-   * of 1115.70 – 1188.72 beside a y-axis topping out at 1185.
-   *
-   * Where a dated series exists it wins, because it is what the reader is
-   * looking at. `closes` is the fallback for a caller that has no dates.
+   * A target is the claim we are accountable for and is drawn in the accent;
+   * a scenario rung is one of several and is drawn quiet. The target is
+   * usually also a rung, so it is matched out — one band per level, not two
+   * stacked on the same pixel with two labels fighting for it.
    */
-  const dated = p.series && p.series.length > 1 ? p.series : null
-  const monthAgo = dated ? Date.parse(dated[dated.length - 1].date) - 31 * 864e5 : 0
-  // The first close on or after the cutoff — not `length - 21`, which assumes
-  // a trading-day cadence the series does not promise.
-  const monthStart = dated?.find(pt => Date.parse(pt.date) >= monthAgo) ?? dated?.[0]
-  const monthCloses: number[] | null = dated
-    ? dated.filter(pt => Date.parse(pt.date) >= monthAgo).map(pt => pt.close)
-    : (p.closes?.length ? p.closes : null)
+  const bands: PriceLevel[] = []
+  if (p.target != null) bands.push({ label: 'Target', price: p.target, kind: 'target' })
+  for (const r of p.rungs) {
+    if (p.target != null && Math.abs(r.price - p.target) < 0.005) continue
+    bands.push({ label: r.name, price: r.price, kind: 'case' })
+  }
 
-  const oneMonthPct = dated
-    ? (monthStart?.close ? ((dated[dated.length - 1].close - monthStart.close) / monthStart.close) * 100 : null)
-    : (p.closes && p.closes.length > 1 && p.closes[0]
-      ? ((p.closes[p.closes.length - 1] - p.closes[0]) / p.closes[0]) * 100
-      : null)
-  const lo = monthCloses?.length ? Math.min(...monthCloses) : null
-  const hi = monthCloses?.length ? Math.max(...monthCloses) : null
+  /** The fallback axis's scale, for a name with no price history on file. */
+  const axisPrices = [...p.rungs.map(r => r.price), p.spot, p.target]
+    .filter((n): n is number => n != null && Number.isFinite(n) && n > 0)
+  const axisLo = axisPrices.length ? Math.min(...axisPrices) : null
+  const axisHi = axisPrices.length ? Math.max(...axisPrices) : null
+  const axisSpan = axisLo != null && axisHi != null ? (axisHi - axisLo) || 1 : 1
+  const at = (n: number) => axisLo == null ? 0 : ((n - axisLo) / axisSpan) * 100
 
   /*
-   * What happened around the move, from events we actually hold.
+   * The dated events are drawn ON the line, by `chartEvents`.
    *
-   * Only three kinds exist in the data: when the case was written, when a
-   * research note arrived, and when the idea was raised. The prototype put a
-   * PRICE against each one; we store no history keyed deeply enough to read one,
-   * so these carry dates and nothing else. A marker on the chart itself would
-   * need the same missing price to position it, which is why this is a dated
-   * strip beneath the chart rather than an overlay on it.
+   * This used to also assemble them into a list rendered beneath the chart.
+   * `ListRowExpansion.chartMarkers` builds the same three kinds from the same
+   * canonical fields, so the panel stated them twice — and the second copy
+   * cost about forty pixels of a frame the plot was already short of.
    */
-  const events: Array<{ k: string; at: string; head: string; hot?: boolean }> = []
-  if (p.caseWrittenAt) events.push({ k: 'case', at: p.caseWrittenAt, head: 'Case written' })
-  for (const c of p.changes.slice(0, 3)) {
-    events.push({
-      k: c.id, at: c.createdAt, head: c.title || 'Research note', hot: c.isNewSinceReview,
-    })
-  }
-  if (p.ideaCreatedAt && p.ideaLabel) {
-    events.push({ k: 'idea', at: p.ideaCreatedAt, head: p.ideaLabel, hot: true })
-  }
-  events.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
 
   return (
     <ModeLayout
       footer={p.footer}
-      railWidth="lg"
       main={
-        <div className="flex flex-col h-full min-h-0 gap-2.5">
+        <div className="flex flex-col h-full min-h-0 gap-3">
           {/*
-            * The chart is the mode. Nothing stands above it.
+            * The chart takes the panel. Nothing stands above it and nothing
+            * stands beside it.
             *
-            * This used to open with three hero figures — Last, 1 month,
-            * Range — stacked ABOVE the chart, which cost about a third of a
-            * fixed-height panel to restate facts the chart already carries:
-            * `PriceContext` draws its own price readout, its own change, and
-            * its own window dates. The result was a 1,100px-wide chart about
-            * ninety pixels tall, which is the aspect ratio of a progress bar.
+            * Both of those have been tried. Three hero figures above it left
+            * a 1,100 × 90 plot, the aspect ratio of a progress bar. A 320px
+            * rail beside it left 1,439 × 230 — better than 6:1 — where a 6%
+            * quarter is drawn as a jagged horizon. Width was never the
+            * constraint; height was, and both arrangements spent height to
+            * restate facts the chart or the verdict line already carried.
             *
-            * So the figures are gone from here. `1 month` and the period range
-            * are not in the chart's header, so they move to the rail beside
-            * it, where they cost width the chart has to spare rather than
-            * height it does not.
-            */}
-          {/*
-            * The real chart, not a bigger sparkline.
-            *
-            * `PriceContext` is the interactive price chart the Ideas feed and
-            * the dashboard use: ranges, axis labels, hover crosshair and
-            * press-and-hold scrub, target drawn as a BAND on the scale, and
-            * the dated events drawn as MARKERS on the line rather than as a
-            * caption strip underneath it. Every input is already in this
-            * mode — the history, the target, the case and research dates — so
-            * this is the same facts in a component that can be interrogated.
-            *
-            * The collapsed row keeps its flat `Sparkline`: at 20px a crosshair
-            * has nothing to point at, and a virtualised table would mount one
-            * pointer-capture region per visible row to no purpose.
+            * `1Y` by default: the levels drawn on this scale are a target and
+            * a set of scenarios, and a quarter of history is not enough
+            * context to judge either. `PriceChart` caps its own aspect, so
+            * the extra panel height cannot be converted back into flatness.
             */}
           {p.series && p.series.length > 1 ? (
             <div className="flex-1 min-h-0">
               <PriceChart
                 symbol={p.symbol ?? ''}
                 series={p.series}
-                levels={p.target != null ? [{ label: 'Target', price: p.target, kind: 'target' }] : []}
+                levels={bands}
                 events={p.chartEvents ?? []}
-                initialRange="3M"
+                spot={p.spot}
+                initialRange="1Y"
               />
             </div>
           ) : p.closes && p.closes.length > 1 ? (
             // No dated series, but we do have closes — the flat path is all
             // that can honestly be drawn without dates to scrub against.
-            // It takes the body too: a short chart in a tall panel reads as a
-            // loading state.
             <div className="flex-1 min-h-0">
               <Sparkline points={p.closes} reference={p.target} />
             </div>
-          ) : (
-            <Quiet>No price history on file.</Quiet>
-          )}
-
-        </div>
-      }
-      rail={
-        <>
-          {/* No wrapper heading: the rail IS the answer to "does it matter
-              here", and a label over a label costs a line the budget does not
-              have. Each figure renders only with a value — an empty labelled
-              section is worse than a shorter rail. */}
-
-          {/*
-            * The two market facts the chart's own header does not state.
-            *
-            * `PriceContext` shows the last price and today's change; it does
-            * not show the move over a month or the high/low of the window. Two
-            * small paired rows rather than two hero figures — the hero in this
-            * mode is the chart.
-            */}
-          {(oneMonthPct != null || (lo != null && hi != null)) && (
-            <div className="space-y-1.5">
-              {oneMonthPct != null && (
-                <StatRow label="1 month" value={pct(oneMonthPct)} tone={toneOf(oneMonthPct)} />
-              )}
-              {lo != null && hi != null && (
-                <StatRow label="Range" value={`${lo.toFixed(2)} – ${hi.toFixed(2)}`} />
-              )}
-            </div>
-          )}
-
-          <Figure label="Position" size="md" sub={p.bookName}
-            value={p.weightPct != null ? `${p.weightPct.toFixed(2)}%` : null} />
-          <Figure label="Target" size="md"
-            value={p.target != null ? money(p.target) : null}
-            tone={toneOf(p.upsidePct)}
-            sub={p.upsidePct != null ? `${pct(p.upsidePct)} upside` : null} />
-          {(p.ratingValue || p.conviction) && (
-            <div>
-              <Label>View</Label>
-              <div className="mt-1.5">
-                <ViewControl value={p.ratingValue} color={p.ratingColor} conviction={p.conviction} />
-              </div>
-            </div>
-          )}
-          {p.ideaLabel && <Figure label="Open idea" size="md" value={p.ideaLabel} />}
-
-          {/*
-            * The dated record, in the rail rather than under the chart.
-            *
-            * It was a horizontal strip beneath the plot, suppressed whenever
-            * a real series existed on the theory that the chart's markers
-            * said the same thing. They do not: a marker says WHEN against the
-            * price and is a tick with a six-pixel label; this says WHAT, at a
-            * size a reader can actually read. Keeping both costs the chart no
-            * height, and it gives the rail something to be — the panel's
-            * width was being spent stretching the plot to 7:1 beside a column
-            * that held three facts and two hundred pixels of nothing.
-            */}
-          {events.length > 0 && (
-            <div className="pt-3 border-t border-gray-900/[0.06] dark:border-white/[0.07]">
-              <Label>Recently</Label>
-              <div className="mt-1.5 space-y-1.5">
-                {events.slice(0, 4).map(e => (
-                  <div key={e.k} className="flex items-baseline justify-between gap-2 min-w-0">
-                    <span className={clsx(
-                      'text-[12px] leading-snug truncate',
-                      e.hot
-                        ? 'font-semibold text-gray-900 dark:text-gray-50'
-                        : 'font-medium text-gray-600 dark:text-gray-300',
-                    )}>
-                      {e.head}
-                    </span>
-                    <span className="flex-shrink-0 text-[10.5px] text-gray-400 dark:text-gray-500 tabular-nums">
-                      {formatDistanceToNow(new Date(e.at))}
-                    </span>
-                  </div>
+          ) : p.rungs.length > 0 && axisLo != null ? (
+            /*
+             * The fallback axis, for a name with no price history at all.
+             *
+             * One axis, not a bar per rung: three bars growing from a common
+             * left edge read as progress meters — three quantities being
+             * filled — when the fact is where each case sits on ONE price
+             * scale and where today sits among them.
+             */
+            <div className="flex-1 min-h-0 flex flex-col justify-center">
+              <div className="relative" style={{ height: 26 }}>
+                <div className="absolute inset-x-0 top-[11px] h-px bg-gray-200 dark:bg-gray-700" />
+                {p.rungs.map(r => (
+                  <span key={r.id}
+                    className="absolute top-[7px] -translate-x-1/2 h-2.5 w-[3px] rounded-full bg-gray-400 dark:bg-gray-500"
+                    style={{ left: `${at(r.price)}%` }}
+                    title={`${r.name} · ${money(r.price)}`}
+                  />
                 ))}
+                {p.spot != null && (
+                  <span
+                    className="absolute -translate-x-1/2 flex flex-col items-center"
+                    style={{ left: `${at(p.spot)}%`, top: 0 }}
+                  >
+                    <span className="h-5 w-[2px] rounded-full bg-gray-900 dark:bg-gray-100" />
+                    <span className="mt-0.5 text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                      today
+                    </span>
+                  </span>
+                )}
               </div>
             </div>
+          ) : (
+            <div className="flex-1 min-h-0 flex items-center">
+              <Quiet>No price history on file.</Quiet>
+            </div>
           )}
-        </>
+
+          {/*
+            * The scenarios as one strip, not one row each.
+            *
+            * A four-column table of five scenarios is five lines, and in a
+            * fixed-height panel those five lines come out of the chart. The
+            * same facts fit on one line across the width the panel has: name,
+            * probability, price, move from here — grouped so each scenario is
+            * one object, separated by alignment rather than by a box. The
+            * chart above carries the shape; this carries the numbers.
+            */}
+          {p.rungs.length > 0 && (
+            <div className="flex-shrink-0 flex items-stretch flex-wrap gap-x-6 gap-y-2 pt-2.5 border-t border-gray-900/[0.06] dark:border-white/[0.07]">
+              {p.rungs.map(r => {
+                const up = p.spot != null && p.spot > 0
+                  ? ((r.price - p.spot) / p.spot) * 100
+                  : null
+                return (
+                  <div key={r.id} className="min-w-0 max-w-[190px]" title={r.reasoning ?? undefined}>
+                    <div className="text-[9.5px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:text-gray-500 truncate">
+                      {r.name}
+                      {r.probability != null && (
+                        <span className="ml-1.5 font-medium normal-case tracking-normal tabular-nums">
+                          {Math.round(r.probability * 100)}%
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 flex items-baseline gap-1.5 tabular-nums">
+                      <span className="text-[14px] font-semibold text-gray-900 dark:text-gray-100">
+                        {money(r.price)}
+                      </span>
+                      {up != null && (
+                        <span className={clsx(
+                          'text-[11px] font-semibold',
+                          up >= 0 ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400',
+                        )}>{pct(up)}</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/*
+            * The dated record is NOT repeated here.
+            *
+            * It was a strip under the chart listing case-written, research
+            * and idea dates — the same events `chartEvents` already draws as
+            * markers on the line, at the position where they happened. Two
+            * renderings of one set of facts, and the strip cost ~40px of a
+            * frame the chart was already short of.
+            *
+            * The markers win because they answer the question the dates are
+            * asked for: what the price did AROUND the event. A list of dates
+            * underneath cannot say that, and the full record is in the case.
+            */}
+        </div>
       }
     />
   )
@@ -1181,7 +1239,7 @@ export function CaseSectionEditor({
   )
 }
 
-export function CaseMode(p: {
+export function ResearchMode(p: {
   symbol?: string
   caseSections: Array<{ key: string; row: any }>
   caseWrittenAt: string | null
@@ -1302,198 +1360,22 @@ export function CaseMode(p: {
   )
 }
 
-// ── Valuation ──────────────────────────────────────────────────────────
+// ── The scenario ladder ────────────────────────────────────────────────
 
+/*
+ * `ValuationMode` used to live here.
+ *
+ * It drew `PriceMode`'s chart from the same series with the rungs added as
+ * levels, which made it that mode plus information — so the rungs moved
+ * there and this became one type. See the second half of `PriceMode`'s
+ * docblock.
+ */
 export interface LadderRung {
   id: string
   name: string
   price: number
   probability?: number | null
   reasoning?: string | null
-}
-
-/**
- * What it is worth, and against what.
- *
- * The rungs are drawn on a shared scale rather than listed, because the useful
- * fact is the SHAPE of the range and where today's price sits inside it — which
- * a column of numbers states but does not show.
- */
-export function ValuationMode(p: {
-  symbol?: string
-  spot: number | null
-  target: number | null
-  upsidePct: number | null
-  rungs: LadderRung[]
-  weightPct: number | null
-  ratingValue: string | null
-  ratingColor: string | null
-  conviction: 'low' | 'medium' | 'high' | null
-  /**
-   * Dated closes, so the scenarios are drawn against where it has traded.
-   *
-   * Same series Market uses. Absent on callers that have no history to hand
-   * (mobile, the fixture gallery), which fall back to the bare price axis.
-   */
-  series?: PricePoint[] | null
-  footer?: React.ReactNode
-}) {
-  const prices = [...p.rungs.map(r => r.price), p.spot, p.target]
-    .filter((n): n is number => n != null && Number.isFinite(n) && n > 0)
-  const lo = prices.length ? Math.min(...prices) : null
-  const hi = prices.length ? Math.max(...prices) : null
-  const span = lo != null && hi != null ? (hi - lo) || 1 : 1
-  const at = (n: number) => lo == null ? 0 : ((n - lo) / span) * 100
-
-  /*
-   * The scenarios belong ON the price history, not on a bare rule.
-   *
-   * `PriceContext` already draws a price level as a labelled dashed band
-   * placed on its own scale — that is exactly what a scenario rung is, and
-   * `kind: 'case'` is the grey treatment for one that is not the headline
-   * target. Drawing them there answers the question the mode exists for:
-   * a bear case is only assessable against where the stock has actually
-   * traded, which a standalone axis cannot show at all.
-   */
-  const bands: PriceLevel[] = []
-  if (p.target != null) bands.push({ label: 'Target', price: p.target, kind: 'target' })
-  for (const r of p.rungs) {
-    // The target is usually also a rung; one band per level, not two.
-    if (p.target != null && Math.abs(r.price - p.target) < 0.005) continue
-    bands.push({ label: r.name, price: r.price, kind: 'case' })
-  }
-
-  const hasChart = !!(p.series && p.series.length > 1)
-
-  return (
-    <ModeLayout
-      footer={p.footer}
-      railWidth="lg"
-      main={
-        <div className="flex flex-col h-full min-h-0 gap-3">
-          {hasChart ? (
-            <div className="flex-1 min-h-0">
-              <PriceChart
-                symbol={p.symbol ?? ''}
-                series={p.series!}
-                levels={bands}
-                initialRange="1Y"
-              />
-            </div>
-          ) : p.rungs.length > 0 && lo != null ? (
-            /*
-             * The fallback axis, for a name with no price history on file.
-             *
-             * One axis, not a bar per rung: three bars growing from a common
-             * left edge read as progress meters — three quantities being
-             * filled — when the fact is where each case sits on ONE price
-             * scale and where today sits among them.
-             */
-            <div className="flex-1 min-h-0 flex flex-col justify-center">
-              <div className="relative" style={{ height: 26 }}>
-                <div className="absolute inset-x-0 top-[11px] h-px bg-gray-200 dark:bg-gray-700" />
-                {p.rungs.map(r => (
-                  <span key={r.id}
-                    className="absolute top-[7px] -translate-x-1/2 h-2.5 w-[3px] rounded-full bg-gray-400 dark:bg-gray-500"
-                    style={{ left: `${at(r.price)}%` }}
-                    title={`${r.name} · ${money(r.price)}`}
-                  />
-                ))}
-                {p.spot != null && (
-                  <span
-                    className="absolute -translate-x-1/2 flex flex-col items-center"
-                    style={{ left: `${at(p.spot)}%`, top: 0 }}
-                  >
-                    <span className="h-5 w-[2px] rounded-full bg-gray-900 dark:bg-gray-100" />
-                    <span className="mt-0.5 text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                      today
-                    </span>
-                  </span>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 min-h-0 flex items-center">
-              <Quiet>No scenario targets on file.</Quiet>
-            </div>
-          )}
-
-          {/*
-            * The rungs as one strip, not one row each.
-            *
-            * A four-column table of five scenarios is five lines, and in a
-            * fixed-height panel those five lines come out of the chart. The
-            * same facts fit on one line across the width the panel already
-            * has: name, price, move from here, probability — grouped so each
-            * scenario is one object, separated by a hairline rather than by a
-            * box. The chart above carries the shape; this carries the numbers.
-            */}
-          {p.rungs.length > 0 && (
-            <div className="flex-shrink-0 flex items-stretch flex-wrap gap-x-5 gap-y-2 pt-2.5 border-t border-gray-900/[0.06] dark:border-white/[0.07]">
-              {p.rungs.map(r => {
-                const up = p.spot != null && p.spot > 0
-                  ? ((r.price - p.spot) / p.spot) * 100
-                  : null
-                return (
-                  <div key={r.id} className="min-w-0 max-w-[190px]" title={r.reasoning ?? undefined}>
-                    <div className="text-[9.5px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:text-gray-500 truncate">
-                      {r.name}
-                      {r.probability != null && (
-                        <span className="ml-1.5 font-medium normal-case tracking-normal tabular-nums">
-                          {Math.round(r.probability * 100)}%
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 flex items-baseline gap-1.5 tabular-nums">
-                      <span className="text-[14px] font-semibold text-gray-900 dark:text-gray-100">
-                        {money(r.price)}
-                      </span>
-                      {up != null && (
-                        <span className={clsx(
-                          'text-[11px] font-semibold',
-                          up >= 0 ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-rose-600 dark:text-rose-400',
-                        )}>{pct(up)}</span>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      }
-      rail={
-        <>
-          {/*
-            * Target and price lead the rail, not the main column.
-            *
-            * They were two 26px heroes above the axis. The chart's own header
-            * states the last price, and the target is drawn on its scale, so
-            * what is actually missing is the MOVE between them — one figure,
-            * in the column that has width to spare.
-            */}
-          <Figure label="Target" size="md"
-            value={p.target != null ? money(p.target) : null}
-            tone={toneOf(p.upsidePct)}
-            sub={p.upsidePct != null ? `${pct(p.upsidePct)} from here` : null} />
-          {!hasChart && (
-            <StatRow label="Price" value={p.spot != null ? money(p.spot) : null} />
-          )}
-          <Figure label="Position" size="md"
-            value={p.weightPct != null ? `${p.weightPct.toFixed(2)}%` : null} />
-          {(p.ratingValue || p.conviction) && (
-            <div>
-              <Label>View</Label>
-              <div className="mt-1.5">
-                <ViewControl value={p.ratingValue} color={p.ratingColor} conviction={p.conviction} />
-              </div>
-            </div>
-          )}
-        </>
-      }
-    />
-  )
 }
 
 // ── Position ───────────────────────────────────────────────────────────
@@ -1599,6 +1481,22 @@ export function PositionMode(p: {
   const largest = rows[0]
   const proposing = p.proposedWeightPct != null
 
+  /*
+   * The books list is clamped, because its length is the DATA's.
+   *
+   * The panel is a fixed-height region inside a virtualised row and
+   * `ModeLayout` clips rather than scrolls — so an unbounded list does not
+   * grow the panel, it gets cut. A name in two books overflowed by 46px and
+   * the second book was sliced through the middle of its own row: half a
+   * number, with no scrollbar and nothing to say more existed.
+   *
+   * Three is what the budget holds beside the heroes. The rest are counted,
+   * not hidden — and the full set is one click away in the case.
+   */
+  const BOOKS_SHOWN = 3
+  const shownRows = rows.slice(0, BOOKS_SHOWN)
+  const hiddenCount = rows.length - shownRows.length
+
   // Nothing held and nothing proposed is the only true empty. A recommendation
   // to open a position is the most important thing Position can say.
   if (rows.length === 0 && !proposing) {
@@ -1608,9 +1506,12 @@ export function PositionMode(p: {
   return (
     <ModeLayout
       footer={p.footer}
-      railWidth={proposing ? 'sm' : 'md'}
+      railWidth="sm"
       main={
-          <div className="space-y-4">
+          // `h-full min-h-0 flex flex-col`, so the list below can be the part
+          // that gives: a plain `space-y-4` block has no height of its own and
+          // simply overran the clip.
+          <div className="h-full min-h-0 flex flex-col gap-4">
             {/*
               * When a recommendation is live, the CHANGE leads — that is what the
               * reader is being asked about. Otherwise the holding does.
@@ -1636,14 +1537,14 @@ export function PositionMode(p: {
                 when there is nothing held — a recommendation to OPEN a position
                 would otherwise render a header over no rows. */}
             {rows.length > 0 && (
-            <div>
+            <div className="min-h-0">
               <div className="grid grid-cols-[minmax(0,1fr)_72px_72px_84px] gap-x-3 pb-1">
                 {['Book', 'Shares', 'Weight', 'Unrealised'].map((h, i) => (
                   <div key={h} className={i === 0 ? '' : 'text-right'}><Label>{h}</Label></div>
                 ))}
               </div>
               <div className="divide-y divide-gray-150 dark:divide-gray-800">
-                {rows.map((r, i) => (
+                {shownRows.map((r, i) => (
                   <div key={r.portfolioId ?? i}
                     className="grid grid-cols-[minmax(0,1fr)_72px_72px_84px] gap-x-3 py-1.5 text-[12.5px] tabular-nums">
                     <span className="truncate text-gray-700 dark:text-gray-300">
@@ -1667,30 +1568,31 @@ export function PositionMode(p: {
                   </div>
                 ))}
               </div>
+              {/* Counted, not dropped. A list that silently ends at three is
+                  a list that misreports the book count above it. */}
+              {hiddenCount > 0 && (
+                <p className="pt-1.5 text-[11.5px] text-gray-400 dark:text-gray-500">
+                  +{hiddenCount} more {hiddenCount === 1 ? 'book' : 'books'} — open the full case
+                </p>
+              )}
             </div>
             )}
           </div>
       }
       rail={
         <>
-          {/* What we are proposing, named. The delta in the main column shows
-              the size of the move; this says what move it is. */}
+          {/*
+            * Only what the verdict line above does not already say.
+            *
+            * It stated Target, the upside and the rating a second time, forty
+            * pixels under a sentence that reads "BUY at medium conviction ·
+            * worth $212, +18.4% from here · 18.40% of Large Cap Value". The
+            * price is the one market fact the verdict has no clause for.
+            */}
           {proposing && p.ideaLabel && (
             <Figure label="Recommendation" size="md" value={p.ideaLabel} />
           )}
           <Figure label="Price" value={p.spot != null ? money(p.spot) : null} size="md" />
-          <Figure label="Target" value={p.target != null ? money(p.target) : null} size="md"
-            tone={toneOf(p.upsidePct)}
-            sub={p.upsidePct != null ? `${pct(p.upsidePct)} upside` : null} />
-          {(p.ratingValue || p.conviction) && (
-            <div>
-              <Label>View</Label>
-              <div className="mt-1.5">
-                <ViewControl value={p.ratingValue} color={p.ratingColor} conviction={p.conviction} />
-              </div>
-            </div>
-          )}
-          {!proposing && p.ideaLabel && <Figure label="Open idea" size="sm" value={p.ideaLabel} />}
         </>
       }
     />
@@ -1962,8 +1864,10 @@ export function WorkMode(p: {
                 </span>
               )}
             </div>
+            {/* `line-clamp-[14]`: see the Overview columns — the frame is
+                fixed and taller than it was, so the clamp grew with it. */}
             {p.leadCase ? (
-              <p className="text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap line-clamp-[8]">
+              <p className="text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap line-clamp-[14]">
                 {p.leadCase.content}
               </p>
             ) : (
@@ -2004,6 +1908,35 @@ export function WorkMode(p: {
  */
 export function ModeSkeleton({ mode }: { mode: ListRowMode }) {
   const bar = 'rounded bg-gray-150 dark:bg-gray-800 motion-safe:animate-pulse'
+
+  /*
+   * PRICE has no rail, so its skeleton must not draw one.
+   *
+   * A skeleton exists to hold the shape the content will take; one that
+   * promises a 212px sidebar and then resolves to a full-width chart is the
+   * jump it was added to prevent.
+   */
+  if (mode === 'market') {
+    return (
+      <div className="h-full flex flex-col gap-3" aria-busy="true" data-testid="mode-skeleton">
+        <div className="flex items-baseline gap-2.5">
+          <div className={clsx(bar, 'h-5 w-24')} />
+          <div className={clsx(bar, 'h-3 w-12')} />
+          <div className={clsx(bar, 'ml-auto h-4 w-40')} />
+        </div>
+        <div className={clsx(bar, 'flex-1 min-h-0 w-full')} />
+        <div className="flex gap-6">
+          {[0, 1, 2].map(i => (
+            <div key={i} className="space-y-1.5">
+              <div className={clsx(bar, 'h-2 w-14')} />
+              <div className={clsx(bar, 'h-4 w-16')} />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="h-full grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,212px)] gap-x-6"
       aria-busy="true" data-testid="mode-skeleton">
@@ -2016,15 +1949,11 @@ export function ModeSkeleton({ mode }: { mode: ListRowMode }) {
             </div>
           ))}
         </div>
-        {mode === 'market' ? (
-          <div className={clsx(bar, 'h-24 w-full')} />
-        ) : (
-          <div className="space-y-2">
-            {[0, 1, 2, 3].map(i => (
-              <div key={i} className={clsx(bar, 'h-3', i === 3 ? 'w-3/5' : 'w-full')} />
-            ))}
-          </div>
-        )}
+        <div className="space-y-2">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className={clsx(bar, 'h-3', i === 3 ? 'w-3/5' : 'w-full')} />
+          ))}
+        </div>
       </div>
       <div className="hidden sm:block space-y-3 sm:border-l border-gray-200/70 dark:border-gray-700/60 sm:pl-5">
         {[0, 1, 2].map(i => (

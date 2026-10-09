@@ -11,17 +11,22 @@
  */
 
 import React, { useMemo, useCallback } from 'react'
+import { clsx } from 'clsx'
 import { AssetTableView } from '../table/AssetTableView'
 import { ListAssigneeCell } from './ListAssigneeCell'
 import { ListStatusCell } from './ListStatusCell'
 import { ListTagsCell } from './ListTagsCell'
 import { ListRowExpansion } from './ListRowExpansion'
 import {
-  LIST_SIGNAL_COLUMNS, listColumnPreset, renderSignalCell,
-  LIST_COLUMN_PRESET_VERSION, listSortComparators,
+  LIST_SIGNAL_COLUMNS, renderSignalCell, listSortComparators,
 } from './ListRowCells'
-import { LIST_EXPANSION_ENTRY_COLUMNS, modeForEntryColumn } from './listRowModes'
+import { LIST_EXPANSION_ENTRY_COLUMNS, expandedRowHeightForDensity } from './listRowModes'
 import { useListRowSignals } from '../../hooks/lists/useListRowSignals'
+import { useListPriceHistory } from '../../hooks/lists/useListPriceHistory'
+import {
+  LIST_VIEWS, DEFAULT_LIST_VIEW, presetFor, storageKeyFor,
+  LIST_COLUMN_PRESET_VERSION, type ListView,
+} from './listViewPresets'
 import type { ListPermissions } from '../../hooks/lists/useListPermissions'
 // Scoped under `.lists-surface` below — see the file header for why the table's
 // visual language is overridden here rather than globally or by forking it.
@@ -104,6 +109,65 @@ const LIST_COLUMNS = [
 // taxonomies still get sensible behavior.
 const TERMINAL_STATUS_NAMES = new Set(['passed', 'rejected', 'archived', 'done', 'closed'])
 
+/**
+ * The three readings of the list, as a segmented control.
+ *
+ * A tablist rather than a row of buttons: these are mutually exclusive views
+ * of one thing, and the arrow-key behaviour a tablist gets for free is the
+ * behaviour a reader expects from a segment. The hint under each label is
+ * what the view ANSWERS — "what moved", "what we think", "what is owed" —
+ * because the names alone do not distinguish Research from Decide for someone
+ * seeing the surface for the first time.
+ */
+function ListViewSwitch({ view, onChange }: { view: ListView; onChange: (v: ListView) => void }) {
+  const ids = LIST_VIEWS.map(v => v.id)
+  const move = (delta: number) => {
+    const next = ids[(ids.indexOf(view) + delta + ids.length) % ids.length]
+    onChange(next)
+  }
+  return (
+    <div className="flex-shrink-0 px-1 pb-2">
+      <div
+        role="tablist"
+        aria-label="List view"
+        className="inline-flex gap-[2px] rounded-lg bg-gray-900/[0.055] p-[2.5px] dark:bg-black/30"
+        onKeyDown={e => {
+          if (e.key === 'ArrowRight') { e.preventDefault(); move(1) }
+          if (e.key === 'ArrowLeft') { e.preventDefault(); move(-1) }
+        }}
+      >
+        {LIST_VIEWS.map(v => {
+          const on = v.id === view
+          return (
+            <button
+              key={v.id}
+              role="tab"
+              aria-selected={on}
+              // Only the active tab is in the tab order; the arrows move
+              // between them. That is the tablist contract, and it stops a
+              // three-stop detour on the way to the table.
+              tabIndex={on ? 0 : -1}
+              onClick={() => onChange(v.id)}
+              className={clsx(
+                'rounded-md px-3.5 py-[5px] text-left leading-tight transition-colors duration-100',
+                on
+                  ? 'bg-white text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.12)] dark:bg-gray-700 dark:text-white'
+                  : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100',
+              )}
+            >
+              <span className="block text-[12px] font-semibold tracking-[-0.005em]">{v.label}</span>
+              <span className={clsx(
+                'block text-[9.5px]',
+                on ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400 dark:text-gray-500',
+              )}>{v.hint}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Main ───────────────────────────────────────────────────────────────
 
 export function ListTableView({
@@ -119,8 +183,23 @@ export function ListTableView({
   // Pulled out of `passthrough` because the expansion needs it too — it is
   // still forwarded to the table below, so the row-menu entry is unchanged.
   onCreateTradeIdea,
+  // Destructured so the spread below cannot put the un-suffixed key back:
+  // each preset persists its own layout. See `storageKeyFor`.
+  storageKey,
   ...passthrough
 }: ListTableViewProps) {
+
+  /*
+   * Which reading of the list is on screen.
+   *
+   * Local state, not a route or a query param: a preset is a presentation
+   * choice over rows that are already loaded, so switching must not remount
+   * the table, refetch anything, or disturb the reader's scroll position and
+   * selection. All three views read the same `signalFor` and the same
+   * `marketFor`. See `listViewPresets`.
+   */
+  const [view, setView] = React.useState<ListView>(DEFAULT_LIST_VIEW)
+  const viewPreset = useMemo(() => presetFor(view), [view])
 
   // Per-row edit gate — mirrors canEditItemNotes for list-scoped fields.
   // In collaborative lists, only the contributor can edit their row; in
@@ -135,55 +214,32 @@ export function ListTableView({
   // table is virtualised and a list can hold hundreds of names.
   const { signalFor } = useListRowSignals(assets)
 
+  /*
+   * Cached closes for the whole list in one batched read.
+   *
+   * `useListRowSignals` carries `closes` too, but those come from the
+   * `yahoo-chart-proxy` edge function, which answers 502 in this deployment —
+   * so the Market column had no series and no change at all. This reads
+   * `price_history_cache`, the same table the opened inspector charts, so the
+   * row and the panel below it cannot show different history.
+   */
+  const { marketFor, domain: priceDomain } = useListPriceHistory(
+    useMemo(() => assets.map(a => a?.symbol), [assets]),
+  )
+
   // Stable per `signalFor`, which is itself memoised on the batch — so the
   // table's filtered-list memo is not invalidated on every render.
   const extraSortComparators = useMemo(() => listSortComparators(signalFor), [signalFor])
 
-  /**
-   * How tall each inspector needs to be, by the mode its entry opens.
-   *
-   * Scaled off the density's own expanded height so Comfortable / Compact /
-   * Ultra keep their relationship: a mode that needs 85% of the budget needs
-   * 85% of it at every density. Module-level constants would have pinned one
-   * density and squeezed the others.
+  /*
+   * One frame for the inspector, whatever mode is showing — the entry is
+   * deliberately ignored. See `expandedRowHeightForDensity`, which owns the
+   * reasoning and the numbers.
    */
-  const expandedHeightFor = useCallback((entry: string | undefined, density: string) => {
-    const base = ({ comfortable: 340, compact: 320, ultra: 296, micro: 268 } as Record<string, number>)[density] ?? 320
-    /*
-     * Measured against real rows, not guessed.
-     *
-     * Only Work is reliably short: it is one headline, one metadata line and a
-     * paragraph, and giving it the full budget left a third of the panel
-     * empty. Everything else holds content whose length is the DATA's — a
-     * holdings table with three books, a thesis somebody wrote at length — so
-     * shrinking them buys dead space at the bottom in exchange for an inner
-     * scrollbar, which is the worse trade.
-     */
-    /*
-     * Market and Valuation get MORE than the budget, because a chart is the
-     * one piece of content whose usefulness is a function of its height.
-     *
-     * Their panels are a single full-width interactive chart. At the shared
-     * height the plot measured 1,074 × 139 on a 1,456px window — better than
-     * 7:1, the aspect ratio of a banner, where a 3% move is a flat line and
-     * the crosshair has no vertical room to resolve anything.
-     *
-     * Half again of vertical, with a wider rail taking width off the other
-     * axis, brings the plot to roughly 4:1. That is still wide — a price
-     * chart is a wide object — but it is the band where movement reads as
-     * movement rather than as a horizon. Every other mode is text and
-     * tables, which gain nothing from the extra and would show it as dead
-     * space at the bottom.
-     */
-    const share: Record<string, number> = {
-      overview: 1, case: 1, position: 1,
-      market: 1.5,
-      valuation: 1.45,
-      work: 0.8,
-    }
-    const mode = modeForEntryColumn(entry)
-    return Math.round(base * (share[mode] ?? 1))
-  }, [])
+  const expandedHeightFor = useCallback(
+    (_entry: string | undefined, density: string) => expandedRowHeightForDensity(density),
+    [],
+  )
 
   const renderExtraCell = useCallback((
     columnId: string,
@@ -197,7 +253,10 @@ export function ListTableView({
 
     // Investment-signal columns first: they apply to screens too, where the
     // list-scoped columns below are deliberately absent.
-    const signalCell = renderSignalCell(columnId, asset, signalFor(asset.id), quote)
+    const signalCell = renderSignalCell(
+      columnId, asset, signalFor(asset.id), quote,
+      marketFor(asset.symbol), priceDomain,
+    )
     if (signalCell !== undefined) return signalCell
 
     switch (columnId) {
@@ -231,7 +290,7 @@ export function ListTableView({
       default:
         return null
     }
-  }, [listId, canEditRow, signalFor])
+  }, [listId, canEditRow, signalFor, marketFor, priceDomain])
 
   const expandedRowSlot = useCallback((
     asset: any,
@@ -243,6 +302,9 @@ export function ListTableView({
     // Lets the inspector restate its entry when the reader switches mode, so
     // the row re-measures. See `onEntryChange` in AssetTableView.
     onEntryChange?: (entryColumnId: string) => void,
+    // The table's own resolved quote. The inspector quotes THIS, so the open
+    // panel and the row above it can never state two different prices.
+    quote?: { price?: number | null; changePercent?: number | null } | null,
   ) => {
     return (
       <ListRowExpansion
@@ -250,6 +312,7 @@ export function ListTableView({
         rowId={rowId}
         asset={asset}
         coverage={coverage}
+        quote={quote}
         canEdit={canEditRow(asset)}
         // The field the reader clicked. See `listRowModes`.
         entryColumnId={entryColumnId}
@@ -263,17 +326,48 @@ export function ListTableView({
     )
   }, [listId, canEditRow, onAssetSelect, onCreateTradeIdea, signalFor])
 
-  // Left-border accent colored by the row's status. Terminal statuses dim.
+  /**
+   * The attention rail: one 3px mark at the left edge of a row.
+   *
+   * ── Why attention outranks the list's own status ──────────────────────
+   *
+   * This accent used to be coloured by `_status`, the curation state of the
+   * row within this list. That is real, but it is a fact about the LIST, and
+   * the question a reader scans a watchlist to answer is a fact about the
+   * SECURITY: is something owed on this name. A rail that lights up for
+   * "In progress" and stays dark for "a PM owes a decision" points the eye
+   * at the wrong rows.
+   *
+   * Two tiers only, and no third:
+   *   • a decision is owed      amber
+   *   • unreviewed research     blue
+   *   • everything else         no rail
+   *
+   * Three colours would be a legend; two are a glance. Everything quieter
+   * than those is carried by the Attention column's own words, and a name
+   * with nothing outstanding gets no mark at all — which is what makes the
+   * marked ones findable. `work.tier` is the same ranking the Work column
+   * and its comparator already use, so the rail cannot disagree with the
+   * cell beside it.
+   *
+   * Terminal list statuses still dim the row: that one IS about the list,
+   * and dimming is a different channel from the rail.
+   */
   const rowAccentFn = useCallback((asset: any): { color?: string | null; dim?: boolean } | null => {
     if (hideListColumns) return null
     const status = asset._status as { name?: string; color?: string } | null
-    if (!status) return null
-    const isTerminal = TERMINAL_STATUS_NAMES.has((status.name ?? '').toLowerCase())
-    return {
-      color: status.color ?? null,
-      dim: isTerminal
-    }
-  }, [hideListColumns])
+    const dim = !!status && TERMINAL_STATUS_NAMES.has((status.name ?? '').toLowerCase())
+
+    const tier = signalFor(asset.id).work.tier
+    const color = tier === 'decision'
+      ? 'rgb(217 119 6)'
+      : tier === 'evidence'
+        ? 'rgb(37 99 235)'
+        : null
+
+    if (!color && !dim) return null
+    return { color, dim }
+  }, [hideListColumns, signalFor])
 
   // Signal columns are about the security, so a screen gets them too. The
   // assignee/status/tags columns are about curating THIS list, which a
@@ -289,14 +383,24 @@ export function ListTableView({
     // The scope for `lists-surface.css`. Everything inside gets the Lists
     // typographic treatment; no other table moves.
     <div className="lists-surface flex-1 min-h-0 flex flex-col">
+    <ListViewSwitch view={view} onChange={setView} />
     <AssetTableView
       assets={assets}
       isLoading={isLoading}
       onAssetSelect={onAssetSelect}
       listId={listId}
       extraColumns={extraColumns}
-      columnPreset={listColumnPreset}
+      columnPreset={viewPreset}
       columnPresetVersion={LIST_COLUMN_PRESET_VERSION}
+      /*
+       * One saved layout per view, keyed through `storageKeyFor`.
+       *
+       * Changing the key is what makes a preset switch instant AND
+       * non-destructive: each view merges against its own saved state rather
+       * than three views fighting over one blob. Monitor keeps the original
+       * unsuffixed key, so layouts saved before presets existed survive.
+       */
+      storageKey={storageKeyFor(storageKey, view)}
       expansionEntryColumns={LIST_EXPANSION_ENTRY_COLUMNS}
       // Arrived from an attention row on Lists home; see `focus` above.
       initialExpanded={focus?.assetId

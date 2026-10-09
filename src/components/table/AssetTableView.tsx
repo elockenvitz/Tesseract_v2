@@ -400,6 +400,17 @@ interface AssetTableViewProps {
      * slot that echoes its own state cannot oscillate.
      */
     onEntryChange?: (entryColumnId: string) => void,
+    /**
+     * The same live quote the table's own price cell resolved for this row.
+     *
+     * Without it an expanded row has to re-derive a price from whatever it can
+     * reach — the workspace cache, a stored `current_price` — and the two
+     * disagree: a List row read 1169.60 while the inspector two pixels below it
+     * read 1,149.85 for the same name, because one had the live quote and the
+     * other had the last cached close. A panel that contradicts the row that
+     * opened it is worse than one that admits it has no price.
+     */
+    quote?: { price?: number | null; changePercent?: number | null } | null,
   ) => React.ReactNode
   /**
    * Columns whose cells open the expanded row, keyed to the mode they mean.
@@ -675,6 +686,36 @@ export function AssetTableView({
     } catch (e) { console.warn('Failed to load columns:', e) }
     return baseColumns
   })
+  /*
+   * Re-seed when the surface swaps its preset.
+   *
+   * `columns` is initialised once, which is right for a surface with a fixed
+   * layout and wrong for one with presets: Lists' Monitor / Research / Decide
+   * switch changes `columnPreset` AND `storageKey` together, and without this
+   * the table kept the first preset's columns forever — the control moved,
+   * the headings did not.
+   *
+   * Keyed on `storageKey` rather than on `columnPreset`'s identity, because a
+   * preset built inline would be a new function every render and this would
+   * then discard the reader's layout on every keystroke. One key per preset is
+   * already the contract (see `storageKeyFor`), so a changed key is exactly
+   * "a different saved layout applies now" — and the merge below is the same
+   * one the initialiser runs, so a reader's widths come back with it.
+   */
+  const seededKey = useRef(storageKey)
+  useEffect(() => {
+    if (seededKey.current === storageKey) return
+    seededKey.current = storageKey
+    try {
+      const saved = localStorage.getItem(storageKey)
+      setColumns(saved
+        ? mergeSavedColumns(baseColumns, JSON.parse(saved), columnPresetVersion)
+        : baseColumns)
+    } catch {
+      setColumns(baseColumns)
+    }
+  }, [storageKey, baseColumns, columnPresetVersion])
+
   const [showColumnSettings, setShowColumnSettings] = useState(false)
   const [draftColumns, setDraftColumns] = useState<ColumnConfig[]>([])
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
@@ -3664,6 +3705,13 @@ export function AssetTableView({
                                     openRowFromCell(asset.id, entryFrom(e, col.id))
                                   }
                                 }}
+                                // Which column this cell is, so a stylesheet can
+                                // address one by NAME. `lists-surface.css` used
+                                // `:nth-child(2)` to reach the ticker cell and
+                                // reached the price cell instead, which put the
+                                // open-row ring on the chart whenever a row was
+                                // opened from the chevron.
+                                data-col={col.id}
                                 className={clsx(
                                   'pro-table-cell',
                                   col.align === 'right' && 'justify-end text-right',
@@ -4054,6 +4102,7 @@ export function AssetTableView({
                                       coverage,
                                       entryColumnFor(asset.id),
                                       reportEntryFor(asset.id),
+                                      quote,
                                     )
                                   : renderMetricDetail(
                                       asset,
@@ -4572,6 +4621,9 @@ export function AssetTableView({
                                         }
                                         handleAssetClick(asset)
                                       }}
+                                      // See the ungrouped branch: the column id
+                                      // so a stylesheet can name a cell.
+                                      data-col={col.id}
                                       className={clsx(
                                         'pro-table-cell',
                                         col.align === 'right' && 'justify-end text-right',
@@ -4947,6 +4999,7 @@ export function AssetTableView({
                                             coverage,
                                             entryColumnFor(asset.id),
                                             reportEntryFor(asset.id),
+                                            quote,
                                           )
                                         : renderMetricDetail(
                                             asset,

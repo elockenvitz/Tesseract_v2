@@ -30,9 +30,17 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import {
-  LIST_SIGNAL_COLUMNS, listColumnPreset, renderSignalCell, listSortComparators,
-  SPARK_HEIGHT,
+  LIST_SIGNAL_COLUMNS, renderSignalCell, listSortComparators, SPARK_HEIGHT,
 } from '../ListRowCells'
+import { presetFor } from '../listViewPresets'
+
+/*
+ * These assertions are about the DEFAULT line, which is Monitor's. The
+ * five-zone preset they were written against has been replaced by one preset
+ * per view; `presetFor('monitor')` is the same column order under a new name,
+ * so the expectations below are unchanged.
+ */
+const listColumnPreset = presetFor('monitor')
 import { DEFAULT_COLUMNS } from '../../table/AssetTableView'
 import type { ListRowSignal } from '../../../hooks/lists/useListRowSignals'
 
@@ -141,10 +149,18 @@ describe('the line is six conceptual columns', () => {
     // its value — but less than the two columns carrying words.
     expect(grow('list_market')).toBeGreaterThan(0)
     expect(grow('list_market')).toBeLessThan(grow('list_work'))
-    // Every conceptual column takes SOME slack: a six-column line that only
-    // grows two of them leaves the other four stranded at their floor beside a
-    // gap, which is the sparse-spreadsheet look again.
-    for (const c of LIST_SIGNAL_COLUMNS) {
+    /*
+     * Scoped to the columns Monitor actually SHOWS.
+     *
+     * It used to iterate every entry in `LIST_SIGNAL_COLUMNS`, which was the
+     * same set while there was one preset. Research and Decide have since
+     * added their own columns to that list, and a column Monitor hides owes
+     * Monitor's line no slack — asserting otherwise would force a grow weight
+     * on a column that is not on screen.
+     */
+    const onMonitor = out.filter(c => c.visible && c.id.startsWith('list_'))
+    expect(onMonitor.length).toBeGreaterThan(2)
+    for (const c of onMonitor) {
       expect(grow(c.id), `${c.id} should take some slack`).toBeGreaterThan(0)
     }
   })
@@ -324,8 +340,28 @@ describe('the conceptual columns can be ordered', () => {
  * flow so an `<svg>` sized in percentages cannot contribute an intrinsic size.
  */
 describe('the market cell has stable geometry before its data exists', () => {
-  const marketCell = (signal: ListRowSignal) =>
-    render(<>{renderSignalCell('list_market', { current_price: 154.33 }, signal)}</>)
+  /*
+   * The series now comes from `price_history_cache` through `marketFor`, not
+   * from `signal.closes` — the proxy that fed those answers 502 in the running
+   * app. These geometry assertions are unchanged in intent; only the source of
+   * a DRAWN state moved.
+   */
+  const drawnMarket = {
+    points: [{ date: '2026-09-10', close: 100 }, { date: '2026-10-01', close: 109 }],
+    m1: { pct: 9, refused: null, slice: [] },
+    m6: { pct: null, refused: 'short-lookback' as const, slice: [] },
+    path: [0, 4, 2, 9],
+    lastClose: { close: 109, date: '2026-10-01' },
+    ageDays: 1,
+    covered: true,
+  }
+  const DOMAIN = { lo: -20, hi: 20 }
+
+  const marketCell = (signal: ListRowSignal, market?: unknown) =>
+    render(<>{renderSignalCell(
+      'list_market', { current_price: 154.33 }, signal, undefined,
+      market as never, market ? DOMAIN : undefined,
+    )}</>)
 
   it('reserves the sparkline box while the month is still loading', () => {
     const { container } = marketCell(empty)
@@ -337,7 +373,7 @@ describe('the market cell has stable geometry before its data exists', () => {
   it('gives the loading and loaded states identical declared height', () => {
     const quiet = marketCell(empty)
       .container.querySelector<HTMLElement>('[data-testid="spark-cell"]')!
-    const drawn = marketCell({ ...empty, closes: [100, 104, 102, 109] })
+    const drawn = marketCell(empty, drawnMarket)
       .container.querySelector<HTMLElement>('[data-testid="spark-cell"]')!
 
     expect(drawn.getAttribute('data-state')).toBe('drawn')
@@ -366,8 +402,8 @@ describe('the market cell has stable geometry before its data exists', () => {
      * and the box computes to 0px: the chart mounts, measures zero, and is
      * invisible. This shipped once; it must not ship twice.
      */
-    for (const signal of [empty, { ...empty, closes: [100, 110] }]) {
-      const box = marketCell(signal)
+    for (const market of [undefined, drawnMarket]) {
+      const box = marketCell(empty, market)
         .container.querySelector<HTMLElement>('[data-testid="spark-cell"]')!
       expect(box.className).not.toMatch(/\bflex-1\b/)
       expect(box.className).toMatch(/\bw-full\b/)
@@ -375,7 +411,7 @@ describe('the market cell has stable geometry before its data exists', () => {
   })
 
   it('keeps the chart out of flow so it cannot size the box', () => {
-    const { container } = marketCell({ ...empty, closes: [100, 104, 102, 109] })
+    const { container } = marketCell(empty, drawnMarket)
     const box = container.querySelector<HTMLElement>('[data-testid="spark-cell"]')!
     expect(box.className).toMatch(/\brelative\b/)
     const svg = container.querySelector('svg')!
@@ -436,6 +472,50 @@ describe('what the conceptual cells say when they do know', () => {
   it('MARKET reads a camelCase change too, since both shapes reach it', () => {
     render(<>{renderSignalCell('list_market', { current_price: 10, changePercent: 1.25 }, empty)}</>)
     expect(screen.getByText('+1.3%')).toBeInTheDocument()
+  })
+
+  /**
+   * A stored zero is a default, not a reading.
+   *
+   * Every asset in the corpus carries `change_percent = 0`, so with no live
+   * quote this cell painted a green `+0.0%` on all twenty-one rows of a list
+   * at once — a column-wide default rendered in the colour reserved for "it
+   * went up", twenty-one times, as if each had been measured.
+   */
+  it('MARKET says nothing rather than +0.0% when the stored change is a default', () => {
+    const { container } = render(
+      <>{renderSignalCell('list_market', { current_price: 154.33, change_percent: 0 }, empty)}</>,
+    )
+    expect(screen.getByText('154.33')).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/0\.0%/)
+    expect(container.querySelector('.text-emerald-600')).toBeNull()
+  })
+
+  /**
+   * A zeroed quote is this deployment's failure mode, not a flat tape.
+   *
+   * The live provider is refused by the page's own CSP and the chart proxy
+   * answers 502, and what reaches the cell is a zero-FILLED quote object. An
+   * earlier rule trusted a live zero and so painted a green `+0.0%` on all
+   * twenty-one rows of a list.
+   */
+  it('MARKET says nothing for a zero-filled quote with no previous close', () => {
+    const { container } = render(
+      <>{renderSignalCell('list_market', { current_price: 154.33 }, empty,
+        { price: 154.33, changePercent: 0 })}</>,
+    )
+    expect(container.textContent).not.toMatch(/0\.0%/)
+  })
+
+  /* The shape the running app actually produces: a zeroed quote that also
+     sets previousClose to the price, so a corroboration check passes on it.
+     That check was tried and is why this assertion exists. */
+  it('MARKET says nothing even when previousClose agrees with the zero', () => {
+    const { container } = render(
+      <>{renderSignalCell('list_market', { current_price: 154.33 }, empty,
+        { price: 154.33, changePercent: 0, previousClose: 154.33 } as never)}</>,
+    )
+    expect(container.textContent).not.toMatch(/0\.0%/)
   })
 
   it('prefers the table\'s live quote over the stored price, in both cells', () => {

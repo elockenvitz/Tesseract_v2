@@ -17,8 +17,9 @@
  * the no-coverage case is a real shipping configuration rather than a defensive
  * test.
  */
+import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const hooks = vi.hoisted(() => ({
@@ -92,6 +93,7 @@ vi.mock('../ListStatusCell', () => ({ ListStatusCell: () => <div data-testid="st
 vi.mock('../ListTagsCell', () => ({ ListTagsCell: () => <div data-testid="tags" /> }))
 
 import { ListRowExpansion } from '../ListRowExpansion'
+import { modeForEntryColumn } from '../listRowModes'
 import { SECTION_LABEL } from '../../../lib/desktop-research/model'
 import type { ListRowSignal } from '../../../hooks/lists/useListRowSignals'
 
@@ -147,6 +149,65 @@ const openFrom = (columnId: string, props: Record<string, unknown> = {}) =>
 const currentMode = () =>
   screen.getByTestId('list-row-expansion').getAttribute('data-mode')
 
+/**
+ * The table's half of the entry handshake, so the loop can be closed.
+ *
+ * `ListRowExpansion` reports the entry it is showing and `AssetTableView`
+ * stores it and feeds it straight back as `entryColumnId` — the row's height
+ * and the ring on the collapsed cell both come from that stored value. Every
+ * test that passes `entryColumnId` as a fixed prop exercises only half of it,
+ * so an echo that disagrees with what it is handed back oscillates forever in
+ * the browser and passes every one of them.
+ *
+ * This mounts the real feedback loop and records it. `settled` is the entry
+ * the pair agreed on; `echoes` is every value that crossed the seam, so a
+ * cycle shows up as a repeating tail rather than as a hung test.
+ */
+type RowProps = React.ComponentProps<typeof ListRowExpansion>
+
+function renderWithTable(initialEntry?: string, props: Partial<RowProps> = {}) {
+  const echoes: string[] = []
+  /*
+   * `pressEnterOn` is the keyboard path, and it is a DIFFERENT path.
+   *
+   * Enter on a focused cell makes `AssetTableView` write that cell's COLUMN
+   * ID over whatever the panel last echoed — see its Enter handler. A tab
+   * click sets the mode in the same commit as the event; this arrives as a
+   * prop change on an already-open row, one frame later. The infinite flash
+   * between the chart and the written case only existed on this path, which
+   * is why driving the row by tab clicks alone never saw it.
+   */
+  let setEntryExternally: (entry: string) => void = () => {}
+  function Harness() {
+    const [entry, setEntry] = React.useState<string | undefined>(initialEntry)
+    setEntryExternally = setEntry
+    return (
+      <ListRowExpansion
+        listId="l-1"
+        rowId="r-1"
+        asset={asset}
+        canEdit
+        entryColumnId={entry}
+        // Mirrors `reportEntryFor` in AssetTableView, which returns the
+        // previous object when the entry is unchanged. Re-echoing the same
+        // value is free; echoing a DIFFERENT one re-renders, which is the
+        // only way a cycle can sustain itself.
+        onEntryChange={next => { echoes.push(next); setEntry(prev => (prev === next ? prev : next)) }}
+        {...props}
+      />
+    )
+  }
+  const view = render(<Harness />)
+  return {
+    ...view,
+    echoes,
+    settled: () => echoes[echoes.length - 1],
+    /** The distinct values the seam produced since `from` — >1 is a cycle. */
+    distinctSince: (from: number) => [...new Set(echoes.slice(from))],
+    pressEnterOn: (columnId: string) => act(() => setEntryExternally(columnId)),
+  }
+}
+
 beforeEach(() => {
   hooks.workspace = {
     sections: [], evidence: [], caseWrittenAt: null, coreSections: [],
@@ -189,11 +250,11 @@ describe('loading is not an answer about the security', () => {
 
   it('keeps the mode switch stable from the first frame', () => {
     // The list-wide signal already knows the weight and target for every name,
-    // so Position and Valuation must not pop in once the workspace lands —
+    // so Position and Price must not pop in once the workspace lands —
     // that moves the tab the reader is aiming at.
     hooks.workspaceLoading = true
     renderRow({ signal: { ...EMPTY_SIGNAL, weightPct: 4.2, targetPrice: 210, closes: [1, 2, 3] } })
-    for (const name of ['Overview', 'Market', 'Case', 'Valuation', 'Position', 'Work']) {
+    for (const name of ['Overview', 'Market', 'Research', 'Position', 'Work']) {
       expect(screen.getByRole('tab', { name })).toBeInTheDocument()
     }
   })
@@ -224,8 +285,10 @@ describe('the clicked field decides the mode', () => {
     ['price', 'market'],
     ['change', 'market'],
     ['list_market', 'market'],
-    ['list_view', 'case'],
-    ['list_valuation', 'valuation'],
+    ['list_view', 'research'],
+    // The target cell opens the same chart the price cell does — the target
+    // is drawn on it. See `listRowModes`.
+    ['list_valuation', 'market'],
     ['list_exposure', 'position'],
     ['list_work', 'work'],
   ])('a click on %s opens %s', (columnId, expected) => {
@@ -250,7 +313,7 @@ describe('the clicked field decides the mode', () => {
    * any test ever exercised: the integration could have thrown on first
    * contact with real data and every test would still have passed.
    */
-  describe('Market uses the interactive chart, not an enlarged sparkline', () => {
+  describe('Price uses the interactive chart, not an enlarged sparkline', () => {
     const dated = (n: number) => Array.from({ length: n }, (_, i) => ({
       date: new Date(Date.UTC(2026, 0, i + 1)).toISOString().slice(0, 10),
       close: 100 + Math.sin(i / 3) * 8,
@@ -295,19 +358,41 @@ describe('the clicked field decides the mode', () => {
      * price and today's change. The chart came out roughly 1,100 × 230, where
      * a 3% move is a flat line.
      *
-     * This asserts the SHAPE, not the absence of the words: `1 month` and
-     * `Range` still exist, in the rail. What must never come back is a
-     * `Last` figure, because that one is pure duplication of the readout.
+     * The rail that held `1 month` and `Range` is gone too, and those two
+     * went with it: the range chips set the window, the move is now labelled
+     * with the window it was measured over, and the high and low ARE the
+     * y-axis. The panel states the price once.
      */
-    it('does not restate the chart readout above the chart', () => {
+    it('does not restate the chart readout anywhere in the panel', () => {
       full()
       hooks.workspace.history = dated(120)
       openFrom('list_market', { signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
       expect(screen.getByTestId('price-chart-readout')).toBeInTheDocument()
       expect(screen.queryByText('Last')).not.toBeInTheDocument()
-      // The two facts the chart's header does NOT carry survive, in the rail.
-      expect(screen.getByText('1 month')).toBeInTheDocument()
-      expect(screen.getByText('Range')).toBeInTheDocument()
+      expect(screen.queryByText('1 month')).not.toBeInTheDocument()
+      expect(screen.queryByText('Range')).not.toBeInTheDocument()
+    })
+
+    /**
+     * The headline figure is the price the ROW is showing, not the last close.
+     *
+     * The inspector read its price from `price_history_cache` while the
+     * collapsed row above it read the table's live quote, so LLY was 1169.60
+     * in the row and 1,149.85 in the panel it opened. Same name, same screen,
+     * two prices, and no way to tell which one the desk acts on.
+     */
+    it('states the quoted price, not the series last close', () => {
+      full()
+      hooks.workspace.history = dated(120)
+      hooks.workspace.spot = null
+      openFrom('list_market', {
+        signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] },
+        quote: { price: 207.5, changePercent: 1.2 },
+      })
+      expect(screen.getByTestId('price-chart-readout')).toHaveTextContent('207.50')
+      // And it says the figure is live rather than dating it to the last
+      // close, which is a day the quote did not come from.
+      expect(screen.getByText('live')).toBeInTheDocument()
     })
 
     /**
@@ -334,13 +419,15 @@ describe('the clicked field decides the mode', () => {
     })
 
     /**
-     * Valuation draws its scenarios on the price history.
+     * PRICE draws the scenarios on the price history, always.
      *
      * The rungs were ticks on a bare 26px rule, which says where each case
      * sits relative to the others and nothing about whether any of them is
-     * plausible. `PriceContext` already places a price level as a labelled
-     * band on its own scale, so the rungs go there — a bear case is only
-     * assessable against where the stock has actually traded.
+     * plausible. `PriceChart` places a price level as a labelled band on its
+     * own scale, so the rungs go there — a bear case is only assessable
+     * against where the stock has actually traded. This used to be
+     * Valuation's behaviour and Market's omission; one mode cannot disagree
+     * with itself about whether to draw them.
      */
     it('draws the scenario rungs as bands on the real chart', () => {
       full()
@@ -356,7 +443,7 @@ describe('the clicked field decides the mode', () => {
         ],
       }
       openFrom('list_valuation')
-      expect(currentMode()).toBe('valuation')
+      expect(currentMode()).toBe('market')
       // The chart's own range control — proof this is the real chart and not
       // the static axis fallback.
       expect(screen.getByRole('button', { name: '3M' })).toBeInTheDocument()
@@ -371,10 +458,144 @@ describe('the clicked field decides the mode', () => {
     })
   })
 
+  /**
+   * The row echoes the FIELD, not the mode.
+   *
+   * `AssetTableView` stamps the echoed value as `data-open-entry`, and
+   * `lists-surface.css` rings the collapsed cell whose `data-entry` matches.
+   * MARKET and the target both open PRICE now, so echoing the mode name
+   * collapsed them into one value: click the target and the ring jumped to
+   * the price cell — a highlight on a field the reader had not touched.
+   */
+  it.each([
+    ['list_valuation', 'valuation'],
+    ['list_market', 'market'],
+    ['list_exposure', 'position'],
+  ])('opened from %s, it reports %s so the ring lands on that cell', (columnId, token) => {
+    full()
+    const onEntryChange = vi.fn()
+    openFrom(columnId, { onEntryChange, signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
+    expect(onEntryChange).toHaveBeenCalledWith(token)
+    expect(onEntryChange).not.toHaveBeenCalledWith('price')
+  })
+
+  /** Reached by the tab switcher instead, there is no clicked field to keep. */
+  it('reports the mode when the reader used the switch, not a cell', async () => {
+    full()
+    const onEntryChange = vi.fn()
+    openFrom('list_exposure', { onEntryChange, signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
+    onEntryChange.mockClear()
+    await userEvent.click(screen.getByRole('tab', { name: 'Market' }))
+    expect(onEntryChange).toHaveBeenCalledWith('market')
+  })
+
+  /**
+   * The seam must come to rest, whatever route the reader took.
+   *
+   * The expansion reports what it is showing and the table hands that back as
+   * the entry. If the two ever disagree about the same state the pair ping-
+   * pongs: the row re-measures on every frame, the panel jitters and the
+   * collapsed ring flickers between cells. This drives the real loop and
+   * asserts it reaches a fixed point.
+   */
+  it.each([
+    ['list_market', 'market'],
+    ['list_valuation', 'market'],
+    ['list_view', 'research'],
+    ['list_exposure', 'position'],
+    ['list_work', 'work'],
+    [undefined, 'overview'],
+  ])('settles immediately when opened from %s', (entry, expectedMode) => {
+    full()
+    const h = renderWithTable(entry, { signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
+    expect(currentMode()).toBe(expectedMode)
+    // One echo, or two where the column id normalises to its token. Never a
+    // third: a third means the pair disagreed and corrected each other.
+    expect(h.echoes.length).toBeLessThanOrEqual(2)
+    expect(modeForEntryColumn(h.settled())).toBe(expectedMode)
+  })
+
+  /**
+   * Enter on the sparkline, then Enter on the investment case.
+   *
+   * The reported flash, reproduced exactly. The keyboard path writes the
+   * raw COLUMN ID onto an already-open row, so the panel sees its entry
+   * change out from under it — and when the mode was synced in an effect,
+   * the echo published a one-frame-stale mode that became the next entry.
+   * The pair then cycled price -> case -> price without ever converging.
+   *
+   * A render-loop test cannot be written as "it does not hang": React gives
+   * up at 50 nested updates and throws, and a cycle that settles after
+   * twenty is still a visible flash. So this counts what crosses the seam.
+   */
+  it('settles when Enter moves from the sparkline to the investment case', () => {
+    full()
+    const h = renderWithTable('list_market', { signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
+    expect(currentMode()).toBe('market')
+
+    const before = h.echoes.length
+    h.pressEnterOn('list_view')
+    expect(currentMode()).toBe('research')
+    // ONE distinct value. The cycle alternated 'price' and 'case' forever;
+    // repeats of a single value are the seam agreeing with itself.
+    /* `case`, not `research`: the echo carries the TOKEN the clicked cell
+       stamps, which is what the ring matches on, while the MODE it resolves
+       to is `research`. Collapsing the two is how the ring ended up on a
+       field nobody touched. */
+    expect(h.distinctSince(before), 'the seam must converge, not cycle').toEqual(['case'])
+
+    // Back to the sparkline, because a cycle needs both legs to show.
+    const mid = h.echoes.length
+    h.pressEnterOn('list_market')
+    expect(currentMode()).toBe('market')
+    expect(h.distinctSince(mid)).toEqual(['market'])
+  })
+
+  /** Every pair of fields, since the cycle needs two modes to bounce between. */
+  it.each([
+    ['list_market', 'list_view', 'research'],
+    ['list_view', 'list_market', 'market'],
+    ['list_valuation', 'list_exposure', 'position'],
+    ['list_exposure', 'list_valuation', 'market'],
+    ['list_work', 'list_view', 'research'],
+  ])('Enter from %s to %s lands on %s and stops', (from, to, expected) => {
+    full()
+    const h = renderWithTable(from, { signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
+    const before = h.echoes.length
+    h.pressEnterOn(to)
+    expect(currentMode()).toBe(expected)
+    expect(h.distinctSince(before).length, 'more than one value means a cycle').toBe(1)
+  })
+
+  /**
+   * Chart → Investment View, the move that was freaking out.
+   *
+   * PRICE and CASE are the two modes whose heights differ most (2.1 against
+   * 1.0 of the row budget), so an unstable seam here is not a subtle flicker —
+   * the row doubles and halves repeatedly.
+   */
+  it('settles when switching from the chart to the written view', async () => {
+    full()
+    const h = renderWithTable('list_market', { signal: { ...EMPTY_SIGNAL, closes: [100, 101, 102] } })
+    expect(currentMode()).toBe('market')
+    const before = h.echoes.length
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Research' }))
+    expect(currentMode()).toBe('research')
+
+    const after = h.echoes.slice(before)
+    expect(after.length).toBeLessThanOrEqual(2)
+    expect(modeForEntryColumn(h.settled())).toBe('research')
+    // And back again, because a cycle can need both legs to show itself.
+    await userEvent.click(screen.getByRole('tab', { name: 'Market' }))
+    expect(currentMode()).toBe('market')
+    expect(modeForEntryColumn(h.settled())).toBe('market')
+  })
+
   it('re-enters on the newly clicked field while the row stays open', () => {
     full()
     const { rerender } = openFrom('list_valuation')
-    expect(currentMode()).toBe('valuation')
+    expect(currentMode()).toBe('market')
     // The table hands in a new entryColumnId — the reader restating intent on
     // a row that is already open.
     rerender(
@@ -388,10 +609,9 @@ describe('the clicked field decides the mode', () => {
     renderRow()
     expect(screen.queryByRole('tab', { name: 'Position' })).not.toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Market' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'Valuation' })).not.toBeInTheDocument()
     // These three always mean something — an unwritten case and unstarted work
     // are exactly what a list is for.
-    for (const name of ['Overview', 'Case', 'Work']) {
+    for (const name of ['Overview', 'Research', 'Work']) {
       expect(screen.getByRole('tab', { name })).toBeInTheDocument()
     }
   })
@@ -468,7 +688,7 @@ describe('the verdict states the stance in one line', () => {
     renderRow()
     const read = () => screen.getByTestId('verdict-band').textContent
     const onOverview = read()
-    await userEvent.click(screen.getByRole('tab', { name: 'Case' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Research' }))
     // Identical, not merely present: the stance does not change because the
     // reader clicked a tab, which is the whole reason each mode below can be
     // pure evidence.
@@ -486,7 +706,7 @@ describe('the verdict states the stance in one line', () => {
      */
     expect(screen.getByTestId('verdict-band').textContent)
       .toMatch(/Not yet rated, and not held/)
-    expect(screen.getByText('No case has been written for this name.')).toBeInTheDocument()
+    expect(screen.getByText(/No case written/)).toBeInTheDocument()
   })
 
   it('shows shares when a position exists but its weight is unknowable', () => {
@@ -671,7 +891,18 @@ describe('Overview is the written case, not a second dashboard', () => {
     expect(body).not.toContain('5.14%')
   })
 
-  it('gives each written section of the case its own column', () => {
+  /**
+   * Overview answers three QUESTIONS, not three sections.
+   *
+   * It used to be the written case in up to three columns, which is what
+   * RESEARCH shows — so opening a row from the ticker and from the rating
+   * gave the same thing at different lengths and the switch between them
+   * did nothing a reader could name. Overview is the mode asked for before
+   * the reader knows what they want, so it says what the desk believes,
+   * what has happened, and what is owed, and each column is a door to the
+   * mode that owns it.
+   */
+  it('asks what we believe, what happened and what is owed', () => {
     hooks.workspace.sections = [
       section('thesis', 'Services mix is underappreciated.'),
       section('where_different', 'Street models hardware cyclicality only.'),
@@ -679,12 +910,19 @@ describe('Overview is the written case, not a second dashboard', () => {
     ]
     renderRow()
     const body = screen.getByTestId('overview-bands')
-    // The whole argument, side by side — the reader is not sent to another
-    // tab to find out what would break the thesis.
-    for (const key of ['thesis', 'where_different', 'risks_to_thesis'] as const) {
-      expect(within(body).getByText(SECTION_LABEL[key])).toBeInTheDocument()
+    for (const heading of ['What we believe', 'What has happened', 'What is owed']) {
+      expect(within(body).getByText(heading)).toBeInTheDocument()
     }
-    expect(within(body).getByText(/China exposure/)).toBeInTheDocument()
+    // The thesis leads the belief column; the rest of the case is Research's.
+    expect(within(body).getByText(/Services mix is underappreciated/)).toBeInTheDocument()
+    expect(within(body).queryByText(/China exposure/)).not.toBeInTheDocument()
+  })
+
+  it('says nothing is outstanding rather than leaving the column blank', () => {
+    hooks.workspace.sections = [section('thesis', 'A view.')]
+    renderRow()
+    const body = screen.getByTestId('overview-bands')
+    expect(within(body).getByText('Nothing outstanding.')).toBeInTheDocument()
   })
 
   it('leads the belief band with the thesis and its author', () => {
@@ -711,10 +949,65 @@ describe('Overview is the written case, not a second dashboard', () => {
     expect(titles[0]).toBe('New since review')
   })
 
-  it('says nothing is new rather than leaving the rail blank', () => {
+  /**
+   * An owed decision hands off. It is never taken in the row.
+   *
+   * A decision is one answer per (idea, PORTFOLIO) track, and authorisation
+   * is PM-only per portfolio — so a row-level Approve would decide for every
+   * other book and might offer an action the reader does not have. Both are
+   * solvable only by reproducing the inbox's portfolio picker, permission
+   * gate and fan-in, which is the duplicate decision engine this must not
+   * become. So the row routes to the canonical surface.
+   */
+  it('routes an owed decision to the canonical surface instead of deciding', async () => {
+    const events: unknown[] = []
+    const onAction = (e: Event) => events.push((e as CustomEvent).detail)
+    window.addEventListener('decision-engine-action', onAction)
+    try {
+      openFrom('list_work', {
+        signal: {
+          ...EMPTY_SIGNAL,
+          work: { tier: 'decision', label: 'BUY · Decision ready', count: 0, secondary: null },
+          idea: {
+            id: 'i1', direction: 'buy', stage: 'ready_for_decision', portfolioName: 'Growth',
+            proposedWeight: 2.5, rationale: null, authorName: 'D. Liu',
+            createdAt: '2026-09-01T00:00:00Z', conviction: 'medium',
+          },
+        },
+      })
+      const btn = screen.getByRole('button', { name: /Decide in Pipeline/ })
+      await userEvent.click(btn)
+      expect(events).toHaveLength(1)
+      expect(events[0]).toMatchObject({ type: 'trade-queue' })
+    } finally {
+      window.removeEventListener('decision-engine-action', onAction)
+    }
+  })
+
+  it('offers no approve or reject control anywhere in the row', () => {
+    openFrom('list_work', {
+      signal: {
+        ...EMPTY_SIGNAL,
+        work: { tier: 'decision', label: 'BUY · Decision ready', count: 0, secondary: null },
+        idea: {
+          id: 'i1', direction: 'buy', stage: 'ready_for_decision', portfolioName: 'Growth',
+          proposedWeight: 2.5, rationale: null, authorName: 'D. Liu',
+          createdAt: '2026-09-01T00:00:00Z', conviction: 'medium',
+        },
+      },
+    })
+    for (const name of [/^Approve/, /^Reject/, /^Accept/, /Request changes/]) {
+      expect(screen.queryByRole('button', { name }), `${name} must not exist here`).toBeNull()
+    }
+  })
+
+  it('says nothing is new rather than leaving the column blank', () => {
     hooks.workspace.sections = [section('thesis', 'Services mix.')]
     renderRow()
-    expect(screen.getByText('Nothing filed since the case was written.')).toBeInTheDocument()
+    // Said in the "What has happened" column AND in the rail's Latest
+    // research — both are places a reader looks for it, so both state it.
+    expect(screen.getAllByText('Nothing filed since the case was written.').length)
+      .toBeGreaterThan(0)
   })
 
   /**
@@ -726,13 +1019,13 @@ describe('Overview is the written case, not a second dashboard', () => {
    */
   it('says so plainly when no case is written', () => {
     renderRow()
-    expect(screen.getByText('No case has been written for this name.')).toBeInTheDocument()
+    expect(screen.getByText(/No case written/)).toBeInTheDocument()
   })
 
   it('ignores a section that exists but is blank', () => {
     hooks.workspace.sections = [section('thesis', '   ')]
     renderRow()
-    expect(screen.getByText('No case has been written for this name.')).toBeInTheDocument()
+    expect(screen.getByText(/No case written/)).toBeInTheDocument()
   })
 })
 
@@ -767,7 +1060,7 @@ describe('Work mode launches the workflow the signal names', () => {
     expect(screen.getByText('No thesis on file')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Write the case/ }))
     // Stays in the row and switches mode rather than navigating away.
-    expect(currentMode()).toBe('case')
+    expect(currentMode()).toBe('research')
   })
 
   it('shows the live idea as the open work', () => {
@@ -813,6 +1106,39 @@ describe('Work mode launches the workflow the signal names', () => {
 })
 
 describe('Position and Valuation modes', () => {
+  /**
+   * The books list is clamped, because the panel clips rather than scrolls.
+   *
+   * `ModeLayout` is `overflow-hidden` by design — a second scroll surface
+   * inside a virtualised row hides content behind a bar nobody looks for. So
+   * a list whose length is the data's has to state what fits and count the
+   * rest. Unclamped, a name in two books overran its box by 46px and the
+   * second book was sliced through the middle of its own figures.
+   */
+  it('clamps the books list and counts what it did not draw', () => {
+    hooks.workspace.positions = Array.from({ length: 6 }, (_, i) => ({
+      portfolioId: `p${i}`, portfolioName: `Book ${i}`, shares: 100 * (6 - i),
+      weightPct: 6 - i, marketValue: 1000 * (6 - i), unrealisedPct: 1,
+    }))
+    openFrom('list_exposure')
+    const body = within(screen.getByTestId('list-row-expansion'))
+    // `Book 0` is also the largest-weight hero's sub and a verdict clause, so
+    // it is the absences that carry this: the fourth book is not drawn.
+    expect(body.getAllByText('Book 0').length).toBeGreaterThan(0)
+    expect(body.getByText('Book 2')).toBeInTheDocument()
+    expect(body.queryByText('Book 3')).not.toBeInTheDocument()
+    expect(body.queryByText('Book 5')).not.toBeInTheDocument()
+    expect(body.getByText('+3 more books — open the full case')).toBeInTheDocument()
+  })
+
+  it('draws every book when they all fit, and counts nothing', () => {
+    hooks.workspace.positions = [
+      { portfolioId: 'p1', portfolioName: 'Only Book', shares: 10, weightPct: 1, marketValue: 100, unrealisedPct: 0 },
+    ]
+    openFrom('list_exposure')
+    expect(screen.queryByText(/more books? — open the full case/)).not.toBeInTheDocument()
+  })
+
   it('lists every book holding it, largest weight first', () => {
     hooks.workspace.positions = [
       { portfolioId: 'p1', portfolioName: 'Small Book', shares: 100, weightPct: 0.4, marketValue: 1000, unrealisedPct: -3.2 },
@@ -844,7 +1170,7 @@ describe('Position and Valuation modes', () => {
       ],
     }
     openFrom('list_valuation')
-    expect(currentMode()).toBe('valuation')
+    expect(currentMode()).toBe('market')
     expect(screen.getByText('Street beat')).toBeInTheDocument()
     expect(screen.getByText('Downside')).toBeInTheDocument()
     // Cheapest rung first, and upside measured against spot.
@@ -853,11 +1179,28 @@ describe('Position and Valuation modes', () => {
 
   it('does not offer to write a price target from the row', () => {
     hooks.workspace.spot = 100
-    hooks.workspace.target = 130
+    hooks.workspace.target = null
     openFrom('list_valuation', { onOpenAsset: () => {} })
     // `savePriceTarget` needs a resolved scenario, which a row cannot pick
     // honestly — so this links into the case instead of writing.
     expect(screen.getByRole('button', { name: /Set a target in the case/ })).toBeInTheDocument()
+  })
+
+  /**
+   * With a target on file, PRICE stops asking for one.
+   *
+   * The merged mode inherited Valuation's footer, which offered "Set a target
+   * in the case" unconditionally — including on a chart that was already
+   * drawing the target as a labelled band. An action that proposes work the
+   * panel can see is done is an action the reader learns to ignore.
+   */
+  it('offers the state-chosen move once a target exists', () => {
+    hooks.workspace.spot = 100
+    hooks.workspace.target = 130
+    hooks.workspace.sections = [section('thesis', 'Services mix.')]
+    openFrom('list_valuation', { onOpenAsset: () => {} })
+    expect(screen.queryByRole('button', { name: /Set a target in the case/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Open full case')).toBeInTheDocument()
   })
 })
 
@@ -870,7 +1213,20 @@ describe('ownership and list fields stay reachable', () => {
     // An open idea is part of the stance, so it is a clause of the verdict
     // rather than a band of its own — one fact about the security, stated
     // once, wherever the reader happens to be.
-    expect(within(screen.getByTestId('verdict-band')).getByText('BUY · deciding')).toBeInTheDocument()
+    //
+    // `Deciding`, not `deciding`: the stage is a database enum and was being
+    // concatenated raw, so a portfolio manager was shown `ready_for_decision`.
+    expect(within(screen.getByTestId('verdict-band')).getByText('BUY · Deciding')).toBeInTheDocument()
+  })
+
+  it('writes an enum stage as words, not as storage', () => {
+    hooks.workspace.liveIdeas = [
+      { id: 'i1', action: 'buy', stage: 'ready_for_decision', rationale: null, portfolioName: 'Tech Growth' },
+    ]
+    renderRow()
+    const band = within(screen.getByTestId('verdict-band'))
+    expect(band.getByText('BUY · Ready for decision')).toBeInTheDocument()
+    expect(band.queryByText(/ready_for_decision/)).not.toBeInTheDocument()
   })
 
   it('shows no Active fact when there is no idea', () => {
