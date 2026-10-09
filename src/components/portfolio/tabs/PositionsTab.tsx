@@ -288,14 +288,16 @@ export function PositionsTab({
    * header does with this count. When nothing is priced there is no total at
    * all, rather than a zero.
    */
-  const { total: totalDailyPnl, unpricedCount } = useMemo(
-    () => sumDayPnl(enrichedRows.map(r => r.dailyPnl)),
+  const { total: totalDailyPnl, unpricedCount, pricedMarketValue } = useMemo(
+    () => sumDayPnl(enrichedRows.map(r => ({ pnl: r.dailyPnl, marketValue: r.marketValue }))),
     [enrichedRows],
   )
 
+  // Against the priced holdings' own NAV, not the book's. See `dayReturnPct`:
+  // a subset numerator over a superset denominator understates the return.
   const totalDailyReturnPct = useMemo(
-    () => dayReturnPct(totalDailyPnl, totalValue),
-    [totalValue, totalDailyPnl],
+    () => dayReturnPct(totalDailyPnl, pricedMarketValue),
+    [pricedMarketValue, totalDailyPnl],
   )
 
   // ── Display rows (filtered/sorted by active view, then grouped) ──
