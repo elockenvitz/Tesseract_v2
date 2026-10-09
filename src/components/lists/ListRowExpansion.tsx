@@ -56,6 +56,7 @@ import {
 import {
   MODE_ORDER, MODE_LABEL, modeForEntryColumn, entryTokenFor, type ListRowMode,
 } from './listRowModes'
+import { pricingSymbolOf } from '../../lib/market-data/identity'
 import { useUpdateListItem } from '../../hooks/lists/useUpdateListItem'
 import { useAssetWorkspace } from '../../hooks/useAssetWorkspace'
 import {
@@ -187,10 +188,37 @@ export function ListRowExpansion({
   // `useAssetWorkspace` returns `{ data, isLoading, error }` and `data` is never
   // undefined — it falls back to an EMPTY shape — so the fields below can be
   // read without guarding every one.
+  /*
+   * The PRICING symbol at the query boundary, the display symbol everywhere
+   * else.
+   *
+   * `price_history_cache` is keyed by what an instrument trades as now; the
+   * row shows what the holdings file called it. Block is `SQ` here and `XYZ`
+   * there. The collapsed row already resolves this — `useListPriceHistory`
+   * fetches by the traded ticker and re-keys to the display one — so SQ shows
+   * a 1M, a 6M and a sparkline. The expansion did not, so `useAssetWorkspace`
+   * queried `SQ`, got nothing, left `spot` null, and `availableModes` dropped
+   * Market: the row had a chart and the panel opened from it said there was
+   * no price history.
+   *
+   * `pricingSymbolOf` is the existing rule (`lib/market-data/identity`), and
+   * `current_symbol` is already selected into every list row by
+   * `ASSET_REFERENCE_COLUMNS` — so this is a resolution at the call site, not
+   * a new fetch, a new hook, or new infrastructure. It is idempotent: a
+   * traded ticker is never itself a rename source.
+   *
+   * Resolved HERE and nowhere else. `asset.symbol` keeps flowing to every
+   * label, heading and action below, because what the desk calls this
+   * security has not changed.
+   */
+  const pricingSymbol = asset?.id
+    ? pricingSymbolOf({ id: asset.id, symbol: asset.symbol ?? null, current_symbol: asset.current_symbol ?? null })
+    : null
+
   const { data: workspace, isLoading: workspaceLoading } =
     // Overview by focus, but it draws a real chart — so it needs the real
     // history, not the twelve-day floor a chartless focus gets.
-    useAssetWorkspace(asset?.id ?? null, asset?.symbol ?? null, 'overview', { deepHistory: true })
+    useAssetWorkspace(asset?.id ?? null, pricingSymbol, 'overview', { deepHistory: true })
   const { ratings, saveRating } = useAnalystRatings({ assetId: asset?.id })
   const { scales } = useRatingScales()
   const { saveContribution } = useContributions({ assetId: asset?.id })
