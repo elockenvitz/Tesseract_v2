@@ -217,12 +217,13 @@ export function OverviewTab({
    * tile presented it as today's result. Null means "no figure", and the
    * tile says so instead of showing a number.
    */
-  const { total: todayPnl, unpricedCount } = useMemo(
-    () => sumDayPnl(enriched.map(h => h.dayPnl)),
+  const { total: todayPnl, unpricedCount, pricedMarketValue } = useMemo(
+    () => sumDayPnl(enriched.map(h => ({ pnl: h.dayPnl, marketValue: h.marketValue }))),
     [enriched],
   )
 
-  const todayReturnPct = dayReturnPct(todayPnl, totalValue)
+  // Against the priced holdings' own NAV, not the book's. See `dayReturnPct`.
+  const todayReturnPct = dayReturnPct(todayPnl, pricedMarketValue)
   const hasQuotes = quotes.size > 0
 
   // ── Movers ───────────────────────────────────────────────
