@@ -174,7 +174,17 @@ export const KNOWN_UNRESOLVED = new Set([
   'tdf_trade_proposal_items', 'tdf_underlying_funds',
   // --- trading / ideas ---
   'trade_queue_comments', 'trade_queue_votes', 'trade_lab_idea_links',
-  'idea_reactions', 'decision_reviews',
+  'idea_reactions',
+  // `decision_reviews` was here. Removed by
+  // 20261009120000_decision_reviews_tenant_isolation.sql, which replaced its
+  // unconditional SELECT with an org-scoped one and derives ownership
+  // server-side. The ratchet only permits removal, so this line going is the
+  // record that the finding was CLOSED rather than reclassified.
+  //
+  // SEQUENCING: this guard reads an inventory captured FROM PRODUCTION. Remove
+  // the entry before the migration is deployed and the next capture still
+  // shows `qual = true`, so the guard fails — correctly. Land this file with
+  // the migration, and refresh the inventory after deployment, not before.
   // --- messaging / social ---
   'author_follows',
   // --- per-user surfaces that are not, in fact, per-user ---

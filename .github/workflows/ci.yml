@@ -214,6 +214,46 @@ jobs:
   # then, run it manually via `npm run tenant:lint:all` with the env
   # vars set in .env.local.
 
+  # ── Permissive tenant-data policies must fail a build ────────────────────
+  #
+  # `unconditional-policy-guard.mjs` was written to catch exactly the
+  # `decision_reviews` finding - a tenant table with USING (true) - and it
+  # would have, except that NOTHING RAN IT. It appeared only inside
+  # `tenant:lint:all`, which was never wired into CI because its SIBLING
+  # script needs a service-role key. The guard itself needs no credentials:
+  # it reads a captured inventory. One script's dependency kept the other out
+  # of CI while the finding sat open.
+  #
+  # So it gets its own job, separate from the credentialed lint.
+  #
+  # It fails closed. With no inventory it exits 2 with an actionable message,
+  # and that is the correct outcome rather than a nuisance - a security gate
+  # that silently skips when its input is missing is the defect class this
+  # repository already documents. If this job is red, either the inventory
+  # needs refreshing or the finding is real.
+  policy-guard:
+    name: Tenant policy guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Not `npm ci`: the lockfile has peer conflicts and guard:ci rejects it.
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
+      # Refresh from production when the token is available, so the guard
+      # measures the live boundary rather than a snapshot that ages quietly.
+      # Without the secret this step is skipped and the guard falls back to a
+      # committed inventory - failing if there is none, which is the point.
+      - name: Refresh security inventory
+        if: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: node scripts/audit/schema-baseline.mjs
+      - run: npm run guard:policies
+
   # ── Red main must reach a human the same day ──────────────────────────────
   #
   # Main's CI sat red across three merges on 11-13 Aug while Netlify published

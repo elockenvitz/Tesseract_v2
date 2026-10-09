@@ -106,6 +106,21 @@ export function useUpsertDecisionReview() {
       organizationId?: string | null
     }) => {
       const { decisionId, userId, patch } = args
+      /*
+       * `organization_id` is deliberately ABSENT here and must stay absent.
+       *
+       * The column exists (20261009120000) and carries this table's tenant
+       * boundary, but it is derived SERVER-SIDE by the
+       * `decision_reviews_owner` trigger from the decision being reviewed.
+       * A client-supplied value is discarded — and were it trusted, the fix
+       * would not work: a caller could stamp their own org onto a row keyed
+       * by another tenant's `decision_id`, which is exactly the squat the
+       * migration closes.
+       *
+       * The INSERT policy independently requires `can_review_decision`, so a
+       * review for a decision outside the caller's organisation is refused
+       * rather than silently created and orphaned.
+       */
       const payload = {
         decision_id: decisionId,
         decision_quality: patch.decision_quality ?? null,
