@@ -73,6 +73,55 @@ describe('the thesis history does not read an abandoned table', () => {
   })
 })
 
+describe('the capital bar strikes every figure at one price', () => {
+  /*
+   * Net Exposure summed `shares * (currentPrice || held)` — the live quote —
+   * while the weight beside it was `(shares * held) / ptotal`, a book price
+   * over a book-priced NAV. Two tiles from one array described different
+   * portfolios, and a reader could divide the two visible columns of a
+   * Current Exposure row and not recover the percentage printed next to them.
+   *
+   * The denominator (`portfolioTotals`) is never repriced, so the fix is to
+   * strike both sides at the book price rather than reprice the numerator —
+   * `useAssetLiveWeights.ts:34-37`: "repricing only the numerator against a
+   * stale denominator is worse than leaving both stale."
+   */
+  const bar = /activeSubPage === 'decisions'[\s\S]{0,1400}?holdingMetrics\.reduce/.exec(ASSET_TAB)?.[0] ?? ''
+
+  it('finds the capital bar', () => {
+    expect(bar, 'the decisions sub-page block should be locatable').toContain('holdingMetrics')
+  })
+
+  it('does not mix a live quote into market value', () => {
+    expect(bar).not.toMatch(/currentPrice\s*\|\|\s*held/)
+    expect(bar).toMatch(/const mktVal = shares \* held/)
+  })
+
+  it('uses the same price in the numerator and the weight', () => {
+    // Both must be `shares * held`; the weight additionally divides by the
+    // book-priced NAV, which is the same basis.
+    expect(bar).toMatch(/const weight = ptotal > 0 \? \(\(shares \* held\) \/ ptotal\) \* 100 : 0/)
+  })
+
+  it('prices the Current Exposure row the same way', () => {
+    expect(ASSET_TAB).not.toMatch(/const currentValue = shares \* \(currentPrice \|\| held\)/)
+    expect(ASSET_TAB).toMatch(/const currentValue = shares \* held/)
+  })
+
+  it('does not gate a book-priced exposure on having a quote', () => {
+    // The old gate rendered an active-styled em-dash while a perfectly good
+    // book-priced exposure was available.
+    expect(ASSET_TAB).not.toMatch(/netExposure > 0 && currentPrice > 0/)
+  })
+
+  it('still reads the newest row per portfolio, not every upload', () => {
+    // The documented holdings-collapse class: `portfolio_holdings` is dated,
+    // so a book uploaded three times otherwise appears three times.
+    expect(ASSET_TAB).toMatch(/currentRows\(/)
+    expect(ASSET_TAB).toMatch(/latestSnapshotRows\(/)
+  })
+})
+
 describe('the legacy ladder table keeps no live writer', () => {
   it('is written only from code with no callers, pending removal', () => {
     /*

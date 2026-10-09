@@ -3787,12 +3787,44 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {activeSubPage === 'decisions' && (() => {
           // Derive summary metrics from portfolio holdings
           const portfolioCount = portfolioHoldings?.length ?? 0
-          const currentPrice = currentQuote?.price || 0
+          /*
+           * ── One price for both sides of every figure in this bar ────────
+           *
+           * `mktVal` was `shares * (currentPrice || held)` — the LIVE quote —
+           * while `weight` was `(shares * held) / ptotal`, a book price over
+           * a book-priced NAV. Two tiles rendered side by side from the same
+           * array therefore described different portfolios: Net Exposure
+           * marked this one holding at today's price while every other
+           * holding in the denominator stayed at its upload price. A reader
+           * could divide the two visible columns of one Current Exposure row
+           * and not recover the percentage printed beside them.
+           *
+           * It is not fixable by repricing the numerator alone, which is the
+           * tempting move. `useAssetLiveWeights.ts:34-37` states the rule:
+           * "weight is a ratio, and repricing only the numerator against a
+           * stale denominator is worse than leaving both stale." The
+           * denominator here (`portfolioTotals`, :1055) is every holding at
+           * its upload price, and repricing it means a quote for every name
+           * in every book — ~40 requests per portfolio, which the mapping
+           * document marks desktop opt-in at most.
+           *
+           * So both sides are struck at the book price, which is what
+           * `lib/portfolio/holdings.ts` does, what `PositionsTab:250-253` and
+           * `OverviewTab:184-197` already do, and what `useAssetWorkspace`
+           * returns. The cost is that Net Exposure no longer moves intraday.
+           * That is the honest reading of a book priced at its last upload,
+           * and the figure is labelled with its as-of date rather than left
+           * to look live.
+           *
+           * The live quote is still fetched and still used — for the header,
+           * and for the upside and divergence checks that genuinely compare
+           * a target against today's price. It is simply not mixed into a
+           * ratio whose denominator it does not reach.
+           */
           const holdingMetrics = portfolioHoldings?.map((h: any) => {
             const shares = parseFloat(h.shares)
             const held = parseFloat(h.price ?? h.cost)
-            // Against the book's market value, on the shared definition.
-            const mktVal = shares * (currentPrice || held)
+            const mktVal = shares * held
             const ptotal = portfolioTotals?.[h.portfolio_id] || 0
             const weight = ptotal > 0 ? ((shares * held) / ptotal) * 100 : 0
             return { weight, mktVal, shares, name: h.portfolios?.name || 'Unknown', portfolioId: h.portfolio_id }
@@ -3818,10 +3850,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   },
                   {
                     label: 'Net Exposure',
-                    value: netExposure > 0 && currentPrice > 0
+                    /* Gated on the exposure itself, not on a quote. It is
+                       struck at the book price now, so a missing quote is
+                       irrelevant to it \u2014 and the old gate rendered an
+                       active-styled em-dash while a book-priced exposure
+                       was sitting right there. */
+                    value: netExposure > 0
                       ? `$${netExposure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
                       : '\u2014',
-                    sub: null,
+                    sub: 'at book price',
                     active: netExposure > 0,
                   },
                   {
@@ -3886,7 +3923,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         const shares = parseFloat(holding.shares)
                         const costPerShare = parseFloat(holding.cost)
                         const held = parseFloat(holding.price ?? holding.cost)
-                        const currentValue = shares * (currentPrice || held)
+                        // Book price, matching the weight beside it. See the
+                        // note above `holdingMetrics`.
+                        const currentValue = shares * held
                         const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
                         const weight = portfolioTotal > 0 ? ((shares * held) / portfolioTotal) * 100 : 0
 
@@ -3911,7 +3950,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             </td>
                             <td className="px-4 py-1.5 text-right">
                               <span className="text-[12px] text-gray-500 tabular-nums dark:text-gray-400">
-                                {currentPrice > 0
+                                {held > 0
                                   ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                   : '\u2014'}
                               </span>
