@@ -198,7 +198,10 @@ const MAX_ERRORS = 0
 // they each carried.
 // 8653 -> 8652: removing the dead price-target history query from
 // ThesisHistoryView took its `target_price` error with it.
-const MAX_REPO_ERRORS = 8652
+// 8652 -> 8638: removing the research_field_presets query and the
+// all-sections read it existed to serve, and replacing three membership
+// `.single()` lookups with the current-org context, took fourteen more.
+const MAX_REPO_ERRORS = 8638
 
 /**
  * A floor on real source files, now that they are counted as source files.
