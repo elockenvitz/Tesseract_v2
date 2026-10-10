@@ -42,6 +42,29 @@ describe('the migration exists and replaces the unconditional policy', () => {
     expect(SQL).toMatch(/DROP POLICY IF EXISTS "decision_reviews_select_authenticated"/)
   })
 
+  it('also drops the containment policies it is applied on top of', () => {
+    // Production runs 01-containment when this migration lands. Leaving its
+    // three `false` policies in place is harmless for access — permissive
+    // policies OR together — but leaves two generations of policy on one
+    // table for the next reader to reconcile.
+    for (const cmd of ['select', 'insert', 'update']) {
+      expect(SQL).toMatch(
+        new RegExp(`DROP POLICY IF EXISTS decision_reviews_contained_${cmd}`),
+      )
+    }
+  })
+
+  it('restores the table grant that containment withdrew', () => {
+    // Without this the permanent fix ships as a permanent OUTAGE: a role with
+    // no table grant never gets as far as having its policies evaluated, so
+    // the correct policies below would be unreachable.
+    expect(SQL).toMatch(
+      /GRANT SELECT, INSERT, UPDATE ON TABLE public\.decision_reviews TO authenticated/,
+    )
+    // DELETE was never granted and no policy allows it.
+    expect(SQL).not.toMatch(/GRANT[^;]*\bDELETE\b[^;]*TO authenticated/)
+  })
+
   it('creates no policy with a `true` predicate', () => {
     // The whole defect in one line: `USING (true)` on a tenant table.
     const policies = SQL.match(/CREATE POLICY[\s\S]*?;/g) ?? []
@@ -85,7 +108,16 @@ describe('the pre-flight hardening is present', () => {
     // The first draft ranked the three candidate tables and took LIMIT 1,
     // which silently picks an owner when two tables claim the same id.
     expect(SQL).not.toMatch(/ORDER BY rank\s*\n?\s*LIMIT 1/)
-    expect(SQL).toMatch(/CASE WHEN count\(\*\) = 1 THEN min\(portfolio_id\) END/)
+    expect(SQL).toMatch(/CASE WHEN count\(\*\) = 1 THEN \(array_agg\(portfolio_id\)\)\[1\] END/)
+  })
+
+  it('does not reach for a min/max aggregate over uuid', () => {
+    // Postgres has no min()/max() for uuid. The first draft used
+    // `min(portfolio_id)` here, which fails at CREATE FUNCTION with 42883 —
+    // so the whole migration would have aborted on its first statement.
+    // Caught by the production preflight, which happened to run the same
+    // expression; this gate is what catches it next time.
+    expect(SQL).not.toMatch(/\b(min|max)\s*\(\s*\w*portfolio_id\s*\)/i)
   })
 
   it('pins search_path on every SECURITY DEFINER function', () => {

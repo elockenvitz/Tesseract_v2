@@ -234,6 +234,9 @@ jobs:
   policy-guard:
     name: Tenant policy guard
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -244,14 +247,23 @@ jobs:
       - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
       # Refresh from production when the token is available, so the guard
       # measures the live boundary rather than a snapshot that ages quietly.
-      # Without the secret this step is skipped and the guard falls back to a
+      # Without the secret this step is skipped and the guard falls back to the
       # committed inventory - failing if there is none, which is the point.
+      #
+      # The condition reads `env`, not `secrets`. The `secrets` context is NOT
+      # available in a step-level `if` (only in `with`/`env`/`run`), and
+      # referencing it there is an "Unrecognized named-value" error that
+      # invalidates the WHOLE workflow file - every job in it, not just this
+      # one. Promoting the secret to a job-level env var first is the
+      # supported shape.
+      #
+      # `--ci-minimal` on purpose: this writes the same file that is committed,
+      # so a refreshed run and a fallback run read the same shape. A full
+      # capture here would land at a different path the guard does not read,
+      # which would look like a refresh and silently be a fallback.
       - name: Refresh security inventory
-        if: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-        run: node scripts/audit/schema-baseline.mjs
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: node scripts/audit/schema-baseline.mjs --ci-minimal
       - run: npm run guard:policies
 
   # ── Red main must reach a human the same day ──────────────────────────────

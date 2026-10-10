@@ -185,6 +185,11 @@ export const KNOWN_UNRESOLVED = new Set([
   // the entry before the migration is deployed and the next capture still
   // shows `qual = true`, so the guard fails — correctly. Land this file with
   // the migration, and refresh the inventory after deployment, not before.
+  //
+  // Done in that order: the migration went to production 2026-10-10, and the
+  // committed inventory was captured after it. `decision_reviews` now records
+  // three policies with qual_class SCOPED, so this removal is backed by a
+  // capture rather than by intent.
   // --- messaging / social ---
   'author_follows',
   // --- per-user surfaces that are not, in fact, per-user ---
@@ -454,19 +459,42 @@ export function coverage(inventory) {
 // Runner
 // ---------------------------------------------------------------------------
 
-const DEFAULT_INVENTORY = 'docs/audit/baselines/production-security-inventory.json'
+/**
+ * In preference order.
+ *
+ * The full inventory is gitignored and is what a local capture produces, so it
+ * wins when present — it is the richer artifact and a developer who just
+ * captured one should be measuring it. The minimal one is the committed
+ * fallback that lets this run in CI with no credentials; it carries only the
+ * tables and policies this guard reads. See docs/audit/baselines/README.md.
+ *
+ * Not finding EITHER is still exit 2. A missing input is never a pass.
+ */
+const DEFAULT_INVENTORIES = [
+  'docs/audit/baselines/production-security-inventory.json',
+  'docs/audit/baselines/ci-policy-inventory.json',
+]
 
 function main(argv) {
   const asJson = argv.includes('--json')
-  const path = argv.find(a => a.endsWith('.json') && a !== '--json') ?? DEFAULT_INVENTORY
+  const explicit = argv.find(a => a.endsWith('.json') && a !== '--json')
+  const candidates = explicit ? [explicit] : DEFAULT_INVENTORIES
 
-  let inventory
-  try {
-    inventory = JSON.parse(readFileSync(path, 'utf8'))
-  } catch (e) {
-    console.error(`FAIL: could not read a security inventory at ${path}`)
-    console.error(`      ${e.message}`)
+  let inventory, path, errors = []
+  for (const c of candidates) {
+    try {
+      inventory = JSON.parse(readFileSync(c, 'utf8'))
+      path = c
+      break
+    } catch (e) {
+      errors.push(`${c}: ${e.message}`)
+    }
+  }
+  if (!inventory) {
+    console.error('FAIL: could not read a security inventory.')
+    for (const e of errors) console.error(`      ${e}`)
     console.error('      Generate one with: node scripts/audit/schema-baseline.mjs')
+    console.error('      ...or the committed CI subset:  --ci-minimal')
     return 2
   }
 
