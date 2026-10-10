@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat, LayoutDashboard } from 'lucide-react'
 import { clsx } from 'clsx'
 import { fetchSignedUrl } from '../../lib/storage/signed-url'
 import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../../lib/storage/buckets'
@@ -36,6 +36,7 @@ import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
+import { InvestmentSnapshot } from '../asset/InvestmentSnapshot'
 // DocumentLibrarySection removed — consolidated into KeyReferencesSection
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddToProjectButton } from '../projects/AddToProjectButton'
@@ -281,10 +282,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }))
   }
 
-  // Active sub-page selector (Research, Workflow, Decisions, Lists)
-  const [activeSubPage, setActiveSubPage] = useState<'research' | 'workflow' | 'decisions' | 'lists'>(() => {
+  /*
+   * Active sub-page selector (Snapshot, Research, Workflow, Decisions, Lists).
+   *
+   * `snapshot` is the default landing for a general arrival. The four deeper
+   * workspaces are unchanged and keep their own entry points — Snapshot is a
+   * fifth destination, not a replacement for any of them.
+   *
+   * A SAVED sub-page still wins. Someone who left this tab on Process comes
+   * back to Process: the default answers "where does an asset open", not
+   * "where must you be". `loadTabState` is per-asset and per-session.
+   */
+  const [activeSubPage, setActiveSubPage] = useState<'snapshot' | 'research' | 'workflow' | 'decisions' | 'lists'>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
-    return savedState?.activeSubPage || 'research'
+    return savedState?.activeSubPage || 'snapshot'
   })
   // Research view filter: 'aggregated' or a specific user_id
   const [researchViewFilter, setResearchViewFilter] = useState<'aggregated' | string>(() => {
@@ -455,17 +466,32 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }, [asset, navigationStageId, navigationWorkflowId, navigationTaskId, taskDetails])
 
   /**
-   * Arrival focus, from the Research and Portfolio lenses.
+   * Arrival focus, from the Research, Portfolio, Ideas and Decisions lenses.
    *
-   * The smallest useful thing: land on the sub-page the sender's question
-   * belongs to. `openAsset` carries `focus` in tab data, and the only sub-pages
-   * that exist are Research, Workflow, Decisions and Lists -- so 'research' and
-   * 'decisions' map, and 'position'/'framework' have no sub-page of their own
-   * and deliberately change nothing rather than guessing at one.
+   * Land on the sub-page the sender's question belongs to. `openAsset` carries
+   * `focus` in tab data (`lib/desktop-asset/navigate.ts`).
+   *
+   * An EXPLICIT focus always wins over the Snapshot default. A reader sent
+   * here by Research to answer a research question must not be redirected to
+   * an overview of everything — that is the sender's intent discarded, and it
+   * is the main way a new default landing breaks existing navigation.
+   *
+   *   research   -> Research      (explicit, preserved)
+   *   decisions  -> Decisions     (explicit, preserved)
+   *   overview   -> Snapshot      NEW. This is what 'overview' always meant;
+   *                               until now there was nothing for it to mean,
+   *                               so it silently did nothing.
+   *   position   -> Snapshot      Position is a Snapshot domain. Previously a
+   *                               no-op, which landed a reader arriving from a
+   *                               book on whatever page they last used.
+   *   framework  -> unchanged     The framework lives in Research's outcomes;
+   *                               it has no home of its own yet, and guessing
+   *                               is worse than leaving the saved page alone.
    */
   useEffect(() => {
     if (asset.focus === 'research') setActiveSubPage('research')
     else if (asset.focus === 'decisions') setActiveSubPage('decisions')
+    else if (asset.focus === 'overview' || asset.focus === 'position') setActiveSubPage('snapshot')
   }, [asset.focus, asset.id])
 
   // Handle researchViewFilter from navigation data (e.g., Trade Queue linking to proposer's research view)
@@ -2414,9 +2440,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <div key={i} className="h-7 w-20 bg-gray-200 dark:bg-gray-700 rounded-full" />
             ))}
           </div>
-          {/* Tab bar skeleton */}
+          {/* Tab bar skeleton — five, matching the real nav since Snapshot. */}
           <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 pb-2">
-            {[1, 2, 3, 4].map(i => (
+            {[1, 2, 3, 4, 5].map(i => (
               <div key={i} className="h-8 w-24 bg-gray-100 dark:bg-gray-800 rounded-t-lg" />
             ))}
           </div>
@@ -2707,6 +2733,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       {/* Sub-page Tab Selector */}
       <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="flex space-x-1" aria-label="Tabs">
+          {/*
+            * Snapshot leads because it is the landing, and because it is the
+            * only one of the five that answers "what is the state of this
+            * name" rather than "let me go do a specific job".
+            */}
+          <button
+            onClick={() => setActiveSubPage('snapshot')}
+            className={clsx(
+              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+              activeSubPage === 'snapshot'
+                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
+            )}
+          >
+            <div className="flex items-center space-x-2">
+              <LayoutDashboard className="h-4 w-4" />
+              <span>Snapshot</span>
+            </div>
+          </button>
           <button
             onClick={() => setActiveSubPage('research')}
             className={clsx(
@@ -3055,6 +3100,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       {/* Sub-page Content */}
       <div className="flex-1 overflow-auto px-8 py-4">
+
+        {/* ========== INVESTMENT SNAPSHOT SUB-PAGE ========== */}
+        {activeSubPage === 'snapshot' && (
+          <InvestmentSnapshot
+            asset={asset}
+            /* Already fetched above for the ticker dropdown — passed down so
+               the Snapshot adds no second read of the same rows. */
+            coverage={coverage || []}
+            thesisStatuses={thesisStatuses}
+            currentQuote={currentQuote}
+            onOpenSubPage={setActiveSubPage}
+          />
+        )}
 
         {/* ========== RESEARCH SUB-PAGE ========== */}
         {activeSubPage === 'research' && (
