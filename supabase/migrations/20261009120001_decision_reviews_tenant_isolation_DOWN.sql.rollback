@@ -1,0 +1,49 @@
+-- ROLLBACK for 20261009120000_decision_reviews_tenant_isolation.sql
+--
+-- Deliberately NOT a `.sql` file: supabase/migrations is applied in filename
+-- order and a down-migration sitting in it would be run as a forward step.
+-- This is kept beside its partner so the two are reviewed together, and is
+-- applied by hand only.
+--
+-- ── What a rollback does and does not restore ─────────────────────────────
+--
+-- It restores ACCESS, not the prior data state. `organization_id` is left in
+-- place and populated: dropping the column would discard the one piece of
+-- provenance this migration established, and a nullable unused column harms
+-- nothing. Re-running the forward migration after a rollback is therefore
+-- safe and idempotent.
+--
+-- Running this re-opens the cross-tenant read. It is here because a rollback
+-- path that does not exist is a rollback path nobody can take under pressure,
+-- not because reverting is an acceptable resting state. If the forward
+-- migration has to be reverted, the exposure is live again and the reason
+-- must be fixed before the next deploy.
+
+BEGIN;
+
+DROP POLICY IF EXISTS decision_reviews_select ON public.decision_reviews;
+DROP POLICY IF EXISTS decision_reviews_insert ON public.decision_reviews;
+DROP POLICY IF EXISTS decision_reviews_update ON public.decision_reviews;
+
+DROP TRIGGER  IF EXISTS decision_reviews_owner ON public.decision_reviews;
+DROP FUNCTION IF EXISTS public.decision_reviews_set_owner();
+DROP FUNCTION IF EXISTS public.can_review_decision(text);
+DROP FUNCTION IF EXISTS public.decision_review_portfolio(text);
+
+-- The exact policies as they stood before, from 20260424130000.
+CREATE POLICY "decision_reviews_select_authenticated" ON public.decision_reviews
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "decision_reviews_insert_self" ON public.decision_reviews
+  FOR INSERT TO authenticated
+  WITH CHECK (reviewed_by = auth.uid());
+
+CREATE POLICY "decision_reviews_update_self" ON public.decision_reviews
+  FOR UPDATE TO authenticated
+  USING (reviewed_by = auth.uid())
+  WITH CHECK (reviewed_by = auth.uid());
+
+-- The anon grant is NOT restored. It was inert (no anon policy ever named it)
+-- and restoring it would re-add a hazard the rollback has no reason to want.
+
+COMMIT;

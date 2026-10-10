@@ -59,8 +59,34 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 
 const argv = process.argv.slice(2)
 const arg = name => argv.find(a => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=')
-const OUT = arg('out') ?? 'docs/audit/baselines/production-security-inventory.json'
 const SUMMARY_ONLY = argv.includes('--summary')
+
+/**
+ * `--ci-minimal` — the subset `scripts/unconditional-policy-guard.mjs` reads,
+ * and nothing else, for committing so the guard can run in CI without
+ * credentials.
+ *
+ * The full inventory is deliberately NOT carried on `main`: sanitized as it
+ * is, it maps every table, policy, function, trigger and bucket in production
+ * (see docs/audit/baselines/README.md). This mode exists because the guard is
+ * worthless if it only ever runs on one laptop, and it narrows the published
+ * surface to what the guard actually consumes:
+ *
+ *   dropped   the function map (371 entries incl. SECURITY DEFINER and
+ *             search_path state), the trigger map, storage buckets, every
+ *             hash, the server version, the project-ref prefix
+ *   kept      per table: name, RLS flags, anon/authenticated privilege sets
+ *             per policy: table, name, command, roles, permissive, whether
+ *             the predicate is unconditional, and the two predicate CLASSES
+ *
+ * What remains is still a policy map, which is why it is a separate file under
+ * a separate name — a reader should not be able to confuse it with a full
+ * capture, and un-ignoring one filename should not quietly un-ignore the other.
+ */
+const CI_MINIMAL = argv.includes('--ci-minimal')
+const OUT = arg('out') ?? (CI_MINIMAL
+  ? 'docs/audit/baselines/ci-policy-inventory.json'
+  : 'docs/audit/baselines/production-security-inventory.json')
 
 async function credentials() {
   let token = process.env.SUPABASE_ACCESS_TOKEN
@@ -241,9 +267,29 @@ if (SUMMARY_ONLY) {
   process.exit(0)
 }
 
+/**
+ * Strip to the guard's input. `counts` is retained because the guard's
+ * proof-of-work check and its report both lean on table/policy totals, and a
+ * count is an aggregate, not a map.
+ */
+function minimal(b) {
+  const drop = (o, keys) => Object.fromEntries(
+    Object.entries(o).filter(([k]) => !keys.includes(k)))
+  return {
+    schema_version: b.schema_version,
+    captured_at: b.captured_at,
+    ci_minimal: true,
+    counts: { tables: b.counts.tables, policies: b.counts.policies },
+    tables: b.tables.map(t => drop(t, ['policy_hashes'])),
+    policies: b.policies.map(p => drop(p, ['qual_hash', 'check_hash'])),
+  }
+}
+
+const emitted = CI_MINIMAL ? minimal(baseline) : baseline
+
 const outPath = path.resolve(REPO, OUT)
 await mkdir(path.dirname(outPath), { recursive: true })
-await writeFile(outPath, JSON.stringify(baseline, null, 2) + '\n', 'utf8')
+await writeFile(outPath, JSON.stringify(emitted, null, 2) + '\n', 'utf8')
 
 console.log(`Wrote ${OUT}`)
 for (const [k, v] of Object.entries(baseline.counts)) console.log(`  ${k.padEnd(38)} ${v}`)

@@ -3,12 +3,12 @@
 Two artifacts, deliberately separated. One is version controlled, one must
 never be.
 
-| | Raw schema snapshot | Sanitized inventory |
-|---|---|---|
-| What | full `pg_dump --schema-only` of production | catalog metadata + hashes |
-| Where | `%USERPROFILE%\.tesseract\schema-baselines\` | `docs/audit/baselines/production-security-inventory.json` |
-| Committed | **never** | not on `main` — see below |
-| Answers | *what exactly changed* | *did anything change* |
+| | Raw schema snapshot | Sanitized inventory | CI policy subset |
+|---|---|---|---|
+| What | full `pg_dump --schema-only` of production | catalog metadata + hashes | tables + policies only |
+| Where | `%USERPROFILE%\.tesseract\schema-baselines\` | `docs/audit/baselines/production-security-inventory.json` | `docs/audit/baselines/ci-policy-inventory.json` |
+| Committed | **never** | not on `main` — see below | **yes**, by exception |
+| Answers | *what exactly changed* | *did anything change* | *is any policy unconditional* |
 
 The split exists because those two questions have different blast radii. A
 drift check needs to know that policy *X* on table *Y* is no longer what it was.
@@ -110,6 +110,48 @@ definition. Plus storage buckets and aggregate counts.
 No function bodies. No policy expressions. No column defaults. No application
 data of any kind. The hashes make change visible; the local snapshot explains
 it.
+
+---
+
+## The CI policy subset — committed, by exception
+
+```bash
+node scripts/audit/schema-baseline.mjs --ci-minimal
+```
+
+The rule above is that no inventory is carried on `main`. This is the one
+exception, approved 2026-10-09, and it exists because
+`scripts/unconditional-policy-guard.mjs` is worthless if it only ever runs on
+one laptop. The guard was written to catch exactly the `decision_reviews`
+`USING (true)` finding and would have — except nothing ran it, because the only
+entry point was a script whose sibling needs a service-role key. The guard
+itself needs no credentials; it needs an input it can read in a pull request.
+
+It carries strictly less than the full inventory:
+
+| | Full | CI subset |
+|---|---|---|
+| tables: name, RLS flags, `anon`/`authenticated` privileges | ✓ | ✓ |
+| policies: table, name, command, roles, permissive, unconditional, two predicate classes | ✓ | ✓ |
+| policy predicate hashes | ✓ | — |
+| function map: name, owner, `SECURITY DEFINER`, `search_path` pinned, `anon` EXECUTE, body hash | ✓ | — |
+| trigger map | ✓ | — |
+| storage buckets | ✓ | — |
+| server version, project-ref prefix | ✓ | — |
+
+The function map is the most sensitive omission and the reason this is a
+separate file: 281 of 371 production functions are `SECURITY DEFINER` and 128
+of those do not pin `search_path`. That is a target list, and it is not what
+the guard reads.
+
+**It is still a policy map.** It is committed deliberately, under a name no
+one can confuse with a full capture, and `.gitignore` negates exactly that one
+filename so the exception cannot widen by accident.
+
+Refresh it after any migration that changes a policy, a grant or RLS state —
+and *after* deployment, not before: the guard's `KNOWN_UNRESOLVED` ratchet is
+checked against this file, so removing an entry before the fix is live makes
+the guard fail, correctly.
 
 ### Reading a diff
 
