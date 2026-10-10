@@ -694,9 +694,25 @@ export function useContributionSummary({
       const { data, error } = await supabase
         .from('contribution_summaries')
         .select('*')
+        /*
+         * `.maybeSingle()`, not `.single()`. "No cached summary yet" is the
+         * normal state of this table, not a failure — it currently holds zero
+         * rows — and `.single()` turned every such read into an HTTP 406 that
+         * the guard below then swallowed. A page whose network log is full of
+         * red is a page where a real failure is invisible.
+         *
+         * Safe because the filter is exactly the unique key,
+         * UNIQUE (asset_id, section), so at most one row can match.
+         *
+         * The PGRST116 guard stays. For a GET, maybeSingle asks for
+         * `application/json` and resolves zero rows to null with no error, but
+         * it still raises PGRST116 CLIENT-SIDE if more than one row comes
+         * back. Keeping the guard means that case behaves exactly as it does
+         * today rather than becoming a new throw.
+         */
         .eq('asset_id', assetId)
         .eq('section', section)
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') throw error
       return data
@@ -858,9 +874,11 @@ export function useThesisAnalysis({
       const { data, error } = await supabase
         .from('contribution_summaries')
         .select('*')
+        // maybeSingle: an absent cache entry is normal, not a 406. Filter is
+        // the unique key (asset_id, section); guard kept for the >1 case.
         .eq('asset_id', assetId)
         .eq('section', section)
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') throw error
 
@@ -1146,9 +1164,11 @@ export function useUnifiedThesisAnalysis({
       const { data, error } = await supabase
         .from('contribution_summaries')
         .select('*')
+        // maybeSingle: an absent cache entry is normal, not a 406. Filter is
+        // the unique key (asset_id, section); guard kept for the >1 case.
         .eq('asset_id', assetId)
         .eq('section', 'unified')
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') throw error
 
@@ -1458,9 +1478,11 @@ export function useHistoryEvolutionAnalysis({
       const { data, error } = await supabase
         .from('contribution_summaries')
         .select('*')
+        // maybeSingle: an absent cache entry is normal, not a 406. Filter is
+        // the unique key (asset_id, section); guard kept for the >1 case.
         .eq('asset_id', assetId)
         .eq('section', cacheSection)
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') throw error
 

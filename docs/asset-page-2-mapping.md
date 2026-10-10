@@ -29,7 +29,7 @@ to take back to the product owner.
 | Which may they decide in? | `getUserPMPortfolios(userId)` — `:264`; per-portfolio `canMakeDecision(userId, portfolioId)` — `:243` |
 | Role for one portfolio | `getUserPortfolioRole` — `:97`, reading `portfolio_team.role === 'Portfolio Manager'` (`:121`) |
 | Org boundary | `portfolio_in_current_org(portfolio_id)`, SECURITY DEFINER, pinned — noted at `src/hooks/useDesktopIdeas.ts:57` |
-| This asset's exposure per portfolio | `portfolio_holdings_positions` via `useAssetPortfolioWeights.ts:45` |
+| This asset's exposure per portfolio | `portfolio_holdings` — see the correction below. `portfolio_holdings_positions` (`useAssetPortfolioWeights.ts:45`) covers one of this org's nine books |
 
 ### The constraint that shapes the selector
 
@@ -78,11 +78,47 @@ existing canonical source · `blocked` = no canonical source.
 
 | Element | Component | Hook | Table | Status |
 |---|---|---|---|---|
-| Weight per portfolio | — | `useAssetPortfolioWeights.ts:45` | `portfolio_holdings_positions.weight_pct` | build — desktop currently computes its own; Increment 1 converges it |
+| Weight per portfolio | — | `lib/portfolio/holdings.ts` | `portfolio_holdings`, weight **derived** | build — see the correction below |
 | Market value / shares | Current Exposure (`:3838`) | `AssetTab:1010`,`:1031` | `portfolio_holdings` | reuse |
 | Live-repriced weight | — | `useAssetLiveWeights.ts:133` | + quote per holding | reuse on mobile; desktop opt-in only (N+1, ~40 req/portfolio) |
 | Active weight vs benchmark | hardcoded `—` (`:3878`) | — | `portfolio_benchmark_weights` | **wire**, with the four-state rule at `lib/desktop-portfolio/benchmark.ts:18-26` |
 | Cost basis / unrealised | Current Exposure | as above | `portfolio_holdings` | reuse |
+
+#### Correction: `portfolio_holdings_positions` is not canonical for this org
+
+An earlier revision of this document named
+`portfolio_holdings_positions.weight_pct` as the source to converge weight
+onto. **That was wrong**, and building the Snapshot on it would have shown
+eight of nine books as empty.
+
+Measured against production, grouped by organization — an ungrouped count is
+meaningless here, because the Management API bypasses RLS and merges every
+pilot org:
+
+| Organization | Portfolios | In `portfolio_holdings` | In `portfolio_holdings_positions` |
+|---|---|---|---|
+| **Tesseract** (the reviewed org) | 9 | **9** | **1** |
+| Kappy Capital | 2 | 2 | 2 |
+| every other pilot org | 1 each | 1 | 1 |
+
+The single-portfolio demo orgs populate both tables, which is why the richer
+table *looks* canonical. In the organization this work is reviewed against it
+covers one book in nine.
+
+So **`portfolio_holdings` is the current source** and weight is **derived**
+from it, which is what `PortfolioTab` and `PositionsTab` already do.
+`src/lib/portfolio/holdings.ts:4-21` states the same conclusion and is the
+module the Snapshot should read through — it also handles the dated-table trap
+(`UNIQUE (portfolio_id, asset_id, date)`, so summing raw rows double-counts a
+book uploaded twice) and the three all-cash portfolios.
+
+Where a snapshot weight also exists the two can disagree. They are not merged
+or averaged; the difference is reported.
+
+**Do not invent live portfolio weights, and do not aggregate weight across
+portfolios.** A weight is a property of one book on one date. The book-price
+definition established in `0a5f2131` and its explicit labelling stand
+unchanged.
 
 ### Active Work — what is owed
 

@@ -62,9 +62,21 @@ export function StageDeadlineManager({
       const { data, error } = await supabase
         .from('asset_stage_deadlines')
         .select('*')
+        /*
+         * maybeSingle: a stage with no deadline set is the normal case — the
+         * table holds zero rows today — and `.single()` made every such read
+         * an HTTP 406 that the guard below then swallowed.
+         *
+         * Note this filter does NOT cover the whole unique key, which is
+         * (asset_id, workflow_id, stage_id). That is why the PGRST116 guard is
+         * kept rather than removed: if one asset ever carries the same stage
+         * in two workflows, maybeSingle raises PGRST116 client-side and this
+         * returns null — exactly what `.single()` did. Behaviour is unchanged
+         * in every case; only the spurious 406 goes away.
+         */
         .eq('asset_id', assetId)
         .eq('stage_id', stageId)
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') throw error
       return data as StageDeadline | null
