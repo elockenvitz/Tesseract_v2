@@ -136,7 +136,12 @@ AS $$
   )
   -- UNION (not UNION ALL) already collapses the same owner seen twice, so
   -- this returns a portfolio only when exactly one distinct owner exists.
-  SELECT CASE WHEN count(*) = 1 THEN min(portfolio_id) END
+  --
+  -- `(array_agg(...))[1]` rather than `min(...)`: Postgres has no min/max
+  -- aggregate for uuid, and the first draft used `min(portfolio_id)`, which
+  -- fails at CREATE FUNCTION with 42883. Caught by the production preflight
+  -- before this was applied anywhere.
+  SELECT CASE WHEN count(*) = 1 THEN (array_agg(portfolio_id))[1] END
     FROM candidates;
 $$;
 
@@ -295,9 +300,19 @@ UPDATE public.decision_reviews r
 --    INSERT/UPDATE additionally validate against the decision itself.
 -- ---------------------------------------------------------------------------
 
+-- The original permissive policies...
 DROP POLICY IF EXISTS "decision_reviews_select_authenticated" ON public.decision_reviews;
 DROP POLICY IF EXISTS "decision_reviews_insert_self"          ON public.decision_reviews;
 DROP POLICY IF EXISTS "decision_reviews_update_self"          ON public.decision_reviews;
+
+-- ...and the deny-by-default ones from the containment step (01-containment),
+-- which is what production is actually running when this is applied. Leaving
+-- them would be harmless for reads — permissive policies OR together, so a
+-- `false` adds nothing — but it would leave two generations of policy on one
+-- table for the next reader to reconcile.
+DROP POLICY IF EXISTS decision_reviews_contained_select ON public.decision_reviews;
+DROP POLICY IF EXISTS decision_reviews_contained_insert ON public.decision_reviews;
+DROP POLICY IF EXISTS decision_reviews_contained_update ON public.decision_reviews;
 
 CREATE POLICY decision_reviews_select ON public.decision_reviews
   FOR SELECT TO authenticated
@@ -356,5 +371,19 @@ CREATE POLICY decision_reviews_update ON public.decision_reviews
 
 REVOKE ALL ON TABLE public.decision_reviews FROM anon;
 REVOKE ALL ON TABLE public.decision_reviews FROM public;
+
+/*
+ * Restore the client grant that containment withdrew.
+ *
+ * 01-containment revoked ALL from `authenticated` as one of its two
+ * mechanisms. Without this line the permanent fix would ship as a permanent
+ * OUTAGE: the policies below would be correct and unreachable, because a
+ * role with no table grant never gets as far as having its policies
+ * evaluated. The policies are the boundary now; the grant only decides
+ * whether the question is asked.
+ *
+ * DELETE is deliberately not granted — it never was, and no policy allows it.
+ */
+GRANT SELECT, INSERT, UPDATE ON TABLE public.decision_reviews TO authenticated;
 
 COMMIT;
