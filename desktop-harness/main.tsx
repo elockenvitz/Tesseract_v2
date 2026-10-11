@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import '../src/index.css'
 import { IdeasWorkspace } from '../src/components/ideas-v2/IdeasWorkspace'
 import { DashboardShell } from '../src/components/dashboard/DashboardShell'
+import { DecisionTimeline } from '../src/components/asset/DecisionTimeline'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
@@ -41,6 +42,37 @@ function Harness() {
   const q = new URLSearchParams(location.search)
   const h = Number(q.get('h') ?? '3200')
   const surface = q.get('surface') ?? 'dashboard'
+  /*
+   * `?surface=decision-timeline` renders the asset Decision Memory timeline
+   * against `stub-decision-timeline.ts`. `?asset=empty` selects the
+   * no-history case; `?book=pf-growth` exercises the portfolio filter.
+   *
+   * Constrained to a realistic column width rather than the full page: the
+   * timeline sits in AssetTab's content column, and measuring it at 1920px
+   * would measure a width it never actually gets.
+   */
+  if (surface === 'decision-timeline') {
+    return (
+      <div
+        style={{ height: `${h}px`, width: '100%', padding: 24, background: '#f8fafc' }}
+        data-harness={surface}
+      >
+        <div style={{ maxWidth: 860 }}>
+          <DecisionTimeline
+            assetId={q.get('asset') ?? 'aapl'}
+            portfolioId={q.get('book')}
+            onNavigate={(d) => {
+              // The harness has no tab shell. Record the descriptor on the DOM
+              // so a probe can assert WHERE a click would have gone, which is
+              // the part that regressed before.
+              document.body.setAttribute('data-last-nav', JSON.stringify(d))
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ height: `${h}px`, width: '100%' }} data-harness={surface}>
       {surface === 'ideas'

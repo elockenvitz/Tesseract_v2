@@ -9,7 +9,7 @@
  * Trade Journal remains the portfolio-level action ledger.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { clsx } from 'clsx'
 import {
   Lightbulb,
@@ -26,13 +26,18 @@ import {
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
+/* From the pure module, not the hook: the desktop harness stubs the hook. */
+import { parseTimelineDate } from '../../lib/asset-decisions/timeline'
 import type {
   DecisionTimelineEvent,
   TimelineEventType,
   TimelinePhase,
   TimelineFilter,
   TimelineDisposition,
+  ExecutionProof,
 } from '../../types/decision-timeline'
+import { ideasTabFor } from '../../lib/desktop-ideas/navigate'
+import { openOutcomesFor, openTradeBookFor } from '../../lib/desktop-decisions/navigate'
 
 // ============================================================
 // Visual config per event type
@@ -41,34 +46,110 @@ import type {
 const EVENT_ICON: Record<TimelineEventType, React.ElementType> = {
   idea_created: Lightbulb,
   idea_escalated: Escalate,
+  thesis_changed: Scale,
   proposal_submitted: FileText,
   decision_accepted: CheckCircle2,
   decision_rejected: XCircle,
   decision_deferred: Clock,
+  decision_withdrawn: XCircle,
+  trade_committed: CheckCircle2,
+  execution_pending: Clock,
   trade_executed: ArrowUpDown,
   outcome_evaluated: Target,
+  review_recorded: Scale,
 }
 
 const EVENT_DOT_COLOR: Record<TimelineEventType, string> = {
   idea_created: 'bg-blue-500',
   idea_escalated: 'bg-blue-400',
+  thesis_changed: 'bg-sky-500',
   proposal_submitted: 'bg-violet-500',
   decision_accepted: 'bg-emerald-500',
   decision_rejected: 'bg-red-500',
   decision_deferred: 'bg-gray-400',
+  decision_withdrawn: 'bg-gray-300',
+  trade_committed: 'bg-emerald-500',
+  // Amber, not green: a commitment with no fill is unfinished business.
+  execution_pending: 'bg-amber-500',
   trade_executed: 'bg-emerald-600',
   outcome_evaluated: 'bg-amber-500',
+  review_recorded: 'bg-indigo-500',
 }
 
 const EVENT_ICON_COLOR: Record<TimelineEventType, string> = {
   idea_created: 'text-blue-600 dark:text-blue-400',
   idea_escalated: 'text-blue-500 dark:text-blue-400',
+  thesis_changed: 'text-sky-600 dark:text-sky-400',
   proposal_submitted: 'text-violet-600 dark:text-violet-400',
   decision_accepted: 'text-emerald-600 dark:text-emerald-400',
   decision_rejected: 'text-red-600 dark:text-red-400',
   decision_deferred: 'text-gray-500 dark:text-gray-400',
+  decision_withdrawn: 'text-gray-400 dark:text-gray-500',
+  trade_committed: 'text-emerald-600 dark:text-emerald-400',
+  execution_pending: 'text-amber-600 dark:text-amber-400',
   trade_executed: 'text-emerald-700 dark:text-emerald-400',
   outcome_evaluated: 'text-amber-600 dark:text-amber-400',
+  review_recorded: 'text-indigo-600 dark:text-indigo-400',
+}
+
+/**
+ * How each proof grade reads, and how loudly.
+ *
+ * Only `verified` is styled as settled. `assumed` is deliberately amber and
+ * spelled out: it means a PM's approval was treated as a fill that nobody
+ * observed, and a reader who cannot see that difference is being misled
+ * about their own book.
+ */
+/**
+ * The short chip on each row. Separate from `EVENT_LABELS` because the chip
+ * has to fit in ~12 characters; the long label is used in the title.
+ *
+ * `Committed` and `Executed` are deliberately different words: one means a
+ * PM signed off, the other means the book moved.
+ */
+const EVENT_CHIP: Record<TimelineEventType, string> = {
+  idea_created: 'Idea',
+  idea_escalated: 'Escalated',
+  thesis_changed: 'Thesis',
+  proposal_submitted: 'Recommended',
+  decision_accepted: 'Decided',
+  decision_rejected: 'Decided',
+  decision_deferred: 'Deferred',
+  decision_withdrawn: 'Withdrawn',
+  trade_committed: 'Committed',
+  execution_pending: 'Unfilled',
+  trade_executed: 'Executed',
+  outcome_evaluated: 'Outcome',
+  review_recorded: 'Reviewed',
+}
+
+const PROOF_STYLE: Record<ExecutionProof, { label: string; className: string; title: string }> = {
+  verified: {
+    label: 'Verified',
+    className: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+    title: 'The app applied this trade and watched the position change.',
+  },
+  attested: {
+    label: 'Attested',
+    className: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+    title: 'A person states this executed away from the app. Not observed here.',
+  },
+  assumed: {
+    label: 'Assumed',
+    className: 'bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+    title:
+      'Pilot policy: a PM approved, so a fill was assumed. No system and no person observed one.',
+  },
+  backfilled: {
+    label: 'Backfilled',
+    className: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
+    title: 'Written by a migration, not by a live execution.',
+  },
+  unattributed: {
+    label: 'Unattributed',
+    className: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+    title: 'This row predates execution provenance. How it executed is not recorded.',
+  },
 }
 
 const DISPOSITION_ACCENT: Record<TimelineDisposition, string> = {
@@ -105,12 +186,24 @@ const DEFAULT_VISIBLE = 15
 
 interface DecisionTimelineProps {
   assetId: string
+  /**
+   * Scope the narrative to one book. Null means every book the reader is
+   * authorized to see — which is the org-scoped set the RLS policies already
+   * return, not a wider one this component assembles.
+   *
+   * Events with no portfolio (a thesis change, a scored price target) survive
+   * the filter: they are facts about the ASSET, not about a book, and hiding
+   * them when a book is selected would make the asset's own history look
+   * like it belonged to whichever portfolio happened to be chosen.
+   */
+  portfolioId?: string | null
   onNavigate?: (tab: { id: string; title: string; type: string; data?: any }) => void
   className?: string
 }
 
 export function DecisionTimeline({
   assetId,
+  portfolioId = null,
   onNavigate,
   className,
 }: DecisionTimelineProps) {
@@ -121,7 +214,16 @@ export function DecisionTimeline({
     events,
     phaseCounts,
     isLoading,
-  } = useAssetDecisionTimeline({ assetId, filter })
+  } = useAssetDecisionTimeline({ assetId, filter, portfolioId })
+
+  /*
+   * Reset paging when the scope changes. Without this, switching book or
+   * phase keeps the previous "show 30 more" count and the reader sees a
+   * partial list with no indication that it is partial.
+   */
+  useEffect(() => {
+    setVisibleCount(DEFAULT_VISIBLE)
+  }, [assetId, portfolioId, filter])
 
   const visibleEvents = events.slice(0, visibleCount)
   const hasMore = events.length > visibleCount
@@ -130,18 +232,66 @@ export function DecisionTimeline({
     setVisibleCount(prev => prev + DEFAULT_VISIBLE)
   }, [])
 
+  /**
+   * Send the reader to the record that owns the fact.
+   *
+   * Every destination here is an existing route with an existing opener —
+   * nothing new is routed and no descriptor is hand-rolled. The previous
+   * version dispatched a hardcoded `'trade-queue'` tab, which is not the
+   * surface ideas live on any more; `ideasTabFor` is what the rest of the
+   * app uses and it reuses the tab rather than duplicating it.
+   *
+   * `openOutcomesFor` and `openTradeBookFor` dispatch the shell's
+   * `decision-engine-action` event directly and return false when the target
+   * is missing, so a click with nothing to open is inert rather than opening
+   * an empty tab.
+   */
   const handleEventClick = useCallback((event: DecisionTimelineEvent) => {
-    if (!onNavigate) return
+    const { provenance, sourceRef } = event
 
-    if (event.sourceRef.type === 'trade_idea' || event.sourceRef.type === 'decision') {
-      onNavigate({
-        id: 'trade-queue',
-        title: 'Idea Pipeline',
-        type: 'trade-queue',
-        data: { selectedTradeId: event.sourceRef.id },
-      })
+    switch (sourceRef.type) {
+      // An idea, a recommendation or a ruling all resolve to the idea they
+      // belong to: that is where the thread is readable end to end.
+      case 'trade_idea':
+      case 'proposal':
+      case 'decision':
+      case 'decision_request': {
+        const ideaId = provenance.ideaId ?? (sourceRef.type === 'trade_idea' ? sourceRef.id : null)
+        if (!ideaId || !onNavigate) return
+        onNavigate(ideasTabFor({ ideaId, origin: 'asset-decision-timeline' }))
+        return
+      }
+
+      // A committed trade and an execution both belong to the Trade Book,
+      // on the batch if there is one and the trade otherwise.
+      case 'accepted_trade':
+      case 'trade_event': {
+        const opened = openTradeBookFor({
+          portfolioId: provenance.portfolioId ?? '',
+          execution: provenance.acceptedTradeId ? { id: provenance.acceptedTradeId } : null,
+          batch: provenance.batchId ? { id: provenance.batchId } : null,
+        } as Parameters<typeof openTradeBookFor>[0])
+        // Nothing to highlight — fall back to the idea thread if we have one.
+        if (!opened && provenance.ideaId && onNavigate) {
+          onNavigate(ideasTabFor({ ideaId: provenance.ideaId, origin: 'asset-decision-timeline' }))
+        }
+        return
+      }
+
+      // Reviews and scored targets are Outcomes' subject.
+      case 'review':
+      case 'outcome': {
+        if (!provenance.ideaId) return
+        openOutcomesFor({ ideaId: provenance.ideaId })
+        return
+      }
+
+      // A thesis change has no destination of its own: the asset page the
+      // reader is already on IS the record. Clicking it does nothing rather
+      // than opening something unrelated.
+      case 'memory_event':
+        return
     }
-    // Trade events and outcomes stay in context — no navigation for now
   }, [onNavigate])
 
   // Empty state
@@ -276,9 +426,14 @@ function TimelineEventRow({
   const accentBorder = DISPOSITION_ACCENT[event.disposition]
   const phaseConf = PHASE_CONFIG[event.phase]
 
+  /*
+   * `parseTimelineDate`, not `new Date`. `portfolio_trade_events.event_date`
+   * is a bare DATE, which `new Date()` reads as UTC midnight — so every
+   * execution rendered a day early for anyone west of UTC. See the helper.
+   */
   const formattedDate = (() => {
     try {
-      const d = new Date(event.timestamp)
+      const d = parseTimelineDate(event.timestamp)
       const now = new Date()
       const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
       if (diffDays <= 7) return formatDistanceToNow(d, { addSuffix: false })
@@ -290,13 +445,40 @@ function TimelineEventRow({
 
   const shortDate = (() => {
     try {
-      return format(new Date(event.timestamp), 'MMM d')
+      return format(parseTimelineDate(event.timestamp), 'MMM d')
     } catch {
       return '—'
     }
   })()
 
-  const isClickable = event.sourceRef.type === 'trade_idea' || event.sourceRef.type === 'decision'
+  /*
+   * Clickable only when there is somewhere real to go. A thesis change has
+   * no destination, and a trade with neither a batch nor a linked idea has
+   * nothing to highlight — those render inert rather than offering a click
+   * that does nothing.
+   */
+  const isClickable = (() => {
+    switch (event.sourceRef.type) {
+      case 'trade_idea':
+        return true
+      case 'proposal':
+      case 'decision':
+      case 'decision_request':
+        return !!event.provenance.ideaId
+      case 'accepted_trade':
+      case 'trade_event':
+        return !!(event.provenance.batchId || event.provenance.acceptedTradeId || event.provenance.ideaId)
+      case 'review':
+      case 'outcome':
+        return !!event.provenance.ideaId
+      case 'memory_event':
+        return false
+      default:
+        return false
+    }
+  })()
+
+  const proof = event.executionProof ? PROOF_STYLE[event.executionProof] : null
 
   return (
     <button
@@ -331,18 +513,28 @@ function TimelineEventRow({
             'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-px rounded shrink-0',
             phaseConf.color,
           )}>
-            {event.type === 'idea_created' ? 'Idea'
-              : event.type === 'idea_escalated' ? 'Escalated'
-              : event.type === 'proposal_submitted' ? 'Recommendation'
-              : event.type === 'decision_accepted' ? 'Accepted'
-              : event.type === 'decision_rejected' ? 'Rejected'
-              : event.type === 'decision_deferred' ? 'Deferred'
-              : event.type === 'trade_executed' ? 'Executed'
-              : 'Outcome'}
+            {EVENT_CHIP[event.type]}
           </span>
           <span className="text-[12px] font-semibold text-gray-900 dark:text-gray-100 truncate">
             {event.title}
           </span>
+          {/*
+            * The proof grade sits on the title line, not buried in the meta
+            * row, because "executed" and "assumed to have executed" are
+            * different claims and the difference has to be visible at a
+            * glance. Only trade_executed carries one.
+            */}
+          {proof && (
+            <span
+              title={proof.title}
+              className={clsx(
+                'text-[9px] font-semibold uppercase tracking-wide px-1.5 py-px rounded shrink-0',
+                proof.className,
+              )}
+            >
+              {proof.label}
+            </span>
+          )}
         </div>
 
         {/* Subtitle / rationale */}

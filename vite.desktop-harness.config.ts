@@ -22,6 +22,7 @@ function stubDataHooks(): Plugin {
   const portfolio = path.resolve(__dirname, 'desktop-harness/stub-portfolio.ts')
   const decisions = path.resolve(__dirname, 'desktop-harness/stub-decisions.ts')
   const day = path.resolve(__dirname, 'desktop-harness/stub-day.ts')
+  const timeline = path.resolve(__dirname, 'desktop-harness/stub-decision-timeline.ts')
   return {
     name: 'desktop-harness-stub-hooks',
     enforce: 'pre',
@@ -43,6 +44,10 @@ function stubDataHooks(): Plugin {
       if (/hooks\/useDesktopPortfolio$/.test(source)) return portfolio
       if (/hooks\/useDesktopDecisions$/.test(source)) return decisions
       if (/hooks\/useDayPerformance$/.test(source)) return day
+      // Asset Decision Memory (Increment 2B). Without this the timeline
+      // reaches for Supabase and renders its loading state forever, which is
+      // how a surface gets "validated" without anybody seeing it.
+      if (/hooks\/useAssetDecisionTimeline$/.test(source)) return timeline
       return null
     },
   }

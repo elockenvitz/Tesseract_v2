@@ -24,6 +24,7 @@ import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
 import { AssetWorkflowSelectorEnhanced } from '../asset/AssetWorkflowSelectorEnhanced'
 import { AssetDecisionView } from '../asset/AssetDecisionView'
 import { DecisionTimeline } from '../asset/DecisionTimeline'
+import { BookFilter } from '../shared/BookFilter'
 import { WorkflowActionButton } from '../asset/WorkflowActionButton'
 import { WorkflowManager } from '../ui/WorkflowManager'
 import { CaseCard } from '../ui/CaseCard'
@@ -297,6 +298,21 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.activeSubPage || 'snapshot'
   })
+  /*
+   * Which book the Decision Memory narrative is scoped to. `null` is
+   * organization-wide and is the default — the asset page's own context is
+   * the org, and a reader arriving from a lens should see every decision
+   * they are authorized to see before narrowing.
+   *
+   * Persisted with the rest of the tab state so returning to the asset
+   * restores the scope the reader left it in, which is the "return context
+   * preserved" requirement. Arriving WITH a portfolio in the request seeds
+   * it, so a click from a portfolio lens lands already scoped to that book.
+   */
+  const [decisionBookId, setDecisionBookId] = useState<string | null>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.decisionBookId ?? asset.portfolioId ?? null
+  })
   // Research view filter: 'aggregated' or a specific user_id
   const [researchViewFilter, setResearchViewFilter] = useState<'aggregated' | string>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
@@ -559,11 +575,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         researchViewFilter,
         thesisViewMode,
         collapsedSections,
-        viewingStageId
+        viewingStageId,
+        // Decision Memory's book scope, so leaving and returning to the asset
+        // restores the narrative the reader was reading.
+        decisionBookId,
       }
       TabStateManager.saveTabState(asset.id, stateToSave)
     }
-  }, [asset.id, activeSubPage, researchViewFilter, thesisViewMode, collapsedSections, viewingStageId, isTabStateInitialized])
+  }, [asset.id, activeSubPage, researchViewFilter, thesisViewMode, collapsedSections, viewingStageId, decisionBookId, isTabStateInitialized])
 
   // Focus-scroll into a Lists tab section when listsFocus is set
   useEffect(() => {
@@ -4220,9 +4239,43 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 })()}
               </Card>
 
-              {/* ─── Decision Timeline ────────────────────────────── */}
+              {/* ─── Decision Memory ──────────────────────────────── */}
+              {/*
+                * The book selector sits ABOVE the timeline rather than inside
+                * it, so the same control governs the capital bar and the
+                * narrative below it and a reader is never looking at one
+                * book's numbers beside another book's history.
+                *
+                * Books come from this asset's own holdings, which are already
+                * fetched for the bar above — so the list is exactly the books
+                * the reader is authorized to see (RLS-scoped) AND in which
+                * this asset actually appears. Offering a book with no
+                * exposure and no decisions would be offering an empty filter.
+                *
+                * `BookFilter` renders nothing at one book or fewer: a choice
+                * of one is not a choice.
+                */}
+              {(() => {
+                const books = [...new Map(
+                  holdingMetrics.map(m => [m.portfolioId, { id: m.portfolioId, name: m.name }]),
+                ).values()]
+                return books.length > 1 ? (
+                  <div className="flex items-center justify-end">
+                    <BookFilter
+                      books={books}
+                      portfolioId={decisionBookId}
+                      onSelect={setDecisionBookId}
+                      allLabel="All portfolios"
+                      testId="decision-memory-book-filter"
+                      compact
+                    />
+                  </div>
+                ) : null
+              })()}
+
               <DecisionTimeline
                 assetId={asset.id}
+                portfolioId={decisionBookId}
                 onNavigate={onNavigate}
               />
             </div>
