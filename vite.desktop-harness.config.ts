@@ -23,6 +23,9 @@ function stubDataHooks(): Plugin {
   const decisions = path.resolve(__dirname, 'desktop-harness/stub-decisions.ts')
   const day = path.resolve(__dirname, 'desktop-harness/stub-day.ts')
   const timeline = path.resolve(__dirname, 'desktop-harness/stub-decision-timeline.ts')
+  const workspace = path.resolve(__dirname, 'desktop-harness/stub-asset-workspace.ts')
+  const mobileAsset = path.resolve(__dirname, 'desktop-harness/stub-mobile-asset-hooks.ts')
+  const org = path.resolve(__dirname, 'desktop-harness/stub-organization.ts')
   return {
     name: 'desktop-harness-stub-hooks',
     enforce: 'pre',
@@ -48,6 +51,26 @@ function stubDataHooks(): Plugin {
       // reaches for Supabase and renders its loading state forever, which is
       // how a surface gets "validated" without anybody seeing it.
       if (/hooks\/useAssetDecisionTimeline$/.test(source)) return timeline
+      // The one read behind both Snapshots. Guard against the stub
+      // re-entering itself: its own imports are already resolved.
+      if (/hooks\/useAssetWorkspace$/.test(source) && !source.includes('stub-')) return workspace
+      /*
+       * The phone page's secondary reads. Two of them call
+       * `useOrganization`, which THROWS without a provider -- so opening the
+       * Decisions tab took the whole harness page down. One stub module
+       * serves them all; each export is named.
+       */
+      if (/hooks\/useAssetTradeIdeas$/.test(source)) return mobileAsset
+      if (/hooks\/useAssetRecentDecisions$/.test(source)) return mobileAsset
+      if (/hooks\/useAssetHeaderContext$/.test(source)) return mobileAsset
+      if (/hooks\/useAssetPortfolioWeights$/.test(source)) return mobileAsset
+      if (/hooks\/useAssetLiveWeights$/.test(source)) return mobileAsset
+      /*
+       * `useOrganization` throws without a provider, and the harness has
+       * none -- so ANY surface reaching it took the whole page down, tab bar
+       * included. One stub unblocks every surface at once.
+       */
+      if (/contexts\/OrganizationContext$/.test(source) && !source.includes('stub-')) return org
       return null
     },
   }

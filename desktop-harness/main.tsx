@@ -4,6 +4,7 @@ import '../src/index.css'
 import { IdeasWorkspace } from '../src/components/ideas-v2/IdeasWorkspace'
 import { DashboardShell } from '../src/components/dashboard/DashboardShell'
 import { DecisionTimeline } from '../src/components/asset/DecisionTimeline'
+import { MobileAssetPage } from '../src/components/mobile/asset/MobileAssetPage'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
@@ -69,6 +70,39 @@ function Harness() {
             }}
           />
         </div>
+      </div>
+    )
+  }
+
+  /*
+   * `?surface=mobile-asset` renders the phone asset page. It is given a
+   * FIXED 390x844 frame rather than the page width, because the whole claim
+   * of Increment 2C is that this surface works at a phone's dimensions —
+   * measuring it in a 1440px window would measure a width it never gets.
+   *
+   * `?asset=empty` is the unheld, no-history security.
+   */
+  if (surface === 'mobile-asset') {
+    const vh = Number(q.get('vh') ?? '844')
+    return (
+      <div
+        data-harness={surface}
+        style={{
+          width: 390, height: vh, overflow: 'hidden',
+          border: '1px solid #e5e7eb', margin: '0 auto',
+        }}
+      >
+        <MobileAssetPage
+          asset={{
+            id: q.get('asset') ?? 'aapl',
+            symbol: q.get('asset') === 'empty' ? 'ZZZ' : 'AAPL',
+            company_name: q.get('asset') === 'empty' ? 'Zephyr Holdings' : 'Apple Inc.',
+            portfolioId: q.get('book'),
+          }}
+          onNavigate={(d) => {
+            document.body.setAttribute('data-last-nav', JSON.stringify(d))
+          }}
+        />
       </div>
     )
   }

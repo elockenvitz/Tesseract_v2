@@ -39,6 +39,7 @@
  */
 import { useMemo, useState } from 'react'
 import { useAssetWorkspace, primaryPosition, otherPositions } from '../../hooks/useAssetWorkspace'
+import { DecisionMemorySummary } from './DecisionMemorySummary'
 /*
  * `useAnalystRatings`, deliberately, and NOT `useRatingConsensus`.
  *
@@ -371,43 +372,27 @@ export function InvestmentSnapshot({
   /* ----------------------------------------------------- decision memory */
 
   /*
-   * Reserved, and deliberately thin.
+   * No longer reserved — Increment 2B built it.
    *
-   * The brief is explicit that Decision Memory lands in the NEXT increment and
-   * that nothing may be invented here. So this reports only what the canonical
-   * read already returned — decisions that carry a `decidedAt` — and otherwise
-   * says what it is. It does not re-query, rank, summarise or interpret.
+   * This panel used to list `data.decisions` filtered to `decidedAt != null`
+   * and say that the real thing was coming. It now reads the SAME hook the
+   * Decisions timeline reads, through `DecisionMemorySummary`, so the landing
+   * surface and the narrative beneath it cannot report different states.
+   *
+   * It summarises rather than truncating: a landing surface answers "where
+   * does this stand", and the newest four events on an active name are often
+   * four executions, which says nothing about whether anything is waiting.
+   * The summary counts the states and flags executions that are not evidenced
+   * by an observed fill.
    */
-  const settled = data.decisions.filter(d => d.decidedAt != null)
   const decisionMemory = (
-    <DesktopModule key="memory" title="Decision memory" meta="reserved — arriving next">
-      {settled.length > 0 ? (
-        <>
-          <ul className="flex flex-col gap-1 text-[12px]">
-            {settled.slice(0, 4).map(d => (
-              <Exists
-                key={d.id}
-                label={`${d.action ?? 'Decision'}${d.portfolioName ? ` · ${d.portfolioName}` : ''}`}
-                value={d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : null}
-              />
-            ))}
-          </ul>
-          {settled.length > 4 && (
-            <p className="mt-2 text-[11px] text-gray-500">
-              {settled.length - 4} more on record.
-            </p>
-          )}
-        </>
-      ) : (
-        <p className="text-[12px] text-gray-600 dark:text-gray-400">
-          No decision has been recorded against {symbol ?? 'this name'} yet.
-        </p>
-      )}
-      <p className="mt-3 text-[10px] text-gray-500">
-        What was decided, why, and what happened next — including review
-        outcomes — is the next increment. This panel shows only decisions
-        already on record and infers nothing from them.
-      </p>
+    <DesktopModule key="memory" title="Decision memory" meta="recommended → decided → executed → reviewed">
+      <DecisionMemorySummary
+        assetId={asset.id}
+        portfolioId={portfolioId}
+        symbol={symbol}
+        onOpenTimeline={() => onOpenSubPage('decisions')}
+      />
       <DeepLinks>
         <DeepLink label="Decisions" onClick={() => onOpenSubPage('decisions')} />
       </DeepLinks>
