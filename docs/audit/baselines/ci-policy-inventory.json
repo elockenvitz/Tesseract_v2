@@ -1,10 +1,10 @@
 {
   "schema_version": 2,
-  "captured_at": "2026-10-10T00:31:22.713Z",
+  "captured_at": "2026-10-11T12:57:49.111Z",
   "ci_minimal": true,
   "counts": {
     "tables": 292,
-    "policies": 935
+    "policies": 934
   },
   "tables": [
     {
@@ -1379,9 +1379,9 @@
       "name": "price_target_outcomes",
       "rls": true,
       "rls_forced": false,
-      "policies": 3,
-      "anon": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE",
-      "auth": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+      "policies": 2,
+      "anon": "",
+      "auth": "SELECT,UPDATE"
     },
     {
       "name": "price_targets",
@@ -7437,33 +7437,23 @@
     },
     {
       "table": "price_target_outcomes",
-      "name": "System can insert outcomes",
-      "cmd": "INSERT",
-      "roles": "public",
-      "permissive": "PERMISSIVE",
-      "unconditional": false,
-      "qual_class": "EMPTY",
-      "check_class": "AUTH_ONLY"
-    },
-    {
-      "table": "price_target_outcomes",
-      "name": "Users can view all price target outcomes",
+      "name": "price_target_outcomes_select",
       "cmd": "SELECT",
-      "roles": "public",
-      "permissive": "PERMISSIVE",
-      "unconditional": false,
-      "qual_class": "AUTH_ONLY",
-      "check_class": "EMPTY"
-    },
-    {
-      "table": "price_target_outcomes",
-      "name": "Users can update their own outcomes",
-      "cmd": "UPDATE",
-      "roles": "public",
+      "roles": "authenticated",
       "permissive": "PERMISSIVE",
       "unconditional": false,
       "qual_class": "SCOPED",
       "check_class": "EMPTY"
+    },
+    {
+      "table": "price_target_outcomes",
+      "name": "price_target_outcomes_update",
+      "cmd": "UPDATE",
+      "roles": "authenticated",
+      "permissive": "PERMISSIVE",
+      "unconditional": false,
+      "qual_class": "SCOPED",
+      "check_class": "SCOPED"
     },
     {
       "table": "price_targets",

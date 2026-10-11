@@ -91,7 +91,11 @@ const GLOBAL_TABLES = {
   price_history_cache:            'Price cache — global',
   price_targets:                  'User price targets — global',
   price_target_history:           'PT history — global',
-  price_target_outcomes:          'PT outcomes — global',
+  // `price_target_outcomes` was here, described as global. It never was: a row
+  // is one firm's hit/missed/expired verdict on its own analyst's forecast.
+  // Removed by 20261011120000_price_target_outcomes_tenant_isolation.sql, which
+  // gives the table an `organization_id` derived from its parent price target.
+  // Dropping the entry is what makes CHECK 2 and CHECK 4 enforce on it.
 
   // --- AI / platform system ---
   platform_ai_config:             'Platform AI settings — singleton',
@@ -386,6 +390,13 @@ async function run() {
     // invisible until an admin assigns one — see that migration's
     // verification queries. Drop from this list once those are resolved.
     'asset_models', 'model_versions',
+    // 20261011120000 added organization_id to price_target_outcomes. Nullable
+    // BY DESIGN and permanently so: NULL is the quarantine state for a row
+    // whose parent price target carries no organization. NOT NULL would force
+    // either a guessed owner or a failed write, and the whole point of the
+    // derivation is that it never guesses. All 30 rows resolved at backfill
+    // time; this reserves the fail-closed path for future ones.
+    'price_target_outcomes',
   ])
   const nullableOrgId = allTables.filter(
     t => t.has_org_id && t.org_id_nullable === 'YES' && !GRANDFATHERED_NULLABLE.has(t.table_name)
