@@ -388,6 +388,7 @@ export function MobileInvestmentSnapshot({
             assetId={assetId}
             portfolioId={portfolioId}
             symbol={symbol}
+            heldBookIds={data.positions.map(p => p.portfolioId)}
             compact
           />
         }

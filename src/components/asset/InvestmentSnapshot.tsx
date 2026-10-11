@@ -33,9 +33,14 @@
  * ── Nothing is invented ──────────────────────────────────────────────────
  *
  * Absent data says it is absent. No AI conclusions, no derived "score", no
- * decision records that do not exist. Decision Memory is a reserved place
- * that reports only what is already on record and says plainly that its real
- * implementation is still to come.
+ * decision records that do not exist.
+ *
+ * Decision Memory arrived in Increment 2B and reads the same hook the
+ * Decisions timeline reads, so the landing surface and the narrative beneath
+ * it cannot report different states. It also discloses an authorization gap
+ * rather than hiding it: holdings are org-scoped while decisions and
+ * executions are portfolio-team scoped, so a reader can legitimately see a
+ * name held in three books and a history covering fewer.
  */
 import { useMemo, useState } from 'react'
 import { useAssetWorkspace, primaryPosition, otherPositions } from '../../hooks/useAssetWorkspace'
@@ -391,6 +396,7 @@ export function InvestmentSnapshot({
         assetId={asset.id}
         portfolioId={portfolioId}
         symbol={symbol}
+        heldBookIds={data.positions.map(p => p.portfolioId)}
         onOpenTimeline={() => onOpenSubPage('decisions')}
       />
       <DeepLinks>

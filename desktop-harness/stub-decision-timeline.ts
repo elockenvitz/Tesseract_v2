@@ -261,6 +261,11 @@ export function useAssetDecisionTimeline({
   }
 
   const source = assetId === 'empty' ? HARNESS_EMPTY : HARNESS_EVENTS
+  /*
+   * The fixture's events name pf-growth and pf-income. The workspace stub
+   * holds the asset in THREE books (pf-opps as well), so the coverage note's
+   * condition -- held in a book no event covers -- is live by construction.
+   */
 
   // The real hook applies the portfolio filter server-side AND keeps events
   // with no portfolio (they are asset-level, not book-level). Same rule here.

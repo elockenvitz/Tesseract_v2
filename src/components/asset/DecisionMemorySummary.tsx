@@ -101,6 +101,13 @@ interface Props {
   assetId: string
   portfolioId?: string | null
   symbol?: string | null
+  /**
+   * The books this asset is HELD in, as the position read returns them.
+   *
+   * Used only to detect and disclose an authorization gap — see
+   * `coverageNote` below. Optional: when absent, no claim is made either way.
+   */
+  heldBookIds?: string[]
   /** Rendered denser on a phone. */
   compact?: boolean
   onOpenTimeline?: () => void
@@ -108,7 +115,7 @@ interface Props {
 }
 
 export function DecisionMemorySummary({
-  assetId, portfolioId = null, symbol, compact, onOpenTimeline, className,
+  assetId, portfolioId = null, symbol, heldBookIds, compact, onOpenTimeline, className,
 }: Props) {
   const { allEvents, isLoading, isError } = useAssetDecisionTimeline({ assetId, portfolioId })
   const s = summariseDecisionMemory(allEvents)
@@ -221,6 +228,44 @@ export function DecisionMemorySummary({
           </span>
         </p>
       )}
+
+      {/*
+        * The authorization gap, disclosed rather than hidden.
+        *
+        * Holdings are ORG-scoped: the position read returns every book in the
+        * organization that holds this name. Decisions, commitments and
+        * executions are PORTFOLIO-TEAM scoped — `decision_requests`,
+        * `accepted_trades` and `portfolio_trade_events` all require
+        * `user_is_portfolio_member(portfolio_id)`.
+        *
+        * Measured in production: a Tesseract analyst sees AAPL held in 3
+        * books and, depending on their team memberships, between 0 and 2 of
+        * its executions. Rendering "2 executed" beside "held in 3 books" with
+        * no note reads as a complete history, and it is not.
+        *
+        * This says so WITHOUT fabricating the missing rows or naming books
+        * the reader cannot see. It is computed from data already in hand — no
+        * extra query — and only shown when the gap actually exists.
+        */}
+      {(() => {
+        if (!heldBookIds || heldBookIds.length === 0) return null
+        if (portfolioId) return null // scoped deliberately; not a gap
+        const covered = new Set(
+          allEvents.map(e => e.portfolio?.id).filter((x): x is string => !!x),
+        )
+        const uncovered = heldBookIds.filter(id => !covered.has(id)).length
+        if (uncovered === 0) return null
+        return (
+          <p
+            className="text-[11px] text-gray-500 dark:text-gray-400"
+            data-testid="decision-memory-coverage-note"
+          >
+            Held in {heldBookIds.length} {heldBookIds.length === 1 ? 'book' : 'books'};
+            this history covers the {heldBookIds.length - uncovered} you have decision
+            access to.
+          </p>
+        )
+      })()}
 
       {s.furthest && (
         <p className="text-[11px] text-gray-500 dark:text-gray-400">

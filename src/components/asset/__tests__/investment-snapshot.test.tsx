@@ -33,6 +33,25 @@ vi.mock('../../../hooks/useAssetWorkspace', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../hooks/useAssetWorkspace')>()
   return { ...actual, useAssetWorkspace: () => ({ data, isLoading: false, error: null }) }
 })
+/*
+ * Increment 2B put the real Decision Memory on this surface, so the Snapshot
+ * now renders `DecisionMemorySummary`, which reads
+ * `useAssetDecisionTimeline`. Unmocked it reaches Supabase and throws, and
+ * because it is rendered inside the composition that failure took down all
+ * ten tests in this file rather than the two about Decision Memory.
+ */
+let timelineEvents: any[] = []
+let timelineError = false
+vi.mock('../../../hooks/useAssetDecisionTimeline', () => ({
+  useAssetDecisionTimeline: () => ({
+    events: timelineEvents,
+    allEvents: timelineEvents,
+    phaseCounts: { all: timelineEvents.length, exploratory: 0, formal: 0, execution: 0, review: 0 },
+    isLoading: false,
+    isError: timelineError,
+  }),
+}))
+
 vi.mock('../../../hooks/useAnalystRatings', () => ({
   useAnalystRatings: () => ({ ratings, consensus, isLoading: false }),
 }))
@@ -171,25 +190,42 @@ describe('absent data says it is absent', () => {
   })
 })
 
-describe('Decision Memory is reserved, and invents nothing', () => {
-  it('says so plainly when nothing is on record', () => {
+/*
+ * This block used to assert the placeholder -- "reserved -- arriving next"
+ * and "infers nothing from them". Increment 2B shipped the real thing, so
+ * asserting the placeholder would now be asserting that the feature has NOT
+ * arrived. Rewritten to the current contract rather than deleted, because
+ * what it was protecting still matters: this panel must invent nothing.
+ */
+describe('Decision Memory invents nothing', () => {
+  beforeEach(() => { timelineEvents = []; timelineError = false })
+
+  it('says plainly when nothing is on record', () => {
     renderSnapshot()
-    expect(screen.getByText(/reserved — arriving next/)).toBeInTheDocument()
-    expect(screen.getByText(/infers nothing from them/)).toBeInTheDocument()
+    expect(screen.getByTestId('decision-memory-summary-empty')).toBeInTheDocument()
+    // And it names the security rather than saying "this one".
+    expect(screen.getByTestId('decision-memory-summary-empty').textContent)
+      .toMatch(/No decision has been recorded/)
   })
 
-  it('lists only decisions that already carry a decided date', () => {
-    data = {
-      ...BASE,
-      decisions: [
-        { id: 'd-1', status: 'accepted', action: 'buy', decidedAt: '2026-05-04', portfolioId: 'p-growth', portfolioName: 'Large Cap Growth', decisionNote: null },
-        { id: 'd-2', status: 'pending', action: 'sell', decidedAt: null, portfolioId: 'p-growth', portfolioName: 'Large Cap Growth', decisionNote: null },
-      ],
-    }
+  it('does NOT report an empty history when the read failed', () => {
+    timelineError = true
     renderSnapshot()
-    // The undecided one belongs to Active Work, not to memory.
-    expect(screen.getByText(/buy · Large Cap Growth/)).toBeInTheDocument()
-    expect(screen.queryByText(/sell · Large Cap Growth/)).not.toBeInTheDocument()
+    expect(screen.getByTestId('decision-memory-summary-error')).toBeInTheDocument()
+    expect(screen.queryByTestId('decision-memory-summary-empty')).not.toBeInTheDocument()
+  })
+
+  it('never claims an execution was observed when it was not', () => {
+    timelineEvents = [
+      { id: 'x1', type: 'trade_executed', phase: 'execution', timestamp: '2026-06-02',
+        title: 'Add', subtitle: null, actor: null, portfolio: null, sizing: null,
+        rationale: null, sourceRef: { type: 'trade_event', id: 'x1' },
+        executionProof: 'assumed', provenance: { table: 'e', rowId: 'x1' },
+        disposition: 'positive' },
+    ]
+    renderSnapshot()
+    expect(screen.getByTestId('decision-memory-unobserved-caveat').textContent)
+      .toMatch(/not\s+evidenced by an observed fill/)
   })
 })
 
