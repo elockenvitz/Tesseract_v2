@@ -110,9 +110,29 @@ interface Props {
 export function DecisionMemorySummary({
   assetId, portfolioId = null, symbol, compact, onOpenTimeline, className,
 }: Props) {
-  const { allEvents, isLoading } = useAssetDecisionTimeline({ assetId, portfolioId })
+  const { allEvents, isLoading, isError } = useAssetDecisionTimeline({ assetId, portfolioId })
   const s = summariseDecisionMemory(allEvents)
   const headline = decisionMemoryHeadline(s)
+
+  /*
+   * A failed read is NOT an empty history.
+   *
+   * Without this branch a dropped request rendered "No decision has been
+   * recorded against AAPL yet" — which is a factual claim about the data, made
+   * on the basis of not having any. On a surface whose whole purpose is to say
+   * what was decided, that is the worst available failure mode.
+   */
+  if (isError) {
+    return (
+      <p
+        className="text-[12px] text-amber-800 dark:text-amber-300"
+        data-testid="decision-memory-summary-error"
+      >
+        Decision history could not be loaded. This is not a statement that there
+        is none — try again.
+      </p>
+    )
+  }
 
   if (isLoading) {
     return (

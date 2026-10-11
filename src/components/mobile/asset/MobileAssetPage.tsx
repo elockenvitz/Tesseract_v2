@@ -128,7 +128,7 @@ export function MobileAssetPage({ asset, onNavigate }: MobileAssetPageProps) {
         })}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 pb-safe space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-2 pb-safe space-y-2">
         {subPage === 'snapshot' && (
           <MobileInvestmentSnapshot
             assetId={asset.id}

@@ -247,6 +247,19 @@ export function useAssetDecisionTimeline({
   portfolioId?: string | null
   enabled?: boolean
 }) {
+  /*
+   * `assetId === 'error'` exercises the failed-read branch. Without a way to
+   * reach it, "a dropped request must not read as an empty history" is an
+   * untested claim about the most important failure mode on this surface.
+   */
+  if (assetId === 'error') {
+    return {
+      events: [], allEvents: [],
+      phaseCounts: { all: 0, exploratory: 0, formal: 0, execution: 0, review: 0 },
+      isLoading: false, isError: true,
+    }
+  }
+
   const source = assetId === 'empty' ? HARNESS_EMPTY : HARNESS_EVENTS
 
   // The real hook applies the portfolio filter server-side AND keeps events

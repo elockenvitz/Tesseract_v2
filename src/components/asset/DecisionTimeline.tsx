@@ -214,6 +214,7 @@ export function DecisionTimeline({
     events,
     phaseCounts,
     isLoading,
+    isError,
   } = useAssetDecisionTimeline({ assetId, filter, portfolioId })
 
   /*
@@ -305,10 +306,26 @@ export function DecisionTimeline({
           <h4 className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">Decision Timeline</h4>
         </div>
         <div className="px-4 py-6 text-center">
-          <span className="text-[13px] text-gray-400 dark:text-gray-500">No decision history yet.</span>
-          <span className="text-[11px] text-gray-400 dark:text-gray-500 block mt-1">
-            Trade ideas, decisions, and executed trades will appear here.
-          </span>
+          {isError ? (
+            <>
+              <span
+                className="text-[13px] text-amber-800 dark:text-amber-300"
+                data-testid="decision-timeline-error"
+              >
+                Decision history could not be loaded.
+              </span>
+              <span className="text-[11px] text-gray-500 dark:text-gray-400 block mt-1">
+                This is not a statement that there is none.
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="text-[13px] text-gray-400 dark:text-gray-500">No decision history yet.</span>
+              <span className="text-[11px] text-gray-400 dark:text-gray-500 block mt-1">
+                Trade ideas, decisions, and executed trades will appear here.
+              </span>
+            </>
+          )}
         </div>
       </div>
     )
@@ -370,7 +387,7 @@ export function DecisionTimeline({
       {!isLoading && visibleEvents.length > 0 && (
         <div className="relative">
           {/* Vertical connector line */}
-          <div className="absolute left-[19px] top-0 bottom-0 w-px bg-gray-200 dark:bg-gray-700" />
+          <div className="absolute left-[21px] top-0 bottom-0 w-px bg-gray-200 dark:bg-gray-700" />
 
           <div className="divide-y divide-gray-50 dark:divide-gray-800">
             {visibleEvents.map((event, idx) => (
@@ -485,7 +502,7 @@ function TimelineEventRow({
       onClick={isClickable ? onClick : undefined}
       disabled={!isClickable}
       className={clsx(
-        'w-full flex items-start gap-3 pl-3 pr-4 py-2.5 text-left transition-colors relative',
+        'w-full flex items-start gap-2.5 pl-3 pr-4 py-1.5 text-left transition-colors relative',
         'border-l-[3px]',
         accentBorder,
         isClickable && 'hover:bg-gray-50/80 dark:hover:bg-gray-700/30 cursor-pointer group',
@@ -495,10 +512,10 @@ function TimelineEventRow({
       {/* ─── Dot / Icon ───────────────────────────────── */}
       <div className="relative z-10 flex-shrink-0 mt-0.5">
         <div className={clsx(
-          'w-6 h-6 rounded-full flex items-center justify-center',
+          'w-5 h-5 rounded-full flex items-center justify-center',
           'bg-white dark:bg-gray-800 ring-2 ring-white dark:ring-gray-800',
         )}>
-          <Icon className={clsx('w-3.5 h-3.5', iconColor)} />
+          <Icon className={clsx('w-3 h-3', iconColor)} />
         </div>
       </div>
 
@@ -539,7 +556,7 @@ function TimelineEventRow({
 
         {/* Subtitle / rationale */}
         {(event.subtitle || event.rationale) && (
-          <div className="mt-0.5 ml-[60px]">
+          <div className="ml-[58px]">
             {event.subtitle && (
               <span className="text-[11px] text-gray-500 dark:text-gray-400 block truncate leading-snug">
                 {event.subtitle}
@@ -554,7 +571,7 @@ function TimelineEventRow({
         )}
 
         {/* Meta line: actor + portfolio */}
-        <div className="mt-0.5 ml-[60px] flex items-center gap-2 text-[10px] text-gray-400 dark:text-gray-500">
+        <div className="ml-[58px] flex items-center gap-2 text-[10px] text-gray-400 dark:text-gray-500">
           {event.actor && (
             <span className="flex items-center gap-1">
               <span className="w-4 h-4 rounded-full bg-gray-100 dark:bg-gray-700 text-[8px] font-semibold text-gray-500 dark:text-gray-400 flex items-center justify-center shrink-0">

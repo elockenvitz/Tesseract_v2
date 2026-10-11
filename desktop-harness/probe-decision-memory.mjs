@@ -216,6 +216,29 @@ const browser = await chromium.launch()
   await page.close()
 }
 
+// ─── 5. A failed read is not an empty history ─────────────────────────────
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+  await page.goto(`${base}?surface=decision-timeline&h=900&asset=error`,
+    { waitUntil: 'networkidle' })
+  await page.waitForSelector('[data-harness="decision-timeline"]')
+  await page.waitForTimeout(200)
+  const text = await page.evaluate(() => document.body.innerText)
+
+  check('failed read says it failed', /could not be loaded/i.test(text), text.slice(0, 160))
+  /*
+   * The specific wrong behaviour this guards: rendering "No decision history
+   * yet" when the request simply failed. That is a factual claim about the
+   * data made on the basis of not having any.
+   */
+  check('failed read does NOT claim an empty history',
+    !/No decision history yet/i.test(text), text.slice(0, 160))
+  check('failed read disclaims the absence',
+    /not a statement that there is none/i.test(text))
+
+  await page.close()
+}
+
 await browser.close()
 
 console.log(`\n  PASS ${ok.length}`)

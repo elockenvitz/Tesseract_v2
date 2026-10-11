@@ -82,7 +82,7 @@ function Band({
       data-testid={testId}
       className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 overflow-hidden"
     >
-      <div className="px-3 pt-2.5 pb-2">
+      <div className="px-3 pt-2 pb-1.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <Icon className="h-3.5 w-3.5 text-gray-400 shrink-0" />
@@ -105,12 +105,12 @@ function Band({
           )}
         </div>
 
-        <div className="mt-1">{headline}</div>
+        <div className="mt-0.5">{headline}</div>
       </div>
 
       {collapsible && open && (
         <div
-          className="px-3 pb-2.5 border-t border-gray-100 dark:border-gray-800 pt-2"
+          className="px-3 pb-2 border-t border-gray-100 dark:border-gray-800 pt-1.5"
           data-testid={`${testId}-detail`}
         >
           {children}
@@ -277,7 +277,7 @@ export function MobileInvestmentSnapshot({
   )
 
   return (
-    <div className="space-y-3" data-testid="mobile-snapshot">
+    <div className="space-y-2" data-testid="mobile-snapshot">
       {/*
         * The book selector sits at the TOP, above every band, because it
         * scopes all of them. Putting it inside Position would imply it only
@@ -303,7 +303,7 @@ export function MobileInvestmentSnapshot({
         icon={Briefcase}
         headline={positionHeadline}
         defaultOpen={false}
-        action={held ? { label: 'Open position detail', onClick: () => onOpenSubPage('lists') } : undefined}
+        action={held ? { label: 'Open books & lists', onClick: () => onOpenSubPage('lists') } : undefined}
       >
         {position && (
           <>
