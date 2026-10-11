@@ -98,8 +98,17 @@ export function OpsSettingsPage() {
 
   const deleteOrgM = useMutation({
     mutationFn: async (orgId: string) => {
-      await supabase.from('organization_memberships').delete().eq('organization_id', orgId)
-      const { error } = await supabase.from('organizations').delete().eq('id', orgId)
+      // One RPC, one transaction. The previous two-statement version deleted
+      // memberships first and then the organization; PostgREST gives each
+      // statement its own transaction, so a failure on the second left the
+      // memberships gone and the organization standing. That is how
+      // `Daniel Adam Capital` became a shell with zero members, and on an org
+      // that was someone's only membership it would have locked them out with
+      // no route back. `organization_memberships.organization_id` is already
+      // ON DELETE CASCADE, so deleting memberships here was never needed.
+      const { error } = await supabase.rpc('delete_organization', {
+        p_organization_id: orgId,
+      })
       if (error) throw error
     },
     onSuccess: () => {

@@ -1062,6 +1062,19 @@ export interface Database {
         /** The new event's id. */
         Returns: string
       }
+      /**
+       * Replaces the ops portal's two-statement delete, which removed
+       * memberships and the organization in separate PostgREST transactions
+       * and so destroyed the memberships whenever the second statement failed.
+       * Memberships cascade from the organization, so the caller must not
+       * delete them. Requires `is_platform_admin()` — the same predicate as
+       * the DELETE policy on `organizations`.
+       */
+      delete_organization: {
+        Args: { p_organization_id: string }
+        /** The deleted organization's id. */
+        Returns: string
+      }
     }
     Enums: {
       priority_level: 'high' | 'medium' | 'low'
