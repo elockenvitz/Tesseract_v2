@@ -1,0 +1,36 @@
+-- ============================================================================
+-- ROLLBACK for 20261011120000_price_target_outcomes_tenant_isolation.sql
+--
+-- NOT a migration. The `.rollback` suffix keeps it out of the CLI's path.
+-- Running this REOPENS the cross-tenant read: every authenticated user in every
+-- organization reads every row again. Use it only to restore service if the
+-- narrowed policy turns out to blank a surface that matters more than the leak.
+--
+-- The `organization_id` column and its trigger are left in place deliberately:
+-- dropping them loses the derived ownership for no benefit, and re-deriving is
+-- idempotent. Only the boundary is reverted.
+-- ============================================================================
+
+DROP POLICY IF EXISTS price_target_outcomes_select ON public.price_target_outcomes;
+CREATE POLICY "Users can view all price target outcomes"
+  ON public.price_target_outcomes
+  FOR SELECT
+  USING (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS price_target_outcomes_update ON public.price_target_outcomes;
+CREATE POLICY "Users can update their own outcomes"
+  ON public.price_target_outcomes
+  FOR UPDATE
+  USING (user_id = auth.uid());
+
+CREATE POLICY "System can insert outcomes"
+  ON public.price_target_outcomes
+  FOR INSERT
+  WITH CHECK (auth.uid() IS NOT NULL);
+
+-- Grants as they were before the fix. Note this hands `anon` DML again; it was
+-- the pre-existing state, not a good one.
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON public.price_target_outcomes TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON public.price_target_outcomes TO anon;
