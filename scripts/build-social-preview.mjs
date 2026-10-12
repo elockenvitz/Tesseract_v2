@@ -35,7 +35,8 @@
  * gets the same bytes as one fetching the home page.
  */
 import { chromium } from '@playwright/test'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, unlinkSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -163,8 +164,67 @@ const page = await browser.newPage({
 })
 await page.setContent(html, { waitUntil: 'load' })
 await page.evaluate(() => document.fonts.ready)
-writeFileSync(join(root, 'public/social-preview.png'), await page.screenshot({ type: 'png' }))
+/*
+ * The preview is published under a filename carrying a hash of its own bytes,
+ * and every reference to it is rewritten here rather than by hand.
+ *
+ * The reason is a bug that lasted from #240 until it was investigated: the
+ * image shipped as `/social-preview.png`, was replaced 22 minutes later at
+ * that same URL, and link-preview caches are keyed on the URL. Those caches
+ * belong to Apple, Meta, Slack and WhatsApp; several ignore `Cache-Control`
+ * and Apple's is effectively permanent. The deployed asset was correct the
+ * whole time while every conversation that had already previewed a Tesseract
+ * link kept showing the superseded one. A new URL is a new cache key, and it
+ * is the only purge we can actually perform.
+ *
+ * Doing the rename by hand would work exactly once. Whoever next re-runs this
+ * script to change the design would overwrite the bytes, leave the filename,
+ * and reintroduce the same bug — so the script owns the name, the meta tags
+ * and the redirect together, and `guard:social-preview` fails the build if
+ * they ever disagree with the file on disk.
+ */
+const png = await page.screenshot({ type: 'png' })
+const hash = createHash('sha256').update(png).digest('hex').slice(0, 8)
+const previewName = `social-preview.${hash}.png`
+
+// Remove superseded hashed copies, so `public/` does not accumulate one dead
+// 70KB PNG per design tweak. The redirect below keeps the OLD UNVERSIONED url
+// working; the old hashed ones were only ever referenced by a tag this script
+// is about to rewrite.
+for (const f of readdirSync(join(root, 'public'))) {
+  if (/^social-preview\.[0-9a-f]{8}\.png$/.test(f) && f !== previewName) {
+    unlinkSync(join(root, 'public', f))
+  }
+}
+writeFileSync(join(root, 'public', previewName), png)
 await page.close()
+
+/*
+ * Rewrite the references. Narrow regexes over the exact published filename
+ * shape, so a stray `social-preview` in prose is not rewritten and a failure
+ * to match is loud rather than silent.
+ */
+const NAME = /social-preview\.[0-9a-f]{8}\.png/g
+
+const indexPath = join(root, 'index.html')
+const indexHtml = readFileSync(indexPath, 'utf8')
+const indexHits = (indexHtml.match(NAME) || []).length
+if (indexHits !== 2) {
+  throw new Error(
+    `index.html should reference the preview twice (og:image, twitter:image), found ${indexHits}. `
+    + 'Refusing to rewrite — the tags have moved and this script would leave them stale.')
+}
+writeFileSync(indexPath, indexHtml.replace(NAME, previewName))
+
+const redirectsPath = join(root, 'public/_redirects')
+const redirects = readFileSync(redirectsPath, 'utf8')
+if (!NAME.test(redirects)) {
+  throw new Error(
+    'public/_redirects has no /social-preview.png rule. Without it the old URL '
+    + 'falls through the SPA catch-all and answers 200 text/html, which breaks '
+    + 'the preview outright for any cache that revalidates.')
+}
+writeFileSync(redirectsPath, redirects.replace(NAME, previewName))
 
 /*
  * Favicon and touch icon, from the same source mark.
@@ -195,4 +255,5 @@ for (const [file, size] of [['favicon.png', 64], ['apple-touch-icon.png', 180]])
 }
 
 await browser.close()
-console.log('wrote public/social-preview.png, public/favicon.png, public/apple-touch-icon.png')
+console.log(`wrote public/${previewName}, public/favicon.png, public/apple-touch-icon.png`)
+console.log('updated index.html (og:image, twitter:image) and public/_redirects')

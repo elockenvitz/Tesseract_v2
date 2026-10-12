@@ -61,6 +61,11 @@ jobs:
       - run: npm run guard:ci
       - run: npm run guard:holdings
       - run: npm run guard:types
+      # The link preview. Pure file reads, no browser, milliseconds — and it
+      # catches a regression that is invisible from the server, because the
+      # server serves the right bytes while third-party caches keyed on an
+      # unchanged URL serve the old ones.
+      - run: npm run guard:social-preview
 
   test:
     name: Unit tests
