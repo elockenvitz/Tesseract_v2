@@ -5,6 +5,8 @@ import { IdeasWorkspace } from '../src/components/ideas-v2/IdeasWorkspace'
 import { DashboardShell } from '../src/components/dashboard/DashboardShell'
 import { DecisionTimeline } from '../src/components/asset/DecisionTimeline'
 import { MobileAssetPage } from '../src/components/mobile/asset/MobileAssetPage'
+import { OurViewSummary } from '../src/components/asset/OurViewSummary'
+import { OUR_VIEW_FIELDS, ourViewContributions } from './our-view-fixtures'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
@@ -67,6 +69,38 @@ function Harness() {
               // so a probe can assert WHERE a click would have gone, which is
               // the part that regressed before.
               document.body.setAttribute('data-last-nav', JSON.stringify(d))
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  /*
+   * `?surface=our-view` renders the Our View firm summary against
+   * `our-view-fixtures.ts`. `?view=empty` is the nobody-has-written case and
+   * `?view=single` the one-contributor case, which is the one that must not
+   * read as a firm position.
+   *
+   * The component is pure — contributions in, summary out, no queries — so it
+   * needs no stub module. Same 860px column the Research pane gives it.
+   */
+  if (surface === 'our-view') {
+    const view = q.get('view')
+    return (
+      <div
+        style={{ height: `${h}px`, width: '100%', padding: 24, background: '#f8fafc' }}
+        data-harness={surface}
+      >
+        <div style={{ maxWidth: 860 }}>
+          <OurViewSummary
+            contributions={ourViewContributions(view)}
+            fields={OUR_VIEW_FIELDS}
+            coveringAnalystIds={new Set(['u-rivera'])}
+            currentUserId="u-okafor"
+            symbol="AAPL"
+            onOpenAnalyst={(id) => {
+              document.body.setAttribute('data-last-nav', JSON.stringify({ analyst: id }))
             }}
           />
         </div>

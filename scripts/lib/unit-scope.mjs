@@ -184,6 +184,19 @@ export const GATED_DIRS = [
   'src/lib/capture',
   'src/components/notes',
   'src/components/tabs',
+  /*
+   * The Asset page's own surfaces: the Snapshot, the Decision Memory summary
+   * and Our View.
+   *
+   * Arrived across increments 2B–2E and were left unlisted the whole way —
+   * exactly the silent disappearance this accounting exists to catch, and the
+   * guard caught it rather than a person. Gated rather than deferred because
+   * every failure mode here is a claim about the firm's own record: that a
+   * failed read is not an empty history, that an execution nobody observed is
+   * not reported as observed, and that one analyst's opinion is not rendered
+   * as the firm's position.
+   */
+  'src/components/asset/__tests__',
   'src/components/layout',  'src/hooks/__tests__',
   'src/components/communication',
 

@@ -225,7 +225,12 @@ const MAX_ERRORS = 0
 // MEASURED figure after merging, not the arithmetic — the guard was run and
 // reported it. Resolving a ceiling conflict by picking a side is how a ratchet
 // silently gains slack, which is exactly what this number exists to prevent.
-const MAX_REPO_ERRORS = 8639
+//
+// → 8638: the Our View summary replaced two inline `coverage?.map(c =>
+// c.user_id)` reads with one annotated memo. The `coverage` query selects an
+// embed the generated row type does not describe, so its rows infer as `never`
+// and each inline read carried its own error. Measured, not arithmetic.
+const MAX_REPO_ERRORS = 8638
 
 /**
  * A floor on real source files, now that they are counted as source files.

@@ -38,6 +38,8 @@ import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { InvestmentSnapshot } from '../asset/InvestmentSnapshot'
+import { OurViewSummary, type OurViewField } from '../asset/OurViewSummary'
+import { contributionSectionsForSlug } from '../../lib/research/contribution-sections'
 // DocumentLibrarySection removed — consolidated into KeyReferencesSection
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddToProjectButton } from '../projects/AddToProjectButton'
@@ -127,6 +129,20 @@ async function getWorkflowStages(workflowId: string) {
 
   return { data: data || [], error }
 }
+
+/**
+ * Template field types that are NOT analyst prose.
+ *
+ * Each of these has a dedicated surface that owns its logic — price targets
+ * and ratings through `PriceTargetsSummary` and `FirmConsensusPanel`, key
+ * references through the References view. Our View and the aggregated document
+ * both skip them, and they share this list so the summary can never claim to
+ * cover a field the document renders, or vice versa.
+ */
+const NON_PROSE_FIELD_TYPES = [
+  'checklist', 'metric', 'timeline', 'numeric', 'date',
+  'rating', 'estimates', 'price_target', 'key_references',
+]
 
 interface AssetTabProps {
   asset: any
@@ -313,11 +329,80 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.decisionBookId ?? asset.portfolioId ?? null
   })
-  // Research view filter: 'aggregated' or a specific user_id
+  /*
+   * Research view filter: 'aggregated' (Our View), a specific user_id, or
+   * UNRESOLVED.
+   *
+   * ── Why there is a third state ───────────────────────────────────────
+   *
+   * This used to initialise to 'aggregated', which made the firm summary the
+   * default full-length research document for everyone. An analyst opening a
+   * name they cover landed on a combined pane rather than their own work.
+   *
+   * The right default is "my own detailed view, if I have one" — but
+   * `researchAnalysts` is derived from `coverage` and `thesisContributions`,
+   * both async, so it is EMPTY on first render. Defaulting at initialisation
+   * is therefore impossible; the choice has to be made once that data lands.
+   *
+   * UNRESOLVED is that "not yet decided" state. It renders as Our View (the
+   * safe, attributable fallback) and is replaced exactly once, by the effect
+   * below, and never over a choice the reader or a navigation already made.
+   */
   const [researchViewFilter, setResearchViewFilter] = useState<'aggregated' | string>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
-    return savedState?.researchViewFilter || 'aggregated'
+    /*
+     * A RESTORED filter is an explicit past choice and is honoured as-is,
+     * including a restored 'aggregated' — a reader who deliberately chose the
+     * summary last time should not be moved off it.
+     *
+     * An arriving `researchViewFilter` in tab data is handled by its own
+     * effect further down and wins over everything.
+     *
+     * The value still starts at 'aggregated' when nothing is known, because
+     * fifteen downstream consumers treat any non-'aggregated' value as a
+     * user id — a sentinel here would be queried AS an id. The "not yet
+     * decided" fact lives in `researchDefaultDecided` instead.
+     */
+    if (savedState?.researchViewFilter) return savedState.researchViewFilter
+    if (asset.data?.researchViewFilter) return asset.data.researchViewFilter
+    return 'aggregated'
   })
+
+  /**
+   * Whether the research view was CHOSEN, as opposed to merely defaulted.
+   *
+   * Distinguishing these is the whole mechanism: "nobody has picked yet" and
+   * "somebody picked Our View" look identical in the filter value, and
+   * conflating them is what made the firm summary everyone's default
+   * full-length research document.
+   *
+   * Seeded true when a saved or arriving choice exists, so the resolver below
+   * leaves those alone.
+   */
+  const [researchDefaultDecided, setResearchDefaultDecided] = useState<boolean>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return !!(savedState?.researchViewFilter || asset.data?.researchViewFilter)
+  })
+
+  /**
+   * Whether the current view was CHOSEN, rather than resolved by default.
+   *
+   * Only a chosen view is persisted. A default that happened to land on
+   * another analyst's view must not be saved as if the reader picked it --
+   * that would keep sending them there even after they write their own
+   * research, which is the exact outcome the new default exists to produce.
+   */
+  const [researchViewChosen, setResearchViewChosen] = useState<boolean>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return !!(savedState?.researchViewFilter || asset.data?.researchViewFilter)
+  })
+
+  /** Any explicit pick — by the reader or by a navigation — settles it. */
+  const chooseResearchView = useCallback((next: string) => {
+    setResearchDefaultDecided(true)
+    setResearchViewChosen(true)
+    setResearchViewFilter(next)
+  }, [])
   // Thesis view mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline
   const [thesisViewMode, setThesisViewMode] = useState<'all' | 'summary' | 'history' | 'references'>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
@@ -513,6 +598,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Handle researchViewFilter from navigation data (e.g., Trade Queue linking to proposer's research view)
   useEffect(() => {
     if (asset.data?.researchViewFilter) {
+      // An explicit navigation intent -- e.g. Trade Queue linking to the
+      // proposer's view. It settles the default so the resolver stays out.
+      setResearchDefaultDecided(true)
+      setResearchViewChosen(true)
       setResearchViewFilter(asset.data.researchViewFilter)
       setActiveSubPage('research')
     }
@@ -572,7 +661,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     if (isTabStateInitialized) {
       const stateToSave = {
         activeSubPage,
-        researchViewFilter,
+        /*
+         * Only a CHOSEN view is persisted. Saving a defaulted one would turn
+         * it into an explicit choice on the next visit and freeze the reader
+         * on whichever view the resolver happened to pick.
+         */
+        ...(researchViewChosen ? { researchViewFilter } : {}),
         thesisViewMode,
         collapsedSections,
         viewingStageId,
@@ -582,7 +676,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       }
       TabStateManager.saveTabState(asset.id, stateToSave)
     }
-  }, [asset.id, activeSubPage, researchViewFilter, thesisViewMode, collapsedSections, viewingStageId, decisionBookId, isTabStateInitialized])
+  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, decisionBookId, isTabStateInitialized])
 
   // Focus-scroll into a Lists tab section when listsFocus is set
   useEffect(() => {
@@ -738,6 +832,55 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Layout/template customizations should ONLY apply when viewing "My View"
   const isViewingOwnTab = user && researchViewFilter === user.id
   const isAggregatedView = researchViewFilter === 'aggregated'
+
+  /**
+   * The prose fields Our View summarises, in the org's own template order.
+   *
+   * Derived from the template rather than listed, for the same reason the
+   * aggregated document was: the organisation decides which fields exist, what
+   * they are called and what order they read in. A hardcoded list inside the
+   * summary would be a second research vocabulary that silently disagrees with
+   * this one the first time an org adds or renames a field.
+   *
+   * The filter mirrors the aggregated document exactly — the same hidden
+   * sections, the same Key References exclusion, the same non-prose field types
+   * that have dedicated summary components (`PriceTargetsSummary`,
+   * `FirmConsensusPanel`) above. So the summary reports on precisely the
+   * sections the full document would have rendered.
+   */
+  const ourViewFields: OurViewField[] = React.useMemo(() => {
+    const out: OurViewField[] = []
+    for (const section of displayedFieldsBySection) {
+      if (section.section_is_hidden) continue
+      if (section.section_slug === 'supporting_docs') continue
+      for (const field of section.fields) {
+        if (!field.is_visible) continue
+        if (NON_PROSE_FIELD_TYPES.includes(field.field_type)) continue
+        out.push({
+          slug: field.field_slug,
+          label: field.field_name,
+          sectionKeys: contributionSectionsForSlug(field.field_slug),
+        })
+      }
+    }
+    return out
+  }, [displayedFieldsBySection])
+
+  /**
+   * The analysts formally covering this asset.
+   *
+   * Computed once rather than inline at each consumer. The `coverage` query
+   * selects an embed, which the generated row type does not describe, so its
+   * rows infer as `never` and every inline `coverage?.map(c => c.user_id)`
+   * produced its own type error. One annotated read states the shape in a
+   * single place; the annotation is narrow on purpose — `user_id` is all a
+   * covering-set needs, so it cannot drift into a second description of a
+   * coverage row.
+   */
+  const coveringAnalystIds = React.useMemo(() => {
+    const rows = (coverage ?? []) as unknown as { user_id: string | null }[]
+    return new Set(rows.map(c => c.user_id).filter((id): id is string => Boolean(id)))
+  }, [coverage])
 
   // Get section info with overrides (name, visibility, etc.)
   const getSectionInfo = useCallback((sectionSlug: string) => {
@@ -975,6 +1118,58 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       return a.name.localeCompare(b.name)
     })
   }, [coverage, thesisContributions, contributorProfiles, isLoadingContributorProfiles, user])
+
+  /**
+   * Resolve the research default, once, when the analyst list arrives.
+   *
+   * ── The rule, in order ───────────────────────────────────────────────
+   *
+   *   1. The reader HAS their own research on this name  → their own view.
+   *      This is the change: an analyst opening a name they cover lands on
+   *      their own work, not on a combined firm pane.
+   *   2. Otherwise, the primary covering analyst's view  → clearly labelled
+   *      as that person's, because the pills show whose view is selected.
+   *   3. Otherwise any covering analyst, then any contributor.
+   *   4. Nobody has written anything                     → Our View, which
+   *      is the honest landing state when there is no individual research to
+   *      open.
+   *
+   * ── What it must never do ────────────────────────────────────────────
+   *
+   * It does NOT create a research record, claim ownership, or write anything.
+   * Selecting a filter is a read. Case 2 and 3 open somebody ELSE's view, and
+   * the selector makes whose it is explicit — the alternative, opening an
+   * empty "own" view, would imply the reader has research they do not have.
+   *
+   * It runs only while UNRESOLVED, so an explicit choice, a restored choice,
+   * or an arriving navigation intent is never overridden. Waiting for
+   * `isLoadingContributorProfiles` avoids resolving against a half-loaded
+   * list and then appearing to "jump" views.
+   */
+  useEffect(() => {
+    if (researchDefaultDecided) return
+    if (isLoadingContributorProfiles) return
+    // Coverage is the other input; `undefined` means still loading.
+    if (coverage === undefined || thesisContributions === undefined) return
+
+    // Decided either way now, so this runs once.
+    setResearchDefaultDecided(true)
+
+    const mine = user?.id && researchAnalysts.some(a => a.id === user.id) ? user.id : null
+    if (mine) {
+      setResearchViewFilter(mine)
+      return
+    }
+    const primary = researchAnalysts.find(a => a.isCovering && a.role === 'primary')
+    const covering = researchAnalysts.find(a => a.isCovering)
+    const fallback = primary ?? covering ?? researchAnalysts[0]
+    // No individual research exists at all -- Our View is then the honest
+    // landing state, not a fallback that hides an absence.
+    setResearchViewFilter(fallback ? fallback.id : 'aggregated')
+  }, [
+    researchDefaultDecided, isLoadingContributorProfiles, coverage,
+    thesisContributions, researchAnalysts, user?.id,
+  ])
 
   // Accessible analyst IDs for rating divergence badge filtering (must be after researchAnalysts)
   const ratingAccessibleUserIds: string[] | undefined = React.useMemo(() => {
@@ -2847,7 +3042,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 // Pills mode for 5 or fewer analysts
                 <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
                   <button
-                    onClick={() => setResearchViewFilter('aggregated')}
+                    onClick={() => chooseResearchView('aggregated')}
                     className={clsx(
                       'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
                       researchViewFilter === 'aggregated'
@@ -2867,7 +3062,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     return (
                       <button
                         key={analyst.id}
-                        onClick={() => setResearchViewFilter(analyst.id)}
+                        onClick={() => chooseResearchView(analyst.id)}
                         title={roleLabel}
                         className={clsx(
                           'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
@@ -2893,7 +3088,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 // Dropdown mode for more than 5 analysts
                 <select
                   value={researchViewFilter}
-                  onChange={(e) => setResearchViewFilter(e.target.value)}
+                  onChange={(e) => chooseResearchView(e.target.value)}
                   className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-200"
                 >
                   <option value="aggregated">Our View (All Analysts)</option>
@@ -3144,7 +3339,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   assetId={asset.id}
                   viewFilter={researchViewFilter}
                   contributions={allAssetContributions}
-                  coveringAnalystIds={new Set(coverage?.map(c => c.user_id) || [])}
+                  coveringAnalystIds={coveringAnalystIds}
                 />
               </Card>
             ) : thesisViewMode === 'history' ? (
@@ -3186,7 +3381,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     </p>
                     {user && (
                       <button
-                        onClick={() => setResearchViewFilter(user.id)}
+                        onClick={() => chooseResearchView(user.id)}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
                       >
                         <Target className="w-4 h-4" />
@@ -3206,44 +3401,27 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   {/* Aggregated Forecasts Summary - shows ratings, estimates when data exists */}
                   <FirmConsensusPanel assetId={asset.id} />
 
-                  {/* Contribution-based fields (rich_text sections with content) */}
-                  {displayedFieldsBySection.flatMap(section => {
-                    if (section.section_is_hidden) return []
+                  {/*
+                    Our View is a SUMMARY of the firm's research, not the
+                    research itself. It used to render a `ContributionSection`
+                    for every prose field in the template, which concatenated
+                    every analyst's full text into one pane several thousand
+                    words long — and this was the default landing view, so an
+                    analyst opening a name they cover saw the combined document
+                    rather than their own work.
 
-                    // Skip Key References section — shown in references view tab
-                    if (section.section_slug === 'supporting_docs') return []
-
-                    return section.fields
-                      .filter(f => f.is_visible)
-                      .map(field => {
-                        const fieldType = field.field_type
-
-                        // Skip non-contribution field types in aggregated view
-                        // (handled by dedicated summary components above)
-                        if (['checklist', 'metric', 'timeline', 'numeric', 'date', 'rating', 'estimates', 'price_target', 'key_references'].includes(fieldType)) {
-                          return null
-                        }
-
-                        // Contribution-based fields (rich_text, etc.)
-                        return (
-                          <ContributionSection
-                            key={field.field_id}
-                            assetId={asset.id}
-                            section={field.field_slug}
-                            title={field.field_name}
-                            activeTab={researchViewFilter}
-                            onTabChange={setResearchViewFilter}
-                            defaultVisibility={sharedThesisVisibility}
-                            hideViewModeButtons={true}
-                            hideVisibility={true}
-                            sharedVisibility={sharedThesisVisibility}
-                            sharedTargetIds={sharedThesisTargetIds}
-                            hideWhenEmpty={true}
-                            flatMode={false}
-                          />
-                        )
-                      })
-                  })}
+                    The full documents are unchanged and one click away: the
+                    individual branch below still renders every section with
+                    editing intact, and every name here opens it.
+                  */}
+                  <OurViewSummary
+                    contributions={allAssetContributions}
+                    fields={ourViewFields}
+                    coveringAnalystIds={coveringAnalystIds}
+                    onOpenAnalyst={chooseResearchView}
+                    currentUserId={user?.id ?? null}
+                    symbol={asset.symbol}
+                  />
                 </div>
               )
             ) : (
