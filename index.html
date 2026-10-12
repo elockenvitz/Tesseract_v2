@@ -62,7 +62,27 @@
          most crawlers, and a preview fetched from a deploy-preview domain
          should still point at the production asset. -->
     <meta property="og:url" content="https://tesseract2025.netlify.app/" />
-    <meta property="og:image" content="https://tesseract2025.netlify.app/social-preview.png" />
+    <!--
+      The filename carries a hash of the image's own bytes, and it has to.
+
+      This was `/social-preview.png` — one unchanging URL. The image behind it
+      was replaced 22 minutes after it first shipped (#239 -> #240, the
+      blown-up glow swapped for the app's own mark), and the URL did not move.
+
+      Link-preview caches are keyed on the URL and belong to Apple, Meta,
+      Slack and WhatsApp. They are not ours to purge, several of them ignore
+      `Cache-Control` outright, and Apple's is effectively permanent. So every
+      conversation that had already previewed a Tesseract link kept showing
+      the superseded image, indefinitely, while the deployed asset was correct
+      the whole time. That is the bug this spelling fixes: a new URL is a new
+      cache key, which is the only purge mechanism we actually have.
+
+      Regenerate with `node scripts/build-social-preview.mjs`, which rewrites
+      this tag, the one below and the redirect in `public/_redirects` from the
+      bytes it just wrote. Do not hand-edit the hash — `guard:social-preview`
+      recomputes it from the file and fails if they disagree.
+    -->
+    <meta property="og:image" content="https://tesseract2025.netlify.app/social-preview.7a4dd3e0.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -71,7 +91,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Tesseract" />
     <meta name="twitter:description" content="Decision intelligence for investment teams." />
-    <meta name="twitter:image" content="https://tesseract2025.netlify.app/social-preview.png" />
+    <meta name="twitter:image" content="https://tesseract2025.netlify.app/social-preview.7a4dd3e0.png" />
     <meta name="twitter:image:alt" content="Tesseract — decision intelligence for investment teams." />
   </head>
   <body>
