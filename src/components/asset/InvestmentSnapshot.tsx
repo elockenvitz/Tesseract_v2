@@ -68,6 +68,15 @@ import {
   CoverageDisplay, type CoverageRecord, type ThesisStatus,
 } from '../coverage/CoverageDisplay'
 import { BookFilter, type BookOption } from '../shared/BookFilter'
+import { InvestmentConclusion } from './InvestmentConclusion'
+/*
+ * The excerpt helper, shared with Our View rather than reimplemented.
+ *
+ * Both surfaces quote an analyst verbatim and attribute it; two independent
+ * clippers would eventually disagree about where a sentence ends, and one of
+ * them would start paraphrasing.
+ */
+import { ourViewExcerpt } from './OurViewSummary'
 
 export type SnapshotSubPage = 'research' | 'workflow' | 'decisions' | 'lists'
 
@@ -95,6 +104,24 @@ export interface InvestmentSnapshotProps {
 
 const pct = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
 const shares = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+
+/**
+ * Reader-facing names for the core sections.
+ *
+ * The raw keys are column values (`risks_to_thesis`, `where_different`), and
+ * title-casing them produced "Where different" and "Risks to thesis" — which
+ * is a schema leaking onto a page an investor reads. Unlisted keys still fall
+ * back to the de-underscored key, so a new section appears rather than
+ * vanishing.
+ */
+const SECTION_LABEL: Record<string, string> = {
+  thesis: 'Investment thesis',
+  where_different: 'Where our thesis differs',
+  risks_to_thesis: 'Risks to the thesis',
+  bull_case: 'Bull case',
+  bear_case: 'Bear case',
+  base_case: 'Base case',
+}
 
 function asOfLabel(ts: string | number | Date | null | undefined): string | null {
   if (!ts) return null
@@ -178,60 +205,84 @@ export function InvestmentSnapshot({
 
   /* ------------------------------------------------------------- belief */
 
+  /*
+   * The case: what each core section actually SAYS, then the valuation.
+   *
+   * This section used to be three figures and a list of section names with
+   * dates beside them — it could tell a reader that a thesis had been written
+   * on 28 September without telling them what it said, which is the opposite
+   * of what a landing surface on an investment workspace is for. The figures
+   * moved up into the conclusion band; what is left here is the argument.
+   *
+   * Excerpts are verbatim and attributed, through the same helper Our View
+   * uses. Nothing on this page paraphrases an analyst.
+   */
+  /*
+   * `where_different` is omitted HERE because the conclusion band above owns
+   * it, verbatim and attributed. Rendering it in both places printed the same
+   * paragraph twice in one screen — and a reader cannot tell whether two
+   * identical quotes are one record or two.
+   */
+  const caseSections = (CORE_SECTIONS as readonly string[])
+    .filter(s => s !== 'where_different')
+    .map(s => ({ key: s, row: core.find(c => c.section === s) }))
+
   const belief = (
-    <DesktopSection key="belief" title="Belief" meta="what we think, and why" lead>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <Figure
-          label="Rating"
-          value={dominant?.value ?? null}
-          sub={dominant
-            ? `${dominant.count} of ${ratings.length} analyst${ratings.length === 1 ? '' : 's'}`
-            : undefined}
-        />
-        <Figure
-          label="Target"
-          value={data.target != null ? money(data.target) : null}
-          sub={data.target != null && quotePrice != null
-            ? `${pct(((data.target - quotePrice) / quotePrice) * 100)} to spot`
-            : undefined}
-        />
-        <Figure
-          label="Case written"
-          value={data.caseWrittenAt ? new Date(data.caseWrittenAt).toLocaleDateString() : null}
-          sub={core.length > 0 ? `${core.length} of ${CORE_SECTIONS.length} core sections` : undefined}
-        />
-      </div>
+    <DesktopSection key="belief" title="The case" meta="what we argue, in our own words" lead>
+      {data.caseWrittenAt ? (
+        <div className="flex flex-col gap-3">
+          {caseSections.map(({ key, row }) => {
+            const written = (row?.content ?? '').trim().length > 0
+            return (
+              <div key={key} className="max-w-[88ch]">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[12px] font-semibold text-gray-900 dark:text-gray-100">
+                    {SECTION_LABEL[key] ?? key.replace(/_/g, ' ')}
+                  </span>
+                  {written && row?.authorName && (
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400">{row.authorName}</span>
+                  )}
+                  {written && row?.updatedAt && (
+                    <span className="text-[10px] text-gray-400">
+                      {new Date(row.updatedAt).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+                {written ? (
+                  <p className="mt-0.5 text-[12px] leading-snug text-gray-600 dark:text-gray-400">
+                    {ourViewExcerpt(row!.content, 200)}
+                  </p>
+                ) : (
+                  /* An unwritten section is a hole in the case, and naming it
+                     is more useful than hiding it — it is the next job. */
+                  <p className="mt-0.5 text-[12px] text-gray-400 dark:text-gray-500">Not written.</p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="max-w-[70ch] text-[13px] text-gray-600 dark:text-gray-400">
+          No core investment case has been written for {symbol ?? 'this name'}.
+          {data.evidence.length > 0
+            ? ` ${data.evidence.length} research item${data.evidence.length === 1 ? '' : 's'} exist against it.`
+            : ' No research is on record either.'}
+        </p>
+      )}
 
       {data.ladder?.valid && data.spot != null && (
-        <div className="mt-5">
-          <div className={EYEBROW}>The ladder, against today</div>
+        <div className="mt-5 border-t border-gray-200/70 pt-4 dark:border-white/[0.07]">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className={EYEBROW}>Valuation — the ladder against today</span>
+            {data.target != null && quotePrice != null && (
+              <span className="font-mono text-[11px] text-gray-500">
+                target {money(data.target)} · {pct(((data.target - quotePrice) / quotePrice) * 100)}
+              </span>
+            )}
+          </div>
           <div className="mt-2"><FrameworkScale ladder={data.ladder} spot={data.spot} /></div>
         </div>
       )}
-
-      <div className="mt-5 max-w-[70ch]">
-        {data.caseWrittenAt ? (
-          <ul className="flex flex-col gap-1 text-[12px]">
-            {(CORE_SECTIONS as readonly string[]).map(s => {
-              const written = core.find(c => c.section === s)
-              return (
-                <Exists
-                  key={s}
-                  label={s.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())}
-                  value={written?.updatedAt ? new Date(written.updatedAt).toLocaleDateString() : null}
-                />
-              )
-            })}
-          </ul>
-        ) : (
-          <p className="text-[13px] text-gray-600 dark:text-gray-400">
-            No core investment case has been written for {symbol ?? 'this name'}.
-            {data.evidence.length > 0
-              ? ` ${data.evidence.length} research item${data.evidence.length === 1 ? '' : 's'} exist against it.`
-              : ' No research is on record either.'}
-          </p>
-        )}
-      </div>
 
       {newEvidence.length > 0 && (
         <p className="mt-3 text-[11px] text-amber-700 dark:text-amber-400">
@@ -328,8 +379,16 @@ export function InvestmentSnapshot({
     ? openDecisions.filter(d => d.portfolioId === portfolioId)
     : openDecisions
 
+  /*
+   * Boxed, and in the right-hand column beside the position.
+   *
+   * It was an unboxed section under the case, which put "what is owed on this
+   * name" at the bottom of a long read. Active work is the only thing on this
+   * page a reader can act on today, so it sits with the book rather than
+   * trailing the argument.
+   */
   const activeWork = (
-    <DesktopSection key="work" title="Active work" meta="what is owed on this name">
+    <DesktopModule key="work" title="Active work" meta="what is owed on this name">
       {scopedIdeas.length === 0 && scopedOpen.length === 0 ? (
         <p className="text-[12px] text-gray-600 dark:text-gray-400">
           Nothing open{portfolioId ? ` in ${selectedBookName}` : ''}. No live ideas and no pending
@@ -371,7 +430,7 @@ export function InvestmentSnapshot({
         <DeepLink label="Process" onClick={() => onOpenSubPage('workflow')} />
         <DeepLink label="Lists" onClick={() => onOpenSubPage('lists')} />
       </DeepLinks>
-    </DesktopSection>
+    </DesktopModule>
   )
 
   /* ----------------------------------------------------- decision memory */
@@ -432,10 +491,50 @@ export function InvestmentSnapshot({
         portfolioId={portfolioId}
         onSelectBook={setPortfolioId}
       />
+      {/*
+        The conclusion comes FIRST, above the columns, at full width.
+
+        It used to be three figures inside the Belief section, level with
+        everything else on the page, so the four questions a reader actually
+        arrives with — what do we think, what is it worth, where are we
+        different, are we positioned for it — had to be assembled from four
+        places. Nothing below it repeats a figure it states.
+      */}
+      <div className="pt-4">
+        <InvestmentConclusion
+          symbol={symbol}
+          rating={dominant ? { value: dominant.value, count: dominant.count } : null}
+          analystCount={ratings.length}
+          target={data.target}
+          spot={quotePrice ?? data.spot}
+          ladder={data.ladder}
+          sections={core.map(c => ({
+            section: c.section,
+            content: c.content,
+            updatedAt: c.updatedAt ?? null,
+            authorName: c.authorName ?? null,
+          }))}
+          weightPct={position?.weightPct ?? null}
+          bookName={position?.portfolioName ?? selectedBookName}
+          heldBookCount={data.positions.length}
+          notInSelectedBook={notInSelectedBook}
+          onOpenResearch={() => onOpenSubPage('research')}
+        />
+      </div>
+
       <div className="pt-5">
+        {/*
+          Left is the argument and what we did about it; right is where we
+          stand and what is owed.
+
+          Decision memory sits on the WIDE side deliberately: it is prose with
+          five status chips and a disclosure sentence, and in the narrow column
+          every one of those wrapped. It also reads as the end of the left-hand
+          story — thesis, valuation, then the record of acting on them.
+        */}
         <DesktopColumns
-          lead={<>{belief}{activeWork}</>}
-          context={<>{positionModule}{decisionMemory}</>}
+          lead={<>{belief}{decisionMemory}</>}
+          context={<>{positionModule}{activeWork}</>}
         />
       </div>
     </div>
@@ -532,19 +631,13 @@ function SnapshotHeader({
 
 /* ----------------------------------------------------------------- bits */
 
-function Figure({ label, value, sub }: { label: string; value: string | null; sub?: string }) {
-  return (
-    <div className="flex flex-col">
-      <span className={EYEBROW}>{label}</span>
-      <span className={`mt-1 font-mono text-[17px] font-semibold leading-none tabular-nums ${
-        value ? 'text-gray-900 dark:text-gray-100' : 'text-gray-300 dark:text-gray-600'
-      }`}>
-        {value ?? '—'}
-      </span>
-      {sub && <span className="mt-1 text-[10px] text-gray-500">{sub}</span>}
-    </div>
-  )
-}
+/*
+ * `Figure` lived here and is gone: the three figures it drew moved into
+ * `InvestmentConclusion`, which needs a richer one (a direction arrow, an
+ * explicit "Not set" rather than an em-dash). Keeping this as a second,
+ * simpler figure for nobody to use is how two of them end up on one page
+ * disagreeing about what an absent value looks like.
+ */
 
 function SnapshotSkeleton() {
   return (

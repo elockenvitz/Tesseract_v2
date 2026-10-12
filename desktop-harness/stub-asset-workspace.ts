@@ -37,18 +37,50 @@ const POSITIONS: AssetPosition[] = [
 
 const POPULATED: AssetWorkspaceData = {
   /* `ThesisSection` is { section, content, supportingDetail, updatedAt, authorName }. */
+  /*
+   * All three CORE sections carry prose, and that is the point of the fixture.
+   *
+   * It used to hold `thesis` plus `bull_case` and `bear_case` — but the core
+   * vocabulary is thesis / where_different / risks_to_thesis, so two of the
+   * three core rows were missing and the Snapshot rendered "Not written"
+   * twice. A surface whose job is to show the argument cannot be judged on a
+   * fixture that has two thirds of the argument missing, and the empty
+   * security (`?asset=empty`) already covers the nothing-written path.
+   */
   sections: [
-    { section: 'thesis', content: 'Services mix is still being valued as hardware. The attach rate on the installed base has room before it is priced.', supportingDetail: null, updatedAt: '2026-09-28T10:00:00Z', authorName: 'Ana Bell' },
+    { section: 'thesis', content: 'Services mix is still being valued as hardware. The attach rate on the installed base has room before it is priced, and the replacement cycle has stopped mattering to the revenue line.', supportingDetail: null, updatedAt: '2026-09-28T10:00:00Z', authorName: 'Ana Bell' },
+    { section: 'where_different', content: 'Consensus treats the services take-rate as a policy variable that regulators will reset. We treat it as a contract term, which is why our 2028 services estimate sits 11% above the street.', supportingDetail: null, updatedAt: '2026-09-28T10:00:00Z', authorName: 'Ana Bell' },
+    { section: 'risks_to_thesis', content: 'App Store remedies in the EU with a US equivalent would take 4-6% off services revenue, and the multiple would follow it down. China is the second: two thirds of the growth gap against our model is one country.', supportingDetail: null, updatedAt: '2026-09-18T10:00:00Z', authorName: 'Tom Vega' },
     { section: 'bull_case', content: 'Services crosses 30% of gross profit and the multiple re-rates with it.', supportingDetail: null, updatedAt: '2026-09-20T10:00:00Z', authorName: 'Ana Bell' },
     { section: 'bear_case', content: 'Regulatory pressure on App Store take rate compresses the best margin line.', supportingDetail: null, updatedAt: '2026-09-18T10:00:00Z', authorName: 'Tom Vega' },
-    { section: 'base_case', content: '', supportingDetail: null, updatedAt: '2026-09-18T10:00:00Z', authorName: null },
   ] as never,
   evidence: [] as never,
   caseWrittenAt: '2026-09-28T10:00:00Z',
   coreSections: ['thesis', 'bull_case', 'bear_case', 'base_case'],
   history: [],
   spot: 231.4,
-  ladder: null,
+  /*
+   * A real three-rung ladder, so the valuation visual actually renders.
+   *
+   * It was `null`, which meant `FrameworkScale` returned null and every
+   * screenshot of this surface was taken with the valuation band missing —
+   * a surface cannot be judged on a case it never shows. Spot (231.4) sits
+   * between Base and Bull, which is the ordinary and most informative case:
+   * inside the framework, with asymmetry still readable on both sides.
+   */
+  ladder: {
+    assetId: 'aapl',
+    symbol: 'AAPL',
+    companyName: 'Apple Inc.',
+    updatedAt: '2026-09-28T10:00:00Z',
+    valid: true,
+    reason: '',
+    cases: [
+      { scenarioId: 'sc-bear', name: 'Bear', price: 168, probability: 0.2, timeframe: '12m', reasoning: 'App Store remedies land.', id: 'pt-bear', userId: 'u-rivera' },
+      { scenarioId: 'sc-base', name: 'Base', price: 224, probability: 0.55, timeframe: '12m', reasoning: 'Services attach holds.', id: 'pt-base', userId: 'u-rivera' },
+      { scenarioId: 'sc-bull', name: 'Bull', price: 296, probability: 0.25, timeframe: '12m', reasoning: 'Attach rate re-rates.', id: 'pt-bull', userId: 'u-rivera' },
+    ],
+  },
   target: 268,
   positions: POSITIONS,
   liveIdeas: [

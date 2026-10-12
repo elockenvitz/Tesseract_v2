@@ -6,6 +6,8 @@ import { DashboardShell } from '../src/components/dashboard/DashboardShell'
 import { DecisionTimeline } from '../src/components/asset/DecisionTimeline'
 import { MobileAssetPage } from '../src/components/mobile/asset/MobileAssetPage'
 import { OurViewSummary } from '../src/components/asset/OurViewSummary'
+import { InvestmentSnapshot } from '../src/components/asset/InvestmentSnapshot'
+import { SNAPSHOT_COVERAGE, SNAPSHOT_THESIS_STATUS, SNAPSHOT_QUOTE } from './snapshot-fixtures'
 import { OUR_VIEW_FIELDS, ourViewContributions } from './our-view-fixtures'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -72,6 +74,41 @@ function Harness() {
             }}
           />
         </div>
+      </div>
+    )
+  }
+
+  /*
+   * `?surface=snapshot` renders the desktop Investment Snapshot — the Asset
+   * page's landing — against the same `useAssetWorkspace` fixtures the phone
+   * Snapshot uses, so the two surfaces cannot be compared against different
+   * data. `?asset=empty` is the unheld, uncovered security.
+   *
+   * Given the asset page's real content width rather than the full window:
+   * the Snapshot sits inside AssetTab's column, and measuring it at 1920
+   * would measure a width it never actually gets.
+   */
+  if (surface === 'snapshot') {
+    const assetId = q.get('asset') ?? 'aapl'
+    const empty = assetId === 'empty'
+    return (
+      <div
+        data-harness={surface}
+        style={{ height: `${h}px`, width: '100%', background: '#f9fafb', padding: '16px 32px' }}
+      >
+        <InvestmentSnapshot
+          asset={{
+            id: assetId,
+            symbol: empty ? 'ZZZ' : 'AAPL',
+            company_name: empty ? 'Zephyr Holdings' : 'Apple Inc.',
+          }}
+          coverage={empty ? [] : SNAPSHOT_COVERAGE}
+          thesisStatuses={empty ? [] : SNAPSHOT_THESIS_STATUS}
+          currentQuote={empty ? null : SNAPSHOT_QUOTE}
+          onOpenSubPage={(page) => {
+            document.body.setAttribute('data-last-nav', JSON.stringify({ subPage: page }))
+          }}
+        />
       </div>
     )
   }

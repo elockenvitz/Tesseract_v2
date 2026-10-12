@@ -26,6 +26,7 @@ function stubDataHooks(): Plugin {
   const workspace = path.resolve(__dirname, 'desktop-harness/stub-asset-workspace.ts')
   const mobileAsset = path.resolve(__dirname, 'desktop-harness/stub-mobile-asset-hooks.ts')
   const org = path.resolve(__dirname, 'desktop-harness/stub-organization.ts')
+  const ratings = path.resolve(__dirname, 'desktop-harness/stub-analyst-ratings.ts')
   return {
     name: 'desktop-harness-stub-hooks',
     enforce: 'pre',
@@ -51,6 +52,9 @@ function stubDataHooks(): Plugin {
       // reaches for Supabase and renders its loading state forever, which is
       // how a surface gets "validated" without anybody seeing it.
       if (/hooks\/useAssetDecisionTimeline$/.test(source)) return timeline
+      // The Snapshot's headline rating. Deliberately a SPLIT fixture, so the
+      // "3 of 5 analysts" qualifier has something to qualify.
+      if (/hooks\/useAnalystRatings$/.test(source)) return ratings
       // The one read behind both Snapshots. Guard against the stub
       // re-entering itself: its own imports are already resolved.
       if (/hooks\/useAssetWorkspace$/.test(source) && !source.includes('stub-')) return workspace
