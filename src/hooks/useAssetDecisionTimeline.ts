@@ -868,8 +868,8 @@ async function fetchAcceptedTrades(
       delta_shares,
       batch_id,
       created_at,
-      portfolio:portfolio_id (id, name),
-      accepted_by_user:users!accepted_trades_accepted_by_fkey (first_name, last_name)
+      accepted_by,
+      portfolio:portfolio_id (id, name)
     `)
     .eq('asset_id', assetId)
     .eq('is_active', true)
@@ -881,7 +881,45 @@ async function fetchAcceptedTrades(
   const { data, error } = await query
   if (error) throw error
 
-  return (data || []).map((row: any) => ({
+  const rows = (data || []) as any[]
+
+  /*
+   * The actor's name, resolved SEPARATELY — and this is the bug that broke
+   * Decision Memory in the authenticated app.
+   *
+   * `accepted_trades.accepted_by` is a foreign key to **auth.users**, not
+   * `public.users`. PostgREST cannot embed through it: `auth` is not an
+   * exposed schema and `auth.users` has no `first_name` column at all. The
+   * embed `users!accepted_trades_accepted_by_fkey(first_name, last_name)`
+   * therefore failed the WHOLE request, which threw, which surfaced as
+   * "Decision history could not be loaded" on both the Snapshot and the
+   * Decisions tab — they share this hook.
+   *
+   * `fetchTradeEvents` already carried the comment "FK references auth.users
+   * — can't join directly". The same trap, one function below, and I walked
+   * into it.
+   *
+   * The ids DO resolve in `public.users` (verified: 50 of 50 in production),
+   * so one keyed lookup gets the names. A failure here degrades to unnamed
+   * actors rather than taking the narrative down.
+   */
+  const actorIds = [...new Set(rows.map(r => r.accepted_by).filter(Boolean))]
+  const actorNames = new Map<string, { first_name: string | null; last_name: string | null }>()
+  if (actorIds.length > 0) {
+    const { data: people, error: peopleErr } = await supabase
+      .from('users')
+      .select('id, first_name, last_name')
+      .in('id', actorIds)
+    if (peopleErr) {
+      console.warn('[DecisionTimeline] accepted_trades actor lookup failed', peopleErr)
+    } else {
+      for (const p of (people || []) as any[]) {
+        actorNames.set(p.id, { first_name: p.first_name, last_name: p.last_name })
+      }
+    }
+  }
+
+  return rows.map((row: any) => ({
     id: row.id,
     action: row.action || 'buy',
     execution_status: row.execution_status,
@@ -893,7 +931,7 @@ async function fetchAcceptedTrades(
     batch_id: row.batch_id ?? null,
     created_at: row.created_at,
     portfolio: row.portfolio || null,
-    accepted_by_user: row.accepted_by_user || null,
+    accepted_by_user: row.accepted_by ? actorNames.get(row.accepted_by) ?? null : null,
   }))
 }
 
@@ -932,7 +970,7 @@ async function fetchDecisionReviews(decisionIds: string[]): Promise<ReviewRow[]>
       decision_quality,
       process_note,
       created_at,
-      reviewer:users!decision_reviews_reviewed_by_fkey (first_name, last_name)
+      reviewed_by
     `)
     .in('decision_id', ids)
     .order('created_at', { ascending: false })
@@ -944,13 +982,36 @@ async function fetchDecisionReviews(decisionIds: string[]): Promise<ReviewRow[]>
     return []
   }
 
-  return (data || []).map((row: any) => ({
+  const rows = (data || []) as any[]
+
+  /*
+   * Same trap as `accepted_trades`: `decision_reviews.reviewed_by` is a
+   * foreign key to **auth.users**, so it cannot be embedded. This one was
+   * already inside a try/warn, so it degraded to "no reviews" instead of
+   * breaking the page — which is worse in one way, because it failed
+   * SILENTLY and reviews simply never appeared.
+   *
+   * Verified in production: all 7 `reviewed_by` ids resolve in `public.users`.
+   */
+  const reviewerIds = [...new Set(rows.map(r => r.reviewed_by).filter(Boolean))]
+  const names = new Map<string, { first_name: string | null; last_name: string | null }>()
+  if (reviewerIds.length > 0) {
+    const { data: people } = await supabase
+      .from('users')
+      .select('id, first_name, last_name')
+      .in('id', reviewerIds)
+    for (const p of (people || []) as any[]) {
+      names.set(p.id, { first_name: p.first_name, last_name: p.last_name })
+    }
+  }
+
+  return rows.map((row: any) => ({
     id: row.id,
     decision_id: row.decision_id,
     decision_quality: row.decision_quality,
     process_note: row.process_note,
     created_at: row.created_at,
-    reviewer: row.reviewer || null,
+    reviewer: row.reviewed_by ? names.get(row.reviewed_by) ?? null : null,
   }))
 }
 
