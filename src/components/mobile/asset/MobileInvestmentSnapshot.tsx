@@ -24,11 +24,19 @@
  *
  * ── Order ────────────────────────────────────────────────────────────────
  *
- * Position, then Belief, then Active Work, then Decision Memory. Desktop
- * leads with Belief because the reader has the whole page at once. On a phone
- * the first band is the only one guaranteed to be seen, and the question that
- * brings someone to an asset on their phone is "what do we own and what is
- * happening to it" — the thesis is what they read once that is answered.
+ * The CONCLUSION first — rating, target, bear/bull and exposure in a 2x2
+ * grid, with the differentiated view quoted under it — then Position, Belief,
+ * Active Work and Decision Memory.
+ *
+ * It did not used to have a conclusion. It opened on Position and reduced the
+ * whole of belief to "$268 target +16%": no rating, no range, no edge. So the
+ * two shells answered different questions about the same name, and the phone
+ * answered the smaller one.
+ *
+ * The old note here argued that a phone reader wants "what do we own" first.
+ * That is still true, and it is still first — exposure is one of the four
+ * figures, and Position remains the first band. What changed is that the
+ * other three conclusions are no longer three taps away.
  */
 
 import { useState } from 'react'
@@ -39,6 +47,14 @@ import {
 import { useAssetWorkspace, primaryPosition, otherPositions } from '../../../hooks/useAssetWorkspace'
 import { DecisionMemorySummary } from '../../asset/DecisionMemorySummary'
 import { BookFilter } from '../../shared/BookFilter'
+/*
+ * The conclusion's arithmetic and the excerpt clipper, imported rather than
+ * rewritten for the phone. The LAYOUT differs between the shells; "percent to
+ * target" and "where a quoted sentence ends" must not.
+ */
+import { conclusionFigures } from '../../asset/InvestmentConclusion'
+import { ourViewExcerpt } from '../../asset/OurViewSummary'
+import { useAnalystRatings } from '../../../hooks/useAnalystRatings'
 
 const pct = (v: number | null | undefined, digits = 1) =>
   v == null || !Number.isFinite(v) ? null : `${v.toFixed(digits)}%`
@@ -145,6 +161,32 @@ function Row({ label, value, sub }: { label: string; value: string | null; sub?:
   )
 }
 
+/**
+ * One of the four conclusion figures, in a 2x2 grid.
+ *
+ * Separate from `Row` because this is a figure, not a label/value pair: the
+ * value leads and the qualifier sits under it. The qualifier is rendered in
+ * the absent case too — "Not rated" and "Needs both cases" are the useful
+ * half when the number is missing, which is the mistake the desktop band made
+ * first.
+ */
+function MobileFigure({
+  label, value, sub,
+}: { label: string; value: string | null; sub?: string | null }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{label}</div>
+      <div className={clsx(
+        'mt-0.5 text-[17px] font-semibold leading-none tracking-tight truncate',
+        value ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500',
+      )}>
+        {value ?? 'Not set'}
+      </div>
+      {sub && <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 truncate">{sub}</div>}
+    </div>
+  )
+}
+
 interface Props {
   assetId: string
   symbol: string
@@ -159,6 +201,16 @@ export function MobileInvestmentSnapshot({
   assetId, symbol, portfolioId, onSelectBook, onOpenSubPage,
 }: Props) {
   const { data, isLoading } = useAssetWorkspace(assetId, symbol, 'overview')
+  /*
+   * The rating, which the phone did not show at all.
+   *
+   * A second query, and a deliberate one: the headline conclusion on desktop
+   * is a rating, and a phone that omits it answers a different question about
+   * the same name. It is the same hook and the same React Query key the Case
+   * tab's rating field already uses, so on this page it is usually a cache
+   * read rather than a round trip.
+   */
+  const { consensus, ratings } = useAnalystRatings({ assetId })
 
   if (isLoading) {
     return (
@@ -192,13 +244,23 @@ export function MobileInvestmentSnapshot({
   }))
 
   /* ── Position ───────────────────────────────────────────────────────── */
+  /*
+   * Value and P&L, because the conclusion above already states the WEIGHT.
+   *
+   * This led on "2.5% of Tech & Consumer Growth" and the band directly above
+   * it now says "2.55%" under Our exposure — the same number at two
+   * precisions, which reads as two different figures. The weight is the
+   * conclusion's; what this band adds is what the stake is worth and what it
+   * has done. Shares remain the fallback when no market value is derivable,
+   * and both stay in the detail rows below.
+   */
   const positionHeadline = held && position ? (
     <div className="flex items-baseline gap-2 flex-wrap">
       <span className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
-        {pct(position.weightPct) ?? shares(position.shares) ?? '—'}
+        {usd(position.marketValue) ?? shares(position.shares) ?? '—'}
       </span>
       <span className="text-[12px] text-gray-500 dark:text-gray-400 truncate">
-        {position.weightPct != null ? 'of' : 'shares in'} {position.portfolioName}
+        {position.marketValue != null ? 'in' : 'shares in'} {position.portfolioName}
       </span>
       {position.unrealisedPct != null && (
         <span className={clsx(
@@ -220,30 +282,27 @@ export function MobileInvestmentSnapshot({
   /* ── Belief ─────────────────────────────────────────────────────────── */
   const core = data.sections.filter(s => data.coreSections.includes(s.section))
   const written = core.filter(s => (s.content ?? '').trim().length > 0)
-  const beliefHeadline = (
-    <div className="flex items-baseline gap-2 flex-wrap">
-      {data.target != null ? (
-        <>
-          <span className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
-            {usd(data.target)}
-          </span>
-          <span className="text-[12px] text-gray-500 dark:text-gray-400">target</span>
-          {data.spot != null && data.spot > 0 && (
-            <span className={clsx(
-              'text-[12px] font-semibold tabular-nums',
-              data.target >= data.spot
-                ? 'text-emerald-600 dark:text-emerald-400'
-                : 'text-red-600 dark:text-red-400',
-            )}>
-              {data.target >= data.spot ? '+' : ''}
-              {(((data.target - data.spot) / data.spot) * 100).toFixed(0)}%
-            </span>
-          )}
-        </>
-      ) : (
-        <span className="text-[13px] text-gray-600 dark:text-gray-400">No target set.</span>
-      )}
-    </div>
+  /*
+   * The thesis, not the target.
+   *
+   * This headline used to be "$268 target +16%" — which the conclusion band
+   * directly above now states, to one more decimal place. Two figures for one
+   * fact, eight millimetres apart, and a reader cannot tell whether they are
+   * one record or two. The band owns the valuation; this band owns the
+   * ARGUMENT, which is what "Belief" was always supposed to mean and what the
+   * desktop's "The case" says.
+   */
+  const thesisRow = core.find(s => s.section === 'thesis' && (s.content ?? '').trim())
+  const beliefHeadline = thesisRow ? (
+    <p className="text-[13px] leading-snug text-gray-700 dark:text-gray-300">
+      {ourViewExcerpt(thesisRow.content, 130)}
+    </p>
+  ) : (
+    <p className="text-[13px] text-gray-600 dark:text-gray-400">
+      {written.length > 0
+        ? `No thesis written. ${written.length} of ${core.length} sections have content.`
+        : 'No investment case has been written.'}
+    </p>
   )
 
   /* ── Active Work ────────────────────────────────────────────────────── */
@@ -276,6 +335,75 @@ export function MobileInvestmentSnapshot({
     </p>
   )
 
+  /* ── The conclusion, first ──────────────────────────────────────────── */
+  /*
+   * Desktop now opens with rating, target, bear/bull and exposure, then the
+   * differentiated view. The phone opened with Position and reduced the whole
+   * belief to "$268 target +16%" — no rating, no range, no edge — so the two
+   * shells answered different questions about the same name.
+   *
+   * The ORDER note above this file argued the phone reader wants "what do we
+   * own" first. That is still true and it is still first INSIDE the
+   * conclusion: exposure is one of the four figures. What changed is that the
+   * other three are no longer three taps away. A 2x2 grid is the layout a
+   * thumb can read; the arithmetic behind it is imported, not recomputed.
+   */
+  const figures = conclusionFigures({ target: data.target, spot: data.spot, ladder: data.ladder })
+  const variant = core.find(s => s.section === 'where_different' && (s.content ?? '').trim())
+  const dominant = consensus[0] ?? null
+
+  const conclusion = (
+    <div
+      data-testid="mobile-conclusion"
+      className="rounded-xl border border-gray-200 bg-white px-3.5 py-3 dark:border-gray-800 dark:bg-gray-900"
+    >
+      <div className="grid grid-cols-2 gap-x-3 gap-y-3">
+        <MobileFigure
+          label="Our rating"
+          value={dominant?.value ?? null}
+          sub={dominant ? `${dominant.count} of ${ratings.length}` : 'Not rated'}
+        />
+        <MobileFigure
+          label="Target"
+          value={data.target != null ? usd(data.target) : null}
+          sub={figures.upside != null ? `${figures.upside >= 0 ? '+' : ''}${figures.upside.toFixed(1)}% to spot` : 'No spot'}
+        />
+        <MobileFigure
+          label="Bear / bull"
+          value={figures.bear != null && figures.bull != null
+            ? `${usd(figures.bear)} – ${usd(figures.bull)}` : null}
+          sub={figures.downside != null && figures.upsideBull != null
+            ? `${figures.downside.toFixed(0)}% / +${figures.upsideBull.toFixed(0)}%`
+              + (figures.skew != null ? ` · ${figures.skew.toFixed(1)}:1` : '')
+            : 'Needs both cases'}
+        />
+        <MobileFigure
+          label="Our exposure"
+          value={position?.weightPct != null ? `${position.weightPct.toFixed(2)}%`
+            : position ? 'Held' : 'Not held'}
+          sub={position ? position.portfolioName : undefined}
+        />
+      </div>
+
+      {variant && (
+        <button
+          type="button"
+          onClick={() => onOpenSubPage('case')}
+          data-testid="mobile-conclusion-variant"
+          className="mt-3 w-full border-t border-gray-200/70 pt-2.5 text-left dark:border-white/[0.07]"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+            Where we differ
+          </span>
+          {/* Verbatim, through the helper both shells share. */}
+          <p className="mt-1 text-[13px] leading-snug text-gray-700 dark:text-gray-300">
+            {ourViewExcerpt(variant.content, 150)}
+          </p>
+        </button>
+      )}
+    </div>
+  )
+
   return (
     <div className="space-y-2" data-testid="mobile-snapshot">
       {/*
@@ -296,6 +424,8 @@ export function MobileInvestmentSnapshot({
           />
         </div>
       )}
+
+      {conclusion}
 
       <Band
         testId="mobile-band-position"

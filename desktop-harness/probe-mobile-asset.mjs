@@ -61,6 +61,39 @@ for (const phone of PHONES) {
 
   const t = await page.evaluate(() => document.body.innerText)
 
+  /*
+   * ── Parity with the desktop conclusion ──
+   *
+   * The phone used to open on Position and reduce the whole of belief to
+   * "$268 target +16%" — no rating, no range, no edge — so the two shells
+   * answered different questions about one name. These assert the four
+   * conclusions are on the phone's first screen, and that none of them is
+   * then repeated by a band below.
+   */
+  check(`${phone.name}: conclusion band is first`, /OUR RATING/i.test(t))
+  check(`${phone.name}: rating with its n`, /Buy/.test(t) && /3 of 5/.test(t))
+  check(`${phone.name}: target with upside`, /\$268/.test(t) && /\+15\.8% to spot/.test(t))
+  check(`${phone.name}: bear\/bull with skew`, /\$168 – \$296/.test(t) && /1\.0:1/.test(t))
+  check(`${phone.name}: exposure`, /2\.55%/.test(t))
+  check(`${phone.name}: the differentiated view is quoted`,
+    /WHERE WE DIFFER/i.test(t) && /contract term|policy variable/.test(t))
+
+  // Nothing above may be restated by a band below it.
+  const targetCopies = (t.match(/\$268/g) || []).length
+  check(`${phone.name}: the target is stated once`, targetCopies === 1, `${targetCopies} copies`)
+  const weightCopies = (t.match(/2\.5{1,2}%/g) || []).length
+  check(`${phone.name}: the weight is stated once`, weightCopies === 1, `${weightCopies} copies`)
+
+  const conclusionTop = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="mobile-conclusion"]')
+    const pos = document.querySelector('[data-testid="mobile-band-position"]')
+    return el && pos
+      ? [Math.round(el.getBoundingClientRect().top), Math.round(pos.getBoundingClientRect().top)]
+      : null
+  })
+  check(`${phone.name}: the conclusion sits above Position`,
+    !!conclusionTop && conclusionTop[0] < conclusionTop[1], JSON.stringify(conclusionTop))
+
   // The four domains.
   check(`${phone.name}: Position band`, /LARGEST POSITION|POSITION/i.test(t))
   check(`${phone.name}: Belief band`, /BELIEF/i.test(t))
@@ -209,7 +242,15 @@ for (const phone of PHONES) {
   const t = await page.evaluate(() => document.body.innerText)
 
   check('unheld says so', /Not held in any book you can see/i.test(t))
-  check('no case says so', /No case has been written/i.test(t) || /No target set/i.test(t))
+  /*
+   * The Belief band used to headline the target, so an empty name read "No
+   * target set." It headlines the THESIS now — the conclusion band above owns
+   * the valuation — so the absence it reports is the absence of a case, which
+   * is the more useful statement and the one the desktop makes.
+   */
+  check('no case says so', /No investment case has been written/i.test(t))
+  check('an unrated name is not given a rating',
+    /Not set/.test(t) && !/\b(Buy|Hold|Sell)\b/.test(t), t.slice(0, 160))
   check('nothing in flight says so', /Nothing in flight/i.test(t))
   check('no decision history says so', /No decision has been recorded/i.test(t))
 

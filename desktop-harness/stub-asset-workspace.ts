@@ -56,7 +56,18 @@ const POPULATED: AssetWorkspaceData = {
   ] as never,
   evidence: [] as never,
   caseWrittenAt: '2026-09-28T10:00:00Z',
-  coreSections: ['thesis', 'bull_case', 'bear_case', 'base_case'],
+  /*
+   * The real core vocabulary, which this listed wrongly.
+   *
+   * It said thesis / bull_case / bear_case / base_case. `CORE_SECTIONS` is
+   * thesis / where_different / risks_to_thesis, and the phone filters its
+   * sections through THIS list — so the differentiated view was filtered out
+   * of the mobile Snapshot by the fixture, and the conclusion band rendered
+   * without the one thing it leads on. The desktop reads `CORE_SECTIONS`
+   * directly and was unaffected, which is how the two shells disagreed while
+   * sharing a hook.
+   */
+  coreSections: ['thesis', 'where_different', 'risks_to_thesis'],
   history: [],
   spot: 231.4,
   /*

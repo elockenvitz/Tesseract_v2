@@ -44,9 +44,17 @@ const desk = () => browser.newPage({ viewport: { width: 1440, height: 1000 } })
   check(1, 'a held security opens on the Snapshot', /AAPL/.test(t) && /POSITION/i.test(t))
   check(1, 'no uncaught errors on open', errs.length === 0, errs.slice(0, 2).join(' | '))
 
-  check(2, 'exposure is stated', /2\.5%|of Tech & Consumer Growth/.test(t))
-  check(2, 'belief is stated', /BELIEF/i.test(t) && /\$268|target/.test(t))
-  check(2, 'valuation is related to price', /\+16%|target/.test(t))
+  /*
+   * These anchored on the phone's old copy — "2.5%", "+16%", a Belief band
+   * headlining the target. The Snapshot now opens with a conclusion band that
+   * states exposure to two decimals and upside to one, and Belief headlines
+   * the thesis because the band above owns the valuation. The journeys are
+   * unchanged; only where each answer is found has moved.
+   */
+  check(2, 'exposure is stated', /2\.55%/.test(t) && /Tech & Consumer Growth/.test(t))
+  check(2, 'belief is stated', /BELIEF/i.test(t) && /Services mix/.test(t))
+  check(2, 'valuation is related to price', /\+15\.8% to spot/.test(t))
+  check(2, 'the rating carries its n', /Buy/.test(t) && /3 of 5/.test(t))
 
   check(3, 'active work is findable', /ACTIVE WORK/i.test(t) && /open idea/i.test(t))
   await p.close()
@@ -148,7 +156,10 @@ const desk = () => browser.newPage({ viewport: { width: 1440, height: 1000 } })
   const t = await p.evaluate(() => document.body.innerText)
 
   check(9, 'unheld says it is unheld', /Not held in any book you can see/i.test(t))
-  check(9, 'no case says so', /No case has been written|No target set/i.test(t))
+  // "No target set" was the old Belief headline; the band now reports the
+  // absence of a CASE, which is the more useful statement and matches desktop.
+  check(9, 'no case says so', /No investment case has been written/i.test(t))
+  check(9, 'an unrated name gets no rating', !/\b(Buy|Hold|Sell)\b/.test(t))
   check(9, 'no work says so', /Nothing in flight/i.test(t))
   check(9, 'no history says so', /No decision has been recorded/i.test(t))
   check(9, 'it invents no exposure', !/% of /.test(t))

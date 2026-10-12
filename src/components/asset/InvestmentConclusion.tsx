@@ -82,6 +82,55 @@ function tone(value: string | null | undefined): 'up' | 'down' | 'flat' | null {
 const rung = (ladder: CurrentLadder | null, name: string) =>
   ladder?.cases.find(c => c.name === name)?.price ?? null
 
+export interface ConclusionFigures {
+  /** Percent from spot to the headline target. Null without both. */
+  upside: number | null
+  /** Percent from spot to the bear rung. */
+  downside: number | null
+  /** Percent from spot to the bull rung. */
+  upsideBull: number | null
+  bear: number | null
+  bull: number | null
+  /** Reward-to-risk. Null unless BOTH ends are on record. */
+  skew: number | null
+}
+
+/**
+ * The band's arithmetic, exported so the phone shares it.
+ *
+ * Mobile renders a different layout — a 2x2 grid, not a wide row — but it
+ * must not compute a second upside. Two implementations of "percent to
+ * target" is how a phone and a desktop end up disagreeing about the same
+ * name, and the rounding would differ before the logic did.
+ *
+ * Every figure here is null-propagating on purpose. A missing spot does not
+ * produce a zero, it produces no number, and the surfaces render the absence.
+ */
+export function conclusionFigures(
+  { target, spot, ladder }: { target: number | null; spot: number | null; ladder: CurrentLadder | null },
+): ConclusionFigures {
+  const usable = spot != null && Number.isFinite(spot) && spot > 0
+  const to = (v: number | null) => (usable && v != null ? ((v - spot!) / spot!) * 100 : null)
+
+  const bear = rung(ladder, 'Bear')
+  const bull = rung(ladder, 'Bull')
+  const downside = to(bear)
+  const upsideBull = to(bull)
+
+  /*
+   * Reward-to-risk, stated only when BOTH ends exist.
+   *
+   * A one-sided ladder produces a ratio against an unknown, which is the kind
+   * of number that gets quoted in a meeting and cannot be defended. Either
+   * both rungs are on record or the figure is not shown.
+   */
+  const skew = downside != null && upsideBull != null && downside < 0
+    ? upsideBull / Math.abs(downside)
+    : null
+
+  return { upside: to(target), downside, upsideBull, bear, bull, skew }
+}
+
 /** A labelled figure, or an explicit absence in the same slot. */
 function Figure({
   label, value, sub, tone: t, wide,
@@ -133,25 +182,8 @@ export function InvestmentConclusion({
   symbol, rating, analystCount, target, spot, ladder, sections,
   weightPct, bookName, heldBookCount, notInSelectedBook, onOpenResearch,
 }: InvestmentConclusionProps) {
-  const upside = target != null && spot != null && spot > 0
-    ? ((target - spot) / spot) * 100
-    : null
-
-  const bear = rung(ladder, 'Bear')
-  const bull = rung(ladder, 'Bull')
-  const downside = bear != null && spot != null && spot > 0 ? ((bear - spot) / spot) * 100 : null
-  const upsideBull = bull != null && spot != null && spot > 0 ? ((bull - spot) / spot) * 100 : null
-
-  /*
-   * Reward-to-risk, stated only when BOTH ends exist.
-   *
-   * A one-sided ladder produces a ratio against an unknown, which is the kind
-   * of number that gets quoted in a meeting and cannot be defended. Either
-   * both rungs are on record or the figure is not shown.
-   */
-  const skew = downside != null && upsideBull != null && downside < 0
-    ? upsideBull / Math.abs(downside)
-    : null
+  const { upside, downside, upsideBull, bear, bull, skew } =
+    conclusionFigures({ target, spot, ladder })
 
   /*
    * The band leads on the DIFFERENTIATED view, and on nothing else.
