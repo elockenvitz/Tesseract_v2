@@ -227,32 +227,18 @@ if (!NAME.test(redirects)) {
 writeFileSync(redirectsPath, redirects.replace(NAME, previewName))
 
 /*
- * Favicon and touch icon, from the same source mark.
+ * The browser-tab icons used to be generated here, and are not any more.
  *
- * `index.html` pointed at `/vite.svg`, which does not exist in `public/` —
- * so the request fell through the SPA catch-all and came back as 200 text/html.
- * The site has been shipping a broken favicon, not a default one.
+ * They were downscales of the glow PNG on a solid black plate — which is not
+ * the mark the application shows, and rendered as a dark square at 16px. They
+ * now come from `scripts/build-favicon.mjs`, which draws the same wireframe
+ * the top-left launcher draws, on a genuinely transparent ground.
  *
- * Downscaled here rather than pointing the tags at `Tesseract Icon.png`
- * directly: that file is 1024x1024 and 1.5MB, which is a lot to fetch on every
- * cold load to draw a 16px square.
+ * Deleted rather than left in place: this script and that one both wrote
+ * `public/favicon.png`, so whichever ran last won. Re-running the social
+ * preview would have quietly reinstated the black icon, which is precisely the
+ * stale-reference trap the favicon work went looking for.
  */
-for (const [file, size] of [['favicon.png', 64], ['apple-touch-icon.png', 180]]) {
-  const iconPage = await browser.newPage({
-    viewport: { width: size, height: size },
-    deviceScaleFactor: 1,
-  })
-  await iconPage.setContent(`
-    <style>
-      * { margin: 0; padding: 0; }
-      html, body { width: ${size}px; height: ${size}px; background: #0A0A0B; }
-      img { width: 100%; height: 100%; object-fit: cover; }
-    </style>
-    <img src="${glowIcon}">
-  `, { waitUntil: 'load' })
-  writeFileSync(join(root, 'public', file), await iconPage.screenshot({ type: 'png' }))
-  await iconPage.close()
-}
 
 await browser.close()
 console.log(`wrote public/${previewName}, public/favicon.png, public/apple-touch-icon.png`)
