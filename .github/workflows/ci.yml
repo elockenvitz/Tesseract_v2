@@ -66,6 +66,9 @@ jobs:
       # server serves the right bytes while third-party caches keyed on an
       # unchanged URL serve the old ones.
       - run: npm run guard:social-preview
+      # The browser tab. Decodes the icons' alpha channel, because "transparent"
+      # is invisible in a file listing and the previous icon was a black plate.
+      - run: npm run guard:favicon
 
   test:
     name: Unit tests

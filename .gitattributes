@@ -57,3 +57,25 @@
 # the same luck the TypeScript anchors were.
 
 *.sql   text eol=lf
+
+# Content-addressed published assets: never rewritten, on any platform.
+#
+# `public/favicon.<hash>.svg` carries a hash of its own bytes in its name, and
+# `guard:favicon` recomputes that hash from the file on disk. Git's CRLF
+# conversion broke exactly that: the blob is stored LF, Windows checked it out
+# CRLF, and the file no longer hashed to the name it is published under. The
+# guard caught it the first time the branch was switched.
+#
+# This is not cosmetic. The file is served byte-for-byte from the repository,
+# so a checkout that rewrites it publishes bytes that do not match the URL the
+# cache key is built from -- which is the whole mechanism for getting a changed
+# icon past a browser's favicon store.
+#
+# `-text` rather than `text eol=lf`: the bytes ARE the identity here, so the
+# honest declaration is that Git must not interpret them at all. PNG and ICO
+# are already treated as binary by content detection; named here so the rule
+# does not depend on that inference.
+
+public/*.svg    -text
+public/*.png    -text
+public/*.ico    -text
