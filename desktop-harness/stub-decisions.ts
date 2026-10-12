@@ -196,3 +196,24 @@ export const useDecisionDetail = (d: DecisionRecord | null) => {
     isLoading: false,
   }
 }
+
+/**
+ * Added to unbreak the harness build, which fails on `main` without it.
+ *
+ * `DecisionsWorkspace` imports this alongside the hooks already stubbed here,
+ * and a resolver that redirects the module redirects every import of it — so
+ * one missing export fails the WHOLE harness bundle, including surfaces that
+ * never touch Decisions. That is what blocked the mobile feed reproduction
+ * from building at all.
+ *
+ * Deliberately inert: no facts, no P&L, not loading. The Decisions surface is
+ * not what this harness run is about, and inventing outcome figures here
+ * would put numbers on a screenshot that no record supports.
+ */
+export function useDecisionOutcomeFacts() {
+  return {
+    factsFor: () => null,
+    pnlForBatch: () => null,
+    isLoading: false,
+  }
+}
