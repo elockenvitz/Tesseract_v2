@@ -493,7 +493,22 @@ async function fetchTimeline(
       phase: 'execution',
       timestamp: te.event_date,
       title: `${actionLabel}${sizingParts.length > 0 ? ` — ${sizingParts.join(', ')}` : ''}`,
-      subtitle: te.portfolio_name || null,
+      /*
+       * No subtitle. It was `te.portfolio_name`, which this event already
+       * carries in `portfolio` below — and both surfaces render the meta line
+       * from that field, so every execution row printed its book twice, one
+       * line under the other:
+       *
+       *     Add — +45bps, +12,000 shs
+       *     Tech & Consumer Growth        <- subtitle
+       *     Tech & Consumer Growth        <- meta line
+       *
+       * Fixed here rather than by suppressing it in each renderer: it is one
+       * fact, and the duplication is at the source. Nothing is lost — the
+       * portfolio is still on the event, still in the meta line, and still
+       * what the book filter matches on.
+       */
+      subtitle: null,
       actor: te.created_by_user
         ? {
             name: getFullName(te.created_by_user.first_name, te.created_by_user.last_name),

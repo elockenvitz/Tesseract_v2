@@ -339,3 +339,23 @@ describe('provenance and navigation', () => {
     expect(TIMELINE).toMatch(/case 'memory_event':\s*\n\s*return false/)
   })
 })
+
+/*
+ * Found by looking at the rendered page during release validation, not by a
+ * test: every execution row printed its book twice, once as the subtitle and
+ * again in the meta line, on BOTH the phone and the desktop.
+ */
+describe('an execution states its book once', () => {
+  it('carries no subtitle, because the portfolio field already holds it', () => {
+    const CODE = fs.readFileSync(
+      path.join(__dirname, '../useAssetDecisionTimeline.ts'), 'utf8',
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^[ \t]*\/\/.*$/gm, '')
+    // The trade_executed branch must not reuse the portfolio name as prose.
+    expect(CODE).not.toContain('subtitle: te.portfolio_name')
+    // And must still carry the portfolio itself, which is what both meta
+    // lines and the book filter read.
+    expect(CODE).toContain('portfolio: te.portfolio_id')
+  })
+})

@@ -501,6 +501,10 @@ function TimelineEventRow({
     <button
       onClick={isClickable ? onClick : undefined}
       disabled={!isClickable}
+      // Addressable, so a probe can assert per-row claims — in particular that
+      // no row states one fact twice, which is how the duplicated book name
+      // went unnoticed until somebody looked at a screenshot.
+      data-timeline-event={event.type}
       className={clsx(
         'w-full flex items-start gap-2.5 pl-3 pr-4 py-1.5 text-left transition-colors relative',
         'border-l-[3px]',

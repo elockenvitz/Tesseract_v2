@@ -337,10 +337,20 @@ function InFlightList({
           {idea.rationale && <ExpandableText text={idea.rationale} lines={3} />}
 
           <p className="mt-1.5 text-[11px] text-gray-400 truncate">
+            {/*
+              Each part is conditional, and the date one especially.
+
+              This read `{` · ${formatAsOf(idea.updated_at)}`}` — appended
+              unconditionally. `formatAsOf` is typed as taking a string and
+              returns its argument back when the date will not parse, so an
+              idea with no `updated_at` rendered the literal text
+              "No portfolio · undefined" to the reader. The type said it could
+              not happen; the data disagreed.
+            */}
             {idea.portfolio?.name ?? 'No portfolio'}
             {idea.creator &&
               ` · ${[idea.creator.first_name, idea.creator.last_name].filter(Boolean).join(' ')}`}
-            {` · ${formatAsOf(idea.updated_at)}`}
+            {idea.updated_at && ` · ${formatAsOf(idea.updated_at)}`}
           </p>
         </button>
       ))}
@@ -473,9 +483,19 @@ function ListsPanel({
 }
 
 /** Snapshot dates are calendar days; time of day would be noise. */
-function formatAsOf(date: string): string {
+/**
+ * A short date, or an empty string.
+ *
+ * The parameter was `date: string` and the fallback was `return date`, so an
+ * `undefined` that the type said was impossible came straight back out and was
+ * interpolated into the page as the word "undefined". The signature now admits
+ * what callers actually pass, and an unparseable value yields nothing rather
+ * than echoing itself — a date that cannot be read is not a date to show.
+ */
+function formatAsOf(date: string | null | undefined): string {
+  if (!date) return ''
   const parsed = new Date(date)
-  if (Number.isNaN(parsed.getTime())) return date
+  if (Number.isNaN(parsed.getTime())) return ''
   return parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 

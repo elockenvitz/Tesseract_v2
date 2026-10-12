@@ -189,6 +189,36 @@ for (const phone of PHONES) {
   const t = await page.evaluate(() => document.body.innerText)
 
   check('decisions tab shows the timeline', /DECISION MEMORY/i.test(t))
+
+  /*
+   * No row states one fact twice, and nothing renders as a JS value name.
+   *
+   * Both were found by reading a screenshot during release validation, not by
+   * any assertion here. Every execution row printed its book on two
+   * consecutive lines — the subtitle the hook set from `portfolio_name`, then
+   * the meta line built from `portfolio` — and an idea with no `updated_at`
+   * rendered the literal text "No portfolio · undefined".
+   *
+   * This is checked on the PHONE and not the desktop because the desktop's
+   * meta line joins actor and portfolio, so its two lines were never byte
+   * identical; the phone's omits a null actor and so was.
+   */
+  const repeatedLines = await page.evaluate(() => {
+    const out = []
+    for (const row of document.querySelectorAll('[data-testid^="mobile-memory-row-"]')) {
+      const lines = row.innerText.split('\n').map(s => s.trim()).filter(Boolean)
+      const seen = new Set()
+      for (const l of lines) {
+        if (l.length > 3 && seen.has(l)) out.push(l)
+        seen.add(l)
+      }
+    }
+    return out
+  })
+  check('no phone timeline row repeats a line', repeatedLines.length === 0,
+    repeatedLines.join(' | '))
+  check('nothing on the phone renders as undefined or null',
+    !/\bundefined\b|\bnull\b/.test(t), (t.match(/.{0,40}(undefined|null).{0,20}/) || [''])[0])
   // Proof grades render per row, with the same words.
   for (const g of ['VERIFIED', 'ASSUMED', 'ATTESTED']) {
     check(`mobile row proof grade ${g}`, new RegExp(g, 'i').test(t))

@@ -109,6 +109,32 @@ const browser = await chromium.launch()
   check('no horizontal overflow', overflow.scrollW <= overflow.clientW + 1,
     `scrollWidth=${overflow.scrollW} clientWidth=${overflow.clientW}`)
 
+  /*
+   * No row states one fact twice.
+   *
+   * Every execution row printed its book on two consecutive lines — once as
+   * the subtitle the hook set from `portfolio_name`, and again in the meta
+   * line built from the `portfolio` field. Found by reading a screenshot
+   * during release validation, not by any assertion, because the FIXTURE
+   * modelled the same duplication the hook did.
+   */
+  const repeated = await page.evaluate(() => {
+    const out = []
+    for (const row of document.querySelectorAll('[data-timeline-event]')) {
+      const lines = row.innerText.split('\n').map(s => s.trim()).filter(Boolean)
+      const seen = new Set()
+      for (const l of lines) {
+        if (l.length > 3 && seen.has(l)) out.push(l)
+        seen.add(l)
+      }
+    }
+    return out
+  })
+  check('no timeline row repeats a line', repeated.length === 0, repeated.join(' | '))
+
+  check('nothing renders as the word undefined or null',
+    !/\bundefined\b|\bnull\b/.test(text), text.slice(0, 160))
+
   check('no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
 
   // Phase filters narrow the list.

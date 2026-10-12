@@ -72,7 +72,15 @@ export const HARNESS_EVENTS: DecisionTimelineEvent[] = [
     // A bare DATE, as portfolio_trade_events stores it.
     timestamp: '2026-06-02',
     title: 'Add — +45bps, +12,000 shs',
-    subtitle: BOOK.name, disposition: 'positive',
+    /*
+     * No subtitle on an execution, matching the hook.
+     *
+     * These said `BOOK.name`, which the hook used to set and no longer does —
+     * so every execution row rendered its book twice, as the subtitle and
+     * again in the meta line. The fixture modelled the defect, which is why
+     * the probes never saw it and a screenshot did.
+     */
+    subtitle: null, disposition: 'positive',
     executionProof: 'verified',
     sizing: { action: 'add', weightDelta: 0.0045, sharesDelta: 12000, weightBefore: 0.021, weightAfter: 0.0255 },
     sourceRef: { type: 'trade_event', id: 'exec-verified' },
@@ -82,7 +90,7 @@ export const HARNESS_EVENTS: DecisionTimelineEvent[] = [
     id: 'exec-assumed', type: 'trade_executed', phase: 'execution',
     timestamp: '2026-05-28',
     title: 'Trim — -20bps, -5,500 shs',
-    subtitle: BOOK.name, disposition: 'negative',
+    subtitle: null, disposition: 'negative',
     // The one that must never read as observed.
     executionProof: 'assumed',
     sourceRef: { type: 'trade_event', id: 'exec-assumed' },
@@ -91,7 +99,7 @@ export const HARNESS_EVENTS: DecisionTimelineEvent[] = [
   ev({
     id: 'exec-attested', type: 'trade_executed', phase: 'execution',
     timestamp: '2026-05-21',
-    title: 'Buy — +30bps', subtitle: BOOK_B.name, portfolio: BOOK_B,
+    title: 'Buy — +30bps', subtitle: null, portfolio: BOOK_B,
     disposition: 'positive', executionProof: 'attested',
     sourceRef: { type: 'trade_event', id: 'exec-attested' },
     provenance: { table: 'portfolio_trade_events', rowId: 'exec-attested', ideaId: 'idea-2', portfolioId: BOOK_B.id, batchId: 'batch-9' },
@@ -99,7 +107,7 @@ export const HARNESS_EVENTS: DecisionTimelineEvent[] = [
   ev({
     id: 'exec-backfilled', type: 'trade_executed', phase: 'execution',
     timestamp: '2026-04-30',
-    title: 'Initiate — +100bps', subtitle: BOOK.name,
+    title: 'Initiate — +100bps', subtitle: null,
     disposition: 'positive', executionProof: 'backfilled',
     sourceRef: { type: 'trade_event', id: 'exec-backfilled' },
     provenance: { table: 'portfolio_trade_events', rowId: 'exec-backfilled', ideaId: null, portfolioId: BOOK.id },
@@ -107,7 +115,7 @@ export const HARNESS_EVENTS: DecisionTimelineEvent[] = [
   ev({
     id: 'exec-unattributed', type: 'trade_executed', phase: 'execution',
     timestamp: '2026-04-11',
-    title: 'Add — +15bps', subtitle: BOOK.name,
+    title: 'Add — +15bps', subtitle: null,
     disposition: 'positive', executionProof: 'unattributed',
     sourceRef: { type: 'trade_event', id: 'exec-unattributed' },
     provenance: { table: 'portfolio_trade_events', rowId: 'exec-unattributed', ideaId: null, portfolioId: BOOK.id },
