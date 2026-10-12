@@ -2681,28 +2681,45 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   return (
     <div className="flex flex-col bg-gray-50 dark:bg-gray-900 -mx-8 -my-6 h-[calc(100%+48px)] overflow-hidden">
       {/* Sticky Header Section */}
-      <div className="flex-shrink-0 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-8 pt-6 space-y-3 shadow-sm">
+      {/* Tightened from pt-6/space-y-3: the identity row lost a line, and the
+          vertical rhythm around it was still sized for the two-line block. */}
+      <div className="flex-shrink-0 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-8 pt-4 space-y-2 shadow-sm">
       {/* Asset Header */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         {/* Single Row - All Summary Info and Controls */}
         <div className="flex items-center justify-between gap-6">
           <div className="flex items-start gap-6">
-            {/* Ticker, Price and Company Name */}
+            {/*
+              Ticker, price and company on ONE baseline.
+
+              This was four type sizes down a two-line block — a 3xl ticker
+              beside a 2xl price and an xl change, with an 18px company name on
+              its own line underneath. Roughly 80px of identity above every
+              screen of this page, repeated on all five sub-pages, to say a
+              thing the reader already knows: which security they opened.
+
+              Identity is orientation, not content. It is one line now, and the
+              space went to the conclusion band below it. Nothing was removed:
+              the same four facts are here, sized as a header rather than as a
+              headline.
+            */}
             <div className="flex flex-col relative">
-              <div className="flex items-baseline gap-4">
+              <div className="flex items-baseline gap-3 flex-wrap">
                 <button
                   onClick={() => setShowTickerDropdown(!showTickerDropdown)}
                   aria-haspopup="dialog"
                   aria-expanded={showTickerDropdown}
-                  className="text-3xl font-bold text-gray-900 hover:text-gray-700 transition-colors flex items-baseline gap-1.5 group dark:hover:text-gray-200 dark:text-white"
+                  className="text-2xl font-bold text-gray-900 hover:text-gray-700 transition-colors flex items-baseline gap-1.5 group dark:hover:text-gray-200 dark:text-white"
                 >
                   <span className="group-hover:underline underline-offset-4 decoration-gray-300">{asset.symbol}</span>
                   <ChevronDown className={clsx('w-4 h-4 text-gray-400 transition-transform', showTickerDropdown && 'rotate-180')} />
                 </button>
-                <StockQuote symbol={asset.symbol} showOnlyPrice={true} className="text-2xl font-bold" />
-                <StockQuote symbol={asset.symbol} showOnlyChange={true} className="text-xl font-semibold" />
+                <StockQuote symbol={asset.symbol} showOnlyPrice={true} className="text-xl font-semibold" />
+                <StockQuote symbol={asset.symbol} showOnlyChange={true} className="text-[15px] font-semibold" />
+                <p className="truncate max-w-[34ch] text-[13px] text-gray-500 dark:text-gray-400">
+                  {asset.company_name}
+                </p>
               </div>
-              <p className="text-lg text-gray-600 mt-1 dark:text-gray-400">{asset.company_name}</p>
 
               {/* Ticker Dropdown */}
               {showTickerDropdown && (
@@ -2904,9 +2921,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             >
               <Layers className="w-3 h-3" />
               <span>Decisions</span>
-              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center dark:text-gray-400 dark:bg-gray-800">
-                0
-              </span>
+              {/*
+                No count badge, deliberately.
+
+                This read `0` — a literal, on every asset, forever. A badge
+                saying zero is not a missing number, it is a claim that there
+                is nothing open, printed beside a chip whose whole job is to
+                take you to the things that are. Nothing in this component
+                carries an open-decision count, and inventing a query for one
+                here would duplicate what the Snapshot's Active work module
+                already reads from the canonical hook.
+
+                Fewer facts, none of them false.
+              */}
             </button>
 
             {/* In Portfolios chip */}
