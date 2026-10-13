@@ -5,6 +5,8 @@ import { IdeasWorkspace } from '../src/components/ideas-v2/IdeasWorkspace'
 import { DashboardShell } from '../src/components/dashboard/DashboardShell'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
+import { FeedSentinelRepro } from './feed-sentinel-repro'
+
 /**
  * The app's providers, minus everything the harness does not need.
  *
@@ -41,6 +43,26 @@ function Harness() {
   const q = new URLSearchParams(location.search)
   const h = Number(q.get('h') ?? '3200')
   const surface = q.get('surface') ?? 'dashboard'
+
+  /*
+   * `?surface=feed-sentinel` reproduces the mobile Ideas feed's pagination
+   * lifecycle — navigating to Explore and back. `?attach=ref` is the broken
+   * form the bug was reported against, `?attach=state` the fix. See
+   * `feed-sentinel-repro.tsx` for exactly what it stands for and what it
+   * does not.
+   */
+  if (surface === 'feed-sentinel') {
+    return (
+      <div data-harness={surface} style={{ padding: 12 }}>
+        <FeedSentinelRepro
+          attach={(q.get('attach') as 'ref' | 'state') ?? 'ref'}
+          initial={q.has('tiles') ? Number(q.get('tiles')) : undefined}
+          exhausted={q.get('exhausted') === '1'}
+        />
+      </div>
+    )
+  }
+
   return (
     <div style={{ height: `${h}px`, width: '100%' }} data-harness={surface}>
       {surface === 'ideas'

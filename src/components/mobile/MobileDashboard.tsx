@@ -1132,7 +1132,36 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const { seenAtMount, interestAtMount } = useReaderSnapshots(userId)
   const [readthroughFor, setReadthroughFor] = useState<ScoredFeedItem | null>(null)
-  const sentinelRef = useRef<HTMLDivElement>(null)
+  /**
+   * The pagination sentinel, held in STATE rather than a ref.
+   *
+   * ── The bug this fixes ────────────────────────────────────────────────────
+   *
+   * Explore and the feed are the two arms of one ternary (`mode === 'explore'
+   * ? … : …`), so leaving the feed UNMOUNTS its whole subtree — scroller,
+   * slots and this sentinel — while `MobileDashboard` stays mounted and keeps
+   * every piece of its state and all of its refs.
+   *
+   * The scroller survives that because `attachScroller` puts it in state, so
+   * each effect that observes it re-runs against the new element. This was a
+   * `useRef`. Writing to a ref does not render, and the IntersectionObserver
+   * effect below depends only on `[hasNextPage, isFetchingNextPage,
+   * fetchNextPage, baseFeedEntries.length, tailVariety]` — none of which
+   * change when a reader comes back. So the effect never re-ran, the observer
+   * went on watching the DETACHED node, and a detached node never intersects
+   * anything again.
+   *
+   * The consequence was that `fetchNextPage()` and `setCycle(c => c + 1)`
+   * stopped firing for the rest of the session. The feed kept exactly the
+   * tiles it already had, so a reader who returned and scrolled to the bottom
+   * found nothing below it — reported from pilot testing as swiping no longer
+   * advancing to the next tile. The feed was not stuck; it had stopped
+   * growing, which looks identical from a thumb.
+   *
+   * `setSentinel` is a stable setter, so it is safe as a callback ref, and the
+   * element is now a dependency of the observer effect.
+   */
+  const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null)
   // State, not a ref. The component returns early while loading, so the
   // scroller does not exist on first render — effects keyed on a ref bound to
   // nothing and never re-ran, which is why pull-to-refresh did nothing and the
@@ -4158,7 +4187,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
 
   useEffect(() => {
-    const sentinel = sentinelRef.current
     if (!sentinel) return
     const observer = new IntersectionObserver(
       entries => {
@@ -4198,7 +4226,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, baseFeedEntries.length, tailVariety])
+    // `sentinel` leads the list deliberately: it is the dependency whose
+    // absence was the bug. A remounted feed hands back a new element, which
+    // re-runs this effect and re-arms pagination.
+  }, [sentinel, hasNextPage, isFetchingNextPage, fetchNextPage, baseFeedEntries.length, tailVariety])
 
   // Restore once, after the entries that make up the remembered offset exist.
   // Attempting it before render leaves scrollTop clamped to zero.
@@ -8461,7 +8492,7 @@ c.assetId ?? null,
           />
         ))}
 
-        <div ref={sentinelRef} className="h-px" />
+        <div ref={setSentinel} className="h-px" />
       </div>
       </>
       )}
