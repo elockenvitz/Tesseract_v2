@@ -35,7 +35,8 @@
  * gets the same bytes as one fetching the home page.
  */
 import { chromium } from '@playwright/test'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, unlinkSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -163,36 +164,82 @@ const page = await browser.newPage({
 })
 await page.setContent(html, { waitUntil: 'load' })
 await page.evaluate(() => document.fonts.ready)
-writeFileSync(join(root, 'public/social-preview.png'), await page.screenshot({ type: 'png' }))
+/*
+ * The preview is published under a filename carrying a hash of its own bytes,
+ * and every reference to it is rewritten here rather than by hand.
+ *
+ * The reason is a bug that lasted from #240 until it was investigated: the
+ * image shipped as `/social-preview.png`, was replaced 22 minutes later at
+ * that same URL, and link-preview caches are keyed on the URL. Those caches
+ * belong to Apple, Meta, Slack and WhatsApp; several ignore `Cache-Control`
+ * and Apple's is effectively permanent. The deployed asset was correct the
+ * whole time while every conversation that had already previewed a Tesseract
+ * link kept showing the superseded one. A new URL is a new cache key, and it
+ * is the only purge we can actually perform.
+ *
+ * Doing the rename by hand would work exactly once. Whoever next re-runs this
+ * script to change the design would overwrite the bytes, leave the filename,
+ * and reintroduce the same bug — so the script owns the name, the meta tags
+ * and the redirect together, and `guard:social-preview` fails the build if
+ * they ever disagree with the file on disk.
+ */
+const png = await page.screenshot({ type: 'png' })
+const hash = createHash('sha256').update(png).digest('hex').slice(0, 8)
+const previewName = `social-preview.${hash}.png`
+
+// Remove superseded hashed copies, so `public/` does not accumulate one dead
+// 70KB PNG per design tweak. The redirect below keeps the OLD UNVERSIONED url
+// working; the old hashed ones were only ever referenced by a tag this script
+// is about to rewrite.
+for (const f of readdirSync(join(root, 'public'))) {
+  if (/^social-preview\.[0-9a-f]{8}\.png$/.test(f) && f !== previewName) {
+    unlinkSync(join(root, 'public', f))
+  }
+}
+writeFileSync(join(root, 'public', previewName), png)
 await page.close()
 
 /*
- * Favicon and touch icon, from the same source mark.
- *
- * `index.html` pointed at `/vite.svg`, which does not exist in `public/` —
- * so the request fell through the SPA catch-all and came back as 200 text/html.
- * The site has been shipping a broken favicon, not a default one.
- *
- * Downscaled here rather than pointing the tags at `Tesseract Icon.png`
- * directly: that file is 1024x1024 and 1.5MB, which is a lot to fetch on every
- * cold load to draw a 16px square.
+ * Rewrite the references. Narrow regexes over the exact published filename
+ * shape, so a stray `social-preview` in prose is not rewritten and a failure
+ * to match is loud rather than silent.
  */
-for (const [file, size] of [['favicon.png', 64], ['apple-touch-icon.png', 180]]) {
-  const iconPage = await browser.newPage({
-    viewport: { width: size, height: size },
-    deviceScaleFactor: 1,
-  })
-  await iconPage.setContent(`
-    <style>
-      * { margin: 0; padding: 0; }
-      html, body { width: ${size}px; height: ${size}px; background: #0A0A0B; }
-      img { width: 100%; height: 100%; object-fit: cover; }
-    </style>
-    <img src="${glowIcon}">
-  `, { waitUntil: 'load' })
-  writeFileSync(join(root, 'public', file), await iconPage.screenshot({ type: 'png' }))
-  await iconPage.close()
+const NAME = /social-preview\.[0-9a-f]{8}\.png/g
+
+const indexPath = join(root, 'index.html')
+const indexHtml = readFileSync(indexPath, 'utf8')
+const indexHits = (indexHtml.match(NAME) || []).length
+if (indexHits !== 2) {
+  throw new Error(
+    `index.html should reference the preview twice (og:image, twitter:image), found ${indexHits}. `
+    + 'Refusing to rewrite — the tags have moved and this script would leave them stale.')
 }
+writeFileSync(indexPath, indexHtml.replace(NAME, previewName))
+
+const redirectsPath = join(root, 'public/_redirects')
+const redirects = readFileSync(redirectsPath, 'utf8')
+if (!NAME.test(redirects)) {
+  throw new Error(
+    'public/_redirects has no /social-preview.png rule. Without it the old URL '
+    + 'falls through the SPA catch-all and answers 200 text/html, which breaks '
+    + 'the preview outright for any cache that revalidates.')
+}
+writeFileSync(redirectsPath, redirects.replace(NAME, previewName))
+
+/*
+ * The browser-tab icons used to be generated here, and are not any more.
+ *
+ * They were downscales of the glow PNG on a solid black plate — which is not
+ * the mark the application shows, and rendered as a dark square at 16px. They
+ * now come from `scripts/build-favicon.mjs`, which draws the same wireframe
+ * the top-left launcher draws, on a genuinely transparent ground.
+ *
+ * Deleted rather than left in place: this script and that one both wrote
+ * `public/favicon.png`, so whichever ran last won. Re-running the social
+ * preview would have quietly reinstated the black icon, which is precisely the
+ * stale-reference trap the favicon work went looking for.
+ */
 
 await browser.close()
-console.log('wrote public/social-preview.png, public/favicon.png, public/apple-touch-icon.png')
+console.log(`wrote public/${previewName}, public/favicon.png, public/apple-touch-icon.png`)
+console.log('updated index.html (og:image, twitter:image) and public/_redirects')
