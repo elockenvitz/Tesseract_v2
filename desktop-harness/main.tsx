@@ -9,6 +9,7 @@ import { OurViewSummary } from '../src/components/asset/OurViewSummary'
 import { InvestmentSnapshot } from '../src/components/asset/InvestmentSnapshot'
 import { SNAPSHOT_COVERAGE, SNAPSHOT_THESIS_STATUS, SNAPSHOT_QUOTE } from './snapshot-fixtures'
 import { OUR_VIEW_FIELDS, ourViewContributions } from './our-view-fixtures'
+import { FeedSentinelRepro } from './feed-sentinel-repro'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
@@ -47,6 +48,27 @@ function Harness() {
   const q = new URLSearchParams(location.search)
   const h = Number(q.get('h') ?? '3200')
   const surface = q.get('surface') ?? 'dashboard'
+
+  /*
+   * `?surface=feed-sentinel` reproduces the mobile Ideas feed's pagination
+   * lifecycle — navigating to Explore and back. `?attach=ref` is the broken
+   * form the bug was reported against, `?attach=state` the fix. See
+   * `feed-sentinel-repro.tsx` for exactly what it stands for and what it
+   * does not.
+   */
+  if (surface === 'feed-sentinel') {
+    return (
+      <div data-harness={surface} style={{ padding: 12 }}>
+        <FeedSentinelRepro
+          attach={(q.get('attach') as 'ref' | 'state') ?? 'ref'}
+          initial={q.has('tiles') ? Number(q.get('tiles')) : undefined}
+          exhausted={q.get('exhausted') === '1'}
+        />
+      </div>
+    )
+  }
+
+
   /*
    * `?surface=decision-timeline` renders the asset Decision Memory timeline
    * against `stub-decision-timeline.ts`. `?asset=empty` selects the
