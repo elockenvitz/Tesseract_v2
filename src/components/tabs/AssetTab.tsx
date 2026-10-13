@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat, LayoutDashboard } from 'lucide-react'
 import { clsx } from 'clsx'
 import { fetchSignedUrl } from '../../lib/storage/signed-url'
 import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../../lib/storage/buckets'
@@ -24,6 +24,7 @@ import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
 import { AssetWorkflowSelectorEnhanced } from '../asset/AssetWorkflowSelectorEnhanced'
 import { AssetDecisionView } from '../asset/AssetDecisionView'
 import { DecisionTimeline } from '../asset/DecisionTimeline'
+import { BookFilter } from '../shared/BookFilter'
 import { WorkflowActionButton } from '../asset/WorkflowActionButton'
 import { WorkflowManager } from '../ui/WorkflowManager'
 import { CaseCard } from '../ui/CaseCard'
@@ -36,6 +37,9 @@ import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
+import { InvestmentSnapshot } from '../asset/InvestmentSnapshot'
+import { OurViewSummary, type OurViewField } from '../asset/OurViewSummary'
+import { contributionSectionsForSlug } from '../../lib/research/contribution-sections'
 // DocumentLibrarySection removed — consolidated into KeyReferencesSection
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddToProjectButton } from '../projects/AddToProjectButton'
@@ -125,6 +129,20 @@ async function getWorkflowStages(workflowId: string) {
 
   return { data: data || [], error }
 }
+
+/**
+ * Template field types that are NOT analyst prose.
+ *
+ * Each of these has a dedicated surface that owns its logic — price targets
+ * and ratings through `PriceTargetsSummary` and `FirmConsensusPanel`, key
+ * references through the References view. Our View and the aggregated document
+ * both skip them, and they share this list so the summary can never claim to
+ * cover a field the document renders, or vice versa.
+ */
+const NON_PROSE_FIELD_TYPES = [
+  'checklist', 'metric', 'timeline', 'numeric', 'date',
+  'rating', 'estimates', 'price_target', 'key_references',
+]
 
 interface AssetTabProps {
   asset: any
@@ -281,16 +299,110 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }))
   }
 
-  // Active sub-page selector (Research, Workflow, Decisions, Lists)
-  const [activeSubPage, setActiveSubPage] = useState<'research' | 'workflow' | 'decisions' | 'lists'>(() => {
+  /*
+   * Active sub-page selector (Snapshot, Research, Workflow, Decisions, Lists).
+   *
+   * `snapshot` is the default landing for a general arrival. The four deeper
+   * workspaces are unchanged and keep their own entry points — Snapshot is a
+   * fifth destination, not a replacement for any of them.
+   *
+   * A SAVED sub-page still wins. Someone who left this tab on Process comes
+   * back to Process: the default answers "where does an asset open", not
+   * "where must you be". `loadTabState` is per-asset and per-session.
+   */
+  const [activeSubPage, setActiveSubPage] = useState<'snapshot' | 'research' | 'workflow' | 'decisions' | 'lists'>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
-    return savedState?.activeSubPage || 'research'
+    return savedState?.activeSubPage || 'snapshot'
   })
-  // Research view filter: 'aggregated' or a specific user_id
+  /*
+   * Which book the Decision Memory narrative is scoped to. `null` is
+   * organization-wide and is the default — the asset page's own context is
+   * the org, and a reader arriving from a lens should see every decision
+   * they are authorized to see before narrowing.
+   *
+   * Persisted with the rest of the tab state so returning to the asset
+   * restores the scope the reader left it in, which is the "return context
+   * preserved" requirement. Arriving WITH a portfolio in the request seeds
+   * it, so a click from a portfolio lens lands already scoped to that book.
+   */
+  const [decisionBookId, setDecisionBookId] = useState<string | null>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.decisionBookId ?? asset.portfolioId ?? null
+  })
+  /*
+   * Research view filter: 'aggregated' (Our View), a specific user_id, or
+   * UNRESOLVED.
+   *
+   * ── Why there is a third state ───────────────────────────────────────
+   *
+   * This used to initialise to 'aggregated', which made the firm summary the
+   * default full-length research document for everyone. An analyst opening a
+   * name they cover landed on a combined pane rather than their own work.
+   *
+   * The right default is "my own detailed view, if I have one" — but
+   * `researchAnalysts` is derived from `coverage` and `thesisContributions`,
+   * both async, so it is EMPTY on first render. Defaulting at initialisation
+   * is therefore impossible; the choice has to be made once that data lands.
+   *
+   * UNRESOLVED is that "not yet decided" state. It renders as Our View (the
+   * safe, attributable fallback) and is replaced exactly once, by the effect
+   * below, and never over a choice the reader or a navigation already made.
+   */
   const [researchViewFilter, setResearchViewFilter] = useState<'aggregated' | string>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
-    return savedState?.researchViewFilter || 'aggregated'
+    /*
+     * A RESTORED filter is an explicit past choice and is honoured as-is,
+     * including a restored 'aggregated' — a reader who deliberately chose the
+     * summary last time should not be moved off it.
+     *
+     * An arriving `researchViewFilter` in tab data is handled by its own
+     * effect further down and wins over everything.
+     *
+     * The value still starts at 'aggregated' when nothing is known, because
+     * fifteen downstream consumers treat any non-'aggregated' value as a
+     * user id — a sentinel here would be queried AS an id. The "not yet
+     * decided" fact lives in `researchDefaultDecided` instead.
+     */
+    if (savedState?.researchViewFilter) return savedState.researchViewFilter
+    if (asset.data?.researchViewFilter) return asset.data.researchViewFilter
+    return 'aggregated'
   })
+
+  /**
+   * Whether the research view was CHOSEN, as opposed to merely defaulted.
+   *
+   * Distinguishing these is the whole mechanism: "nobody has picked yet" and
+   * "somebody picked Our View" look identical in the filter value, and
+   * conflating them is what made the firm summary everyone's default
+   * full-length research document.
+   *
+   * Seeded true when a saved or arriving choice exists, so the resolver below
+   * leaves those alone.
+   */
+  const [researchDefaultDecided, setResearchDefaultDecided] = useState<boolean>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return !!(savedState?.researchViewFilter || asset.data?.researchViewFilter)
+  })
+
+  /**
+   * Whether the current view was CHOSEN, rather than resolved by default.
+   *
+   * Only a chosen view is persisted. A default that happened to land on
+   * another analyst's view must not be saved as if the reader picked it --
+   * that would keep sending them there even after they write their own
+   * research, which is the exact outcome the new default exists to produce.
+   */
+  const [researchViewChosen, setResearchViewChosen] = useState<boolean>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return !!(savedState?.researchViewFilter || asset.data?.researchViewFilter)
+  })
+
+  /** Any explicit pick — by the reader or by a navigation — settles it. */
+  const chooseResearchView = useCallback((next: string) => {
+    setResearchDefaultDecided(true)
+    setResearchViewChosen(true)
+    setResearchViewFilter(next)
+  }, [])
   // Thesis view mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline
   const [thesisViewMode, setThesisViewMode] = useState<'all' | 'summary' | 'history' | 'references'>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
@@ -455,22 +567,41 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }, [asset, navigationStageId, navigationWorkflowId, navigationTaskId, taskDetails])
 
   /**
-   * Arrival focus, from the Research and Portfolio lenses.
+   * Arrival focus, from the Research, Portfolio, Ideas and Decisions lenses.
    *
-   * The smallest useful thing: land on the sub-page the sender's question
-   * belongs to. `openAsset` carries `focus` in tab data, and the only sub-pages
-   * that exist are Research, Workflow, Decisions and Lists -- so 'research' and
-   * 'decisions' map, and 'position'/'framework' have no sub-page of their own
-   * and deliberately change nothing rather than guessing at one.
+   * Land on the sub-page the sender's question belongs to. `openAsset` carries
+   * `focus` in tab data (`lib/desktop-asset/navigate.ts`).
+   *
+   * An EXPLICIT focus always wins over the Snapshot default. A reader sent
+   * here by Research to answer a research question must not be redirected to
+   * an overview of everything — that is the sender's intent discarded, and it
+   * is the main way a new default landing breaks existing navigation.
+   *
+   *   research   -> Research      (explicit, preserved)
+   *   decisions  -> Decisions     (explicit, preserved)
+   *   overview   -> Snapshot      NEW. This is what 'overview' always meant;
+   *                               until now there was nothing for it to mean,
+   *                               so it silently did nothing.
+   *   position   -> Snapshot      Position is a Snapshot domain. Previously a
+   *                               no-op, which landed a reader arriving from a
+   *                               book on whatever page they last used.
+   *   framework  -> unchanged     The framework lives in Research's outcomes;
+   *                               it has no home of its own yet, and guessing
+   *                               is worse than leaving the saved page alone.
    */
   useEffect(() => {
     if (asset.focus === 'research') setActiveSubPage('research')
     else if (asset.focus === 'decisions') setActiveSubPage('decisions')
+    else if (asset.focus === 'overview' || asset.focus === 'position') setActiveSubPage('snapshot')
   }, [asset.focus, asset.id])
 
   // Handle researchViewFilter from navigation data (e.g., Trade Queue linking to proposer's research view)
   useEffect(() => {
     if (asset.data?.researchViewFilter) {
+      // An explicit navigation intent -- e.g. Trade Queue linking to the
+      // proposer's view. It settles the default so the resolver stays out.
+      setResearchDefaultDecided(true)
+      setResearchViewChosen(true)
       setResearchViewFilter(asset.data.researchViewFilter)
       setActiveSubPage('research')
     }
@@ -530,14 +661,22 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     if (isTabStateInitialized) {
       const stateToSave = {
         activeSubPage,
-        researchViewFilter,
+        /*
+         * Only a CHOSEN view is persisted. Saving a defaulted one would turn
+         * it into an explicit choice on the next visit and freeze the reader
+         * on whichever view the resolver happened to pick.
+         */
+        ...(researchViewChosen ? { researchViewFilter } : {}),
         thesisViewMode,
         collapsedSections,
-        viewingStageId
+        viewingStageId,
+        // Decision Memory's book scope, so leaving and returning to the asset
+        // restores the narrative the reader was reading.
+        decisionBookId,
       }
       TabStateManager.saveTabState(asset.id, stateToSave)
     }
-  }, [asset.id, activeSubPage, researchViewFilter, thesisViewMode, collapsedSections, viewingStageId, isTabStateInitialized])
+  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, decisionBookId, isTabStateInitialized])
 
   // Focus-scroll into a Lists tab section when listsFocus is set
   useEffect(() => {
@@ -693,6 +832,55 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Layout/template customizations should ONLY apply when viewing "My View"
   const isViewingOwnTab = user && researchViewFilter === user.id
   const isAggregatedView = researchViewFilter === 'aggregated'
+
+  /**
+   * The prose fields Our View summarises, in the org's own template order.
+   *
+   * Derived from the template rather than listed, for the same reason the
+   * aggregated document was: the organisation decides which fields exist, what
+   * they are called and what order they read in. A hardcoded list inside the
+   * summary would be a second research vocabulary that silently disagrees with
+   * this one the first time an org adds or renames a field.
+   *
+   * The filter mirrors the aggregated document exactly — the same hidden
+   * sections, the same Key References exclusion, the same non-prose field types
+   * that have dedicated summary components (`PriceTargetsSummary`,
+   * `FirmConsensusPanel`) above. So the summary reports on precisely the
+   * sections the full document would have rendered.
+   */
+  const ourViewFields: OurViewField[] = React.useMemo(() => {
+    const out: OurViewField[] = []
+    for (const section of displayedFieldsBySection) {
+      if (section.section_is_hidden) continue
+      if (section.section_slug === 'supporting_docs') continue
+      for (const field of section.fields) {
+        if (!field.is_visible) continue
+        if (NON_PROSE_FIELD_TYPES.includes(field.field_type)) continue
+        out.push({
+          slug: field.field_slug,
+          label: field.field_name,
+          sectionKeys: contributionSectionsForSlug(field.field_slug),
+        })
+      }
+    }
+    return out
+  }, [displayedFieldsBySection])
+
+  /**
+   * The analysts formally covering this asset.
+   *
+   * Computed once rather than inline at each consumer. The `coverage` query
+   * selects an embed, which the generated row type does not describe, so its
+   * rows infer as `never` and every inline `coverage?.map(c => c.user_id)`
+   * produced its own type error. One annotated read states the shape in a
+   * single place; the annotation is narrow on purpose — `user_id` is all a
+   * covering-set needs, so it cannot drift into a second description of a
+   * coverage row.
+   */
+  const coveringAnalystIds = React.useMemo(() => {
+    const rows = (coverage ?? []) as unknown as { user_id: string | null }[]
+    return new Set(rows.map(c => c.user_id).filter((id): id is string => Boolean(id)))
+  }, [coverage])
 
   // Get section info with overrides (name, visibility, etc.)
   const getSectionInfo = useCallback((sectionSlug: string) => {
@@ -931,6 +1119,58 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     })
   }, [coverage, thesisContributions, contributorProfiles, isLoadingContributorProfiles, user])
 
+  /**
+   * Resolve the research default, once, when the analyst list arrives.
+   *
+   * ── The rule, in order ───────────────────────────────────────────────
+   *
+   *   1. The reader HAS their own research on this name  → their own view.
+   *      This is the change: an analyst opening a name they cover lands on
+   *      their own work, not on a combined firm pane.
+   *   2. Otherwise, the primary covering analyst's view  → clearly labelled
+   *      as that person's, because the pills show whose view is selected.
+   *   3. Otherwise any covering analyst, then any contributor.
+   *   4. Nobody has written anything                     → Our View, which
+   *      is the honest landing state when there is no individual research to
+   *      open.
+   *
+   * ── What it must never do ────────────────────────────────────────────
+   *
+   * It does NOT create a research record, claim ownership, or write anything.
+   * Selecting a filter is a read. Case 2 and 3 open somebody ELSE's view, and
+   * the selector makes whose it is explicit — the alternative, opening an
+   * empty "own" view, would imply the reader has research they do not have.
+   *
+   * It runs only while UNRESOLVED, so an explicit choice, a restored choice,
+   * or an arriving navigation intent is never overridden. Waiting for
+   * `isLoadingContributorProfiles` avoids resolving against a half-loaded
+   * list and then appearing to "jump" views.
+   */
+  useEffect(() => {
+    if (researchDefaultDecided) return
+    if (isLoadingContributorProfiles) return
+    // Coverage is the other input; `undefined` means still loading.
+    if (coverage === undefined || thesisContributions === undefined) return
+
+    // Decided either way now, so this runs once.
+    setResearchDefaultDecided(true)
+
+    const mine = user?.id && researchAnalysts.some(a => a.id === user.id) ? user.id : null
+    if (mine) {
+      setResearchViewFilter(mine)
+      return
+    }
+    const primary = researchAnalysts.find(a => a.isCovering && a.role === 'primary')
+    const covering = researchAnalysts.find(a => a.isCovering)
+    const fallback = primary ?? covering ?? researchAnalysts[0]
+    // No individual research exists at all -- Our View is then the honest
+    // landing state, not a fallback that hides an absence.
+    setResearchViewFilter(fallback ? fallback.id : 'aggregated')
+  }, [
+    researchDefaultDecided, isLoadingContributorProfiles, coverage,
+    thesisContributions, researchAnalysts, user?.id,
+  ])
+
   // Accessible analyst IDs for rating divergence badge filtering (must be after researchAnalysts)
   const ratingAccessibleUserIds: string[] | undefined = React.useMemo(() => {
     if (!researchAnalysts || researchAnalysts.length === 0) return undefined
@@ -1072,7 +1312,33 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       const quote = await financialDataService.getQuote(asset.symbol)
       return quote
     },
-    enabled: !!asset.symbol && portfolioHoldings && portfolioHoldings.length > 0,
+    /*
+     * A price does not depend on owning the thing.
+     *
+     * This read `&& portfolioHoldings.length > 0`, so the quote was fetched
+     * only for names already in a book. For every other security — a
+     * research candidate, a watchlist name, anything being worked up before
+     * a position exists — `currentQuote` stayed undefined, and three things
+     * went quiet with it:
+     *
+     *   • `PriceTargetsSummary` computes upside as
+     *     `currentPrice && aggregatedPrice ? … : …` (PriceTargetsSummary.tsx:77),
+     *     so every upside figure rendered blank;
+     *   • `useRatingDivergence` bails on `!currentPrice`
+     *     (useRatingDivergence.ts:234) and returns no warning — the
+     *     rating-versus-expected-value check was SUPPRESSED rather than
+     *     deferred, on exactly the assets where a view is still forming;
+     *   • the capital bar's market value fell back to the holdings price.
+     *
+     * Meanwhile the header rendered a live price the whole time, because
+     * `StockQuote` (:2436) fetches its own and is ungated. So the symptom was
+     * a header quoting a price above a price-target panel showing dashes,
+     * with its integrity warnings off and nothing saying why.
+     *
+     * The holdings dependency was never a correctness condition. It was a
+     * cost control, and the cost it saved is one quote per asset page.
+     */
+    enabled: !!asset.symbol,
     staleTime: 15000, // Cache for 15 seconds
     refetchInterval: 30000, // Auto-refresh every 30 seconds
   })
@@ -2388,9 +2654,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <div key={i} className="h-7 w-20 bg-gray-200 dark:bg-gray-700 rounded-full" />
             ))}
           </div>
-          {/* Tab bar skeleton */}
+          {/* Tab bar skeleton — five, matching the real nav since Snapshot. */}
           <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 pb-2">
-            {[1, 2, 3, 4].map(i => (
+            {[1, 2, 3, 4, 5].map(i => (
               <div key={i} className="h-8 w-24 bg-gray-100 dark:bg-gray-800 rounded-t-lg" />
             ))}
           </div>
@@ -2415,28 +2681,45 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   return (
     <div className="flex flex-col bg-gray-50 dark:bg-gray-900 -mx-8 -my-6 h-[calc(100%+48px)] overflow-hidden">
       {/* Sticky Header Section */}
-      <div className="flex-shrink-0 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-8 pt-6 space-y-3 shadow-sm">
+      {/* Tightened from pt-6/space-y-3: the identity row lost a line, and the
+          vertical rhythm around it was still sized for the two-line block. */}
+      <div className="flex-shrink-0 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-8 pt-4 space-y-2 shadow-sm">
       {/* Asset Header */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         {/* Single Row - All Summary Info and Controls */}
         <div className="flex items-center justify-between gap-6">
           <div className="flex items-start gap-6">
-            {/* Ticker, Price and Company Name */}
+            {/*
+              Ticker, price and company on ONE baseline.
+
+              This was four type sizes down a two-line block — a 3xl ticker
+              beside a 2xl price and an xl change, with an 18px company name on
+              its own line underneath. Roughly 80px of identity above every
+              screen of this page, repeated on all five sub-pages, to say a
+              thing the reader already knows: which security they opened.
+
+              Identity is orientation, not content. It is one line now, and the
+              space went to the conclusion band below it. Nothing was removed:
+              the same four facts are here, sized as a header rather than as a
+              headline.
+            */}
             <div className="flex flex-col relative">
-              <div className="flex items-baseline gap-4">
+              <div className="flex items-baseline gap-3 flex-wrap">
                 <button
                   onClick={() => setShowTickerDropdown(!showTickerDropdown)}
                   aria-haspopup="dialog"
                   aria-expanded={showTickerDropdown}
-                  className="text-3xl font-bold text-gray-900 hover:text-gray-700 transition-colors flex items-baseline gap-1.5 group dark:hover:text-gray-200 dark:text-white"
+                  className="text-2xl font-bold text-gray-900 hover:text-gray-700 transition-colors flex items-baseline gap-1.5 group dark:hover:text-gray-200 dark:text-white"
                 >
                   <span className="group-hover:underline underline-offset-4 decoration-gray-300">{asset.symbol}</span>
                   <ChevronDown className={clsx('w-4 h-4 text-gray-400 transition-transform', showTickerDropdown && 'rotate-180')} />
                 </button>
-                <StockQuote symbol={asset.symbol} showOnlyPrice={true} className="text-2xl font-bold" />
-                <StockQuote symbol={asset.symbol} showOnlyChange={true} className="text-xl font-semibold" />
+                <StockQuote symbol={asset.symbol} showOnlyPrice={true} className="text-xl font-semibold" />
+                <StockQuote symbol={asset.symbol} showOnlyChange={true} className="text-[15px] font-semibold" />
+                <p className="truncate max-w-[34ch] text-[13px] text-gray-500 dark:text-gray-400">
+                  {asset.company_name}
+                </p>
               </div>
-              <p className="text-lg text-gray-600 mt-1 dark:text-gray-400">{asset.company_name}</p>
 
               {/* Ticker Dropdown */}
               {showTickerDropdown && (
@@ -2638,9 +2921,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             >
               <Layers className="w-3 h-3" />
               <span>Decisions</span>
-              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center dark:text-gray-400 dark:bg-gray-800">
-                0
-              </span>
+              {/*
+                No count badge, deliberately.
+
+                This read `0` — a literal, on every asset, forever. A badge
+                saying zero is not a missing number, it is a claim that there
+                is nothing open, printed beside a chip whose whole job is to
+                take you to the things that are. Nothing in this component
+                carries an open-decision count, and inventing a query for one
+                here would duplicate what the Snapshot's Active work module
+                already reads from the canonical hook.
+
+                Fewer facts, none of them false.
+              */}
             </button>
 
             {/* In Portfolios chip */}
@@ -2681,6 +2974,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       {/* Sub-page Tab Selector */}
       <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="flex space-x-1" aria-label="Tabs">
+          {/*
+            * Snapshot leads because it is the landing, and because it is the
+            * only one of the five that answers "what is the state of this
+            * name" rather than "let me go do a specific job".
+            */}
+          <button
+            onClick={() => setActiveSubPage('snapshot')}
+            className={clsx(
+              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+              activeSubPage === 'snapshot'
+                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
+            )}
+          >
+            <div className="flex items-center space-x-2">
+              <LayoutDashboard className="h-4 w-4" />
+              <span>Snapshot</span>
+            </div>
+          </button>
           <button
             onClick={() => setActiveSubPage('research')}
             className={clsx(
@@ -2757,7 +3069,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 // Pills mode for 5 or fewer analysts
                 <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
                   <button
-                    onClick={() => setResearchViewFilter('aggregated')}
+                    onClick={() => chooseResearchView('aggregated')}
                     className={clsx(
                       'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
                       researchViewFilter === 'aggregated'
@@ -2777,7 +3089,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     return (
                       <button
                         key={analyst.id}
-                        onClick={() => setResearchViewFilter(analyst.id)}
+                        onClick={() => chooseResearchView(analyst.id)}
                         title={roleLabel}
                         className={clsx(
                           'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
@@ -2803,7 +3115,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 // Dropdown mode for more than 5 analysts
                 <select
                   value={researchViewFilter}
-                  onChange={(e) => setResearchViewFilter(e.target.value)}
+                  onChange={(e) => chooseResearchView(e.target.value)}
                   className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-200"
                 >
                   <option value="aggregated">Our View (All Analysts)</option>
@@ -3030,6 +3342,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       {/* Sub-page Content */}
       <div className="flex-1 overflow-auto px-8 py-4">
 
+        {/* ========== INVESTMENT SNAPSHOT SUB-PAGE ========== */}
+        {activeSubPage === 'snapshot' && (
+          <InvestmentSnapshot
+            asset={asset}
+            /* Already fetched above for the ticker dropdown — passed down so
+               the Snapshot adds no second read of the same rows. */
+            coverage={coverage || []}
+            thesisStatuses={thesisStatuses}
+            currentQuote={currentQuote}
+            onOpenSubPage={setActiveSubPage}
+          />
+        )}
+
         {/* ========== RESEARCH SUB-PAGE ========== */}
         {activeSubPage === 'research' && (
           <div className="space-y-3 min-h-full">
@@ -3041,7 +3366,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   assetId={asset.id}
                   viewFilter={researchViewFilter}
                   contributions={allAssetContributions}
-                  coveringAnalystIds={new Set(coverage?.map(c => c.user_id) || [])}
+                  coveringAnalystIds={coveringAnalystIds}
                 />
               </Card>
             ) : thesisViewMode === 'history' ? (
@@ -3083,7 +3408,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     </p>
                     {user && (
                       <button
-                        onClick={() => setResearchViewFilter(user.id)}
+                        onClick={() => chooseResearchView(user.id)}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
                       >
                         <Target className="w-4 h-4" />
@@ -3103,44 +3428,27 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   {/* Aggregated Forecasts Summary - shows ratings, estimates when data exists */}
                   <FirmConsensusPanel assetId={asset.id} />
 
-                  {/* Contribution-based fields (rich_text sections with content) */}
-                  {displayedFieldsBySection.flatMap(section => {
-                    if (section.section_is_hidden) return []
+                  {/*
+                    Our View is a SUMMARY of the firm's research, not the
+                    research itself. It used to render a `ContributionSection`
+                    for every prose field in the template, which concatenated
+                    every analyst's full text into one pane several thousand
+                    words long — and this was the default landing view, so an
+                    analyst opening a name they cover saw the combined document
+                    rather than their own work.
 
-                    // Skip Key References section — shown in references view tab
-                    if (section.section_slug === 'supporting_docs') return []
-
-                    return section.fields
-                      .filter(f => f.is_visible)
-                      .map(field => {
-                        const fieldType = field.field_type
-
-                        // Skip non-contribution field types in aggregated view
-                        // (handled by dedicated summary components above)
-                        if (['checklist', 'metric', 'timeline', 'numeric', 'date', 'rating', 'estimates', 'price_target', 'key_references'].includes(fieldType)) {
-                          return null
-                        }
-
-                        // Contribution-based fields (rich_text, etc.)
-                        return (
-                          <ContributionSection
-                            key={field.field_id}
-                            assetId={asset.id}
-                            section={field.field_slug}
-                            title={field.field_name}
-                            activeTab={researchViewFilter}
-                            onTabChange={setResearchViewFilter}
-                            defaultVisibility={sharedThesisVisibility}
-                            hideViewModeButtons={true}
-                            hideVisibility={true}
-                            sharedVisibility={sharedThesisVisibility}
-                            sharedTargetIds={sharedThesisTargetIds}
-                            hideWhenEmpty={true}
-                            flatMode={false}
-                          />
-                        )
-                      })
-                  })}
+                    The full documents are unchanged and one click away: the
+                    individual branch below still renders every section with
+                    editing intact, and every name here opens it.
+                  */}
+                  <OurViewSummary
+                    contributions={allAssetContributions}
+                    fields={ourViewFields}
+                    coveringAnalystIds={coveringAnalystIds}
+                    onOpenAnalyst={chooseResearchView}
+                    currentUserId={user?.id ?? null}
+                    symbol={asset.symbol}
+                  />
                 </div>
               )
             ) : (
@@ -3761,12 +4069,44 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {activeSubPage === 'decisions' && (() => {
           // Derive summary metrics from portfolio holdings
           const portfolioCount = portfolioHoldings?.length ?? 0
-          const currentPrice = currentQuote?.price || 0
+          /*
+           * ── One price for both sides of every figure in this bar ────────
+           *
+           * `mktVal` was `shares * (currentPrice || held)` — the LIVE quote —
+           * while `weight` was `(shares * held) / ptotal`, a book price over
+           * a book-priced NAV. Two tiles rendered side by side from the same
+           * array therefore described different portfolios: Net Exposure
+           * marked this one holding at today's price while every other
+           * holding in the denominator stayed at its upload price. A reader
+           * could divide the two visible columns of one Current Exposure row
+           * and not recover the percentage printed beside them.
+           *
+           * It is not fixable by repricing the numerator alone, which is the
+           * tempting move. `useAssetLiveWeights.ts:34-37` states the rule:
+           * "weight is a ratio, and repricing only the numerator against a
+           * stale denominator is worse than leaving both stale." The
+           * denominator here (`portfolioTotals`, :1055) is every holding at
+           * its upload price, and repricing it means a quote for every name
+           * in every book — ~40 requests per portfolio, which the mapping
+           * document marks desktop opt-in at most.
+           *
+           * So both sides are struck at the book price, which is what
+           * `lib/portfolio/holdings.ts` does, what `PositionsTab:250-253` and
+           * `OverviewTab:184-197` already do, and what `useAssetWorkspace`
+           * returns. The cost is that Net Exposure no longer moves intraday.
+           * That is the honest reading of a book priced at its last upload,
+           * and the figure is labelled with its as-of date rather than left
+           * to look live.
+           *
+           * The live quote is still fetched and still used — for the header,
+           * and for the upside and divergence checks that genuinely compare
+           * a target against today's price. It is simply not mixed into a
+           * ratio whose denominator it does not reach.
+           */
           const holdingMetrics = portfolioHoldings?.map((h: any) => {
             const shares = parseFloat(h.shares)
             const held = parseFloat(h.price ?? h.cost)
-            // Against the book's market value, on the shared definition.
-            const mktVal = shares * (currentPrice || held)
+            const mktVal = shares * held
             const ptotal = portfolioTotals?.[h.portfolio_id] || 0
             const weight = ptotal > 0 ? ((shares * held) / ptotal) * 100 : 0
             return { weight, mktVal, shares, name: h.portfolios?.name || 'Unknown', portfolioId: h.portfolio_id }
@@ -3792,10 +4132,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   },
                   {
                     label: 'Net Exposure',
-                    value: netExposure > 0 && currentPrice > 0
+                    /* Gated on the exposure itself, not on a quote. It is
+                       struck at the book price now, so a missing quote is
+                       irrelevant to it \u2014 and the old gate rendered an
+                       active-styled em-dash while a book-priced exposure
+                       was sitting right there. */
+                    value: netExposure > 0
                       ? `$${netExposure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
                       : '\u2014',
-                    sub: null,
+                    sub: 'at book price',
                     active: netExposure > 0,
                   },
                   {
@@ -3860,7 +4205,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         const shares = parseFloat(holding.shares)
                         const costPerShare = parseFloat(holding.cost)
                         const held = parseFloat(holding.price ?? holding.cost)
-                        const currentValue = shares * (currentPrice || held)
+                        // Book price, matching the weight beside it. See the
+                        // note above `holdingMetrics`.
+                        const currentValue = shares * held
                         const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
                         const weight = portfolioTotal > 0 ? ((shares * held) / portfolioTotal) * 100 : 0
 
@@ -3885,7 +4232,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             </td>
                             <td className="px-4 py-1.5 text-right">
                               <span className="text-[12px] text-gray-500 tabular-nums dark:text-gray-400">
-                                {currentPrice > 0
+                                {held > 0
                                   ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                   : '\u2014'}
                               </span>
@@ -4097,9 +4444,43 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 })()}
               </Card>
 
-              {/* ─── Decision Timeline ────────────────────────────── */}
+              {/* ─── Decision Memory ──────────────────────────────── */}
+              {/*
+                * The book selector sits ABOVE the timeline rather than inside
+                * it, so the same control governs the capital bar and the
+                * narrative below it and a reader is never looking at one
+                * book's numbers beside another book's history.
+                *
+                * Books come from this asset's own holdings, which are already
+                * fetched for the bar above — so the list is exactly the books
+                * the reader is authorized to see (RLS-scoped) AND in which
+                * this asset actually appears. Offering a book with no
+                * exposure and no decisions would be offering an empty filter.
+                *
+                * `BookFilter` renders nothing at one book or fewer: a choice
+                * of one is not a choice.
+                */}
+              {(() => {
+                const books = [...new Map(
+                  holdingMetrics.map(m => [m.portfolioId, { id: m.portfolioId, name: m.name }]),
+                ).values()]
+                return books.length > 1 ? (
+                  <div className="flex items-center justify-end">
+                    <BookFilter
+                      books={books}
+                      portfolioId={decisionBookId}
+                      onSelect={setDecisionBookId}
+                      allLabel="All portfolios"
+                      testId="decision-memory-book-filter"
+                      compact
+                    />
+                  </div>
+                ) : null
+              })()}
+
               <DecisionTimeline
                 assetId={asset.id}
+                portfolioId={decisionBookId}
                 onNavigate={onNavigate}
               />
             </div>

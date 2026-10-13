@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import {
   resolveLayout,
   logResolutionDiagnostics,
@@ -83,6 +84,27 @@ export interface FieldWithPreference {
  */
 export function useUserAssetPagePreferences(assetId?: string) {
   const { user } = useAuth()
+  /*
+   * The org comes from the app's current-org context, not from a membership
+   * lookup.
+   *
+   * Three queries in this file resolved it by selecting the user's active
+   * `organization_memberships` row with `.single()`. `.single()` is a promise
+   * that exactly one row exists, and a user may belong to more than one
+   * organisation — this account belongs to two. PostgREST answered 406
+   * `PGRST116: The result contains 2 rows`, the destructured `orgMembership`
+   * came back undefined, and `if (!orgMembership) return []` handed the
+   * research surface an empty section list.
+   *
+   * So a multi-org user saw an asset page with no research sections at all,
+   * and the only trace was a 406 in the network panel. Observed on the
+   * running app: four of them per asset open.
+   *
+   * `currentOrgId` is the answer the rest of the product already uses, and it
+   * is the right answer rather than merely a working one — the user's org is
+   * whichever one they have switched to, which a membership query cannot know.
+   */
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   // Fetch user's default layout
@@ -156,30 +178,22 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
   // Fetch all sections (including empty ones)
   const { data: allSections, isLoading: sectionsLoading } = useQuery({
-    queryKey: ['all-research-sections', user?.id],
+    // Keyed on the org, so switching organisation refetches rather than
+    // showing the previous org's sections.
+    queryKey: ['all-research-sections', user?.id, currentOrgId],
     queryFn: async () => {
-      if (!user?.id) return []
-
-      // Get user's organization
-      const { data: orgMembership } = await supabase
-        .from('organization_memberships')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .single()
-
-      if (!orgMembership) return []
+      if (!user?.id || !currentOrgId) return []
 
       const { data: sections, error } = await supabase
         .from('research_sections')
         .select('id, name, slug, display_order, is_system')
-        .eq('organization_id', orgMembership.organization_id)
+        .eq('organization_id', currentOrgId)
         .order('display_order', { ascending: true })
 
       if (error) throw error
       return sections || []
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && !!currentOrgId,
     staleTime: 0,
     gcTime: 0,
     refetchOnMount: 'always'
@@ -218,27 +232,33 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       if (error) throw error
 
-      // Also fetch preset fields (standard field templates)
-      const { data: presets, error: presetsError } = await supabase
-        .from('research_field_presets')
-        .select('*')
-        .order('category', { ascending: true })
-        .order('name', { ascending: true })
+      /*
+       * There is no preset-field library, so this no longer asks for one.
+       *
+       * A query here selected from `research_field_presets` and logged any
+       * error to the console. The table has never existed: no migration in
+       * the repository creates it, and the running app answers
+       * `404 / 42P01 relation "public.research_field_presets" does not
+       * exist` — three times per asset open, because this query is
+       * `gcTime: 0, refetchOnMount: 'always'`.
+       *
+       * The error was caught and `presets || []` fell through, so nothing
+       * broke; the cost was a failing request on every open and a feature
+       * that silently contributed zero fields. Removed rather than created:
+       * inventing the table would be adding speculative schema for a library
+       * nobody has authored, and the field catalogue it was meant to
+       * supplement (`research_fields` above) already works.
+       */
 
-      if (presetsError) {
-        console.error('Error fetching presets:', presetsError)
-      }
-
-      // Get all sections to map preset suggested_section (slug) to section info
-      const { data: allSections } = await supabase
-        .from('research_sections')
-        .select('id, name, slug, display_order')
-        .order('display_order', { ascending: true })
-
-      const sectionsBySlug = (allSections || []).reduce((acc, s) => {
-        acc[s.slug] = s
-        return acc
-      }, {} as Record<string, { id: string; name: string; slug: string; display_order: number }>)
+      /*
+       * The all-sections read went with the presets.
+       *
+       * Its only purpose was mapping a preset's `suggested_section` slug to a
+       * real section. `research_fields` above already embeds its own
+       * `research_sections!inner`, so a field arrives with its section
+       * attached and this second, unfiltered read of every section in the
+       * database answered a question nobody now asks.
+       */
 
       // Fetch creator names for custom fields
       const creatorIds = [...new Set(fields?.filter(f => f.created_by).map(f => f.created_by))]
@@ -258,46 +278,12 @@ export function useUserAssetPagePreferences(assetId?: string) {
         }
       }
 
-      // Build combined field list
-      const existingSlugs = new Set((fields || []).map(f => f.slug))
-
-      // Convert research_fields to common format
-      const fieldsList = (fields || []).map(field => ({
+      // The field list is `research_fields`, which is the only catalogue
+      // that exists. See the note above where the preset query was removed.
+      return (fields || []).map(field => ({
         ...field,
         creator: field.created_by ? creatorsMap[field.created_by] || null : null
       }))
-
-      // Add presets that don't already exist as research_fields
-      const presetFields = (presets || [])
-        .filter(p => !existingSlugs.has(p.slug))
-        .map(preset => {
-          // Map suggested_section slug to actual section
-          const section = sectionsBySlug[preset.suggested_section] || sectionsBySlug['thesis'] || Object.values(sectionsBySlug)[0]
-          return {
-            id: `preset-${preset.slug}`,
-            name: preset.name,
-            slug: preset.slug,
-            description: preset.description,
-            field_type: preset.field_type,
-            section_id: section?.id || null,
-            is_universal: false, // Presets are available but not universal by default
-            is_system: false, // Presets are library fields, not part of default template
-            display_order: 999, // Show after regular fields
-            created_by: null,
-            created_at: preset.created_at,
-            research_sections: section ? {
-              id: section.id,
-              name: section.name,
-              slug: section.slug,
-              display_order: section.display_order
-            } : null,
-            creator: null,
-            is_preset: true // Mark as preset for special handling
-          }
-        })
-        .filter(p => p.research_sections) // Only include presets with valid sections
-
-      return [...fieldsList, ...presetFields]
     },
     enabled: !!user?.id,
     staleTime: 0,
@@ -946,15 +932,9 @@ export function useUserAssetPagePreferences(assetId?: string) {
     mutationFn: async ({ name, addAsOverride = true }: { name: string; addAsOverride?: boolean }) => {
       if (!user?.id) throw new Error('Not authenticated')
 
-      // First get user's organization
-      const { data: orgMembership, error: orgError } = await supabase
-        .from('organization_memberships')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .single()
-
-      if (orgError || !orgMembership) throw new Error('Could not find organization')
+      // The org the user is currently in. See the note at the top of the
+      // hook: a membership `.single()` returns nothing for a multi-org user.
+      if (!currentOrgId) throw new Error('Could not find organization')
 
       // Generate base slug from name
       const baseSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
@@ -963,7 +943,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       const { data: existingSections } = await supabase
         .from('research_sections')
         .select('slug')
-        .eq('organization_id', orgMembership.organization_id)
+        .eq('organization_id', currentOrgId)
         .like('slug', `${baseSlug}%`)
 
       // Find a unique slug
@@ -983,7 +963,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       const { data: sections } = await supabase
         .from('research_sections')
         .select('display_order')
-        .eq('organization_id', orgMembership.organization_id)
+        .eq('organization_id', currentOrgId)
         .order('display_order', { ascending: false })
         .limit(1)
 
@@ -992,7 +972,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       const { data: newSection, error } = await supabase
         .from('research_sections')
         .insert({
-          organization_id: orgMembership.organization_id,
+          organization_id: currentOrgId,
           name,
           slug,
           display_order: maxOrder + 1,
@@ -1550,6 +1530,10 @@ async function logLayoutAuditEvent(
  */
 export function useUserAssetPageLayouts() {
   const { user } = useAuth()
+  // Org-wide layout shares are scoped to the org the user is currently in.
+  // See the note in `useUserAssetPagePreferences` on why this is not a
+  // membership lookup.
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   // Fetch user's own layouts + layouts shared with them
@@ -1622,16 +1606,10 @@ export function useUserAssetPageLayouts() {
         nodeShares = data || []
       }
 
-      // 5. Get layouts shared with entire organization
-      const { data: orgMembership } = await supabase
-        .from('organization_memberships')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .single()
-
+      // 5. Get layouts shared with entire organization. The org is the one
+      // the user has switched to — see the note at the top of the hook.
       let orgShares: any[] = []
-      if (orgMembership) {
+      if (currentOrgId) {
         const { data, error: orgError } = await supabase
           .from('layout_collaborations')
           .select(`

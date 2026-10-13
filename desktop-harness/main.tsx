@@ -3,9 +3,14 @@ import { createRoot } from 'react-dom/client'
 import '../src/index.css'
 import { IdeasWorkspace } from '../src/components/ideas-v2/IdeasWorkspace'
 import { DashboardShell } from '../src/components/dashboard/DashboardShell'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-
+import { DecisionTimeline } from '../src/components/asset/DecisionTimeline'
+import { MobileAssetPage } from '../src/components/mobile/asset/MobileAssetPage'
+import { OurViewSummary } from '../src/components/asset/OurViewSummary'
+import { InvestmentSnapshot } from '../src/components/asset/InvestmentSnapshot'
+import { SNAPSHOT_COVERAGE, SNAPSHOT_THESIS_STATUS, SNAPSHOT_QUOTE } from './snapshot-fixtures'
+import { OUR_VIEW_FIELDS, ourViewContributions } from './our-view-fixtures'
 import { FeedSentinelRepro } from './feed-sentinel-repro'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
  * The app's providers, minus everything the harness does not need.
@@ -58,6 +63,138 @@ function Harness() {
           attach={(q.get('attach') as 'ref' | 'state') ?? 'ref'}
           initial={q.has('tiles') ? Number(q.get('tiles')) : undefined}
           exhausted={q.get('exhausted') === '1'}
+        />
+      </div>
+    )
+  }
+
+
+  /*
+   * `?surface=decision-timeline` renders the asset Decision Memory timeline
+   * against `stub-decision-timeline.ts`. `?asset=empty` selects the
+   * no-history case; `?book=pf-growth` exercises the portfolio filter.
+   *
+   * Constrained to a realistic column width rather than the full page: the
+   * timeline sits in AssetTab's content column, and measuring it at 1920px
+   * would measure a width it never actually gets.
+   */
+  if (surface === 'decision-timeline') {
+    return (
+      <div
+        style={{ height: `${h}px`, width: '100%', padding: 24, background: '#f8fafc' }}
+        data-harness={surface}
+      >
+        <div style={{ maxWidth: 860 }}>
+          <DecisionTimeline
+            assetId={q.get('asset') ?? 'aapl'}
+            portfolioId={q.get('book')}
+            onNavigate={(d) => {
+              // The harness has no tab shell. Record the descriptor on the DOM
+              // so a probe can assert WHERE a click would have gone, which is
+              // the part that regressed before.
+              document.body.setAttribute('data-last-nav', JSON.stringify(d))
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  /*
+   * `?surface=snapshot` renders the desktop Investment Snapshot — the Asset
+   * page's landing — against the same `useAssetWorkspace` fixtures the phone
+   * Snapshot uses, so the two surfaces cannot be compared against different
+   * data. `?asset=empty` is the unheld, uncovered security.
+   *
+   * Given the asset page's real content width rather than the full window:
+   * the Snapshot sits inside AssetTab's column, and measuring it at 1920
+   * would measure a width it never actually gets.
+   */
+  if (surface === 'snapshot') {
+    const assetId = q.get('asset') ?? 'aapl'
+    const empty = assetId === 'empty'
+    return (
+      <div
+        data-harness={surface}
+        style={{ height: `${h}px`, width: '100%', background: '#f9fafb', padding: '16px 32px' }}
+      >
+        <InvestmentSnapshot
+          asset={{
+            id: assetId,
+            symbol: empty ? 'ZZZ' : 'AAPL',
+            company_name: empty ? 'Zephyr Holdings' : 'Apple Inc.',
+          }}
+          coverage={empty ? [] : SNAPSHOT_COVERAGE}
+          thesisStatuses={empty ? [] : SNAPSHOT_THESIS_STATUS}
+          currentQuote={empty ? null : SNAPSHOT_QUOTE}
+          onOpenSubPage={(page) => {
+            document.body.setAttribute('data-last-nav', JSON.stringify({ subPage: page }))
+          }}
+        />
+      </div>
+    )
+  }
+
+  /*
+   * `?surface=our-view` renders the Our View firm summary against
+   * `our-view-fixtures.ts`. `?view=empty` is the nobody-has-written case and
+   * `?view=single` the one-contributor case, which is the one that must not
+   * read as a firm position.
+   *
+   * The component is pure — contributions in, summary out, no queries — so it
+   * needs no stub module. Same 860px column the Research pane gives it.
+   */
+  if (surface === 'our-view') {
+    const view = q.get('view')
+    return (
+      <div
+        style={{ height: `${h}px`, width: '100%', padding: 24, background: '#f8fafc' }}
+        data-harness={surface}
+      >
+        <div style={{ maxWidth: 860 }}>
+          <OurViewSummary
+            contributions={ourViewContributions(view)}
+            fields={OUR_VIEW_FIELDS}
+            coveringAnalystIds={new Set(['u-rivera'])}
+            currentUserId="u-okafor"
+            symbol="AAPL"
+            onOpenAnalyst={(id) => {
+              document.body.setAttribute('data-last-nav', JSON.stringify({ analyst: id }))
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  /*
+   * `?surface=mobile-asset` renders the phone asset page. It is given a
+   * FIXED 390x844 frame rather than the page width, because the whole claim
+   * of Increment 2C is that this surface works at a phone's dimensions —
+   * measuring it in a 1440px window would measure a width it never gets.
+   *
+   * `?asset=empty` is the unheld, no-history security.
+   */
+  if (surface === 'mobile-asset') {
+    const vh = Number(q.get('vh') ?? '844')
+    return (
+      <div
+        data-harness={surface}
+        style={{
+          width: 390, height: vh, overflow: 'hidden',
+          border: '1px solid #e5e7eb', margin: '0 auto',
+        }}
+      >
+        <MobileAssetPage
+          asset={{
+            id: q.get('asset') ?? 'aapl',
+            symbol: q.get('asset') === 'empty' ? 'ZZZ' : 'AAPL',
+            company_name: q.get('asset') === 'empty' ? 'Zephyr Holdings' : 'Apple Inc.',
+            portfolioId: q.get('book'),
+          }}
+          onNavigate={(d) => {
+            document.body.setAttribute('data-last-nav', JSON.stringify(d))
+          }}
         />
       </div>
     )
