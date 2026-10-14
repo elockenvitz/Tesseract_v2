@@ -125,6 +125,86 @@ const browser = await chromium.launch()
   await page.close()
 }
 
+// ─── 1b. The loading -> loaded transition, in a real browser ─────────────
+/*
+ * This is the case that crashed the authenticated app:
+ *
+ *     Rendered more hooks than during the previous render.
+ *
+ * `InvestmentSnapshot` has `if (isLoading) return <SnapshotSkeleton />`
+ * part-way down, and a `useMemo` had been placed BELOW it — so the loading
+ * render ran seven hooks and the loaded render ran eight.
+ *
+ * Every other surface here mocks the query as already-resolved, which is
+ * exactly why none of them could see it. `?loading=<ms>` makes the stub
+ * resolve asynchronously like the real hook, so the transition actually
+ * happens. Any React error fails this.
+ */
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+  const reactErrors = []
+  page.on('pageerror', e => reactErrors.push(`pageerror: ${e.message}`))
+  page.on('console', m => {
+    if (m.type() !== 'error') return
+    const t = m.text()
+    if (/ERR_NAME_NOT_RESOLVED|Failed to load resource|status of 40\d/i.test(t)) return
+    reactErrors.push(t)
+  })
+
+  await page.goto(`${base}?surface=snapshot&loading=400&h=2400`, { waitUntil: 'domcontentloaded' })
+
+  // The skeleton first — proof the loading branch was genuinely taken.
+  await page.waitForSelector('[data-testid="snapshot-skeleton"]', { timeout: 3000 })
+  check('the loading branch is actually entered', true)
+
+  /*
+   * Then the real surface, which is the render that used to throw.
+   *
+   * Caught rather than awaited bare: with the defect present the component
+   * throws and never mounts, so a bare await dies with an opaque
+   * `TimeoutError` and the probe reports nothing. Catching it turns the same
+   * failure into a named check beside the React error that caused it.
+   */
+  let mounted = true
+  try {
+    await page.waitForSelector('[data-testid="investment-conclusion"]', { timeout: 8000 })
+  } catch {
+    mounted = false
+  }
+  await page.waitForTimeout(400)
+  check('the Snapshot mounts after the query resolves', mounted,
+    reactErrors.slice(0, 2).join(' | ') || 'never rendered, and React logged nothing')
+
+  const hookErrors = reactErrors.filter(e =>
+    /Rendered more hooks|Rendered fewer hooks|order of Hooks|Should have a queue/i.test(e))
+  check('no hook-order error across the transition', hookErrors.length === 0, hookErrors.join(' | '))
+  check('no React error of any kind across the transition',
+    reactErrors.length === 0, reactErrors.slice(0, 2).join(' | '))
+
+  // And it rendered, rather than merely not throwing.
+  const text = await page.evaluate(() => document.body.innerText)
+  check('the conclusion is present after loading', /OUR RATING/i.test(text))
+
+  // The same transition on the empty security.
+  const page2 = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+  const errs2 = []
+  page2.on('pageerror', e => errs2.push(e.message))
+  await page2.goto(`${base}?surface=snapshot&asset=empty&loading=300&h=1600`, { waitUntil: 'domcontentloaded' })
+  let mounted2 = true
+  try {
+    await page2.waitForSelector('[data-testid="investment-snapshot"]', { timeout: 8000 })
+  } catch {
+    mounted2 = false
+  }
+  await page2.waitForTimeout(300)
+  check('the empty security survives the same transition',
+    mounted2 && errs2.length === 0,
+    mounted2 ? errs2.join(' | ') : 'never rendered')
+
+  await page.close()
+  await page2.close()
+}
+
 // ─── 2. The unwritten, unheld name ───────────────────────────────────────
 {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })

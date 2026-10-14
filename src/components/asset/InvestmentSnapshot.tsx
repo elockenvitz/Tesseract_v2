@@ -222,6 +222,40 @@ export function InvestmentSnapshot({
     [portfolios, heldIds],
   )
 
+  /*
+   * ── Every hook in this component lives ABOVE the `isLoading` return ──
+   *
+   * This `useMemo` was further down, next to the panel that consumes it, and
+   * that crashed the authenticated app:
+   *
+   *     Rendered more hooks than during the previous render.
+   *
+   * `if (isLoading) return <SnapshotSkeleton />` sits below this line. On the
+   * first render the workspace query is in flight, the component returns at
+   * that guard, and React records seven hooks. On the next render the data has
+   * arrived, execution continues past the guard, and an eighth hook appears —
+   * which React cannot reconcile against a list of seven.
+   *
+   * The harness never caught it because its stubbed `useAssetWorkspace`
+   * returns `isLoading: false` on the first render, so the loading -> loaded
+   * transition that triggers this never happens there. Only a real async
+   * query produces it. `__tests__/snapshot-hook-order.test.tsx` now drives
+   * that transition for real.
+   *
+   * So: new hooks go here, above the guard, whatever they are for. Proximity
+   * to the consumer is not worth a crash.
+   *
+   * Execution proof is counted from the same timeline the Decision Memory
+   * panel reads — same hook, same key, same arguments, so React Query serves
+   * the second caller from cache and the band and the panel cannot disagree
+   * about how many fills were actually observed.
+   */
+  const executionProvenance = useMemo(() => {
+    const executed = timelineEvents.filter(e => e.executionProof != null)
+    const observed = executed.filter(e => OBSERVED_PROOFS.includes(e.executionProof!))
+    return { total: executed.length, unobserved: executed.length - observed.length }
+  }, [timelineEvents])
+
   const position = primaryPosition(data.positions, portfolioId)
   const others = otherPositions(data.positions, position)
   const maxWeight = data.positions.reduce((m, p) => Math.max(m, p.weightPct ?? 0), 0)
@@ -408,17 +442,6 @@ export function InvestmentSnapshot({
 
   const openDecisions = data.decisions.filter(d => d.decidedAt == null)
 
-  /*
-   * Execution proof, counted from the same timeline the Decision Memory panel
-   * reads. Same hook, same key, same arguments — React Query serves the second
-   * caller from cache, so this costs no request and the band and the panel
-   * cannot disagree about how many fills were actually observed.
-   */
-  const executionProvenance = useMemo(() => {
-    const executed = timelineEvents.filter(e => e.executionProof != null)
-    const observed = executed.filter(e => OBSERVED_PROOFS.includes(e.executionProof!))
-    return { total: executed.length, unobserved: executed.length - observed.length }
-  }, [timelineEvents])
   const scopedIdeas = portfolioId
     ? data.liveIdeas.filter(i => i.portfolioName === selectedBookName)
     : data.liveIdeas

@@ -12,6 +12,7 @@
  * rather than silently rendering half a page.
  */
 
+import { useEffect, useState } from 'react'
 import type { AssetWorkspaceData, AssetPosition } from '../src/hooks/useAssetWorkspace'
 
 const POSITIONS: AssetPosition[] = [
@@ -122,8 +123,39 @@ const EMPTY: AssetWorkspaceData = {
   decisions: [],
 }
 
+/**
+ * `?loading=<ms>` makes this stub resolve ASYNCHRONOUSLY, like the real query.
+ *
+ * Returning `isLoading: false` on the first render is what let a conditional
+ * hook reach the authenticated app. `InvestmentSnapshot` has
+ * `if (isLoading) return <SnapshotSkeleton />` part-way down, and a `useMemo`
+ * had been placed below it — so the loading render ran seven hooks and the
+ * loaded render ran eight, which React cannot reconcile:
+ *
+ *     Rendered more hooks than during the previous render.
+ *
+ * Every harness surface and every test fixture skipped the loading branch
+ * entirely, so none of them could see it. This makes the transition
+ * reproducible in a real browser; `probe-snapshot.mjs` drives it.
+ */
 export function useAssetWorkspace(assetId: string | null) {
   const data = assetId === 'empty' ? EMPTY : POPULATED
+  const delay = typeof window !== 'undefined'
+    ? Number(new URLSearchParams(window.location.search).get('loading') ?? '0')
+    : 0
+
+  const [resolved, setResolved] = useState(delay <= 0)
+  useEffect(() => {
+    if (delay <= 0) return
+    const t = setTimeout(() => setResolved(true), delay)
+    return () => clearTimeout(t)
+  }, [delay])
+
+  if (!resolved) {
+    // The shape the real hook returns while in flight: the empty skeleton
+    // data, not the populated set, so nothing paints before it should.
+    return { data: EMPTY, isLoading: true, error: null }
+  }
   return { data, isLoading: false, error: null }
 }
 
