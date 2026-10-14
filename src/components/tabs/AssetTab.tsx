@@ -4121,185 +4121,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
           return (
             <div className="space-y-3">
-              {/* ─── Capital State Bar ────────────────────────────── */}
-              <div className="grid grid-cols-5 gap-2">
-                {[
-                  {
-                    label: 'Held In',
-                    value: portfolioCount > 0 ? `${portfolioCount}` : '\u2014',
-                    sub: portfolioCount > 0 ? `portfolio${portfolioCount !== 1 ? 's' : ''}` : null,
-                    active: portfolioCount > 0,
-                  },
-                  {
-                    label: 'Net Exposure',
-                    /* Gated on the exposure itself, not on a quote. It is
-                       struck at the book price now, so a missing quote is
-                       irrelevant to it \u2014 and the old gate rendered an
-                       active-styled em-dash while a book-priced exposure
-                       was sitting right there. */
-                    value: netExposure > 0
-                      ? `$${netExposure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-                      : '\u2014',
-                    sub: 'at book price',
-                    active: netExposure > 0,
-                  },
-                  {
-                    label: 'Largest Position',
-                    value: largestPos && largestPos.weight > 0 ? `${largestPos.weight.toFixed(2)}%` : '\u2014',
-                    sub: largestPos && largestPos.weight > 0 ? largestPos.name : null,
-                    active: !!(largestPos && largestPos.weight > 0),
-                  },
-                  {
-                    label: 'Active vs BM',
-                    value: '\u2014',
-                    sub: null,
-                    active: false,
-                  },
-                  {
-                    label: 'Last Action',
-                    value: '\u2014',
-                    sub: null,
-                    active: false,
-                  },
-                ].map((metric) => (
-                  <div
-                    key={metric.label}
-                    className={`rounded-lg border px-3 py-2.5 ${metric.active ? 'border-gray-200/80 bg-white shadow-sm dark:bg-gray-800' : 'border-gray-200/60 bg-gray-50/80'}`}
-                  >
-                    <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-widest block leading-none">
-                      {metric.label}
-                    </span>
-                    <span className={`text-[17px] font-extrabold tabular-nums block mt-1.5 leading-tight ${metric.active ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>
-                      {metric.value}
-                    </span>
-                    {metric.sub && (
-                      <span className="text-[10px] text-gray-500 block mt-0.5 leading-tight truncate dark:text-gray-400">{metric.sub}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
+              {/*
+                ─── Order: the decision workflow first ──────────────────
 
-              {/* ─── Current Exposure ────────────────────────────── */}
-              <Card padding="none">
-                <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between dark:border-gray-800">
-                  <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Current Exposure</h4>
-                  {portfolioCount > 0 && (
-                    <span className="text-[10px] text-gray-400 tabular-nums">{portfolioCount} position{portfolioCount !== 1 ? 's' : ''}</span>
-                  )}
-                </div>
-                {portfolioHoldings && portfolioHoldings.length > 0 ? (
-                  <table className="min-w-full">
-                    <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-800">
-                        <th className="px-4 py-1.5 text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider">Portfolio</th>
-                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Port Wgt</th>
-                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider" title="Benchmark not configured">Bench Wgt</th>
-                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider" title="Benchmark not configured">Active Wgt</th>
-                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Port Shs</th>
-                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Mkt Val</th>
-                        <th className="w-8" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100/80">
-                      {portfolioHoldings.map((holding: any) => {
-                        const shares = parseFloat(holding.shares)
-                        const costPerShare = parseFloat(holding.cost)
-                        const held = parseFloat(holding.price ?? holding.cost)
-                        // Book price, matching the weight beside it. See the
-                        // note above `holdingMetrics`.
-                        const currentValue = shares * held
-                        const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
-                        const weight = portfolioTotal > 0 ? ((shares * held) / portfolioTotal) * 100 : 0
+                This tab opened with five exposure tiles and a holdings
+                table, and put Open Items and the decision timeline BELOW
+                them — roughly four hundred lines of portfolio arithmetic
+                before the first thing anybody can act on.
 
-                        return (
-                          <tr key={holding.id} className="hover:bg-blue-50/40 group transition-colors">
-                            <td className="px-4 py-1.5">
-                              <span className="text-[13px] font-medium text-gray-900 dark:text-white">{holding.portfolios?.name || 'Unknown'}</span>
-                            </td>
-                            <td className="px-4 py-1.5 text-right">
-                              <span className="text-[13px] font-bold text-gray-900 tabular-nums dark:text-white">
-                                {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '\u2014'}
-                              </span>
-                            </td>
-                            <td className="px-4 py-1.5 text-right">
-                              <span className="text-[12px] text-gray-300 tabular-nums">{'\u2014'}</span>
-                            </td>
-                            <td className="px-4 py-1.5 text-right">
-                              <span className="text-[12px] text-gray-300 tabular-nums">{'\u2014'}</span>
-                            </td>
-                            <td className="px-4 py-1.5 text-right">
-                              <span className="text-[12px] text-gray-500 tabular-nums dark:text-gray-400">{shares.toLocaleString()}</span>
-                            </td>
-                            <td className="px-4 py-1.5 text-right">
-                              <span className="text-[12px] text-gray-500 tabular-nums dark:text-gray-400">
-                                {held > 0
-                                  ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                  : '\u2014'}
-                              </span>
-                            </td>
-                            <td className="px-1 py-1.5">
-                              <button
-                                onClick={() => {
-                                  if (onNavigate) {
-                                    onNavigate({
-                                      id: holding.portfolio_id,
-                                      title: holding.portfolios?.name || 'Portfolio',
-                                      type: 'portfolio',
-                                      data: { id: holding.portfolio_id, portfolio_id: holding.portfolios?.portfolio_id }
-                                    })
-                                  }
-                                }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-primary-600"
-                                title="Open portfolio"
-                              >
-                                <ExternalLink className="w-3 h-3" />
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
+                Decisions is the authoritative environment for
+                recommendations, approvals, commitments, executions and
+                reviews. Exposure is the context those happen against, not
+                the subject, and the Snapshot already states it in the
+                conclusion band and the Position module.
 
-                  </table>
-                ) : (
-                  <div className="px-4 py-4 flex items-center justify-between">
-                    <div>
-                      <span className="text-[13px] font-medium text-gray-500 block dark:text-gray-400">Not currently held</span>
-                      <span className="text-[11px] text-gray-400 block mt-0.5">No approved or executed trade recommendations exist for this asset.</span>
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <button
-                        onClick={() => {
-                          window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                            detail: {
-                              type: 'trade-queue',
-                              data: { filterAssetId: asset.id, filterSymbol: asset.symbol }
-                            }
-                          }))
-                        }}
-                        className="text-[11px] font-medium text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
-                      >
-                        View Idea Pipeline
-                      </button>
-                      <button
-                        onClick={() => {
-                          window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                            detail: {
-                              type: 'new-trade-idea',
-                              data: { assetId: asset.id, symbol: asset.symbol }
-                            }
-                          }))
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors shadow-sm"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        New Trade Idea
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </Card>
-
+                So the lifecycle leads and exposure follows. Nothing was
+                removed: both exposure blocks are intact and unchanged
+                below, and the capital bar keeps the one-price rule
+                documented in its own comment.
+              */}
               {/* ─── Open Items ──────────────────────────────────── */}
               <Card padding="none" id="decisions-open-items">
                 <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-3 dark:border-gray-800">
@@ -4483,6 +4323,185 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 portfolioId={decisionBookId}
                 onNavigate={onNavigate}
               />
+
+              {/* ─── Capital State Bar ────────────────────────────── */}
+              <div className="grid grid-cols-5 gap-2">
+                {[
+                  {
+                    label: 'Held In',
+                    value: portfolioCount > 0 ? `${portfolioCount}` : '\u2014',
+                    sub: portfolioCount > 0 ? `portfolio${portfolioCount !== 1 ? 's' : ''}` : null,
+                    active: portfolioCount > 0,
+                  },
+                  {
+                    label: 'Net Exposure',
+                    /* Gated on the exposure itself, not on a quote. It is
+                       struck at the book price now, so a missing quote is
+                       irrelevant to it \u2014 and the old gate rendered an
+                       active-styled em-dash while a book-priced exposure
+                       was sitting right there. */
+                    value: netExposure > 0
+                      ? `$${netExposure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                      : '\u2014',
+                    sub: 'at book price',
+                    active: netExposure > 0,
+                  },
+                  {
+                    label: 'Largest Position',
+                    value: largestPos && largestPos.weight > 0 ? `${largestPos.weight.toFixed(2)}%` : '\u2014',
+                    sub: largestPos && largestPos.weight > 0 ? largestPos.name : null,
+                    active: !!(largestPos && largestPos.weight > 0),
+                  },
+                  {
+                    label: 'Active vs BM',
+                    value: '\u2014',
+                    sub: null,
+                    active: false,
+                  },
+                  {
+                    label: 'Last Action',
+                    value: '\u2014',
+                    sub: null,
+                    active: false,
+                  },
+                ].map((metric) => (
+                  <div
+                    key={metric.label}
+                    className={`rounded-lg border px-3 py-2.5 ${metric.active ? 'border-gray-200/80 bg-white shadow-sm dark:bg-gray-800' : 'border-gray-200/60 bg-gray-50/80'}`}
+                  >
+                    <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-widest block leading-none">
+                      {metric.label}
+                    </span>
+                    <span className={`text-[17px] font-extrabold tabular-nums block mt-1.5 leading-tight ${metric.active ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>
+                      {metric.value}
+                    </span>
+                    {metric.sub && (
+                      <span className="text-[10px] text-gray-500 block mt-0.5 leading-tight truncate dark:text-gray-400">{metric.sub}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* ─── Current Exposure ────────────────────────────── */}
+              <Card padding="none">
+                <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between dark:border-gray-800">
+                  <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Current Exposure</h4>
+                  {portfolioCount > 0 && (
+                    <span className="text-[10px] text-gray-400 tabular-nums">{portfolioCount} position{portfolioCount !== 1 ? 's' : ''}</span>
+                  )}
+                </div>
+                {portfolioHoldings && portfolioHoldings.length > 0 ? (
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-800">
+                        <th className="px-4 py-1.5 text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider">Portfolio</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Port Wgt</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider" title="Benchmark not configured">Bench Wgt</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider" title="Benchmark not configured">Active Wgt</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Port Shs</th>
+                        <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Mkt Val</th>
+                        <th className="w-8" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100/80">
+                      {portfolioHoldings.map((holding: any) => {
+                        const shares = parseFloat(holding.shares)
+                        const costPerShare = parseFloat(holding.cost)
+                        const held = parseFloat(holding.price ?? holding.cost)
+                        // Book price, matching the weight beside it. See the
+                        // note above `holdingMetrics`.
+                        const currentValue = shares * held
+                        const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
+                        const weight = portfolioTotal > 0 ? ((shares * held) / portfolioTotal) * 100 : 0
+
+                        return (
+                          <tr key={holding.id} className="hover:bg-blue-50/40 group transition-colors">
+                            <td className="px-4 py-1.5">
+                              <span className="text-[13px] font-medium text-gray-900 dark:text-white">{holding.portfolios?.name || 'Unknown'}</span>
+                            </td>
+                            <td className="px-4 py-1.5 text-right">
+                              <span className="text-[13px] font-bold text-gray-900 tabular-nums dark:text-white">
+                                {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '\u2014'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-1.5 text-right">
+                              <span className="text-[12px] text-gray-300 tabular-nums">{'\u2014'}</span>
+                            </td>
+                            <td className="px-4 py-1.5 text-right">
+                              <span className="text-[12px] text-gray-300 tabular-nums">{'\u2014'}</span>
+                            </td>
+                            <td className="px-4 py-1.5 text-right">
+                              <span className="text-[12px] text-gray-500 tabular-nums dark:text-gray-400">{shares.toLocaleString()}</span>
+                            </td>
+                            <td className="px-4 py-1.5 text-right">
+                              <span className="text-[12px] text-gray-500 tabular-nums dark:text-gray-400">
+                                {held > 0
+                                  ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : '\u2014'}
+                              </span>
+                            </td>
+                            <td className="px-1 py-1.5">
+                              <button
+                                onClick={() => {
+                                  if (onNavigate) {
+                                    onNavigate({
+                                      id: holding.portfolio_id,
+                                      title: holding.portfolios?.name || 'Portfolio',
+                                      type: 'portfolio',
+                                      data: { id: holding.portfolio_id, portfolio_id: holding.portfolios?.portfolio_id }
+                                    })
+                                  }
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-primary-600"
+                                title="Open portfolio"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+
+                  </table>
+                ) : (
+                  <div className="px-4 py-4 flex items-center justify-between">
+                    <div>
+                      <span className="text-[13px] font-medium text-gray-500 block dark:text-gray-400">Not currently held</span>
+                      <span className="text-[11px] text-gray-400 block mt-0.5">No approved or executed trade recommendations exist for this asset.</span>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <button
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                            detail: {
+                              type: 'trade-queue',
+                              data: { filterAssetId: asset.id, filterSymbol: asset.symbol }
+                            }
+                          }))
+                        }}
+                        className="text-[11px] font-medium text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
+                      >
+                        View Idea Pipeline
+                      </button>
+                      <button
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                            detail: {
+                              type: 'new-trade-idea',
+                              data: { assetId: asset.id, symbol: asset.symbol }
+                            }
+                          }))
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors shadow-sm"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        New Trade Idea
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </Card>
             </div>
           )
         })()}
