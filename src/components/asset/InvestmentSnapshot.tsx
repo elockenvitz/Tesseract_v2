@@ -625,7 +625,9 @@ export function InvestmentSnapshot({
           <AttentionBand
             state={workspaceState}
             signals={workspaceSignals}
-            onOpen={onOpenSubPage}
+            /* `snapshot` is where the reader already is, so it is a no-op
+               here rather than a navigation to the current page. */
+            onOpen={(page) => { if (page !== 'snapshot') onOpenSubPage(page) }}
           />
         </div>
       )}

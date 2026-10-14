@@ -170,8 +170,16 @@ export function resolveWorkspaceState(f: WorkspaceFacts): WorkspaceState {
  * inferred from the record. This is the whole of the "arriving from a
  * decision request lands in the decision" behaviour — no engine required.
  */
+/*
+ * Note what is NOT a parameter: the state.
+ *
+ * It was one, and TypeScript pointed out that nothing read it. That is the
+ * correct design rather than an oversight — every state lands on the
+ * Snapshot, because each is a different emphasis WITHIN that page. Taking a
+ * state and ignoring it would have implied a dependency that does not exist,
+ * so the signature now says what the function actually does.
+ */
 export function resolveLanding(
-  state: WorkspaceState,
   arrival: WorkspaceFacts['arrivalIntent'],
 ): WorkspaceDestination {
   const fromOrigin: Record<string, WorkspaceDestination> = {

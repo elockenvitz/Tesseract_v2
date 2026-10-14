@@ -36,9 +36,10 @@
 
 import { clsx } from 'clsx'
 import { AlertTriangle, Clock, CircleDashed, FileSearch, Hourglass } from 'lucide-react'
-import type { WorkspaceSignal, SignalKind, WorkspaceState } from '../../lib/asset-workspace/context'
+import type {
+  WorkspaceSignal, SignalKind, WorkspaceState, WorkspaceDestination,
+} from '../../lib/asset-workspace/context'
 import { STATE_EMPHASIS } from '../../lib/asset-workspace/context'
-import type { SnapshotSubPage } from './InvestmentSnapshot'
 
 const KIND: Record<SignalKind, { rule: string; icon: typeof AlertTriangle; tone: string }> = {
   pending: { rule: 'bg-blue-500', icon: Hourglass, tone: 'text-blue-700 dark:text-blue-400' },
@@ -51,7 +52,15 @@ const KIND: Record<SignalKind, { rule: string; icon: typeof AlertTriangle; tone:
 export interface AttentionBandProps {
   state: WorkspaceState
   signals: WorkspaceSignal[]
-  onOpen: (page: SnapshotSubPage) => void
+  /*
+   * Takes the resolver's own destination type, which includes `snapshot`.
+   *
+   * Narrowing it to the Snapshot's four sub-pages would have made the band
+   * unusable from anywhere else — and a signal whose answer is "look at the
+   * page you are already on" is legitimate. The caller decides what to do
+   * with it.
+   */
+  onOpen: (page: WorkspaceDestination) => void
   className?: string
 }
 

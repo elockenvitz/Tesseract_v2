@@ -85,34 +85,38 @@ describe('the situation is a closed set, resolved by precedence', () => {
 
 describe('where the reader lands', () => {
   it('honours an explicit focus above anything inferred', () => {
-    const s = resolveWorkspaceState(facts({ positions: [pos()] }))
-    expect(resolveLanding(s, { origin: 'today', focus: 'research', portfolioId: null }))
+    expect(resolveLanding({ origin: 'today', focus: 'research', portfolioId: null }))
       .toBe('research')
   })
 
   it('lands in the decision when the sender was a decision surface', () => {
-    expect(resolveLanding('decision-pending', { origin: 'decisions', focus: null, portfolioId: null }))
+    expect(resolveLanding({ origin: 'decisions', focus: null, portfolioId: null }))
       .toBe('decisions')
-    expect(resolveLanding('position-monitored', { origin: 'ideas', focus: null, portfolioId: null }))
+    expect(resolveLanding({ origin: 'ideas', focus: null, portfolioId: null }))
       .toBe('decisions')
   })
 
   it('ignores a focus that is not a real destination', () => {
     // A sender passing junk must not produce a blank page.
-    expect(resolveLanding('unowned', { origin: null, focus: 'nonsense', portfolioId: null }))
+    expect(resolveLanding({ origin: null, focus: 'nonsense', portfolioId: null }))
       .toBe('snapshot')
   })
 
-  it('defaults to the Snapshot for every state', () => {
+  it('defaults to the Snapshot, whatever the situation', () => {
     /*
      * Deliberate: each state is a different EMPHASIS within the Snapshot, not
      * a different page. Sending an analyst straight to Research on an
      * unstarted name would skip the context they need to decide whether to
      * start at all.
+     *
+     * This looped over every state until `resolveLanding` stopped taking one
+     * — the signature now says what the function does, so the loop asserted
+     * the same call six times. The claim is unchanged; it is simply stated
+     * once, and the type system now carries the "state does not affect
+     * landing" half of it.
      */
-    for (const state of Object.keys(STATE_EMPHASIS)) {
-      expect(resolveLanding(state as never, null)).toBe('snapshot')
-    }
+    expect(resolveLanding(null)).toBe('snapshot')
+    expect(resolveLanding({ origin: null, focus: null, portfolioId: null })).toBe('snapshot')
   })
 })
 
