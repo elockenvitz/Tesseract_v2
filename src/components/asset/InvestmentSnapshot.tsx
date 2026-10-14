@@ -45,6 +45,8 @@
 import { useMemo, useState } from 'react'
 import { useAssetWorkspace, primaryPosition, otherPositions } from '../../hooks/useAssetWorkspace'
 import { DecisionMemorySummary } from './DecisionMemorySummary'
+import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
+import { OBSERVED_PROOFS } from '../../types/decision-timeline'
 /*
  * `useAnalystRatings`, deliberately, and NOT `useRatingConsensus`.
  *
@@ -69,6 +71,16 @@ import {
 } from '../coverage/CoverageDisplay'
 import { BookFilter, type BookOption } from '../shared/BookFilter'
 import { InvestmentConclusion } from './InvestmentConclusion'
+import { AttentionBand } from './AttentionBand'
+/*
+ * The workspace resolver. Pure, deterministic, and fed only from facts this
+ * component already fetched — it issues no query of its own and decides no
+ * permission. See `lib/asset-workspace/context` for what it may and may not
+ * claim.
+ */
+import {
+  resolveWorkspaceState, resolveWorkspaceSignals, type WorkspaceFacts,
+} from '../../lib/asset-workspace/context'
 /*
  * The excerpt helper, shared with Our View rather than reimplemented.
  *
@@ -146,6 +158,13 @@ export function InvestmentSnapshot({
   const [portfolioId, setPortfolioId] = useState<string | null>(null)
 
   const { data, isLoading } = useAssetWorkspace(asset.id, symbol, 'overview')
+  /*
+   * The same key `DecisionMemorySummary` uses below, with the same arguments,
+   * so this is a cache read rather than a second request — and the attention
+   * band cannot report a different execution history from the panel it sits
+   * above.
+   */
+  const { allEvents: timelineEvents } = useAssetDecisionTimeline({ assetId: asset.id, portfolioId })
   const { consensus, ratings } = useAnalystRatings({ assetId: asset.id })
   const { portfolios } = usePortfolioList()
 
@@ -372,6 +391,18 @@ export function InvestmentSnapshot({
   /* -------------------------------------------------------- active work */
 
   const openDecisions = data.decisions.filter(d => d.decidedAt == null)
+
+  /*
+   * Execution proof, counted from the same timeline the Decision Memory panel
+   * reads. Same hook, same key, same arguments — React Query serves the second
+   * caller from cache, so this costs no request and the band and the panel
+   * cannot disagree about how many fills were actually observed.
+   */
+  const executionProvenance = useMemo(() => {
+    const executed = timelineEvents.filter(e => e.executionProof != null)
+    const observed = executed.filter(e => OBSERVED_PROOFS.includes(e.executionProof!))
+    return { total: executed.length, unobserved: executed.length - observed.length }
+  }, [timelineEvents])
   const scopedIdeas = portfolioId
     ? data.liveIdeas.filter(i => i.portfolioName === selectedBookName)
     : data.liveIdeas
@@ -464,10 +495,64 @@ export function InvestmentSnapshot({
     </DesktopModule>
   )
 
+  /* ------------------------------------------------- what needs attention */
+
+  /*
+   * Facts in, signals out. Nothing here queries.
+   *
+   * `timelineEvents` comes from the SAME `useAssetDecisionTimeline` key
+   * `DecisionMemorySummary` already uses with the same arguments, so React
+   * Query serves it from cache rather than issuing a second request — and the
+   * band cannot report a different execution history from the panel below it.
+   */
+  const workspaceFacts: WorkspaceFacts = {
+    symbol,
+    positions: data.positions.map(p => ({
+      portfolioId: p.portfolioId, portfolioName: p.portfolioName, weightPct: p.weightPct ?? null,
+    })),
+    coveringUserIds: coverage.map(c => c.user_id).filter((v): v is string => Boolean(v)),
+    caseWrittenAt: data.caseWrittenAt,
+    writtenSections: core.map(c => ({ section: c.section, updatedAt: c.updatedAt ?? null })),
+    rating: dominant ? { value: dominant.value, count: dominant.count, total: ratings.length } : null,
+    target: data.target,
+    spot: quotePrice ?? data.spot,
+    newEvidenceCount: newEvidence.length,
+    openDecisions: openDecisions.map(d => ({
+      id: d.id, action: d.action ?? null,
+      portfolioId: d.portfolioId ?? null, portfolioName: d.portfolioName ?? null,
+    })),
+    liveIdeaCount: data.liveIdeas.length,
+    unobservedExecutionCount: executionProvenance.unobserved,
+    executionCount: executionProvenance.total,
+    viewerId: null,
+    arrivalIntent: null,
+  }
+  const workspaceState = resolveWorkspaceState(workspaceFacts)
+  /*
+   * Execution provenance is withheld HERE, and only here.
+   *
+   * The Decision Memory panel on this same screen already states it, word for
+   * word, from the same counts — and the first build rendered both, 700px
+   * apart, so one screen made the same claim twice. The band's job is to
+   * surface what a reader could not otherwise assemble; a fact the
+   * authoritative panel is already stating beside its own data is not that.
+   *
+   * The signal stays in the resolver because it is real, and a consumer that
+   * is NOT next to Decision Memory — the phone, a lens, a digest — should
+   * still get it.
+   */
+  const workspaceSignals = resolveWorkspaceSignals(workspaceFacts)
+    .filter(s => s.kind !== 'provenance')
+
   /* --------------------------------------------------------- composition */
 
   return (
-    <div data-testid="investment-snapshot" data-asset={asset.id} data-portfolio={portfolioId ?? 'all'}>
+    <div
+      data-testid="investment-snapshot"
+      data-asset={asset.id}
+      data-portfolio={portfolioId ?? 'all'}
+      data-workspace-state={workspaceState}
+    >
       <SnapshotHeader
         price={quotePrice}
         asOf={quoteAsOf}
@@ -521,6 +606,29 @@ export function InvestmentSnapshot({
           onOpenResearch={() => onOpenSubPage('research')}
         />
       </div>
+
+      {/*
+        What needs attention, between the conclusion and the detail.
+
+        Placed here because it is the only thing on the page a reader could
+        not assemble themselves: the conclusion states figures, the panels
+        below state records, and this states the RELATIONSHIPS between them —
+        a rating that disagrees with an open recommendation, exposure with no
+        case behind it, a price past its target.
+
+        Absent when there is nothing to say. Not an empty state and not a
+        reassuring all-clear: on a half-loaded page "no signals" is not a
+        finding this surface is entitled to assert.
+      */}
+      {workspaceSignals.length > 0 && (
+        <div className="pt-3">
+          <AttentionBand
+            state={workspaceState}
+            signals={workspaceSignals}
+            onOpen={onOpenSubPage}
+          />
+        </div>
+      )}
 
       <div className="pt-5">
         {/*
