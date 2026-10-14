@@ -10,6 +10,7 @@ import { InvestmentSnapshot } from '../src/components/asset/InvestmentSnapshot'
 import { SNAPSHOT_COVERAGE, SNAPSHOT_THESIS_STATUS, SNAPSHOT_QUOTE } from './snapshot-fixtures'
 import { OUR_VIEW_FIELDS, ourViewContributions } from './our-view-fixtures'
 import { FeedSentinelRepro } from './feed-sentinel-repro'
+import { DesignDirections } from './design/directions'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
@@ -56,6 +57,19 @@ function Harness() {
    * `feed-sentinel-repro.tsx` for exactly what it stands for and what it
    * does not.
    */
+  /*
+   * `?surface=design&dir=a|b&mobile=1` renders the two proposed Asset
+   * Workspace directions. Prototypes for a decision, never imported by the app.
+   */
+  if (surface === 'design') {
+    const mobile = q.get('mobile') === '1'
+    return (
+      <div data-harness="design" style={{ width: mobile ? 390 : '100%', height: mobile ? 860 : h, margin: mobile ? '0 auto' : undefined, border: mobile ? '1px solid #ddd' : undefined, overflow: 'hidden' }}>
+        <DesignDirections dir={(q.get('dir') as 'a' | 'b') ?? 'a'} mobile={mobile} />
+      </div>
+    )
+  }
+
   if (surface === 'feed-sentinel') {
     return (
       <div data-harness={surface} style={{ padding: 12 }}>
