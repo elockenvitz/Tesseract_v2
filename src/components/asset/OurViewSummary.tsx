@@ -163,7 +163,26 @@ export interface OurViewSummaryProps {
   currentUserId?: string | null
   symbol?: string | null
   className?: string
+  /**
+   * How much to show.
+   *
+   * `full` quotes each contributor's opening claim per section. `roster`
+   * shows only who has written, how much, how fresh, and where more than one
+   * analyst has written the same section — no prose at all.
+   *
+   * `roster` exists because of where this now sits. On the Snapshot it is
+   * directly below "The case", which already renders one verbatim excerpt per
+   * core section from the same contributions. Showing both put the thesis on
+   * screen twice, which is the duplication this whole surface was built to
+   * remove. The case states the ARGUMENT; this states WHO MADE IT.
+   */
+  mode?: 'full' | 'roster'
+  /** Drop the outer card chrome when the caller already provides a panel. */
+  bare?: boolean
 }
+
+const CARD_FULL = 'rounded-xl border border-gray-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900'
+const CARD_BARE = 'px-1 py-1.5'
 
 export function OurViewSummary({
   contributions,
@@ -173,7 +192,10 @@ export function OurViewSummary({
   currentUserId,
   symbol,
   className,
+  mode = 'full',
+  bare = false,
 }: OurViewSummaryProps) {
+  const CARD = bare ? CARD_BARE : CARD_FULL
   const live = useMemo(() => contributions.filter(hasLiveProse), [contributions])
 
   const rows = useMemo(() => {
@@ -245,7 +267,7 @@ export function OurViewSummary({
   return (
     <div className={clsx('space-y-2', className)} data-testid="our-view-summary">
       {/* ── Who has a view here, and how fresh the newest one is ────── */}
-      <div className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900">
+      <div className={CARD}>
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
           <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <Users className="h-3.5 w-3.5 text-gray-400" />
@@ -293,12 +315,47 @@ export function OurViewSummary({
         </div>
       </div>
 
+      {/*
+        ── Roster: who wrote where, without re-quoting it ──
+
+        On the Snapshot this sits directly under "The case", which already
+        renders one verbatim excerpt per core section from the same
+        contributions. Quoting them again put the thesis on screen twice.
+        So this mode reports coverage and disagreement only: which sections
+        have writing, how many analysts, and where more than one has written.
+      */}
+      {mode === 'roster' && rows.length > 0 && (
+        <div className={CARD} data-testid="our-view-roster">
+          <ul className="flex flex-col gap-1">
+            {rows.map(row => (
+              <li key={row.slug} className="flex items-baseline justify-between gap-3 text-[12px]">
+                <span className="min-w-0 truncate text-gray-700 dark:text-gray-300">{row.label}</span>
+                <span className="flex shrink-0 items-baseline gap-2">
+                  {row.matches.length > 1 && (
+                    <span
+                      data-testid={`our-view-multiple-${row.slug}`}
+                      title="More than one analyst has written here. Open a contributor to read each."
+                      className="rounded bg-amber-50 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                    >
+                      {row.matches.length} views
+                    </span>
+                  )}
+                  <span className="font-mono text-[11px] text-gray-500">
+                    {row.matches.length} {row.matches.length === 1 ? 'entry' : 'entries'}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* ── Per template field: who said what, attributed, with a way in ── */}
-      {rows.map(row => (
+      {mode === 'full' && rows.map(row => (
         <div
           key={row.slug}
           data-testid={`our-view-section-${row.slug}`}
-          className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900"
+          className={CARD}
         >
           <div className="flex items-baseline justify-between gap-2">
             <h3 className="text-[12px] font-semibold text-gray-900 dark:text-gray-100">{row.label}</h3>
@@ -361,6 +418,7 @@ export function OurViewSummary({
         </div>
       ))}
 
+      {mode === 'full' && (
       <p className="flex items-start gap-1 px-1 text-[11px] text-gray-500 dark:text-gray-400">
         <Info className="mt-0.5 h-3 w-3 shrink-0" />
         <span>
@@ -368,6 +426,7 @@ export function OurViewSummary({
           conclusion — open a contributor to read their full research.
         </span>
       </p>
+      )}
     </div>
   )
 }

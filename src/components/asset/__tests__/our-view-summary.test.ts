@@ -228,9 +228,29 @@ describe('the aggregated document was replaced, not duplicated', () => {
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
     .replace(/^[ \t]*\/\/.*$/gm, '')
 
-  it('renders the summary in the aggregated branch', () => {
-    expect(TAB_CODE).toContain('<OurViewSummary')
-    expect(TAB_CODE).toContain('fields={ourViewFields}')
+  it('renders the summary on the Snapshot, not inside Research', () => {
+    /*
+     * It began in the Research tab's aggregated pane. It moved: Research is
+     * one analyst's document, and who ELSE has written is a fact about the
+     * organisation. The tab still derives the FIELD list from the org's
+     * template and passes it down, so the two surfaces cannot disagree about
+     * which sections exist.
+     */
+    expect(TAB_CODE).not.toContain('<OurViewSummary')
+    expect(TAB_CODE).toContain('contributionFields={ourViewFields}')
+    expect(TAB_CODE).toContain('contributions={allAssetContributions}')
+
+    const SNAP = fs.readFileSync(
+      path.resolve(__dirname, '../InvestmentSnapshot.tsx'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
+    expect(SNAP).toContain('<OurViewSummary')
+    expect(SNAP).toContain('fields={contributionFields}')
+  })
+
+  it('leaves Research a route to the contributors it no longer shows', () => {
+    // Removing the pane without saying where it went would simply lose it.
+    expect(TAB_CODE).toContain("setActiveSubPage('snapshot')")
   })
 
   it('derives the summarised fields from the org template', () => {

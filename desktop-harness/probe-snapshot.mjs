@@ -66,6 +66,28 @@ const browser = await chromium.launch()
   const thesisCount = (text.match(/Services mix is still being valued as hardware/g) || []).length
   check('the thesis appears exactly once', thesisCount === 1, `${thesisCount} copies`)
 
+  /*
+   * ── The contributor roster quotes nothing ──
+   *
+   * "Who has written" moved here out of the Research tab, and it sits
+   * directly under "The case", which already renders one verbatim excerpt per
+   * core section from the SAME contributions. Rendering both in full put the
+   * thesis on screen twice. The roster reports coverage and disagreement
+   * only — who wrote where, how many entries, where more than one analyst
+   * wrote the same section.
+   */
+  const roster = await page.locator('[data-testid="our-view-roster"]').count()
+  check('the contributor roster is present', roster === 1, `${roster} found`)
+  if (roster === 1) {
+    const rosterText = await page.locator('[data-testid="our-view-roster"]').innerText()
+    check('the roster carries no prose',
+      !/\. /.test(rosterText) && rosterText.length < 400,
+      rosterText.slice(0, 160))
+    check('the roster still reports disagreement', /views/i.test(rosterText), rosterText.slice(0, 120))
+  }
+  check('contributors are named with their counts',
+    /5 contributors/i.test(text) && /Dana Rivera/.test(text))
+
   // Section headings must be reader-facing, not column names.
   check('section names are not raw column keys',
     !/where_different|risks_to_thesis/.test(text))

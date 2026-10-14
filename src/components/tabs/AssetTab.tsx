@@ -38,7 +38,10 @@ import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { InvestmentSnapshot } from '../asset/InvestmentSnapshot'
-import { OurViewSummary, type OurViewField } from '../asset/OurViewSummary'
+// The component itself renders on the Snapshot now; this tab still derives
+// the FIELD list from the org's template and passes it down, so the two
+// surfaces cannot disagree about which sections exist.
+import { type OurViewField } from '../asset/OurViewSummary'
 import { contributionSectionsForSlug } from '../../lib/research/contribution-sections'
 // DocumentLibrarySection removed — consolidated into KeyReferencesSection
 import { RelatedProjects } from '../projects/RelatedProjects'
@@ -3351,6 +3354,24 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             coverage={coverage || []}
             thesisStatuses={thesisStatuses}
             currentQuote={currentQuote}
+            /*
+              The firm's contributors, on the OVERVIEW rather than inside
+              Research. Research is one analyst's document; who else has
+              written, and where they disagree, is a fact about the
+              organisation and belongs where the organisation is described.
+
+              Passed down from the reads this tab already issues — no second
+              query, and the same `ourViewFields` the Research pane derives
+              from the org's own template, so the two cannot disagree about
+              which sections exist.
+            */
+            contributions={allAssetContributions}
+            contributionFields={ourViewFields}
+            coveringAnalystIds={coveringAnalystIds}
+            onOpenAnalyst={(userId) => {
+              chooseResearchView(userId)
+              setActiveSubPage('research')
+            }}
             onOpenSubPage={setActiveSubPage}
           />
         )}
@@ -3429,26 +3450,39 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <FirmConsensusPanel assetId={asset.id} />
 
                   {/*
-                    Our View is a SUMMARY of the firm's research, not the
-                    research itself. It used to render a `ContributionSection`
-                    for every prose field in the template, which concatenated
-                    every analyst's full text into one pane several thousand
-                    words long — and this was the default landing view, so an
-                    analyst opening a name they cover saw the combined document
-                    rather than their own work.
+                    ─── Our View is the firm's NUMBERS here, not its words ───
 
-                    The full documents are unchanged and one click away: the
-                    individual branch below still renders every section with
-                    editing intact, and every name here opens it.
+                    This pane used to render every analyst's prose — first as
+                    the full document, then as an attributed summary. Both are
+                    gone from Research, and the summary now lives on the
+                    Snapshot under "Who has written".
+
+                    The reason is what Research IS. It is one analyst's
+                    document: their sections, their rating, their targets,
+                    their editing. A pane inside that workspace answering
+                    "what does the organisation think" put a fact about the
+                    firm inside a fact about a person, and made the firm's
+                    position reachable only by first opening somebody's
+                    research and then navigating away from it.
+
+                    What stays is the firm-level VALUATION above — the
+                    aggregated price targets and the rating consensus — which
+                    are the organisation's numbers and have always been
+                    computed by their own panels. Nothing is lost: contributor
+                    attribution, disagreement and the route into each full
+                    document all moved together.
                   */}
-                  <OurViewSummary
-                    contributions={allAssetContributions}
-                    fields={ourViewFields}
-                    coveringAnalystIds={coveringAnalystIds}
-                    onOpenAnalyst={chooseResearchView}
-                    currentUserId={user?.id ?? null}
-                    symbol={asset.symbol}
-                  />
+                  <p className="px-1 text-[12px] text-gray-600 dark:text-gray-400">
+                    Contributors and where they differ are on the{' '}
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubPage('snapshot')}
+                      className="font-medium text-primary-600 hover:underline dark:text-primary-400"
+                    >
+                      Snapshot
+                    </button>
+                    . Choose an analyst above to read their full research.
+                  </p>
                 </div>
               )
             ) : (

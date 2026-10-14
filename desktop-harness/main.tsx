@@ -127,6 +127,10 @@ function Harness() {
           coverage={empty ? [] : SNAPSHOT_COVERAGE}
           thesisStatuses={empty ? [] : SNAPSHOT_THESIS_STATUS}
           currentQuote={empty ? null : SNAPSHOT_QUOTE}
+          contributions={ourViewContributions(null)}
+          contributionFields={OUR_VIEW_FIELDS}
+          coveringAnalystIds={new Set(['u-rivera'])}
+          onOpenAnalyst={(id) => document.body.setAttribute('data-last-nav', JSON.stringify({ analyst: id }))}
           onOpenSubPage={(page) => {
             document.body.setAttribute('data-last-nav', JSON.stringify({ subPage: page }))
           }}

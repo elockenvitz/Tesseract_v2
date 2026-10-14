@@ -88,7 +88,8 @@ import {
  * clippers would eventually disagree about where a sentence ends, and one of
  * them would start paraphrasing.
  */
-import { ourViewExcerpt } from './OurViewSummary'
+import { ourViewExcerpt, OurViewSummary, type OurViewField } from './OurViewSummary'
+import type { Contribution } from '../../hooks/useContributions'
 
 export type SnapshotSubPage = 'research' | 'workflow' | 'decisions' | 'lists'
 
@@ -112,6 +113,20 @@ export interface InvestmentSnapshotProps {
   } | null
   /** Hand the reader to the workspace that owns a domain. */
   onOpenSubPage: (page: SnapshotSubPage) => void
+  /*
+   * The firm's written contributions, passed down rather than re-queried.
+   *
+   * These moved here from the Research tab's "Our View" pane. Research is one
+   * analyst's document; WHO ELSE has written and where they disagree is a
+   * fact about the organisation, and it belongs on the surface that describes
+   * the organisation's position. Optional so the component still renders for
+   * callers that have not wired it.
+   */
+  contributions?: Contribution[]
+  contributionFields?: OurViewField[]
+  coveringAnalystIds?: Set<string>
+  /** Open one analyst's full research document. */
+  onOpenAnalyst?: (userId: string) => void
 }
 
 const pct = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
@@ -144,6 +159,7 @@ function asOfLabel(ts: string | number | Date | null | undefined): string | null
 
 export function InvestmentSnapshot({
   asset, coverage, thesisStatuses = [], currentQuote, onOpenSubPage,
+  contributions, contributionFields, coveringAnalystIds, onOpenAnalyst,
 }: InvestmentSnapshotProps) {
   const symbol = asset.symbol ?? null
 
@@ -495,6 +511,37 @@ export function InvestmentSnapshot({
     </DesktopModule>
   )
 
+  /* ------------------------------------------------ who else has written */
+
+  /*
+   * The organisation's contributors, moved here out of the Research tab.
+   *
+   * Research is one analyst's document — their sections, their ratings, their
+   * targets, their editing. Who ELSE has written on this name, and where they
+   * disagree, is a fact about the firm rather than about that document, and a
+   * reader asking "what does this organisation think" was previously answered
+   * by a pane inside one person's workspace.
+   *
+   * Rendered only when the tab wired it; a caller that passes nothing gets
+   * nothing rather than an empty panel.
+   */
+  const contributorSummary = contributions && contributionFields && contributionFields.length > 0 ? (
+    <DesktopModule key="contributors" title="Who has written" meta="the firm, by contributor">
+      <OurViewSummary
+        contributions={contributions}
+        fields={contributionFields}
+        coveringAnalystIds={coveringAnalystIds}
+        onOpenAnalyst={onOpenAnalyst}
+        symbol={symbol}
+        mode="roster"
+        bare
+      />
+      <DeepLinks>
+        <DeepLink label="Research" onClick={() => onOpenSubPage('research')} />
+      </DeepLinks>
+    </DesktopModule>
+  ) : null
+
   /* ------------------------------------------------- what needs attention */
 
   /*
@@ -643,7 +690,7 @@ export function InvestmentSnapshot({
           story — thesis, valuation, then the record of acting on them.
         */}
         <DesktopColumns
-          lead={<>{belief}{decisionMemory}</>}
+          lead={<>{belief}{contributorSummary}{decisionMemory}</>}
           context={<>{positionModule}{activeWork}</>}
         />
       </div>
