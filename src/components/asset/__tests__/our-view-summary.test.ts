@@ -14,6 +14,7 @@ import path from 'node:path'
 import {
   ourViewAge,
   ourViewExcerpt,
+  ourViewPlainText,
   contributorName,
   hasLiveProse,
 } from '../OurViewSummary'
@@ -277,5 +278,51 @@ describe('the aggregated document was replaced, not duplicated', () => {
     // document renders through a dedicated component.
     expect(TAB_CODE).toContain('NON_PROSE_FIELD_TYPES')
     expect((TAB_CODE.match(/'price_target', 'key_references'/g) || []).length).toBe(1)
+  })
+})
+
+describe('excerpts are plain text, not raw Markdown', () => {
+  /*
+   * Reported from the authenticated app: Snapshot excerpts showed literal
+   * `**bold**` and `## heading`. The helper stripped HTML only, and
+   * contributions are Markdown — every other surface renders them through
+   * `ReactMarkdown`.
+   */
+  const cases: [string, string][] = [
+    ['**Services** mix is mispriced.', 'Services mix is mispriced.'],
+    ['__Services__ mix is mispriced.', 'Services mix is mispriced.'],
+    ['*Services* mix is mispriced.', 'Services mix is mispriced.'],
+    ['***Services*** mix is mispriced.', 'Services mix is mispriced.'],
+    ['~~Old view~~ New view.', 'Old view New view.'],
+    ['## Investment thesis\nServices mix is mispriced.', 'Investment thesis Services mix is mispriced.'],
+    ['> We differ on the take-rate.', 'We differ on the take-rate.'],
+    ['- Attach rate rising\n- Mix shifting', 'Attach rate rising Mix shifting'],
+    ['1. Attach rate rising\n2. Mix shifting', 'Attach rate rising Mix shifting'],
+    ['See [the filing](https://x.com/a) for detail.', 'See the filing for detail.'],
+    ['![chart](https://x.com/c.png) Services mix.', 'Services mix.'],
+    ['Margin is `42%` today.', 'Margin is 42% today.'],
+    ['Mixed <b>HTML</b> and **Markdown**.', 'Mixed HTML and Markdown.'],
+  ]
+
+  for (const [raw, want] of cases) {
+    it(`strips: ${raw.slice(0, 32).replace(/\n/g, ' ')}`, () => {
+      expect(ourViewPlainText(raw)).toBe(want)
+    })
+  }
+
+  it('leaves ordinary prose untouched', () => {
+    // Over-stripping is the other failure: an asterisk or underscore inside a
+    // sentence is not emphasis, and a footnote marker is not a list.
+    const plain = 'Margins compress 4-6% as mix shifts; the street models flat.'
+    expect(ourViewPlainText(plain)).toBe(plain)
+  })
+
+  it('does not mangle a stray asterisk', () => {
+    expect(ourViewPlainText('Up 5% * see note')).toBe('Up 5% * see note')
+  })
+
+  it('reaches the excerpt, not just the plain-text helper', () => {
+    expect(ourViewExcerpt('**Services** mix is mispriced. More follows.'))
+      .toBe('Services mix is mispriced. More follows.')
   })
 })

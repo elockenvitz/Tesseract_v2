@@ -96,12 +96,47 @@ export function contributorName(c: Pick<Contribution, 'user'>): string {
  * markup still renders in the analyst's own view.
  */
 export function ourViewPlainText(content: string | null | undefined): string {
+  /*
+   * HTML *and* Markdown.
+   *
+   * This stripped tags only, and contributions are MARKDOWN — every other
+   * surface renders them through `ReactMarkdown` / `SmartInputRenderer`. So a
+   * thesis written as "**Services** mix is mispriced" reached the Snapshot,
+   * the conclusion band and the phone as the literal characters `**Services**`,
+   * and a `## Heading` or a `[link](url)` leaked whole. Reported from the
+   * authenticated app as raw Markdown in the excerpts.
+   *
+   * Order matters: images before links (both start `[`), and emphasis after
+   * code so a backtick span is not half-unwrapped.
+   */
   return (content ?? '')
+    // HTML first — some contributions carry both.
     .replace(/<[^>]*>/g, ' ')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
+    // Fenced and inline code: keep the code, drop the fence.
+    .replace(/```[a-z]*\n?/gi, ' ')
+    .replace(/`([^`]*)`/g, '$1')
+    // Images drop entirely; links keep their text, not their URL.
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    // Block syntax at the start of a line: headings, quotes, list bullets,
+    // ordered markers and horizontal rules.
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s{0,3}>\s?/gm, '')
+    .replace(/^\s{0,3}[-*+]\s+/gm, '')
+    .replace(/^\s{0,3}\d+[.)]\s+/gm, '')
+    .replace(/^\s{0,3}([-*_]\s*){3,}$/gm, ' ')
+    // Emphasis. Longest marker first so `**` is not left as a stray `*`.
+    .replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*\n]+)\*/g, '$1')
+    .replace(/___([^_]+)___/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, '$1$2')
+    .replace(/~~([^~]+)~~/g, '$1')
     .replace(/\s+/g, ' ')
     .trim()
 }

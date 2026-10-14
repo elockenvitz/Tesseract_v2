@@ -68,7 +68,10 @@ import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
 import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
-import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
+// `discuss` and `canDiscuss` are no longer imported here: the generic
+// asset-level entry point is withdrawn (see the note at its old site). Both
+// remain exported and in use from seven other surfaces.
+import { askAI, type EngagementTarget } from '../../lib/engagement'
 import { currentRows, type HoldingRow } from '../../lib/portfolio/holdings'
 import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
@@ -3080,8 +3083,22 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                     )}
                   >
+                    {/*
+                      "Firm valuation", not "Our View".
+
+                      The contributor summary moved to the Snapshot, but this
+                      SELECTOR was left untouched — so the authenticated app
+                      still offered "Our View (All Analysts)" over a pane that
+                      no longer contains any analyst's words. The label
+                      promised prose and delivered numbers.
+
+                      Nothing is deleted: the pane still renders the aggregated
+                      price targets and the rating consensus, each from its own
+                      existing panel, and every contributor and section is intact
+                      on the Snapshot and in each analyst's own document.
+                    */}
                     <Users className="w-3.5 h-3.5" />
-                    Our View
+                    Firm valuation
                   </button>
                   {researchAnalysts.map(analyst => {
                     const isCurrentUser = analyst.id === user?.id
@@ -3121,7 +3138,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   onChange={(e) => chooseResearchView(e.target.value)}
                   className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-200"
                 >
-                  <option value="aggregated">Our View (All Analysts)</option>
+                  <option value="aggregated">Firm valuation (targets & ratings)</option>
                   {researchAnalysts.map(analyst => {
                     const roleTag = analyst.isCovering
                       ? analyst.role === 'primary' ? '★ ' : '☆ '
@@ -4862,7 +4879,6 @@ function AssetArrivalBar({
       ? { issue: { title: issueText, detail: issueDetail ?? undefined, reason: `asset:${focus ?? 'overview'}` } }
       : {}),
   }
-  const teamable = canDiscuss(target)
 
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 pb-2 pt-1">
@@ -4881,34 +4897,25 @@ function AssetArrivalBar({
         >
           Ask AI
         </button>
-        {teamable && (
-          /*
-            "Discuss", not "Team".
+        {/*
+          ─── The generic Discuss entry point is withdrawn from this page ───
 
-            The button said Team. `messages_select` is
-            `organization_id = current_org_id()` — organisation-wide, not
-            team-scoped, not participant-scoped. Everyone in the organisation
-            can read every asset discussion in it.
+          Nothing was deleted from the system: `messages` keeps every row, RLS
+          is untouched, the engagement pane is still mounted in `Layout`, and
+          the other SEVEN `discuss()` call sites — Ideas, Decisions, Research,
+          Portfolio positions, the opportunity grid and the parked workspace —
+          are unaffected.
 
-            That is not a leak: RLS holds the tenant boundary correctly and
-            `organization_id` is enforced on insert as well. It is a labelling
-            problem, and the worse kind — somebody writing a candid note about
-            a position under a button marked "Team" has been told the audience
-            is smaller than it is.
+          Withdrawn because a bare "discuss this security" is the wrong unit.
+          A conversation worth finding again is about a THESIS, a
+          recommendation, a decision or a review: something with a subject and
+          a time. An asset-level thread has neither, so it accumulates remarks
+          nobody can place, and this page gave no indication a thread even
+          existed — so nobody returned to one.
 
-            The title says the real scope. See
-            docs/tickets/asset-discussions-and-messages.md for the audit and
-            the integration lane this does not attempt.
-          */
-          <button
-            type="button"
-            onClick={() => discuss(target)}
-            title="Visible to everyone in your organization"
-            className="rounded-md px-2.5 py-1 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-          >
-            Discuss
-          </button>
-        )}
+          The audit, the storage model and the contextual design that should
+          replace it are in docs/tickets/asset-discussions-and-messages.md.
+        */}
       </div>
     </div>
   )
