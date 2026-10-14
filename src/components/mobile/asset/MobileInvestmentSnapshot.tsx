@@ -55,6 +55,10 @@ import { BookFilter } from '../../shared/BookFilter'
 import { conclusionFigures } from '../../asset/InvestmentConclusion'
 import { ourViewExcerpt } from '../../asset/OurViewSummary'
 import { useAnalystRatings } from '../../../hooks/useAnalystRatings'
+import { AttentionBand } from '../../asset/AttentionBand'
+import {
+  resolveWorkspaceState, resolveWorkspaceSignals, type WorkspaceFacts,
+} from '../../../lib/asset-workspace/context'
 
 const pct = (v: number | null | undefined, digits = 1) =>
   v == null || !Number.isFinite(v) ? null : `${v.toFixed(digits)}%`
@@ -352,6 +356,55 @@ export function MobileInvestmentSnapshot({
   const variant = core.find(s => s.section === 'where_different' && (s.content ?? '').trim())
   const dominant = consensus[0] ?? null
 
+  /*
+   * What needs attention, from the same resolver the desktop uses.
+   *
+   * ── The one signal this surface must NOT emit ──
+   *
+   * `gap-no-coverage` fires when `coveringUserIds` is empty and work exists.
+   * The phone does not fetch coverage — `MobileAssetPage` has no coverage
+   * query — so passing an empty array here would make every name on every
+   * phone claim "nobody is assigned coverage", which is a false statement
+   * derived from absent data rather than from a record.
+   *
+   * So the facts carry empty coverage and the signal is filtered out, and
+   * both halves are stated here rather than left for a reader to infer from
+   * a missing query. Adding a coverage read to the phone would fix it
+   * properly; that is a deliberate scope call, not an oversight.
+   *
+   * The execution counts are likewise zero, so `provenance` cannot fire here
+   * either: deriving them needs the decision-timeline hook, and this
+   * component does not call it — `DecisionMemorySummary` does, one band
+   * below, and that band already states the caveat from its own counts.
+   * Passing zeros is therefore both honest and sufficient; it is not a
+   * placeholder waiting to be filled.
+   */
+  const workspaceFacts: WorkspaceFacts = {
+    symbol,
+    positions: data.positions.map(p => ({
+      portfolioId: p.portfolioId, portfolioName: p.portfolioName, weightPct: p.weightPct ?? null,
+    })),
+    coveringUserIds: [],
+    caseWrittenAt: data.caseWrittenAt,
+    writtenSections: core.map(s => ({ section: s.section, updatedAt: s.updatedAt ?? null })),
+    rating: dominant ? { value: dominant.value, count: dominant.count, total: ratings.length } : null,
+    target: data.target,
+    spot: data.spot,
+    newEvidenceCount: 0,
+    openDecisions: openDecisions.map(d => ({
+      id: d.id, action: d.action ?? null,
+      portfolioId: d.portfolioId ?? null, portfolioName: d.portfolioName ?? null,
+    })),
+    liveIdeaCount: liveIdeas.length,
+    unobservedExecutionCount: 0,
+    executionCount: 0,
+    viewerId: null,
+    arrivalIntent: null,
+  }
+  const workspaceState = resolveWorkspaceState(workspaceFacts)
+  const workspaceSignals = resolveWorkspaceSignals(workspaceFacts)
+    .filter(s => s.id !== 'gap-no-coverage')
+
   const conclusion = (
     <div
       data-testid="mobile-conclusion"
@@ -426,6 +479,18 @@ export function MobileInvestmentSnapshot({
       )}
 
       {conclusion}
+
+      {/* Same resolver, same signals, same words as the desktop band. */}
+      {workspaceSignals.length > 0 && (
+        <AttentionBand
+          state={workspaceState}
+          signals={workspaceSignals}
+          onOpen={(page) => {
+            if (page === 'decisions' || page === 'lists') onOpenSubPage(page)
+            else if (page === 'research' || page === 'workflow') onOpenSubPage('case')
+          }}
+        />
+      )}
 
       <Band
         testId="mobile-band-position"

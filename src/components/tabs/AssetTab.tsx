@@ -4882,12 +4882,31 @@ function AssetArrivalBar({
           Ask AI
         </button>
         {teamable && (
+          /*
+            "Discuss", not "Team".
+
+            The button said Team. `messages_select` is
+            `organization_id = current_org_id()` — organisation-wide, not
+            team-scoped, not participant-scoped. Everyone in the organisation
+            can read every asset discussion in it.
+
+            That is not a leak: RLS holds the tenant boundary correctly and
+            `organization_id` is enforced on insert as well. It is a labelling
+            problem, and the worse kind — somebody writing a candid note about
+            a position under a button marked "Team" has been told the audience
+            is smaller than it is.
+
+            The title says the real scope. See
+            docs/tickets/asset-discussions-and-messages.md for the audit and
+            the integration lane this does not attempt.
+          */
           <button
             type="button"
             onClick={() => discuss(target)}
+            title="Visible to everyone in your organization"
             className="rounded-md px-2.5 py-1 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
           >
-            Team
+            Discuss
           </button>
         )}
       </div>
