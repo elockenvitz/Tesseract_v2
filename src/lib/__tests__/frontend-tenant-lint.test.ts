@@ -13,10 +13,11 @@ const ORG_SCOPED_TABLES = new Set([
   'workflows', 'projects', 'themes', 'conversations', 'calendar_events',
   'teams', 'organization_memberships', 'organization_invites',
   'organization_audit_log', 'topics', 'captures', 'custom_notebooks',
+  // Membership view must be org-filtered in frontend code (not a free-pass view) — see linter.
+  'organization_members_v',
 ])
 
 const ORG_SCOPED_VIEWS = new Set([
-  'organization_members_v',
   'org_workflows_v',
   'org_themes_v',
   'org_calendar_events_v',
@@ -37,7 +38,6 @@ const SAFE_FILTER_REGEX = /\.eq\(\s*['"`](id|workflow_id|team_id|project_id|conv
 
 function scanFile(content: string) {
   const violations: { line: number; table: string; isP0: boolean }[] = []
-  const lines = content.split('\n')
   let match: RegExpExecArray | null
 
   FROM_REGEX.lastIndex = 0
@@ -126,19 +126,24 @@ const prices = await supabase.from('price_history_cache').select('*')
     expect(violations).toHaveLength(0)
   })
 
-  it('allows org-scoped views (they handle filtering internally)', () => {
+  it('flags organization_members_v WITHOUT an org filter (membership view is not a free pass)', () => {
+    const codeNoFilter = `
+const { data } = await supabase.from('organization_members_v').select('*')
+`
+    const violations = scanFile(codeNoFilter)
+    expect(violations).toHaveLength(1)
+    expect(violations[0].table).toBe('organization_members_v')
+    expect(violations[0].isP0).toBe(false)
+  })
+
+  it('allows organization_members_v WITH an org filter', () => {
     const code = `
 const { data } = await supabase
   .from('organization_members_v')
   .select('*')
   .eq('organization_id', orgId)
 `
-    // Even without org filter, the view is allowlisted
-    const codeNoFilter = `
-const { data } = await supabase.from('organization_members_v').select('*')
-`
     expect(scanFile(code)).toHaveLength(0)
-    expect(scanFile(codeNoFilter)).toHaveLength(0)
   })
 
   it('allows new Phase 9 org-scoped views', () => {

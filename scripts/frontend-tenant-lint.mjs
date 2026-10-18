@@ -54,6 +54,10 @@ const ORG_SCOPED_TABLES = new Set([
   'organization_contacts',
   'teams',
   'org_chart_nodes',
+  // Membership view: org-filtered in its own definition, but frontend callers must STILL pass
+  // organization_id. It exposes member emails and was an anon-exposure target (containment A1),
+  // so it is NOT a free-pass view — treat it like an org-scoped table in frontend code.
+  'organization_members_v',
 
   // Org-scoped config tables
   'coverage_settings',
@@ -94,7 +98,6 @@ const P0_TABLES = new Set([
  * Views that are already org-scoped via their definition — allowed without filter.
  */
 const ORG_SCOPED_VIEWS = new Set([
-  'organization_members_v',
   'org_workflows_v',
   'org_themes_v',
   'org_calendar_events_v',
