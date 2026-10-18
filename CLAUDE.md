@@ -61,6 +61,17 @@ Do the task asked. If you find adjacent problems, list them at the end as
 separate findings — do not fix them in the same change. Unbundled work is
 reviewable; bundled work is not.
 
+### 5. Tenant isolation ships with the feature
+Every new organization-owned feature (any table, view, RPC, or storage path that
+holds one org's data) must ship in the same change with (a) authorization: RLS
+policies scoped to the org / active member / owner — never `USING(true)` to
+`authenticated`, never an anon grant — and writes gated to the right role; and
+(b) a tenant-isolation test proving cross-org read AND write are denied while a
+legitimate same-org user is allowed (add it to `supabase/tests/*.sql` and the
+frontend tenant-lint). A feature is not done until both exist. Global reference
+data (no org column by design) is the explicit exception and must be documented
+as such.
+
 ---
 
 ## Known defect classes — check for these
