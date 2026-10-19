@@ -23,6 +23,7 @@ import {
 import { PriorityBadge } from '../ui/PriorityBadge'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -540,6 +541,7 @@ export function AssetTableView({
   rowAccentFn
 }: AssetTableViewProps) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   // Get asset IDs for user priority lookup
@@ -555,12 +557,14 @@ export function AssetTableView({
   const setUserPriorityMutation = useMutation({
     mutationFn: async ({ assetId, priority }: { assetId: string; priority: Priority }) => {
       if (!user?.id) throw new Error('Not authenticated')
+      if (!currentOrgId) throw new Error('No active organization')
 
       if (priority === 'none') {
         // Delete the priority record
         const { error } = await supabase
           .from('user_asset_priorities')
           .delete()
+          .eq('organization_id', currentOrgId)
           .eq('asset_id', assetId)
           .eq('user_id', user.id)
         if (error) throw error
@@ -569,11 +573,12 @@ export function AssetTableView({
         const { error } = await supabase
           .from('user_asset_priorities')
           .upsert({
+            organization_id: currentOrgId,
             asset_id: assetId,
             user_id: user.id,
             priority,
             updated_at: new Date().toISOString()
-          }, { onConflict: 'asset_id,user_id' })
+          }, { onConflict: 'organization_id,asset_id,user_id' })
         if (error) throw error
       }
     },
