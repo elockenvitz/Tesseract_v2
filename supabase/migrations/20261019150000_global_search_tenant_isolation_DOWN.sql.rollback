@@ -15,3 +15,7 @@ alter function public.global_search(text, integer) reset search_path;
 
 grant execute on function public.global_search(text, integer) to public;
 grant execute on function public.global_search(text, integer) to anon;
+
+-- Reverse the column-scoped assets grant (prod baseline: authenticated had no
+-- SELECT on assets). Only needed if rolling back the whole change.
+revoke select (id, symbol, company_name) on public.assets from authenticated;

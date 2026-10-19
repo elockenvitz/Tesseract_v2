@@ -28,3 +28,12 @@ alter function public.global_search(text, integer) set search_path = public, pg_
 revoke execute on function public.global_search(text, integer) from public;
 revoke execute on function public.global_search(text, integer) from anon;
 grant  execute on function public.global_search(text, integer) to authenticated;
+
+-- Under INVOKER the function reads `assets` as the caller. authenticated lacks
+-- a table grant on assets in production, so asset search would break. assets is
+-- global, platform-curated reference data (RLS SELECT is USING(true)), but the
+-- table also carries research-style columns (thesis, where_different,
+-- risks_to_thesis, quick_note, thesis_references). global_search only ever reads
+-- id/symbol/company_name, so the grant is COLUMN-SCOPED to exactly those — asset
+-- search works while no research column becomes globally readable.
+grant select (id, symbol, company_name) on public.assets to authenticated;

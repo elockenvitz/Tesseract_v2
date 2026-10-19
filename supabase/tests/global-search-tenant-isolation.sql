@@ -15,11 +15,12 @@
 -- The three "no organization_id column" types (users, simulations, model_files)
 -- are isolated by join/owner policies; they are asserted explicitly.
 --
--- Expected against a MIGRATED database: 6/6 pass. Against the pre-migration
+-- Expected against a MIGRATED database: 7/7 pass. Against the pre-migration
 -- (SECURITY DEFINER, PUBLIC/anon EXECUTE) function, assertions 1,2,5,6 FAIL —
--- which is the defect this guards.
+-- which is the defect this guards. Assertion 7 proves the assets grant is
+-- column-scoped (reference columns readable, research columns denied).
 --
--- Self-cleaning. 6 assertions.
+-- Self-cleaning. 7 assertions.
 -- =============================================================================
 
 DROP TABLE IF EXISTS _sec_results;
@@ -52,6 +53,7 @@ DECLARE
   v_msg      text;
   v_year_a   int  := 3000 + (abs(hashtext('a'||v_suffix)) % 900);  -- target_year is globally UNIQUE
   v_year_b   int  := 3900 + (abs(hashtext('b'||v_suffix)) % 900);
+  v_denied   boolean;
 BEGIN
   RAISE NOTICE '=== global_search Tenant Isolation (suffix: %) ===', v_suffix;
 
@@ -211,6 +213,29 @@ BEGIN
   ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (6, 'FAIL', 'complex paths: '||v_msg); END IF;
 
   -- ===========================================================================
+  -- 7. assets exposure is COLUMN-SCOPED: reference columns (symbol) readable by
+  --    authenticated, but research columns (thesis) are NOT. Guards against a
+  --    table-wide grant that would expose proprietary research globally.
+  -- ===========================================================================
+  v_count := -1;
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user_a, 'role','authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    SELECT 1 INTO v_count FROM assets WHERE id = v_asset AND symbol IS NOT NULL;  -- reads symbol (granted)
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_count := -9; END;
+  v_denied := false;
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user_a, 'role','authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    PERFORM thesis FROM assets WHERE id = v_asset;                                -- reads thesis (NOT granted)
+    RESET ROLE;
+  EXCEPTION WHEN insufficient_privilege THEN RESET ROLE; v_denied := true;
+            WHEN OTHERS THEN RESET ROLE; v_denied := true; END;
+  IF v_count = 1 AND v_denied THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (7, 'PASS', 'assets: reference columns readable, research columns denied');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (7, 'FAIL', format('assets column scope wrong (symbol_read=%s, thesis_denied=%s)', v_count, v_denied)); END IF;
+
+  -- ===========================================================================
   -- CLEANUP
   -- ===========================================================================
   SET LOCAL request.jwt.claims = '';
@@ -230,7 +255,7 @@ BEGIN
   DELETE FROM organizations WHERE id IN (v_org_a, v_org_b);
   DELETE FROM auth.users WHERE id IN (v_user_a, v_user_a2, v_user_b);
 
-  RAISE NOTICE '=== RESULTS: % passed, % failed out of 6 assertions ===', v_pass, v_fail;
+  RAISE NOTICE '=== RESULTS: % passed, % failed out of 7 assertions ===', v_pass, v_fail;
 END;
 $$;
 
