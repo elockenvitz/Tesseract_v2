@@ -1,0 +1,284 @@
+{
+  "$comment": "Reviewed legacy-finding inventory for frontend-tenant-lint. Each (file -> table) is a known pre-existing finding with its severity and occurrence count. NEW/WORSENED findings fail CI; a fixed finding makes this STALE and must be removed here in a reviewed commit. P0 entries require a non-empty ack and are echoed every run. Do NOT regenerate this to silence a real finding.",
+  "generatedAt": "2026-10-19",
+  "findings": {
+    "src/components/communication/AITagPicker.tsx": {
+      "themes": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/components/communication/DirectMessaging.tsx": {
+      "conversations": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/components/coverage/CoverageManager.tsx": {
+      "org_chart_nodes": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      },
+      "teams": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/components/organization/OrgRequestsTab.tsx": {
+      "access_requests": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/components/portfolio/tabs/ProcessWalkthrough.tsx": {
+      "workflows": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/components/projects/ProjectOverviewWidget.tsx": {
+      "projects": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/components/projects/ProjectStatusBreakdown.tsx": {
+      "projects": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/components/projects/RecentProjectActivity.tsx": {
+      "projects": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/components/projects/UpcomingDeadlines.tsx": {
+      "projects": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/components/tabs/AssetTab.tsx": {
+      "workflows": {
+        "severity": "P0",
+        "count": 5,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/components/templates/ResearchFieldsManager.tsx": {
+      "research_fields": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/engine/decisionEngine/useDecisionEngine.ts": {
+      "projects": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/hooks/useAI.ts": {
+      "themes": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/hooks/useAnalystRatings.ts": {
+      "rating_scales": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/hooks/useAssetEvents.ts": {
+      "calendar_events": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/hooks/useCommandCenter.ts": {
+      "projects": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/hooks/useEntitySearch.ts": {
+      "calendar_events": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      },
+      "projects": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/hooks/useGlobalDecisionEngine.ts": {
+      "projects": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/hooks/useInvestmentCaseTemplates.ts": {
+      "investment_case_templates": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/hooks/useModelTemplates.ts": {
+      "model_templates": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/hooks/useObjectLinks.ts": {
+      "calendar_events": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      },
+      "projects": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/hooks/useResearchFields.ts": {
+      "research_fields": {
+        "severity": "P1",
+        "count": 3,
+        "ack": "legacy 2026-10-19: pre-existing"
+      },
+      "research_sections": {
+        "severity": "P1",
+        "count": 2,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/hooks/useScorecards.ts": {
+      "rating_scales": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/hooks/useTemplateCollaborations.ts": {
+      "teams": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/hooks/useThemeWorkflows.ts": {
+      "workflows": {
+        "severity": "P0",
+        "count": 2,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/hooks/useUserAssetPagePreferences.ts": {
+      "research_fields": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      },
+      "research_sections": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/hooks/workflow/useActiveRuns.ts": {
+      "workflows": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/hooks/workflow/useWorkflowQueries.ts": {
+      "workflows": {
+        "severity": "P0",
+        "count": 3,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/pages/AssetAllocationPage.tsx": {
+      "allocation_periods": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/pages/ops/OpsAIUsagePage.tsx": {
+      "teams": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/pages/ops/OpsClientsPage.tsx": {
+      "organization_memberships": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/pages/ops/OpsDashboardPage.tsx": {
+      "organization_memberships": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      },
+      "themes": {
+        "severity": "P0",
+        "count": 1,
+        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
+      }
+    },
+    "src/pages/OrganizationPage.tsx": {
+      "access_requests": {
+        "severity": "P1",
+        "count": 2,
+        "ack": "legacy 2026-10-19: pre-existing"
+      },
+      "organization_contacts": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      },
+      "teams": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    },
+    "src/pages/TDFListPage.tsx": {
+      "target_date_funds": {
+        "severity": "P1",
+        "count": 1,
+        "ack": "legacy 2026-10-19: pre-existing"
+      }
+    }
+  }
+}
