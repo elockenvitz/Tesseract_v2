@@ -1,0 +1,17 @@
+-- =============================================================================
+-- ROLLBACK for 20261019150000_global_search_tenant_isolation.sql
+--
+-- EMERGENCY USE ONLY. This restores the previous behaviour, which REINSTATES the
+-- cross-organization disclosure. Use only if the INVOKER change is shown to hide
+-- legitimate, authorized results in production.
+--
+-- Restores the exact prior attributes and grants captured before the change:
+--   secdef = true, search_path = (none), EXECUTE held by PUBLIC + anon.
+-- (authenticated and service_role EXECUTE were already present and are untouched.)
+-- =============================================================================
+
+alter function public.global_search(text, integer) security definer;
+alter function public.global_search(text, integer) reset search_path;
+
+grant execute on function public.global_search(text, integer) to public;
+grant execute on function public.global_search(text, integer) to anon;
