@@ -29,7 +29,8 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      # The lockfile has known peer-dependency drift, so `npm ci` fails (EUSAGE); match ci.yml.
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
       - name: security:check --static (no infra)
         env:
           NODE_OPTIONS: --max-old-space-size=8192
@@ -45,7 +46,8 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      # The lockfile has known peer-dependency drift, so `npm ci` fails (EUSAGE); match ci.yml.
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
       - name: security:check (all tiers, fail-closed)
         env:
           SECURITY_SUPABASE_REF: ${{ secrets.SECURITY_SUPABASE_REF }}
