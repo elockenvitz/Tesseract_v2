@@ -1,0 +1,57 @@
+name: security
+
+# Platform security gate (CLAUDE.md Standing Rules 5 & 6). Two jobs by infrastructure dependency:
+#
+#   static  — tier 1 only (frontend tenant lint, unconditional-policy guard, edge-authz guard). No DB, no
+#             secrets; runs on every PR. This is the job to make a REQUIRED status check first, once it is
+#             green and proven non-vacuous (the tenant-lint baseline debt must be reconciled first — see
+#             project-security-followups). Currently informational.
+#
+#   db      — tiers 2+3 (tenant-boundary structural lint + SQL isolation suites). FAIL-CLOSED: requires a
+#             NON-production staging project via SECURITY_SUPABASE_REF + SECURITY_SUPABASE_SERVICE_KEY +
+#             SECURITY_SUPABASE_TOKEN. Absent secrets => the job FAILS (never silently skipped). Both DB tiers
+#             refuse the production ref. Until staging is wired this job runs only on demand / on the harness
+#             branch, so it does not block PRs while red. See SECURITY-STAGING.md for the exact secrets.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [security/asset-workspace-ci-harness, security/guardrails-c1]
+  workflow_dispatch: {}
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      # The lockfile has known peer-dependency drift, so `npm ci` fails (EUSAGE); match ci.yml.
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
+      - name: security:check --static (no infra)
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: npm run security:check:static
+
+  db:
+    # Fail-closed DB tiers. Not run on PRs (would block while red pre-staging); on demand or on the harness branch.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      # The lockfile has known peer-dependency drift, so `npm ci` fails (EUSAGE); match ci.yml.
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
+      - name: security:check (all tiers, fail-closed)
+        env:
+          SECURITY_SUPABASE_REF: ${{ secrets.SECURITY_SUPABASE_REF }}
+          SECURITY_SUPABASE_SERVICE_KEY: ${{ secrets.SECURITY_SUPABASE_SERVICE_KEY }}
+          SECURITY_SUPABASE_TOKEN: ${{ secrets.SECURITY_SUPABASE_TOKEN }}
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: npm run security:check

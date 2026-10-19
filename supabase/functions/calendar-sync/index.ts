@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { requirePublishableKey } from "../_shared/publishable-key.ts";
+import { authorizeConnectionOwnership } from "./authorize.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -42,23 +43,31 @@ Deno.serve(async (req) => {
 
     const { connectionId, syncType = 'incremental' } = await req.json();
 
-    // Get the connection
-    const { data: connection, error: connError } = await supabaseClient
-      .from('calendar_connections')
-      .select(`
-        *,
-        connected_calendars (*)
-      `)
-      .eq('id', connectionId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (connError || !connection) {
+    // Cross-user authorization (tested in calendar-sync/authorize.ts): load the
+    // connection scoped to the VERIFIED user.id — never a request value — so one
+    // user cannot operate on another's connection. Denied before any token
+    // refresh, external sync, or write.
+    const owned = await authorizeConnectionOwnership(
+      (id, userId) =>
+        supabaseClient
+          .from('calendar_connections')
+          .select(`
+            *,
+            connected_calendars (*)
+          `)
+          .eq('id', id)
+          .eq('user_id', userId)
+          .single(),
+      connectionId,
+      user.id,
+    );
+    if (!owned.ok) {
       return new Response(
-        JSON.stringify({ error: 'Connection not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: owned.error }),
+        { status: owned.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    const connection = owned.connection as any;
 
     // Check if token needs refresh
     let accessToken = connection.access_token;

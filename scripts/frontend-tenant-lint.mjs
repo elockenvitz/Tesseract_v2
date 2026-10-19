@@ -54,6 +54,10 @@ const ORG_SCOPED_TABLES = new Set([
   'organization_contacts',
   'teams',
   'org_chart_nodes',
+  // Membership view: org-filtered in its own definition, but frontend callers must STILL pass
+  // organization_id. It exposes member emails and was an anon-exposure target (containment A1),
+  // so it is NOT a free-pass view — treat it like an org-scoped table in frontend code.
+  'organization_members_v',
 
   // Org-scoped config tables
   'coverage_settings',
@@ -94,7 +98,6 @@ const P0_TABLES = new Set([
  * Views that are already org-scoped via their definition — allowed without filter.
  */
 const ORG_SCOPED_VIEWS = new Set([
-  'organization_members_v',
   'org_workflows_v',
   'org_themes_v',
   'org_calendar_events_v',
@@ -132,13 +135,44 @@ const EXCLUDED_PATHS = [
 // ---------------------------------------------------------------------------
 
 /**
- * Pre-existing violations that are safe due to RLS enforcement.
- * These queries rely on server-side RLS rather than client-side org_id filtering.
- *
- * Update these when violations are fixed. See docs/tenant-lint-baselines.md.
+ * Legacy-finding inventory (replaces the old BASELINE_TOTAL / BASELINE_P0 count
+ * thresholds). The inventory is an EXACT, reviewed record of every known
+ * pre-existing finding, keyed by (file, table) with its severity and occurrence
+ * count. It lives in scripts/tenant-lint-inventory.json and is the review
+ * artifact — a count threshold is not. Enforcement (see runner):
+ *   - a (file, table) not in the inventory, or a higher count than recorded, or a
+ *     severity that worsened (P1 -> P0) => a NEW/WORSENED finding => CI fails;
+ *   - a finding that no longer occurs (or occurs fewer times) => the inventory is
+ *     STALE => CI fails until the inventory is updated in a reviewed commit, so a
+ *     fix is acknowledged and a fixed finding cannot silently reappear later;
+ *   - every P0 entry must carry a non-empty `ack`, and all P0 entries are echoed
+ *     on each run, so a high-severity finding can never be silently grandfathered.
+ * Regenerate the file from the current tree with `--write-inventory` (a reviewed,
+ * deliberate action — never run it just to make CI green).
  */
-const BASELINE_TOTAL = 38
-const BASELINE_P0 = 17
+import { existsSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname } from 'node:path'
+
+const INVENTORY_PATH = join(dirname(fileURLToPath(import.meta.url)), 'tenant-lint-inventory.json')
+
+function loadInventory() {
+  if (!existsSync(INVENTORY_PATH)) return { findings: {} }
+  return JSON.parse(readFileSync(INVENTORY_PATH, 'utf-8'))
+}
+
+/** Group a flat violation list into { "file\u0000table": {severity, count} }. */
+function groupFindings(violations) {
+  const g = new Map()
+  for (const v of violations) {
+    const key = `${v.file}\u0000${v.table}`
+    const cur = g.get(key) || { file: v.file, table: v.table, severity: v.isP0 ? 'P0' : 'P1', count: 0 }
+    cur.count++
+    if (v.isP0) cur.severity = 'P0'
+    g.set(key, cur)
+  }
+  return g
+}
 
 // ---------------------------------------------------------------------------
 // Scanner
@@ -316,47 +350,93 @@ function run() {
     }
   }
 
+  const current = groupFindings(allViolations)
+
+  // ── --write-inventory: regenerate the reviewed inventory from the tree ──
+  if (args.includes('--write-inventory')) {
+    const prior = loadInventory().findings || {}
+    const findings = {}
+    for (const { file, table, severity, count } of [...current.values()].sort(
+      (a, b) => a.file.localeCompare(b.file) || a.table.localeCompare(b.table))) {
+      const priorAck = prior[file]?.[table]?.ack
+      findings[file] = findings[file] || {}
+      findings[file][table] = {
+        severity, count,
+        ack: priorAck || (severity === 'P0'
+          ? 'LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups'
+          : 'legacy 2026-10-19: pre-existing'),
+      }
+    }
+    const out = {
+      $comment: 'Reviewed legacy-finding inventory for frontend-tenant-lint. Each (file -> table) is a known pre-existing finding with its severity and occurrence count. NEW/WORSENED findings fail CI; a fixed finding makes this STALE and must be removed here in a reviewed commit. P0 entries require a non-empty ack and are echoed every run. Do NOT regenerate this to silence a real finding.',
+      generatedAt: new Date().toISOString().slice(0, 10),
+      findings,
+    }
+    writeFileSync(INVENTORY_PATH, JSON.stringify(out, null, 2) + '\n')
+    console.log(`Wrote inventory: ${INVENTORY_PATH} (${current.size} file/table findings)`)
+    process.exit(0)
+  }
+
   // ── CI summary ────────────────────────────────────────────────────────
   console.log(`\n--- Summary ---`)
   console.log(`Files scanned:  ${filesScanned}`)
   console.log(`Files skipped:  ${filesSkipped}`)
-  console.log(`Total:          ${totalViolations} (baseline: ${BASELINE_TOTAL}, delta: ${totalViolations - BASELINE_TOTAL >= 0 ? '+' : ''}${totalViolations - BASELINE_TOTAL})`)
-  console.log(`  P0:           ${p0Count} (baseline: ${BASELINE_P0}, delta: ${p0Count - BASELINE_P0 >= 0 ? '+' : ''}${p0Count - BASELINE_P0})`)
-  console.log(`  P1:           ${p1Count}`)
+  console.log(`Total:          ${totalViolations}   P0: ${p0Count}   P1: ${p1Count}`)
 
-  // ── Enforcement ───────────────────────────────────────────────────────
+  // ── Enforcement: diff current findings against the reviewed inventory ───
+  const inv = loadInventory().findings || {}
+  const invGet = (file, table) => inv[file]?.[table]
+  const newOrWorse = []   // introduced or worsened -> fail
+  const stale = []        // fixed/reduced but still in inventory -> fail (needs reviewed removal)
+  const ungrounded = []   // P0 in inventory with no ack -> fail
+  const grandfathered = [] // P0 legacy still present (echoed, not a failure by itself)
+
+  // current vs inventory
+  for (const { file, table, severity, count } of current.values()) {
+    const rec = invGet(file, table)
+    if (!rec) { newOrWorse.push(`NEW ${severity} ${table} in ${file} (${count}×) — not in inventory`); continue }
+    if (count > rec.count) newOrWorse.push(`WORSENED ${table} in ${file}: ${rec.count}→${count} occurrence(s)`)
+    if (severity === 'P0' && rec.severity !== 'P0') newOrWorse.push(`WORSENED ${table} in ${file}: ${rec.severity}→P0`)
+  }
+  // inventory vs current (fixed or stale) + P0 acks
+  for (const [file, tables] of Object.entries(inv)) {
+    for (const [table, rec] of Object.entries(tables)) {
+      const cur = current.get(`${file}\u0000${table}`)
+      if (!cur) stale.push(`FIXED ${table} in ${file} (was ${rec.count}×) — remove it from the inventory (reviewed)`)
+      else if (cur.count < rec.count) stale.push(`REDUCED ${table} in ${file}: ${rec.count}→${cur.count} — update the inventory (reviewed)`)
+      if (rec.severity === 'P0') {
+        if (!rec.ack || !String(rec.ack).trim()) ungrounded.push(`${table} in ${file}`)
+        else if (cur) grandfathered.push(`P0 ${table} in ${file} (${rec.count}×) — ${rec.ack}`)
+      }
+    }
+  }
+
+  if (grandfathered.length > 0) {
+    console.log(`\nGrandfathered P0 legacy findings (visible, must shrink — not silenced):`)
+    for (const g of grandfathered) console.log(`  • ${g}`)
+  }
+
   let failed = false
-
-  if (p0Count > BASELINE_P0) {
-    console.log(`\nFAILED: ${p0Count - BASELINE_P0} NEW P0 violation(s) above baseline.`)
-    console.log('Fix: Add .eq(\'organization_id\', orgId), use an org-scoped view, or use an org-scoped hook.')
+  if (newOrWorse.length > 0) {
+    console.log(`\nFAILED: ${newOrWorse.length} new/worsened tenant-isolation finding(s):`)
+    for (const m of newOrWorse) console.log(`  ✗ ${m}`)
+    console.log(`Fix: add .eq('organization_id', orgId), an org-scoped view, or an org-scoped hook — do NOT add it to the inventory.`)
+    failed = true
+  }
+  if (ungrounded.length > 0) {
+    console.log(`\nFAILED: ${ungrounded.length} P0 inventory entr(ies) grandfathered without an ack:`)
+    for (const m of ungrounded) console.log(`  ✗ ${m}`)
+    failed = true
+  }
+  if (stale.length > 0) {
+    console.log(`\nFAILED: inventory is STALE (${stale.length}) — a finding was fixed/reduced:`)
+    for (const m of stale) console.log(`  ✗ ${m}`)
+    console.log(`Run: node scripts/frontend-tenant-lint.mjs --write-inventory, then commit the inventory so the fix is reviewed.`)
     failed = true
   }
 
-  if (totalViolations > BASELINE_TOTAL) {
-    console.log(`\nFAILED: ${totalViolations - BASELINE_TOTAL} NEW violation(s) above total baseline.`)
-    console.log('Fix: Add .eq(\'organization_id\', orgId), use an org-scoped view, or use an org-scoped hook.')
-    failed = true
-  }
-
-  if (failed) {
-    console.log('')
-    process.exit(1)
-  }
-
-  if (totalViolations < BASELINE_TOTAL || p0Count < BASELINE_P0) {
-    console.log(`\nPASS: Violations decreased! Update baselines:`)
-    if (totalViolations < BASELINE_TOTAL) {
-      console.log(`  BASELINE_TOTAL: ${BASELINE_TOTAL} → ${totalViolations}`)
-    }
-    if (p0Count < BASELINE_P0) {
-      console.log(`  BASELINE_P0:    ${BASELINE_P0} → ${p0Count}`)
-    }
-    console.log('')
-    process.exit(0)
-  }
-
-  console.log('\nPASS: No new violations (at baseline).\n')
+  if (failed) { console.log(''); process.exit(1) }
+  console.log('\nPASS: current findings exactly match the reviewed inventory.\n')
   process.exit(0)
 }
 

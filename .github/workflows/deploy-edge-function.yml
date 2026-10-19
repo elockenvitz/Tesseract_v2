@@ -1,0 +1,146 @@
+name: deploy-edge-function
+
+# Manual, controlled production deployment of a single Supabase Edge Function.
+#
+# Security controls (see the security-closure plan):
+#  1. workflow_dispatch ONLY — never on push / merge / pull_request / pull_request_target (req 8).
+#     Fork/PR code can never trigger this, so untrusted code never sees the prod token (req 7).
+#  2. Reuses the EXISTING secrets.SUPABASE_ACCESS_TOKEN; passed only as a masked job env var, never
+#     echoed, and `supabase functions deploy` does not print it (req 2, 9).
+#  3. `function` is a fixed choice allowlist (calendar-sync / market-events / market-news), re-checked
+#     at runtime; auto-archive and holdings-sftp-sync are deliberately absent (req 3).
+#  4. All operator inputs are consumed via `env:` and referenced as quoted shell vars ("$SHA"), never
+#     interpolated as ${{ inputs.* }} inside run scripts — so a crafted input cannot inject shell (req 4).
+#  5. `sha` must be a full 40-hex commit and an ancestor of the freshly-fetched remote origin/main — a
+#     trustworthy reviewed/merged ref, never a local or arbitrary branch (req 5).
+#  6. Runs in the `production` GitHub environment: if that environment has required reviewers, GitHub
+#     enforces approval. This workflow does NOT create or weaken any environment protection — arm the gate
+#     by configuring required reviewers on `production` (req 6).
+#  7. permissions: contents: read (least privilege); reuses `npm run deploy:fn:prod`; no existing
+#     script/workflow modified (req 10).
+
+on:
+  workflow_dispatch:
+    inputs:
+      function:
+        description: Edge Function to deploy (approved allowlist)
+        required: true
+        type: choice
+        options:
+          - calendar-sync
+          - market-events
+          - market-news
+      sha:
+        description: Full 40-char commit SHA to deploy (must be merged to main)
+        required: true
+        type: string
+      confirm_prod_ref:
+        description: Type the production project ref to confirm (wfcebeagznzgeuyysbnt)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      PROD_REF: wfcebeagznzgeuyysbnt
+      ALLOWLIST: "calendar-sync market-events market-news"
+      # Inputs consumed as env vars (never ${{ }} inside run) to prevent script injection.
+      IN_FUNCTION: ${{ inputs.function }}
+      IN_SHA: ${{ inputs.sha }}
+      IN_CONFIRM: ${{ inputs.confirm_prod_ref }}
+    steps:
+      - name: Validate inputs (allowlist, full SHA, prod confirmation)
+        run: |
+          set -euo pipefail
+          echo "Requested function : $IN_FUNCTION"
+          echo "Requested sha      : $IN_SHA"
+          echo "Target project ref : $PROD_REF"
+          if [ "$IN_CONFIRM" != "$PROD_REF" ]; then
+            echo "::error::confirm_prod_ref did not match the production ref. Refusing."
+            exit 1
+          fi
+          case " $ALLOWLIST " in
+            *" $IN_FUNCTION "*) echo "Function is on the allowlist." ;;
+            *) echo "::error::Function is not on the approved allowlist ($ALLOWLIST)."; exit 1 ;;
+          esac
+          if ! printf '%s' "$IN_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::sha must be a full 40-character lowercase hex commit SHA."
+            exit 1
+          fi
+
+      - name: Fail closed unless the production environment has required reviewers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Read-only check with the job's own token (workflow permissions: contents: read).
+          # Response body is written to a file and only grepped — never printed — so no
+          # reviewer identities or other API detail is echoed.
+          code="$(curl -sS -o env.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/environments/production" || echo 000)"
+          if [ "$code" != "200" ]; then
+            rm -f env.json
+            echo "::error::Cannot confirm the 'production' environment (HTTP $code). Failing closed."
+            exit 1
+          fi
+          if ! grep -qE '"type"[[:space:]]*:[[:space:]]*"required_reviewers"' env.json; then
+            rm -f env.json
+            echo "::error::'production' has no active required_reviewers protection. Configure required reviewers before deploying. Failing closed."
+            exit 1
+          fi
+          rm -f env.json
+          echo "Confirmed: 'production' has an active required_reviewers protection rule."
+
+      - name: Checkout the exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+
+      - name: Verify the commit is reviewed (ancestor of the remote origin/main)
+        run: |
+          set -euo pipefail
+          # Fetch main from the remote into a known local ref; do not trust any pre-existing local ref.
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          MAIN_SHA="$(git rev-parse refs/remotes/origin/main)"
+          echo "origin/main = $MAIN_SHA"
+          if ! git merge-base --is-ancestor "$IN_SHA" refs/remotes/origin/main; then
+            echo "::error::$IN_SHA is not an ancestor of origin/main. Only reviewed/merged commits may deploy."
+            exit 1
+          fi
+          echo "Commit is reachable from origin/main (reviewed)."
+
+      - name: Verify the function exists at this commit
+        run: |
+          set -euo pipefail
+          test -f "supabase/functions/$IN_FUNCTION/index.ts" \
+            || { echo "::error::supabase/functions/$IN_FUNCTION/index.ts missing at the requested commit"; exit 1; }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy via the existing deploy script
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN secret is not configured for the production environment."
+            exit 1
+          fi
+          # Reuses scripts/supabase-target.mjs, which targets the prod ref explicitly.
+          npm run deploy:fn:prod -- "$IN_FUNCTION"
+          echo "Deployed $IN_FUNCTION to $PROD_REF from $IN_SHA."
