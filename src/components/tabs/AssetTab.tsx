@@ -47,7 +47,6 @@ import { contributionSectionsForSlug } from '../../lib/research/contribution-sec
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddToProjectButton } from '../projects/AddToProjectButton'
 import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView, ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
-import { ResearchLibrary } from '../research/ResearchLibrary'
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
 import { useKeyReferences } from '../../hooks/useKeyReferences'
 import { useUserAssetPriority, type Priority } from '../../hooks/useUserAssetPriority'
@@ -3417,24 +3416,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 />
               </Card>
             ) : thesisViewMode === 'references' ? (
-              /* References View - the Research Library (a first-class research
-                 workspace) above the existing Key References surface. */
-              <div className="space-y-4">
-                <ResearchLibrary
-                  assetId={asset.id}
-                  assetName={asset.symbol || asset.company_name || 'this asset'}
-                  onBackToInvestmentCase={() => setThesisViewMode('all')}
-                />
-                <AssetTabKeyReferencesInline
-                  assetId={asset.id}
-                  isCollapsed={false}
-                  onToggle={() => {}}
-                  notes={notes || []}
-                  onCreateNote={handleCreateNote}
-                  onNoteClick={handleNoteClick}
-                  isEmbedded
-                />
-              </div>
+              /* References View - unified Key References surface */
+              <AssetTabKeyReferencesInline
+                assetId={asset.id}
+                isCollapsed={false}
+                onToggle={() => {}}
+                notes={notes || []}
+                onCreateNote={handleCreateNote}
+                onNoteClick={handleNoteClick}
+                isEmbedded
+              />
             ) : isAggregatedView ? (
               /* Aggregated "All" View - clean flat list of fields with content */
               allAssetContributions.length === 0 ? (
