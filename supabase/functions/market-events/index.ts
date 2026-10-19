@@ -25,6 +25,8 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
+import { requirePublishableKey } from '../_shared/publishable-key.ts'
+import { authorizeVerifiedUser } from '../_shared/verified-user.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -109,6 +111,21 @@ serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
+  // Verify a real signed-in user before any external API call or cache write.
+  // The bare anon key resolves to no user and is rejected (see verified-user.ts).
+  const authHeader = req.headers.get('Authorization')
+  const userClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    requirePublishableKey((n) => Deno.env.get(n)),
+    { auth: { persistSession: false }, global: { headers: { Authorization: authHeader ?? '' } } },
+  )
+  const authz = await authorizeVerifiedUser(authHeader, userClient)
+  if (!authz.ok) {
+    return new Response(JSON.stringify({ error: authz.error }), {
+      status: authz.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 
