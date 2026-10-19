@@ -15,6 +15,8 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { requirePublishableKey } from '../_shared/publishable-key.ts'
+import { authorizeSeedRequest } from './authorize.ts'
 
 // ============================================================================
 // CORS
@@ -127,6 +129,47 @@ serve(async (req: Request) => {
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+
+  // ── Authorization gate ──────────────────────────────────────────────────
+  // Runs BEFORE any service_role client is constructed, so a denied request has
+  // zero database or Auth side effects. The caller is identified from a VERIFIED
+  // JWT (auth.getUser on a request-scoped client that forwards their header —
+  // not the mere presence of an Authorization header), and platform-admin status
+  // is derived from trusted server data (is_platform_admin() → platform_admins),
+  // never from caller-controlled JWT claims.
+  let body: Record<string, unknown> = {}
+  try {
+    body = await req.json()
+  } catch {
+    body = {}
+  }
+
+  const authHeader = req.headers.get('Authorization') ?? ''
+  const userClient = createClient(supabaseUrl, requirePublishableKey((n) => Deno.env.get(n)), {
+    global: { headers: { Authorization: authHeader } },
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { data: { user } } = await userClient.auth.getUser()
+  let isPlatformAdmin = false
+  if (user) {
+    const { data: adminFlag } = await userClient.rpc('is_platform_admin')
+    isPlatformAdmin = adminFlag === true
+  }
+
+  const decision = authorizeSeedRequest({
+    method: req.method,
+    hasVerifiedUser: !!user,
+    isPlatformAdmin,
+    organizationId: (body as { organization_id?: unknown }).organization_id,
+  })
+  if (!decision.ok) {
+    return new Response(JSON.stringify({ error: decision.reason }), {
+      status: decision.status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
+  // Authorized platform admin only past this point — now build the service_role client.
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -134,9 +177,9 @@ serve(async (req: Request) => {
 
   try {
     if (req.method === 'POST') {
-      return await handleSeed(req, admin)
+      return await handleSeed(body, admin)
     } else if (req.method === 'DELETE') {
-      return await handleCleanup(req, admin)
+      return await handleCleanup(body, admin)
     }
 
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -157,8 +200,8 @@ serve(async (req: Request) => {
 // Seed Handler
 // ============================================================================
 
-async function handleSeed(req: Request, admin: ReturnType<typeof createClient>) {
-  const { organization_id, portfolio_id } = await req.json()
+async function handleSeed(body: Record<string, unknown>, admin: ReturnType<typeof createClient>) {
+  const { organization_id, portfolio_id } = body as { organization_id?: string; portfolio_id?: string }
 
   if (!organization_id || !portfolio_id) {
     return new Response(JSON.stringify({ error: 'organization_id and portfolio_id required' }), {
@@ -510,8 +553,8 @@ async function handleSeed(req: Request, admin: ReturnType<typeof createClient>) 
 // Cleanup Handler — Remove all demo data for an org
 // ============================================================================
 
-async function handleCleanup(req: Request, admin: ReturnType<typeof createClient>) {
-  const { organization_id } = await req.json()
+async function handleCleanup(body: Record<string, unknown>, admin: ReturnType<typeof createClient>) {
+  const { organization_id } = body as { organization_id?: string }
 
   if (!organization_id) {
     return new Response(JSON.stringify({ error: 'organization_id required' }), {
