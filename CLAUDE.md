@@ -61,6 +61,49 @@ Do the task asked. If you find adjacent problems, list them at the end as
 separate findings — do not fix them in the same change. Unbundled work is
 reviewable; bundled work is not.
 
+### 5. Tenant isolation ships with the feature
+Every new organization-owned entity (table, view, RPC, storage path, or Edge
+Function that touches one org's data) ships in the SAME change with:
+- **Ownership**: an explicit, stable `organization_id` (never derived from a
+  mutable `current_org_id()` at read time for storage; set at write time).
+  Global reference data (no org by design) is the documented exception.
+- **RLS + grants**: RLS enabled; policies scoped to the org / active member /
+  owner — never `USING(true)`/`WITH CHECK(true)` to `authenticated` or
+  `public`, never an anon grant. Writes gated to the correct role.
+- **Tenant-aware policies for all four verbs** (SELECT/INSERT/UPDATE/DELETE),
+  and child tables guarded so a row cannot reference another org's/user's parent.
+- **A regression test** proving cross-org AND removed-member read/write are
+  denied while a legitimate same-org user is allowed (DB suite in
+  `supabase/tests/*.sql` + the relevant tenant lint).
+
+A feature is not done until all of the above exist.
+
+### 6. Privileged code requires a verified authorization gate
+Applies to `SECURITY DEFINER` RPCs and all Edge Functions.
+- **Never** perform a privileged operation on a **client-supplied
+  organization_id** (or user/resource id) without first verifying the caller
+  is authorized for it. The presence of a valid JWT is not authorization — the
+  anon/publishable key is itself a valid JWT.
+- **Derive authority from trusted server-side data**, never from
+  caller-controlled JWT claims (`app_metadata`, etc.): platform-admin via
+  `is_platform_admin()` → `platform_admins`; org membership via
+  `current_org_id()`/`is_member_of_org()`; portfolio access via the table's own
+  permission predicate.
+- **Separate the auth model per function class** and gate accordingly:
+  user-facing (verified `auth.getUser()` + org/role check), `service_role`
+  (must self-authorize before any privileged op), cron (internal secret,
+  timing-safe compare, fails closed if unset), webhook (signature verify),
+  API-key (hashed key → its own org scope).
+- **Order**: authorize BEFORE constructing any `service_role` client; a denied
+  request must cause **zero** DB/Auth side effects.
+- A new privileged function is not reviewable until it is registered in
+  `supabase/functions/authz-registry.json` with its auth class and a runtime
+  authorization test. CI (`npm run sec:edge-authz`) fails if a `service_role`
+  function is unregistered or a user-reachable privileged class lacks a test.
+- **Do not** treat a naming convention or the presence of a familiar auth
+  helper as proof of security — static checks complement, never replace,
+  runtime authorization tests. **Do not** weaken a test to get green CI.
+
 ---
 
 ## Known defect classes — check for these
