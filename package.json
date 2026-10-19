@@ -32,6 +32,7 @@
     "typecheck:all": "tsc -b --pretty false",
     "guard:types": "node scripts/typecheck-cards.mjs",
     "guard:ci": "node scripts/ci-integrity.mjs",
+    "sec:edge-authz": "node scripts/edge-authz-guard.mjs",
     "guard:gallery": "node scripts/gallery-purity.mjs",
     "guard:holdings": "node scripts/holdings-collapse-audit.mjs",
     "guard:tdz": "node scripts/lint-mobile-ratchet.mjs",

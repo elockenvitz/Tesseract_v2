@@ -1,0 +1,27 @@
+{
+  "$comment": "Authorization registry for Supabase Edge Functions (CLAUDE.md Standing Rule 6). Every function directory under supabase/functions/ must appear here. 'serviceRole' must match whether the function constructs a SUPABASE_SERVICE_ROLE_KEY client (verified by scripts/edge-authz-guard.mjs against source). A service_role function is a FAIL until reviewed:true with an authClass; user-reachable privileged classes (platform-admin, user-jwt) additionally require a runtime 'test' that exists on disk. Do NOT set reviewed:true or add a justification without a real authorization review in the PR — this file is the review artifact, not a suppression list.",
+  "authClasses": {
+    "platform-admin": "verified auth.getUser() + is_platform_admin() (platform_admins table). TEST REQUIRED.",
+    "user-jwt": "verified auth.getUser() + per-request org/role/ownership check before privileged ops. TEST REQUIRED.",
+    "user-jwt-rls": "forwards caller JWT; all data access runs under the caller's RLS (no service_role). Test recommended.",
+    "api-key": "hashed API key resolved to its own organization_id; all access scoped to that org. Test recommended.",
+    "cron-secret": "internal scheduler secret, timing-safe compare, fails closed if unset; no caller-named targets. Test recommended.",
+    "webhook": "provider signature verification. Test recommended.",
+    "public-proxy": "stateless proxy, no DB writes, no tenant data."
+  },
+  "functions": {
+    "seed-pilot-data":      { "serviceRole": true,  "reviewed": true,  "authClass": "platform-admin", "test": "src/lib/security/__tests__/seed-pilot-data-auth.test.ts" },
+    "workflow-automation":  { "serviceRole": true,  "reviewed": true,  "authClass": "cron-secret",    "test": "src/lib/security/__tests__/workflow-automation-auth.test.ts" },
+    "holdings-api":         { "serviceRole": true,  "reviewed": true,  "authClass": "api-key",        "test": null, "justification": "Authenticates a hashed hk_ key -> holdings_api_keys.organization_id; rejects 403 when portfolio.organization_id != key org; all writes key-org-scoped. Regression test recommended (follow-up)." },
+    "ai-chat":              { "serviceRole": false, "reviewed": true,  "authClass": "user-jwt-rls",   "test": "src/lib/security/__tests__/edge-publishable-key.test.ts", "justification": "Publishable key + forwarded caller JWT + auth.getUser(); all context queries run under caller RLS; no service_role." },
+    "attention":            { "serviceRole": false, "reviewed": true,  "authClass": "user-jwt-rls",   "test": null, "justification": "Forwards caller JWT; read-only; no service_role." },
+    "calendar-oauth-start": { "serviceRole": false, "reviewed": true,  "authClass": "user-jwt",       "test": null, "justification": "OAuth start; forwards caller JWT; no service_role data access." },
+    "fetch-url-metadata":   { "serviceRole": false, "reviewed": true,  "authClass": "public-proxy",   "test": null, "justification": "Stateless URL metadata fetch; no DB." },
+    "yahoo-chart-proxy":    { "serviceRole": false, "reviewed": true,  "authClass": "public-proxy",   "test": null, "justification": "Global market chart proxy; no DB, no tenant data." },
+    "calendar-sync":        { "serviceRole": true,  "reviewed": false, "authClass": null, "test": null, "note": "Uses service_role + auth.getUser(); classify (user-jwt) and add a cross-user regression test before reviewed:true." },
+    "auto-archive":         { "serviceRole": true,  "reviewed": false, "authClass": null, "test": null, "note": "service_role, no visible caller gate; confirm cron-only + add a cron-secret gate/test before reviewed:true." },
+    "holdings-sftp-sync":   { "serviceRole": true,  "reviewed": false, "authClass": null, "test": null, "note": "service_role, no visible caller gate; confirm cron/system-only before reviewed:true." },
+    "market-events":        { "serviceRole": true,  "reviewed": false, "authClass": null, "test": null, "note": "service_role, global market data; confirm invocation gate before reviewed:true (low tenant risk)." },
+    "market-news":          { "serviceRole": true,  "reviewed": false, "authClass": null, "test": null, "note": "service_role, global market data; confirm invocation gate before reviewed:true (low tenant risk)." }
+  }
+}
