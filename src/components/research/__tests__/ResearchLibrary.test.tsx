@@ -1,11 +1,12 @@
 /**
- * Research Library — the asset's first-class research workspace.
+ * Supporting Research — the asset's compact, secondary research surface.
  *
  * The data hooks and the note editor have their own suites; here we assert the
- * surface's own behaviour: it frames a research workspace (not an attachment
- * list), connects each artifact to the asset on open, presents governed
- * asset-level documents with honest copy, and handles empty/loading/error/
- * no-org states.
+ * surface's own behaviour: it frames supporting research as secondary to the
+ * Investment Case (with an obvious route back), lists artifacts compactly and
+ * opens them in a drawer (NOT an embedded full Notes app), never creates a note
+ * just by rendering, keeps the artifact count fresh, and presents governed
+ * asset-level documents with honest copy and empty/loading/error states.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within, waitFor } from '@testing-library/react'
@@ -13,8 +14,10 @@ import userEvent from '@testing-library/user-event'
 
 const notesApi = vi.hoisted(() => ({
   ready: true, isLoading: false, error: null as Error | null,
-  notes: [{ id: 'n1', title: 'Services deep-dive', contentPreview: null, createdBy: 'u1', createdAt: '', updatedAt: '' }],
+  notes: [{ id: 'n1', title: 'Services deep-dive', contentPreview: 'margins', createdBy: 'u1', createdAt: '2026-01-01', updatedAt: '2026-01-01' }],
   ensureAssetLink: vi.fn(async () => {}),
+  createArtifact: vi.fn(async () => 'new-id'),
+  isCreating: false,
   refetch: vi.fn(),
 }))
 const docsApi = vi.hoisted(() => ({
@@ -30,12 +33,13 @@ vi.mock('../../../hooks/useAssetResearchNotes', () => ({
   useAssetResearchDocuments: () => docsApi,
 }))
 
-// The canonical note workspace is proven elsewhere; stub it to a seam that lets
-// us trigger onNoteSelect (which fires on create + open).
-vi.mock('../../notes/UniversalNoteEditor', () => ({
-  UniversalNoteEditor: ({ entityType, entityId, onNoteSelect }: any) => (
-    <div data-testid="universal-note-editor" data-entity-type={entityType} data-entity-id={entityId}>
-      <button data-testid="editor-open-note" onClick={() => onNoteSelect('n1')}>open/create note</button>
+// The artifact editor lives in a drawer and is proven elsewhere; stub it to a
+// seam that lets us read the opened note id and trigger onNoteSelect / onClose.
+vi.mock('../ResearchArtifactDrawer', () => ({
+  ResearchArtifactDrawer: ({ noteId, onNoteSelect, onClose }: any) => (
+    <div data-testid="research-drawer" data-note-id={noteId}>
+      <button data-testid="drawer-fire-select" onClick={() => onNoteSelect(noteId)}>select</button>
+      <button data-testid="drawer-close" onClick={onClose}>close</button>
     </div>
   ),
 }))
@@ -43,36 +47,89 @@ vi.mock('../../notes/UniversalNoteEditor', () => ({
 import { ResearchLibrary } from '../ResearchLibrary'
 
 beforeEach(() => {
-  notesApi.ready = true; notesApi.isLoading = false; notesApi.error = null
-  notesApi.notes = [{ id: 'n1', title: 'Services deep-dive', contentPreview: null, createdBy: 'u1', createdAt: '', updatedAt: '' }]
-  notesApi.ensureAssetLink.mockClear()
+  notesApi.ready = true; notesApi.isLoading = false; notesApi.error = null; notesApi.isCreating = false
+  notesApi.notes = [{ id: 'n1', title: 'Services deep-dive', contentPreview: 'margins', createdBy: 'u1', createdAt: '2026-01-01', updatedAt: '2026-01-01' }]
+  notesApi.ensureAssetLink.mockClear(); notesApi.refetch.mockClear()
+  notesApi.createArtifact.mockClear(); notesApi.createArtifact.mockResolvedValue('new-id')
   docsApi.ready = true; docsApi.isLoading = false; docsApi.error = null; docsApi.documents = []; docsApi.isAttaching = false
   docsApi.uploadAndAttach.mockClear(); docsApi.getUrl.mockClear()
   vi.spyOn(window, 'open').mockImplementation(() => null)
 })
 
-describe('Research Library surface', () => {
-  it('frames a research workspace with a count and asset-scoped editor', () => {
-    render(<ResearchLibrary assetId="a1" assetName="AAPL" />)
-    expect(screen.getByText('Research')).toBeInTheDocument()
+describe('Supporting Research surface', () => {
+  it('frames research as secondary to the Investment Case, with a count and a route back', () => {
+    const onBack = vi.fn()
+    render(<ResearchLibrary assetId="a1" assetName="AAPL" onBackToInvestmentCase={onBack} />)
+    expect(screen.getByText('Supporting research')).toBeInTheDocument()
     expect(screen.getByText(/1 artifact/)).toBeInTheDocument()
-    expect(screen.getByText(/no\s+investment idea required/i)).toBeInTheDocument()
-    const editor = screen.getByTestId('universal-note-editor')
-    expect(editor).toHaveAttribute('data-entity-type', 'asset')
-    expect(editor).toHaveAttribute('data-entity-id', 'a1')
+    // Distinction from the canonical Investment Case is explicit.
+    expect(screen.getByText(/not the case itself/i)).toBeInTheDocument()
+    expect(screen.getByText(/no investment idea required/i)).toBeInTheDocument()
+    expect(screen.getByTestId('back-to-investment-case')).toBeInTheDocument()
   })
 
-  it('connects an artifact to the asset when it is opened or created', async () => {
+  it('does NOT embed the full Notes application inline and does not create on render', () => {
     render(<ResearchLibrary assetId="a1" assetName="AAPL" />)
-    await userEvent.click(screen.getByTestId('editor-open-note'))
-    expect(notesApi.ensureAssetLink).toHaveBeenCalledWith('n1')
+    // No inline editor, no drawer until an artifact is opened.
+    expect(screen.queryByTestId('universal-note-editor')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('research-drawer')).not.toBeInTheDocument()
+    // Rendering must never create an artifact.
+    expect(notesApi.createArtifact).not.toHaveBeenCalled()
+  })
+
+  it('returns to the Investment Case when asked', async () => {
+    const onBack = vi.fn()
+    render(<ResearchLibrary assetId="a1" assetName="AAPL" onBackToInvestmentCase={onBack} />)
+    await userEvent.click(screen.getByTestId('back-to-investment-case'))
+    expect(onBack).toHaveBeenCalled()
   })
 
   it('shows a no-organization state instead of running unscoped', () => {
     notesApi.ready = false
     render(<ResearchLibrary assetId="a1" assetName="AAPL" />)
     expect(screen.getByTestId('research-library-no-org')).toBeInTheDocument()
-    expect(screen.queryByTestId('universal-note-editor')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('research-artifacts')).not.toBeInTheDocument()
+  })
+})
+
+describe('Artifact list and drawer', () => {
+  it('lists artifacts compactly and opens one in the drawer', async () => {
+    render(<ResearchLibrary assetId="a1" assetName="AAPL" />)
+    await userEvent.click(screen.getByText('Services deep-dive'))
+    const drawer = screen.getByTestId('research-drawer')
+    expect(drawer).toHaveAttribute('data-note-id', 'n1')
+  })
+
+  it('shows the empty state when there is no supporting research', () => {
+    notesApi.notes = []
+    render(<ResearchLibrary assetId="a1" assetName="AAPL" />)
+    expect(screen.getByTestId('research-artifacts-empty')).toBeInTheDocument()
+  })
+
+  it('creates a new artifact on explicit New and opens it in the drawer', async () => {
+    notesApi.notes = []
+    render(<ResearchLibrary assetId="a1" assetName="AAPL" />)
+    await userEvent.click(screen.getByTestId('supporting-research-new'))
+    expect(notesApi.createArtifact).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(screen.getByTestId('research-drawer')).toHaveAttribute('data-note-id', 'new-id'))
+  })
+
+  it('connects the artifact to the asset when the drawer selects it', async () => {
+    render(<ResearchLibrary assetId="a1" assetName="AAPL" />)
+    await userEvent.click(screen.getByText('Services deep-dive'))
+    await userEvent.click(screen.getByTestId('drawer-fire-select'))
+    expect(notesApi.ensureAssetLink).toHaveBeenCalledWith('n1')
+  })
+
+  it('refreshes the artifact list when the drawer closes so the count stays fresh', async () => {
+    // The editor owns persistence and invalidates only its own query; closing
+    // the drawer must refetch or titles / new artifacts go stale.
+    render(<ResearchLibrary assetId="a1" assetName="AAPL" />)
+    await userEvent.click(screen.getByText('Services deep-dive'))
+    expect(notesApi.refetch).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByTestId('drawer-close'))
+    expect(notesApi.refetch).toHaveBeenCalled()
+    expect(screen.queryByTestId('research-drawer')).not.toBeInTheDocument()
   })
 })
 
@@ -90,8 +147,7 @@ describe('Governed source documents', () => {
   it('lists linked documents and opens one via a signed URL', async () => {
     docsApi.documents = [{ linkId: 'fl1', linkedAt: '', file: { id: 'f1', original_name: 'Model.xlsx', name: 'model', storage_bucket: 'assets', storage_path: 'o/f1' } }]
     render(<ResearchLibrary assetId="a1" assetName="AAPL" />)
-    const row = screen.getByText('Model.xlsx')
-    await userEvent.click(row)
+    await userEvent.click(screen.getByText('Model.xlsx'))
     await waitFor(() => expect(docsApi.getUrl).toHaveBeenCalled())
     expect(window.open).toHaveBeenCalledWith('https://signed.example/doc', '_blank', 'noopener,noreferrer')
   })

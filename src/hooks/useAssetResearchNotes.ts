@@ -23,7 +23,7 @@
  * Governed source documents (files/file_links) live in `useAssetResearchDocuments`
  * below — they are linked to the ASSET, never to an individual note.
  */
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
@@ -106,11 +106,48 @@ export function useAssetResearchNotes(assetId: string | null) {
     queryClient.invalidateQueries({ queryKey: listKey })
   }, [queryClient, listKey])
 
+  const [isCreating, setIsCreating] = useState(false)
+
+  /**
+   * Create a research artifact deliberately (user clicked "New"). Mirrors the
+   * note editor's own insert shape — org_id and created_by are also stamped by
+   * the asset_notes triggers — then connects it to the asset and refreshes the
+   * list. Returns the new note id so the caller can open it in the drawer.
+   * Nothing here runs on mount, so no empty artifact is ever created implicitly.
+   */
+  const createArtifact = useCallback(async (): Promise<string | null> => {
+    if (!assetId || !user?.id) return null
+    setIsCreating(true)
+    try {
+      const { data, error } = await supabase
+        .from('asset_notes')
+        .insert([{
+          asset_id: assetId,
+          title: 'Untitled',
+          content: '',
+          note_type: RESEARCH_NOTE_TYPE,
+          created_by: user.id,
+          updated_by: user.id,
+        }] as any)
+        .select('id')
+        .single()
+      if (error) throw new Error(error.message)
+      const id = (data as any).id as string
+      await ensureAssetLink(id)
+      await queryClient.invalidateQueries({ queryKey: listKey })
+      return id
+    } finally {
+      setIsCreating(false)
+    }
+  }, [assetId, user?.id, ensureAssetLink, queryClient, listKey])
+
   return {
     notes,
     isLoading,
     error: (error as Error) ?? null,
     ensureAssetLink,
+    createArtifact,
+    isCreating,
     refetch,
     ready: !!assetId && !!currentOrgId,
   }

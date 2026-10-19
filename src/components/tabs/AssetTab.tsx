@@ -3423,6 +3423,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 <ResearchLibrary
                   assetId={asset.id}
                   assetName={asset.symbol || asset.company_name || 'this asset'}
+                  onBackToInvestmentCase={() => setThesisViewMode('all')}
                 />
                 <AssetTabKeyReferencesInline
                   assetId={asset.id}

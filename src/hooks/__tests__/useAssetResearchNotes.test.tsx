@@ -46,7 +46,19 @@ vi.mock('../../lib/supabase', () => {
           }
           return Promise.resolve({ error: null })
         }
-        chain.insert = (row: any) => { rowsFor(table).push({ ...row, organization_id: row.organization_id ?? env.orgId }); return Promise.resolve({ error: null }) }
+        chain.insert = (rows: any) => {
+          const inserted = (Array.isArray(rows) ? rows : [rows]).map((row: any) => {
+            const withMeta = { id: row.id ?? `gen-${Math.random().toString(36).slice(2, 8)}`, ...row, organization_id: row.organization_id ?? env.orgId }
+            rowsFor(table).push(withMeta)
+            return withMeta
+          })
+          const insertChain: any = {
+            select: () => insertChain,
+            single: () => Promise.resolve({ data: inserted[0], error: null }),
+            then: (resolve: (v: any) => any) => Promise.resolve({ data: inserted, error: null }).then(resolve),
+          }
+          return insertChain
+        }
         chain.then = (resolve: (v: any) => any) => {
           let out = rowsFor(table).filter(r => orgScoped(r) && filters.every(([, col, val]) => r[col] === val))
           if (embedFiles) {
@@ -124,6 +136,28 @@ describe('useAssetResearchNotes.ensureAssetLink — the research→asset relatio
       source_type: 'asset_note', source_id: 'n1', target_type: 'asset', target_id: 'a1',
       link_type: 'references', is_auto: false, created_by: 'user-1', organization_id: 'org-a',
     })
+  })
+})
+
+describe('useAssetResearchNotes.createArtifact — explicit creation only', () => {
+  it('inserts a research note for this asset, links it, and returns its id', async () => {
+    const { result } = renderHook(() => useAssetResearchNotes('a1'), { wrapper })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    let newId: string | null = null
+    await act(async () => { newId = await result.current.createArtifact() })
+    expect(newId).toBeTruthy()
+    const created = env.asset_notes.find(n => n.id === newId)
+    expect(created).toMatchObject({ asset_id: 'a1', note_type: 'research', organization_id: 'org-a', created_by: 'user-1' })
+    // the new artifact is connected to the asset
+    expect(env.object_links.some(l => l.source_id === newId && l.target_id === 'a1' && l.link_type === 'references')).toBe(true)
+  })
+
+  it('does not create without a user or asset', async () => {
+    env.userId = null
+    const { result } = renderHook(() => useAssetResearchNotes('a1'), { wrapper })
+    let newId: string | null = 'x'
+    await act(async () => { newId = await result.current.createArtifact() })
+    expect(newId).toBeNull()
   })
 })
 
