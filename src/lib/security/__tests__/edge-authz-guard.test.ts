@@ -32,7 +32,7 @@ describe('edge-authz guard — decision core', () => {
 
   it('FAILS a new unregistered service_role function (regression: privileged fn added without review)', () => {
     const r = evaluateAuthz([{ name: 'rogue', usesServiceRole: true }], {}, good)
-    expect(r.errors.some((e) => /rogue/.test(e) && /registry/.test(e))).toBe(true)
+    expect(r.errors.some((e: string) => /rogue/.test(e) && /registry/.test(e))).toBe(true)
   })
 
   it('FAILS a service_role function that is registered but not yet reviewed', () => {
@@ -41,7 +41,7 @@ describe('edge-authz guard — decision core', () => {
       { cron1: { serviceRole: true, reviewed: false, authClass: null, test: null } },
       good,
     )
-    expect(r.errors.some((e) => /cron1/.test(e) && /pending authorization review/.test(e))).toBe(true)
+    expect(r.errors.some((e: string) => /cron1/.test(e) && /pending authorization review/.test(e))).toBe(true)
   })
 
   it('FAILS when source uses service_role but the registry says it does not (drift)', () => {
@@ -50,7 +50,7 @@ describe('edge-authz guard — decision core', () => {
       { drift: { serviceRole: false, reviewed: true, authClass: 'user-jwt' } },
       good,
     )
-    expect(r.errors.some((e) => /drift/.test(e) && /serviceRole/.test(e))).toBe(true)
+    expect(r.errors.some((e: string) => /drift/.test(e) && /serviceRole/.test(e))).toBe(true)
   })
 
   it('FAILS a privileged (platform-admin) class whose referenced test is MISSING', () => {
@@ -59,7 +59,7 @@ describe('edge-authz guard — decision core', () => {
       { seed: { serviceRole: true, reviewed: true, authClass: 'platform-admin', test: 'src/missing.test.ts' } },
       missing,
     )
-    expect(r.errors.some((e) => /seed/.test(e) && /does not exist/.test(e))).toBe(true)
+    expect(r.errors.some((e: string) => /seed/.test(e) && /does not exist/.test(e))).toBe(true)
   })
 
   it('FAILS a privileged class whose test is an EMPTY PLACEHOLDER (exists but no it()/expect())', () => {
@@ -68,7 +68,7 @@ describe('edge-authz guard — decision core', () => {
       { seed: { serviceRole: true, reviewed: true, authClass: 'platform-admin', test: 'src/empty.test.ts' } },
       emptyPlaceholder,
     )
-    expect(r.errors.some((e) => /seed/.test(e) && /empty placeholder/.test(e))).toBe(true)
+    expect(r.errors.some((e: string) => /seed/.test(e) && /empty placeholder/.test(e))).toBe(true)
   })
 
   it('FAILS a privileged class whose test is outside src/**/*.test.ts (npm test would not run it)', () => {
@@ -77,7 +77,7 @@ describe('edge-authz guard — decision core', () => {
       { seed: { serviceRole: true, reviewed: true, authClass: 'user-jwt', test: 'supabase/functions/seed/test.ts' } },
       outOfScope,
     )
-    expect(r.errors.some((e) => /seed/.test(e) && /npm test/.test(e))).toBe(true)
+    expect(r.errors.some((e: string) => /seed/.test(e) && /npm test/.test(e))).toBe(true)
   })
 
   it('WARNS (does not error) on an api-key service_role function without a test', () => {
@@ -87,7 +87,7 @@ describe('edge-authz guard — decision core', () => {
       missing,
     )
     expect(r.errors).toEqual([])
-    expect(r.warnings.some((w) => /hk/.test(w))).toBe(true)
+    expect(r.warnings.some((w: string) => /hk/.test(w))).toBe(true)
   })
 
   it('WARNS on a non-service_role function that builds a client with an unrecognized key source', () => {
@@ -97,7 +97,7 @@ describe('edge-authz guard — decision core', () => {
       missing,
     )
     expect(r.errors).toEqual([])
-    expect(r.warnings.some((w) => /odd/.test(w) && /unrecognized key source/.test(w))).toBe(true)
+    expect(r.warnings.some((w: string) => /odd/.test(w) && /unrecognized key source/.test(w))).toBe(true)
   })
 
   it('does not require a test for non-service_role functions', () => {
