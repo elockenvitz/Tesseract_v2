@@ -73,6 +73,32 @@ jobs:
             exit 1
           fi
 
+      - name: Fail closed unless the production environment has required reviewers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Read-only check with the job's own token (workflow permissions: contents: read).
+          # Response body is written to a file and only grepped — never printed — so no
+          # reviewer identities or other API detail is echoed.
+          code="$(curl -sS -o env.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/environments/production" || echo 000)"
+          if [ "$code" != "200" ]; then
+            rm -f env.json
+            echo "::error::Cannot confirm the 'production' environment (HTTP $code). Failing closed."
+            exit 1
+          fi
+          if ! grep -qE '"type"[[:space:]]*:[[:space:]]*"required_reviewers"' env.json; then
+            rm -f env.json
+            echo "::error::'production' has no active required_reviewers protection. Configure required reviewers before deploying. Failing closed."
+            exit 1
+          fi
+          rm -f env.json
+          echo "Confirmed: 'production' has an active required_reviewers protection rule."
+
       - name: Checkout the exact commit
         uses: actions/checkout@v4
         with:
