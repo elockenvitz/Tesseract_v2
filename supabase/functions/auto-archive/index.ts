@@ -18,15 +18,12 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { authorizeAutomationRequest } from '../_shared/automation-auth.ts'
 
-// ============================================================================
-// CORS Headers
-// ============================================================================
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || 'https://tesseract.app',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+// Not a browser endpoint: this is a scheduler-only maintenance sweep that runs
+// with the service-role key across every organization. No CORS headers, so no
+// page on any origin can read a response; the x-automation-secret gate below is
+// the only thing that may reach the service_role client.
 
 // ============================================================================
 // Types
@@ -65,56 +62,45 @@ const SYSTEM_ACTOR = {
 // ============================================================================
 
 serve(async (req: Request) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+  // Authorize before any service_role client or privileged read/write exists.
+  // The run is a global retention sweep; the body only tunes retention/batch and
+  // can never name an org, so a rejected caller causes no side effects at all.
+  const auth = authorizeAutomationRequest(
+    req.method,
+    req.headers,
+    Deno.env.get('AUTOMATION_SECRET'),
+  )
+  if (!auth.ok) {
+    console.warn(`[auto-archive] Rejected: ${auth.reason}`)
+    return new Response(
+      JSON.stringify({ error: auth.status === 405 ? 'method not allowed' : 'unauthorized' }),
+      {
+        status: auth.status,
+        headers: auth.status === 405
+          ? { 'Content-Type': 'application/json', 'Allow': 'POST' }
+          : { 'Content-Type': 'application/json' },
+      },
+    )
   }
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    const url = new URL(req.url)
-    const path = url.pathname.replace('/auto-archive', '')
-
-    // Route handling
-    if (path === '/status' && req.method === 'GET') {
-      const status = await getTrashStatus(supabase)
-      return new Response(JSON.stringify(status), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    let retentionDays = DEFAULT_RETENTION_DAYS
+    let batchSize = DEFAULT_BATCH_SIZE
+    try {
+      const body = await req.json()
+      retentionDays = body.retention_days ?? DEFAULT_RETENTION_DAYS
+      batchSize = body.batch_size ?? DEFAULT_BATCH_SIZE
+    } catch {
+      // Use defaults if body parsing fails.
     }
 
-    if (req.method === 'POST' || req.method === 'GET') {
-      // Parse configuration from request body or query params
-      let retentionDays = DEFAULT_RETENTION_DAYS
-      let batchSize = DEFAULT_BATCH_SIZE
-
-      if (req.method === 'POST') {
-        try {
-          const body = await req.json()
-          retentionDays = body.retention_days ?? DEFAULT_RETENTION_DAYS
-          batchSize = body.batch_size ?? DEFAULT_BATCH_SIZE
-        } catch {
-          // Use defaults if body parsing fails
-        }
-      } else {
-        retentionDays = parseInt(url.searchParams.get('retention_days') || '') || DEFAULT_RETENTION_DAYS
-        batchSize = parseInt(url.searchParams.get('batch_size') || '') || DEFAULT_BATCH_SIZE
-      }
-
-      const result = await runAutoArchive(supabase, retentionDays, batchSize)
-
-      return new Response(JSON.stringify(result), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    const result = await runAutoArchive(supabase, retentionDays, batchSize)
+    return new Response(JSON.stringify(result), {
+      headers: { 'Content-Type': 'application/json' },
     })
   } catch (error) {
     console.error('Auto-archive error:', error)
@@ -123,10 +109,7 @@ serve(async (req: Request) => {
         error: error instanceof Error ? error.message : 'Unknown error',
         processedAt: new Date().toISOString(),
       }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+      { status: 500, headers: { 'Content-Type': 'application/json' } },
     )
   }
 })

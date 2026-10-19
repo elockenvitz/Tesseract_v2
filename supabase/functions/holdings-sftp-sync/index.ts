@@ -17,11 +17,12 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { authorizeAutomationRequest } from '../_shared/automation-auth.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || 'https://tesseract.app',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+// Not a browser endpoint: this is a scheduler-only ingestion job that runs with
+// the service-role key and writes portfolio holdings for every active config's
+// organization. No CORS headers; the x-automation-secret gate in serve() is the
+// only thing that may reach the service_role client or the SFTP/API fetch.
 
 // ============================================================================
 // CSV Parsing (same logic as frontend useHoldingsUpload)
@@ -369,8 +370,25 @@ function autoDetectMappings(headers: string[]): Record<string, string> {
 // ============================================================================
 
 serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+  // Authorize before any service_role client, SFTP connection, or write exists.
+  // The org is read from holdings_integration_configs rows (server-trusted), never
+  // from the caller, and a rejected caller reaches no privileged side effect.
+  const auth = authorizeAutomationRequest(
+    req.method,
+    req.headers,
+    Deno.env.get('AUTOMATION_SECRET'),
+  )
+  if (!auth.ok) {
+    console.warn(`[holdings-sftp-sync] Rejected: ${auth.reason}`)
+    return new Response(
+      JSON.stringify({ error: auth.status === 405 ? 'method not allowed' : 'unauthorized' }),
+      {
+        status: auth.status,
+        headers: auth.status === 405
+          ? { 'Content-Type': 'application/json', 'Allow': 'POST' }
+          : { 'Content-Type': 'application/json' },
+      },
+    )
   }
 
   try {
@@ -421,13 +439,13 @@ serve(async (req: Request) => {
       failed: results.filter(r => r.status === 'failed').length,
       results,
     }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
     })
 
   } catch (err: any) {
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
     })
   }
 })
