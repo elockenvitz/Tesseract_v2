@@ -3,20 +3,21 @@ name: deploy-edge-function
 # Manual, controlled production deployment of a single Supabase Edge Function.
 #
 # Security controls (see the security-closure plan):
-#  1. workflow_dispatch ONLY — never on push / merge / pull_request (req 8). PR code
-#     from a fork cannot trigger this, so untrusted code never sees the prod token (req 7).
-#  2. Reuses the EXISTING secrets.SUPABASE_ACCESS_TOKEN; it is passed only as a masked job
-#     env var, never echoed, and `supabase functions deploy` does not print it (req 2, 9).
-#  3. `function` is a fixed choice allowlist (calendar-sync / market-events / market-news),
-#     re-checked at runtime; auto-archive and holdings-sftp-sync are deliberately absent (req 3).
-#  4. Production project ref is explicit and verified before any deploy: the operator must type
-#     it into `confirm_prod_ref`, and it must equal the hard-coded PROD_REF (req 4).
-#  5. Deploys an EXACT commit `sha`, checked out by SHA, and verified to be an ancestor of
-#     origin/main (a reviewed/merged commit) — never an arbitrary unreviewed branch (req 5).
-#  6. Runs in the `production` GitHub environment: if that environment has required reviewers,
-#     GitHub enforces approval before the job runs. This workflow does not create or weaken any
-#     environment protection — configure required reviewers on `production` to arm the gate (req 6).
-#  7. Reuses the existing `npm run deploy:fn:prod` script; no existing script/workflow is modified (req 10).
+#  1. workflow_dispatch ONLY — never on push / merge / pull_request / pull_request_target (req 8).
+#     Fork/PR code can never trigger this, so untrusted code never sees the prod token (req 7).
+#  2. Reuses the EXISTING secrets.SUPABASE_ACCESS_TOKEN; passed only as a masked job env var, never
+#     echoed, and `supabase functions deploy` does not print it (req 2, 9).
+#  3. `function` is a fixed choice allowlist (calendar-sync / market-events / market-news), re-checked
+#     at runtime; auto-archive and holdings-sftp-sync are deliberately absent (req 3).
+#  4. All operator inputs are consumed via `env:` and referenced as quoted shell vars ("$SHA"), never
+#     interpolated as ${{ inputs.* }} inside run scripts — so a crafted input cannot inject shell (req 4).
+#  5. `sha` must be a full 40-hex commit and an ancestor of the freshly-fetched remote origin/main — a
+#     trustworthy reviewed/merged ref, never a local or arbitrary branch (req 5).
+#  6. Runs in the `production` GitHub environment: if that environment has required reviewers, GitHub
+#     enforces approval. This workflow does NOT create or weaken any environment protection — arm the gate
+#     by configuring required reviewers on `production` (req 6).
+#  7. permissions: contents: read (least privilege); reuses `npm run deploy:fn:prod`; no existing
+#     script/workflow modified (req 10).
 
 on:
   workflow_dispatch:
@@ -30,7 +31,7 @@ on:
           - market-events
           - market-news
       sha:
-        description: Exact commit SHA to deploy (must be merged to main)
+        description: Full 40-char commit SHA to deploy (must be merged to main)
         required: true
         type: string
       confirm_prod_ref:
@@ -48,21 +49,29 @@ jobs:
     env:
       PROD_REF: wfcebeagznzgeuyysbnt
       ALLOWLIST: "calendar-sync market-events market-news"
+      # Inputs consumed as env vars (never ${{ }} inside run) to prevent script injection.
+      IN_FUNCTION: ${{ inputs.function }}
+      IN_SHA: ${{ inputs.sha }}
+      IN_CONFIRM: ${{ inputs.confirm_prod_ref }}
     steps:
-      - name: Verify production target and allowlist
+      - name: Validate inputs (allowlist, full SHA, prod confirmation)
         run: |
           set -euo pipefail
-          echo "Requested function : ${{ inputs.function }}"
-          echo "Requested sha      : ${{ inputs.sha }}"
+          echo "Requested function : $IN_FUNCTION"
+          echo "Requested sha      : $IN_SHA"
           echo "Target project ref : $PROD_REF"
-          if [ "${{ inputs.confirm_prod_ref }}" != "$PROD_REF" ]; then
-            echo "::error::confirm_prod_ref did not match the production ref $PROD_REF. Refusing."
+          if [ "$IN_CONFIRM" != "$PROD_REF" ]; then
+            echo "::error::confirm_prod_ref did not match the production ref. Refusing."
             exit 1
           fi
           case " $ALLOWLIST " in
-            *" ${{ inputs.function }} "*) echo "Function is on the allowlist." ;;
-            *) echo "::error::Function '${{ inputs.function }}' is not on the approved allowlist ($ALLOWLIST)."; exit 1 ;;
+            *" $IN_FUNCTION "*) echo "Function is on the allowlist." ;;
+            *) echo "::error::Function is not on the approved allowlist ($ALLOWLIST)."; exit 1 ;;
           esac
+          if ! printf '%s' "$IN_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::sha must be a full 40-character lowercase hex commit SHA."
+            exit 1
+          fi
 
       - name: Checkout the exact commit
         uses: actions/checkout@v4
@@ -70,12 +79,15 @@ jobs:
           ref: ${{ inputs.sha }}
           fetch-depth: 0
 
-      - name: Verify the commit is reviewed (ancestor of origin/main)
+      - name: Verify the commit is reviewed (ancestor of the remote origin/main)
         run: |
           set -euo pipefail
-          git fetch --no-tags origin main
-          if ! git merge-base --is-ancestor "${{ inputs.sha }}" origin/main; then
-            echo "::error::${{ inputs.sha }} is not an ancestor of origin/main. Only reviewed/merged commits may deploy."
+          # Fetch main from the remote into a known local ref; do not trust any pre-existing local ref.
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          MAIN_SHA="$(git rev-parse refs/remotes/origin/main)"
+          echo "origin/main = $MAIN_SHA"
+          if ! git merge-base --is-ancestor "$IN_SHA" refs/remotes/origin/main; then
+            echo "::error::$IN_SHA is not an ancestor of origin/main. Only reviewed/merged commits may deploy."
             exit 1
           fi
           echo "Commit is reachable from origin/main (reviewed)."
@@ -83,8 +95,8 @@ jobs:
       - name: Verify the function exists at this commit
         run: |
           set -euo pipefail
-          test -f "supabase/functions/${{ inputs.function }}/index.ts" \
-            || { echo "::error::supabase/functions/${{ inputs.function }}/index.ts missing at ${{ inputs.sha }}"; exit 1; }
+          test -f "supabase/functions/$IN_FUNCTION/index.ts" \
+            || { echo "::error::supabase/functions/$IN_FUNCTION/index.ts missing at the requested commit"; exit 1; }
 
       - uses: actions/setup-node@v4
         with:
@@ -104,5 +116,5 @@ jobs:
             exit 1
           fi
           # Reuses scripts/supabase-target.mjs, which targets the prod ref explicitly.
-          npm run deploy:fn:prod -- "${{ inputs.function }}"
-          echo "Deployed ${{ inputs.function }} to $PROD_REF from ${{ inputs.sha }}."
+          npm run deploy:fn:prod -- "$IN_FUNCTION"
+          echo "Deployed $IN_FUNCTION to $PROD_REF from $IN_SHA."
