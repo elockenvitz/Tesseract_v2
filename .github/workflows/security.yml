@@ -1,0 +1,34 @@
+name: security
+
+# Platform security gate. Runs the unified `security:check`:
+#  - STATIC: tenant-boundary lint, frontend tenant lint, unconditional-policy guard (no DB).
+#  - DB (fail-closed): SQL isolation suites + platform RLS baseline, against a NON-production staging project
+#    supplied via the SECURITY_SUPABASE_REF / SECURITY_SUPABASE_TOKEN secrets. If those are absent the gate FAILS
+#    (security tests that need infrastructure are never silently skipped). Never point these at production.
+#
+# Make this a required status check in branch protection once the staging project is wired and the existing
+# tenant-lint debt is reconciled (see SECURITY-REGISTER.md).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [security/asset-workspace-ci-harness]
+  workflow_dispatch: {}
+
+jobs:
+  security-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: security:check
+        env:
+          SECURITY_SUPABASE_REF: ${{ secrets.SECURITY_SUPABASE_REF }}
+          SECURITY_SUPABASE_TOKEN: ${{ secrets.SECURITY_SUPABASE_TOKEN }}
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: npm run security:check
