@@ -880,29 +880,38 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
     staleTime: 5 * 60 * 1000
   })
 
-  // Fetch price target history
-  const { data: priceTargetHistory = [], isLoading: loadingTargets } = useQuery({
-    queryKey: ['price-target-history', assetId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('price_targets')
-        .select(`
-          id,
-          target_price,
-          created_by,
-          created_at,
-          updated_at,
-          user:users!price_targets_created_by_fkey(id, first_name, last_name, full_name)
-        `)
-        .eq('asset_id', assetId)
-        .order('updated_at', { ascending: false })
-
-      if (error) throw error
-      return data || []
-    },
-    enabled: !!assetId,
-    staleTime: 5 * 60 * 1000
-  })
+  /*
+   * Price-target history is NOT read here, and the query that used to be
+   * was removed rather than repaired.
+   *
+   * ── What it was ──────────────────────────────────────────────────────
+   *
+   * A select of `target_price` from `price_targets`. That column does not
+   * exist — the table's column is `price` (`types/database.ts:725`) — so
+   * PostgREST rejected it, the `throw` left the array empty, and the
+   * timeline below silently rendered without a single price-target event.
+   * It has never worked.
+   *
+   * ── Why renaming the column would have been worse ────────────────────
+   *
+   * `price_targets` is the LEGACY ladder table, and nothing writes it any
+   * more: its only two writers are `AssetTab.tsx:1645` and `:1660`, both
+   * reachable solely from `handlePriceTargetSave`, which has no callers.
+   * Fixing the column name would therefore have turned a failing query
+   * into a working one that renders a frozen snapshot of targets nobody
+   * has maintained — presented, in a view called History, as the record of
+   * what the desk believed. An empty section is a smaller lie.
+   *
+   * ── Where the real thing lives ───────────────────────────────────────
+   *
+   * The canonical ladder is `analyst_price_targets` (per analyst, per
+   * scenario, org-stamped) and its history is `analyst_price_target_history`,
+   * read by `usePriceTargetHistory` (`useAnalystPriceTargets.ts:659`). That
+   * hook keys on a price-target id, not an asset, so asset-level history
+   * needs a query this file does not have — real work, belonging with the
+   * Decision Memory section rather than smuggled into a correctness pass.
+   * See `docs/asset-page-2-mapping.md`.
+   */
 
   // Fetch reference history
   const { data: referenceHistory = [] } = useQuery({
@@ -962,14 +971,6 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
         }
       }
     })
-    priceTargetHistory.forEach((pt: any) => {
-      if (pt.user && !lookup[pt.created_by]) {
-        lookup[pt.created_by] = {
-          name: pt.user.full_name || `${pt.user.first_name} ${pt.user.last_name}`,
-          isCovering: coveringIds.has(pt.created_by)
-        }
-      }
-    })
     referenceHistory.forEach((rh: any) => {
       if (rh.user && rh.changed_by && !lookup[rh.changed_by]) {
         lookup[rh.changed_by] = {
@@ -988,7 +989,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
       }
     })
     return lookup
-  }, [contributions, priceTargetHistory, referenceHistory, revisions, coveringIds])
+  }, [contributions, referenceHistory, revisions, coveringIds])
 
   // Build timeline events
   const events = useMemo(() => {
@@ -1027,21 +1028,9 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
       }
     })
 
-    // Add price target events
-    priceTargetHistory.forEach((pt: any, idx: number) => {
-      const userInfo = userLookup[pt.created_by] || { name: 'Unknown', isCovering: false }
-      const previousTarget = priceTargetHistory[idx + 1]
-
-      allEvents.push({
-        id: `pt-${pt.id}`,
-        type: 'price_target',
-        timestamp: new Date(pt.updated_at || pt.created_at),
-        userId: pt.created_by,
-        userName: userInfo.name,
-        priceTarget: pt.target_price,
-        previousPriceTarget: previousTarget?.target_price
-      })
-    })
+    // No price-target events. See the note above the contributions query:
+    // the source this read was the legacy `price_targets` table, which has
+    // no writers, and the canonical history needs a query this file lacks.
 
     // Add reference events
     referenceHistory.forEach((rh: any) => {
@@ -1193,7 +1182,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
 
     // Sort by timestamp descending
     return filtered.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-  }, [contributionHistory, contributions, priceTargetHistory, referenceHistory, revisions, userLookup, viewFilter])
+  }, [contributionHistory, contributions, referenceHistory, revisions, userLookup, viewFilter])
 
   // Compute evolution stats
   const evolutionStats = useMemo((): EvolutionStats => {
@@ -1267,7 +1256,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
   // Find last editor info for the change intelligence header
   const lastEditor = events.length > 0 ? events[0] : null
 
-  const isLoading = loadingContributions || loadingTargets
+  const isLoading = loadingContributions
 
   if (isLoading) {
     return (

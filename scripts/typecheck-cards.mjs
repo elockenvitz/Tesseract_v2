@@ -196,10 +196,15 @@ const MAX_ERRORS = 0
 // reason: deleting two hand-rolled fan-in implementations in favour of
 // `resolveIdeaAfterDecision` removed the loosely-typed `as any` track scans
 // they each carried.
+// 8653 -> 8652: removing the dead price-target history query from
+// ThesisHistoryView took its `target_price` error with it.
+// 8652 -> 8638: removing the research_field_presets query and the
+// all-sections read it existed to serve, and replacing three membership
+// `.single()` lookups with the current-org context, took fourteen more.
 //
-// → 8654 for ONE new error, deliberately, with the atomic organization delete.
-// The ops portal's two-statement delete became a single `delete_organization`
-// RPC, and that one `supabase.rpc(...)` call produces
+// → 8654 on main, for ONE new error, deliberately, with the atomic
+// organization delete. The ops portal's two-statement delete became a single
+// `delete_organization` RPC, and that one `supabase.rpc(...)` call produces
 //   TS2345: Argument of type '{ p_organization_id: string }' is not assignable
 //           to parameter of type 'undefined'
 // It is one more instance of an existing class, not a new kind of wrongness:
@@ -210,14 +215,22 @@ const MAX_ERRORS = 0
 // true. `set_message_pinned` is declared and its call site at
 // MessagingSection.tsx:389 still errors, as does mark_conversation_read at
 // DirectMessaging.tsx:367. The `Functions` block is not wired into
-// supabase-js's `rpc` overloads at all.
+// supabase-js's `rpc` overloads at all. Typing the RPC surface properly would
+// clear it along with its three neighbours — a separate change, since it
+// touches unrelated call sites.
 //
-// So the feature costs exactly one error of an existing kind, and typing the
-// RPC surface properly would clear this one along with its three neighbours —
-// a separate change, since it touches unrelated call sites. Raised knowingly
-// rather than left as slack, which is the failure this ceiling exists to
-// prevent.
-const MAX_REPO_ERRORS = 8654
+// → 8639 where those two lines met. This branch had taken the ceiling to 8638
+// and main had raised it to 8654; both moved from 8653, so neither value is
+// right for the merge. 8638 + main's one RPC error = 8639, and that is the
+// MEASURED figure after merging, not the arithmetic — the guard was run and
+// reported it. Resolving a ceiling conflict by picking a side is how a ratchet
+// silently gains slack, which is exactly what this number exists to prevent.
+//
+// → 8638: the Our View summary replaced two inline `coverage?.map(c =>
+// c.user_id)` reads with one annotated memo. The `coverage` query selects an
+// embed the generated row type does not describe, so its rows infer as `never`
+// and each inline read carried its own error. Measured, not arithmetic.
+const MAX_REPO_ERRORS = 8638
 
 /**
  * A floor on real source files, now that they are counted as source files.

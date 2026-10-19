@@ -19,9 +19,10 @@
  * The active-work filters that Ideas and Today apply would empty this page.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { ChevronDown, Landmark } from 'lucide-react'
+import { Landmark } from 'lucide-react'
+import { BookFilter } from '../shared/BookFilter'
 import {
   useDecisionScan, usePortfoliosWithDecisions, useDecisionDetail,
   useDecisionOutcomeFacts,
@@ -394,78 +395,14 @@ function Metric({ n, label }: { n: number; label: string }) {
   )
 }
 
-function BookFilter({
-  books, portfolioId, onSelect, compact,
-}: {
-  books: { id: string; name: string; count: number }[]
-  portfolioId: string | null
-  onSelect: (id: string | null) => void
-  compact?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const away = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', away)
-    return () => document.removeEventListener('mousedown', away)
-  }, [open])
-
-  /*
-   * One book is not a choice, and it is not a page label either.
-   *
-   * This used to fall back to printing the book's NAME in the corner of the
-   * page: passive text dressed as a filter, saying what every card on the
-   * page already says about itself. The book belongs to the decision, so the
-   * card names it and this renders nothing.
-   */
-  if (books.length <= 1) return null
-
-  const current = books.find(b => b.id === portfolioId)
-
-  return (
-    <div ref={ref} data-testid="book-filter" className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className={clsx(
-          'flex min-w-0 items-center gap-1 rounded-md border border-gray-300 hover:bg-gray-100 dark:border-white/15 dark:hover:bg-white/[0.06]',
-          compact ? 'px-1.5 py-0.5 text-[11px] font-semibold' : 'px-2 py-1 text-[11px]',
-        )}
-      >
-        <span className="min-w-0 truncate">{current?.name ?? 'All portfolios'}</span>
-        <ChevronDown className="h-3 w-3 shrink-0 text-gray-500" />
-      </button>
-      {open && (
-        <div role="listbox"
-             className="absolute left-0 top-full z-20 mt-1 max-h-viewport-60 w-60 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-[#141a25]">
-          <button type="button" role="option" aria-selected={!portfolioId}
-                  onClick={() => { onSelect(null); setOpen(false) }}
-                  className={clsx('block w-full px-3 py-1.5 text-left text-[12px]',
-                    !portfolioId ? 'bg-blue-50 font-semibold text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
-                                 : 'hover:bg-gray-100 dark:hover:bg-white/[0.06]')}>
-            All portfolios
-          </button>
-          {books.map(b => (
-            <button key={b.id} type="button" role="option" aria-selected={b.id === portfolioId}
-                    onClick={() => { onSelect(b.id); setOpen(false) }}
-                    className={clsx('flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-[12px]',
-                      b.id === portfolioId ? 'bg-blue-50 font-semibold text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
-                                           : 'hover:bg-gray-100 dark:hover:bg-white/[0.06]')}>
-              <span className="min-w-0 flex-1 truncate">{b.name}</span>
-              <span className="font-mono text-[10px] text-gray-500">{b.count}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
+/*
+ * `BookFilter` now lives in `components/shared/BookFilter.tsx`.
+ *
+ * It was lifted unchanged when the Investment Snapshot needed the same three
+ * answers this page needed — null means every book, one book renders no
+ * control, and the count is the caller's to define. A second copy would have
+ * been free to drift on all three.
+ */
 
 /* ------------------------------------------------------------------- index */
 

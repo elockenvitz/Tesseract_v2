@@ -41,13 +41,28 @@ function sourceFiles(dir = SRC, acc: string[] = []): string[] {
 
 const rel = (f: string) => path.relative(SRC, f).replace(/\\/g, '/')
 
+/**
+ * The tree, walked and read ONCE for the whole file.
+ *
+ * Each test used to call `sourceFiles()` and then `readFileSync` + a
+ * comment-strip on every result — three full passes over `src`, which is
+ * ~3,600 files. That cost scales with the repository, and it crossed vitest's
+ * 5s per-test budget: the suite started failing on timeouts with no change to
+ * the code it guards, first only under parallel load and then on its own.
+ *
+ * A timeout bump would have hidden that; it is the same work three times, so
+ * it is done once. The guard is unchanged — same files, same assertions — and
+ * it is now fast enough that growth in `src` cannot reintroduce the failure
+ * for a long while.
+ */
+const ALL_FILES = sourceFiles()
+const RAW = new Map(ALL_FILES.map(f => [f, readFileSync(f, 'utf8')]))
+const CODE = new Map(ALL_FILES.map(f => [f, codeOf(f)]))
+
 /** Files whose CODE queries the table directly. */
 function directReaders(): string[] {
-  return sourceFiles()
-    .filter(f => {
-      const code = codeOf(f)
-      return code.includes("from('portfolio_benchmark_weights')")
-    })
+  return ALL_FILES
+    .filter(f => CODE.get(f)!.includes("from('portfolio_benchmark_weights')"))
     .map(rel)
     .sort()
 }
@@ -142,11 +157,8 @@ describe('the stale single-date claim is gone', () => {
       'forbids a second',
       'table can hold only one',
     ]
-    const offenders = sourceFiles()
-      .filter(f => {
-        const raw = readFileSync(f, 'utf8')
-        return phrases.some(p => raw.includes(p))
-      })
+    const offenders = ALL_FILES
+      .filter(f => phrases.some(p => RAW.get(f)!.includes(p)))
       .map(rel)
       // `latest-benchmark.ts` describes the constraint in the PAST tense as
       // the history of its own existence, which is the opposite of claiming

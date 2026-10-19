@@ -192,9 +192,11 @@ export function useColumnContent(
         const { data: summary, error } = await supabase
           .from('contribution_summaries')
           .select('summary')
+          // maybeSingle: an absent summary is normal, not a 406. Filter is
+          // the unique key (asset_id, section); guard kept for the >1 case.
           .eq('asset_id', assetId)
           .eq('section', columnId)
-          .single()
+          .maybeSingle()
 
         if (error && error.code !== 'PGRST116') throw error
         return summary?.summary || null

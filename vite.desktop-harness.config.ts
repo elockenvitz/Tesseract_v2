@@ -22,6 +22,11 @@ function stubDataHooks(): Plugin {
   const portfolio = path.resolve(__dirname, 'desktop-harness/stub-portfolio.ts')
   const decisions = path.resolve(__dirname, 'desktop-harness/stub-decisions.ts')
   const day = path.resolve(__dirname, 'desktop-harness/stub-day.ts')
+  const timeline = path.resolve(__dirname, 'desktop-harness/stub-decision-timeline.ts')
+  const workspace = path.resolve(__dirname, 'desktop-harness/stub-asset-workspace.ts')
+  const mobileAsset = path.resolve(__dirname, 'desktop-harness/stub-mobile-asset-hooks.ts')
+  const org = path.resolve(__dirname, 'desktop-harness/stub-organization.ts')
+  const ratings = path.resolve(__dirname, 'desktop-harness/stub-analyst-ratings.ts')
   return {
     name: 'desktop-harness-stub-hooks',
     enforce: 'pre',
@@ -43,6 +48,33 @@ function stubDataHooks(): Plugin {
       if (/hooks\/useDesktopPortfolio$/.test(source)) return portfolio
       if (/hooks\/useDesktopDecisions$/.test(source)) return decisions
       if (/hooks\/useDayPerformance$/.test(source)) return day
+      // Asset Decision Memory (Increment 2B). Without this the timeline
+      // reaches for Supabase and renders its loading state forever, which is
+      // how a surface gets "validated" without anybody seeing it.
+      if (/hooks\/useAssetDecisionTimeline$/.test(source)) return timeline
+      // The Snapshot's headline rating. Deliberately a SPLIT fixture, so the
+      // "3 of 5 analysts" qualifier has something to qualify.
+      if (/hooks\/useAnalystRatings$/.test(source)) return ratings
+      // The one read behind both Snapshots. Guard against the stub
+      // re-entering itself: its own imports are already resolved.
+      if (/hooks\/useAssetWorkspace$/.test(source) && !source.includes('stub-')) return workspace
+      /*
+       * The phone page's secondary reads. Two of them call
+       * `useOrganization`, which THROWS without a provider -- so opening the
+       * Decisions tab took the whole harness page down. One stub module
+       * serves them all; each export is named.
+       */
+      if (/hooks\/useAssetTradeIdeas$/.test(source)) return mobileAsset
+      if (/hooks\/useAssetRecentDecisions$/.test(source)) return mobileAsset
+      if (/hooks\/useAssetHeaderContext$/.test(source)) return mobileAsset
+      if (/hooks\/useAssetPortfolioWeights$/.test(source)) return mobileAsset
+      if (/hooks\/useAssetLiveWeights$/.test(source)) return mobileAsset
+      /*
+       * `useOrganization` throws without a provider, and the harness has
+       * none -- so ANY surface reaching it took the whole page down, tab bar
+       * included. One stub unblocks every surface at once.
+       */
+      if (/contexts\/OrganizationContext$/.test(source) && !source.includes('stub-')) return org
       return null
     },
   }
@@ -51,6 +83,26 @@ function stubDataHooks(): Plugin {
 export default defineConfig({
   root: path.resolve(__dirname, 'desktop-harness'),
   base: './',
+  /**
+   * The harness gets its OWN dependency cache.
+   *
+   * Without this it shares `node_modules/.vite` with the app config. The two
+   * configs have different roots and therefore different dependency graphs, so
+   * whichever ran last rewrote the cache — and the other then loaded a second
+   * copy of React. The symptom is
+   *
+   *   Warning: Invalid hook call
+   *   TypeError: Cannot read properties of null (reading 'useEffect')
+   *
+   * and a completely blank surface. That looks exactly like a component
+   * defect, and it cost a round of chasing one: every journey assertion
+   * failed immediately after an `npx vite build`, with no code change between
+   * the passing and failing runs.
+   *
+   * A separate cacheDir lets `npm run dev` and the harness run side by side,
+   * which is the normal way to compare a change against the real app.
+   */
+  cacheDir: path.resolve(__dirname, 'node_modules/.vite-desktop-harness'),
   plugins: [stubDataHooks(), react()],
   define: {
     'import.meta.env.VITE_SUPABASE_URL': JSON.stringify('http://harness.invalid'),

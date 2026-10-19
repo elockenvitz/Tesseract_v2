@@ -198,22 +198,33 @@ export const useDecisionDetail = (d: DecisionRecord | null) => {
 }
 
 /**
- * Added to unbreak the harness build, which fails on `main` without it.
+ * Outcome facts, stubbed.
  *
- * `DecisionsWorkspace` imports this alongside the hooks already stubbed here,
- * and a resolver that redirects the module redirects every import of it — so
- * one missing export fails the WHOLE harness bundle, including surfaces that
- * never touch Decisions. That is what blocked the mobile feed reproduction
- * from building at all.
+ * `DecisionsWorkspace` started importing this and the stub never gained it,
+ * so the whole harness bundle failed to evaluate with
+ * `does not provide an export named 'useDecisionOutcomeFacts'` — which took
+ * down every surface, not just Decisions. A stub module that resolves a real
+ * module must export everything that module's consumers import, or it
+ * silently converts a fixture harness into a blank page.
  *
- * Deliberately inert: no facts, no P&L, not loading. The Decisions surface is
- * not what this harness run is about, and inventing outcome figures here
- * would put numbers on a screenshot that no record supports.
+ * Returns the empty-facts shape for every decision. The harness exists to
+ * measure layout and composition; inventing P&L here would put numbers on
+ * screen that no record supports.
  */
 export function useDecisionOutcomeFacts() {
+  const facts = {
+    sincePct: null,
+    sinceBasis: null,
+    sinceDated: false,
+    pnl: null,
+    verdictLabel: 'Outcome not reviewed',
+    reviewed: false,
+    hurting: false,
+    executed: false,
+  }
   return {
-    factsFor: () => null,
-    pnlForBatch: () => null,
+    factsFor: (_d: { ideaId: string | null }) => facts as never,
+    pnlForBatch: (_id: string | null | undefined) => null,
     isLoading: false,
   }
 }
