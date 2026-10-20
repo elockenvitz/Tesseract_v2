@@ -85,6 +85,34 @@ export interface ContributionHistory {
   }
 }
 
+/**
+ * A restricted visibility must name an audience.
+ *
+ * `contribution_visibility_targets` is the only record of who a non-firm
+ * contribution was shared with, and every write path below REPLACES that set
+ * rather than merging into it. So saving `visibility: 'team'` with no targets
+ * does not mean "keep the current team" — it deletes the audience, leaving a
+ * row that still reads as restricted, still renders a lock, and is readable by
+ * its author alone. The teams it was shared with cannot be recovered, because
+ * nothing else recorded them.
+ *
+ * Refusing here rather than in the editor is deliberate: this is the one place
+ * every save, publish and visibility change passes through, so a caller added
+ * later cannot reintroduce the defect by forgetting to pass targets.
+ */
+function assertVisibilityNamesAnAudience(
+  visibility: ContributionVisibility,
+  targetIds: string[]
+) {
+  if (visibility !== 'firm' && targetIds.length === 0) {
+    throw new Error(
+      `Cannot save "${visibility}" visibility with no targets. ` +
+      `That would delete the audience this contribution was shared with and ` +
+      `leave it visible only to you. Select at least one ${visibility}, or choose Firm.`
+    )
+  }
+}
+
 // Helper to compute full name
 const getFullName = (user: { first_name?: string | null; last_name?: string | null } | null) => {
   if (!user) return 'Unknown User'
@@ -162,16 +190,31 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       supportingDetail,
       attachments,
       sectionKey,
-      visibility = 'firm' as ContributionVisibility,
-      targetIds = []
+      visibility,
+      targetIds
     }: {
       content: string
       supportingDetail?: string
       attachments?: ContributionAttachment[]
       sectionKey: string
+      /**
+       * Omit to PRESERVE the contribution's current visibility and audience.
+       *
+       * Editing prose is not a visibility decision. This used to default to
+       * `'firm'` with `targetIds = []`, so any caller that saved content
+       * without restating the visibility silently published restricted
+       * research to the whole organization and deleted its audience. Absence
+       * now means "leave it alone"; only an explicit value changes it.
+       */
       visibility?: ContributionVisibility
+      /** Required when `visibility` is given and not `'firm'`. Ignored otherwise. */
       targetIds?: string[]
     }) => {
+      // An explicit visibility change is the only thing that may touch the
+      // audience. `undefined` is preservation, and `[]` is not a substitute
+      // for it — see assertVisibilityNamesAnAudience.
+      const isVisibilityChange = visibility !== undefined
+      if (isVisibilityChange) assertVisibilityNamesAnAudience(visibility, targetIds ?? [])
       // Check if user already has a contribution for this section
       const { data: existing } = await supabase
         .from('asset_contributions')
@@ -182,15 +225,19 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
         .maybeSingle()
 
       if (existing) {
-        // Update existing contribution
+        // Update existing contribution. `visibility` and `team_id` are written
+        // ONLY on an explicit visibility change, so a prose edit cannot move
+        // either one.
         const { data, error } = await supabase
           .from('asset_contributions')
           .update({
             content,
             supporting_detail: supportingDetail || null,
             attachments: attachments || [],
-            visibility,
-            team_id: targetIds.length === 1 ? targetIds[0] : null,
+            ...(isVisibilityChange ? {
+              visibility,
+              team_id: (targetIds ?? []).length === 1 ? (targetIds ?? [])[0] : null,
+            } : {}),
             updated_at: new Date().toISOString()
           })
           .eq('id', existing.id)
@@ -203,20 +250,24 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
         if (error) throw error
 
-        // Update visibility targets
-        await supabase
-          .from('contribution_visibility_targets')
-          .delete()
-          .eq('contribution_id', existing.id)
-
-        if (visibility !== 'firm' && targetIds.length > 0) {
+        // Replace the audience ONLY when the visibility was explicitly
+        // changed. On a prose edit the existing target rows are left exactly
+        // as they are — this delete/insert pair is what used to destroy them.
+        if (isVisibilityChange) {
           await supabase
             .from('contribution_visibility_targets')
-            .insert(targetIds.map(nodeId => ({
-              contribution_id: existing.id,
-              node_id: nodeId,
-              organization_id: currentOrgId
-            })))
+            .delete()
+            .eq('contribution_id', existing.id)
+
+          if (visibility !== 'firm' && (targetIds ?? []).length > 0) {
+            await supabase
+              .from('contribution_visibility_targets')
+              .insert((targetIds ?? []).map(nodeId => ({
+                contribution_id: existing.id,
+                node_id: nodeId,
+                organization_id: currentOrgId
+              })))
+          }
         }
 
         return {
@@ -234,8 +285,11 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
             supporting_detail: supportingDetail || null,
             attachments: attachments || [],
             created_by: user?.id,
-            team_id: targetIds.length === 1 ? targetIds[0] : null,
-            visibility,
+            // A new row has no prior visibility to preserve, so the historical
+            // default stands — but it is stated here rather than hidden in a
+            // parameter default that also applied to updates.
+            team_id: (targetIds ?? []).length === 1 ? (targetIds ?? [])[0] : null,
+            visibility: visibility ?? 'firm',
             organization_id: currentOrgId
           })
           .select(`
@@ -248,10 +302,10 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
         if (error) throw error
 
         // Save visibility targets
-        if (targetIds.length > 0) {
+        if ((targetIds ?? []).length > 0) {
           await supabase
             .from('contribution_visibility_targets')
-            .insert(targetIds.map(nodeId => ({
+            .insert((targetIds ?? []).map(nodeId => ({
               contribution_id: data.id,
               node_id: nodeId,
               organization_id: currentOrgId
@@ -359,13 +413,21 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
   const publishDraft = useMutation({
     mutationFn: async ({
       sectionKey,
-      visibility = 'firm' as ContributionVisibility,
-      targetIds = []
+      visibility,
+      targetIds
     }: {
       sectionKey: string
+      /**
+       * Omit to PRESERVE the contribution's current visibility and audience.
+       * Publishing a draft is a content action; it carried the same `'firm'`
+       * default as saveContribution and declassified restricted sections the
+       * same way.
+       */
       visibility?: ContributionVisibility
       targetIds?: string[]
     }) => {
+      const isVisibilityChange = visibility !== undefined
+      if (isVisibilityChange) assertVisibilityNamesAnAudience(visibility, targetIds ?? [])
       // Get the contribution with draft AND current published content (for revision diff)
       const { data: existing } = await supabase
         .from('asset_contributions')
@@ -389,8 +451,10 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
           content: newContent,
           draft_content: null,
           draft_updated_at: null,
-          visibility,
-          team_id: targetIds.length === 1 ? targetIds[0] : null,
+          ...(isVisibilityChange ? {
+            visibility,
+            team_id: (targetIds ?? []).length === 1 ? (targetIds ?? [])[0] : null,
+          } : {}),
           updated_at: new Date().toISOString()
         })
         .eq('id', existing.id)
@@ -403,20 +467,23 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
       if (error) throw error
 
-      // Update visibility targets
-      await supabase
-        .from('contribution_visibility_targets')
-        .delete()
-        .eq('contribution_id', existing.id)
-
-      if (visibility !== 'firm' && targetIds.length > 0) {
+      // Replace the audience only on an explicit visibility change — see the
+      // same branch in saveContribution.
+      if (isVisibilityChange) {
         await supabase
           .from('contribution_visibility_targets')
-          .insert(targetIds.map(nodeId => ({
-            contribution_id: existing.id,
-            node_id: nodeId,
-            organization_id: currentOrgId
-          })))
+          .delete()
+          .eq('contribution_id', existing.id)
+
+        if (visibility !== 'firm' && (targetIds ?? []).length > 0) {
+          await supabase
+            .from('contribution_visibility_targets')
+            .insert((targetIds ?? []).map(nodeId => ({
+              contribution_id: existing.id,
+              node_id: nodeId,
+              organization_id: currentOrgId
+            })))
+        }
       }
 
       // Create revision event (fire-and-forget, don't block publish)
@@ -520,6 +587,10 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       // Use passed contributionId or fall back to myContribution
       const contribId = contributionId || myContribution?.id
       if (!contribId) throw new Error('No contribution to update')
+
+      // This path IS the explicit visibility change, so it always replaces the
+      // audience — and therefore always has to name one.
+      assertVisibilityNamesAnAudience(visibility, targetIds)
 
       const { data, error } = await supabase
         .from('asset_contributions')

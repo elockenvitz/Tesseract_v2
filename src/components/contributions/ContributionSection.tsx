@@ -665,7 +665,21 @@ export function ContributionSection({
   const isUndoRedoRef = useRef(false)
   const [selectedVisibility, setSelectedVisibility] = useState<ContributionVisibility>(defaultVisibility)
   const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false)
-  const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([])
+  /*
+   * There is deliberately NO local target-id state here.
+   *
+   * This component has no control that selects visibility targets — the level
+   * list it renders was never wired to one, and visibility is changed through
+   * `handleVisibilityChangeSave` → `updateVisibility`. The state that used to
+   * live here was initialised to `[]`, never loaded from the saved row, and
+   * submitted on every content save, which deleted the audience the section
+   * had been shared with. Content saves now send no visibility at all (see
+   * `visibilityArgs`), so there is nothing for this state to hold, and keeping
+   * an empty array next to a save path is how the defect would come back.
+   *
+   * In the AssetTab host the parent owns both values and passes them in as
+   * `sharedVisibility` / `sharedTargetIds`.
+   */
   const [showTeamDropdown, setShowTeamDropdown] = useState(false)
   const [showVisibilityChange, setShowVisibilityChange] = useState(false)
   const [visibilityChangeStep, setVisibilityChangeStep] = useState<'level' | 'targets'>('level')
@@ -832,10 +846,6 @@ export function ContributionSection({
   const pendingTargetOptions = getTargetOptions(pendingVisibility || 'firm')
 
   useEffect(() => {
-    setSelectedTargetIds([])
-  }, [selectedVisibility])
-
-  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (visibilityRef.current && !visibilityRef.current.contains(event.target as Node)) {
         setShowVisibilityDropdown(false)
@@ -916,7 +926,9 @@ export function ContributionSection({
       editBaselineRef.current = myContribution?.content || ''
       setIsDraftMode(false)
     }
-    setSelectedVisibility(myContribution?.visibility || defaultVisibility)
+    // The level only — the audience is not held here. See the note at the
+    // target-state declaration above, and `visibilityArgs`.
+    setSelectedVisibility((myContribution?.visibility || defaultVisibility) as ContributionVisibility)
     setUndoStack([])
     setRedoStack([])
     setIsEditing(true)
@@ -925,18 +937,32 @@ export function ContributionSection({
     }
   }
 
+  /**
+   * The visibility fields to send with a CONTENT save, if any.
+   *
+   * Sent only when the parent owns visibility: in the AssetTab host
+   * (`hideVisibility`) the toolbar picker is the explicit visibility control
+   * and is persisted by the next content save, so the parent's value is a
+   * deliberate choice and has to be forwarded.
+   *
+   * Standalone, nothing in this editor can change the level — visibility is
+   * changed through `handleVisibilityChangeSave` / `updateVisibility` — so
+   * sending it from here could only restate what is already stored, or, as it
+   * did, destroy it. Returning nothing tells the mutation to preserve the
+   * row's visibility and its audience.
+   */
+  const visibilityArgs = (): { visibility?: ContributionVisibility; targetIds?: string[] } =>
+    hideVisibility && sharedVisibility
+      ? { visibility: sharedVisibility, targetIds: sharedTargetIds ?? [] }
+      : {}
+
   const handleSave = async () => {
     if (!editContent.trim()) return
-
-    // Use shared visibility if controlled from parent, otherwise use local state
-    const visibilityToUse = hideVisibility && sharedVisibility ? sharedVisibility : selectedVisibility
-    const targetIdsToUse = hideVisibility && sharedTargetIds ? sharedTargetIds : selectedTargetIds
 
     await saveContribution.mutateAsync({
       content: editContent.trim(),
       sectionKey: section,
-      visibility: visibilityToUse,
-      targetIds: targetIdsToUse
+      ...visibilityArgs(),
     })
 
     setIsEditing(false)
@@ -996,14 +1022,10 @@ export function ContributionSection({
 
   // Publish draft content
   const handlePublishDraft = async () => {
-    // Use shared visibility if controlled from parent, otherwise use local state
-    const visibilityToUse = hideVisibility && sharedVisibility ? sharedVisibility : selectedVisibility
-    const targetIdsToUse = hideVisibility && sharedTargetIds ? sharedTargetIds : selectedTargetIds
-
+    // Publishing is a content action — same rule as handleSave.
     await publishDraft.mutateAsync({
       sectionKey: section,
-      visibility: visibilityToUse,
-      targetIds: targetIdsToUse
+      ...visibilityArgs(),
     })
 
     setIsEditing(false)

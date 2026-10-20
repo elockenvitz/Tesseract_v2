@@ -462,6 +462,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false)
   const [visibilityStep, setVisibilityStep] = useState<'level' | 'targets'>('level')
   const [hasInitializedVisibility, setHasInitializedVisibility] = useState(false)
+  /** The visibility level the shared picker was last LOADED with. */
+  const rehydratedVisibilityRef = useRef<ContributionVisibility | null>(null)
   const visibilityRef = useRef<HTMLDivElement>(null)
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
@@ -1039,7 +1041,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         || userRisksContributions.find(c => c.created_by === user.id)
 
       if (userContribution) {
-        setSharedThesisVisibility(userContribution.visibility as ContributionVisibility)
+        const savedVisibility = userContribution.visibility as ContributionVisibility
+        // Before the state, so the level-change effect below can tell this
+        // transition was a load rather than a user choice.
+        rehydratedVisibilityRef.current = savedVisibility
+        setSharedThesisVisibility(savedVisibility)
         const targets = (userContribution as any).visibility_targets
         if (targets && Array.isArray(targets)) {
           setSharedThesisTargetIds(targets.map((t: any) => t.node_id).filter(Boolean))
@@ -1052,12 +1058,24 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Reset initialization when asset changes
   useEffect(() => {
     setHasInitializedVisibility(false)
+    rehydratedVisibilityRef.current = null
     setSharedThesisVisibility('firm')
     setSharedThesisTargetIds([])
   }, [asset.id])
 
-  // Reset target IDs when visibility level changes
+  /*
+   * Reset target IDs when the visibility LEVEL changes — a team id is not a
+   * department id, so the old selection cannot carry over.
+   *
+   * The ref is what stops this from undoing the rehydration above. That effect
+   * sets the level and the targets together; this one then saw the level change
+   * and wiped the targets it had just loaded, in the same render cycle. The
+   * result was a save with `targetIds: []`, which deleted every
+   * contribution_visibility_targets row for the section — the restriction
+   * destroyed, the badge still showing a lock.
+   */
   useEffect(() => {
+    if (rehydratedVisibilityRef.current === sharedThesisVisibility) return
     setSharedThesisTargetIds([])
   }, [sharedThesisVisibility])
 
@@ -1076,15 +1094,35 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Handle visibility level selection
   const handleVisibilitySelect = useCallback((newVisibility: ContributionVisibility) => {
     const targets = getTargetOptions(newVisibility)
-    if (newVisibility === 'firm' || targets.length === 0) {
-      setSharedThesisVisibility(newVisibility)
+
+    // From here on, a level change is the USER's, so the level-change effect
+    // must be allowed to clear the loaded targets again. Without this, picking
+    // another level and then returning to the saved one would keep the other
+    // level's node ids.
+    rehydratedVisibilityRef.current = null
+
+    if (newVisibility === 'firm') {
+      setSharedThesisVisibility('firm')
       setSharedThesisTargetIds([])
       setShowVisibilityDropdown(false)
       setVisibilityStep('level')
-    } else {
-      setSharedThesisVisibility(newVisibility)
-      setVisibilityStep('targets')
+      return
     }
+
+    /*
+     * A restricted level with nothing to select cannot be applied.
+     *
+     * This used to set the level anyway with an empty target list, which the
+     * save then stored as "restricted, audience nobody" — and, before the
+     * mutation guard, deleted whatever audience the section already had. The
+     * level is left unchanged instead, and the menu stays open on the level
+     * step. Telling the user WHY nothing happened needs UI this change should
+     * not invent — it is listed as an adjacent gap.
+     */
+    if (targets.length === 0) return
+
+    setSharedThesisVisibility(newVisibility)
+    setVisibilityStep('targets')
   }, [getTargetOptions])
 
   // Handle target selection confirmation
