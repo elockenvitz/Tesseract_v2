@@ -105,7 +105,16 @@ describe('AssetContextStrip — target, upside, exposure attribution, freshness'
       evidence: [{ isNewSinceReview: true }, { isNewSinceReview: true }, { isNewSinceReview: false }],
     }
     renderStrip()
-    expect(screen.getByText('10 mo')).toBeTruthy()
-    expect(screen.getByText('2 items since')).toBeTruthy()
+    expect(screen.getByText('10 mo old')).toBeTruthy()
+    expect(screen.getByText('2 new items since')).toBeTruthy()
+  })
+
+  it('an old case with no newer research is never called "up to date"', () => {
+    // Refinement 1: case AGE and evidence freshness are separate facts.
+    ws.data = { ...EMPTY_WS, caseWrittenAt: monthsAgo(11), evidence: [] }
+    renderStrip()
+    expect(screen.getByText('11 mo old')).toBeTruthy()
+    expect(screen.getByText('no new research since')).toBeTruthy()
+    expect(screen.queryByText(/up to date/i)).toBeNull()
   })
 })

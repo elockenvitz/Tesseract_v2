@@ -71,13 +71,13 @@ function Cell({
         type="button"
         onClick={onClick}
         title={title}
-        className="text-left bg-white dark:bg-gray-800 px-3 py-2 min-w-0 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-inset"
+        className="flex-1 min-w-[132px] text-left bg-white dark:bg-gray-800 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-inset"
       >
         {inner}
       </button>
     )
   }
-  return <div className="bg-white dark:bg-gray-800 px-3 py-2 min-w-0">{inner}</div>
+  return <div className="flex-1 min-w-[132px] bg-white dark:bg-gray-800 px-3 py-2">{inner}</div>
 }
 
 export function AssetContextStrip({ assetId, symbol, spot, onOpen, className }: Props) {
@@ -114,11 +114,11 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, className }: 
   if (isLoading && !ws) {
     return (
       <div
-        className={`grid grid-cols-2 xs:grid-cols-3 lg:grid-cols-5 gap-px rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-700 border border-gray-200 dark:border-gray-700 ${className ?? ''}`}
+        className={`flex flex-nowrap overflow-x-auto gap-px rounded-lg bg-gray-200 dark:bg-gray-700 border border-gray-200 dark:border-gray-700 ${className ?? ''}`}
         aria-hidden="true"
       >
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="bg-white dark:bg-gray-800 px-3 py-2">
+          <div key={i} className="flex-1 min-w-[132px] bg-white dark:bg-gray-800 px-3 py-2">
             <div className="h-2 w-12 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
             <div className="h-3.5 w-16 rounded bg-gray-100 dark:bg-gray-700 mt-2 animate-pulse" />
           </div>
@@ -131,7 +131,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, className }: 
     <div
       role="group"
       aria-label="Investment context"
-      className={`grid grid-cols-2 xs:grid-cols-3 lg:grid-cols-5 gap-px rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-700 border border-gray-200 dark:border-gray-700 ${className ?? ''}`}
+      className={`flex flex-nowrap overflow-x-auto gap-px rounded-lg bg-gray-200 dark:bg-gray-700 border border-gray-200 dark:border-gray-700 ${className ?? ''}`}
     >
       {/* Firm rating */}
       <Cell label="Firm rating" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm consensus rating">
@@ -213,10 +213,12 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, className }: 
         {age != null ? (
           <>
             <div className={VALUE + (stale ? ' text-amber-700 dark:text-amber-400' : '')}>
-              {age === 0 ? 'This month' : `${age} mo`}
+              {age === 0 ? 'This month' : `${age} mo old`}
             </div>
+            {/* Evidence freshness is a SEPARATE fact from the case's age: an old
+                case with no newer research is still old, never "up to date". */}
             <div className={SUB}>
-              {newSince > 0 ? `${newSince} item${newSince > 1 ? 's' : ''} since` : 'up to date'}
+              {newSince > 0 ? `${newSince} new item${newSince > 1 ? 's' : ''} since` : 'no new research since'}
             </div>
           </>
         ) : (
