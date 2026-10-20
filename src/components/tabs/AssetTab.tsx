@@ -41,7 +41,7 @@ import { InvestmentSnapshot } from '../asset/InvestmentSnapshot'
 // The component itself renders on the Snapshot now; this tab still derives
 // the FIELD list from the org's template and passes it down, so the two
 // surfaces cannot disagree about which sections exist.
-import { type OurViewField } from '../asset/OurViewSummary'
+import { OurViewSummary, type OurViewField } from '../asset/OurViewSummary'
 import { contributionSectionsForSlug } from '../../lib/research/contribution-sections'
 // DocumentLibrarySection removed — consolidated into KeyReferencesSection
 import { RelatedProjects } from '../projects/RelatedProjects'
@@ -3557,39 +3557,41 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <FirmConsensusPanel assetId={asset.id} />
 
                   {/*
-                    ─── Our View is the firm's NUMBERS here, not its words ───
+                    ─── Firm Research: valuation AND contributor context ───
 
-                    This pane used to render every analyst's prose — first as
-                    the full document, then as an attributed summary. Both are
-                    gone from Research, and the summary now lives on the
-                    Snapshot under "Who has written".
+                    The firm-level VALUATION above (aggregated targets, rating
+                    consensus) is the organisation's numbers. Beneath it we now
+                    render the firm's WORDS too — each visible contributor's
+                    opening claim per section, attributed by name.
 
-                    The reason is what Research IS. It is one analyst's
-                    document: their sections, their rating, their targets,
-                    their editing. A pane inside that workspace answering
-                    "what does the organisation think" put a fact about the
-                    firm inside a fact about a person, and made the firm's
-                    position reachable only by first opening somebody's
-                    research and then navigating away from it.
+                    The earlier objection — that contributor prose put "a fact
+                    about the firm inside a fact about a person" — was about the
+                    INDIVIDUAL view, which is one analyst's own document. This
+                    branch is the opposite: the aggregated Firm view, whose
+                    whole job is "what does the organisation think". So the
+                    attribution belongs here, and the firm position is no longer
+                    reachable only by leaving to the Snapshot.
 
-                    What stays is the firm-level VALUATION above — the
-                    aggregated price targets and the rating consensus — which
-                    are the organisation's numbers and have always been
-                    computed by their own panels. Nothing is lost: contributor
-                    attribution, disagreement and the route into each full
-                    document all moved together.
+                    This is READ-ONLY and owns no data: it reuses the same
+                    OurViewSummary the Snapshot uses, over the RLS-scoped
+                    `allAssetContributions` (org + visibility filtered at the
+                    DB). It does not merge divergent views into a fabricated
+                    firm thesis — it lists them, per author, where they differ.
+                    Personal editing, drafts, history, publishing and the
+                    visibility controls are untouched; they live in the
+                    individual view this branch never renders. Choosing an
+                    analyst opens their full, editable research in place.
                   */}
-                  <p className="px-1 text-[12px] text-gray-600 dark:text-gray-400">
-                    Contributors and where they differ are on the{' '}
-                    <button
-                      type="button"
-                      onClick={() => setActiveSubPage('snapshot')}
-                      className="font-medium text-primary-600 hover:underline dark:text-primary-400"
-                    >
-                      Snapshot
-                    </button>
-                    . Choose an analyst above to read their full research.
-                  </p>
+                  <OurViewSummary
+                    contributions={allAssetContributions}
+                    fields={ourViewFields}
+                    coveringAnalystIds={coveringAnalystIds}
+                    currentUserId={user?.id}
+                    symbol={asset.symbol}
+                    onOpenAnalyst={chooseResearchView}
+                    mode="full"
+                    className="px-1"
+                  />
                 </div>
               )
             ) : (
