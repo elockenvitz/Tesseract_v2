@@ -647,6 +647,31 @@ B1 tests one predicate: `team_id IS NULL`. The other two confirmed defects are
 
 A zero here says nothing about either. They are measured next.
 
+## B3 — V1 history exposure · **ZERO**
+
+`n_4_restricted_with_exposed_history = 0`. No non-empty history row hangs off a
+restricted contribution, in any organization.
+
+**V1 is latent too.** The policy is defective — A1 confirmed it verbatim — but
+nothing is currently exposed through it.
+
+### Two zeros start to suggest a common cause
+
+B1 and B3 test different predicates. B1 required `team_id IS NULL`; B3 required
+`visibility <> 'firm'` **with** history, and would have caught a restricted
+contribution with `team_id` set that B1 missed.
+
+Both zero is consistent with one simpler explanation: **there may be no
+restricted contributions in this database at all.** The alternative is that
+restricted contributions exist but have never been edited — possible, since
+`track_contribution_history()` has no INSERT branch (A7), so a
+written-once-never-edited contribution has no history row.
+
+Either way, a count of non-firm contributions by organization would explain
+B1, B3 and B4 together, and is needed to interpret any zero B4 returns: without
+it, "no revision-event exposure" is indistinguishable between *the policy is
+not reached* and *there is nothing for it to reach*. Queued as **B3b**.
+
 ---
 
 ## Still queued, none blocking
