@@ -1,43 +1,56 @@
 -- ============================================================================
 -- contribution-visibility / 01 — PRE-APPROVAL CHECKLIST  (READ-ONLY)
 --
--- Nine numbers to put in front of a go/no-go decision. Every statement is a
--- SELECT; nothing here writes. Run after 00-verify-readonly.sql, which proves
--- production's policies are the ones being replaced.
+-- Every statement is a SELECT. Nothing here writes. Run after
+-- 00-verify-readonly.sql. Self-contained: no helper functions, no dependency
+-- on the contribution-freshness lane.
 --
--- Fill in the right-hand column and attach it to the approval.
+-- ── EVERY COUNT IS GROUPED BY ORGANIZATION, AND THAT IS NOT COSMETIC ───────
 --
---   #  what                                                  expected        actual
---   1  restricted contributions readable org-wide today       > 0 = the leak  ____
---   2  …of those, how many have NO targets at all            these go        ____
---      (audience destroyed; owner-only after the fix)         owner-only
---   3  …how many have targets intact                          these keep     ____
---      (multi-target; restriction restored by the fix)         their audience
---   4  restricted contributions exposed via history           unconditional  ____
---   5  restricted contributions exposed via revision events   unconditional  ____
---   6  contributions that LOSE a reader because of the fix    the cost       ____
---   7  department/division targets whose node has no members  descent gap    ____
---   8  distinct users who lose access to something            who to tell    ____
---   9  orphaned revision events (prose, no contribution)      denied after   ____
+-- The Supabase SQL Editor runs as an owner role that BYPASSES RLS, so an
+-- ungrouped count here silently merges every tenant in the database —
+-- including the pilot and demo organizations, whose research corpus is known
+-- to be junk. "47 exposed contributions" could be 47 in one real firm or two
+-- each across twenty-four test tenants, and those are different decisions.
+--
+-- So each query returns one row per organization. Read the rows for the
+-- organizations that matter and ignore the rest; the totals are deliberately
+-- not computed, because a total is the number that misleads.
 -- ============================================================================
 
--- 1. The headline number. Restricted contributions the whole organization can
---    read right now, through the team_id-NULL branch.
-SELECT count(*) AS n_1_exposed_now
-FROM public.asset_contributions
-WHERE coalesce(is_archived, false) = false
-  AND visibility <> 'firm'
-  AND team_id IS NULL;
+-- Name the organizations once, so every result below can be read without
+-- cross-referencing uuids.
+SELECT id AS organization_id, name, slug
+FROM public.organizations
+ORDER BY name;
 
--- 2 and 3. Split that by whether the audience still exists. The split matters
---    because the two halves get different outcomes from the same fix:
---      targets intact  → the restriction is RESTORED to the intended audience
---      no targets      → owner-only, because nothing records who it was for
-SELECT CASE WHEN t.n > 0 THEN '3_targets_intact_restriction_restored'
+-- ---------------------------------------------------------------------------
+-- 1. THE HEADLINE. Restricted contributions the whole organization can read
+--    right now, through the team_id-NULL branch.
+-- ---------------------------------------------------------------------------
+SELECT o.name AS organization,
+       count(*) AS n_1_exposed_now
+FROM public.asset_contributions ac
+JOIN public.organizations o ON o.id = ac.organization_id
+WHERE coalesce(ac.is_archived, false) = false
+  AND ac.visibility <> 'firm'
+  AND ac.team_id IS NULL
+GROUP BY o.name
+ORDER BY n_1_exposed_now DESC;
+
+-- ---------------------------------------------------------------------------
+-- 2 and 3. Split by whether the audience still exists, because the two halves
+--    get different outcomes from the same fix:
+--       targets intact  → the restriction is RESTORED to its intended audience
+--       no targets      → owner-only; nothing records who it was for
+-- ---------------------------------------------------------------------------
+SELECT o.name AS organization,
+       CASE WHEN t.n > 0 THEN '3_targets_intact_restriction_restored'
             ELSE            '2_no_targets_becomes_owner_only' END AS bucket,
-       count(*) AS contributions,
+       count(*)                      AS contributions,
        count(DISTINCT ac.created_by) AS distinct_authors
 FROM public.asset_contributions ac
+JOIN public.organizations o ON o.id = ac.organization_id
 CROSS JOIN LATERAL (
   SELECT count(*) AS n FROM public.contribution_visibility_targets v
    WHERE v.contribution_id = ac.id
@@ -45,122 +58,150 @@ CROSS JOIN LATERAL (
 WHERE coalesce(ac.is_archived, false) = false
   AND ac.visibility <> 'firm'
   AND ac.team_id IS NULL
-GROUP BY 1
-ORDER BY 1;
+GROUP BY o.name, 2
+ORDER BY o.name, 2;
 
--- 4. The unconditional path: restricted contributions whose prose is readable
---    org-wide through history, regardless of team_id.
-SELECT count(DISTINCT ac.id) AS n_4_restricted_with_exposed_history,
+-- ---------------------------------------------------------------------------
+-- 4. UNCONDITIONAL PATH ONE: restricted prose readable org-wide through
+--    history, regardless of team_id. (asset_contribution_history has no
+--    organization of its own; it takes the parent contribution's.)
+-- ---------------------------------------------------------------------------
+SELECT o.name AS organization,
+       count(DISTINCT ac.id) AS n_4_restricted_with_exposed_history,
        count(*)              AS history_rows_carrying_prose
 FROM public.asset_contribution_history h
 JOIN public.asset_contributions ac ON ac.id = h.contribution_id
+JOIN public.organizations o ON o.id = ac.organization_id
 WHERE ac.visibility <> 'firm'
-  AND btrim(coalesce(h.new_content, '')) <> '';
+  AND btrim(coalesce(h.new_content, '')) <> ''
+GROUP BY o.name
+ORDER BY n_4_restricted_with_exposed_history DESC;
 
--- 5. The other unconditional path: revision events, attributed through the
---    actor exactly as 10-'s policy does.
-SELECT count(DISTINCT ac.id) AS n_5_restricted_with_exposed_revisions,
+-- ---------------------------------------------------------------------------
+-- 5. UNCONDITIONAL PATH TWO: revision events, attributed through the ACTOR
+--    exactly as 10- section 4 does.
+-- ---------------------------------------------------------------------------
+SELECT o.name AS organization,
+       count(DISTINCT ac.id) AS n_5_restricted_with_exposed_revisions,
        count(*)              AS revision_events_carrying_prose
 FROM public.asset_revision_events e
 JOIN public.asset_revisions r      ON r.id = e.revision_id
-JOIN public.asset_contributions ac ON ac.asset_id   = r.asset_id
-                                 AND ac.section    = e.field_key
-                                 AND ac.created_by = r.actor_user_id
+JOIN public.asset_contributions ac ON ac.asset_id    = r.asset_id
+                                  AND ac.section     = e.field_key
+                                  AND ac.created_by  = r.actor_user_id
+JOIN public.organizations o ON o.id = ac.organization_id
 WHERE e.category <> 'valuation_targets'
   AND ac.visibility <> 'firm'
-  AND btrim(coalesce(e.after_value, '')) <> '';
+  AND btrim(coalesce(e.after_value, '')) <> ''
+GROUP BY o.name
+ORDER BY n_5_restricted_with_exposed_revisions DESC;
 
--- 6 and 8. THE COST OF THE FIX, named. Contributions that at least one person
---    can read today and nobody but the author will read afterwards, with the
---    authors who need telling. This is the only query whose answer should
---    change a decision rather than confirm one.
-SELECT ac.id, a.symbol, ac.section, ac.visibility,
-       ac.created_by AS author, ac.updated_at,
-       'no targets — audience not recorded' AS reason
-FROM public.asset_contributions ac
-JOIN public.assets a ON a.id = ac.asset_id
-WHERE coalesce(ac.is_archived, false) = false
-  AND ac.visibility <> 'firm'
-  AND ac.team_id IS NULL
-  AND NOT EXISTS (SELECT 1 FROM public.contribution_visibility_targets v
-                   WHERE v.contribution_id = ac.id)
-
-UNION ALL
-
--- The second way to lose a reader: the targets survive, but the targeted node
--- has no direct members, so direct-membership matching reaches nobody. This is
--- the unimplemented-descent gap showing up as lost access.
-SELECT ac.id, a.symbol, ac.section, ac.visibility,
-       ac.created_by, ac.updated_at,
-       'targeted node has no direct members — descent unimplemented'
-FROM public.asset_contributions ac
-JOIN public.assets a ON a.id = ac.asset_id
-WHERE coalesce(ac.is_archived, false) = false
-  AND ac.visibility <> 'firm'
-  AND EXISTS (SELECT 1 FROM public.contribution_visibility_targets v
-               WHERE v.contribution_id = ac.id)
-  AND NOT EXISTS (
-        SELECT 1
-        FROM public.contribution_visibility_targets v
-        JOIN public.org_chart_node_members m ON m.node_id = v.node_id
-       WHERE v.contribution_id = ac.id)
-ORDER BY 4, 2, 3;
-
-SELECT count(DISTINCT author) AS n_8_authors_to_notify FROM (
-  SELECT ac.created_by AS author
+-- ---------------------------------------------------------------------------
+-- 6. THE COST, SUMMARISED. Contributions at least one person can read today
+--    and only the author will read afterwards. This is operational impact,
+--    not a security signal — see docs/contribution-visibility-gate.md.
+-- ---------------------------------------------------------------------------
+WITH losing AS (
+  SELECT ac.id, ac.organization_id, ac.created_by,
+         CASE WHEN NOT EXISTS (SELECT 1 FROM public.contribution_visibility_targets v
+                                WHERE v.contribution_id = ac.id)
+              THEN 'a_audience_destroyed'
+              ELSE 'b_targets_intact_but_node_has_no_direct_members' END AS reason
   FROM public.asset_contributions ac
   WHERE coalesce(ac.is_archived, false) = false
     AND ac.visibility <> 'firm'
-    AND (ac.team_id IS NULL OR true)
     AND NOT EXISTS (
           SELECT 1
           FROM public.contribution_visibility_targets v
           JOIN public.org_chart_node_members m ON m.node_id = v.node_id
          WHERE v.contribution_id = ac.id)
-) s;
+)
+SELECT o.name AS organization,
+       l.reason,
+       count(*)                     AS n_6_contributions_losing_a_reader,
+       count(DISTINCT l.created_by) AS n_8_authors_to_notify
+FROM losing l
+JOIN public.organizations o ON o.id = l.organization_id
+GROUP BY o.name, l.reason
+ORDER BY o.name, l.reason;
 
--- 7. The descent gap, by node type. A targeted node type with few
---    direct-member nodes is the product question from
---    docs/contribution-visibility-assessment.md, in numbers.
-SELECT n.node_type,
+-- ---------------------------------------------------------------------------
+-- 6b. THE SAME ROWS, ITEMISED — the notification list. Only run for the
+--     organizations that matter; it is one row per contribution.
+--     Add:  AND o.slug = '<slug>'
+-- ---------------------------------------------------------------------------
+SELECT o.name AS organization, a.symbol, ac.section, ac.visibility,
+       ac.created_by AS author, ac.updated_at,
+       CASE WHEN NOT EXISTS (SELECT 1 FROM public.contribution_visibility_targets v
+                              WHERE v.contribution_id = ac.id)
+            THEN 'audience destroyed — not recorded anywhere'
+            ELSE 'targeted node has no direct members' END AS reason
+FROM public.asset_contributions ac
+JOIN public.assets a        ON a.id = ac.asset_id
+JOIN public.organizations o ON o.id = ac.organization_id
+WHERE coalesce(ac.is_archived, false) = false
+  AND ac.visibility <> 'firm'
+  AND NOT EXISTS (
+        SELECT 1
+        FROM public.contribution_visibility_targets v
+        JOIN public.org_chart_node_members m ON m.node_id = v.node_id
+       WHERE v.contribution_id = ac.id)
+ORDER BY o.name, a.symbol, ac.section;
+
+-- ---------------------------------------------------------------------------
+-- 7. The descent gap in numbers. Expected to be large; it is context for
+--    reading 6, not a stop condition.
+-- ---------------------------------------------------------------------------
+SELECT o.name AS organization,
+       n.node_type,
        count(DISTINCT t.contribution_id) AS contributions_targeting,
        count(DISTINCT t.node_id)         AS nodes_targeted,
-       count(DISTINCT t.node_id) FILTER (
-         WHERE EXISTS (SELECT 1 FROM public.org_chart_node_members m
-                        WHERE m.node_id = t.node_id)) AS nodes_with_direct_members,
        count(DISTINCT t.node_id) FILTER (
          WHERE NOT EXISTS (SELECT 1 FROM public.org_chart_node_members m
                             WHERE m.node_id = t.node_id)) AS n_7_nodes_reaching_nobody
 FROM public.contribution_visibility_targets t
 JOIN public.org_chart_nodes n ON n.id = t.node_id
-GROUP BY n.node_type
-ORDER BY contributions_targeting DESC;
+JOIN public.organizations o   ON o.id = n.organization_id
+GROUP BY o.name, n.node_type
+ORDER BY o.name, contributions_targeting DESC;
 
--- 9. Orphaned revision prose: an event in a contribution category whose
---    section has no contribution by that actor. After the fix these are
---    readable only by the actor. The prose stays in the table either way —
---    this counts what becomes unreadable, not what gets removed.
-SELECT count(*) AS n_9_orphaned_revision_events
+-- ---------------------------------------------------------------------------
+-- 9. Orphaned revision prose — retained for audit integrity, access denied
+--    after the fix. Counted, never deleted.
+-- ---------------------------------------------------------------------------
+SELECT o.name AS organization,
+       count(*) AS n_9_orphaned_revision_events
 FROM public.asset_revision_events e
 JOIN public.asset_revisions r ON r.id = e.revision_id
+JOIN public.organizations o   ON o.id = r.organization_id
 WHERE e.category <> 'valuation_targets'
   AND btrim(coalesce(e.after_value, '')) <> ''
   AND NOT EXISTS (SELECT 1 FROM public.asset_contributions c
                    WHERE c.asset_id   = r.asset_id
                      AND c.section    = e.field_key
-                     AND c.created_by = r.actor_user_id);
+                     AND c.created_by = r.actor_user_id)
+GROUP BY o.name
+ORDER BY n_9_orphaned_revision_events DESC;
 
--- ── The invariant 10- depends on, checked against real data ────────────────
--- Every contribution-category revision event whose section HAS a contribution
--- must have one by the ACTOR. A non-zero answer breaks the derivation in 10-
--- section 4 and must be understood before applying it.
-SELECT count(*) AS invariant_violations_actor_is_not_author
+-- ===========================================================================
+-- THE INVARIANT. 10- section 4 derives a revision event's visibility from the
+-- contribution authored by that event's ACTOR. If any event's section has a
+-- contribution but none by the actor, that derivation is unsound and the
+-- policy would hand one analyst's prose to another.
+--
+-- A NON-ZERO ANSWER IN ANY ORGANIZATION IS A HARD STOP.
+-- ===========================================================================
+SELECT coalesce(o.name, '(no organization)') AS organization,
+       count(*) AS invariant_violations_actor_is_not_author
 FROM public.asset_revision_events e
 JOIN public.asset_revisions r ON r.id = e.revision_id
+LEFT JOIN public.organizations o ON o.id = r.organization_id
 WHERE e.category <> 'valuation_targets'
   AND EXISTS (SELECT 1 FROM public.asset_contributions c
                WHERE c.asset_id = r.asset_id AND c.section = e.field_key)
   AND NOT EXISTS (SELECT 1 FROM public.asset_contributions c
                    WHERE c.asset_id   = r.asset_id
                      AND c.section    = e.field_key
-                     AND c.created_by = r.actor_user_id);
+                     AND c.created_by = r.actor_user_id)
+GROUP BY 1
+ORDER BY 2 DESC;

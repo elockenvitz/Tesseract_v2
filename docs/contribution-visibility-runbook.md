@@ -39,6 +39,12 @@ Both files are self-contained: no helper functions, and **no dependency on the
 freshness lane**. Nothing from `scripts/sql/contribution-freshness/` needs to
 be installed, and nothing here installs anything.
 
+> **Superseded in part by `docs/contribution-visibility-gate.md`.** That file
+> splits these into security-invalidating and operational-impact, and corrects
+> one entry: a large `n_6` is **not** a stop condition. It changes sequencing
+> and communication, never go/no-go. The gate document is authoritative where
+> the two differ.
+
 ### Stop conditions — any one of these halts the release
 
 | Signal | Where | Why it stops us |
@@ -48,7 +54,7 @@ be installed, and nothing here installs anything.
 | A `SECURITY DEFINER` function over these tables is executable by `anon` or `authenticated` | `00-` Q2 | Same: an independent path the policy fix does not touch. |
 | Any grant to `anon` on any of the five tables | `00-` Q3 | Pre-authentication exposure outranks this work. |
 | `invariant_violations_actor_is_not_author` **> 0** | `01-` final query | The revision-event derivation in `10-` §4 is unsound. Both the actor branch and the attribution would hand one analyst's prose to another. **Hard stop — redesign §4.** |
-| `n_6` (contributions that lose a reader) is large relative to the corpus | `01-` #6 | Correct but disruptive. Becomes a notification exercise before the policy lands, not after. |
+| ~~`n_6` is large relative to the corpus~~ | `01-` #6 | **Not a stop condition.** See the gate document: every row in `n_6` is currently readable by people it was never shared with, so a large value argues for shipping sooner. It sets the notification plan. |
 | Column shapes differ from `revision-service.ts` / `useAssetRevisions.ts` | `00-` Q1 | Neither revision table has a migration in this repo. The policy is written against an inferred shape. |
 
 ### Numbers that inform but do not stop
