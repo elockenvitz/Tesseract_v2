@@ -200,8 +200,16 @@ DROP POLICY IF EXISTS contribution_visibility_targets_writer_delete ON public.co
 DROP POLICY IF EXISTS asset_contributions_writer_update ON public.asset_contributions;
 GRANT INSERT, UPDATE, DELETE ON public.contribution_visibility_targets TO authenticated;
 REVOKE tesseract_audience_writer FROM postgres;
-DROP ROLE IF EXISTS tesseract_audience_writer;
+DROP ROLE IF EXISTS tesseract_audience_writer;   -- must follow the DROP FUNCTION above
+
+-- Last: 90- deliberately leaves this commented, because the policies that
+-- reference it must be restored first. Dropping it here completes the revert.
+DROP FUNCTION IF EXISTS public.can_read_asset_contribution(uuid);
 ```
+
+**Order is load-bearing.** Functions before the role (`DROP ROLE` fails while
+it owns objects), and `can_read_asset_contribution` after `90-` has replaced
+the five policies that call it.
 
 Re-running the baseline suites should return **9/7** and **4/10** — which is
 itself the proof that the rollback is complete.
@@ -220,6 +228,66 @@ against a missing RPC.
 | 3, 4 | any error — the transaction rolls back; report before retrying |
 | 5 | audience assertion 2 fails, or either suite is not 16/0 and 14/0 |
 | 6 | any of the seven checks mismatches |
+
+---
+
+## 6. Final verification of the two safety claims
+
+### Fixtures cannot survive — verified against the files, not the pattern
+
+| | visibility suite | audience suite |
+|---|---|---|
+| `DO $$ … $$;` blocks | 1 | 1 |
+| `COMMIT` / `ROLLBACK` inside | **0** | **0** |
+| statements outside the block | `DROP TABLE`, `CREATE TEMP TABLE`, final `SELECT` | same |
+| cleanup `DELETE`/`UPDATE` | 14 | 10 |
+| `EXCEPTION WHEN` handlers | 18 | 13 |
+
+Three failure modes, all safe:
+
+1. **Success** — cleanup runs at the end of the same block.
+2. **Caught assertion failure** — `BEGIN … EXCEPTION` is a *subtransaction*;
+   only it rolls back, the block continues, cleanup still runs.
+3. **Uncaught error** — fixture setup, an FK violation during cleanup, a
+   statement timeout, a dropped connection. The `DO` is **one statement**, so
+   its implicit transaction aborts and every fixture row disappears with it.
+   There is nothing left to clean up.
+
+The nested blocks added for assertions 15/16 and audience 14 have **no**
+exception handler, which is the safer configuration: an error there propagates
+and forces the full rollback rather than being swallowed.
+
+One trigger-created row was checked specifically: audience assertion 2's
+`UPDATE` fires `contribution_history_trigger`, which inserts into
+`asset_contribution_history`. Both suites delete from that table in cleanup —
+confirmed present, not assumed.
+
+**The one condition.** This rests on each file being its own statement batch
+under autocommit. `psql -f` and the Supabase SQL Editor both satisfy it.
+**Do not wrap either suite in an explicit `BEGIN;`** — a transaction committed
+despite an earlier error would defeat the guarantee.
+
+### Rollback restores exactly, and touches no data
+
+`10-` creates five policies; `90-` recreates the same five, with the pre-fix
+text taken verbatim from preflight A1 and A3c — not reconstructed.
+
+**No irreversible effect on data.** Neither file reads or writes a
+contribution, visibility value, target row, timestamp or audit record. There
+is nothing to back up beyond schema, and nothing to backfill on revert.
+
+Three dependencies, all handled in §4:
+
+- **`can_read_asset_contribution` is left behind** by a bare `90-` run — the
+  drop is commented there deliberately, because the policies calling it must
+  be restored first. Harmless if left (nothing references it), but §4 now
+  drops it last for a complete revert. *This was missing from the §4 list and
+  has been added.*
+- **`90-` does not revert `20-`.** Separate teardown, with `DROP ROLE` after
+  `DROP FUNCTION` or it fails on owned objects.
+- **If the app has shipped, roll it back too.** Without the RPC,
+  `setContributionAudience` throws "function does not exist" — loudly now,
+  which is the new behaviour working, but audience changes stop.
 
 ---
 
