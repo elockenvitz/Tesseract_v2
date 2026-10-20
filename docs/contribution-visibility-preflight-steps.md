@@ -120,6 +120,25 @@ GROUP BY 1
 ORDER BY rows DESC;
 ```
 
+## A8 — Is RLS actually ENABLED? — HARD STOP
+
+```sql
+SELECT c.relname, c.relrowsecurity AS rls_enabled, c.relforcerowsecurity AS rls_forced
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public'
+  AND c.relname IN ('asset_contributions','contribution_visibility_targets',
+                    'asset_contribution_history','asset_revisions','asset_revision_events');
+```
+
+**HARD STOP** if `rls_enabled` is false for any row. A policy on a table
+without RLS enforces nothing, and the whole assessment rests on policies that
+would never run.
+
+This also settles one specific gap: `contribution_visibility_targets` has
+SELECT/INSERT/DELETE policies and **no UPDATE policy**, so RLS is what denies
+re-pointing an existing target row to a different node — a direct audience
+change. With RLS off, the grants alone permit it.
+
 ## A7 — Triggers on `asset_contributions` (context, not a stop)
 
 ```sql
@@ -339,6 +358,7 @@ ORDER BY o.name, a.symbol, ac.section;
 | A3 | a SECURITY DEFINER function executable by `anon`/`authenticated` |
 | A4 | any grant to `anon` |
 | A5 | a missing column on either revision table |
+| A8 | RLS not enabled on any of the five tables |
 | **B8** | **any non-zero count — forces a redesign, not a delay** |
 
 Everything else is sizing or operational impact. None of it blocks a
