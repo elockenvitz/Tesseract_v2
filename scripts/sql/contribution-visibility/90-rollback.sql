@@ -46,6 +46,21 @@ CREATE POLICY asset_revision_events_select ON public.asset_revision_events
                           WHERE r.id = asset_revision_events.revision_id
                             AND r.actor_user_id = auth.uid())));
 
+-- ── contribution_replies / contribution_reactions — back to production ─────
+-- Captured verbatim from preflight A3c. Reverting restores the org-level
+-- predicate, which is visibility-blind.
+DROP POLICY IF EXISTS contribution_replies_select ON public.contribution_replies;
+CREATE POLICY contribution_replies_select ON public.contribution_replies
+  FOR SELECT TO authenticated
+  USING (public.contribution_in_current_org(contribution_id)
+         AND public.is_active_member_of_current_org());
+
+DROP POLICY IF EXISTS contribution_reactions_select ON public.contribution_reactions;
+CREATE POLICY contribution_reactions_select ON public.contribution_reactions
+  FOR SELECT TO authenticated
+  USING (public.contribution_in_current_org(contribution_id)
+         AND public.is_active_member_of_current_org());
+
 COMMIT;
 
 -- ── Drop the predicate, only once nothing references it ────────────────────

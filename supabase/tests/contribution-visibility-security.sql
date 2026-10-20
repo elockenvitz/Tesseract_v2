@@ -16,11 +16,15 @@
 -- ── Expected results ────────────────────────────────────────────────────────
 --
 --   BEFORE scripts/sql/contribution-visibility/10-policy-fix.sql:
---       9 PASS, 5 FAIL — assertions 3, 4, 6, 8 and 13 MUST fail.
+--       9 PASS, 7 FAIL — assertions 3, 4, 6, 8, 13, 15 and 16 MUST fail.
 --       If they pass, this test is decoration and must not be trusted.
 --
 --   AFTER 10-policy-fix.sql:
---       14 PASS, 0 FAIL.
+--       16 PASS, 0 FAIL.
+--
+-- 15 and 16 were added after the production preflight. 15 asserts the
+-- legacy null-org shape B8 found three of and could not exercise; 16 asserts
+-- the four-column attribution A5 showed the original policy had got wrong.
 --
 -- Assertions 1, 2, 5, 7, 9, 10, 11, 12 and 14 pass in BOTH states by design:
 -- they are the preserve-legitimate-access controls, and a fix that breaks one
@@ -42,7 +46,7 @@
 -- 12 documents the gap as a tested fact rather than a guess. It is not a
 -- recommendation that descent stay unimplemented.
 --
--- Self-cleaning. 14 assertions.
+-- Self-cleaning. 16 assertions.
 -- =============================================================================
 
 DROP TABLE IF EXISTS _sec_results;
@@ -520,6 +524,125 @@ BEGIN
   ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (14, 'FAIL', v_msg); END IF;
 
   -- ===========================================================================
+  -- 15. LEGACY NULL-ORG REVISION: actor only.
+  --
+  --     Preflight B8 found exactly three non-valuation events in production,
+  --     all on revisions with organization_id NULL and none with a matching
+  --     contribution. The invariant check was therefore VACUOUS, so this
+  --     asserts the shape directly instead of trusting that result.
+  --
+  --     The corrected policy requires BOTH the event's and the revision's
+  --     organization_id to equal current_org_id(). With the revision's NULL,
+  --     NULL = uuid yields NULL, the org branch is unreachable, and only
+  --     `r.actor_user_id = auth.uid()` grants. Fails closed to the owner.
+  -- ===========================================================================
+  DECLARE v_rev_legacy uuid := gen_random_uuid();
+  BEGIN
+    SET LOCAL request.jwt.claims = '';
+    INSERT INTO asset_revisions(id, asset_id, actor_user_id, view_scope_type, organization_id)
+    VALUES (v_rev_legacy, v_asset, v_owner, 'firm', NULL);
+    INSERT INTO asset_revision_events(revision_id, category, field_key, before_value, after_value, significance_tier)
+    VALUES (v_rev_legacy, 'thesis', 'thesis', 'ZZ OLD LEGACY '||v_suffix,
+            'ZZ LEGACY NULL ORG PROSE '||v_suffix, 2);
+
+    v_msg := '';
+    BEGIN
+      EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                     json_build_object('sub', v_owner, 'role','authenticated')::text);
+      SET LOCAL ROLE authenticated;
+      SELECT count(*) INTO v_n FROM asset_revision_events WHERE revision_id = v_rev_legacy;
+      RESET ROLE;
+    EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1; END;
+    IF v_n <> 1 THEN v_msg := v_msg || format('actor cannot read own legacy event (%s) ', v_n); END IF;
+
+    BEGIN
+      EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                     json_build_object('sub', v_other, 'role','authenticated')::text);
+      SET LOCAL ROLE authenticated;
+      SELECT count(*) INTO v_n FROM asset_revision_events WHERE revision_id = v_rev_legacy;
+      RESET ROLE;
+    EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1; END;
+    IF v_n <> 0 THEN v_msg := v_msg || format('same-org non-actor READ legacy prose (%s) ', v_n); END IF;
+
+    IF v_msg = '' THEN v_pass := v_pass + 1;
+      INSERT INTO _sec_results VALUES (15, 'PASS', 'legacy null-org event: actor only');
+    ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (15, 'FAIL', v_msg); END IF;
+
+    DELETE FROM asset_revision_events WHERE revision_id = v_rev_legacy;
+    DELETE FROM asset_revisions       WHERE id = v_rev_legacy;
+  END;
+
+  -- ===========================================================================
+  -- 16. MULTI-ORG AUTHOR: a foreign-org contribution must not authorize an
+  --     event, and the same-org one still must.
+  --
+  --     Production uniqueness is (created_by, asset_id, section,
+  --     organization_id) — FOUR columns (preflight A5) — so one author can
+  --     hold the same section on the same asset in two organizations. The
+  --     original policy matched on three and relied on
+  --     can_read_asset_contribution's own org check to compensate. This
+  --     asserts the join itself is pinned.
+  -- ===========================================================================
+  DECLARE
+    v_c_b   uuid;
+    v_mem_b uuid := gen_random_uuid();
+  BEGIN
+    SET LOCAL request.jwt.claims = '';
+    -- the owner also belongs to org B and writes the SAME section there,
+    -- firm-visible, so only the org pin can keep it out of the org-A decision
+    INSERT INTO organization_memberships(organization_id, user_id, status)
+    VALUES (v_org_b, v_owner, 'active');
+    INSERT INTO auth.users(id) VALUES (v_mem_b);
+    UPDATE users SET current_organization_id = v_org_b WHERE id = v_mem_b;
+    INSERT INTO organization_memberships(organization_id, user_id, status)
+    VALUES (v_org_b, v_mem_b, 'active');
+
+    UPDATE users SET current_organization_id = v_org_b WHERE id = v_owner;
+    EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                   json_build_object('sub', v_owner, 'role','authenticated')::text);
+    INSERT INTO asset_contributions(asset_id, section, content, created_by, visibility, team_id)
+    VALUES (v_asset, 'thesis', 'ZZ ORG B FIRM PROSE '||v_suffix, v_owner, 'firm', NULL)
+    RETURNING id INTO v_c_b;
+    SET LOCAL request.jwt.claims = '';
+    UPDATE users SET current_organization_id = v_org_a WHERE id = v_owner;
+
+    v_msg := '';
+    -- v_other is in org A and cannot read the org-A restricted thesis. The
+    -- org-B contribution is firm-visible, but belongs to another tenant: it
+    -- must not authorize the org-A event.
+    BEGIN
+      EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                     json_build_object('sub', v_other, 'role','authenticated')::text);
+      SET LOCAL ROLE authenticated;
+      SELECT count(*) INTO v_n FROM asset_revision_events
+       WHERE revision_id = v_rev AND field_key = 'thesis';
+      RESET ROLE;
+    EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1; END;
+    IF v_n <> 0 THEN
+      v_msg := v_msg || format('foreign-org contribution authorized an event (%s) ', v_n); END IF;
+
+    -- and the legitimate reader still gets it
+    BEGIN
+      EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                     json_build_object('sub', v_owner, 'role','authenticated')::text);
+      SET LOCAL ROLE authenticated;
+      SELECT count(*) INTO v_n FROM asset_revision_events
+       WHERE revision_id = v_rev AND field_key = 'thesis';
+      RESET ROLE;
+    EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1; END;
+    IF v_n <> 1 THEN v_msg := v_msg || format('author lost their own event (%s) ', v_n); END IF;
+
+    IF v_msg = '' THEN v_pass := v_pass + 1;
+      INSERT INTO _sec_results VALUES (16, 'PASS', 'multi-org author: attribution pinned to the event''s org');
+    ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (16, 'FAIL', v_msg); END IF;
+
+    DELETE FROM asset_contributions WHERE id = v_c_b;
+    DELETE FROM organization_memberships WHERE user_id IN (v_owner, v_mem_b) AND organization_id = v_org_b;
+    UPDATE users SET current_organization_id = NULL WHERE id = v_mem_b;
+    DELETE FROM auth.users WHERE id = v_mem_b;
+  END;
+
+  -- ===========================================================================
   -- CLEANUP
   -- ===========================================================================
   SET LOCAL request.jwt.claims = '';
@@ -544,8 +667,8 @@ BEGIN
   DELETE FROM organizations WHERE id IN (v_org_a, v_org_b);
   DELETE FROM auth.users WHERE id IN (v_owner, v_member, v_other, v_outsider);
 
-  RAISE NOTICE '=== RESULTS: % passed, % failed out of 14 assertions ===', v_pass, v_fail;
-  RAISE NOTICE 'Before the fix, 3/4/6/8/13 MUST be among the failures.';
+  RAISE NOTICE '=== RESULTS: % passed, % failed out of 16 assertions ===', v_pass, v_fail;
+  RAISE NOTICE 'Before the fix, 3/4/6/8/13/15/16 MUST be among the failures.';
 END;
 $$;
 

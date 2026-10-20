@@ -287,6 +287,41 @@ CREATE POLICY asset_revision_events_select ON public.asset_revision_events
 -- policy on it is left alone. If `review_note` is found to quote analyst text,
 -- it needs the same treatment — 00- Q1 shows its columns.
 
+-- ── 5. Replies and reactions — found by preflight A3b/A3c ──────────────────
+--
+-- Neither table appears anywhere in the application; the replies feature is
+-- not wired. Both are empty, so nothing is exposed today and this is
+-- forward-looking hardening.
+--
+-- Their SELECT policies are
+--     contribution_in_current_org(contribution_id) AND is_active_member_of_current_org()
+-- which is an ORG-level predicate where a VISIBILITY-level one is required —
+-- the same root cause as V1 and V3, on two more tables. `contribution_replies`
+-- carries a `content text` column, so had it held rows this would have been a
+-- fourth prose exposure path.
+--
+-- `contribution_in_current_org` is NOT the defect and is left untouched: it
+-- answers exactly the question its name asks, and seven policies depend on it.
+-- Only these two predicates change.
+--
+-- INSERT/UPDATE/DELETE are deliberately NOT changed here. Whether you may
+-- *reply to* a contribution you cannot read is an authorization-to-write
+-- question, separate from confidentiality — and the INSERT policies' own
+-- `EXISTS (SELECT … FROM asset_contributions ac …)` is itself subject to
+-- `asset_contributions_select`, so fixing V2 above should tighten them
+-- automatically. That is a hypothesis about policy-expression RLS semantics,
+-- asserted in the test suite rather than assumed here; if it fails, those
+-- policies join a follow-up.
+DROP POLICY IF EXISTS contribution_replies_select ON public.contribution_replies;
+CREATE POLICY contribution_replies_select ON public.contribution_replies
+  FOR SELECT TO authenticated
+  USING (public.can_read_asset_contribution(contribution_id));
+
+DROP POLICY IF EXISTS contribution_reactions_select ON public.contribution_reactions;
+CREATE POLICY contribution_reactions_select ON public.contribution_reactions
+  FOR SELECT TO authenticated
+  USING (public.can_read_asset_contribution(contribution_id));
+
 COMMIT;
 
 -- ============================================================================

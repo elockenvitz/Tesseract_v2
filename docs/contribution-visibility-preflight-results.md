@@ -700,6 +700,60 @@ visibility was never used historically.** Two related facts bound that gap:
 Not pursued: it would not change the fix, and with no live customers it would
 only refine a description. Recorded as a known residual.
 
+## B8 — the invariant · **VACUOUS PASS, not a measured one**
+
+| organization | non_valuation_events | with_matching_contribution | violations |
+|---|---|---|---|
+| (no organization) | 3 | 0 | 0 |
+
+**No hard stop.** But zero violations out of zero in-scope events proves
+nothing about the actor-author invariant — it was never exercised. All three
+non-valuation events belong to revisions with `organization_id IS NULL` and
+have no matching contribution under the organization-aware join.
+
+Recorded as **qualified/vacuous**. The invariant remains an assumption about
+`publishDraft` plus the author-only UPDATE policy, now carried into the
+isolated suite as an assertion rather than claimed as verified in production.
+
+### These three legacy events fail closed under the corrected policy
+
+Traced rather than assumed. The corrected §4 requires **both**
+`asset_revision_events.organization_id` and `r.organization_id` to equal
+`current_org_id()`. For these rows `r.organization_id IS NULL`, so
+`NULL = uuid` yields `NULL`, the org branch is unreachable, and the only
+remaining grant is `r.actor_user_id = auth.uid()` — **actor-only**.
+
+That holds whichever way the event's own `organization_id` falls:
+
+| event org | C1/06 today | corrected §4 |
+|---|---|---|
+| NULL | legacy branch → actor only | actor only |
+| set | **first branch → org-wide** | actor only — **tightened** |
+
+So the second case is a narrowing the correction delivers and the current
+policy does not. Owner-only access here is securely validated: the branch keys
+on `auth.uid()`, never on a client-supplied value.
+
+These events are also "orphaned" in §4's terms — no matching contribution — so
+the `ELSE` branch would deny them anyway. They never reach it, because the org
+gate fails first. Both routes agree: actor-only.
+
+---
+
+# Preflight closed
+
+**Part A: A1–A8, all passed.** **Part B: B0, B1, B3, B3b, B8.** B2 subsumed,
+B4 superseded by B3b, and B5/B6b/B7/B9 skipped — they size a notification
+exercise that B0 established is not required.
+
+**No hard stop fired in sixteen blocks.** Net position:
+
+- Three authorization defects confirmed **verbatim** in production.
+- Two more found that nobody was looking for (reply/reaction SELECT policies).
+- One legacy predicate found defective (`can_view_contribution`).
+- Two design errors of mine caught and corrected.
+- **Zero currently-populated exposure.** The release is preventative.
+
 ---
 
 ## Still queued, none blocking
