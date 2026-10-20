@@ -3,7 +3,24 @@
 Run by the user in the Supabase SQL Editor, one block at a time. No writes.
 Procedure: `docs/contribution-visibility-preflight-steps.md`.
 
-Status: **A1–A3c complete. A4 onward outstanding.**
+Status: **PART A COMPLETE — A1 to A8, all passed. Part B outstanding.**
+
+| Block | Subject | Result |
+|---|---|---|
+| A1 | policies on the five tables | **PASS** — all 14 verbatim; three defects confirmed |
+| A2 | views | **PASS** — 0 rows |
+| A3 | SECURITY DEFINER functions | **QUALIFIED PASS** — `contribution_in_current_org`, override reasoned |
+| A3b | its callers | 7 policies; **preserve**, do not revoke |
+| A3c | reply/reaction policies | **2 new authorization gaps**; both tables empty |
+| A3d | `can_view_contribution` | **defective**; 2 INSERT callers; do not reuse |
+| A4 | grants | **PASS** — no `anon`, no `PUBLIC`; excess `authenticated` grants noted |
+| A5 | schema shape | **CONDITIONAL PASS** — correction applied to `10-` |
+| A6 | history row shapes | **PASS** — 24 rows total |
+| A7 | triggers | **PASS** — history writer identified |
+| A8 | RLS enabled | **PASS** — true on all seven, owner `postgres` |
+
+**No hard stop fired.** The three defects are confirmed in production, two more
+were found, and two design errors of mine were caught and corrected.
 
 ---
 
@@ -503,13 +520,68 @@ priority, hygiene rather than security.
 
 ---
 
-## Outstanding
+---
 
-| Block | Question | Status |
+## A8 — RLS enabled · **PASS. Part A complete.**
+
+All seven tables: `rls_enabled = true`, `rls_forced = false`, `owner = postgres`.
+
+`rls_forced = false` is expected and not a problem — `FORCE` affects only the
+table owner, and C1/08 documents why it is not set: `postgres` and
+`service_role` carry `BYPASSRLS`, which wins over `FORCE` regardless.
+
+### What this settles
+
+**Every excess grant A4 found is inert.** `authenticated` holding
+INSERT/UPDATE/DELETE on `asset_contribution_history`, UPDATE on
+`contribution_visibility_targets`, DELETE on the revision tables — all denied,
+because a grant with no matching policy cannot act while RLS is on. The
+hardening finding stands; the urgency does not. No integrity incident.
+
+### And it resolves the ⟨B⟩ privilege question from the RPC design
+
+`owner = postgres` on every table, with `rls_forced = false`, means a table
+owner bypasses RLS. So both candidate shapes work, and the choice is now
+informed rather than deferred:
+
+| | Mechanism | Verdict |
 |---|---|---|
-| A3e | `EXECUTE` grants on `can_view_contribution`; full body | queued |
-| A7b | is `track_contribution_changes()` attached to any table? | queued, low priority |
-| A8 | **RLS actually enabled** on the five tables | **next — hard stop, completes Part A** |
+| **B-i** | dedicated `tesseract_audience_writer` role, not a table owner, with three narrow policies naming it | **Chosen.** The pin trigger's `current_user` check names exactly one role that nothing else can be |
+| **B-ii** | own the function as `postgres`, relying on the owner's RLS exemption | Rejected — every `postgres`-owned definer function and the SQL Editor would pass the pin, and it silently breaks the day anyone sets `FORCE ROW LEVEL SECURITY` |
+
+B-i costs three extra policies and does not depend on `rls_forced` staying
+`false`.
+
+---
+
+## Design corrections carried out of Part A
+
+Seven, all local, none applied:
+
+1. **A4** — the revoke on `contribution_visibility_targets` must be
+   `INSERT, UPDATE, DELETE`. UPDATE is granted and was going to be missed.
+2. **A5** — revision-event attribution pinned with
+   `c.organization_id = r.organization_id`, matching the real four-column
+   unique tuple. *(applied to `10-`)*
+3. **A5** — both the event's and the revision's `organization_id` must match
+   `current_org_id()`, removing a widening I had introduced for legacy
+   null-org events. *(applied to `10-`)*
+4. **A3c** — the two reply/reaction SELECT policies join the release, using
+   `can_read_asset_contribution`.
+5. **A7** — the RPC must not stamp `updated_at`; a visibility-only update
+   leaves the clock alone unless written by hand.
+6. **A8** — privilege boundary is B-i, a dedicated non-owner role.
+7. **A5** — the RPC's scope validation is defence in depth, not sole
+   enforcement: a CHECK already restricts `visibility` to the five scopes. It
+   stays, because the CHECK cannot see a scope/target mismatch.
+
+## Still queued, none blocking
+
+| Block | Question |
+|---|---|
+| A3e | `EXECUTE` grants on `can_view_contribution` — item 5 of the A3d decisions |
+| A7b | is `track_contribution_changes()` attached to any table anywhere? |
+| A2b | wider view sweep: all schemas, all five tables |
 | A5 | revision table columns, plus any CHECK on `visibility` | outstanding |
 | A6 | history row shapes | outstanding |
 | A7 | triggers on `asset_contributions` | outstanding |
