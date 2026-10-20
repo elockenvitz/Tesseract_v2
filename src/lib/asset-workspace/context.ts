@@ -69,6 +69,24 @@ export type SignalKind =
   | 'gap'             // something expected is absent
   | 'provenance'      // a claim is weaker than it looks
 
+/**
+ * Where, precisely, acting on a signal should land the reader.
+ *
+ * `destination` already names the page; `focus` names the exact thing on it, so
+ * the UI can scroll to a section anchor, select the waiting decision(s), or open
+ * the evidence — reusing the Asset page's existing navigation rather than new
+ * routing. A signal may omit it; then the page is enough.
+ */
+export type SignalFocus =
+  /** One or more waiting decisions in a book (the pending/contradiction kinds). */
+  | { kind: 'decision'; decisionIds: string[]; portfolioId: string | null }
+  /** A specific research anchor that already exists in the Research view. */
+  | { kind: 'research-section'; anchor: 'thesis' | 'risks' | 'targets' | 'rating' | 'case' }
+  /** Research added since the case was written. */
+  | { kind: 'research-evidence' }
+  /** Coverage assignment. */
+  | { kind: 'coverage' }
+
 export interface WorkspaceSignal {
   id: string
   kind: SignalKind
@@ -76,6 +94,8 @@ export interface WorkspaceSignal {
   headline: string
   /** Where the reader goes to act on or verify it. */
   destination: WorkspaceDestination
+  /** The exact target on that page, when there is one. */
+  focus?: SignalFocus
   /**
    * The records this was derived from, so the UI can link and attribute.
    * A signal with no evidence is a bug, not a soft claim.
@@ -232,19 +252,47 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
    * decision, or in which book. A situation label with no corresponding fact
    * is the surface asserting something it then declines to evidence.
    */
-  for (const d of f.openDecisions) {
-    const what = d.action ? d.action.toLowerCase() : 'request'
-    // "A add" was on screen. The actions are a known, small vocabulary, so a
+  /*
+   * Dedupe by the decision's own id first (the timeline can surface the same
+   * request from more than one source), then GROUP by (book, action). Two
+   * distinct buy requests in the same book read as one line "2 buys … waiting",
+   * not two identical rows — deduped by the underlying entity and action rather
+   * than by matching headline text. Every grouped id is still carried as
+   * evidence and in `focus`, so nothing is hidden.
+   */
+  const seenDecisionIds = new Set<string>()
+  const uniqueDecisions = f.openDecisions.filter(d => {
+    if (seenDecisionIds.has(d.id)) return false
+    seenDecisionIds.add(d.id)
+    return true
+  })
+  const decisionGroups = new Map<string, {
+    action: string | null; portfolioId: string | null; portfolioName: string | null; ids: string[]
+  }>()
+  for (const d of uniqueDecisions) {
+    const key = `${d.portfolioId ?? ''}|${(d.action ?? '').toLowerCase()}`
+    const g = decisionGroups.get(key) ?? { action: d.action, portfolioId: d.portfolioId, portfolioName: d.portfolioName, ids: [] }
+    g.ids.push(d.id)
+    decisionGroups.set(key, g)
+  }
+  for (const g of decisionGroups.values()) {
+    const what = g.action ? g.action.toLowerCase() : 'request'
+    const n = g.ids.length
+    // "A add" would be wrong. The actions are a known, small vocabulary, so a
     // vowel test is sufficient and cannot be wrong in a way that matters.
     const article = /^[aeiou]/.test(what) ? 'An' : 'A'
+    const headline = n > 1
+      ? `${n} ${what}s${g.portfolioName ? ` in ${g.portfolioName}` : ''} waiting on a decision`
+      : g.portfolioName
+        ? `${article} ${what} in ${g.portfolioName} is waiting on a decision`
+        : `${article} ${what} is waiting on a decision`
     out.push({
-      id: `pending-${d.id}`,
+      id: `pending-${g.portfolioId ?? 'na'}-${what}`,
       kind: 'pending',
-      headline: d.portfolioName
-        ? `${article} ${what} in ${d.portfolioName} is waiting on a decision`
-        : `${article} ${what} is waiting on a decision`,
+      headline,
       destination: 'decisions',
-      evidence: [{ label: `Request: ${d.action ?? 'decision'}`, table: 'decision_requests', id: d.id }],
+      focus: { kind: 'decision', decisionIds: g.ids, portfolioId: g.portfolioId },
+      evidence: g.ids.slice(0, 3).map(id => ({ label: `Request: ${g.action ?? 'decision'}`, table: 'decision_requests', id })),
       weight: 110,
     })
   }
@@ -259,7 +307,7 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
   if (f.rating && f.openDecisions.length > 0) {
     const ratingTone = NEGATIVE.test(f.rating.value) ? 'negative'
       : POSITIVE.test(f.rating.value) ? 'positive' : null
-    for (const d of f.openDecisions) {
+    for (const d of uniqueDecisions) {
       const action = d.action ?? ''
       const actionTone = INCREASING.test(action) ? 'positive'
         : DECREASING.test(action) ? 'negative' : null
@@ -269,6 +317,7 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
           kind: 'contradiction',
           headline: `Rated ${f.rating.value} by ${f.rating.count} of ${f.rating.total}, with a pending ${action.toLowerCase()} in ${d.portfolioName ?? 'a book'}`,
           destination: 'decisions',
+          focus: { kind: 'decision', decisionIds: [d.id], portfolioId: d.portfolioId },
           evidence: [
             { label: `Rating: ${f.rating.value}`, table: 'asset_ratings' },
             { label: `Open request: ${action}`, table: 'decision_requests', id: d.id },
@@ -287,6 +336,7 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
       kind: 'gap',
       headline: `Held in ${books} book${books === 1 ? '' : 's'} with no investment case on record`,
       destination: 'research',
+      focus: { kind: 'research-section', anchor: 'case' },
       evidence: f.positions.slice(0, 3).map(p => ({
         label: p.portfolioName, table: 'portfolio_holdings', id: p.portfolioId,
       })),
@@ -301,6 +351,7 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
       kind: 'staleness',
       headline: `${f.newEvidenceCount} research item${f.newEvidenceCount === 1 ? '' : 's'} dated after the case was last written`,
       destination: 'research',
+      focus: { kind: 'research-evidence' },
       evidence: [{ label: 'Investment case', table: 'asset_contributions' }],
       weight: 70,
     })
@@ -314,6 +365,7 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
       kind: 'staleness',
       headline: `The case was last written ${Math.floor(age / 30)} months ago`,
       destination: 'research',
+      focus: { kind: 'research-section', anchor: 'thesis' },
       evidence: [{ label: 'Investment case', table: 'asset_contributions' }],
       weight: 60,
     })
@@ -331,6 +383,7 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
       kind: 'contradiction',
       headline: `Trading at or above the target (${f.spot.toFixed(2)} vs ${f.target.toFixed(2)})`,
       destination: 'research',
+      focus: { kind: 'research-section', anchor: 'targets' },
       evidence: [{ label: 'Price target', table: 'price_targets' }],
       weight: 80,
     })
@@ -361,6 +414,7 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
       kind: 'gap',
       headline: 'Work is on record but nobody is assigned coverage',
       destination: 'workflow',
+      focus: { kind: 'coverage' },
       evidence: [{ label: 'Coverage', table: 'coverage' }],
       weight: 40,
     })

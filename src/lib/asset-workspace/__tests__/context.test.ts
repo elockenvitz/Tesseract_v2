@@ -304,6 +304,62 @@ describe('a waiting decision is itself a signal', () => {
   })
 })
 
+describe('waiting decisions are deduped by entity and grouped by action', () => {
+  it('collapses two distinct requests of the same action in the same book into one line', () => {
+    const s = resolveWorkspaceSignals(facts({
+      openDecisions: [
+        { id: 'd1', action: 'Buy', portfolioId: 'pf-1', portfolioName: 'Vision Fund 10K' },
+        { id: 'd2', action: 'Buy', portfolioId: 'pf-1', portfolioName: 'Vision Fund 10K' },
+      ],
+    }), NOW)
+    const pending = s.filter(x => x.kind === 'pending')
+    expect(pending).toHaveLength(1)
+    expect(pending[0].headline).toBe('2 buys in Vision Fund 10K waiting on a decision')
+    // every underlying request is still carried, in focus and as evidence
+    expect(pending[0].focus).toEqual({ kind: 'decision', decisionIds: ['d1', 'd2'], portfolioId: 'pf-1' })
+    expect(pending[0].evidence.map(e => e.id)).toEqual(['d1', 'd2'])
+  })
+
+  it('dedupes by decision id when the same request arrives twice', () => {
+    const s = resolveWorkspaceSignals(facts({
+      openDecisions: [
+        { id: 'd1', action: 'Buy', portfolioId: 'pf-1', portfolioName: 'Growth' },
+        { id: 'd1', action: 'Buy', portfolioId: 'pf-1', portfolioName: 'Growth' },
+      ],
+    }), NOW)
+    const pending = s.filter(x => x.kind === 'pending')
+    expect(pending).toHaveLength(1)
+    expect(pending[0].headline).toBe('A buy in Growth is waiting on a decision')
+    expect(pending[0].focus).toEqual({ kind: 'decision', decisionIds: ['d1'], portfolioId: 'pf-1' })
+  })
+
+  it('does not group different actions or different books', () => {
+    const s = resolveWorkspaceSignals(facts({
+      openDecisions: [
+        { id: 'd1', action: 'Buy', portfolioId: 'pf-1', portfolioName: 'Growth' },
+        { id: 'd2', action: 'Sell', portfolioId: 'pf-1', portfolioName: 'Growth' },
+        { id: 'd3', action: 'Buy', portfolioId: 'pf-2', portfolioName: 'Income' },
+      ],
+    }), NOW)
+    expect(s.filter(x => x.kind === 'pending')).toHaveLength(3)
+  })
+})
+
+describe('signals carry a precise focus for deep linking', () => {
+  it('points a stale case at the thesis section and new evidence at research evidence', () => {
+    const s = resolveWorkspaceSignals(facts({ caseWrittenAt: ago(400), newEvidenceCount: 3 }), NOW)
+    expect(s.find(x => x.id === 'staleness-case-age')?.focus).toEqual({ kind: 'research-section', anchor: 'thesis' })
+    expect(s.find(x => x.id === 'staleness-new-evidence')?.focus).toEqual({ kind: 'research-evidence' })
+  })
+  it('points spot-past-target at the targets anchor and a coverage gap at coverage', () => {
+    const s = resolveWorkspaceSignals(facts({
+      positions: [pos()], caseWrittenAt: ago(5), target: 100, spot: 150, coveringUserIds: [],
+    }), NOW)
+    expect(s.find(x => x.id === 'contradiction-spot-past-target')?.focus).toEqual({ kind: 'research-section', anchor: 'targets' })
+    expect(s.find(x => x.id === 'gap-no-coverage')?.focus).toEqual({ kind: 'coverage' })
+  })
+})
+
 describe('the pending headline reads as English', () => {
   it('uses "An" before a vowel', () => {
     // "A add in Tech & Consumer Growth" was on screen.
