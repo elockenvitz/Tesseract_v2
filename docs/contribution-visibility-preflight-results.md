@@ -247,12 +247,63 @@ Item 5 is unanswered: who holds `EXECUTE` on `can_view_contribution`. Queued as
 
 ---
 
+---
+
+## A4 — Table grants · **PASS on the hard stop**
+
+**Zero `anon` grants. Zero `PUBLIC` grants.** The hard stop is clear: none of
+these tables is reachable with the publishable key alone.
+
+All five tables grant **SELECT, INSERT, UPDATE, DELETE to `authenticated`**,
+which is broader than the policies use:
+
+| Table | Granted | Policies exist for | Gap |
+|---|---|---|---|
+| `contribution_visibility_targets` | S I U D | S I D | **UPDATE** — no policy |
+| `asset_contribution_history` | S I U D | S | **INSERT, UPDATE, DELETE** — no policies |
+| `asset_revisions` | S I U D | S I U | **DELETE** — no policy |
+| `asset_revision_events` | S I U D | S I | **UPDATE, DELETE** — no policies |
+
+### This is the documented posture, not drift
+
+C1/11 revoked `ALL` from `anon` and `TRUNCATE, REFERENCES, TRIGGER` from
+`authenticated`, and **deliberately left the CRUD grants in place**, relying on
+RLS policies as the gate. A4's result is exactly what that file produces.
+
+### Which makes A8 the single control behind all of it
+
+A grant with no matching policy is inert **only while RLS is enabled**. With
+RLS on, every gap above is denied. With RLS off — or if a permissive policy is
+added later — they become live, and the worst of them is not the target
+re-point:
+
+**`asset_contribution_history` grants INSERT, UPDATE and DELETE to
+`authenticated` with only a SELECT policy.** That table is the audit record of
+what the desk wrote. If RLS were ever off, any authenticated user could forge
+or erase it. A8 is therefore decisive for audit integrity across three tables,
+not merely for one re-point scenario.
+
+### Design correction this produces
+
+The RPC design proposed `REVOKE INSERT, DELETE ON
+contribution_visibility_targets FROM authenticated`. A4 shows **UPDATE is also
+granted**, so the revoke must be `INSERT, UPDATE, DELETE`. Without that, a
+latent UPDATE path survives the release and would re-point a target row the
+moment an UPDATE policy appeared.
+
+### Decision
+
+A4 passes. Excess `authenticated` grants recorded as a **separate hardening
+finding**, subject to A8. **No grants changed during the preflight.**
+
+---
+
 ## Outstanding
 
 | Block | Question | Status |
 |---|---|---|
 | A3e | `EXECUTE` grants on `can_view_contribution`; full body | queued |
-| A4 | grants to `anon` on the five tables | **next** |
+| A5 | revision table columns; any CHECK on `visibility` | **next** |
 | A5 | revision table columns, plus any CHECK on `visibility` | outstanding |
 | A6 | history row shapes | outstanding |
 | A7 | triggers on `asset_contributions` | outstanding |
