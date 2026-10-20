@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat, LayoutDashboard, Edit3 } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Repeat, LayoutDashboard, Edit3 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { fetchSignedUrl } from '../../lib/storage/signed-url'
 import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../../lib/storage/buckets'
@@ -33,11 +33,9 @@ import { AddToListButton } from '../lists/AddToListButton'
 import { AddToThemeButton } from '../lists/AddToThemeButton'
 import { AddToQueueButton } from '../lists/AddToQueueButton'
 import { useAssetTradeIdeas } from '../../hooks/useAssetTradeIdeas'
-import { StockQuote } from '../financial/StockQuote'
 import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
-import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { InvestmentSnapshot } from '../asset/InvestmentSnapshot'
 import { AssetWorkspaceHeader } from '../asset/AssetWorkspaceHeader'
 import '../asset/asset-ux2.css'
@@ -479,7 +477,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   // showAssetPriorityDropdown removed — priority selector replaced by state chips
   const [showWorkflowPriorityDropdown, setShowWorkflowPriorityDropdown] = useState(false)
-  const [showTickerDropdown, setShowTickerDropdown] = useState(false)
   const [listsFocus, setListsFocus] = useState<string | null>(null)
   const [openItemsFilter, setOpenItemsFilter] = useState<'all' | 'idea' | 'working_on' | 'modeling' | 'deciding'>('all')
   const headerContext = useAssetHeaderContext(asset.id)
@@ -2803,7 +2800,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           A1 resolver), and the collapsible context strip. No new data path. */}
       <AssetWorkspaceHeader
         asset={asset}
-        sector={asset.sector || fullAsset?.sector}
+        sector={asset.sector || (fullAsset as unknown as { sector?: string | null } | undefined)?.sector}
         quote={currentQuote ?? null}
         spot={currentQuote?.price ?? null}
         headerContext={headerContext}
@@ -2816,282 +2813,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         onOpenList={(focus) => { setActiveSubPage('lists'); setListsFocus(focus) }}
         collapsed={headerCollapsed}
       />
-      {/* LEGACY header block — inert during the Phase-1 cutover, superseded by
-          AssetWorkspaceHeader above. Kept to keep the diff reviewable; removed
-          in the Phase-1 cleanup follow-up. */}
-      {false && (
-      <div className="space-y-2">
-        {/* Single Row - All Summary Info and Controls */}
-        <div className="flex items-center justify-between gap-6">
-          <div className="flex items-start gap-6">
-            {/*
-              Ticker, price and company on ONE baseline.
-
-              This was four type sizes down a two-line block — a 3xl ticker
-              beside a 2xl price and an xl change, with an 18px company name on
-              its own line underneath. Roughly 80px of identity above every
-              screen of this page, repeated on all five sub-pages, to say a
-              thing the reader already knows: which security they opened.
-
-              Identity is orientation, not content. It is one line now, and the
-              space went to the conclusion band below it. Nothing was removed:
-              the same four facts are here, sized as a header rather than as a
-              headline.
-            */}
-            <div className="flex flex-col relative">
-              <div className="flex items-baseline gap-3 flex-wrap">
-                <button
-                  onClick={() => setShowTickerDropdown(!showTickerDropdown)}
-                  aria-haspopup="dialog"
-                  aria-expanded={showTickerDropdown}
-                  className="text-2xl font-bold text-gray-900 hover:text-gray-700 transition-colors flex items-baseline gap-1.5 group dark:hover:text-gray-200 dark:text-white"
-                >
-                  <span className="group-hover:underline underline-offset-4 decoration-gray-300">{asset.symbol}</span>
-                  <ChevronDown className={clsx('w-4 h-4 text-gray-400 transition-transform', showTickerDropdown && 'rotate-180')} />
-                </button>
-                <StockQuote symbol={asset.symbol} showOnlyPrice={true} className="text-xl font-semibold" />
-                <StockQuote symbol={asset.symbol} showOnlyChange={true} className="text-[15px] font-semibold" />
-                <p className="truncate max-w-[34ch] text-[13px] text-gray-500 dark:text-gray-400">
-                  {asset.company_name}
-                </p>
-              </div>
-
-              {/* Ticker Dropdown */}
-              {showTickerDropdown && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setShowTickerDropdown(false)}
-                  />
-                  <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-20 p-4 min-w-[320px] max-h-viewport-70 overflow-y-auto">
-                    <div className="space-y-4">
-                      {/* Coverage */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Coverage</h4>
-                          {onNavigate && (
-                            <button
-                              onClick={() => {
-                                setShowTickerDropdown(false)
-                                onNavigate({
-                                  id: 'coverage',
-                                  title: 'Coverage',
-                                  type: 'coverage',
-                                  data: { assetId: asset.id, assetSymbol: asset.symbol }
-                                })
-                              }}
-                              className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium transition-colors"
-                            >
-                              <span>Go to Coverage</span>
-                              <ExternalLink className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
-                        <CoverageDisplay
-                          assetId={asset.id}
-                          coverage={coverage || []}
-                          showHeader={false}
-                          thesisStatuses={thesisStatuses}
-                          showThesisStatus={true}
-                          onUserClick={(user) => {
-                            if (onNavigate) {
-                              onNavigate({
-                                id: user.id,
-                                title: user.full_name,
-                                type: 'user',
-                                data: user
-                              })
-                            }
-                          }}
-                        />
-                      </div>
-
-                      {/* Sector */}
-                      {(asset.sector || fullAsset?.sector) && (
-                        <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Sector</h4>
-                          <p className="text-sm text-gray-900 dark:text-gray-100">{asset.sector || fullAsset?.sector}</p>
-                        </div>
-                      )}
-
-                      {/* Context */}
-                      <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Context</h4>
-                        {headerContext.isError ? (
-                          <p className="text-xs text-gray-400 italic">Context unavailable</p>
-                        ) : headerContext.isLoading ? (
-                          <div className="space-y-2">
-                            {[1, 2, 3, 4].map((i) => (
-                              <div key={i} className="h-5 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            {/* Portfolios */}
-                            <div className="flex items-center justify-between py-1 group/row">
-                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                                <Briefcase className="w-3.5 h-3.5 text-gray-400" />
-                                <span>{headerContext.portfolios.length > 0
-                                  ? `${headerContext.portfolios.length} portfolio${headerContext.portfolios.length !== 1 ? 's' : ''}`
-                                  : 'No portfolios'}</span>
-                              </div>
-                              {headerContext.portfolios.length > 0 && (
-                                <button
-                                  onClick={() => {
-                                    setShowTickerDropdown(false)
-                                    setActiveSubPage('lists')
-                                    setListsFocus('portfoliosContent')
-                                  }}
-                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
-                                >
-                                  View
-                                </button>
-                              )}
-                            </div>
-                            {/* Lists */}
-                            <div className="flex items-center justify-between py-1 group/row">
-                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                                <List className="w-3.5 h-3.5 text-gray-400" />
-                                <span>{(() => {
-                                  const s = headerContext.listsShared.length
-                                  const p = headerContext.listsMine.length
-                                  if (s + p === 0) return 'No lists'
-                                  const parts: string[] = []
-                                  if (p > 0) parts.push(`${p} personal list${p !== 1 ? 's' : ''}`)
-                                  if (s > 0) parts.push(`${s} shared list${s !== 1 ? 's' : ''}`)
-                                  return parts.join(' · ')
-                                })()}</span>
-                              </div>
-                              {(headerContext.listsShared.length + headerContext.listsMine.length) > 0 && (
-                                <button
-                                  onClick={() => {
-                                    setShowTickerDropdown(false)
-                                    setActiveSubPage('lists')
-                                    setListsFocus('listsContent')
-                                  }}
-                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
-                                >
-                                  View
-                                </button>
-                              )}
-                            </div>
-                            {/* Themes */}
-                            <div className="flex items-center justify-between py-1 group/row">
-                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                                <Tag className="w-3.5 h-3.5 text-gray-400" />
-                                <span>{headerContext.themes.length > 0
-                                  ? `${headerContext.themes.length} theme${headerContext.themes.length !== 1 ? 's' : ''}`
-                                  : 'No themes'}</span>
-                              </div>
-                              {headerContext.themes.length > 0 && (
-                                <button
-                                  onClick={() => {
-                                    setShowTickerDropdown(false)
-                                    setActiveSubPage('lists')
-                                    setListsFocus('themesContent')
-                                  }}
-                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
-                                >
-                                  View
-                                </button>
-                              )}
-                            </div>
-                            {/* Projects */}
-                            <div className="flex items-center justify-between py-1 group/row">
-                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                                <FolderKanban className="w-3.5 h-3.5 text-gray-400" />
-                                <span>{headerContext.projectsCount > 0
-                                  ? `${headerContext.projectsCount} project${headerContext.projectsCount !== 1 ? 's' : ''}`
-                                  : 'No projects'}</span>
-                              </div>
-                              {headerContext.projectsCount > 0 && (
-                                <button
-                                  onClick={() => {
-                                    setShowTickerDropdown(false)
-                                    setActiveSubPage('lists')
-                                    setListsFocus('projectsContent')
-                                  }}
-                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
-                                >
-                                  View
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* ─── Header State Chips ──────────────────────────── */}
-          <div className="flex items-center gap-2">
-            {/* Active Processes chip */}
-            <button
-              onClick={() => setActiveSubPage('workflow')}
-              className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-purple-300 hover:text-purple-700 hover:bg-purple-50/50 transition-colors dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
-              title="View active processes"
-            >
-              <Repeat className="w-3 h-3" />
-              <span>Processes</span>
-              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center dark:text-gray-400 dark:bg-gray-800">
-                {activeProcessCount}
-              </span>
-            </button>
-
-            {/* Open Decisions chip */}
-            <button
-              onClick={() => {
-                setActiveSubPage('decisions')
-                // Scroll to open items after tab renders
-                requestAnimationFrame(() => {
-                  document.getElementById('decisions-open-items')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                })
-              }}
-              className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50/50 transition-colors dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
-              title="View decisions and exposure"
-            >
-              <Layers className="w-3 h-3" />
-              <span>Decisions</span>
-              {/*
-                No count badge, deliberately.
-
-                This read `0` — a literal, on every asset, forever. A badge
-                saying zero is not a missing number, it is a claim that there
-                is nothing open, printed beside a chip whose whole job is to
-                take you to the things that are. Nothing in this component
-                carries an open-decision count, and inventing a query for one
-                here would duplicate what the Snapshot's Active work module
-                already reads from the canonical hook.
-
-                Fewer facts, none of them false.
-              */}
-            </button>
-
-            {/* In Portfolios chip */}
-            {headerContext.portfolios.length > 0 && (
-              <button
-                onClick={() => {
-                  setActiveSubPage('lists')
-                  setListsFocus('portfoliosContent')
-                }}
-                className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 transition-colors dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
-                title="View portfolio holdings"
-              >
-                <Briefcase className="w-3 h-3" />
-                <span>Portfolios</span>
-                <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center dark:text-gray-400 dark:bg-gray-800">
-                  {headerContext.portfolios.length}
-                </span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-      )}
 
       {/* Sub-page Tab Selector */}
       <div className="border-b border-gray-200 dark:border-gray-700">

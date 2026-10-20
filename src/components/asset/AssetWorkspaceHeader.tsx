@@ -32,7 +32,7 @@ interface Props {
   thesisStatuses?: CoverageProps['thesisStatuses']
   coveringUserIds: string[]
   onFocus: (destination: WorkspaceDestination, focus?: SignalFocus) => void
-  onNavigate?: (tab: unknown) => void
+  onNavigate?: (tab: { id: string; title: string; type: string; data?: unknown }) => void
   onOpenSubPage: (sub: Sub) => void
   onOpenList: (focus: ListFocus) => void
   /** When collapsed, the context strip is hidden but identity, price, attention,

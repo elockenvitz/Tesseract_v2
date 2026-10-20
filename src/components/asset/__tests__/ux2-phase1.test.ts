@@ -22,6 +22,7 @@ const ASSET_TAB = codeOf(readFileSync(resolve(SRC, 'components/tabs/AssetTab.tsx
 const BAND = codeOf(readFileSync(resolve(SRC, 'components/asset/AssetAttentionBand.tsx'), 'utf8'))
 const STRIP = codeOf(readFileSync(resolve(SRC, 'components/asset/AssetContextStrip.tsx'), 'utf8'))
 const HEADER = codeOf(readFileSync(resolve(SRC, 'components/asset/AssetWorkspaceHeader.tsx'), 'utf8'))
+const VWI = codeOf(readFileSync(resolve(SRC, 'components/outcomes/ViewWarningIndicator.tsx'), 'utf8'))
 
 describe('UX2 P1: perspective — My Research is the fresh-visit default', () => {
   it('a persisted perspective is NOT restored on init (no stale-Firm override)', () => {
@@ -67,6 +68,26 @@ describe('UX2 P1: attention — one resolver, shown as a header popover', () => 
     expect(ASSET_TAB).not.toContain('<AssetAttentionBand')
     // and the header mounts the popover variant
     expect(HEADER).toContain('variant="popover"')
+  })
+
+  it('the ⚡ is the single attention affordance — the view-warnings badge is distinct', () => {
+    // UX2 P1 closure: ViewWarningIndicator is integrity/consistency checks, not
+    // asset-level attention. It must NOT use the ⚡ bolt or claim "Attention",
+    // so the header ⚡ is the one recognizable attention entry point.
+    expect(VWI).not.toContain('Zap')
+    expect(VWI).toContain('View checks') // the badge/popover no longer says "Attention"
+    // still a real, functioning warnings surface (not removed)
+    expect(VWI).toContain('AlertTriangle')
+  })
+})
+
+describe('UX2 P1 closure: the inert legacy header is gone', () => {
+  it('no false-gated legacy header block remains', () => {
+    expect(ASSET_TAB).not.toContain('LEGACY header block')
+    expect(ASSET_TAB).not.toMatch(/\{false && \(/)
+    // and the symbols only that block used are no longer imported
+    expect(ASSET_TAB).not.toMatch(/import \{ StockQuote \}/)
+    expect(ASSET_TAB).not.toMatch(/import \{ CoverageDisplay \}/)
   })
 })
 
