@@ -101,13 +101,17 @@ ORDER BY ac.updated_at DESC;
 -- Q7. V1/V3 BLAST RADIUS — restricted contributions whose prose is readable
 --     org-wide through the history and revision tables REGARDLESS of
 --     team_id. These two paths need no precondition at all.
+-- Self-contained: no helper function, and no dependency on the freshness lane.
+-- Revision events are attributed through the ACTOR, exactly as 10- §4 does —
+-- unique_user_asset_section makes (asset_id, field_key, actor_user_id) resolve
+-- to one contribution.
 SELECT 'asset_contribution_history' AS path,
        count(DISTINCT h.contribution_id) AS restricted_contributions_exposed,
        count(*)                          AS rows_carrying_prose
 FROM public.asset_contribution_history h
 JOIN public.asset_contributions ac ON ac.id = h.contribution_id
 WHERE ac.visibility <> 'firm'
-  AND public.contribution_prose_identity_or_raw(h.new_content) <> ''
+  AND btrim(coalesce(h.new_content, '')) <> ''
 UNION ALL
 SELECT 'asset_revision_events',
        count(DISTINCT ac.id),
@@ -115,16 +119,12 @@ SELECT 'asset_revision_events',
 FROM public.asset_revision_events e
 JOIN public.asset_revisions r  ON r.id = e.revision_id
 JOIN public.asset_contributions ac
-     ON ac.asset_id = r.asset_id AND ac.section = e.field_key
-WHERE ac.visibility <> 'firm'
-  AND coalesce(e.after_value, '') <> '';
-
--- NOTE on Q7: `contribution_prose_identity_or_raw` does NOT exist — it is named
--- here deliberately so this query FAILS LOUDLY rather than silently reporting
--- zero if run before the helper exists. Replace with `btrim(coalesce(
--- h.new_content,''))` to run it standalone; the freshness lane's
--- `contribution_prose_identity` is NOT a dependency of this lane and must not
--- be installed to satisfy it.
+     ON ac.asset_id    = r.asset_id
+    AND ac.section     = e.field_key
+    AND ac.created_by  = r.actor_user_id
+WHERE e.category <> 'valuation_targets'
+  AND ac.visibility <> 'firm'
+  AND btrim(coalesce(e.after_value, '')) <> '';
 
 -- Q8. THE OPEN DESIGN QUESTION — does a department/division target need to
 --     cascade to descendant nodes?
