@@ -366,6 +366,78 @@ describe('the decision queue lists only outstanding obligations', () => {
     expect(screen.getByText('ready to recommend')).toBeInTheDocument()
   })
 
+  /*
+   * `ideaId` is optional, so "unknown relationship" and "no relationship" are
+   * the same value. The rule has to be: an unknown id suppresses NOTHING. A
+   * set built from missing ids that collapsed to `undefined` would hide every
+   * idea at once.
+   */
+  it.each([['null', null], ['undefined', undefined]])(
+    'with a %s ideaId, suppresses nothing and still lists the request',
+    (_label, ideaId) => {
+      data = {
+        ...BASE,
+        liveIdeas: [idea({ id: 'i-1' }), idea({ id: 'i-2', rationale: 'Second idea' })],
+        decisions: [request({ ideaId: ideaId as any, decisionNote: 'Unlinked request' })],
+      }
+      renderSnapshot()
+      expect(screen.getByText('Unlinked request')).toBeInTheDocument()
+      expect(screen.getByText('Add to AAPL before the print')).toBeInTheDocument()
+      expect(screen.getByText('Second idea')).toBeInTheDocument()
+    },
+  )
+
+  it('only suppresses the idea it actually names', () => {
+    data = {
+      ...BASE,
+      liveIdeas: [idea({ id: 'i-1' }), idea({ id: 'i-2', rationale: 'Untouched idea' })],
+      decisions: [request({ ideaId: 'i-1', decisionNote: 'Linked to i-1' })],
+    }
+    renderSnapshot()
+    expect(screen.getByText('Linked to i-1')).toBeInTheDocument()
+    expect(screen.getByText('Untouched idea')).toBeInTheDocument()
+    // i-1's own row is represented by the request, not twice.
+    expect(screen.queryByText('Add to AAPL before the print')).toBeNull()
+  })
+
+  it('keeps multiple independent pending requests distinguishable', () => {
+    data = {
+      ...BASE,
+      decisions: [
+        request({ decisionNote: 'First obligation' }),
+        request({ decisionNote: 'Second obligation' }),
+      ],
+    }
+    renderSnapshot()
+    expect(screen.getByText('First obligation')).toBeInTheDocument()
+    expect(screen.getByText('Second obligation')).toBeInTheDocument()
+    expect(screen.getAllByText('Awaiting decision')).toHaveLength(2)
+  })
+
+  it('a withdrawn request cannot reappear just because its ideaId is missing', () => {
+    data = {
+      ...BASE,
+      liveIdeas: [idea({ id: 'i-1' })],
+      decisions: [request({ status: 'withdrawn', ideaId: undefined as any, decisionNote: 'Withdrawn, unlinked' })],
+    }
+    renderSnapshot()
+    expect(screen.queryByText('Withdrawn, unlinked')).toBeNull()
+    // and it must not have suppressed the live idea on its way out
+    expect(screen.getByText('Add to AAPL before the print')).toBeInTheDocument()
+  })
+
+  it('a withdrawn request does not suppress the idea it names', () => {
+    data = {
+      ...BASE,
+      liveIdeas: [idea({ id: 'i-1' })],
+      decisions: [request({ status: 'withdrawn', ideaId: 'i-1', decisionNote: 'Withdrawn' })],
+    }
+    renderSnapshot()
+    expect(screen.queryByText('Withdrawn')).toBeNull()
+    // The idea is still live work even though a request against it was pulled.
+    expect(screen.getByText('Add to AAPL before the print')).toBeInTheDocument()
+  })
+
   it('scopes the queue to the chosen book', async () => {
     books = [
       { id: 'p-growth', name: 'Large Cap Growth', role: 'pm' },
