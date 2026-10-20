@@ -168,18 +168,82 @@ hardening, not an incident, and it carries no notification implications.
 5. `can_view_contribution`'s legacy semantics to be reviewed for
    inconsistency — **not** expanded into a general redesign.
 
-### New open item arising from (5)
+### New open item arising from (5) — answered in A3d below
 
-`can_view_contribution(team_id, visibility, user)` is a **pre-existing
-visibility-aware predicate** that nothing in this lane had seen. Its signature
-takes `team_id` — the broken denormalisation at the centre of V2 — so it may
-encode the same `team_id IS NULL` defect, and it may be the ancestor of it.
+---
 
-This has to be read before `10-policy-fix.sql` is finalised, because it changes
-a design decision: if `can_view_contribution` is correct, the release should
-**reuse** it rather than add a parallel `can_read_asset_contribution`; if it is
-defective, every policy that calls it inherits the defect and the blast radius
-is larger than seven policies. Queued as **A3d**.
+---
+
+## A3d — `can_view_contribution` · **DEFECTIVE, contained, not modified**
+
+`public.can_view_contribution(p_contribution_team_id uuid, p_visibility text, p_user_id uuid)`,
+SECURITY DEFINER. Three defects, and a fourth property that is worse than any
+of them:
+
+1. **`IF p_contribution_team_id IS NULL THEN RETURN TRUE`** — this is **V2 in
+   function form**. The policy's `OR team_id IS NULL` and this function share
+   one wrong premise: that an absent `team_id` means "unrestricted" rather than
+   "the denormalisation does not apply". The function is very likely the
+   ancestor of the policy branch.
+2. **Membership is not filtered for active status** — it selects
+   `organization_memberships … LIMIT 1` with no `status = 'active'` and no
+   `expires_at` check. A revoked or expired member passes. `current_org_id()`
+   was fixed for exactly this in migration `20260826100000`; this function was
+   not.
+3. **It does not understand `contribution_visibility_targets`** — it reasons
+   only about the single `team_id`, so it predates multi-target audiences and
+   cannot express one.
+4. **It takes the user id as a parameter.** `p_user_id` is supplied by the
+   caller rather than derived from `auth.uid()`, in a SECURITY DEFINER function
+   that bypasses RLS. Called directly it is a **membership oracle**: "is user X
+   a member of team T", for any X and T whose uuids the caller holds, with no
+   organization check on the caller's side. The two policies pass
+   `auth.uid()`, so the policy path is not affected — but the direct path is
+   open to anyone with `EXECUTE`. Severity is bounded by needing uuids and by
+   returning a boolean, but it is a genuine cross-tenant metadata oracle.
+
+**Blast radius is small: exactly two callers**, both INSERT policies —
+`contribution_reactions_insert` and `contribution_replies_insert`. No function
+callers, no SELECT policy uses it. The defect does not reach the three
+confirmed exposure paths.
+
+### Decisions taken
+
+1. **Do not reuse it** for the security correction.
+2. Retain `can_read_asset_contribution(contribution_id)`, subject to its
+   isolated tests. A3d justifies the parallel helper rather than contradicting
+   it: the existing function cannot express a multi-target audience, so reuse
+   was never actually available.
+3. Record as defective; **do not modify or revoke yet**.
+4. Assess whether the INSERT policies' `EXISTS` subqueries and parent-table RLS
+   independently prevent unauthorized writes — **do not assume exploitability**.
+5. Verify direct EXECUTE grants and account for the arbitrary `p_user_id`.
+6. Keep the two SELECT-policy corrections in the release.
+
+### On (4), a hypothesis to test rather than assert
+
+The INSERT policies wrap the call in `EXISTS (SELECT … FROM asset_contributions
+ac WHERE …)`. A policy expression that queries another table is an ordinary
+query in the caller's context, so **that subquery is itself subject to
+`asset_contributions_select`**. If that holds, the INSERT gate is effectively
+"a contribution I can already read", and **fixing V2 tightens these INSERT
+policies automatically** — no separate change needed, which supports decision 4
+with a reason rather than a deferral.
+
+`can_view_contribution` being SECURITY DEFINER does not undo this: it receives
+`ac.team_id` and `ac.visibility` as values already extracted by the
+RLS-subject outer query.
+
+This is a hypothesis about policy-expression RLS semantics, which are subtle. It
+must be **proven in the isolated environment**, as an assertion in the suite:
+*after* the fix, a same-org member who cannot read a restricted contribution
+cannot insert a reply or a reaction against it. If that assertion fails, the
+INSERT policies come into the release after all.
+
+### Still open
+
+Item 5 is unanswered: who holds `EXECUTE` on `can_view_contribution`. Queued as
+**A3e** — a function-grant question, kept separate from A4's table grants.
 
 ---
 
@@ -187,7 +251,7 @@ is larger than seven policies. Queued as **A3d**.
 
 | Block | Question | Status |
 |---|---|---|
-| A3d | `can_view_contribution` body and all its callers | **queued — blocks `10-` design** |
+| A3e | `EXECUTE` grants on `can_view_contribution`; full body | queued |
 | A4 | grants to `anon` on the five tables | **next** |
 | A5 | revision table columns, plus any CHECK on `visibility` | outstanding |
 | A6 | history row shapes | outstanding |
