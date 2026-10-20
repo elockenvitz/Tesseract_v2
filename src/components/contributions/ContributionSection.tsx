@@ -46,6 +46,7 @@ import {
 } from '../../hooks/useContributions'
 import { ThesisSummaryView } from './ThesisSummaryView'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { registerUnsavedEditor } from '../../lib/contributions/unsaved-edits-guard'
 import { InfoTooltip } from '../ui/Tooltip'
 import { supabase } from '../../lib/supabase'
 import { useQuery } from '@tanstack/react-query'
@@ -647,6 +648,11 @@ export function ContributionSection({
   const [showCancelConfirm, setShowCancelConfirm] = useState(false) // Confirm before discarding unsaved inline edits
   // The content the editor opened with, so Cancel/unload can tell dirty from clean.
   const editBaselineRef = useRef<string>('')
+  // Live mirrors of the editor's dirty state and draft-save handler, read by the
+  // in-app unsaved-research guard (UX1c-2b). Refs avoid stale closures: the
+  // register effect runs once but always sees the latest values here.
+  const dirtyRef = useRef(false)
+  const saveDraftRef = useRef<() => Promise<void>>(async () => {})
   const smartInputRef = useRef<UniversalSmartInputRef>(null)
   const visibilityRef = useRef<HTMLDivElement>(null)
   const teamRef = useRef<HTMLDivElement>(null)
@@ -837,6 +843,19 @@ export function ContributionSection({
     return () => window.removeEventListener('beforeunload', warn)
   }, [inlineEditor, isEditing, editContent])
 
+  // In-app unsaved-research guard (UX1c-2b): while this inline editor is mounted,
+  // register it so any in-app navigation that would unmount it (Research mode /
+  // perspective / sub-tab switch, or the main tab switch/close) can pause and ask
+  // first. Registered once per mount; the guard reads live state through the refs
+  // above, so dirty content is never silently discarded by SPA navigation.
+  useEffect(() => {
+    if (!inlineEditor) return
+    return registerUnsavedEditor({
+      isDirty: () => dirtyRef.current,
+      saveDraft: () => saveDraftRef.current(),
+    })
+  }, [inlineEditor])
+
   // Hide section if no contributions and hideWhenEmpty is true
   // NOTE: This early return must come AFTER all hooks are called to follow React rules
   if (hideWhenEmpty && !isLoading && contributions.length === 0) {
@@ -928,6 +947,12 @@ export function ContributionSection({
     setIsDraftMode(false)
     setViewingDraft(false) // Go back to published view
   }
+
+  // Keep the guard's live mirrors current (UX1c-2b). Assignments, not hooks, so
+  // they are safe after the early return; when the section is hidden there is no
+  // editor and `isDirty` is false anyway.
+  dirtyRef.current = inlineEditor && isDirty
+  saveDraftRef.current = handleSaveDraft
 
   // Publish draft content
   const handlePublishDraft = async () => {

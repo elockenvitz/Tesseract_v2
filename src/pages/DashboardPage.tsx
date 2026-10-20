@@ -8,6 +8,8 @@ import {
   TabStateManager, CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID,
 } from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
+import { UnsavedEditsPrompt } from '../components/contributions/UnsavedEditsPrompt'
+import { requestUnsavedNavigation } from '../lib/contributions/unsaved-edits-guard'
 import { IdeasApp } from '../components/ideas-app/IdeasApp'
 import { DashboardShell } from '../components/dashboard/DashboardShell'
 import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
@@ -616,7 +618,14 @@ export function DashboardPage() {
     return () => window.removeEventListener('decision-engine-action', handler)
   }, [])
 
+  // Guarded (UX1c-2b): switching the active main tab unmounts the current tab's
+  // content, including an open inline Investment Case editor in an AssetTab. Ask
+  // before discarding unsaved research; clean editors navigate immediately.
   const handleTabChange = (tabId: string) => {
+    requestUnsavedNavigation(() => applyTabChange(tabId))
+  }
+
+  const applyTabChange = (tabId: string) => {
     // If tab doesn't exist yet (e.g. synthetic parent from grouped tabs), create it directly
     const exists = tabs.some(tab => tab.id === tabId)
     if (!exists) {
@@ -644,6 +653,10 @@ export function DashboardPage() {
   }
 
   const handleTabClose = (tabId: string) => {
+    requestUnsavedNavigation(() => applyTabClose(tabId))
+  }
+
+  const applyTabClose = (tabId: string) => {
     if (tabId === 'dashboard') return // Can't close dashboard tab
 
     // Clean up empty notes when closing a note tab
@@ -740,6 +753,10 @@ export function DashboardPage() {
 
 
   const handleCloseTabs = (tabIds: string[]) => {
+    requestUnsavedNavigation(() => applyCloseTabs(tabIds))
+  }
+
+  const applyCloseTabs = (tabIds: string[]) => {
     const idsToClose = new Set(tabIds.filter(id => id !== 'dashboard'))
     if (idsToClose.size === 0) return
 
@@ -1802,6 +1819,8 @@ export function DashboardPage() {
 
   return (
     <>
+    {/* UX1c-2b: single prompt fronting the in-app unsaved-research guard. */}
+    <UnsavedEditsPrompt />
     <Layout
       tabs={visibleTabs}
       activeTabId={activeTabId}

@@ -13,6 +13,7 @@ import {
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useAssetModels } from '../../hooks/useAssetModels'
 import { TabStateManager } from '../../lib/tabStateManager'
+import { requestUnsavedNavigation } from '../../lib/contributions/unsaved-edits-guard'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -407,17 +408,33 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     return !!(savedState?.researchViewFilter || asset.data?.researchViewFilter)
   })
 
-  /** Any explicit pick — by the reader or by a navigation — settles it. */
+  /**
+   * Any explicit pick — by the reader or by a navigation — settles it. Guarded
+   * (UX1c-2b): switching the Firm/personal perspective unmounts the editable
+   * section, so pause for unsaved research first.
+   */
   const chooseResearchView = useCallback((next: string) => {
-    setResearchDefaultDecided(true)
-    setResearchViewChosen(true)
-    setResearchViewFilter(next)
+    requestUnsavedNavigation(() => {
+      setResearchDefaultDecided(true)
+      setResearchViewChosen(true)
+      setResearchViewFilter(next)
+    })
+  }, [])
+  // Guarded in-tab navigation (UX1c-2b): switching the Asset Page sub-tab or the
+  // Research read-mode also unmounts an open inline editor, so route the user
+  // controls through the unsaved-research guard. Clean editors pass through
+  // synchronously, so behaviour is unchanged when nothing is being edited.
+  const goToSubPage = useCallback((next: typeof activeSubPage) => {
+    requestUnsavedNavigation(() => setActiveSubPage(next))
   }, [])
   // Thesis view mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline
   const [thesisViewMode, setThesisViewMode] = useState<'all' | 'summary' | 'history' | 'references'>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.thesisViewMode || 'all'
   })
+  const goToThesisMode = useCallback((next: typeof thesisViewMode) => {
+    requestUnsavedNavigation(() => setThesisViewMode(next))
+  }, [])
   // Attention band → research-section deep link: anchor to scroll to, with a
   // nonce so re-clicking the same signal re-fires.
   const [attentionAnchor, setAttentionAnchor] = useState<
@@ -3046,7 +3063,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         assetId={asset.id}
         symbol={asset.symbol ?? null}
         spot={currentQuote?.price ?? null}
-        onOpen={(sub) => setActiveSubPage(sub)}
+        onOpen={(sub) => goToSubPage(sub)}
       />
 
       {/* Why the reader is here, and who they can ask about it.
@@ -3072,7 +3089,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             * name" rather than "let me go do a specific job".
             */}
           <button
-            onClick={() => setActiveSubPage('snapshot')}
+            onClick={() => goToSubPage('snapshot')}
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
               activeSubPage === 'snapshot'
@@ -3086,7 +3103,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             </div>
           </button>
           <button
-            onClick={() => setActiveSubPage('research')}
+            onClick={() => goToSubPage('research')}
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
               activeSubPage === 'research'
@@ -3100,7 +3117,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             </div>
           </button>
           <button
-            onClick={() => setActiveSubPage('workflow')}
+            onClick={() => goToSubPage('workflow')}
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
               activeSubPage === 'workflow'
@@ -3119,7 +3136,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             </div>
           </button>
           <button
-            onClick={() => setActiveSubPage('decisions')}
+            onClick={() => goToSubPage('decisions')}
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
               activeSubPage === 'decisions'
@@ -3133,7 +3150,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             </div>
           </button>
           <button
-            onClick={() => setActiveSubPage('lists')}
+            onClick={() => goToSubPage('lists')}
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
               activeSubPage === 'lists'
@@ -3396,7 +3413,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <div className="mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
               <div className="flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
                 <button
-                  onClick={() => setThesisViewMode('all')}
+                  onClick={() => goToThesisMode('all')}
                   className={clsx(
                     'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
                     thesisViewMode === 'all'
@@ -3409,7 +3426,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <span className="hidden xl:inline">All sections</span>
                 </button>
                 <button
-                  onClick={() => setThesisViewMode('summary')}
+                  onClick={() => goToThesisMode('summary')}
                   className={clsx(
                     'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
                     thesisViewMode === 'summary'
@@ -3422,7 +3439,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <span className="hidden xl:inline">AI summary</span>
                 </button>
                 <button
-                  onClick={() => setThesisViewMode('history')}
+                  onClick={() => goToThesisMode('history')}
                   className={clsx(
                     'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
                     thesisViewMode === 'history'
@@ -3435,7 +3452,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <span className="hidden xl:inline">History</span>
                 </button>
                 <button
-                  onClick={() => setThesisViewMode('references')}
+                  onClick={() => goToThesisMode('references')}
                   className={clsx(
                     'relative flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
                     thesisViewMode === 'references'
