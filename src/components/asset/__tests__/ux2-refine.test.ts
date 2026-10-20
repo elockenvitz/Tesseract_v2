@@ -20,9 +20,19 @@ const BAND = codeOf(readFileSync(resolve(SRC, 'components/asset/AttentionBand.ts
 const CSS = readFileSync(resolve(SRC, 'components/asset/asset-ux2.css'), 'utf8')
 
 describe('UX2 refine: header integration', () => {
-  it('lightens/desaturates the navy band (no longer the near-black #101d31)', () => {
+  it('light mode: the band is a light slate-blue surface, not a dark banner', () => {
     expect(CSS).not.toContain('#101d31')
-    expect(CSS).toContain('--ux2-band:#223049')
+    expect(CSS).not.toContain('#223049') // the earlier "lighter navy" is gone
+    expect(CSS).toContain('--ux2-band:#eef2f8') // light slate-blue in light mode
+    expect(CSS).toContain('--ux2-ink:#1e293b')  // dark ink on the light band
+  })
+
+  it('dark mode keeps the navy band, defined separately', () => {
+    expect(CSS).toMatch(/\.dark \.ux2-scope\{[\s\S]*--ux2-band:#16233a/)
+  })
+
+  it('the band is separated from the content by a subtle border', () => {
+    expect(CSS).toMatch(/\.ux2-band\{[^}]*border-bottom:1px solid var\(--ux2-band-line\)/)
   })
 
   it('closes the white gutter between the tab bar and the band (-mt-4)', () => {
@@ -38,28 +48,38 @@ describe('UX2 refine: header integration', () => {
   })
 })
 
-describe('UX2 refine: near-full-screen focused editor', () => {
-  it('EditingPane gains an overlay presentation + optional context rail', () => {
-    expect(CONTRIB).toMatch(/overlay\s*=\s*false/)
-    expect(CONTRIB).toContain('if (overlay) {')
-    expect(CONTRIB).toContain('role="dialog" aria-modal="true"')
-    expect(CONTRIB).toContain('contextNode')
+describe('UX2 refine: restored full-width in-page expand editor', () => {
+  it('uses the proven in-page expand-takeover, NOT a modal overlay', () => {
+    // The UX2 modal overlay was removed: no dialog, no dimmed backdrop, no
+    // overlay prop / context rail.
+    expect(CONTRIB).not.toContain('aria-modal="true"')
+    expect(CONTRIB).not.toContain('overlayEditor')
+    expect(CONTRIB).not.toMatch(/\boverlay\b/)
+  })
+
+  it('the takeover anchors on the stable .contribution-pane marker', () => {
+    // documentChrome dropped the old `.rounded-lg` card, so the expand lookup
+    // targets the marker the root always carries (fallback kept for old callers).
+    expect(CONTRIB).toContain("'contribution-pane'")
+    expect(CONTRIB).toContain("el.closest('.contribution-pane')")
+    // the takeover effect runs for the default path (only inline bails)
+    expect(CONTRIB).toContain('if (inline) return')
   })
 
   it('reuses the same editor + handlers (no second editor, no new save path)', () => {
-    // one EditingPane function; the overlay is a branch inside it
     expect((CONTRIB.match(/function EditingPane/g) ?? []).length).toBe(1)
-    expect(CONTRIB).toContain('const run = (action: () => void) => (inline || overlay ? action() : collapseAndRun(action))')
+    expect(CONTRIB).toContain('const run = (action: () => void) => (inline ? action() : collapseAndRun(action))')
   })
 
-  it('keeps the unsaved safeguards for the overlay too (guardedEditor)', () => {
-    expect(CONTRIB).toContain('const guardedEditor = inlineEditor || overlayEditor')
+  it('keeps the unsaved safeguards on the full-page editor (guardedEditor)', () => {
+    expect(CONTRIB).toContain('const guardedEditor = inlineEditor || fullPageEditor')
     expect(CONTRIB).toMatch(/if \(!guardedEditor\) return[\s\S]{0,120}registerUnsavedEditor/)
     expect(CONTRIB).toMatch(/dirtyRef\.current = guardedEditor && isDirty/)
   })
 
-  it('AssetTab opens the case editor in the overlay', () => {
-    expect((ASSET_TAB.match(/overlayEditor/g) ?? []).length).toBeGreaterThanOrEqual(2)
+  it('AssetTab opens the case editor with the full-page takeover', () => {
+    expect((ASSET_TAB.match(/fullPageEditor/g) ?? []).length).toBeGreaterThanOrEqual(2)
+    expect(ASSET_TAB).not.toContain('overlayEditor')
   })
 })
 

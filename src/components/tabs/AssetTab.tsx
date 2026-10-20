@@ -3517,10 +3517,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                   sharedVisibility={sharedThesisVisibility}
                                   sharedTargetIds={sharedThesisTargetIds}
                                   plainChrome
-                                  inlineEditor
                                   documentChrome
                                   alwaysShowToolbar
-                                  overlayEditor
+                                  fullPageEditor
                                 />
                               </div>
                             )
@@ -3718,10 +3717,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 sharedVisibility={sharedThesisVisibility}
                                 sharedTargetIds={sharedThesisTargetIds}
                                 plainChrome
-                                inlineEditor
                                 documentChrome
                                 alwaysShowToolbar
-                                overlayEditor
+                                fullPageEditor
                               />
                             </div>
                           )

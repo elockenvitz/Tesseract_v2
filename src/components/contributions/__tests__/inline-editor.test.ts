@@ -24,7 +24,7 @@ describe('UX1c-2: inline editor expands in place, no viewport takeover', () => {
   it('skips the full-screen expand/scroll-lock effect when inline', () => {
     // The takeover effect animates the card to the scroll height and locks the
     // page scroll; inline must bail out of it before any of that runs.
-    expect(CONTRIB).toContain('if (inline || overlay) return')
+    expect(CONTRIB).toContain('if (inline) return')
   })
 
   it('bounds the inline editor height instead of filling the viewport', () => {
@@ -38,8 +38,14 @@ describe('UX1c-2: inline editor expands in place, no viewport takeover', () => {
     expect(CONTRIB).toMatch(/inline\s*=\s*false/) // EditingPane prop default
   })
 
-  it('AssetTab turns it on for both case section renders', () => {
-    expect((ASSET_TAB.match(/inlineEditor/g) ?? []).length).toBeGreaterThanOrEqual(2)
+  it('the bounded inline path stays available but the Investment Case now opens '
+     + 'the full-width in-page editor instead', () => {
+    // UX2 P1/P2 refinement superseded the bounded inline box for Research with
+    // the proven full-width expand editor. The inline code path is retained for
+    // other/future callers, so the case renders no longer pass inlineEditor.
+    expect(CONTRIB).toContain('max-h-[55vh]') // inline branch still present
+    expect(ASSET_TAB).not.toContain('inlineEditor')
+    expect((ASSET_TAB.match(/fullPageEditor/g) ?? []).length).toBeGreaterThanOrEqual(2)
   })
 })
 
@@ -75,7 +81,7 @@ describe('UX1c-2: persistence and permissions are unchanged', () => {
 
   it('inline and full-screen run the SAME action handler (no second save path)', () => {
     // The only difference is the collapse animation, not what the button does.
-    expect(CONTRIB).toContain('const run = (action: () => void) => (inline || overlay ? action() : collapseAndRun(action))')
+    expect(CONTRIB).toContain('const run = (action: () => void) => (inline ? action() : collapseAndRun(action))')
   })
 
   it('does not add a second editor implementation', () => {
