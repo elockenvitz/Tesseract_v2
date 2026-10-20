@@ -47,8 +47,6 @@ import { contributionSectionsForSlug } from '../../lib/research/contribution-sec
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddToProjectButton } from '../projects/AddToProjectButton'
 import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView, ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
-import { ResearchCanvas } from '../research/ResearchCanvas'
-import { useResearchWorkspaceEnabled } from '../../hooks/useResearchWorkspaceEnabled'
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
 import { useKeyReferences } from '../../hooks/useKeyReferences'
 import { useUserAssetPriority, type Priority } from '../../hooks/useUserAssetPriority'
@@ -416,10 +414,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.thesisViewMode || 'all'
   })
-  // Research Workspace canvas (flagged; default off). View/Customize is the
-  // workspace mode within the "All sections" view. S0 scaffold only.
-  const researchWorkspaceEnabled = useResearchWorkspaceEnabled()
-  const [researchWorkspaceMode, setResearchWorkspaceMode] = useState<'view' | 'customize'>('view')
   // Research layout mode: 'classic' uses hardcoded sections, 'dynamic' uses configurable fields
   // User asset widgets
   const [showFieldCustomizer, setShowFieldCustomizer] = useState(false)
@@ -3294,38 +3288,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 </button>
               )}
 
-              {/* Research Workspace: View / Customize toggle (flagged; default off).
-                  Shown only in the All-sections view on your own research. S0 wires
-                  the mode; the drag/resize editor arrives in a later slice. */}
-              {researchWorkspaceEnabled && thesisViewMode === 'all' && researchViewFilter === user?.id && (
-                <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
-                  <button
-                    onClick={() => setResearchWorkspaceMode('view')}
-                    className={clsx(
-                      'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
-                      researchWorkspaceMode === 'view'
-                        ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                    )}
-                    title="View"
-                  >
-                    View
-                  </button>
-                  <button
-                    onClick={() => setResearchWorkspaceMode('customize')}
-                    className={clsx(
-                      'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
-                      researchWorkspaceMode === 'customize'
-                        ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                    )}
-                    title="Customize layout"
-                  >
-                    Customize
-                  </button>
-                </div>
-              )}
-
               {/* View mode buttons */}
               <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
                 <button
@@ -3542,10 +3504,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               )
             ) : (
               /* Individual User "All" View - shows full layout with all sections */
-              /* S0: framed by the (flagged) Research Workspace canvas — a layout-
-                 transparent pass-through when disabled, so this is unchanged today. */
-              <ResearchCanvas enabled={researchWorkspaceEnabled} mode={researchWorkspaceMode}>
-              {displayedFieldsBySection.map((section, sectionIdx) => {
+              displayedFieldsBySection.map((section, sectionIdx) => {
                 // Skip hidden sections
                 if (section.section_is_hidden) return null
 
@@ -3853,8 +3812,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   )}
                 </Card>
               )
-            })}
-            </ResearchCanvas>
+            })
             )}
 
             {/* User-Added Widgets Section */}
