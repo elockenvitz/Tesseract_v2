@@ -20,19 +20,21 @@ const BAND = codeOf(readFileSync(resolve(SRC, 'components/asset/AttentionBand.ts
 const CSS = readFileSync(resolve(SRC, 'components/asset/asset-ux2.css'), 'utf8')
 
 describe('UX2 refine: header integration', () => {
-  it('light mode: the band is a light slate-blue surface, not a dark banner', () => {
+  it('light mode: the band is a crisp white surface, not a dark or muddy banner', () => {
     expect(CSS).not.toContain('#101d31')
     expect(CSS).not.toContain('#223049') // the earlier "lighter navy" is gone
-    expect(CSS).toContain('--ux2-band:#eef2f8') // light slate-blue in light mode
-    expect(CSS).toContain('--ux2-ink:#1e293b')  // dark ink on the light band
+    expect(CSS).not.toContain('linear-gradient') // the gradient attempt is gone
+    expect(CSS).toContain('--ux2-band:#ffffff') // white identity surface
+    expect(CSS).toContain('--ux2-ink:#1e293b')  // dark ink on the white band
   })
 
-  it('dark mode keeps the navy band, defined separately', () => {
-    expect(CSS).toMatch(/\.dark \.ux2-scope\{[\s\S]*--ux2-band:#16233a/)
+  it('dark mode keeps a solid navy band, defined separately', () => {
+    expect(CSS).toMatch(/\.dark \.ux2-scope\{[\s\S]*--ux2-band:#111c30/)
   })
 
-  it('the band is separated from the content by a subtle border', () => {
-    expect(CSS).toMatch(/\.ux2-band\{[^}]*border-bottom:1px solid var\(--ux2-band-line\)/)
+  it('the band floats over the content: hairline border + soft shadow', () => {
+    expect(CSS).toMatch(/\.ux2-band\{[\s\S]*border-bottom:1px solid var\(--ux2-band-line\)/)
+    expect(CSS).toMatch(/\.ux2-band\{[\s\S]*box-shadow:/)
   })
 
   it('closes the white gutter between the tab bar and the band (-mt-4)', () => {

@@ -95,15 +95,15 @@ export function AssetWorkspaceHeader({
               onClick={() => setShowTickerDropdown(v => !v)}
               aria-haspopup="dialog"
               aria-expanded={showTickerDropdown}
-              className="ux2-band-ink text-2xl font-bold flex items-baseline gap-1.5 group hover:opacity-90"
+              className="ux2-band-ink text-2xl font-bold tracking-tight flex items-baseline gap-1.5 group hover:opacity-90"
             >
               <span className="group-hover:underline underline-offset-4 decoration-white/30">{asset.symbol}</span>
               <ChevronDown className={clsx('w-4 h-4 ux2-band-muted transition-transform', showTickerDropdown && 'rotate-180')} />
             </button>
-            <span className="ux2-band-ink text-lg font-medium truncate max-w-[34ch]">{asset.company_name}</span>
+            <span className="ux2-band-muted text-base font-normal truncate max-w-[34ch]">{asset.company_name}</span>
             {price != null && (
               <span className="flex items-baseline gap-2 ml-1">
-                <span className="ux2-band-ink text-xl font-semibold tabular-nums">{money(price)}</span>
+                <span className="ux2-band-ink text-xl font-semibold tabular-nums tracking-tight">{money(price)}</span>
                 {change != null && (
                   <span className={clsx('text-sm font-semibold tabular-nums', up ? 'ux2-pos' : 'ux2-neg')}>
                     {up ? '+' : ''}{change.toFixed(2)}

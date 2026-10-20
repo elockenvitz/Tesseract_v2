@@ -206,28 +206,28 @@ interface ContributionSectionProps {
 // Section color themes - unified blue accent with amber hover
 const SECTION_THEMES = {
   thesis: {
-    accent: 'border-l-blue-400',
+    accent: 'border-l-blue-500',
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     hoverBorder: 'hover:border-amber-200',
     hoverBg: 'hover:bg-amber-50/30',
   },
   forecasts: {
-    accent: 'border-l-blue-400',
+    accent: 'border-l-blue-500',
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     hoverBorder: 'hover:border-amber-200',
     hoverBg: 'hover:bg-amber-50/30',
   },
   supporting: {
-    accent: 'border-l-blue-400',
+    accent: 'border-l-blue-500',
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     hoverBorder: 'hover:border-amber-200',
     hoverBg: 'hover:bg-amber-50/30',
   },
   custom: {
-    accent: 'border-l-blue-400',
+    accent: 'border-l-blue-500',
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     hoverBorder: 'hover:border-amber-200',
@@ -318,7 +318,9 @@ function CollapsibleContent({ content }: { content: string }) {
       <div
         ref={contentRef}
         className={clsx(
-          'prose prose-sm max-w-none text-gray-700 leading-relaxed overflow-hidden transition-all duration-200 dark:text-gray-300',
+          // Comfortable reading measure for long-form research — the card stays
+          // full-width, but the prose line length is capped so it stays legible.
+          'prose prose-sm max-w-[72ch] text-gray-700 leading-relaxed overflow-hidden transition-all duration-200 dark:text-gray-300',
           !expanded && needsCollapse && 'max-h-[240px]',
         )}
       >
@@ -1527,12 +1529,14 @@ export function ContributionSection({
           // container — distinct fields, not a stack of heavy cards.
           ? 'bg-transparent rounded-none border-t border-gray-100 transition-colors dark:border-gray-800'
           : [
-              'bg-white border border-gray-200 rounded-lg transition-all duration-200 dark:border-gray-700 dark:bg-gray-800',
+              // Elevated card: softer radius, a thin refined accent rail (not a
+              // heavy 4px bar), flat at rest with a quiet lift on hover.
+              'bg-white border border-gray-200/80 rounded-xl transition-all duration-200 dark:border-gray-700 dark:bg-gray-800',
               plainChrome
                 // Quiet reading chrome: a clean thin-bordered card, no coloured
                 // accent, no amber hover recolour, no shadow.
                 ? 'hover:border-gray-300 dark:hover:border-gray-600'
-                : ['border-l-4', theme.accent, theme.hoverBorder, theme.hoverBg, 'hover:shadow-sm'],
+                : ['border-l-[3px]', theme.accent, theme.hoverBorder, theme.hoverBg, 'hover:shadow-sm'],
             ],
         className
       )}
@@ -1825,7 +1829,7 @@ export function ContributionSection({
                               : 'recently'
                             }
                           </div>
-                          <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed dark:text-gray-300">
+                          <div className="prose prose-sm max-w-[72ch] text-gray-700 leading-relaxed dark:text-gray-300">
                             <SmartInputRenderer content={myContribution?.draft_content || ''} />
                           </div>
                         </div>
@@ -1864,7 +1868,7 @@ export function ContributionSection({
                         )}
                       </div>
                     ) : (
-                      <div className={documentChrome ? 'py-0.5' : 'text-center py-1'}>
+                      <div className="py-0.5">
                         {activeTab === user?.id ? (
                           <button
                             onClick={handleStartEdit}

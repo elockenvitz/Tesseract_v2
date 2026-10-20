@@ -2907,7 +2907,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       {/* Research View Filter - Fixed bar that doesn't scroll */}
       {activeSubPage === 'research' && (
         <div className="px-8 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between gap-3">
+          {/* flex-wrap lets the perspective (left) and the view/utility controls
+              (right) drop to a second row on narrow widths instead of
+              overflowing or clipping. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             {/* Left side: View filter */}
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-400 uppercase tracking-wide font-medium">View</span>
@@ -3134,37 +3137,38 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 <ViewWarningIndicator warnings={viewWarnings} />
               )}
 
-              {/* Customize button - only show when viewing own view */}
+              {/* Utilities cluster (Customize, Export) — deliberately quieter than
+                  the read-mode nav: icon-only, so the primary "how to read the
+                  case" controls lead. A divider sets them off from the
+                  visibility / warning status to the left. Labels live in the
+                  tooltip; discoverability is preserved. */}
+              <div className="mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
               {researchViewFilter === user?.id && (
                 <button
                   onClick={() => setShowFieldCustomizer(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-gray-200 dark:text-gray-400"
+                  className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-gray-200"
                   title="Customize asset page layout"
+                  aria-label="Customize asset page layout"
                 >
                   <Settings2 className="w-4 h-4" />
-                  <span className="hidden sm:inline">Customize</span>
                 </button>
               )}
-
-              {/* Export the case — an own-view utility, grouped with the others. */}
               <button
                 onClick={() => setShowCaseBuilder(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-gray-200 dark:text-gray-400"
+                className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-gray-200"
                 title="Export investment case as PDF"
+                aria-label="Export investment case as PDF"
               >
                 <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">Export</span>
               </button>
 
               {/*
-                How to read the case — the four Research modes, now the primary
-                control on this bar and clearly labelled. The labels were icon-
-                only before; a reader had to hover each one to learn it existed.
-                Labels show from xl so a narrow desktop keeps the compact icons
-                (titles intact), and the border-l groups this nav apart from the
-                own-view utilities to its left.
+                How to read the case — the four Research modes, the PRIMARY nav on
+                this bar. Labels show from xl so a narrow desktop keeps the compact
+                icons (titles intact); the pill group + divider set this nav apart
+                from the quieter utilities to its left.
               */}
-              {/* Divider: the own-view utilities to the left, the read-mode nav to the right. */}
+              {/* Divider: utilities to the left, the read-mode nav to the right. */}
               <div className="mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
               <div className="flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
                 <button
@@ -3418,9 +3422,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card key={section.section_id} padding="none" className={sectionShade}>
                     <button
                       onClick={() => toggleSection('outcomes')}
-                      className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl dark:bg-gray-700 dark:hover:bg-gray-600"
+                      className="w-full px-5 py-3 flex items-center gap-2 bg-gray-50 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
                     >
-                      <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{section.section_name}</span>
                       {collapsedSections.outcomes ? (
                         <ChevronDown className="h-5 w-5 text-gray-400" />
                       ) : (
@@ -3446,7 +3450,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Price target field
                             if (fieldType === 'price_target') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <div key={field.field_id} id="asset-warning-anchor-targets" className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3465,7 +3469,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Rating field
                             if (fieldType === 'rating') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <div key={field.field_id} id="asset-warning-anchor-rating" className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3486,7 +3490,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Estimates field
                             if (fieldType === 'estimates') {
                               return (
-                                <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3539,9 +3543,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 <Card key={section.section_id} padding="none" className={sectionShade}>
                   <button
                     onClick={() => toggleSection(section.section_slug as any)}
-                    className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl dark:bg-gray-700 dark:hover:bg-gray-600"
+                    className="w-full px-5 py-3 flex items-center gap-2 bg-gray-50 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
                   >
-                    <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{section.section_name}</span>
                     {collapsedSections[section.section_slug as keyof typeof collapsedSections] ? (
                       <ChevronDown className="h-5 w-5 text-gray-400" />
                     ) : (
@@ -3559,7 +3563,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Checklist field
                           if (fieldType === 'checklist') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3576,7 +3580,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Metric field
                           if (fieldType === 'metric') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3593,7 +3597,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Timeline field
                           if (fieldType === 'timeline') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3610,7 +3614,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Numeric field
                           if (fieldType === 'numeric') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3627,7 +3631,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Date field
                           if (fieldType === 'date') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3644,7 +3648,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Rating field - render analyst ratings section
                           if (fieldType === 'rating') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} id="asset-warning-anchor-rating" className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3665,7 +3669,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Estimates field - render analyst estimates section
                           if (fieldType === 'estimates') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3681,7 +3685,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Price target field - render outcomes container for price targets
                           if (fieldType === 'price_target') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} id="asset-warning-anchor-targets" className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>

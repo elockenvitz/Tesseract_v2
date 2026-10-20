@@ -7,13 +7,14 @@
  * dark palette keys off an ancestor `.dark` (what the app already toggles).
  */
 .ux2-scope{
-  /* LIGHT MODE — the identity band is a light slate-blue surface, not a dark
-     banner: it reads as part of Tesseract's light UI, separated from the white
-     content below by a subtle border rather than by heavy contrast. */
-  --ux2-band:#eef2f8;      /* light slate-blue identity surface */
-  --ux2-band-2:#e0e7f1;    /* chips / context-strip cells */
-  --ux2-band-hover:#d4deec;/* chip hover */
-  --ux2-band-line:rgba(51,65,85,.14); /* subtle slate border */
+  /* LIGHT MODE — a crisp WHITE identity surface that floats over the grey
+     content area. The "pop" and the elegance come from the white-on-grey
+     contrast, a refined shadow and strong typography — not from a coloured
+     wash or a gradient (both read cheap here). */
+  --ux2-band:#ffffff;      /* white identity surface */
+  --ux2-band-2:#f1f4f9;    /* chips / controls on the band */
+  --ux2-band-hover:#e7ecf4;/* chip hover */
+  --ux2-band-line:rgba(15,23,42,.08); /* hairline between band and content */
   --ux2-ink:#1e293b;       /* primary text on the band (slate-800) */
   --ux2-ink-2:#64748b;     /* muted text on the band (slate-500) */
   --ux2-pos:#059669;       /* positive change (emerald-600) */
@@ -21,8 +22,8 @@
   --ux2-crit:#dc2626;      /* attention count pill */
 }
 .dark .ux2-scope{
-  /* DARK MODE — keep the navy identity band. */
-  --ux2-band:#16233a;
+  /* DARK MODE — a solid refined navy surface (same floating-header treatment). */
+  --ux2-band:#111c30;
   --ux2-band-2:#223150;
   --ux2-band-hover:#344665;
   --ux2-band-line:rgba(157,176,202,.20);
@@ -33,9 +34,16 @@
   --ux2-crit:#b5362a;
 }
 
-/* The identity band itself: light slate-blue in light mode, navy in dark mode,
-   separated from the content below by a subtle bottom border. */
-.ux2-band{ background:var(--ux2-band); color:var(--ux2-ink); border-bottom:1px solid var(--ux2-band-line); }
+/* The identity band itself: a solid surface (white / navy) that floats over the
+   content, separated by a crisp hairline and a soft, tight shadow so it reads
+   clean and lifted rather than flat. */
+.ux2-band{
+  background:var(--ux2-band);
+  color:var(--ux2-ink);
+  border-bottom:1px solid var(--ux2-band-line);
+  box-shadow:0 1px 2px rgba(15,23,42,.04), 0 8px 24px -16px rgba(15,23,42,.18);
+}
+.dark .ux2-band{ box-shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -16px rgba(0,0,0,.6); }
 .ux2-band-ink{ color:var(--ux2-ink); }
 .ux2-band-muted{ color:var(--ux2-ink-2); }
 .ux2-pos{ color:var(--ux2-pos); }

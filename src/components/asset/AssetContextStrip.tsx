@@ -56,7 +56,7 @@ const SUB = 'text-[11px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5 t
 const DASH = 'text-[14px] font-semibold text-gray-300 dark:text-gray-600 leading-tight'
 
 function Cell({
-  label, onClick, title, children, band, eyebrow,
+  label, onClick, title, children, band, eyebrow, dimmed,
 }: {
   label: string
   onClick?: () => void
@@ -64,6 +64,9 @@ function Cell({
   children: React.ReactNode
   band?: boolean
   eyebrow: string
+  /** An absent metric (no rating / no target): kept in place but visually
+   *  quieted so the metrics that DO carry data lead the row. */
+  dimmed?: boolean
 }) {
   const base = band ? 'bg-transparent' : 'bg-white dark:bg-gray-800'
   const hover = band
@@ -71,7 +74,10 @@ function Cell({
     : 'hover:bg-gray-50 dark:hover:bg-gray-700/60'
   // Band cells size to their content (a lean row); default cells share the row
   // equally (the tiled grid).
-  const sizing = band ? 'flex-none px-4 py-1 first:pl-0' : 'flex-1 min-w-[132px] px-3 py-2'
+  const sizing = clsx(
+    band ? 'flex-none px-4 py-1 first:pl-0' : 'flex-1 min-w-[132px] px-3 py-2',
+    band && dimmed && 'opacity-55',
+  )
   const inner = (
     <>
       <span className={eyebrow}>{label}</span>
@@ -101,10 +107,10 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
   // Band variant swaps the cell text to the light-on-navy tokens; default keeps
   // the existing light-surface styling. Logic below is identical either way.
   const EYEBROW_C = band
-    ? 'block text-[10px] font-semibold uppercase tracking-wide text-[color:var(--ux2-ink-2)]'
+    ? 'block text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--ux2-ink-2)]'
     : EYEBROW
   const VALUE_C = band
-    ? 'text-[14px] font-semibold text-[color:var(--ux2-ink)] leading-tight'
+    ? 'text-[13.5px] font-semibold tabular-nums tracking-tight text-[color:var(--ux2-ink)] leading-tight'
     : VALUE
   const SUB_C = band
     ? 'text-[11px] text-[color:var(--ux2-ink-2)] leading-tight mt-0.5 truncate'
@@ -170,7 +176,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
       className={`${wrapC} ${className ?? ''}`}
     >
       {/* Firm rating */}
-      <Cell label="Firm rating" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm consensus rating" band={band} eyebrow={EYEBROW_C}>
+      <Cell label="Firm rating" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm consensus rating" band={band} eyebrow={EYEBROW_C} dimmed={!topRating}>
         {topRating ? (
           <>
             <div className={VALUE_C + ' truncate'}>{topRating.value}</div>
@@ -189,7 +195,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
       </Cell>
 
       {/* Price target + upside */}
-      <Cell label="Price target" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm price target" band={band} eyebrow={EYEBROW_C}>
+      <Cell label="Price target" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm price target" band={band} eyebrow={EYEBROW_C} dimmed={target == null}>
         {target != null ? (
           <>
             <div className={VALUE_C + ' tabular-nums flex items-baseline gap-1.5'}>

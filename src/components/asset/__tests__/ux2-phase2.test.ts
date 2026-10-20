@@ -30,8 +30,8 @@ describe('Research presentation: original per-section cards restored', () => {
     expect(ASSET_TAB).not.toContain('border-t border-gray-200 first:border-t-0')
   })
 
-  it('restores the blue left-accent + amber hover-highlight on fields', () => {
-    expect(ASSET_TAB).toContain('border-l-4 border-l-blue-400')
+  it('keeps the blue left-accent + amber hover-highlight on fields (elevated: thin rail)', () => {
+    expect(ASSET_TAB).toContain('border-l-[3px] border-l-blue-500')
     expect(ASSET_TAB).toContain('hover:border-amber-200 hover:bg-amber-50/30')
   })
 
