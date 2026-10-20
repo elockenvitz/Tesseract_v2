@@ -74,7 +74,7 @@ export function AttentionBand({ state, signals, onOpen, className }: AttentionBa
       aria-label="What needs attention"
       className={clsx('rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900', className)}
     >
-      <div className="flex items-baseline justify-between gap-3 border-b border-gray-100 px-4 py-2 dark:border-gray-800">
+      <div className="flex items-baseline justify-between gap-3 border-b border-gray-100 px-3.5 py-1.5 dark:border-gray-800">
         <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">
           Needs attention
         </span>
@@ -100,7 +100,7 @@ export function AttentionBand({ state, signals, onOpen, className }: AttentionBa
                 type="button"
                 onClick={() => onOpen(s.destination, s.focus)}
                 data-testid={`attention-${s.id}`}
-                className="group flex-1 px-3.5 py-2 text-left hover:bg-gray-50/70 dark:hover:bg-gray-800/40"
+                className="group flex-1 px-3.5 py-1.5 text-left hover:bg-gray-50/70 dark:hover:bg-gray-800/40"
               >
                 <span className="flex items-start gap-2">
                   <Icon className={clsx('mt-[2px] h-3.5 w-3.5 shrink-0', k.tone)} />

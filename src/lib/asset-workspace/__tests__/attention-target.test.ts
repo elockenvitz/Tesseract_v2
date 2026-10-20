@@ -2,9 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { attentionTarget } from '../attention-target'
 
 describe('attentionTarget — focus maps to existing navigation, never a silent redirect', () => {
-  it('opens Decisions for a waiting decision (grouped or single)', () => {
+  it('opens Decisions scoped to the request book, at Open Items', () => {
     expect(attentionTarget('decisions', { kind: 'decision', decisionIds: ['d1', 'd2'], portfolioId: 'pf-1' }))
-      .toEqual({ subPage: 'decisions' })
+      .toEqual({ subPage: 'decisions', decisionsBook: 'pf-1', openItems: true })
+  })
+  it('scopes to every book when the request names none', () => {
+    expect(attentionTarget('decisions', { kind: 'decision', decisionIds: ['d1'], portfolioId: null }))
+      .toEqual({ subPage: 'decisions', decisionsBook: null, openItems: true })
   })
 
   it('opens the exact research anchor for a section signal', () => {

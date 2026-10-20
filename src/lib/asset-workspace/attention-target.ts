@@ -12,6 +12,15 @@ export interface AttentionTarget {
   /** An existing research anchor to scroll to. */
   anchor?: 'thesis' | 'risks' | 'targets' | 'rating' | 'case'
   /**
+   * Scope the Decisions sub-page to this book so the waiting requests are
+   * identifiable (null = every book the reader may see). Reuses the existing
+   * `decisionBookId` scope and the `#decisions-open-items` anchor — no new
+   * decision interface.
+   */
+  decisionsBook?: string | null
+  /** Scroll to the Decisions "Open Items" section. */
+  openItems?: boolean
+  /**
    * True when the exact thing has no deep-linked surface on the Asset page and
    * we used the nearest truthful context instead — so the UI can say so rather
    * than pretend it landed where asked.
@@ -27,8 +36,9 @@ export interface AttentionTarget {
 export function attentionTarget(destination: WorkspaceDestination, focus?: SignalFocus): AttentionTarget {
   switch (focus?.kind) {
     case 'decision':
-      // Grouped or single waiting requests both open the Decisions sub-page.
-      return { subPage: 'decisions' }
+      // Open Decisions scoped to the request's book, scrolled to Open Items, so
+      // the specific waiting requests are identifiable among the book's items.
+      return { subPage: 'decisions', decisionsBook: focus.portfolioId, openItems: true }
     case 'research-section':
       return { subPage: 'research', researchMode: 'all', anchor: focus.anchor }
     case 'research-evidence':

@@ -718,8 +718,22 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       setAttentionAnchor({ anchor: t.anchor, nonce: Date.now() })
       return
     }
+    // Scope the Decisions sub-page to the request's book so the specific
+    // waiting requests are identifiable (null = every book).
+    if (t.decisionsBook !== undefined) setDecisionBookId(t.decisionsBook ?? null)
     setActiveSubPage(t.subPage)
     if (t.researchMode) setThesisViewMode(t.researchMode)
+    if (t.openItems) {
+      // Scroll to the existing Open Items section once the Decisions tab is in
+      // the DOM. Short poll because the sub-page switch is a state update.
+      let tries = 0
+      const tick = () => {
+        const el = document.getElementById('decisions-open-items')
+        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return }
+        if (tries++ < 20) window.setTimeout(tick, 80)
+      }
+      window.setTimeout(tick, 80)
+    }
   }, [researchViewFilter, user?.id])
 
   // Save tab state whenever relevant state changes (but only after initialization)
