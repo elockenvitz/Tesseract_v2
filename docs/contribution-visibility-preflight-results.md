@@ -377,12 +377,67 @@ uncorrected policy:
 
 ---
 
+---
+
+## A6 — History row shapes · **PASS**
+
+| shape | `old_missing` | rows |
+|---|---|---|
+| prose | false | 22 |
+| attachment-envelope | false | **2** |
+| **total** | | **24** |
+
+No `null`, `empty` or `other-structured` values.
+
+### 1. The envelope is real — and I appear to have created it
+
+The `[Attachments: N items]` form is confirmed as a **stored** shape, not a UI
+artifact, so `change-classification.ts` returning `ambiguous` for it and the
+freshness backfill excluding it are both justified.
+
+But there are exactly **two** such rows, and the LLY incident was one attach
+followed by one detach during Phase 4 browser testing on 2026-10-20 — which
+produced the two timeline entries reading `[Attachments: 2 items] Added 1
+reference(s)`. The arithmetic matches exactly.
+
+So the envelope most likely exists in production **because of that testing, not
+because of ordinary product use**. The classifier branch describes a shape I
+produced. It stays — the trigger will compose it again for any future
+attachment write — but its population today is two rows of my own making, and
+calling it a general production shape would overstate it.
+
+### 2. Every row has an `old_content` — the trigger fires only on UPDATE
+
+`old_missing = false` on all 24. No history row exists for a first publication.
+
+This **independently corroborates the freshness-lane finding** that the
+original LLY thesis write of 2025-12-12 has no history row, and it is not an
+LLY peculiarity: *no* first publication is recorded anywhere. The freshness
+backfill's `history_proven` bucket will therefore be small by construction, and
+unknowns will dominate — predicted from one asset, now confirmed across the
+table.
+
+### 3. Scale
+
+**24 rows in the entire production database.** Whatever V1 exposes, it exposes
+from a population of 24. B3 will give the restricted subset.
+
+### 4. Conclusions adopted
+
+The 22 prose rows are a **population for exposure analysis, not proof of
+exposure** — V1 exposes a restricted row's history to the org, and how many of
+those 24 hang off restricted contributions is B3's question, not A6's.
+Attachment-only exclusion is preserved in both the classifier and the backfill.
+**No security-release change.**
+
+---
+
 ## Outstanding
 
 | Block | Question | Status |
 |---|---|---|
 | A3e | `EXECUTE` grants on `can_view_contribution`; full body | queued |
-| A6 | history row shapes | **next** |
+| A7 | triggers on `asset_contributions`; **identity of the history-writing trigger** | **next** |
 | A5 | revision table columns, plus any CHECK on `visibility` | outstanding |
 | A6 | history row shapes | outstanding |
 | A7 | triggers on `asset_contributions` | outstanding |
