@@ -62,3 +62,38 @@ describe('AssetAttentionBand', () => {
     expect(onFocus).toHaveBeenCalledWith('research', focus)
   })
 })
+
+describe('AssetAttentionBand — collapsible (compact pill)', () => {
+  function renderCollapsible(onFocus = vi.fn()) {
+    render(<AssetAttentionBand assetId="a1" symbol="LLY" coveringUserIds={[]} onFocus={onFocus} collapsible />)
+    return onFocus
+  }
+
+  it('starts as a one-line pill naming the count and the top signal, band hidden', () => {
+    hook.value = { signals: [sig('s1'), sig('s2')], state: 'decision-pending', isLoading: false, ready: true }
+    renderCollapsible()
+    expect(screen.getByTestId('attention-pill')).toHaveTextContent('2 need attention')
+    expect(screen.getByTestId('attention-pill')).toHaveTextContent('Signal s1') // resolver's top item
+    expect(screen.queryByTestId('asset-attention-band')).not.toBeInTheDocument()
+  })
+
+  it('expands to the full band and still routes a signal with its precise focus', async () => {
+    const focus = { kind: 'research-section', anchor: 'thesis' }
+    hook.value = { signals: [sig('s1', { destination: 'research', focus })], state: 'position-monitored', isLoading: false, ready: true }
+    const onFocus = renderCollapsible()
+    await userEvent.click(screen.getByTestId('attention-pill'))
+    expect(screen.getByTestId('asset-attention-band')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('Signal s1'))
+    expect(onFocus).toHaveBeenCalledWith('research', focus) // deep-link unchanged
+  })
+
+  it('collapses back to the pill on Hide', async () => {
+    hook.value = { signals: [sig('s1')], state: 'decision-pending', isLoading: false, ready: true }
+    renderCollapsible()
+    await userEvent.click(screen.getByTestId('attention-pill'))
+    expect(screen.getByTestId('asset-attention-band')).toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('attention-collapse'))
+    expect(screen.getByTestId('attention-pill')).toBeInTheDocument()
+    expect(screen.queryByTestId('asset-attention-band')).not.toBeInTheDocument()
+  })
+})

@@ -181,12 +181,15 @@ describe('absent data says it is absent', () => {
     expect(screen.getAllByText(/Last close/).length).toBeGreaterThan(0)
   })
 
-  it('reports the n behind a rating instead of a bare consensus', () => {
+  it('no longer repeats the rating the persistent header strip now owns', () => {
+    // UX1b de-dup: rating (with its analyst count) and target moved to the
+    // header strip. The Overview must not restate them. The "n behind a rating"
+    // guarantee now lives in asset-context-strip.test.tsx.
     ratings = [{ id: 'r-1' }]
     consensus = [{ value: 'UW', count: 1, percentage: 100 }]
     renderSnapshot()
-    // One analyst is not "the firm's view", so the count travels with it.
-    expect(screen.getByText(/1 of 1 analyst/)).toBeInTheDocument()
+    expect(screen.queryByText(/of 1 analyst/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Our rating')).not.toBeInTheDocument()
   })
 })
 

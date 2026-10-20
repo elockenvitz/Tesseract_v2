@@ -244,7 +244,7 @@ export function DesktopColumns({
  */
 export function DeepLinks({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-8 flex flex-wrap items-center gap-x-1 gap-y-1 border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
+    <div className="mt-5 flex flex-wrap items-center gap-x-1 gap-y-1 border-t border-gray-200/70 pt-2.5 dark:border-white/[0.07]">
       <span className="mr-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
         Open in full
       </span>

@@ -660,8 +660,6 @@ export function InvestmentSnapshot({
       <div className="pt-4">
         <InvestmentConclusion
           symbol={symbol}
-          rating={dominant ? { value: dominant.value, count: dominant.count } : null}
-          analystCount={ratings.length}
           target={data.target}
           spot={quotePrice ?? data.spot}
           ladder={data.ladder}
@@ -671,10 +669,6 @@ export function InvestmentSnapshot({
             updatedAt: c.updatedAt ?? null,
             authorName: c.authorName ?? null,
           }))}
-          weightPct={position?.weightPct ?? null}
-          bookName={position?.portfolioName ?? selectedBookName}
-          heldBookCount={data.positions.length}
-          notInSelectedBook={notInSelectedBook}
           onOpenResearch={() => onOpenSubPage('research')}
         />
       </div>

@@ -2,11 +2,13 @@
  * The conclusion band states a position. These tests are about the ways it
  * must refuse to.
  *
- * It is the most prominent thing on the Asset page, so every figure on it is
- * read at a glance and acted on. The failure mode is never a crash — it is a
- * number that looks authoritative and is one analyst's opinion, an arithmetic
- * result computed against a missing operand, or a paraphrase presented as a
- * quote.
+ * As of UX1b the band no longer carries rating, target or exposure — those live
+ * in the persistent header strip (and their correctness guarantees moved there:
+ * see asset-context-strip.test.tsx). What remains here is what the header does
+ * NOT carry: the bear/bull reward-to-risk framing, and the differentiated view
+ * quoted in the analyst's own words. The failure mode is still a number that
+ * looks authoritative and is computed against a missing operand, or a paraphrase
+ * presented as a quote.
  */
 
 import { describe, it, expect, vi } from 'vitest'
@@ -29,55 +31,14 @@ const section = (s: string, content: string, over: Partial<ConclusionSection> = 
 
 const base = {
   symbol: 'AAPL',
-  rating: { value: 'Buy', count: 3 },
-  analystCount: 5,
   target: 268,
   spot: 231.4,
   ladder: ladder([['Bear', 168], ['Base', 224], ['Bull', 296]]),
   sections: [section('where_different', 'We treat the take-rate as a contract term.')],
-  weightPct: 2.55,
-  bookName: 'Tech & Consumer Growth',
-  heldBookCount: 3,
   onOpenResearch: vi.fn(),
 }
 
-describe('the rating never stands alone', () => {
-  it('always shows the count it rests on', () => {
-    render(<InvestmentConclusion {...base} />)
-    expect(screen.getByText('Buy')).toBeInTheDocument()
-    expect(screen.getByText('3 of 5 analysts')).toBeInTheDocument()
-  })
-
-  it('does not round one analyst up to a firm position', () => {
-    /*
-     * The whole reason the count is never suppressed. A single Buy rendered
-     * bare reads as "the firm rates this Buy", and the Firm Consensus panel
-     * elsewhere already states a percentage with no minimum-n gate.
-     */
-    render(<InvestmentConclusion {...base} rating={{ value: 'Buy', count: 1 }} analystCount={1} />)
-    expect(screen.getByText('1 of 1 analyst')).toBeInTheDocument()
-  })
-
-  it('says the rating is not set rather than inventing a neutral one', () => {
-    render(<InvestmentConclusion {...base} rating={null} analystCount={0} />)
-    expect(screen.queryByText('Buy')).not.toBeInTheDocument()
-    expect(screen.getAllByText('Not set').length).toBeGreaterThan(0)
-  })
-})
-
-describe('arithmetic is only shown when both operands exist', () => {
-  it('states upside against a real spot', () => {
-    render(<InvestmentConclusion {...base} />)
-    expect(screen.getByText('+15.8% to spot')).toBeInTheDocument()
-  })
-
-  it('withholds upside when there is no spot', () => {
-    // A target with no price to compare is a number, not a return.
-    render(<InvestmentConclusion {...base} spot={null} />)
-    expect(screen.queryByText(/to spot/)).not.toBeInTheDocument()
-    expect(screen.getByText('No spot to compare')).toBeInTheDocument()
-  })
-
+describe('the bear/bull framing is shown only when both ends are defensible', () => {
   it('states the bear/bull range and the reward-to-risk ratio', () => {
     render(<InvestmentConclusion {...base} />)
     expect(screen.getByText('$168 – $296')).toBeInTheDocument()
@@ -98,6 +59,14 @@ describe('arithmetic is only shown when both operands exist', () => {
   it('withholds the range entirely when there is no ladder', () => {
     render(<InvestmentConclusion {...base} ladder={null} />)
     expect(screen.getByText('Needs both a bear and a bull case')).toBeInTheDocument()
+  })
+
+  it('no longer repeats the rating, target or exposure the header now owns', () => {
+    // UX1b de-dup: these three were tiles here; they must be gone from the band.
+    const { container } = render(<InvestmentConclusion {...base} />)
+    const text = container.textContent ?? ''
+    expect(text).not.toMatch(/Our rating|Our exposure/)
+    expect(text).not.toMatch(/to spot/)      // the target's upside sub-line
   })
 })
 
@@ -123,31 +92,5 @@ describe('the differentiated view is quoted, never manufactured', () => {
   it('says no case exists when nothing is written at all', () => {
     render(<InvestmentConclusion {...base} sections={[]} />)
     expect(screen.getByText(/No investment case has been written for AAPL/)).toBeInTheDocument()
-  })
-})
-
-describe('exposure is described, not judged', () => {
-  it('states the weight and the number of books', () => {
-    render(<InvestmentConclusion {...base} />)
-    expect(screen.getByText('2.55%')).toBeInTheDocument()
-    expect(screen.getByText(/Tech & Consumer Growth · 3 books/)).toBeInTheDocument()
-  })
-
-  it('reports a selected book that does not hold the name', () => {
-    render(<InvestmentConclusion
-      {...base} notInSelectedBook weightPct={null} bookName="Core Income" />)
-    expect(screen.getByText('Not held')).toBeInTheDocument()
-    expect(screen.getByText('Core Income does not hold it')).toBeInTheDocument()
-  })
-
-  it('never offers a sizing opinion', () => {
-    /*
-     * "Underweight relative to conviction" is a position-sizing judgement, and
-     * nobody has asked a landing surface to have one. Asserted on the rendered
-     * text so a future "helpful" addition fails here.
-     */
-    const { container } = render(<InvestmentConclusion {...base} />)
-    const text = container.textContent ?? ''
-    expect(text).not.toMatch(/underweight|overweight|too small|too large|should be/i)
   })
 })

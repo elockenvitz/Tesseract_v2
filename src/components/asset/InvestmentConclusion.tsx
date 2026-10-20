@@ -50,34 +50,16 @@ export interface ConclusionSection {
 
 export interface InvestmentConclusionProps {
   symbol: string | null
-  /** Dominant rating and the n it rests on. Null when nobody has rated it. */
-  rating: { value: string; count: number } | null
-  analystCount: number
+  /** Target and spot drive the bear/bull reward-to-risk framing (via conclusionFigures). */
   target: number | null
   spot: number | null
   ladder: CurrentLadder | null
   /** Core research sections, for the variant view and the thesis line. */
   sections: ConclusionSection[]
-  /** The position in the current scope, and how many books hold it at all. */
-  weightPct: number | null
-  bookName: string | null
-  heldBookCount: number
-  /** True when a book is selected that does not hold the name. */
-  notInSelectedBook?: boolean
   onOpenResearch: () => void
 }
 
 const pct1 = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`
-
-/** A rating's direction, for the arrow only. Unknown words get no arrow. */
-function tone(value: string | null | undefined): 'up' | 'down' | 'flat' | null {
-  if (!value) return null
-  const v = value.toLowerCase()
-  if (/buy|overweight|outperform|add|long/.test(v)) return 'up'
-  if (/sell|underweight|underperform|trim|short|reduce/.test(v)) return 'down'
-  if (/hold|neutral|market ?perform|equal ?weight/.test(v)) return 'flat'
-  return null
-}
 
 const rung = (ladder: CurrentLadder | null, name: string) =>
   ladder?.cases.find(c => c.name === name)?.price ?? null
@@ -179,10 +161,9 @@ function Figure({
 }
 
 export function InvestmentConclusion({
-  symbol, rating, analystCount, target, spot, ladder, sections,
-  weightPct, bookName, heldBookCount, notInSelectedBook, onOpenResearch,
+  symbol, target, spot, ladder, sections, onOpenResearch,
 }: InvestmentConclusionProps) {
-  const { upside, downside, upsideBull, bear, bull, skew } =
+  const { downside, upsideBull, bear, bull, skew } =
     conclusionFigures({ target, spot, ladder })
 
   /*
@@ -208,47 +189,23 @@ export function InvestmentConclusion({
       data-testid="investment-conclusion"
       className="rounded-xl border border-gray-200 bg-white px-5 py-4 dark:border-gray-800 dark:bg-gray-900"
     >
+      {/*
+        Rating, target and exposure used to sit here as three more tiles. They
+        now live in the persistent header strip, visible on every tab, so
+        repeating them on the Overview was the exact duplication this page
+        exists to remove (UX1b). What stays is what the header does NOT carry:
+        the bear/bull range and reward-to-risk framing, and the differentiated
+        view below. The figures' correctness guarantees moved with them to the
+        header strip (rating never shown without its count; upside only against
+        a real spot; exposure described, never judged).
+      */}
       <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
-        <Figure
-          label="Our rating"
-          value={rating?.value ?? null}
-          tone={tone(rating?.value)}
-          sub={rating
-            ? `${rating.count} of ${analystCount} analyst${analystCount === 1 ? '' : 's'}`
-            : undefined}
-        />
-        <Figure
-          label="Target"
-          value={target != null ? `$${target.toFixed(2)}` : null}
-          sub={upside != null ? `${pct1(upside)} to spot` : 'No spot to compare'}
-        />
         <Figure
           label="Bear / bull"
           value={bear != null && bull != null ? `$${bear.toFixed(0)} – $${bull.toFixed(0)}` : null}
           sub={downside != null && upsideBull != null
             ? `${pct1(downside)} / ${pct1(upsideBull)}${skew != null ? ` · ${skew.toFixed(1)}:1` : ''}`
             : 'Needs both a bear and a bull case'}
-        />
-        <Figure
-          label="Our exposure"
-          value={notInSelectedBook ? 'Not held'
-            : weightPct != null ? `${weightPct.toFixed(2)}%`
-              : heldBookCount > 0 ? 'Held' : 'Not held'}
-          /*
-           * No sub-line in the held-nowhere case, deliberately.
-           *
-           * It read "Not held in any book you can see" — word for word what
-           * the Position module below already says. One screen stating the
-           * same fact in the same sentence twice is the incoherence this page
-           * exists to remove, and a reader cannot tell whether two identical
-           * claims are one read or two. The value says it; the module below
-           * carries the detail.
-           */
-          sub={notInSelectedBook
-            ? `${bookName ?? 'This book'} does not hold it`
-            : heldBookCount > 0
-              ? `${bookName ? `${bookName} · ` : ''}${heldBookCount} book${heldBookCount === 1 ? '' : 's'}`
-              : undefined}
         />
       </div>
 
@@ -287,7 +244,7 @@ export function InvestmentConclusion({
                 ? 'Nobody has recorded what this firm sees that the market does not. '
                   + 'The thesis is below.'
                 : `No investment case has been written for ${symbol ?? 'this name'}. `
-                  + 'The figures above are whatever has been recorded against it.'}
+                  + 'The header shows whatever figures have been recorded against it.'}
             </p>
           </div>
         )}

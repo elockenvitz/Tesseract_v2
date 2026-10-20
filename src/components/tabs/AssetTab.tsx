@@ -3460,6 +3460,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               coveringUserIds={(coverage || []).map((c: any) => c.user_id).filter(Boolean)}
               spot={currentQuote?.price ?? null}
               onFocus={handleAttentionFocus}
+              collapsible
             />
           </div>
         )}

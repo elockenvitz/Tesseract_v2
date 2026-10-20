@@ -66,6 +66,15 @@ describe('AssetContextStrip — firm consensus vs the reader', () => {
     expect(screen.queryByText(/^You:/)).toBeNull()
   })
 
+  it('never rounds a single analyst up to a firm position — the count travels with it', () => {
+    // Guarantee migrated from the old conclusion band.
+    rt.consensus = [{ value: 'UW', count: 1, percentage: 100 }]
+    rt.ratings = [{}]
+    renderStrip()
+    expect(screen.getByText('UW')).toBeTruthy()
+    expect(screen.getByText('1 of 1')).toBeTruthy()
+  })
+
   it('surfaces the reader’s OWN rating separately when it diverges', () => {
     rt.consensus = [{ value: 'Buy', count: 2, percentage: 66 }]
     rt.ratings = [{}, {}, {}]
@@ -83,6 +92,23 @@ describe('AssetContextStrip — target, upside, exposure attribution, freshness'
     expect(screen.getByText('$1,480')).toBeTruthy()
     expect(screen.getByText('+19.4%')).toBeTruthy() // (1480-1240)/1240
     expect(screen.getByText('firm target')).toBeTruthy()
+  })
+
+  it('shows a target with no upside when there is no spot to compare', () => {
+    // Guarantee migrated from the old conclusion band: a target with no price
+    // to compare is a number, not a return.
+    ws.data = { ...EMPTY_WS, target: 180 }
+    renderStrip(null)
+    expect(screen.getByText('$180')).toBeTruthy()
+    expect(screen.queryByText(/%/)).toBeNull()
+  })
+
+  it('describes exposure without ever judging the sizing', () => {
+    // Migrated guarantee: a landing surface states the weight, it does not
+    // offer an over/underweight sizing opinion.
+    ws.data = { ...EMPTY_WS, positions: [{ portfolioId: 'p1', portfolioName: 'Growth', weightPct: 2.1 }] }
+    const { container } = renderStrip()
+    expect(container.textContent ?? '').not.toMatch(/overweight|underweight|too small|too large|should/i)
   })
 
   it('attributes exposure to a named book and counts the rest', () => {
