@@ -3374,64 +3374,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 </button>
               )}
 
-              {/* View mode buttons */}
-              <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
-                <button
-                  onClick={() => setThesisViewMode('all')}
-                  className={clsx(
-                    'p-1.5 rounded-md transition-colors',
-                    thesisViewMode === 'all'
-                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                  )}
-                  title="All sections"
-                >
-                  <Layers className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setThesisViewMode('summary')}
-                  className={clsx(
-                    'p-1.5 rounded-md transition-colors',
-                    thesisViewMode === 'summary'
-                      ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                  )}
-                  title="AI summary"
-                >
-                  <Sparkles className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setThesisViewMode('history')}
-                  className={clsx(
-                    'p-1.5 rounded-md transition-colors',
-                    thesisViewMode === 'history'
-                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                  )}
-                  title="History timeline"
-                >
-                  <History className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setThesisViewMode('references')}
-                  className={clsx(
-                    'p-1.5 rounded-md transition-colors relative',
-                    thesisViewMode === 'references'
-                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                  )}
-                  title="Key references"
-                >
-                  <Link2 className="w-4 h-4" />
-                  {userKeyReferences.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
-                      {userKeyReferences.length}
-                    </span>
-                  )}
-                </button>
-              </div>
-
-              {/* Export Case Button */}
+              {/* Export the case — an own-view utility, grouped with the others. */}
               <button
                 onClick={() => setShowCaseBuilder(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-gray-200 dark:text-gray-400"
@@ -3440,6 +3383,77 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 <Download className="w-4 h-4" />
                 <span className="hidden sm:inline">Export</span>
               </button>
+
+              {/*
+                How to read the case — the four Research modes, now the primary
+                control on this bar and clearly labelled. The labels were icon-
+                only before; a reader had to hover each one to learn it existed.
+                Labels show from xl so a narrow desktop keeps the compact icons
+                (titles intact), and the border-l groups this nav apart from the
+                own-view utilities to its left.
+              */}
+              {/* Divider: the own-view utilities to the left, the read-mode nav to the right. */}
+              <div className="mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
+              <div className="flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
+                <button
+                  onClick={() => setThesisViewMode('all')}
+                  className={clsx(
+                    'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
+                    thesisViewMode === 'all'
+                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="All sections"
+                >
+                  <Layers className="w-4 h-4" />
+                  <span className="hidden xl:inline">All sections</span>
+                </button>
+                <button
+                  onClick={() => setThesisViewMode('summary')}
+                  className={clsx(
+                    'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
+                    thesisViewMode === 'summary'
+                      ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="AI summary"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span className="hidden xl:inline">AI summary</span>
+                </button>
+                <button
+                  onClick={() => setThesisViewMode('history')}
+                  className={clsx(
+                    'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
+                    thesisViewMode === 'history'
+                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="History timeline"
+                >
+                  <History className="w-4 h-4" />
+                  <span className="hidden xl:inline">History</span>
+                </button>
+                <button
+                  onClick={() => setThesisViewMode('references')}
+                  className={clsx(
+                    'relative flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
+                    thesisViewMode === 'references'
+                      ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                  title="Key references"
+                >
+                  <Link2 className="w-4 h-4" />
+                  <span className="hidden xl:inline">Key references</span>
+                  {userKeyReferences.length > 0 && (
+                    <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
+                      {userKeyReferences.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
             </div>
           </div>
         </div>
@@ -3622,7 +3636,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card key={section.section_id} padding="none" className={sectionShade}>
                     <button
                       onClick={() => toggleSection('outcomes')}
-                      className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl"
+                      className="w-full px-5 py-2 flex items-center gap-2 bg-gray-100/80 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
                     >
                       <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
                       {collapsedSections.outcomes ? (
@@ -3641,7 +3655,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Price target field
                             if (fieldType === 'price_target') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <div key={field.field_id} id="asset-warning-anchor-targets" className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3660,7 +3674,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Rating field
                             if (fieldType === 'rating') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <div key={field.field_id} id="asset-warning-anchor-rating" className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3681,7 +3695,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Estimates field
                             if (fieldType === 'estimates') {
                               return (
-                                <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3713,6 +3727,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                   hideVisibility={true}
                                   sharedVisibility={sharedThesisVisibility}
                                   sharedTargetIds={sharedThesisTargetIds}
+                                  plainChrome
                                 />
                               </div>
                             )
@@ -3733,7 +3748,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 <Card key={section.section_id} padding="none" className={sectionShade}>
                   <button
                     onClick={() => toggleSection(section.section_slug as any)}
-                    className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl"
+                    className="w-full px-5 py-2 flex items-center gap-2 bg-gray-100/80 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
                   >
                     <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
                     {collapsedSections[section.section_slug as keyof typeof collapsedSections] ? (
@@ -3753,7 +3768,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Checklist field
                           if (fieldType === 'checklist') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3770,7 +3785,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Metric field
                           if (fieldType === 'metric') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3787,7 +3802,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Timeline field
                           if (fieldType === 'timeline') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3804,7 +3819,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Numeric field
                           if (fieldType === 'numeric') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3821,7 +3836,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Date field
                           if (fieldType === 'date') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3838,7 +3853,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Rating field - render analyst ratings section
                           if (fieldType === 'rating') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} id="asset-warning-anchor-rating" className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3859,7 +3874,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Estimates field - render analyst estimates section
                           if (fieldType === 'estimates') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3875,7 +3890,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Price target field - render outcomes container for price targets
                           if (fieldType === 'price_target') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} id="asset-warning-anchor-targets" className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3909,6 +3924,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 hideVisibility={true}
                                 sharedVisibility={sharedThesisVisibility}
                                 sharedTargetIds={sharedThesisTargetIds}
+                                plainChrome
                               />
                             </div>
                           )

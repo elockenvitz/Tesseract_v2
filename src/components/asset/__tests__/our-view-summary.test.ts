@@ -229,17 +229,21 @@ describe('the aggregated document was replaced, not duplicated', () => {
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
     .replace(/^[ \t]*\/\/.*$/gm, '')
 
-  it('renders the summary on the Snapshot, not inside Research', () => {
+  it('renders the contributor summary on the Snapshot and in Firm Research, over one shared data source', () => {
     /*
-     * It began in the Research tab's aggregated pane. It moved: Research is
-     * one analyst's document, and who ELSE has written is a fact about the
-     * organisation. The tab still derives the FIELD list from the org's
-     * template and passes it down, so the two surfaces cannot disagree about
-     * which sections exist.
+     * Updated for A2 (commit bb0e619a). The roster lives on the Snapshot ("who
+     * has written"), and A2 brought the SAME attributed summary into Research's
+     * aggregated FIRM view — the same component (OurViewSummary) over the same
+     * org-scoped contributions, not a second data model. It is NOT shown in the
+     * individual analyst view, which is one analyst's own document. The exact
+     * Research placement is pinned in firm-research-attribution.test.ts.
      */
-    expect(TAB_CODE).not.toContain('<OurViewSummary')
-    expect(TAB_CODE).toContain('contributionFields={ourViewFields}')
+    // A2: present in AssetTab's Firm Research view, fed the shared org-scoped data.
+    expect(TAB_CODE).toContain('<OurViewSummary')
+    expect(TAB_CODE).toContain('fields={ourViewFields}')
     expect(TAB_CODE).toContain('contributions={allAssetContributions}')
+    // The same field list is handed to the Snapshot, so the two surfaces agree.
+    expect(TAB_CODE).toContain('contributionFields={ourViewFields}')
 
     const SNAP = fs.readFileSync(
       path.resolve(__dirname, '../InvestmentSnapshot.tsx'), 'utf8')

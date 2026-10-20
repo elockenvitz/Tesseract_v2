@@ -163,6 +163,13 @@ interface ContributionSectionProps {
   flatMode?: boolean
   /** Hide this section entirely when there are no contributions */
   hideWhenEmpty?: boolean
+  /**
+   * Quieter reading chrome: drop the 4px coloured left accent, the amber hover
+   * recolour and the shadow, leaving a clean thin-bordered card. Presentation
+   * only — used where the section already sits inside a group card, so the page
+   * isn't a card inside a card inside a coloured bar. Editing is unaffected.
+   */
+  plainChrome?: boolean
 }
 
 // Section color themes - unified blue accent with amber hover
@@ -574,7 +581,8 @@ export function ContributionSection({
   sharedTargetIds = [],
   sectionType = 'thesis',
   flatMode = false,
-  hideWhenEmpty = false
+  hideWhenEmpty = false,
+  plainChrome = false,
 }: ContributionSectionProps) {
   // Get theme based on section type
   const theme = SECTION_THEMES[sectionType]
@@ -1379,11 +1387,12 @@ export function ContributionSection({
   return (
     <div
       className={clsx(
-        'bg-white border border-gray-200 rounded-lg border-l-4 transition-all duration-200 dark:border-gray-700 dark:bg-gray-800',
-        theme.accent,
-        theme.hoverBorder,
-        theme.hoverBg,
-        'hover:shadow-sm',
+        'bg-white border border-gray-200 rounded-lg transition-all duration-200 dark:border-gray-700 dark:bg-gray-800',
+        plainChrome
+          // Quiet reading chrome: a clean thin-bordered card, no coloured
+          // accent, no amber hover recolour, no shadow.
+          ? 'hover:border-gray-300 dark:hover:border-gray-600'
+          : ['border-l-4', theme.accent, theme.hoverBorder, theme.hoverBg, 'hover:shadow-sm'],
         className
       )}
       onMouseEnter={() => setIsHovered(true)}
@@ -1414,13 +1423,13 @@ export function ContributionSection({
               <InfoTooltip content={description} position="right" />
             )}
             {activeTab === 'aggregated' && lastUpdated && !showHistory && (
-              <span className="text-xs text-gray-400">
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
                 Updated {formatDistanceToNow(new Date(lastUpdated), { addSuffix: true })}
               </span>
             )}
             {activeTab !== 'aggregated' && selectedContribution && !showHistory && (
               <>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   Updated {formatDistanceToNow(new Date(selectedContribution.updated_at), { addSuffix: true })}
                 </span>
                 {/* Draft toggle button - clickable icon to view/hide draft */}
