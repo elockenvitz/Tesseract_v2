@@ -113,6 +113,54 @@ function assertVisibilityNamesAnAudience(
   }
 }
 
+/**
+ * Change who can read a contribution.
+ *
+ * The ONLY way the client may do this. `visibility` and `team_id` are pinned
+ * against direct UPDATE by a trigger, and INSERT/UPDATE/DELETE on
+ * `contribution_visibility_targets` are revoked, so the field writes this
+ * replaces are inert — they would appear to succeed and change nothing.
+ *
+ * Three things the function does that the old three-request sequence could
+ * not:
+ *   - the replace is ONE transaction, so a dropped connection can no longer
+ *     leave a restricted contribution with no audience and no way to recover
+ *     who it was shared with;
+ *   - it authorizes the caller itself (author, organization, node ownership,
+ *     scope/target agreement) rather than trusting that the client checked;
+ *   - it returns what was actually stored, so this can confirm rather than
+ *     assume.
+ *
+ * Errors are thrown, never logged and swallowed. A refused audience change
+ * must not look like a successful one — the server's message explains WHY
+ * ("a team audience must name at least one group"), which "please try again"
+ * actively contradicts.
+ */
+async function setContributionAudience(
+  contributionId: string,
+  visibility: ContributionVisibility,
+  targetIds: string[]
+): Promise<ContributionAudience> {
+  const { data, error } = await supabase.rpc('set_contribution_audience', {
+    p_contribution_id: contributionId,
+    p_visibility: visibility,
+    p_node_ids: targetIds,
+  } as never)
+
+  if (error) {
+    throw new Error(error.message || 'Could not change who can see this section.')
+  }
+  return (data ?? null) as unknown as ContributionAudience
+}
+
+/** What `set_contribution_audience` reports it stored. */
+export interface ContributionAudience {
+  contribution_id: string
+  visibility: ContributionVisibility
+  node_ids: string[]
+  node_count: number
+}
+
 // Helper to compute full name
 const getFullName = (user: { first_name?: string | null; last_name?: string | null } | null) => {
   if (!user) return 'Unknown User'
@@ -234,10 +282,6 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
             content,
             supporting_detail: supportingDetail || null,
             attachments: attachments || [],
-            ...(isVisibilityChange ? {
-              visibility,
-              team_id: (targetIds ?? []).length === 1 ? (targetIds ?? [])[0] : null,
-            } : {}),
             updated_at: new Date().toISOString()
           })
           .eq('id', existing.id)
@@ -250,24 +294,19 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
         if (error) throw error
 
-        // Replace the audience ONLY when the visibility was explicitly
-        // changed. On a prose edit the existing target rows are left exactly
-        // as they are — this delete/insert pair is what used to destroy them.
+        /*
+         * Replace the audience ONLY when the visibility was explicitly
+         * changed, and only through the RPC. On a prose edit the existing
+         * target rows are left exactly as they are — the delete/insert pair
+         * that used to live here is what destroyed them.
+         *
+         * This runs AFTER the content write so a refused audience change
+         * cannot discard the prose the analyst just typed. The two are not
+         * atomic with each other, and deliberately so: losing an edit to a
+         * rejected visibility choice would be the worse failure.
+         */
         if (isVisibilityChange) {
-          await supabase
-            .from('contribution_visibility_targets')
-            .delete()
-            .eq('contribution_id', existing.id)
-
-          if (visibility !== 'firm' && (targetIds ?? []).length > 0) {
-            await supabase
-              .from('contribution_visibility_targets')
-              .insert((targetIds ?? []).map(nodeId => ({
-                contribution_id: existing.id,
-                node_id: nodeId,
-                organization_id: currentOrgId
-              })))
-          }
+          await setContributionAudience(existing.id, visibility, targetIds ?? [])
         }
 
         return {
@@ -285,9 +324,16 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
             supporting_detail: supportingDetail || null,
             attachments: attachments || [],
             created_by: user?.id,
-            // A new row has no prior visibility to preserve, so the historical
-            // default stands — but it is stated here rather than hidden in a
-            // parameter default that also applied to updates.
+            /*
+             * A new row has no prior visibility to preserve, so the historical
+             * default stands — stated here rather than hidden in a parameter
+             * default that also applied to updates.
+             *
+             * These two are written directly, and only here: the pin trigger
+             * is BEFORE UPDATE, so an INSERT may still set them. The audience
+             * ROWS still go through the RPC below, because INSERT on the
+             * target table is revoked.
+             */
             team_id: (targetIds ?? []).length === 1 ? (targetIds ?? [])[0] : null,
             visibility: visibility ?? 'firm',
             organization_id: currentOrgId
@@ -301,15 +347,13 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
         if (error) throw error
 
-        // Save visibility targets
-        if ((targetIds ?? []).length > 0) {
-          await supabase
-            .from('contribution_visibility_targets')
-            .insert((targetIds ?? []).map(nodeId => ({
-              contribution_id: data.id,
-              node_id: nodeId,
-              organization_id: currentOrgId
-            })))
+        /*
+         * Install the audience through the RPC. If it fails, the row exists
+         * as restricted with no targets — readable by its author alone. Fail
+         * closed, and the thrown error says why.
+         */
+        if (visibility && visibility !== 'firm') {
+          await setContributionAudience(data.id, visibility, targetIds ?? [])
         }
 
         return {
@@ -451,10 +495,6 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
           content: newContent,
           draft_content: null,
           draft_updated_at: null,
-          ...(isVisibilityChange ? {
-            visibility,
-            team_id: (targetIds ?? []).length === 1 ? (targetIds ?? [])[0] : null,
-          } : {}),
           updated_at: new Date().toISOString()
         })
         .eq('id', existing.id)
@@ -467,23 +507,10 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
       if (error) throw error
 
-      // Replace the audience only on an explicit visibility change — see the
-      // same branch in saveContribution.
+      // Replace the audience only on an explicit visibility change, and only
+      // through the RPC — see the same branch in saveContribution.
       if (isVisibilityChange) {
-        await supabase
-          .from('contribution_visibility_targets')
-          .delete()
-          .eq('contribution_id', existing.id)
-
-        if (visibility !== 'firm' && (targetIds ?? []).length > 0) {
-          await supabase
-            .from('contribution_visibility_targets')
-            .insert((targetIds ?? []).map(nodeId => ({
-              contribution_id: existing.id,
-              node_id: nodeId,
-              organization_id: currentOrgId
-            })))
-        }
+        await setContributionAudience(existing.id, visibility, targetIds ?? [])
       }
 
       // Create revision event (fire-and-forget, don't block publish)
@@ -588,59 +615,24 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       const contribId = contributionId || myContribution?.id
       if (!contribId) throw new Error('No contribution to update')
 
-      // This path IS the explicit visibility change, so it always replaces the
-      // audience — and therefore always has to name one.
+      /*
+       * This path IS the explicit visibility change, so it always replaces the
+       * audience — and therefore always has to name one. Checked here for a
+       * message without a round trip; the server enforces it too, because an
+       * older bundle does not have this check.
+       */
       assertVisibilityNamesAnAudience(visibility, targetIds)
 
-      const { data, error } = await supabase
-        .from('asset_contributions')
-        .update({
-          visibility,
-          team_id: targetIds.length === 1 ? targetIds[0] : null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', contribId)
-        .eq('created_by', user?.id)
-        .select()
-        .single()
-
-      if (error) {
-        console.error('Error updating visibility:', error)
-        throw error
-      }
-
-      // Update visibility targets
-      const { error: deleteError } = await supabase
-        .from('contribution_visibility_targets')
-        .delete()
-        .eq('contribution_id', contribId)
-
-      if (deleteError) {
-        console.error('Error deleting visibility targets:', deleteError)
-      }
-
-      if (visibility !== 'firm' && targetIds.length > 0) {
-        const { error: insertError } = await supabase
-          .from('contribution_visibility_targets')
-          .insert(targetIds.map(nodeId => ({
-            contribution_id: contribId,
-            node_id: nodeId,
-            organization_id: currentOrgId
-          })))
-
-        if (insertError) {
-          console.error('Error inserting visibility targets:', insertError)
-        }
-      }
-
-      return data
+      return setContributionAudience(contribId, visibility, targetIds)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
-    },
-    onError: (error) => {
-      console.error('updateVisibility mutation failed:', error)
     }
+    /*
+     * No onError handler. It previously logged and swallowed, which is how a
+     * refused audience change could look like a successful one. The error now
+     * propagates to the caller, which is responsible for showing it.
+     */
   })
 
   return {

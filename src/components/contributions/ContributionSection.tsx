@@ -683,6 +683,8 @@ export function ContributionSection({
   const [showTeamDropdown, setShowTeamDropdown] = useState(false)
   const [showVisibilityChange, setShowVisibilityChange] = useState(false)
   const [visibilityChangeStep, setVisibilityChangeStep] = useState<'level' | 'targets'>('level')
+  /** The server's reason an audience change was refused, shown in the menu. */
+  const [visibilityError, setVisibilityError] = useState<string | null>(null)
   const [pendingVisibility, setPendingVisibility] = useState<ContributionVisibility | null>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [pendingTargetIds, setPendingTargetIds] = useState<string[]>([])
@@ -1073,9 +1075,25 @@ export function ContributionSection({
         targetIds
       })
       resetVisibilityChangeState()
+      setVisibilityError(null)
     } catch (error) {
-      console.error('Failed to save visibility change:', error)
-      alert('Failed to save visibility change. Please try again.')
+      /*
+       * Show what the server said, not a generic retry prompt.
+       *
+       * `set_contribution_audience` refuses for reasons the analyst can act
+       * on — "a team audience must name at least one group", "2 target(s) are
+       * not department groups in your organization" — and "please try again"
+       * contradicts every one of them: retrying an identical, deliberate
+       * refusal cannot succeed.
+       *
+       * The menu is deliberately left OPEN so the selection survives and can
+       * be corrected, rather than closing and discarding it.
+       */
+      setVisibilityError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Could not change who can see this section.'
+      )
     }
   }
 
@@ -1085,6 +1103,7 @@ export function ContributionSection({
     setPendingVisibility(null)
     setPendingTargetIds([])
     setEditingContributionId(null)
+    setVisibilityError(null)
   }
 
   // Text formatting helpers
@@ -1332,6 +1351,15 @@ export function ContributionSection({
 
           {showVisibilityChange && (
             <div className="absolute left-0 top-7 z-20 w-64 bg-white border rounded-lg shadow-lg py-1 dark:bg-gray-800">
+              {/* The server's reason, where the choice was made. */}
+              {visibilityError && (
+                <p
+                  role="alert"
+                  className="mx-1 mb-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs leading-snug text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300"
+                >
+                  {visibilityError}
+                </p>
+              )}
               {visibilityChangeStep === 'level' ? (
                 <>
                   <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b dark:text-gray-400">

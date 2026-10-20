@@ -67,31 +67,46 @@ describe('the defaults that caused the leak are gone', () => {
 })
 
 describe('a content save cannot touch the audience', () => {
-  it('saveContribution writes visibility and team_id only on an explicit change', () => {
-    const body = mutationBody(HOOK, 'saveContribution')
-    // Every write of either column is inside the isVisibilityChange branch.
-    expect(body).toMatch(/isVisibilityChange\s*\?\s*\{[\s\S]*?visibility,[\s\S]*?team_id:/)
-    // The UPDATE payload reaches `visibility` only through that conditional
-    // spread — the one before `.eq('id', existing.id)`.
-    const update = body.slice(body.indexOf('.update({'), body.indexOf(".eq('id', existing.id)"))
-    expect(update).toMatch(/\.\.\.\(isVisibilityChange \?/)
-    expect(update.replace(/\.\.\.\(isVisibilityChange \?[\s\S]*?\} : \{\}\)/, ''))
-      .not.toMatch(/\bvisibility\b|\bteam_id\b/)
-  })
-
-  it('publishDraft writes visibility and team_id only on an explicit change', () => {
-    const body = mutationBody(HOOK, 'publishDraft')
-    expect(body).toMatch(/isVisibilityChange\s*\?\s*\{[\s\S]*?visibility,[\s\S]*?team_id:/)
-  })
-
-  it('the delete/insert of target rows is gated on an explicit change in both paths', () => {
+  /*
+   * These replace four assertions that pinned the old shape — a conditional
+   * spread of visibility/team_id into the UPDATE, and a gated delete/insert of
+   * target rows. That shape is gone: the fields are pinned by a trigger and
+   * the target table's write grants are revoked, so the client cannot perform
+   * those writes at all. The invariant is unchanged and the guard moves with
+   * it.
+   */
+  it('neither content path writes visibility or team_id on an UPDATE', () => {
     for (const name of ['saveContribution', 'publishDraft']) {
       const body = mutationBody(HOOK, name)
-      const del = body.indexOf("from('contribution_visibility_targets')")
-      expect(del, `${name}: no target write found`).toBeGreaterThan(-1)
-      const gate = body.lastIndexOf('if (isVisibilityChange)', del)
-      expect(gate, `${name}: target rows replaced outside a visibility change`).toBeGreaterThan(-1)
+      const from = body.indexOf('.update({')
+      const to = body.indexOf('.select(', from)
+      expect(from, `${name}: no update found`).toBeGreaterThan(-1)
+      expect(body.slice(from, to), name).not.toMatch(/\bvisibility\b|\bteam_id\b/)
     }
+  })
+
+  it('neither content path writes contribution_visibility_targets directly', () => {
+    for (const name of ['saveContribution', 'publishDraft']) {
+      expect(mutationBody(HOOK, name), name)
+        .not.toMatch(/from\('contribution_visibility_targets'\)/)
+    }
+  })
+
+  it('the audience is changed only through the RPC, and only on an explicit change', () => {
+    for (const name of ['saveContribution', 'publishDraft']) {
+      const body = mutationBody(HOOK, name)
+      const call = body.indexOf('setContributionAudience(')
+      expect(call, `${name}: audience is never set`).toBeGreaterThan(-1)
+      const gate = body.lastIndexOf('if (isVisibilityChange)', call)
+      const insertGate = body.lastIndexOf("if (visibility && visibility !== 'firm')", call)
+      expect(Math.max(gate, insertGate), `${name}: audience set outside an explicit change`)
+        .toBeGreaterThan(-1)
+    }
+  })
+
+  it('the audience call runs AFTER the content write, so a refusal cannot discard prose', () => {
+    const body = mutationBody(HOOK, 'saveContribution')
+    expect(body.indexOf('.update({')).toBeLessThan(body.indexOf('setContributionAudience('))
   })
 })
 
@@ -220,10 +235,70 @@ describe('all five target shapes are carried through unbranched', () => {
     }
   })
 
-  it('the audience is written as the whole array, not a single id', () => {
+  it('the audience is passed as the whole array, not a single id', () => {
     for (const name of ['saveContribution', 'publishDraft']) {
       expect(mutationBody(HOOK, name), name)
-        .toMatch(/\(targetIds \?\? \[\]\)\.map\(nodeId => \(\{/)
+        .toMatch(/setContributionAudience\([\w.]+, visibility, targetIds \?\? \[\]\)/)
     }
+  })
+})
+
+describe('the audience RPC is the only write path, and it reports failure', () => {
+  it('calls set_contribution_audience with the documented parameters', () => {
+    expect(HOOK).toMatch(/supabase\.rpc\('set_contribution_audience'/)
+    for (const p of ['p_contribution_id', 'p_visibility', 'p_node_ids']) {
+      expect(HOOK, p).toContain(p)
+    }
+  })
+
+  it('throws the server message instead of logging and continuing', () => {
+    const at = HOOK.indexOf('async function setContributionAudience')
+    const body = HOOK.slice(at, HOOK.indexOf('\n}', at))
+    expect(body).toMatch(/throw new Error\(error\.message/)
+    expect(body).not.toMatch(/console\.(error|warn)/)
+  })
+
+  it('updateVisibility no longer writes the row, the targets, or updated_at', () => {
+    const body = mutationBody(HOOK, 'updateVisibility')
+    expect(body).toMatch(/return setContributionAudience\(/)
+    expect(body).not.toMatch(/\.update\(/)
+    expect(body).not.toMatch(/from\('contribution_visibility_targets'\)/)
+    // A7: the history trigger stamps updated_at on content/attachment changes.
+    // An audience change is neither, so writing it by hand would contaminate
+    // the "last written" clock — which is what this path used to do.
+    expect(body).not.toMatch(/updated_at/)
+  })
+
+  it('updateVisibility no longer swallows its own errors', () => {
+    const body = mutationBody(HOOK, 'updateVisibility')
+    expect(body).not.toMatch(/onError/)
+    expect(body).not.toMatch(/console\.error/)
+  })
+
+  it('no write path outside the RPC helper touches the target table', () => {
+    // The declaration in the select() is a read, so count write verbs only.
+    const writes = HOOK.match(/from\('contribution_visibility_targets'\)\s*\n?\s*\.(insert|update|delete)/g) ?? []
+    expect(writes, 'direct target writes remain').toHaveLength(0)
+  })
+})
+
+describe('the refusal reaches the person who made the choice', () => {
+  it('ContributionSection shows the server message, not a generic retry prompt', () => {
+    expect(SECTION).toMatch(/setVisibilityError\(/)
+    expect(SECTION).toMatch(/error instanceof Error && error\.message/)
+    // "Please try again" contradicts a deliberate refusal: retrying an
+    // identical, rejected audience cannot succeed.
+    expect(SECTION).not.toMatch(/Failed to save visibility change\. Please try again\./)
+    expect(SECTION).not.toMatch(/alert\('Failed to save visibility/)
+  })
+
+  it('renders it as an alert inside the menu, so the selection survives', () => {
+    expect(SECTION).toMatch(/role="alert"/)
+    expect(SECTION).toMatch(/\{visibilityError\}/)
+  })
+
+  it('clears the message when the menu resets', () => {
+    const at = SECTION.indexOf('const resetVisibilityChangeState')
+    expect(SECTION.slice(at, at + 400)).toMatch(/setVisibilityError\(null\)/)
   })
 })
