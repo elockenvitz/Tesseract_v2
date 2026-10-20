@@ -173,9 +173,15 @@ describe('a restricted level with nothing to select is not applied', () => {
   it('AssetTab refuses the level instead of storing an empty audience', () => {
     const at = TAB.indexOf('const handleVisibilitySelect')
     const body = TAB.slice(at, at + 1200)
-    // The old form set the level anyway when there was nothing to pick.
+    // The original form set the level anyway when there was nothing to pick.
     expect(body).not.toMatch(/newVisibility === 'firm' \|\| targets\.length === 0/)
-    expect(body).toMatch(/if \(targets\.length === 0\) return/)
+    /*
+     * The guard is now REACHABILITY, not option count — a level whose every
+     * node has no direct members would store a restricted contribution with an
+     * audience of one. See src/components/tabs/__tests__/audience-picker.test.ts.
+     */
+    expect(body).toMatch(/if \(!isLevelSelectable\(options\)\) return/)
+    expect(body).not.toMatch(/targets\.length === 0/)
   })
 })
 

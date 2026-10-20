@@ -2,6 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Repeat, LayoutDashboard, Edit3 } from 'lucide-react'
 import { clsx } from 'clsx'
+import {
+  buildAudienceOptions,
+  isLevelSelectable,
+  unreachableReason,
+  emptyLevelReason,
+  type AudienceNode,
+} from '../../lib/contributions/audience-reach'
 import { fetchSignedUrl } from '../../lib/storage/signed-url'
 import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../../lib/storage/buckets'
 import { useAuth } from '../../hooks/useAuth'
@@ -464,6 +471,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const [hasInitializedVisibility, setHasInitializedVisibility] = useState(false)
   /** The visibility level the shared picker was last LOADED with. */
   const rehydratedVisibilityRef = useRef<ContributionVisibility | null>(null)
+  /**
+   * The audience as SAVED on the contribution, kept apart from the live
+   * selection so the picker can always show what exists today — including
+   * nodes the author could not pick again.
+   */
+  const [savedAudience, setSavedAudience] =
+    useState<{ visibility: ContributionVisibility; targetIds: string[] } | null>(null)
   const visibilityRef = useRef<HTMLDivElement>(null)
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
@@ -867,7 +881,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .select('node_id, org_chart_nodes(id, name, color, node_type, parent_id)')
         .eq('user_id', user?.id)
 
-      if (!memberships) return { portfolios: [], teams: [], departments: [], divisions: [] }
+      const empty = {
+        portfolios: [], teams: [], departments: [], divisions: [],
+        memberCounts: new Map<string, number>(),
+        nodeById: new Map<string, AudienceNode>(),
+      }
+      if (!memberships) return empty
 
       const directNodes = memberships
         .map(m => m.org_chart_nodes as { id: string; name: string; color: string; node_type: string; parent_id: string | null })
@@ -877,7 +896,30 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .from('org_org_chart_nodes_v')
         .select('id, name, color, node_type, parent_id')
 
-      if (!allNodes) return { portfolios: [], teams: [], departments: [], divisions: [] }
+      if (!allNodes) return empty
+
+      /*
+       * Direct member counts per node — the only count authorization acts on.
+       *
+       * The picker offers the author ancestor nodes (their department, their
+       * division) by walking UP from their own memberships, but a reader is
+       * matched on DIRECT membership of the targeted node; descent is
+       * deliberately unimplemented. Without these counts the menu can promise
+       * an audience nobody is in. See src/lib/contributions/audience-reach.ts.
+       */
+      const { data: allMembers } = await supabase
+        .from('org_chart_node_members')
+        .select('node_id')
+
+      const memberCounts = new Map<string, number>()
+      for (const m of (allMembers ?? []) as { node_id: string }[]) {
+        memberCounts.set(m.node_id, (memberCounts.get(m.node_id) ?? 0) + 1)
+      }
+      // Every node by id, so a target the author can no longer pick can still
+      // be shown by name instead of as a bare id.
+      const nodeById = new Map<string, AudienceNode>(
+        (allNodes as AudienceNode[]).map(n => [n.id, n])
+      )
 
       const nodeMap = new Map(allNodes.map(n => [n.id, n]))
       const teamsSet = new Map<string, typeof allNodes[0]>()
@@ -904,7 +946,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       const departments = Array.from(departmentsSet.values()).sort((a, b) => a.name.localeCompare(b.name))
       const divisions = Array.from(divisionsSet.values()).sort((a, b) => a.name.localeCompare(b.name))
 
-      return { portfolios, teams, departments, divisions }
+      return { portfolios, teams, departments, divisions, memberCounts, nodeById }
     },
     enabled: !!user?.id
   })
@@ -1031,7 +1073,31 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
   }, [userOrgContext])
 
-  const targetOptions = getTargetOptions(sharedThesisVisibility)
+  /**
+   * The option list for one visibility level, with reachability.
+   *
+   * `storedTargetIds` is the union of what is SAVED at this level and what is
+   * selected right now. The saved half is what stops the picker from being the
+   * reason an audience shrinks: a node the author has left, or whose last
+   * member has, must still be listed and checked, because confirming a list
+   * that omits it would quietly drop it.
+   */
+  const audienceOptionsFor = useCallback((visibility: ContributionVisibility) => {
+    if (!userOrgContext || visibility === 'firm') return []
+    const savedForLevel = savedAudience?.visibility === visibility ? savedAudience.targetIds : []
+    const liveForLevel  = sharedThesisVisibility === visibility ? sharedThesisTargetIds : []
+    const storedTargetIds = [...new Set([...savedForLevel, ...liveForLevel])]
+    return buildAudienceOptions({
+      candidates: getTargetOptions(visibility) as AudienceNode[],
+      storedTargetIds,
+      memberCounts: userOrgContext.memberCounts,
+      storedNodes: storedTargetIds
+        .map(id => userOrgContext.nodeById.get(id))
+        .filter((n): n is AudienceNode => !!n),
+    })
+  }, [userOrgContext, getTargetOptions, savedAudience, sharedThesisVisibility, sharedThesisTargetIds])
+
+  const targetOptions = audienceOptionsFor(sharedThesisVisibility)
 
   // Initialize visibility from user's existing contributions
   useEffect(() => {
@@ -1047,9 +1113,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         rehydratedVisibilityRef.current = savedVisibility
         setSharedThesisVisibility(savedVisibility)
         const targets = (userContribution as any).visibility_targets
-        if (targets && Array.isArray(targets)) {
-          setSharedThesisTargetIds(targets.map((t: any) => t.node_id).filter(Boolean))
-        }
+        const savedIds: string[] = Array.isArray(targets)
+          ? targets.map((t: any) => t.node_id).filter(Boolean)
+          : []
+        setSharedThesisTargetIds(savedIds)
+        setSavedAudience({ visibility: savedVisibility, targetIds: savedIds })
         setHasInitializedVisibility(true)
       }
     }
@@ -1059,6 +1127,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   useEffect(() => {
     setHasInitializedVisibility(false)
     rehydratedVisibilityRef.current = null
+    setSavedAudience(null)
     setSharedThesisVisibility('firm')
     setSharedThesisTargetIds([])
   }, [asset.id])
@@ -1093,7 +1162,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
   // Handle visibility level selection
   const handleVisibilitySelect = useCallback((newVisibility: ContributionVisibility) => {
-    const targets = getTargetOptions(newVisibility)
+    const options = audienceOptionsFor(newVisibility)
 
     // From here on, a level change is the USER's, so the level-change effect
     // must be allowed to clear the loaded targets again. Without this, picking
@@ -1110,20 +1179,22 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
 
     /*
-     * A restricted level with nothing to select cannot be applied.
+     * A level that can reach nobody cannot be applied.
      *
-     * This used to set the level anyway with an empty target list, which the
-     * save then stored as "restricted, audience nobody" — and, before the
-     * mutation guard, deleted whatever audience the section already had. The
-     * level is left unchanged instead, and the menu stays open on the level
-     * step. Telling the user WHY nothing happened needs UI this change should
-     * not invent — it is listed as an adjacent gap.
+     * Not merely "has no options": a level whose every node has no DIRECT
+     * members would store a restricted contribution with an audience of one.
+     * It used to be applied anyway with an empty target list. The level is
+     * left unchanged, and the menu renders the reason in place rather than
+     * doing nothing visible.
+     *
+     * A level that is unreachable but ALREADY in use stays selectable, so the
+     * author can still see and edit an audience that exists.
      */
-    if (targets.length === 0) return
+    if (!isLevelSelectable(options)) return
 
     setSharedThesisVisibility(newVisibility)
     setVisibilityStep('targets')
-  }, [getTargetOptions])
+  }, [audienceOptionsFor])
 
   // Handle target selection confirmation
   const handleTargetsConfirm = useCallback(() => {
@@ -3085,25 +3156,40 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           {VISIBILITY_OPTIONS.map((option) => {
                             const OptionIcon = option.icon
                             const isSelected = sharedThesisVisibility === option.value
-                            const targets = getTargetOptions(option.value)
-                            const needsTargets = option.value !== 'firm' && targets.length > 0
+                            const options = audienceOptionsFor(option.value)
+                            /* A level is offered when it can reach somebody, or
+                               when it is already in use. Firm always can. */
+                            const selectable = option.value === 'firm' || isLevelSelectable(options)
+                            const needsTargets = option.value !== 'firm' && selectable
                             return (
                               <button
                                 key={option.value}
                                 onClick={() => handleVisibilitySelect(option.value)}
+                                disabled={!selectable}
+                                title={selectable ? undefined : emptyLevelReason(option.label.toLowerCase())}
                                 className={clsx(
-                                  'w-full flex items-center px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700',
+                                  'w-full flex items-start px-3 py-2 text-sm text-left',
+                                  selectable
+                                    ? 'hover:bg-gray-50 dark:hover:bg-gray-700'
+                                    : 'cursor-not-allowed opacity-60',
                                   isSelected && 'bg-primary-50 dark:bg-primary-900/20'
                                 )}
                               >
-                                <OptionIcon className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" />
-                                <div className="flex-1">
+                                <OptionIcon className="w-4 h-4 mr-2 mt-0.5 text-gray-500 dark:text-gray-400 shrink-0" />
+                                <div className="flex-1 min-w-0">
                                   <span className="font-medium text-gray-900 dark:text-gray-100">{option.label}</span>
                                   {needsTargets && (
                                     <span className="text-xs text-gray-400 ml-1">→</span>
                                   )}
+                                  {/* The limitation is stated where the choice is
+                                      made, not after the fact. */}
+                                  {!selectable && (
+                                    <p className="mt-0.5 text-xs leading-snug text-gray-500 dark:text-gray-400">
+                                      No one is a direct member. Groups beneath it aren’t included.
+                                    </p>
+                                  )}
                                 </div>
-                                {isSelected && <Check className="w-4 h-4 text-primary-600 dark:text-primary-400" />}
+                                {isSelected && <Check className="w-4 h-4 mt-0.5 text-primary-600 dark:text-primary-400 shrink-0" />}
                               </button>
                             )
                           })}
@@ -3121,12 +3207,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                     sharedThesisVisibility === 'team' ? 'teams' :
                                     sharedThesisVisibility === 'department' ? 'departments' : 'divisions'}
                           </div>
-                          <div className="max-h-48 overflow-y-auto">
+                          <div className="max-h-56 overflow-y-auto">
                             {targetOptions.map((target) => {
                               const isSelected = sharedThesisTargetIds.includes(target.id)
+                              const reason = unreachableReason(target)
                               return (
                                 <button
                                   key={target.id}
+                                  /* An unreachable node is still clickable when it
+                                     is already part of the audience — the author
+                                     must be able to remove it deliberately. Only a
+                                     node that is neither reachable nor selected is
+                                     disabled, because selecting it would share with
+                                     nobody. */
+                                  disabled={!target.reachable && !isSelected}
                                   onClick={() => {
                                     setSharedThesisTargetIds(prev =>
                                       prev.includes(target.id)
@@ -3135,21 +3229,40 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                     )
                                   }}
                                   className={clsx(
-                                    'w-full flex items-center px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700',
+                                    'w-full flex items-start px-3 py-2 text-sm',
+                                    !target.reachable && !isSelected
+                                      ? 'cursor-not-allowed opacity-60'
+                                      : 'hover:bg-gray-50 dark:hover:bg-gray-700',
                                     isSelected && 'bg-primary-50 dark:bg-primary-900/20'
                                   )}
                                 >
                                   <div className={clsx(
-                                    'w-4 h-4 rounded border mr-3 flex items-center justify-center',
+                                    'w-4 h-4 rounded border mr-3 mt-0.5 flex items-center justify-center shrink-0',
                                     isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600'
                                   )}>
                                     {isSelected && <Check className="w-3 h-3 text-white" />}
                                   </div>
                                   <span
-                                    className="w-3 h-3 rounded-full mr-2"
+                                    className="w-3 h-3 rounded-full mr-2 mt-1 shrink-0"
                                     style={{ backgroundColor: target.color || '#6b7280' }}
                                   />
-                                  <span className="flex-1 text-left text-gray-900 dark:text-gray-100">{target.name}</span>
+                                  <span className="flex-1 min-w-0 text-left">
+                                    <span className="block text-gray-900 dark:text-gray-100">
+                                      {target.name}
+                                      {target.storedOnly && (
+                                        <span className="ml-1.5 text-xs text-gray-400">already shared</span>
+                                      )}
+                                    </span>
+                                    {target.reachable ? (
+                                      <span className="block text-xs text-gray-400">
+                                        {target.memberCount} direct {target.memberCount === 1 ? 'member' : 'members'}
+                                      </span>
+                                    ) : (
+                                      <span className="block text-xs leading-snug text-amber-700 dark:text-amber-400">
+                                        {reason}
+                                      </span>
+                                    )}
+                                  </span>
                                 </button>
                               )
                             })}
