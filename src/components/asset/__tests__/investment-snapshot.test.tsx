@@ -280,6 +280,105 @@ describe('no second definition of weight is introduced', () => {
   })
 })
 
+describe('the decision queue lists only outstanding obligations', () => {
+  const request = (over: Partial<AssetWorkspaceData['decisions'][number]> = {}) => ({
+    id: `d-${Math.random().toString(36).slice(2)}`,
+    status: 'pending',
+    action: 'buy',
+    decidedAt: null,
+    portfolioId: 'p-growth',
+    portfolioName: 'Large Cap Growth',
+    decisionNote: null,
+    ideaId: null,
+    ...over,
+  })
+  const idea = (over: Partial<AssetWorkspaceData['liveIdeas'][number]> = {}) => ({
+    id: 'i-1', action: 'buy', stage: 'ready_to_recommend',
+    rationale: 'Add to AAPL before the print', portfolioName: 'Large Cap Growth',
+    ...over,
+  })
+
+  it('keeps a genuinely pending request', () => {
+    data = { ...BASE, decisions: [request({ decisionNote: 'Please size this up' })] }
+    renderSnapshot()
+    expect(screen.getByTestId('snapshot-needs-decision')).toBeInTheDocument()
+    expect(screen.getByText('Please size this up')).toBeInTheDocument()
+  })
+
+  /*
+   * The withdrawal case is the one that shipped broken: the requester withdrew,
+   * so nobody ever ruled and `reviewed_at` stayed null — and a queue keyed only
+   * on that listed it as "Awaiting decision" under its own note saying there
+   * was no active recommendation. 29 of 111 production requests are withdrawn.
+   */
+  it.each([
+    ['withdrawn', 'withdrawn'],
+    ['canceled', 'canceled'],
+    ['cancelled', 'cancelled'],
+    ['completed', 'completed'],
+  ])('drops a %s request even though nobody ruled on it', (_label, status) => {
+    data = { ...BASE, decisions: [request({ status, decisionNote: 'No active recommendation' })] }
+    renderSnapshot()
+    expect(screen.queryByTestId('snapshot-needs-decision')).toBeNull()
+    expect(screen.queryByText('No active recommendation')).toBeNull()
+  })
+
+  it('drops a request a PM actually ruled on', () => {
+    data = {
+      ...BASE,
+      decisions: [request({ status: 'accepted', decidedAt: '2026-02-01T00:00:00Z', decisionNote: 'Ruled' })],
+    }
+    renderSnapshot()
+    expect(screen.queryByTestId('snapshot-needs-decision')).toBeNull()
+  })
+
+  it('does not hide a pending request just because another was withdrawn', () => {
+    data = {
+      ...BASE,
+      decisions: [
+        request({ status: 'withdrawn', decisionNote: 'Withdrawn during cleanup' }),
+        request({ status: 'pending', decisionNote: 'Still waiting on the PM' }),
+      ],
+    }
+    renderSnapshot()
+    expect(screen.getByText('Still waiting on the PM')).toBeInTheDocument()
+    expect(screen.queryByText('Withdrawn during cleanup')).toBeNull()
+  })
+
+  it('counts an idea and its own pending request as ONE item, titled from the idea', () => {
+    data = {
+      ...BASE,
+      liveIdeas: [idea()],
+      decisions: [request({ ideaId: 'i-1', decisionNote: null })],
+    }
+    renderSnapshot()
+    // One row, not two: the request is the further-along state and represents
+    // the pair, but it borrows the idea's words since it has none of its own.
+    expect(screen.getAllByText('Add to AAPL before the print')).toHaveLength(1)
+    expect(screen.getByText('Awaiting decision')).toBeInTheDocument()
+    expect(screen.queryByText('ready to recommend')).toBeNull()
+  })
+
+  it('still lists an idea that has no request of its own', () => {
+    data = { ...BASE, liveIdeas: [idea({ id: 'i-2' })], decisions: [] }
+    renderSnapshot()
+    expect(screen.getByText('Add to AAPL before the print')).toBeInTheDocument()
+    expect(screen.getByText('ready to recommend')).toBeInTheDocument()
+  })
+
+  it('scopes the queue to the chosen book', async () => {
+    books = [
+      { id: 'p-growth', name: 'Large Cap Growth', role: 'pm' },
+      { id: 'p-value', name: 'Large Cap Value', role: 'analyst' },
+    ]
+    data = { ...BASE, decisions: [request({ decisionNote: 'Growth only' })] }
+    renderSnapshot()
+    await userEvent.click(screen.getByTestId('snapshot-book-filter').querySelector('button')!)
+    await userEvent.click(screen.getByRole('option', { name: /Large Cap Value/ }))
+    expect(screen.queryByTestId('snapshot-needs-decision')).toBeNull()
+  })
+})
+
 describe('personal vs firm distinction (Phase 3)', () => {
   const contrib = (over: { section: string; created_by: string }) => ({
     id: `${over.section}-${over.created_by}`,

@@ -3271,6 +3271,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             }}
             onOpenSubPage={setActiveSubPage}
             currentUserId={user?.id}
+            /* The existing note navigation — opens the note in its own tab.
+               Lets "What changed" name the research items instead of counting
+               them, without a new route or a second query. */
+            onOpenEvidence={handleNoteClick}
           />
         )}
 

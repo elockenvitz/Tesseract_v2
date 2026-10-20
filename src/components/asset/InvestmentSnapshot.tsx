@@ -46,7 +46,7 @@ import { useMemo, useState } from 'react'
 import { useAssetWorkspace, primaryPosition, otherPositions } from '../../hooks/useAssetWorkspace'
 import { DecisionMemorySummary } from './DecisionMemorySummary'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
-import { OBSERVED_PROOFS } from '../../types/decision-timeline'
+import { OBSERVED_PROOFS, isAwaitingDecision } from '../../types/decision-timeline'
 /*
  * `useAnalystRatings`, deliberately, and NOT `useRatingConsensus`.
  *
@@ -141,6 +141,14 @@ export interface InvestmentSnapshotProps {
   /** The viewer, so the Snapshot can distinguish THEIR view from the firm's
    *  (research authorship + rating) without a second query. */
   currentUserId?: string
+  /**
+   * Open one research note, through AssetTab's existing note navigation.
+   *
+   * Without it "What changed" can only state a count: naming items a reader
+   * cannot open would be a list of dead ends. Optional, so a caller that has
+   * not wired it still gets the truthful summary.
+   */
+  onOpenEvidence?: (noteId: string) => void
 }
 
 const pct = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
@@ -168,6 +176,7 @@ const SECTION_LABEL: Record<string, string> = {
 export function InvestmentSnapshot({
   asset, coverage, thesisStatuses = [], currentQuote, onOpenSubPage,
   contributions, contributionFields, coveringAnalystIds, onOpenAnalyst, currentUserId,
+  onOpenEvidence,
 }: InvestmentSnapshotProps) {
   const symbol = asset.symbol ?? null
 
@@ -354,13 +363,17 @@ export function InvestmentSnapshot({
     ? undefined
     : caseAgeDays < 31 ? 'written this month' : `written ${Math.floor(caseAgeDays / 30)} months ago`
 
-  /* Each absence is one chip that goes where it can be filled — never a hero. */
-  /* `risks_to_thesis` is NOT listed here: it renders inline in the case as
-     "Not written", and naming it twice reads as two different holes. */
+  /*
+   * Each absence is one quiet chip, named ONCE, where it can be filled.
+   *
+   * Only gaps in the written CASE belong here. `risks_to_thesis` is excluded
+   * because it already renders inline as "Not written", and the valuation gaps
+   * (no target, no bear/bull range) are excluded because Exposure & valuation
+   * states them — a sparse name was otherwise carrying the same "no price
+   * target" message in two blocks with two calls to action.
+   */
   const caseGaps: string[] = []
   if (!variantRow) caseGaps.push('Where we differ not recorded')
-  if (figures.bear == null || figures.bull == null) caseGaps.push('No bear/bull range')
-  if (data.target == null) caseGaps.push('No price target')
 
   const ourView = (
     <SnapBlock
@@ -372,41 +385,18 @@ export function InvestmentSnapshot({
         <span className={caseStale ? 'text-amber-700 dark:text-amber-400' : undefined}>{caseAgeLabel}</span>
       )}
     >
-      {/* Firm vs. you — the explicit personal/consensus distinction, on one
-          line. Counts and links only; never a merged firm thesis, never a view
-          the reader cannot already see. */}
-      {(dominant || myRating || firmVsYou.hasContext) && (
-        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
-          {dominant ? (
-            <span className="text-gray-700 dark:text-gray-300">Firm {dominant.value} · {dominant.count} of {firmRatingTotal}</span>
-          ) : (
-            <span className="text-gray-500">No firm rating</span>
-          )}
-          {yourRatingDiffers && <StatusChip tone="recommended">You {myRating!.rating_value}</StatusChip>}
-          {firmVsYou.hasContext && (
-            firmVsYou.yourCount > 0 ? (
-              <span className="text-gray-500">You wrote {firmVsYou.yourCount} of {firmVsYou.coreCount} case sections</span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onOpenSubPage('research')}
-                className="text-primary-600 hover:underline dark:text-primary-400"
-              >
-                You haven't recorded your own view →
-              </button>
-            )
-          )}
-          {firmVsYou.divergentCount > 0 && (
-            <button
-              type="button"
-              onClick={() => onOpenSubPage('research')}
-              className="text-amber-700 hover:underline dark:text-amber-400"
-            >
-              {firmVsYou.divergentCount} section{firmVsYou.divergentCount === 1 ? '' : 's'} with differing views →
-            </button>
-          )}
-        </div>
-      )}
+      {/*
+        Two columns: the argument at a reading measure, and a narrow rail that
+        uses the space beside it.
+
+        The card spans the page, but prose must not: at full width a thesis ran
+        to ~160 characters a line while the right half of a tall card stayed
+        empty. The rail is not new information — it is the firm-vs-you summary
+        and the case gaps, moved out of the reading column to where the blank
+        was. Nothing in it is repeated anywhere else on the page.
+      */}
+      <div className="flex flex-col gap-5 xl:flex-row xl:gap-8">
+        <div className="min-w-0 flex-1">
       {data.caseWrittenAt ? (
         <div className="flex flex-col gap-3">
           {caseSections.map(({ key, row }) => {
@@ -494,12 +484,60 @@ export function InvestmentSnapshot({
           </p>
         </div>
       )}
-
-      {caseGaps.length > 0 && (
-        <div className="mt-4 flex flex-wrap items-center gap-1.5">
-          {caseGaps.map(g => <GapChip key={g} label={g} onClick={() => onOpenSubPage('research')} />)}
         </div>
-      )}
+
+        {/* The rail: firm-vs-you and what the case still lacks. */}
+        <aside className="flex shrink-0 flex-col gap-4 border-t border-gray-200/70 pt-4 dark:border-white/[0.07] xl:w-56 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+          <div>
+            <div className="text-xs text-gray-500">Rating</div>
+            {dominant ? (
+              <div className="mt-0.5 text-sm text-gray-800 dark:text-gray-200">Firm {dominant.value} · {dominant.count} of {firmRatingTotal}</div>
+            ) : (
+              <div className="mt-0.5 text-sm text-gray-400">No firm rating</div>
+            )}
+            {yourRatingDiffers && (
+              <div className="mt-1"><StatusChip tone="recommended">You {myRating!.rating_value}</StatusChip></div>
+            )}
+          </div>
+
+          {firmVsYou.hasContext && (
+            <div>
+              <div className="text-xs text-gray-500">Your research</div>
+              {firmVsYou.yourCount > 0 ? (
+                <div className="mt-0.5 text-sm text-gray-800 dark:text-gray-200">
+                  {firmVsYou.yourCount} of {firmVsYou.coreCount} case sections
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onOpenSubPage('research')}
+                  className="mt-0.5 text-left text-sm text-primary-600 hover:underline dark:text-primary-400"
+                >
+                  You haven't recorded your own view →
+                </button>
+              )}
+              {firmVsYou.divergentCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onOpenSubPage('research')}
+                  className="mt-1 block text-left text-sm text-amber-700 hover:underline dark:text-amber-400"
+                >
+                  {firmVsYou.divergentCount} section{firmVsYou.divergentCount === 1 ? '' : 's'} with differing views →
+                </button>
+              )}
+            </div>
+          )}
+
+          {caseGaps.length > 0 && (
+            <div>
+              <div className="text-xs text-gray-500">Not yet recorded</div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {caseGaps.map(g => <GapChip key={g} label={g} onClick={() => onOpenSubPage('research')} />)}
+              </div>
+            </div>
+          )}
+        </aside>
+      </div>
     </SnapBlock>
   )
 
@@ -604,25 +642,52 @@ export function InvestmentSnapshot({
     </SnapBlock>
   )
 
-  /* -------------------------------------------------------- active work */
+  /* ----------------------------------------------------- the decision queue */
 
-  const openDecisions = data.decisions.filter(d => d.decidedAt == null)
+  /*
+   * Only work somebody still OWES.
+   *
+   * This filtered on `decidedAt == null` alone, which is "nobody ruled" — not
+   * "somebody still owes a ruling". A withdrawn request is never ruled on, so
+   * its `reviewed_at` stays null and it sat in the queue reading "Awaiting
+   * decision" under its own note saying there was no active recommendation.
+   * `isAwaitingDecision` checks the status as well, from the one place that
+   * owns the decision vocabulary.
+   */
+  const openDecisions = data.decisions.filter(isAwaitingDecision)
 
-  const scopedIdeas = portfolioId
-    ? data.liveIdeas.filter(i => i.portfolioName === selectedBookName)
-    : data.liveIdeas
   const scopedOpen = portfolioId
     ? openDecisions.filter(d => d.portfolioId === portfolioId)
     : openDecisions
 
   /*
-   * Boxed, and in the right-hand column beside the position.
+   * An idea with a pending request on it is ONE piece of work, not two.
    *
-   * It was an unboxed section under the case, which put "what is owed on this
-   * name" at the bottom of a long read. Active work is the only thing on this
-   * page a reader can act on today, so it sits with the book rather than
-   * trailing the argument.
+   * The request is the further-along state, so it represents the pair and the
+   * idea row is suppressed; an idea with no request still stands on its own.
    */
+  const queuedIdeaIds = new Set(scopedOpen.map(d => d.ideaId).filter((v): v is string => !!v))
+  const scopedIdeas = (portfolioId
+    ? data.liveIdeas.filter(i => i.portfolioName === selectedBookName)
+    : data.liveIdeas
+  ).filter(i => !queuedIdeaIds.has(i.id))
+
+  /*
+   * A request carries the idea's words when it has none of its own.
+   *
+   * `decision_note` is usually blank on submission, which left the queue row
+   * reading "buy" — the action verb and nothing else — even though the idea it
+   * was raised on says why. Same records, no extra read.
+   */
+  const ideaRationaleById = new Map(
+    data.liveIdeas.map(i => [i.id, i.rationale] as const),
+  )
+  const queueTitle = (d: typeof data.decisions[number]) =>
+    d.decisionNote
+    ?? (d.ideaId ? ideaRationaleById.get(d.ideaId) ?? null : null)
+    ?? d.action
+    ?? 'Decision request'
+
   const hasActionable = scopedIdeas.length > 0 || scopedOpen.length > 0
 
   /*
@@ -654,7 +719,7 @@ export function InvestmentSnapshot({
             key={d.id}
             tone="waiting"
             status="Awaiting decision"
-            title={d.decisionNote ?? d.action ?? 'Decision request'}
+            title={queueTitle(d)}
             meta={d.portfolioName ?? undefined}
             onClick={() => onOpenSubPage('decisions')}
           />
@@ -798,7 +863,43 @@ export function InvestmentSnapshot({
             dated after the case was last written
             {newestEvidenceAt ? `, newest ${new Date(newestEvidenceAt).toLocaleDateString()}` : ''}.
           </p>
-          <QuietLine className="mt-1">
+          {/*
+            Name them only when they can be OPENED. `onOpenEvidence` is
+            AssetTab's own note navigation; without it this stays a count,
+            because a row a reader cannot follow is a dead end. `title` is
+            nullable on `asset_notes`, so an untitled note falls back to its
+            own opening words — never an invented label.
+          */}
+          {onOpenEvidence && (
+            <div className="mt-2 flex flex-col gap-0.5">
+              {newEvidence.slice(0, 3).map(e => {
+                const label = (e.title ?? '').trim()
+                  || ourViewExcerpt(e.content ?? '', 60)
+                  || 'Untitled research note'
+                return (
+                  <ActionRow
+                    key={e.id}
+                    tone={e.isShared ? 'neutral' : 'waiting'}
+                    status={e.isShared ? 'Shared' : 'Private'}
+                    title={label}
+                    meta={[e.authorName, new Date(e.createdAt).toLocaleDateString()]
+                      .filter(Boolean).join(' · ')}
+                    onClick={() => onOpenEvidence(e.id)}
+                  />
+                )
+              })}
+              {newEvidence.length > 3 && (
+                <button
+                  type="button"
+                  onClick={() => onOpenSubPage('research')}
+                  className="mt-1 self-start text-sm text-primary-600 hover:underline dark:text-primary-400"
+                >
+                  {newEvidence.length - 3} more →
+                </button>
+              )}
+            </div>
+          )}
+          <QuietLine className="mt-2">
             Whether each supports or challenges the thesis is not recorded — that is the review.
           </QuietLine>
         </>
@@ -907,8 +1008,21 @@ export function InvestmentSnapshot({
         the Asset-page level (AssetAttentionBand) above every sub-page, so the
         reader never sees two copies.
       */}
-      {ourView}
-      {needsDecision}
+      {/*
+        The top row carries the two things worth the full width: the argument
+        and what is owed on it. Prose holds a reading measure inside its own
+        column, so pairing them removes the empty band that opened up when a
+        72ch paragraph sat alone in a page-wide card. With nothing owed, the
+        view takes the row by itself.
+      */}
+      {needsDecision ? (
+        /* `items-start` so a short queue does not stretch to the height of a
+           long thesis beside it. */
+        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]">
+          {ourView}
+          {needsDecision}
+        </div>
+      ) : ourView}
       <div className="grid grid-cols-1 gap-x-8 gap-y-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]">
         <div className="flex min-w-0 flex-col gap-5">
           {whatChanged}

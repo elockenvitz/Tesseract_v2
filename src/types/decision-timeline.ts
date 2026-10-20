@@ -249,3 +249,37 @@ export const TERMINAL_DECISION_STATUSES: readonly string[] = [
   'rejected',
   'deferred',
 ]
+
+/**
+ * Statuses that mean a request is no longer an outstanding obligation.
+ *
+ * "A PM ruled" (TERMINAL_DECISION_STATUSES) is NOT the same question as "does
+ * anyone still owe a decision". A request the requester WITHDREW was never
+ * ruled on, so `reviewed_at` stays null — and a queue keyed only on
+ * `reviewed_at == null` therefore lists every withdrawal as still waiting. 29
+ * of 111 requests in production are withdrawn, so that is not an edge case.
+ *
+ * The non-ruling closures below are listed defensively: whichever of them a
+ * deployment actually writes, none of them is work somebody still owes.
+ */
+export const CLOSED_DECISION_STATUSES: readonly string[] = [
+  ...TERMINAL_DECISION_STATUSES,
+  'withdrawn',
+  'cancelled',
+  'canceled',
+  'completed',
+  'expired',
+]
+
+/**
+ * Does this request still owe somebody a decision?
+ *
+ * Both conditions matter and neither implies the other: a ruling stamps
+ * `reviewed_at`, a withdrawal only changes `status`.
+ */
+export function isAwaitingDecision(
+  d: { status?: string | null; decidedAt?: string | null },
+): boolean {
+  if (d.decidedAt != null) return false
+  return !CLOSED_DECISION_STATUSES.includes((d.status ?? 'pending').toLowerCase())
+}
