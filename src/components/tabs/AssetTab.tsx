@@ -38,6 +38,7 @@ import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { InvestmentSnapshot } from '../asset/InvestmentSnapshot'
+import { AssetContextStrip } from '../asset/AssetContextStrip'
 // The component itself renders on the Snapshot now; this tab still derives
 // the FIELD list from the org's template and passes it down, so the two
 // surfaces cannot disagree about which sections exist.
@@ -3036,6 +3037,17 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           </div>
         </div>
       </div>
+
+      {/* UX1a — persistent investment-context strip: the firm's load-bearing
+          numbers (rating, target, exposure, open work, case freshness), read
+          from the same org-scoped hooks the Snapshot uses and kept visible on
+          every tab. Read-only; the A1 attention band below is unchanged. */}
+      <AssetContextStrip
+        assetId={asset.id}
+        symbol={asset.symbol ?? null}
+        spot={currentQuote?.price ?? null}
+        onOpen={(sub) => setActiveSubPage(sub)}
+      />
 
       {/* Why the reader is here, and who they can ask about it.
           One quiet line above the sub-pages: the reason a lens sent them, and
