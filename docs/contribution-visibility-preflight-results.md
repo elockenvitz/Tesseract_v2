@@ -575,6 +575,53 @@ Seven, all local, none applied:
    enforcement: a CHECK already restricts `visibility` to the five scopes. It
    stays, because the CHECK cannot see a scope/target mismatch.
 
+---
+
+# Part B — exposure footprint
+
+## B0 — Organizations · **28, all test/development**
+
+Classified by the user: **all 28 production organizations are test or
+development accounts. There are no live customer organizations in this
+database.**
+
+Consistent with the standing project status — the database looks like live
+multi-tenant SaaS and is not.
+
+### What this changes
+
+- **Customer notification planning is not required.** The operational-impact
+  analysis that shaped the gate — `n_6` thresholds, who to tell and when, the
+  staged announcement for a large blast radius — is **moot**. `01-` #6 and #6b
+  remain useful as a measure of the fix's reach, not as a contact list.
+- **The release is pre-release hardening, not incident response.** That changes
+  urgency and sequencing, not whether to ship.
+- **The stale-client transition loses most of its force.** With no live users,
+  the window between applying the policy and deploying the application is not
+  an operational risk, and brief unavailability of audience changes costs
+  nobody. The freeze-versus-permanent-safeguard argument becomes a question of
+  design quality rather than an operational constraint.
+
+### What it does NOT change
+
+- **The permanent safeguard is still right.** It closes the non-atomic replace
+  — a dropped connection between the delete and the insert destroys an audience
+  — which is a defect in the write path regardless of who is using the system.
+- **Do not infer that the research content is synthetic or non-sensitive.**
+  A test tenant can hold real material someone pasted in. Confidentiality still
+  applies to whatever is genuinely real; the test-account designation describes
+  the *accounts*, not the *content*.
+- **Every authorization defect found in Part A is still a defect.** Fixing them
+  before there are live customers is the cheapest this will ever be.
+
+### Reframed priority
+
+Complete the preflight, test the fixes in isolation, deploy. Notification
+planning is deferred unless later evidence identifies genuine third-party
+confidential data or external exposure.
+
+---
+
 ## Still queued, none blocking
 
 | Block | Question |
