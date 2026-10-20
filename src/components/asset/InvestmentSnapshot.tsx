@@ -87,7 +87,7 @@ import {
  * clippers would eventually disagree about where a sentence ends, and one of
  * them would start paraphrasing.
  */
-import { ourViewExcerpt, OurViewSummary, type OurViewField } from './OurViewSummary'
+import { ourViewExcerpt, hasLiveProse, OurViewSummary, type OurViewField } from './OurViewSummary'
 import type { Contribution } from '../../hooks/useContributions'
 
 export type SnapshotSubPage = 'research' | 'workflow' | 'decisions' | 'lists'
@@ -126,6 +126,9 @@ export interface InvestmentSnapshotProps {
   coveringAnalystIds?: Set<string>
   /** Open one analyst's full research document. */
   onOpenAnalyst?: (userId: string) => void
+  /** The viewer, so the Snapshot can distinguish THEIR view from the firm's
+   *  (research authorship + rating) without a second query. */
+  currentUserId?: string
 }
 
 const pct = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
@@ -158,7 +161,7 @@ function asOfLabel(ts: string | number | Date | null | undefined): string | null
 
 export function InvestmentSnapshot({
   asset, coverage, thesisStatuses = [], currentQuote, onOpenSubPage,
-  contributions, contributionFields, coveringAnalystIds, onOpenAnalyst,
+  contributions, contributionFields, coveringAnalystIds, onOpenAnalyst, currentUserId,
 }: InvestmentSnapshotProps) {
   const symbol = asset.symbol ?? null
 
@@ -180,7 +183,7 @@ export function InvestmentSnapshot({
    * above.
    */
   const { allEvents: timelineEvents } = useAssetDecisionTimeline({ assetId: asset.id, portfolioId })
-  const { consensus, ratings } = useAnalystRatings({ assetId: asset.id })
+  const { consensus, ratings, myRating } = useAnalystRatings({ assetId: asset.id })
   const { portfolios } = usePortfolioList()
 
   /*
@@ -255,6 +258,38 @@ export function InvestmentSnapshot({
     return { total: executed.length, unobserved: executed.length - observed.length }
   }, [timelineEvents])
 
+  /*
+   * Personal vs. firm: what the VIEWER has written on this name, and where the
+   * firm's analysts diverge — derived from the SAME RLS-scoped contributions
+   * the roster uses (already visibility-filtered upstream; private views never
+   * reach here). It counts and links, it never merges several analysts into one
+   * "firm thesis". A core section with two authors is "2 views → compare", not a
+   * majority. `where_different` is a core section, so it counts even though its
+   * prose is shown in the conclusion band, not re-quoted here.
+   */
+  const firmVsYou = useMemo(() => {
+    const coreKeys = CORE_SECTIONS as readonly string[]
+    const live = (contributions ?? []).filter(
+      c => !c.is_archived && hasLiveProse(c) && coreKeys.includes(c.section),
+    )
+    const bySection = new Map<string, Set<string>>()
+    for (const c of live) {
+      const set = bySection.get(c.section) ?? new Set<string>()
+      if (c.created_by) set.add(c.created_by)
+      bySection.set(c.section, set)
+    }
+    const yours = currentUserId ? coreKeys.filter(k => bySection.get(k)?.has(currentUserId)) : []
+    const divergent = coreKeys.filter(k => (bySection.get(k)?.size ?? 0) >= 2)
+    return {
+      bySection,
+      coreCount: coreKeys.length,
+      writtenCount: coreKeys.filter(k => (bySection.get(k)?.size ?? 0) > 0).length,
+      yourCount: yours.length,
+      divergentCount: divergent.length,
+      hasContext: contributions != null,
+    }
+  }, [contributions, currentUserId])
+
   const position = primaryPosition(data.positions, portfolioId)
   const others = otherPositions(data.positions, position)
   const maxWeight = data.positions.reduce((m, p) => Math.max(m, p.weightPct ?? 0), 0)
@@ -295,8 +330,60 @@ export function InvestmentSnapshot({
     .filter(s => s !== 'where_different')
     .map(s => ({ key: s, row: core.find(c => c.section === s) }))
 
+  const firmRatingTotal = ratings?.length ?? (dominant?.count ?? 0)
+  const yourRatingDiffers = !!myRating && (!dominant || myRating.rating_value !== dominant.value)
+
   const belief = (
     <DesktopSection key="belief" title="The case" meta="what we argue, in our own words" lead>
+      {/* Firm vs. you — the explicit personal/consensus distinction. Counts and
+          links only; never a merged firm thesis, never a view the reader can't
+          already see. */}
+      {(dominant || myRating || firmVsYou.hasContext) && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-lg border border-gray-200/80 bg-gray-50/60 px-3 py-2 dark:border-white/[0.07] dark:bg-white/[0.02]">
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className={EYEBROW}>Rating</span>
+            {dominant ? (
+              <span className="text-[12px] font-medium text-gray-800 dark:text-gray-200">
+                Firm {dominant.value} · {dominant.count} of {firmRatingTotal}
+              </span>
+            ) : (
+              <span className="text-[12px] text-gray-400">No firm rating</span>
+            )}
+            {yourRatingDiffers && (
+              <span className="text-[12px] font-medium text-primary-600 dark:text-primary-400">
+                · You {myRating!.rating_value}
+              </span>
+            )}
+          </span>
+          {firmVsYou.hasContext && (
+            <span className="inline-flex flex-wrap items-baseline gap-1.5">
+              <span className={EYEBROW}>Your research</span>
+              {firmVsYou.yourCount > 0 ? (
+                <span className="text-[12px] text-gray-700 dark:text-gray-300">
+                  {firmVsYou.yourCount} of {firmVsYou.coreCount} case sections
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onOpenSubPage('research')}
+                  className="text-[12px] text-primary-600 hover:underline dark:text-primary-400"
+                >
+                  You haven't recorded your own view →
+                </button>
+              )}
+              {firmVsYou.divergentCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onOpenSubPage('research')}
+                  className="text-[12px] text-amber-700 hover:underline dark:text-amber-400"
+                >
+                  · {firmVsYou.divergentCount} section{firmVsYou.divergentCount === 1 ? '' : 's'} with differing views →
+                </button>
+              )}
+            </span>
+          )}
+        </div>
+      )}
       {data.caseWrittenAt ? (
         <div className="flex flex-col gap-3">
           {caseSections.map(({ key, row }) => {
@@ -315,6 +402,27 @@ export function InvestmentSnapshot({
                       {new Date(row.updatedAt).toLocaleDateString()}
                     </span>
                   )}
+                  {written && (() => {
+                    const authors = firmVsYou.bySection.get(key)
+                    const n = authors?.size ?? 0
+                    const mine = !!currentUserId && !!authors?.has(currentUserId)
+                    return (
+                      <>
+                        {mine && (
+                          <span className="rounded bg-primary-50 px-1.5 text-[10px] font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">You</span>
+                        )}
+                        {n >= 2 && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenSubPage('research')}
+                            className="text-[10px] text-amber-700 hover:underline dark:text-amber-400"
+                          >
+                            {n} views →
+                          </button>
+                        )}
+                      </>
+                    )
+                  })()}
                 </div>
                 {written ? (
                   <p className="mt-0.5 text-[12px] leading-snug text-gray-600 dark:text-gray-400">

@@ -3270,6 +3270,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               setActiveSubPage('research')
             }}
             onOpenSubPage={setActiveSubPage}
+            currentUserId={user?.id}
           />
         )}
 

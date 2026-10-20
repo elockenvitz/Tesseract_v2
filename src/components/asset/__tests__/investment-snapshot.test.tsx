@@ -27,6 +27,7 @@ const BASE: AssetWorkspaceData = {
 let data: AssetWorkspaceData = BASE
 let ratings: { id: string }[] = []
 let consensus: { value: string; count: number; percentage: number }[] = []
+let myRating: { rating_value: string } | undefined
 let books: { id: string; name: string; role: string | null }[] = []
 
 vi.mock('../../../hooks/useAssetWorkspace', async importOriginal => {
@@ -53,7 +54,7 @@ vi.mock('../../../hooks/useAssetDecisionTimeline', () => ({
 }))
 
 vi.mock('../../../hooks/useAnalystRatings', () => ({
-  useAnalystRatings: () => ({ ratings, consensus, isLoading: false }),
+  useAnalystRatings: () => ({ ratings, consensus, myRating, isLoading: false }),
 }))
 vi.mock('../../../hooks/useDesktopPortfolio', () => ({
   usePortfolioList: () => ({ portfolios: books, isLoading: false }),
@@ -96,6 +97,7 @@ beforeEach(() => {
   data = { ...BASE }
   ratings = []
   consensus = []
+  myRating = undefined
   books = []
 })
 
@@ -263,5 +265,66 @@ describe('no second definition of weight is introduced', () => {
     // `useRatingConsensus` has no importers and its RPC is called nowhere
     // else; a landing page must not headline an unexercised server function.
     expect(SRC).not.toContain('useRatingConsensus')
+  })
+})
+
+describe('personal vs firm distinction (Phase 3)', () => {
+  const contrib = (over: { section: string; created_by: string }) => ({
+    id: `${over.section}-${over.created_by}`,
+    section: over.section,
+    content: 'We think this name is mispriced.',
+    created_by: over.created_by,
+    is_archived: false,
+  }) as any
+
+  it('states the firm rating and the viewer\'s own when they differ — never merged', () => {
+    ratings = [{ id: 'r1' }, { id: 'r2' }, { id: 'r3' }]
+    consensus = [{ value: 'Buy', count: 2, percentage: 66 }]
+    myRating = { rating_value: 'Hold' }
+    renderSnapshot({ contributions: [], currentUserId: 'me' })
+    expect(screen.getByText(/Firm Buy · 2 of 3/)).toBeInTheDocument()
+    expect(screen.getByText(/You Hold/)).toBeInTheDocument()
+  })
+
+  it('counts the viewer\'s own case sections and flags where analysts differ', () => {
+    data = {
+      ...BASE,
+      caseWrittenAt: '2026-01-01T00:00:00Z',
+      coreSections: ['thesis', 'risks_to_thesis'],
+      sections: [{ section: 'thesis', content: 'We think LLY wins.', supportingDetail: null, updatedAt: '2026-01-01T00:00:00Z', authorName: 'Me' }],
+    }
+    renderSnapshot({
+      currentUserId: 'me',
+      contributions: [
+        contrib({ section: 'thesis', created_by: 'me' }),
+        contrib({ section: 'thesis', created_by: 'other' }),
+        contrib({ section: 'risks_to_thesis', created_by: 'me' }),
+      ],
+    })
+    expect(screen.getByText(/2 of 3 case sections/)).toBeInTheDocument()
+    expect(screen.getByText(/1 section with differing views/)).toBeInTheDocument()
+    expect(screen.getByText('You')).toBeInTheDocument()
+    expect(screen.getByText(/2 views/)).toBeInTheDocument()
+  })
+
+  it('never invents a unanimous firm thesis — a single author shows no divergence', () => {
+    data = {
+      ...BASE,
+      caseWrittenAt: '2026-01-01T00:00:00Z',
+      coreSections: ['thesis'],
+      sections: [{ section: 'thesis', content: 'We think LLY wins.', supportingDetail: null, updatedAt: '2026-01-01T00:00:00Z', authorName: 'Me' }],
+    }
+    renderSnapshot({
+      currentUserId: 'me',
+      contributions: [contrib({ section: 'thesis', created_by: 'me' })],
+    })
+    expect(screen.getByText(/1 of 3 case sections/)).toBeInTheDocument()
+    expect(screen.queryByText(/differing views/)).toBeNull()
+    expect(screen.queryByText(/2 views/)).toBeNull()
+  })
+
+  it('invites a view when the viewer has written nothing, without faking one', () => {
+    renderSnapshot({ contributions: [], currentUserId: 'me' })
+    expect(screen.getByText(/You haven't recorded your own view/)).toBeInTheDocument()
   })
 })
