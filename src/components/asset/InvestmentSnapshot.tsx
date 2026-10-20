@@ -62,15 +62,27 @@ import { OBSERVED_PROOFS } from '../../types/decision-timeline'
 import { useAnalystRatings } from '../../hooks/useAnalystRatings'
 import { usePortfolioList } from '../../hooks/useDesktopPortfolio'
 import { CORE_SECTIONS } from '../../lib/desktop-research/model'
+/*
+ * Snapshot-local blocks, NOT the shared `DesktopModule` grammar.
+ *
+ * `desktop/DesktopModule` is shared by six workspaces; the Snapshot had to
+ * match the Asset Page's own Research language (14/15px type, one readable
+ * heading per block, rounded-xl cards with a thin rail), and editing the shared
+ * chrome to get there would have redesigned five other workspaces. It is left
+ * untouched; these live beside the Snapshot.
+ */
 import {
-  DesktopModule, DesktopSection, DesktopColumns, DeepLinks, DeepLink, Exists, EYEBROW,
-} from '../desktop/DesktopModule'
+  SnapBlock, StatusChip, GapChip, ActionRow, QuietLine, FactRow,
+} from './SnapshotBlocks'
 import { FrameworkScale, WeightBar, money, bigMoney } from '../portfolio-v2/PortfolioVisual'
 import {
   CoverageDisplay, type CoverageRecord, type ThesisStatus,
 } from '../coverage/CoverageDisplay'
 import { BookFilter, type BookOption } from '../shared/BookFilter'
-import { InvestmentConclusion } from './InvestmentConclusion'
+/* The bear/bull arithmetic only — the big conclusion CARD is gone; its figures
+   now sit inline in Our view, and its absences are gap chips rather than a
+   130px empty hero. The helper stays exported for the phone shell. */
+import { conclusionFigures } from './InvestmentConclusion'
 /*
  * The workspace resolver. Pure, deterministic, and fed only from facts this
  * component already fetched — it issues no query of its own and decides no
@@ -152,12 +164,6 @@ const SECTION_LABEL: Record<string, string> = {
   base_case: 'Base case',
 }
 
-function asOfLabel(ts: string | number | Date | null | undefined): string | null {
-  if (!ts) return null
-  const d = new Date(ts)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
 
 export function InvestmentSnapshot({
   asset, coverage, thesisStatuses = [], currentQuote, onOpenSubPage,
@@ -302,7 +308,6 @@ export function InvestmentSnapshot({
   const notInSelectedBook = portfolioId != null && position == null
 
   const quotePrice = currentQuote?.price != null && currentQuote.price > 0 ? currentQuote.price : null
-  const quoteAsOf = asOfLabel(currentQuote?.timestamp)
 
   if (isLoading) return <SnapshotSkeleton />
 
@@ -333,54 +338,72 @@ export function InvestmentSnapshot({
   const firmRatingTotal = ratings?.length ?? (dominant?.count ?? 0)
   const yourRatingDiffers = !!myRating && (!dominant || myRating.rating_value !== dominant.value)
 
-  const belief = (
-    <DesktopSection key="belief" title="The case" meta="what we argue, in our own words" lead>
-      {/* Firm vs. you — the explicit personal/consensus distinction. Counts and
-          links only; never a merged firm thesis, never a view the reader can't
-          already see. */}
+  /* Bear/bull arithmetic, inline — no longer a 130px card that says "Not set". */
+  const figures = conclusionFigures({ target: data.target, spot: quotePrice ?? data.spot, ladder: data.ladder })
+  const sectionRow = (k: string) => core.find(c => c.section === k && (c.content ?? '').trim().length > 0)
+  /* `thesis` and `risks_to_thesis` render inline in the case (including their
+     own "Not written"), so only the variant is pulled out here. */
+  const variantRow = sectionRow('where_different')
+
+  const caseAgeDays = data.caseWrittenAt
+    ? Math.floor((Date.now() - new Date(data.caseWrittenAt).getTime()) / 86_400_000)
+    : null
+  /* 120 days is the resolver's STALE_CASE_DAYS; the same clock, not a new one. */
+  const caseStale = caseAgeDays != null && caseAgeDays >= 120
+  const caseAgeLabel = caseAgeDays == null
+    ? undefined
+    : caseAgeDays < 31 ? 'written this month' : `written ${Math.floor(caseAgeDays / 30)} months ago`
+
+  /* Each absence is one chip that goes where it can be filled — never a hero. */
+  /* `risks_to_thesis` is NOT listed here: it renders inline in the case as
+     "Not written", and naming it twice reads as two different holes. */
+  const caseGaps: string[] = []
+  if (!variantRow) caseGaps.push('Where we differ not recorded')
+  if (figures.bear == null || figures.bull == null) caseGaps.push('No bear/bull range')
+  if (data.target == null) caseGaps.push('No price target')
+
+  const ourView = (
+    <SnapBlock
+      key="our-view"
+      testId="snapshot-our-view"
+      rail="primary"
+      title="Our view"
+      meta={caseAgeLabel && (
+        <span className={caseStale ? 'text-amber-700 dark:text-amber-400' : undefined}>{caseAgeLabel}</span>
+      )}
+    >
+      {/* Firm vs. you — the explicit personal/consensus distinction, on one
+          line. Counts and links only; never a merged firm thesis, never a view
+          the reader cannot already see. */}
       {(dominant || myRating || firmVsYou.hasContext) && (
-        <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-lg border border-gray-200/80 bg-gray-50/60 px-3 py-2 dark:border-white/[0.07] dark:bg-white/[0.02]">
-          <span className="inline-flex items-baseline gap-1.5">
-            <span className={EYEBROW}>Rating</span>
-            {dominant ? (
-              <span className="text-[12px] font-medium text-gray-800 dark:text-gray-200">
-                Firm {dominant.value} · {dominant.count} of {firmRatingTotal}
-              </span>
-            ) : (
-              <span className="text-[12px] text-gray-400">No firm rating</span>
-            )}
-            {yourRatingDiffers && (
-              <span className="text-[12px] font-medium text-primary-600 dark:text-primary-400">
-                · You {myRating!.rating_value}
-              </span>
-            )}
-          </span>
+        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
+          {dominant ? (
+            <span className="text-gray-700 dark:text-gray-300">Firm {dominant.value} · {dominant.count} of {firmRatingTotal}</span>
+          ) : (
+            <span className="text-gray-500">No firm rating</span>
+          )}
+          {yourRatingDiffers && <StatusChip tone="recommended">You {myRating!.rating_value}</StatusChip>}
           {firmVsYou.hasContext && (
-            <span className="inline-flex flex-wrap items-baseline gap-1.5">
-              <span className={EYEBROW}>Your research</span>
-              {firmVsYou.yourCount > 0 ? (
-                <span className="text-[12px] text-gray-700 dark:text-gray-300">
-                  {firmVsYou.yourCount} of {firmVsYou.coreCount} case sections
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onOpenSubPage('research')}
-                  className="text-[12px] text-primary-600 hover:underline dark:text-primary-400"
-                >
-                  You haven't recorded your own view →
-                </button>
-              )}
-              {firmVsYou.divergentCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => onOpenSubPage('research')}
-                  className="text-[12px] text-amber-700 hover:underline dark:text-amber-400"
-                >
-                  · {firmVsYou.divergentCount} section{firmVsYou.divergentCount === 1 ? '' : 's'} with differing views →
-                </button>
-              )}
-            </span>
+            firmVsYou.yourCount > 0 ? (
+              <span className="text-gray-500">You wrote {firmVsYou.yourCount} of {firmVsYou.coreCount} case sections</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onOpenSubPage('research')}
+                className="text-primary-600 hover:underline dark:text-primary-400"
+              >
+                You haven't recorded your own view →
+              </button>
+            )
+          )}
+          {firmVsYou.divergentCount > 0 && (
+            <button
+              type="button"
+              onClick={() => onOpenSubPage('research')}
+              className="text-amber-700 hover:underline dark:text-amber-400"
+            >
+              {firmVsYou.divergentCount} section{firmVsYou.divergentCount === 1 ? '' : 's'} with differing views →
+            </button>
           )}
         </div>
       )}
@@ -389,16 +412,16 @@ export function InvestmentSnapshot({
           {caseSections.map(({ key, row }) => {
             const written = (row?.content ?? '').trim().length > 0
             return (
-              <div key={key} className="max-w-[88ch]">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-[12px] font-semibold text-gray-900 dark:text-gray-100">
+              <div key={key} className="max-w-[72ch]">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                     {SECTION_LABEL[key] ?? key.replace(/_/g, ' ')}
                   </span>
                   {written && row?.authorName && (
-                    <span className="text-[11px] text-gray-500 dark:text-gray-400">{row.authorName}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{row.authorName}</span>
                   )}
                   {written && row?.updatedAt && (
-                    <span className="text-[10px] text-gray-400">
+                    <span className="text-xs text-gray-400">
                       {new Date(row.updatedAt).toLocaleDateString()}
                     </span>
                   )}
@@ -408,14 +431,12 @@ export function InvestmentSnapshot({
                     const mine = !!currentUserId && !!authors?.has(currentUserId)
                     return (
                       <>
-                        {mine && (
-                          <span className="rounded bg-primary-50 px-1.5 text-[10px] font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">You</span>
-                        )}
+                        {mine && <StatusChip tone="recommended">You</StatusChip>}
                         {n >= 2 && (
                           <button
                             type="button"
                             onClick={() => onOpenSubPage('research')}
-                            className="text-[10px] text-amber-700 hover:underline dark:text-amber-400"
+                            className="text-xs text-amber-700 hover:underline dark:text-amber-400"
                           >
                             {n} views →
                           </button>
@@ -425,53 +446,61 @@ export function InvestmentSnapshot({
                   })()}
                 </div>
                 {written ? (
-                  <p className="mt-0.5 text-[12px] leading-snug text-gray-600 dark:text-gray-400">
-                    {ourViewExcerpt(row!.content, 200)}
+                  <p className="mt-1 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                    {ourViewExcerpt(row!.content, 280)}
                   </p>
                 ) : (
                   /* An unwritten section is a hole in the case, and naming it
                      is more useful than hiding it — it is the next job. */
-                  <p className="mt-0.5 text-[12px] text-gray-400 dark:text-gray-500">Not written.</p>
+                  <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">Not written.</p>
                 )}
               </div>
             )
           })}
         </div>
       ) : (
-        <p className="max-w-[70ch] text-[13px] text-gray-600 dark:text-gray-400">
-          No core investment case has been written for {symbol ?? 'this name'}.
-          {data.evidence.length > 0
-            ? ` ${data.evidence.length} research item${data.evidence.length === 1 ? '' : 's'} exist against it.`
-            : ' No research is on record either.'}
-        </p>
-      )}
-
-      {data.ladder?.valid && data.spot != null && (
-        <div className="mt-5 border-t border-gray-200/70 pt-4 dark:border-white/[0.07]">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className={EYEBROW}>Valuation — the ladder against today</span>
-            {data.target != null && quotePrice != null && (
-              <span className="font-mono text-[11px] text-gray-500">
-                target {money(data.target)} · {pct(((data.target - quotePrice) / quotePrice) * 100)}
-              </span>
-            )}
-          </div>
-          <div className="mt-2"><FrameworkScale ladder={data.ladder} spot={data.spot} /></div>
+        /* A compact, actionable absence — one line and the way to fix it, not a
+           hero panel announcing emptiness. */
+        <div className="max-w-[72ch]">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            No core investment case has been written for {symbol ?? 'this name'}.
+            {data.evidence.length > 0
+              ? ` ${data.evidence.length} research item${data.evidence.length === 1 ? '' : 's'} exist against it.`
+              : ' No research is on record either.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => onOpenSubPage('research')}
+            className="mt-1.5 text-sm font-medium text-primary-600 hover:underline dark:text-primary-400"
+          >
+            Write the investment case →
+          </button>
         </div>
       )}
 
-      {newEvidence.length > 0 && (
-        <p className="mt-3 text-[11px] text-amber-700 dark:text-amber-400">
-          {newEvidence.length} item{newEvidence.length === 1 ? '' : 's'} dated after the case was last
-          written. Whether each supports or challenges it is not recorded — that is the review.
-        </p>
+      {/* "Where we differ" renders HERE, once. The conclusion card that used to
+          own it is gone, and printing it in two places made one record look
+          like two. */}
+      {variantRow && (
+        <div className="mt-4 max-w-[72ch] border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              Where our thesis differs
+            </span>
+            {variantRow.authorName && <span className="text-xs text-gray-500">{variantRow.authorName}</span>}
+          </div>
+          <p className="mt-1 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+            {ourViewExcerpt(variantRow.content ?? '', 280)}
+          </p>
+        </div>
       )}
 
-      <DeepLinks>
-        <DeepLink label="Research" onClick={() => onOpenSubPage('research')} />
-        <DeepLink label="Process" onClick={() => onOpenSubPage('workflow')} />
-      </DeepLinks>
-    </DesktopSection>
+      {caseGaps.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-1.5">
+          {caseGaps.map(g => <GapChip key={g} label={g} onClick={() => onOpenSubPage('research')} />)}
+        </div>
+      )}
+    </SnapBlock>
   )
 
   /* ----------------------------------------------------------- position */
@@ -491,10 +520,10 @@ export function InvestmentSnapshot({
         </p>
       )}
       <ul className="mt-3 flex flex-col gap-1 text-[12px]">
-        <Exists label="Shares" value={shares(position.shares)} />
-        <Exists label="Market value" value={bigMoney(position.marketValue)} />
-        <Exists label="Average cost" value={position.avgCost != null ? money(position.avgCost) : null} />
-        <Exists
+        <FactRow label="Shares" value={shares(position.shares)} />
+        <FactRow label="Market value" value={bigMoney(position.marketValue)} />
+        <FactRow label="Average cost" value={position.avgCost != null ? money(position.avgCost) : null} />
+        <FactRow
           label="Unrealised"
           value={position.unrealisedGain != null
             ? `${position.unrealisedGain >= 0 ? '+' : ''}${bigMoney(position.unrealisedGain)} (${pct(position.unrealisedPct!)})`
@@ -502,13 +531,13 @@ export function InvestmentSnapshot({
         />
       </ul>
       {position.avgCost == null && (
-        <p className="mt-2 text-[10px] text-gray-500">
+        <p className="mt-2 text-xs text-gray-500">
           No average cost on record, so no unrealised figure is shown.
         </p>
       )}
       {others.length > 0 && !portfolioId && (
         <div className="mt-4 border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
-          <div className={EYEBROW}>Also held in</div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Also held in</div>
           <div className="mt-2 flex flex-col gap-1">
             {/* Each book's weight is against its OWN market value. 25% of one
                 fund plus 4% of another is not 29% of anything, so these are
@@ -527,22 +556,52 @@ export function InvestmentSnapshot({
       )}
     </>
   ) : (
-    <p className="text-[12px] text-gray-600 dark:text-gray-400">
-      Not held in any book you can see.
-    </p>
+    <QuietLine>Not held in any book you can see.</QuietLine>
   )
 
-  const positionModule = (
-    <DesktopModule
-      key="position"
-      title={held ? (portfolioId ? 'Position' : 'Largest position') : 'Position'}
-      meta={position?.asOf ? `as of ${new Date(position.asOf).toLocaleDateString()} · at book price` : undefined}
+  /*
+   * Exposure and valuation in ONE block.
+   *
+   * Apart they were two modules that are each empty on most names — "Not held
+   * in any book you can see" and "no target" given a bordered card apiece. They
+   * answer the same question (where do we stand against what we think it is
+   * worth), so they share a block and each absence compresses to one line.
+   */
+  const exposureValuation = (
+    <SnapBlock
+      key="exposure"
+      testId="snapshot-exposure"
+      title="Exposure & valuation"
+      meta={position?.asOf ? `position as of ${new Date(position.asOf).toLocaleDateString()}` : undefined}
     >
       {positionBody}
-      <DeepLinks>
-        <DeepLink label="Decisions" onClick={() => onOpenSubPage('decisions')} />
-      </DeepLinks>
-    </DesktopModule>
+      <div className="mt-4 border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
+        {data.target != null ? (
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="text-sm text-gray-700 dark:text-gray-300">
+              Target{' '}
+              <span className="font-mono font-semibold text-gray-900 dark:text-gray-100">{money(data.target)}</span>
+            </span>
+            {figures.upside != null && (
+              <span className={`font-mono text-sm font-semibold tabular-nums ${figures.upside >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                {pct(figures.upside)}
+              </span>
+            )}
+            {figures.bear != null && figures.bull != null && (
+              <span className="text-xs text-gray-500">
+                bear {money(figures.bear)} · bull {money(figures.bull)}
+                {figures.skew != null ? ` · skew ${figures.skew.toFixed(1)}:1` : ''}
+              </span>
+            )}
+          </div>
+        ) : (
+          <GapChip label="No price target set" onClick={() => onOpenSubPage('research')} />
+        )}
+        {data.ladder?.valid && data.spot != null && (
+          <div className="mt-3"><FrameworkScale ladder={data.ladder} spot={data.spot} /></div>
+        )}
+      </div>
+    </SnapBlock>
   )
 
   /* -------------------------------------------------------- active work */
@@ -564,51 +623,56 @@ export function InvestmentSnapshot({
    * page a reader can act on today, so it sits with the book rather than
    * trailing the argument.
    */
-  const activeWork = (
-    <DesktopModule key="work" title="Active work" meta="what is owed on this name">
-      {scopedIdeas.length === 0 && scopedOpen.length === 0 ? (
-        <p className="text-[12px] text-gray-600 dark:text-gray-400">
-          Nothing open{portfolioId ? ` in ${selectedBookName}` : ''}. No live ideas and no pending
-          decision requests.
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {scopedIdeas.map(i => (
-            <div key={i.id} className="flex items-baseline gap-2 text-[12px]">
-              <span className="rounded bg-blue-50 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-                {i.action ?? 'idea'}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">
-                {i.rationale ?? 'No rationale recorded'}
-              </span>
-              <span className="shrink-0 text-[11px] text-gray-500">{i.portfolioName ?? '—'}</span>
-              {/* `stage` is a raw enum (`ready_to_recommend`); a reader should
-                  not be shown a column name. */}
-              <span className="shrink-0 text-[10px] uppercase tracking-wide text-gray-500">
-                {i.stage ? i.stage.replace(/_/g, ' ') : ''}
-              </span>
-            </div>
-          ))}
-          {scopedOpen.map(d => (
-            <div key={d.id} className="flex items-baseline gap-2 text-[12px]">
-              <span className="rounded bg-amber-50 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                pending
-              </span>
-              <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">
-                {d.decisionNote ?? d.action ?? 'Decision request'}
-              </span>
-              <span className="shrink-0 text-[11px] text-gray-500">{d.portfolioName ?? '—'}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      <DeepLinks>
-        <DeepLink label="Decisions" onClick={() => onOpenSubPage('decisions')} />
-        <DeepLink label="Process" onClick={() => onOpenSubPage('workflow')} />
-        <DeepLink label="Lists" onClick={() => onOpenSubPage('lists')} />
-      </DeepLinks>
-    </DesktopModule>
-  )
+  const hasActionable = scopedIdeas.length > 0 || scopedOpen.length > 0
+
+  /*
+   * Promoted to the top of the page, and ABSENT when nothing is owed.
+   *
+   * This was a right-column module sitting level with two empty cards, so the
+   * one thing on the page a reader can act on today read as the least
+   * important. Each row is now the navigation — which replaced the identical
+   * "Open in full · Decisions · Process · Lists" footer every module carried.
+   *
+   * Lifecycle labels come from the record that owns each fact: an open
+   * `decision_requests` row is AWAITING A DECISION (nobody has ruled); a live
+   * `trade_queue_items` idea shows its own stage. "Committed, not executed" is
+   * deliberately NOT restated here — Decision Memory owns it, from the same
+   * timeline, and two surfaces counting fills independently is how they come
+   * to disagree.
+   */
+  const needsDecision = hasActionable ? (
+    <SnapBlock
+      key="needs-decision"
+      testId="snapshot-needs-decision"
+      rail="action"
+      title="Needs a decision"
+      meta={portfolioId ? selectedBookName ?? undefined : undefined}
+    >
+      <div className="flex flex-col gap-0.5">
+        {scopedOpen.map(d => (
+          <ActionRow
+            key={d.id}
+            tone="waiting"
+            status="Awaiting decision"
+            title={d.decisionNote ?? d.action ?? 'Decision request'}
+            meta={d.portfolioName ?? undefined}
+            onClick={() => onOpenSubPage('decisions')}
+          />
+        ))}
+        {scopedIdeas.map(i => (
+          <ActionRow
+            key={i.id}
+            tone={i.stage === 'ready_to_recommend' ? 'recommended' : 'neutral'}
+            /* `stage` is a raw enum; a reader should not be shown a column name. */
+            status={i.stage ? i.stage.replace(/_/g, ' ') : (i.action ?? 'idea')}
+            title={i.rationale ?? `${i.action ?? 'Idea'} — no rationale recorded`}
+            meta={i.portfolioName ?? undefined}
+            onClick={() => onOpenSubPage('decisions')}
+          />
+        ))}
+      </div>
+    </SnapBlock>
+  ) : null
 
   /* ----------------------------------------------------- decision memory */
 
@@ -626,8 +690,15 @@ export function InvestmentSnapshot({
    * The summary counts the states and flags executions that are not evidenced
    * by an observed fill.
    */
-  const decisionMemory = (
-    <DesktopModule key="memory" title="Decision memory" meta="recommended → decided → executed → reviewed">
+  /* The panel already carries its own "See the full history →"; the extra
+     "Open in full · Decisions" footer was a second link to the same place. */
+  const decisionHistory = (
+    <SnapBlock
+      key="memory"
+      testId="snapshot-decision-history"
+      title="Decision history"
+      meta="recommended → decided → executed → reviewed"
+    >
       <DecisionMemorySummary
         assetId={asset.id}
         portfolioId={portfolioId}
@@ -635,10 +706,7 @@ export function InvestmentSnapshot({
         heldBookIds={data.positions.map(p => p.portfolioId)}
         onOpenTimeline={() => onOpenSubPage('decisions')}
       />
-      <DeepLinks>
-        <DeepLink label="Decisions" onClick={() => onOpenSubPage('decisions')} />
-      </DeepLinks>
-    </DesktopModule>
+    </SnapBlock>
   )
 
   /* ------------------------------------------------ who else has written */
@@ -655,22 +723,94 @@ export function InvestmentSnapshot({
    * Rendered only when the tab wired it; a caller that passes nothing gets
    * nothing rather than an empty panel.
    */
-  const contributorSummary = contributions && contributionFields && contributionFields.length > 0 ? (
-    <DesktopModule key="contributors" title="Who has written" meta="the firm, by contributor">
+  const perspectives = contributions && contributionFields && contributionFields.length > 0 ? (
+    <SnapBlock
+      key="contributors"
+      testId="snapshot-perspectives"
+      title="Research perspectives"
+      meta="the firm, by contributor"
+      action={(
+        <button
+          type="button"
+          onClick={() => onOpenSubPage('research')}
+          className="text-sm text-primary-600 hover:underline dark:text-primary-400"
+        >
+          Open Research →
+        </button>
+      )}
+    >
       <OurViewSummary
         contributions={contributions}
         fields={contributionFields}
         coveringAnalystIds={coveringAnalystIds}
         onOpenAnalyst={onOpenAnalyst}
+        currentUserId={currentUserId}
         symbol={symbol}
         mode="roster"
         bare
       />
-      <DeepLinks>
-        <DeepLink label="Research" onClick={() => onOpenSubPage('research')} />
-      </DeepLinks>
-    </DesktopModule>
+    </SnapBlock>
   ) : null
+
+  /* ---------------------------------------------------------- what changed */
+
+  /*
+   * The SUPPORTED freshness summary — deliberately not a list of evidence rows.
+   *
+   * `useAssetWorkspace.evidence` carries id / createdAt / authorName / isShared
+   * reliably, but `title` is NULLABLE and nothing in this component's prop
+   * surface can open a single note: `onOpenSubPage` takes a page, and the
+   * per-note route (`asset.noteId`) belongs to AssetTab. Rendering rows under
+   * possibly-blank titles that cannot be opened would be a list of dead ends,
+   * so this states what is actually on record — how many items postdate the
+   * case, and when the newest arrived.
+   *
+   * Whether an item supports or challenges the thesis is recorded nowhere, and
+   * is not inferred here.
+   */
+  const newestEvidenceAt = newEvidence.reduce<string | null>(
+    (max, e) => (max == null || e.createdAt > max ? e.createdAt : max),
+    null,
+  )
+
+  const whatChanged = (
+    <SnapBlock
+      key="changed"
+      testId="snapshot-what-changed"
+      title="What changed"
+      meta={caseAgeLabel ? `since the case was ${caseAgeLabel}` : undefined}
+      action={newEvidence.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => onOpenSubPage('research')}
+          className="text-sm text-primary-600 hover:underline dark:text-primary-400"
+        >
+          Open Research →
+        </button>
+      ) : undefined}
+    >
+      {newEvidence.length > 0 ? (
+        <>
+          <p className="text-sm text-gray-800 dark:text-gray-200">
+            <span className="font-semibold">
+              {newEvidence.length} research item{newEvidence.length === 1 ? '' : 's'}
+            </span>{' '}
+            dated after the case was last written
+            {newestEvidenceAt ? `, newest ${new Date(newestEvidenceAt).toLocaleDateString()}` : ''}.
+          </p>
+          <QuietLine className="mt-1">
+            Whether each supports or challenges the thesis is not recorded — that is the review.
+          </QuietLine>
+        </>
+      ) : (
+        <QuietLine>
+          {data.caseWrittenAt
+            ? 'No research has been filed since the case was last written.'
+            : 'No case and no research on record yet.'}
+        </QuietLine>
+      )}
+    </SnapBlock>
+  )
 
   /* ------------------------------------------------- what needs attention */
 
@@ -732,11 +872,9 @@ export function InvestmentSnapshot({
       data-asset={asset.id}
       data-portfolio={portfolioId ?? 'all'}
       data-workspace-state={workspaceState}
+      className="flex flex-col gap-5"
     >
       <SnapshotHeader
-        price={quotePrice}
-        asOf={quoteAsOf}
-        lastClose={data.spot}
         /*
          * The chip answers the question IN THE CURRENT SCOPE.
          *
@@ -757,53 +895,29 @@ export function InvestmentSnapshot({
         onSelectBook={setPortfolioId}
       />
       {/*
-        The conclusion comes FIRST, above the columns, at full width.
+        The brief, in the order a reader asks the questions:
 
-        It used to be three figures inside the Belief section, level with
-        everything else on the page, so the four questions a reader actually
-        arrives with — what do we think, what is it worth, where are we
-        different, are we positioned for it — had to be assembled from four
-        places. Nothing below it repeats a figure it states.
+          1. what do we think        — Our view (full width, the page's lead)
+          2. what is owed            — Needs a decision, ABSENT when nothing is
+          3. what changed / who says — left column
+          4. where we stand          — right column
+
+        The two blocks that can carry an action lead the page; the rest support
+        them. Attention itself is NOT here: it lives in one connected surface at
+        the Asset-page level (AssetAttentionBand) above every sub-page, so the
+        reader never sees two copies.
       */}
-      <div className="pt-4">
-        <InvestmentConclusion
-          symbol={symbol}
-          target={data.target}
-          spot={quotePrice ?? data.spot}
-          ladder={data.ladder}
-          sections={core.map(c => ({
-            section: c.section,
-            content: c.content,
-            updatedAt: c.updatedAt ?? null,
-            authorName: c.authorName ?? null,
-          }))}
-          onOpenResearch={() => onOpenSubPage('research')}
-        />
-      </div>
-
-      {/*
-        What needs attention now lives in ONE connected surface at the Asset-
-        page level (AssetAttentionBand), shown above every sub-page, so it is
-        not rendered twice. It states the relationships a reader could not
-        assemble themselves — a rating that disagrees with an open
-        recommendation, exposure with no case, a price past its target — and
-        is absent when there is nothing to say.
-      */}
-
-      <div className="pt-5">
-        {/*
-          Left is the argument and what we did about it; right is where we
-          stand and what is owed.
-
-          Decision memory sits on the WIDE side deliberately: it is prose with
-          five status chips and a disclosure sentence, and in the narrow column
-          every one of those wrapped. It also reads as the end of the left-hand
-          story — thesis, valuation, then the record of acting on them.
-        */}
-        <DesktopColumns
-          lead={<>{belief}{contributorSummary}{decisionMemory}</>}
-          context={<>{positionModule}{activeWork}</>}
-        />
+      {ourView}
+      {needsDecision}
+      <div className="grid grid-cols-1 gap-x-8 gap-y-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]">
+        <div className="flex min-w-0 flex-col gap-5">
+          {whatChanged}
+          {perspectives}
+        </div>
+        <div className="flex min-w-0 flex-col gap-5">
+          {exposureValuation}
+          {decisionHistory}
+        </div>
       </div>
     </div>
   )
@@ -836,12 +950,9 @@ export function InvestmentSnapshot({
  *   scope     the one selector, which governs all three domains below
  */
 function SnapshotHeader({
-  price, asOf, lastClose, held, heldLabel,
+  held, heldLabel,
   coverage, thesisStatuses, books, portfolioId, onSelectBook,
 }: {
-  price: number | null
-  asOf: string | null
-  lastClose: number | null
   /** Held IN THE CURRENT SCOPE — drives the chip's tone. */
   held: boolean
   heldLabel: string
@@ -851,12 +962,10 @@ function SnapshotHeader({
   portfolioId: string | null
   onSelectBook: (id: string | null) => void
 }) {
-  const basis = price != null
-    ? (asOf ? `Quote as of ${asOf}` : 'Live quote')
-    : lastClose != null
-      ? `Last close ${money(lastClose)}`
-      : 'No price on record'
-
+  /* The price basis line was removed: the Asset Page header above states the
+     price and its as-of, and repeating it here was the duplicate-header-metric
+     problem. The held chip stays — it is SCOPE-reactive (it answers the book
+     the reader has selected), which the page header is not. */
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-gray-200 pb-3 dark:border-white/[0.08]">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -868,9 +977,6 @@ function SnapshotHeader({
           }`}
         >
           {heldLabel}
-        </span>
-        <span className={`text-[11px] ${price == null && lastClose == null ? 'text-gray-400' : 'text-gray-500'}`}>
-          {basis}
         </span>
       </div>
 

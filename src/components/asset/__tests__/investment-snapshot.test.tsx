@@ -139,8 +139,12 @@ describe('the one selector governs every domain', () => {
 
     // Position: an honest fact, not an empty card.
     expect(screen.getByText(/Large Cap Value does not hold AAPL/)).toBeInTheDocument()
-    // Active work: the same scope, in the same breath.
-    expect(screen.getByText(/Nothing open in Large Cap Value/)).toBeInTheDocument()
+    /*
+     * "Needs a decision" narrows with it, and when the chosen book has nothing
+     * owed the block is ABSENT rather than a card announcing emptiness — the
+     * page only spends space on something a reader can act on.
+     */
+    expect(screen.queryByTestId('snapshot-needs-decision')).toBeNull()
   })
 
   it('does not let the header contradict the position panel', async () => {
@@ -163,7 +167,8 @@ describe('absent data says it is absent', () => {
     renderSnapshot()
     expect(screen.getByText(/No core investment case has been written for AAPL/)).toBeInTheDocument()
     expect(screen.getByText(/No research is on record either/)).toBeInTheDocument()
-    expect(screen.getByText(/Nothing open\./)).toBeInTheDocument()
+    /* Nothing is owed, so the actionable block is absent rather than empty. */
+    expect(screen.queryByTestId('snapshot-needs-decision')).toBeNull()
     expect(screen.getByText(/Not held in any book you can see/)).toBeInTheDocument()
     expect(screen.getByText(/No decision has been recorded against AAPL yet/)).toBeInTheDocument()
     expect(screen.getByText(/No coverage assigned/)).toBeInTheDocument()
@@ -176,11 +181,18 @@ describe('absent data says it is absent', () => {
     expect(screen.getByText(/No average cost on record/)).toBeInTheDocument()
   })
 
-  it('names the price basis, and never presents a stale close as "current"', () => {
-    renderSnapshot({ currentQuote: null })
+  it('does not restate the price the Asset Page header already owns', () => {
+    /*
+     * The Snapshot used to print a price-basis line ("Quote as of …" / "Last
+     * close $X") directly under a sticky header that states the price and its
+     * as-of. Two surfaces, one number. The header owns it; the Snapshot no
+     * longer repeats it in any form.
+     */
     data = { ...BASE, spot: 330.32 }
     renderSnapshot({ currentQuote: null })
-    expect(screen.getAllByText(/Last close/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Last close/)).toBeNull()
+    expect(screen.queryByText(/Quote as of/)).toBeNull()
+    expect(screen.queryByText(/Live quote/)).toBeNull()
   })
 
   it('no longer repeats the rating the persistent header strip now owns', () => {

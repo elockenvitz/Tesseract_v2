@@ -304,10 +304,18 @@ export function OurViewSummary({
       {/* ── Who has a view here, and how fresh the newest one is ────── */}
       <div className={CARD}>
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          {/* `roster` is the Snapshot's mode and only the Snapshot's: there it
+              reads at the page's body size rather than as another 11px
+              uppercase micro-label. `full` (the Research tab) is untouched. */}
+          <span className={clsx(
+            'inline-flex items-center gap-1.5 text-gray-500 dark:text-gray-400',
+            mode === 'roster'
+              ? 'text-sm font-medium'
+              : 'text-[11px] font-semibold uppercase tracking-wide',
+          )}>
             <Users className="h-3.5 w-3.5 text-gray-400" />
             {authors.length} {authors.length === 1 ? 'contributor' : 'contributors'}
-            <span className="font-normal normal-case tracking-normal text-gray-400">
+            <span className={clsx('text-gray-400', mode !== 'roster' && 'font-normal normal-case tracking-normal')}>
               across {rows.length} {rows.length === 1 ? 'section' : 'sections'}
             </span>
           </span>
@@ -363,7 +371,7 @@ export function OurViewSummary({
         <div className={CARD} data-testid="our-view-roster">
           <ul className="flex flex-col gap-1">
             {rows.map(row => (
-              <li key={row.slug} className="flex items-baseline justify-between gap-3 text-[12px]">
+              <li key={row.slug} className="flex items-baseline justify-between gap-3 text-sm">
                 <span className="min-w-0 truncate text-gray-700 dark:text-gray-300">{row.label}</span>
                 <span className="flex shrink-0 items-baseline gap-2">
                   {row.matches.length > 1 && (
