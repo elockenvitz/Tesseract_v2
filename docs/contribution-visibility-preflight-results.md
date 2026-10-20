@@ -432,12 +432,84 @@ Attachment-only exclusion is preserved in both the classifier and the backfill.
 
 ---
 
+---
+
+## A7 — Triggers · **PASS. The unreadable trigger is identified.**
+
+Two active triggers on `asset_contributions`:
+
+| Trigger | Timing | Function | Rights |
+|---|---|---|---|
+| `asset_contributions_set_organization_id` | BEFORE INSERT OR UPDATE | — | SECURITY DEFINER, owner `postgres` |
+| `contribution_history_trigger` | BEFORE UPDATE | `track_contribution_history()` | SECURITY DEFINER, owner `postgres` |
+
+The first matches C1/08:122-144, legacy NULL preservation included.
+
+### `track_contribution_history()` — what it does
+
+- Inserts an `asset_contribution_history` row when **content** changes.
+- Inserts a **separate** envelope row when **attachments** change, formatted
+  `[Attachments: N items] Added/Removed X reference(s)` or `Updated references`.
+- **Sets `NEW.updated_at = now()` on either a content or an attachment change.**
+- **Does not record the initial INSERT / first publication.**
+
+### Three things this closes
+
+**1. The LLY incident is explained, not inferred.** `saveSectionReferences`
+deliberately omits `updated_at` (`asset-research.ts:241-248`), and the
+timestamp moved anyway because this trigger stamps it when *attachments*
+change. That was a hypothesis for several turns; it is now read from the
+object. The two A6 envelope rows match the format this trigger composes.
+
+**2. First publication is structurally unrecoverable.** Not merely "no row
+exists for LLY" — the trigger has no INSERT branch, so **no first publication
+is recorded for any contribution, ever**. The freshness backfill's
+`history_proven` bucket can never cover a first publication by construction.
+That lane stays parked; the question it could not answer is now answered.
+
+**3. C1/07:38's claim is correct.** It asserts the history writer is SECURITY
+DEFINER running as the table owner, which is why `asset_contribution_history`
+needs no INSERT policy. Verified. That matters more after A4, which showed
+`authenticated` holds INSERT/UPDATE/DELETE there with no policies — those
+grants are inert under RLS, and the legitimate writer does not need them.
+
+### Design consequences for `10-` and the RPC
+
+**Trigger ordering is safe.** BEFORE row triggers fire in name order:
+`a_pin_audience` → `asset_contributions_set_organization_id` →
+`contribution_history_trigger`. The pin rewrites only `visibility`/`team_id`;
+the history trigger reads only `content`/`attachments`. No interaction.
+
+**The RPC must NOT stamp `updated_at`.** A visibility-only UPDATE changes
+neither content nor attachments, so `track_contribution_history()` leaves the
+timestamp alone — meaning an audience change does not contaminate the "last
+written" clock, provided the RPC does not write it by hand. The current
+`updateVisibility` **does** (`useContributions.ts:529`), which is one of the
+contamination sources the freshness audit identified. The RPC must not inherit
+that.
+
+### New finding — an orphaned writer
+
+`public.track_contribution_changes()` also writes
+`asset_contribution_history`, is **not** SECURITY DEFINER, and is attached to
+neither inspected table. Likely a predecessor left behind.
+
+Not a live risk: detached, it never runs, and were it attached it would run
+with invoker rights against a table with no INSERT policy, so RLS would make it
+fail rather than leak. But it is an unowned function that writes the audit
+record, and **A7 only established that it is not attached to the two tables it
+inspected** — not that it is unattached everywhere. Queued as **A7b**, low
+priority, hygiene rather than security.
+
+---
+
 ## Outstanding
 
 | Block | Question | Status |
 |---|---|---|
 | A3e | `EXECUTE` grants on `can_view_contribution`; full body | queued |
-| A7 | triggers on `asset_contributions`; **identity of the history-writing trigger** | **next** |
+| A7b | is `track_contribution_changes()` attached to any table? | queued, low priority |
+| A8 | **RLS actually enabled** on the five tables | **next — hard stop, completes Part A** |
 | A5 | revision table columns, plus any CHECK on `visibility` | outstanding |
 | A6 | history row shapes | outstanding |
 | A7 | triggers on `asset_contributions` | outstanding |
