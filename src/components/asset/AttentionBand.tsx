@@ -37,7 +37,7 @@
 import { clsx } from 'clsx'
 import { AlertTriangle, Clock, CircleDashed, FileSearch, Hourglass } from 'lucide-react'
 import type {
-  WorkspaceSignal, SignalKind, WorkspaceState, WorkspaceDestination,
+  WorkspaceSignal, SignalKind, WorkspaceState, WorkspaceDestination, SignalFocus,
 } from '../../lib/asset-workspace/context'
 import { STATE_EMPHASIS } from '../../lib/asset-workspace/context'
 
@@ -60,7 +60,7 @@ export interface AttentionBandProps {
    * page you are already on" is legitimate. The caller decides what to do
    * with it.
    */
-  onOpen: (page: WorkspaceDestination) => void
+  onOpen: (page: WorkspaceDestination, focus?: SignalFocus) => void
   className?: string
 }
 
@@ -98,7 +98,7 @@ export function AttentionBand({ state, signals, onOpen, className }: AttentionBa
               <span aria-hidden className={clsx('w-[2px] shrink-0', k.rule)} />
               <button
                 type="button"
-                onClick={() => onOpen(s.destination)}
+                onClick={() => onOpen(s.destination, s.focus)}
                 data-testid={`attention-${s.id}`}
                 className="group flex-1 px-3.5 py-2 text-left hover:bg-gray-50/70 dark:hover:bg-gray-800/40"
               >

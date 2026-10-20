@@ -47,6 +47,9 @@ import { contributionSectionsForSlug } from '../../lib/research/contribution-sec
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddToProjectButton } from '../projects/AddToProjectButton'
 import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView, ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
+import { AssetAttentionBand } from '../asset/AssetAttentionBand'
+import type { WorkspaceDestination, SignalFocus } from '../../lib/asset-workspace/context'
+import { attentionTarget } from '../../lib/asset-workspace/attention-target'
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
 import { useKeyReferences } from '../../hooks/useKeyReferences'
 import { useUserAssetPriority, type Priority } from '../../hooks/useUserAssetPriority'
@@ -414,6 +417,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.thesisViewMode || 'all'
   })
+  // Attention band → research-section deep link: anchor to scroll to, with a
+  // nonce so re-clicking the same signal re-fires.
+  const [attentionAnchor, setAttentionAnchor] = useState<
+    { anchor: 'thesis' | 'risks' | 'targets' | 'rating' | 'case'; nonce: number } | null
+  >(null)
   // Research layout mode: 'classic' uses hardcoded sections, 'dynamic' uses configurable fields
   // User asset widgets
   const [showFieldCustomizer, setShowFieldCustomizer] = useState(false)
@@ -661,6 +669,58 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     // though `scrollTo` itself didn't change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asset.data?.scrollTo, asset.data?.scrollNonce])
+
+  // Attention band → an exact research anchor. Reuses the same approach as the
+  // external scrollTo above (force Research + the All view, expand the section,
+  // then poll until the anchor is in the DOM). The anchors already exist in the
+  // render; this adds no new routing. 'case' has no anchor of its own — the
+  // case begins at the thesis, which is the nearest truthful target.
+  useEffect(() => {
+    if (!attentionAnchor) return
+    const map: Record<string, string> = {
+      thesis: 'asset-anchor-thesis',
+      case: 'asset-anchor-thesis',
+      risks: 'asset-warning-anchor-risks',
+      targets: 'asset-warning-anchor-targets',
+      rating: 'asset-warning-anchor-rating',
+    }
+    const targetId = map[attentionAnchor.anchor]
+    setActiveSubPage('research')
+    setThesisViewMode('all')
+    if (attentionAnchor.anchor === 'targets' || attentionAnchor.anchor === 'rating') {
+      setCollapsedSections(prev => ({ ...prev, outcomes: false }))
+    }
+    let cancelled = false
+    let attempts = 0
+    const tick = () => {
+      if (cancelled) return
+      const el = document.getElementById(targetId)
+      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return }
+      if (attempts++ < 30) window.setTimeout(tick, 100)
+    }
+    const initial = window.setTimeout(tick, 150)
+    return () => { cancelled = true; window.clearTimeout(initial) }
+  }, [attentionAnchor])
+
+  /*
+   * Where an attention signal takes the reader — the precise `focus` first,
+   * the signal's own page as the truthful fallback. No silent redirect: a
+   * signal with no exact target lands on the page it names, never elsewhere.
+   */
+  const handleAttentionFocus = useCallback((destination: WorkspaceDestination, focus?: SignalFocus) => {
+    const t = attentionTarget(destination, focus)
+    if (t.anchor) {
+      // Per-section prose only renders in an individual research view. If the
+      // reader is on the firm (aggregated) view there is no section to scroll
+      // to, so switch to their own research — the nearest view that shows it.
+      if (researchViewFilter === 'aggregated' && user?.id) setResearchViewFilter(user.id)
+      // The anchor effect then forces Research + the All view, expands, scrolls.
+      setAttentionAnchor({ anchor: t.anchor, nonce: Date.now() })
+      return
+    }
+    setActiveSubPage(t.subPage)
+    if (t.researchMode) setThesisViewMode(t.researchMode)
+  }, [researchViewFilter, user?.id])
 
   // Save tab state whenever relevant state changes (but only after initialization)
   useEffect(() => {
@@ -3361,6 +3421,22 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       {/* Sub-page Content */}
       <div className="flex-1 overflow-auto px-8 py-4">
+
+        {/* One connected attention surface for the whole asset, shown above
+            every sub-page. The Snapshot's inline band was removed so the
+            reader never sees two copies. */}
+        {user && (
+          <div className="mb-4">
+            <AssetAttentionBand
+              assetId={asset.id}
+              symbol={asset.symbol ?? null}
+              portfolioId={null}
+              coveringUserIds={(coverage || []).map((c: any) => c.user_id).filter(Boolean)}
+              spot={currentQuote?.price ?? null}
+              onFocus={handleAttentionFocus}
+            />
+          </div>
+        )}
 
         {/* ========== INVESTMENT SNAPSHOT SUB-PAGE ========== */}
         {activeSubPage === 'snapshot' && (

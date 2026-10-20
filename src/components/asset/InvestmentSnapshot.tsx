@@ -71,7 +71,6 @@ import {
 } from '../coverage/CoverageDisplay'
 import { BookFilter, type BookOption } from '../shared/BookFilter'
 import { InvestmentConclusion } from './InvestmentConclusion'
-import { AttentionBand } from './AttentionBand'
 /*
  * The workspace resolver. Pure, deterministic, and fed only from facts this
  * component already fetched — it issues no query of its own and decides no
@@ -79,7 +78,7 @@ import { AttentionBand } from './AttentionBand'
  * claim.
  */
 import {
-  resolveWorkspaceState, resolveWorkspaceSignals, type WorkspaceFacts,
+  resolveWorkspaceState, type WorkspaceFacts,
 } from '../../lib/asset-workspace/context'
 /*
  * The excerpt helper, shared with Our View rather than reimplemented.
@@ -611,8 +610,11 @@ export function InvestmentSnapshot({
    * is NOT next to Decision Memory — the phone, a lens, a digest — should
    * still get it.
    */
-  const workspaceSignals = resolveWorkspaceSignals(workspaceFacts)
-    .filter(s => s.kind !== 'provenance')
+  // The attention band is no longer rendered here: it moved to one connected
+  // surface at the Asset-page level (AssetAttentionBand), shown above every
+  // sub-page, so the reader never sees two copies. The facts above still drive
+  // this page's state/emphasis (`workspaceState`); the signals themselves are
+  // resolved by AssetAttentionBand from the same cached hooks.
 
   /* --------------------------------------------------------- composition */
 
@@ -678,29 +680,13 @@ export function InvestmentSnapshot({
       </div>
 
       {/*
-        What needs attention, between the conclusion and the detail.
-
-        Placed here because it is the only thing on the page a reader could
-        not assemble themselves: the conclusion states figures, the panels
-        below state records, and this states the RELATIONSHIPS between them —
-        a rating that disagrees with an open recommendation, exposure with no
-        case behind it, a price past its target.
-
-        Absent when there is nothing to say. Not an empty state and not a
-        reassuring all-clear: on a half-loaded page "no signals" is not a
-        finding this surface is entitled to assert.
+        What needs attention now lives in ONE connected surface at the Asset-
+        page level (AssetAttentionBand), shown above every sub-page, so it is
+        not rendered twice. It states the relationships a reader could not
+        assemble themselves — a rating that disagrees with an open
+        recommendation, exposure with no case, a price past its target — and
+        is absent when there is nothing to say.
       */}
-      {workspaceSignals.length > 0 && (
-        <div className="pt-3">
-          <AttentionBand
-            state={workspaceState}
-            signals={workspaceSignals}
-            /* `snapshot` is where the reader already is, so it is a no-op
-               here rather than a navigation to the current page. */
-            onOpen={(page) => { if (page !== 'snapshot') onOpenSubPage(page) }}
-          />
-        </div>
-      )}
 
       <div className="pt-5">
         {/*
