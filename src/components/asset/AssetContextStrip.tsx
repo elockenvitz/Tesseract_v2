@@ -1,4 +1,5 @@
 import React from 'react'
+import { clsx } from 'clsx'
 import { useAssetWorkspace, primaryPosition } from '../../hooks/useAssetWorkspace'
 import { useAnalystRatings } from '../../hooks/useAnalystRatings'
 
@@ -64,12 +65,17 @@ function Cell({
   band?: boolean
   eyebrow: string
 }) {
-  const base = band ? 'ux2-strip-cell' : 'bg-white dark:bg-gray-800'
-  const hover = band ? 'ux2-strip-cell' : 'hover:bg-gray-50 dark:hover:bg-gray-700/60'
+  const base = band ? 'bg-transparent' : 'bg-white dark:bg-gray-800'
+  const hover = band
+    ? 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+    : 'hover:bg-gray-50 dark:hover:bg-gray-700/60'
+  // Band cells size to their content (a lean row); default cells share the row
+  // equally (the tiled grid).
+  const sizing = band ? 'flex-none px-4 py-1 first:pl-0' : 'flex-1 min-w-[132px] px-3 py-2'
   const inner = (
     <>
       <span className={eyebrow}>{label}</span>
-      <div className="mt-1 min-w-0">{children}</div>
+      <div className={clsx(band ? 'mt-0.5' : 'mt-1', 'min-w-0')}>{children}</div>
     </>
   )
   if (onClick) {
@@ -78,13 +84,13 @@ function Cell({
         type="button"
         onClick={onClick}
         title={title}
-        className={`flex-1 min-w-[132px] text-left ${base} ${hover} px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-inset`}
+        className={`${sizing} text-left ${base} ${hover} transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-inset`}
       >
         {inner}
       </button>
     )
   }
-  return <div className={`flex-1 min-w-[132px] ${base} px-3 py-2`}>{inner}</div>
+  return <div className={`${sizing} ${base}`}>{inner}</div>
 }
 
 export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'default', className }: Props) {
@@ -106,8 +112,12 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
   const DASH_C = band
     ? 'text-[14px] font-semibold text-[color:var(--ux2-ink-2)] leading-tight'
     : DASH
+  // Band variant (the asset header): a compact inline context ROW — thin
+  // dividers between facts, no boxed cells, no outer frame — so it supports the
+  // page rather than dominating it as five equal tiles. Default keeps the tiled
+  // grid used elsewhere.
   const wrapC = band
-    ? 'ux2-strip-wrap flex flex-nowrap overflow-x-auto gap-px rounded-lg border'
+    ? 'flex flex-nowrap overflow-x-auto items-stretch divide-x divide-[color:var(--ux2-band-line)]'
     : 'flex flex-nowrap overflow-x-auto gap-px rounded-lg bg-gray-200 dark:bg-gray-700 border border-gray-200 dark:border-gray-700'
 
   const ws = data ?? null

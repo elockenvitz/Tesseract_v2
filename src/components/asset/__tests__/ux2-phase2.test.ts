@@ -3,14 +3,15 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
- * UX2 Phase 2 — Research as one coherent Investment Case document.
+ * Research presentation — the ORIGINAL per-section design, restored.
  *
- * AssetTab (~5k lines) and ContributionSection cannot be mounted affordably, so
- * these pin the wiring against comment-stripped source (the suite idiom). The
- * editor/draft/publish/visibility/history behaviour keeps its own behavioural
- * coverage in the contributions suites; here we prove the Phase-2 presentation:
- * one document container, flat per-section chrome, always-visible Edit, and the
- * personal-vs-consensus valuation note — all opt-in so other callers are intact.
+ * The Phase-2 "one continuous Investment Case document" presentation
+ * (documentChrome, always-visible Edit, a single rounded container) was reverted
+ * at the founder's direction. Research sections are again individual cards with
+ * the blue/amber accent, section hover-highlight and a hover-reveal Edit pencil,
+ * while the corrected full-width in-page editor (fullPageEditor) is kept. Pinned
+ * against comment-stripped source (the suite idiom); editor/draft/publish keep
+ * their own behavioural coverage in the contributions suites.
  */
 
 const SRC = resolve(__dirname, '../../..')
@@ -20,37 +21,30 @@ const codeOf = (s: string) =>
 const ASSET_TAB = codeOf(readFileSync(resolve(SRC, 'components/tabs/AssetTab.tsx'), 'utf8'))
 const CONTRIB = codeOf(readFileSync(resolve(SRC, 'components/contributions/ContributionSection.tsx'), 'utf8'))
 
-describe('UX2 P2: ContributionSection gains opt-in document presentation', () => {
-  it('adds documentChrome + alwaysShowToolbar, both default OFF', () => {
-    expect(CONTRIB).toMatch(/documentChrome\s*=\s*false/)
-    expect(CONTRIB).toMatch(/alwaysShowToolbar\s*=\s*false/)
+describe('Research presentation: original per-section cards restored', () => {
+  it('renders each section as a <Card> with alternating shade (not one document container)', () => {
+    expect(ASSET_TAB).toContain('padding="none" className={sectionShade}')
+    expect(ASSET_TAB).toMatch(/sectionIdx % 2 === 1 \? '!bg-gray-50\/60'/)
+    // the UX2 "one document" wrapper and flat hairline section rows are gone
+    expect(ASSET_TAB).not.toContain('rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden')
+    expect(ASSET_TAB).not.toContain('border-t border-gray-200 first:border-t-0')
   })
 
-  it('documentChrome renders flat (no card), keeping the card for other callers', () => {
-    // flat branch has no border/fill/radius; the card branch (plainChrome etc.)
-    // still exists for every non-document caller.
-    expect(CONTRIB).toMatch(/documentChrome[\s\S]{0,120}bg-transparent rounded-none/)
-    expect(CONTRIB).toContain("'border-l-4'") // card accent path preserved
+  it('restores the blue left-accent + amber hover-highlight on fields', () => {
+    expect(ASSET_TAB).toContain('border-l-4 border-l-blue-400')
+    expect(ASSET_TAB).toContain('hover:border-amber-200 hover:bg-amber-50/30')
   })
 
-  it('Edit/Add-your-view no longer relies on hover', () => {
+  it('drops the invented document / quiet / always-on chrome; Edit pencil is hover-reveal again', () => {
+    expect(ASSET_TAB).not.toContain('documentChrome')
+    expect(ASSET_TAB).not.toContain('alwaysShowToolbar')
+    expect(ASSET_TAB).not.toContain('plainChrome')
+    // ContributionSection still gates the toolbar on hover (not permanently on)
     expect(CONTRIB).toContain('showToolbar = isHovered || isEditing || showHistory || alwaysShowToolbar')
   })
-})
 
-describe('UX2 P2: AssetTab renders one Investment Case document', () => {
-  it('wraps the individual-view sections in a single container (not a stack of cards)', () => {
-    // one rounded container around the whole section map; sections are hairline-
-    // separated flat regions, not per-section <Card>s.
-    expect(ASSET_TAB).toContain('rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden')
-    expect(ASSET_TAB).toContain('border-t border-gray-200 first:border-t-0')
-    // the per-section case <Card> wrapper is gone (sections are flat divs now)
-    expect(ASSET_TAB).not.toContain('padding="none" className={sectionShade}')
-  })
-
-  it('turns on documentChrome + alwaysShowToolbar for the case sections', () => {
-    expect((ASSET_TAB.match(/documentChrome/g) ?? []).length).toBeGreaterThanOrEqual(2)
-    expect((ASSET_TAB.match(/alwaysShowToolbar/g) ?? []).length).toBeGreaterThanOrEqual(2)
+  it('keeps the full-width in-page editor on the case sections', () => {
+    expect((ASSET_TAB.match(/fullPageEditor/g) ?? []).length).toBeGreaterThanOrEqual(2)
   })
 
   it('keeps personal valuation visibly distinct from firm consensus', () => {
@@ -65,10 +59,7 @@ describe('UX2 P2: AssetTab renders one Investment Case document', () => {
     }
   })
 
-  it('does NOT invent section-linked evidence (no per-section evidence source added)', () => {
-    // There is no real section→evidence relationship in the data model, so the
-    // prototype's per-section evidence chips were deliberately NOT built. The
-    // case-level freshness stays where it already lives (header/attention).
+  it('does NOT invent section-linked evidence (no per-section evidence source)', () => {
     expect(ASSET_TAB).not.toContain('Linked evidence')
     expect(ASSET_TAB).not.toContain('newer firm notes since')
   })

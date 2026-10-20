@@ -3402,21 +3402,23 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 </div>
               )
             ) : (
-              /* Individual User "All" View — the Investment Case as ONE
-                 continuous document (UX2 P2): a single container, sections
-                 separated by hairlines instead of a stack of heavy cards. */
-              <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-700 dark:bg-gray-800">
-              {displayedFieldsBySection.map((section) => {
+              /* Individual User "All" View — the original per-section design:
+                 each section is its own card (blue/amber accent, hover
+                 highlight, hover-reveal edit), with alternating shade. */
+              displayedFieldsBySection.map((section, sectionIdx) => {
                 // Skip hidden sections
                 if (section.section_is_hidden) return null
+
+                // Alternating shade for visual separation
+                const sectionShade = sectionIdx % 2 === 1 ? '!bg-gray-50/60' : ''
 
               // Forecasts Section - render fields individually as tiles
               if (section.section_slug === 'forecasts') {
                 return (
-                  <div key={section.section_id} className="border-t border-gray-200 first:border-t-0 dark:border-gray-700">
+                  <Card key={section.section_id} padding="none" className={sectionShade}>
                     <button
                       onClick={() => toggleSection('outcomes')}
-                      className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800/40"
+                      className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl dark:bg-gray-700 dark:hover:bg-gray-600"
                     >
                       <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
                       {collapsedSections.outcomes ? (
@@ -3444,7 +3446,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Price target field
                             if (fieldType === 'price_target') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-targets" className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
+                                <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3463,7 +3465,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Rating field
                             if (fieldType === 'rating') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-rating" className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
+                                <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3484,7 +3486,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Estimates field
                             if (fieldType === 'estimates') {
                               return (
-                                <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
+                                <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3516,9 +3518,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                   hideVisibility={true}
                                   sharedVisibility={sharedThesisVisibility}
                                   sharedTargetIds={sharedThesisTargetIds}
-                                  plainChrome
-                                  documentChrome
-                                  alwaysShowToolbar
                                   fullPageEditor
                                 />
                               </div>
@@ -3526,7 +3525,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           })}
                       </div>
                     )}
-                  </div>
+                  </Card>
                 )
               }
 
@@ -3537,10 +3536,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
               // Generic Section - for all other section types
               return (
-                <div key={section.section_id} className="border-t border-gray-200 first:border-t-0 dark:border-gray-700">
+                <Card key={section.section_id} padding="none" className={sectionShade}>
                   <button
                     onClick={() => toggleSection(section.section_slug as any)}
-                    className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800/40"
+                    className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl dark:bg-gray-700 dark:hover:bg-gray-600"
                   >
                     <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
                     {collapsedSections[section.section_slug as keyof typeof collapsedSections] ? (
@@ -3560,7 +3559,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Checklist field
                           if (fieldType === 'checklist') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3577,7 +3576,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Metric field
                           if (fieldType === 'metric') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3594,7 +3593,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Timeline field
                           if (fieldType === 'timeline') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3611,7 +3610,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Numeric field
                           if (fieldType === 'numeric') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3628,7 +3627,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Date field
                           if (fieldType === 'date') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3645,7 +3644,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Rating field - render analyst ratings section
                           if (fieldType === 'rating') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-rating" className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
+                              <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3666,7 +3665,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Estimates field - render analyst estimates section
                           if (fieldType === 'estimates') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3682,7 +3681,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Price target field - render outcomes container for price targets
                           if (fieldType === 'price_target') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-targets" className="border border-gray-200 bg-white rounded-lg hover:border-gray-300 transition-colors p-4 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600">
+                              <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3716,9 +3715,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 hideVisibility={true}
                                 sharedVisibility={sharedThesisVisibility}
                                 sharedTargetIds={sharedThesisTargetIds}
-                                plainChrome
-                                documentChrome
-                                alwaysShowToolbar
                                 fullPageEditor
                               />
                             </div>
@@ -3726,10 +3722,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         })}
                     </div>
                   )}
-                </div>
+                </Card>
               )
-            })}
-              </div>
+            })
             )}
 
             {/* User-Added Widgets Section */}

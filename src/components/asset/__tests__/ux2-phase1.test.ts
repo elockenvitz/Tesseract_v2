@@ -129,9 +129,11 @@ describe('UX2 P1: scoped tokens do not touch the global theme', () => {
     expect(tw).toContain("600: '#2563eb'")
   })
 
-  it('the context strip gained a band variant (navy cells), default unchanged', () => {
+  it('the context strip has a band variant, default unchanged', () => {
     expect(STRIP).toMatch(/variant\s*=\s*'default'/)
     expect(STRIP).toContain("variant === 'band'")
-    expect(STRIP).toContain('ux2-strip-cell')
+    // Band is now a compact inline row (thin dividers, no boxed tiles); the
+    // default variant keeps its tiled grid.
+    expect(STRIP).toContain('divide-x divide-[color:var(--ux2-band-line)]')
   })
 })
