@@ -16,16 +16,33 @@
 -- ── Expected results ────────────────────────────────────────────────────────
 --
 --   BEFORE scripts/sql/contribution-visibility/10-policy-fix.sql:
---       6 PASS, 4 FAIL — assertions 3, 4, 6 and 8 MUST fail.
+--       9 PASS, 5 FAIL — assertions 3, 4, 6, 8 and 13 MUST fail.
 --       If they pass, this test is decoration and must not be trusted.
 --
 --   AFTER 10-policy-fix.sql:
---       10 PASS, 0 FAIL.
+--       14 PASS, 0 FAIL.
 --
--- Assertions 2, 5, 7, 9 and 10 pass in BOTH states by design: they are the
--- preserve-legitimate-access controls, and a fix that breaks them is too tight.
+-- Assertions 1, 2, 5, 7, 9, 10, 11, 12 and 14 pass in BOTH states by design:
+-- they are the preserve-legitimate-access controls, and a fix that breaks one
+-- is too tight.
 --
--- Self-cleaning. 10 assertions.
+-- ── What 11 and 12 pin, and why they are not a new rule ─────────────────────
+--
+-- The org chart is a real hierarchy (`org_chart_nodes.parent_id`), and the
+-- picker offers the author their department and division by walking UP from
+-- their own memberships (ContributionSection.tsx:781-794). The POLICY matches
+-- on direct membership only — the convention stated in
+-- 20260827090400_quick_thoughts_tenant_rls.sql:52-56, which refused to invent
+-- subtree traversal inside a security change and left descent as an open
+-- product question.
+--
+-- So the fixture nests team ⊂ department ⊂ division and asserts both halves of
+-- what the code actually does: a DIRECT member of a targeted department reads
+-- it (11), and a member of a team BENEATH a targeted division does not (12).
+-- 12 documents the gap as a tested fact rather than a guess. It is not a
+-- recommendation that descent stay unimplemented.
+--
+-- Self-cleaning. 14 assertions.
 -- =============================================================================
 
 DROP TABLE IF EXISTS _sec_results;
@@ -41,14 +58,19 @@ DECLARE
   v_other     uuid := gen_random_uuid();   -- org A, member of an UNTARGETED node
   v_outsider  uuid := gen_random_uuid();   -- org B
   v_asset     uuid := gen_random_uuid();
-  v_node_t1   uuid := gen_random_uuid();   -- targeted
-  v_node_t2   uuid := gen_random_uuid();   -- targeted (second target)
-  v_node_t3   uuid := gen_random_uuid();   -- NOT targeted
+  v_node_div  uuid := gen_random_uuid();   -- division  (no direct members)
+  v_node_dept uuid := gen_random_uuid();   -- department, child of the division
+  v_node_t1   uuid := gen_random_uuid();   -- team, child of the department; targeted
+  v_node_t2   uuid := gen_random_uuid();   -- team, targeted (second target)
+  v_node_t3   uuid := gen_random_uuid();   -- team, NOT targeted
   v_c_single  uuid;   -- visibility 'team', team_id set,  1 target   → restricted
   v_c_multi   uuid;   -- visibility 'team', team_id NULL, 2 targets  → restricted
   v_c_zero    uuid;   -- visibility 'team', team_id NULL, 0 targets  → owner-only
   v_c_firm    uuid;   -- visibility 'firm'                           → org-wide
+  v_c_dept    uuid;   -- visibility 'department', targeted at the department
+  v_c_div     uuid;   -- visibility 'division',   targeted at the division
   v_rev       uuid := gen_random_uuid();
+  v_n2        int;
   v_pass      int := 0;
   v_fail      int := 0;
   v_seen      uuid[];
@@ -73,15 +95,28 @@ BEGIN
   INSERT INTO assets(id, symbol, company_name)
   VALUES (v_asset, 'ZZV'||v_suffix, 'ZZ Visibility Co '||v_suffix);
 
-  -- ----- Org chart: v_member is in t1 only; v_other is in t3 only -----
-  INSERT INTO org_chart_nodes(id, organization_id, node_type, name) VALUES
-    (v_node_t1, v_org_a, 'team', 'ZZ Targeted One '||v_suffix),
-    (v_node_t2, v_org_a, 'team', 'ZZ Targeted Two '||v_suffix),
-    (v_node_t3, v_org_a, 'team', 'ZZ Untargeted '||v_suffix);
+  -- ----- Org chart -----
+  --
+  --   division  (no direct members)
+  --     └ department          ← v_member is a DIRECT member
+  --         └ team t1         ← v_member
+  --   team t2 (flat)          ← v_member
+  --   team t3 (flat)          ← v_other
+  --
+  -- The nesting is what makes 12 meaningful: v_member sits BENEATH the
+  -- division without being a member of it.
+  INSERT INTO org_chart_nodes(id, organization_id, node_type, name, parent_id) VALUES
+    (v_node_div,  v_org_a, 'division',   'ZZ Division '||v_suffix,     NULL),
+    (v_node_dept, v_org_a, 'department', 'ZZ Department '||v_suffix,   v_node_div),
+    (v_node_t1,   v_org_a, 'team',       'ZZ Targeted One '||v_suffix, v_node_dept),
+    (v_node_t2,   v_org_a, 'team',       'ZZ Targeted Two '||v_suffix, NULL),
+    (v_node_t3,   v_org_a, 'team',       'ZZ Untargeted '||v_suffix,   NULL);
   INSERT INTO org_chart_node_members(node_id, user_id, role) VALUES
-    (v_node_t1, v_member,   'member'),
-    (v_node_t2, v_member,   'member'),
-    (v_node_t3, v_other,    'member');
+    (v_node_t1,   v_member, 'member'),
+    (v_node_t2,   v_member, 'member'),
+    (v_node_dept, v_member, 'member'),   -- DIRECT member of the department
+    (v_node_t3,   v_other,  'member');
+  -- Deliberately NO member of v_node_div.
 
   -- ----- Contributions, all authored by v_owner -----
   -- One per section: unique_user_asset_section is UNIQUE(created_by, asset_id,
@@ -111,10 +146,22 @@ BEGIN
   VALUES (v_asset, 'business_model', 'ZZ FIRM VISIBLE '||v_suffix, v_owner, 'firm', NULL)
   RETURNING id INTO v_c_firm;
 
+  -- Department- and division-scoped, the two shapes the picker offers by
+  -- walking up the hierarchy.
+  INSERT INTO asset_contributions(asset_id, section, content, created_by, visibility, team_id)
+  VALUES (v_asset, 'key_catalysts', 'ZZ RESTRICTED DEPT '||v_suffix, v_owner, 'department', v_node_dept)
+  RETURNING id INTO v_c_dept;
+
+  INSERT INTO asset_contributions(asset_id, section, content, created_by, visibility, team_id)
+  VALUES (v_asset, 'competitive_position', 'ZZ RESTRICTED DIV '||v_suffix, v_owner, 'division', v_node_div)
+  RETURNING id INTO v_c_div;
+
   INSERT INTO contribution_visibility_targets(contribution_id, node_id, organization_id) VALUES
-    (v_c_single, v_node_t1, v_org_a),
-    (v_c_multi,  v_node_t1, v_org_a),
-    (v_c_multi,  v_node_t2, v_org_a);
+    (v_c_single, v_node_t1,   v_org_a),
+    (v_c_multi,  v_node_t1,   v_org_a),
+    (v_c_multi,  v_node_t2,   v_org_a),
+    (v_c_dept,   v_node_dept, v_org_a),
+    (v_c_div,    v_node_div,  v_org_a);
   -- v_c_zero deliberately gets NONE.
 
   -- ----- The same prose, in the two side tables -----
@@ -127,11 +174,22 @@ BEGIN
          (v_c_multi,  'ZZ OLD MULTI  '||v_suffix, 'ZZ RESTRICTED MULTI HISTORY '||v_suffix,  v_owner),
          (v_c_firm,   'ZZ OLD FIRM   '||v_suffix, 'ZZ FIRM HISTORY '||v_suffix,              v_owner);
 
+  -- One revision session by the owner, carrying three shapes of event. The
+  -- actor IS the author — the invariant the derivation depends on, asserted in
+  -- 14 rather than assumed.
   INSERT INTO asset_revisions(id, asset_id, actor_user_id, view_scope_type, organization_id)
   VALUES (v_rev, v_asset, v_owner, 'firm', v_org_a);
   INSERT INTO asset_revision_events(revision_id, category, field_key, before_value, after_value, significance_tier)
-  VALUES (v_rev, 'thesis', 'thesis',
-          'ZZ OLD SINGLE '||v_suffix, 'ZZ RESTRICTED SINGLE REVISION '||v_suffix, 2);
+  VALUES
+    -- (a) attributable to v_c_single, which is restricted
+    (v_rev, 'thesis', 'thesis',
+     'ZZ OLD SINGLE '||v_suffix, 'ZZ RESTRICTED SINGLE REVISION '||v_suffix, 2),
+    -- (b) ORPHANED: no contribution holds this section, so nothing records
+    --     who its prose was shared with
+    (v_rev, 'thesis', 'zz_deleted_section_'||v_suffix,
+     'ZZ OLD ORPHAN '||v_suffix, 'ZZ ORPHANED PROSE '||v_suffix, 2),
+    -- (c) a price target: not contribution prose, org-visible by design
+    (v_rev, 'valuation_targets', 'price_target', '100', '125', 1);
 
   SET LOCAL request.jwt.claims = '';
 
@@ -292,7 +350,11 @@ BEGIN
     EXECUTE format('SET LOCAL request.jwt.claims = %L',
                    json_build_object('sub', v_other, 'role','authenticated')::text);
     SET LOCAL ROLE authenticated;
-    SELECT count(*) INTO v_n FROM asset_revision_events WHERE revision_id = v_rev;
+    -- Only the event attributable to the restricted contribution. The
+    -- price-target event in the same session is NOT contribution prose and is
+    -- asserted separately in 14.
+    SELECT count(*) INTO v_n FROM asset_revision_events
+     WHERE revision_id = v_rev AND field_key = 'thesis';
     RESET ROLE;
   EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1;
   END;
@@ -314,11 +376,11 @@ BEGIN
     RESET ROLE;
   EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1;
   END;
-  IF v_n >= 1 THEN v_pass := v_pass + 1;
-    INSERT INTO _sec_results VALUES (9, 'PASS', 'actor still reads own revision events');
+  IF v_n = 3 THEN v_pass := v_pass + 1;
+    INSERT INTO _sec_results VALUES (9, 'PASS', 'actor still reads all 3 of their own revision events');
   ELSE v_fail := v_fail + 1;
     INSERT INTO _sec_results VALUES (9, 'FAIL',
-      format('actor lost own revision events (count %s)', v_n)); END IF;
+      format('actor read %s of their own 3 revision events', v_n)); END IF;
 
   -- ===========================================================================
   -- 10. CROSS-ORG on both side tables.
@@ -344,19 +406,137 @@ BEGIN
     INSERT INTO _sec_results VALUES (10, 'FAIL', 'cross-org leaked: '||v_msg); END IF;
 
   -- ===========================================================================
+  -- 11. DEPARTMENT target, DIRECT member. v_member is a direct member of the
+  --     targeted department, so they read it; v_other is not, so they do not.
+  --     PASS before and after — the single-target path already worked.
+  -- ===========================================================================
+  v_msg := '';
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                   json_build_object('sub', v_member, 'role','authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    SELECT count(*) INTO v_n  FROM asset_contributions WHERE id = v_c_dept;
+    RESET ROLE;
+    EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                   json_build_object('sub', v_other, 'role','authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    SELECT count(*) INTO v_n2 FROM asset_contributions WHERE id = v_c_dept;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1; v_n2 := -1;
+  END;
+  IF v_n <> 1  THEN v_msg := v_msg || 'direct department member cannot read it '; END IF;
+  IF v_n2 <> 0 THEN v_msg := v_msg || 'LEAKED to a non-member '; END IF;
+  IF v_msg = '' THEN v_pass := v_pass + 1;
+    INSERT INTO _sec_results VALUES (11, 'PASS', 'department target: direct member yes, non-member no');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (11, 'FAIL', v_msg); END IF;
+
+  -- ===========================================================================
+  -- 12. DIVISION target with NO direct members. v_member sits in a team
+  --     BENEATH that division and still cannot read it, because the policy
+  --     matches direct membership only.
+  --
+  --     PASS before and after. This asserts WHAT THE CODE DOES, documenting
+  --     the unimplemented descent as a tested fact — it is not an endorsement.
+  --     If descent is ever implemented, this assertion must be INVERTED, and
+  --     the failure is the signal to do so deliberately.
+  -- ===========================================================================
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                   json_build_object('sub', v_member, 'role','authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    SELECT count(*) INTO v_n FROM asset_contributions WHERE id = v_c_div;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1;
+  END;
+  IF v_n = 0 THEN v_pass := v_pass + 1;
+    INSERT INTO _sec_results VALUES (12, 'PASS',
+      'division target does NOT reach a descendant team member (descent unimplemented, by convention)');
+  ELSE v_fail := v_fail + 1;
+    INSERT INTO _sec_results VALUES (12, 'FAIL',
+      format('descendant read a division-targeted contribution (count %s) — descent semantics changed', v_n)); END IF;
+
+  -- ===========================================================================
+  -- 13. ORPHANED revision prose. An event whose section has no contribution
+  --     cannot be attributed, so nothing records who it was shared with and it
+  --     must be denied to everyone but the actor.
+  --
+  --     FAILS BEFORE THE FIX: organization-scoped, so the whole org reads it.
+  -- ===========================================================================
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                   json_build_object('sub', v_other, 'role','authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    SELECT count(*) INTO v_n FROM asset_revision_events
+     WHERE revision_id = v_rev AND field_key = 'zz_deleted_section_'||v_suffix;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1;
+  END;
+  IF v_n = 0 THEN v_pass := v_pass + 1;
+    INSERT INTO _sec_results VALUES (13, 'PASS', 'unattributable revision prose denied to non-actor');
+  ELSE v_fail := v_fail + 1;
+    INSERT INTO _sec_results VALUES (13, 'FAIL',
+      format('orphaned prose readable org-wide (count %s)', v_n)); END IF;
+
+  -- ===========================================================================
+  -- 14. Two things the fix must NOT change.
+  --
+  --     (a) Price-target events stay organization-visible. They are not
+  --         contribution prose, and they are the only revision category the
+  --         Evolution Timeline renders.
+  --     (b) actor == author: the invariant the whole derivation rests on. If a
+  --         revision event ever has an actor who is not the author of the
+  --         matching contribution, the actor branch hands out somebody else's
+  --         prose. Asserted, not assumed.
+  -- ===========================================================================
+  v_msg := '';
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                   json_build_object('sub', v_other, 'role','authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    SELECT count(*) INTO v_n FROM asset_revision_events
+     WHERE revision_id = v_rev AND category = 'valuation_targets';
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1;
+  END;
+  IF v_n <> 1 THEN v_msg := v_msg || format('price-target event no longer org-visible (count %s) ', v_n); END IF;
+
+  -- (b) run unprivileged: every contribution-category event with a matching
+  --     section must match on the ACTOR, and exactly one row.
+  SELECT count(*) INTO v_n2
+    FROM asset_revision_events e
+    JOIN asset_revisions r ON r.id = e.revision_id
+   WHERE r.id = v_rev
+     AND e.category <> 'valuation_targets'
+     AND EXISTS (SELECT 1 FROM asset_contributions c
+                  WHERE c.asset_id = r.asset_id AND c.section = e.field_key)
+     AND NOT EXISTS (SELECT 1 FROM asset_contributions c
+                      WHERE c.asset_id = r.asset_id AND c.section = e.field_key
+                        AND c.created_by = r.actor_user_id);
+  IF v_n2 <> 0 THEN
+    v_msg := v_msg || format('%s event(s) attributable to a section whose author is NOT the actor ', v_n2);
+  END IF;
+  IF v_msg = '' THEN v_pass := v_pass + 1;
+    INSERT INTO _sec_results VALUES (14, 'PASS', 'price targets stay org-visible; actor == author holds');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (14, 'FAIL', v_msg); END IF;
+
+  -- ===========================================================================
   -- CLEANUP
   -- ===========================================================================
   SET LOCAL request.jwt.claims = '';
   DELETE FROM asset_revision_events WHERE revision_id = v_rev;
   DELETE FROM asset_revisions       WHERE id = v_rev;
   DELETE FROM asset_contribution_history
-   WHERE contribution_id IN (v_c_single, v_c_multi, v_c_zero, v_c_firm);
+   WHERE contribution_id IN (v_c_single, v_c_multi, v_c_zero, v_c_firm, v_c_dept, v_c_div);
   DELETE FROM contribution_visibility_targets
-   WHERE contribution_id IN (v_c_single, v_c_multi, v_c_zero, v_c_firm);
+   WHERE contribution_id IN (v_c_single, v_c_multi, v_c_zero, v_c_firm, v_c_dept, v_c_div);
   DELETE FROM asset_contributions
-   WHERE id IN (v_c_single, v_c_multi, v_c_zero, v_c_firm);
-  DELETE FROM org_chart_node_members WHERE node_id IN (v_node_t1, v_node_t2, v_node_t3);
-  DELETE FROM org_chart_nodes        WHERE id      IN (v_node_t1, v_node_t2, v_node_t3);
+   WHERE id IN (v_c_single, v_c_multi, v_c_zero, v_c_firm, v_c_dept, v_c_div);
+  DELETE FROM org_chart_node_members
+   WHERE node_id IN (v_node_t1, v_node_t2, v_node_t3, v_node_dept, v_node_div);
+  -- Children before parents: parent_id references org_chart_nodes.
+  DELETE FROM org_chart_nodes WHERE id IN (v_node_t1, v_node_t2, v_node_t3);
+  DELETE FROM org_chart_nodes WHERE id = v_node_dept;
+  DELETE FROM org_chart_nodes WHERE id = v_node_div;
   DELETE FROM assets WHERE id = v_asset;
   DELETE FROM organization_memberships WHERE organization_id IN (v_org_a, v_org_b);
   UPDATE users SET current_organization_id = NULL
@@ -364,8 +544,8 @@ BEGIN
   DELETE FROM organizations WHERE id IN (v_org_a, v_org_b);
   DELETE FROM auth.users WHERE id IN (v_owner, v_member, v_other, v_outsider);
 
-  RAISE NOTICE '=== RESULTS: % passed, % failed out of 10 assertions ===', v_pass, v_fail;
-  RAISE NOTICE 'Before the fix, 3/4/6/8 MUST be among the failures.';
+  RAISE NOTICE '=== RESULTS: % passed, % failed out of 14 assertions ===', v_pass, v_fail;
+  RAISE NOTICE 'Before the fix, 3/4/6/8/13 MUST be among the failures.';
 END;
 $$;
 

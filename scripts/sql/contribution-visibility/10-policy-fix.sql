@@ -50,10 +50,38 @@
 --               for a NULL node (20260827090400:126): a missing target denies,
 --               it does not share.
 --
--- NOT CHANGED, and NOT DECIDED HERE: whether a department/division target
--- should cascade to descendant nodes. 00- Q8/Q8b/Q9 answer whether that is
--- even a live case. If targeted nodes have no direct members, this file makes
--- those contributions owner-only and the cascade must be designed FIRST.
+-- ── The hierarchy question, now answered — and NOT changed here ─────────────
+--
+-- `org_chart_nodes` has `parent_id` and five node types (division, department,
+-- team, portfolio, custom — src/lib/org-graph.ts:11).
+--
+-- The picker builds its options by walking UP from the author's own direct
+-- memberships (`traverseUp`, ContributionSection.tsx:781-794): "my department"
+-- is the department ANCESTOR of a team the author belongs to, a node the
+-- author is usually not a direct member of. So the UI offers a broad audience.
+--
+-- The policy, here and in C1/08, matches on DIRECT membership only. That is
+-- the codebase's stated convention, and it was stated in a security change for
+-- the same reason it is being kept in one:
+--
+--     "Node scope is direct membership, matching the established convention on
+--      `layout_collaborations` rather than inventing subtree traversal inside a
+--      security change. Whether a division-level post should reach its
+--      sub-teams is a product question and is deliberately left open."
+--                      — 20260827090400_quick_thoughts_tenant_rls.sql:52-56
+--
+-- So subtree descent is UNIMPLEMENTED BY DECISION, not by oversight, and this
+-- file does not add it. The consequence has to be stated plainly: a
+-- department- or division-targeted contribution reaches only the direct
+-- members of that node, which is frequently nobody. 00- Q8b returns the count.
+-- Where it is nobody, the contribution is owner-only — and under the CURRENT
+-- policy a multi-target one of those is readable by the whole organization, so
+-- this file replaces an over-share with an under-share for exactly those rows.
+--
+-- That is the correct direction for proprietary research and it is still a
+-- product decision to confirm. The honest fix for the gap is in the PICKER,
+-- not here: it should stop offering an audience the authorization model does
+-- not deliver. That is a separate change.
 -- ============================================================================
 
 BEGIN;
@@ -153,56 +181,100 @@ CREATE POLICY asset_contribution_history_select ON public.asset_contribution_his
 
 -- ── 4. V3 — asset_revision_events ──────────────────────────────────────────
 --
--- Harder than V1, and the difference is worth stating. A revision event is
--- keyed by (asset_id, field_key), NOT by contribution_id, so it cannot simply
--- inherit one row's visibility. `field_key` is the section and several authors
--- can hold the same section, so an event's prose may match a restricted
--- contribution the caller cannot read.
+-- ATTRIBUTION. A revision event has NO contribution_id. It carries
+-- `field_key` (the section) and `category`, and hangs off `asset_revisions`,
+-- which carries `asset_id` and `actor_user_id`. There is no migration for
+-- either table in this repository — the shape above is read from
+-- src/lib/revision-service.ts:14-20 and src/hooks/useAssetRevisions.ts:6-21,
+-- and 00- Q1 must confirm it.
 --
--- The rule applied: the caller may read a revision event if they are its actor,
--- or if NO contribution in that (asset, section) is hidden from them. If any
--- matching contribution is restricted and unreadable, the event is withheld.
--- That is deliberately conservative — it can hide an event whose prose came
--- from a firm-visible contribution that happens to share a section with a
--- restricted one. Withholding a visible author's event is recoverable; leaking
--- a restricted author's prose is not.
+-- Despite the missing column, an event IS reliably attributable, through the
+-- actor. `publishDraft` passes `actorUserId: user.id`
+-- (useContributions.ts:424), and the author-only UPDATE policy means nobody
+-- else can publish that contribution — so the actor IS the author. With
+-- `unique_user_asset_section UNIQUE (created_by, asset_id, section)`, the
+-- triple (r.asset_id, e.field_key, r.actor_user_id) identifies EXACTLY ONE
+-- contribution row. No guessing, no "most recent wins".
+--
+-- THE INVARIANT THAT MAKES THIS SAFE, stated so it can be checked: actor ==
+-- author. If any future path ever writes a revision event whose actor is not
+-- the author of the matching contribution — a bulk tool, an admin action, a
+-- server job — then both the actor branch below AND the derivation become
+-- wrong, and that path would hand one analyst's prose to another. The test
+-- asserts the invariant rather than assuming it.
+--
+-- Three cases, and the two that cannot be attributed are handled explicitly
+-- rather than guessed:
+--
+--   category = 'valuation_targets'
+--       Price-target events. `field_key` is 'price_target', which is not a
+--       contribution section, so no contribution exists to derive from. These
+--       are NOT contribution prose, and they are the only revision category
+--       the Evolution Timeline renders (ThesisHistoryView.tsx:1058). Their
+--       current organization-scoped visibility is PRESERVED — unchanged, not
+--       widened. If price-target reasoning is later judged restricted, that is
+--       its own change with its own evidence.
+--
+--   an attributable contribution exists
+--       Derive from it. One row, via the triple above.
+--
+--   no contribution exists for a contribution-category event
+--       ORPHANED PROSE: the contribution was deleted and its before/after text
+--       outlived it. Nothing records who it was shared with, so it is denied
+--       to everyone but the actor. This is a real residual — the prose is
+--       still in the table, merely unreadable — and is documented as such.
 DROP POLICY IF EXISTS asset_revision_events_select ON public.asset_revision_events;
 CREATE POLICY asset_revision_events_select ON public.asset_revision_events
   FOR SELECT TO authenticated
   USING (
-    EXISTS (SELECT 1 FROM public.asset_revisions r
-             WHERE r.id = asset_revision_events.revision_id
-               AND (r.actor_user_id = auth.uid()
-                    OR (r.organization_id = public.current_org_id()
-                        AND public.is_active_member_of_current_org()
-                        AND NOT EXISTS (
+    EXISTS (
+      SELECT 1 FROM public.asset_revisions r
+       WHERE r.id = asset_revision_events.revision_id
+         AND (
+               -- The actor is the author of the prose in their own session.
+               r.actor_user_id = auth.uid()
+               OR (
+                 r.organization_id = public.current_org_id()
+                 AND public.is_active_member_of_current_org()
+                 AND CASE
+                       WHEN asset_revision_events.category = 'valuation_targets'
+                         THEN true          -- not contribution prose; unchanged
+                       ELSE EXISTS (
                               SELECT 1
                               FROM public.asset_contributions c
-                              WHERE c.asset_id = r.asset_id
-                                AND c.section  = asset_revision_events.field_key
-                                AND NOT public.can_read_asset_contribution(c.id)))))
+                              WHERE c.asset_id    = r.asset_id
+                                AND c.section     = asset_revision_events.field_key
+                                AND c.created_by  = r.actor_user_id
+                                AND public.can_read_asset_contribution(c.id))
+                     END
+               )
+             )
+    )
   );
 
--- asset_revisions itself carries no prose (actor, asset, timestamp, note), so
--- C1/06's policy on it is left alone. If `review_note` is later found to carry
--- analyst text, it needs the same treatment — 00- Q1 shows its columns.
+-- asset_revisions itself carries no prose (actor, asset, timestamps, scope,
+-- and a `review_note` the actor writes about their own session), so C1/06's
+-- policy on it is left alone. If `review_note` is found to quote analyst text,
+-- it needs the same treatment — 00- Q1 shows its columns.
 
 COMMIT;
 
 -- ============================================================================
 -- NON-VACUITY — the gate must be shown observing its own failure mode.
 --
--- supabase/tests/contribution-visibility-security.sql is the real test: 10
--- assertions against the live `authenticated` role with real jwt claims.
--- Against an UNFIXED database it must report assertions 3, 4, 6 and 8
--- FAILING — one per defect, V2 twice (the two team_id-NULL shapes), V1 and V3
--- once each. If it passes before this file is applied, the test is decoration
--- and must not be trusted.
+-- supabase/tests/contribution-visibility-security.sql is the real test: 14
+-- assertions against the live `authenticated` and `anon` roles with real jwt
+-- claims. Against an UNFIXED database it must report assertions 3, 4, 6, 8
+-- and 13 FAILING — V2 twice (the two team_id-NULL shapes), V1, V3, and the
+-- orphaned-prose case. If it passes before this file is applied, the test is
+-- decoration and must not be trusted.
 --
--- Assertions 2, 5, 7, 9 and 10 must pass in BOTH states: they are the
+-- Nine assertions must pass in BOTH states: they are the
 -- preserve-legitimate-access controls, and a fix that breaks one is too tight.
+-- Assertion 12 pins the UNIMPLEMENTED subtree descent as a tested fact; if
+-- descent is ever implemented, 12 must be deliberately inverted.
 --
---   psql "$DB_URL" -f supabase/tests/contribution-visibility-security.sql   -- expect 6 PASS / 4 FAIL
+--   psql "$DB_URL" -f supabase/tests/contribution-visibility-security.sql   -- expect 9 PASS / 5 FAIL
 --   psql "$DB_URL" -f scripts/sql/contribution-visibility/10-policy-fix.sql
---   psql "$DB_URL" -f supabase/tests/contribution-visibility-security.sql   -- expect 10 PASS / 0 FAIL
+--   psql "$DB_URL" -f supabase/tests/contribution-visibility-security.sql   -- expect 14 PASS / 0 FAIL
 -- ============================================================================
