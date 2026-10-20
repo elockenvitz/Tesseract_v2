@@ -178,6 +178,21 @@ interface ContributionSectionProps {
    * warning). Default OFF keeps the existing full-screen editor for other callers.
    */
   inlineEditor?: boolean
+  /**
+   * UX2 Phase 2 — flat "document" chrome: no per-section card border / fill /
+   * radius, just a hairline top separator, so a stack of sections reads as ONE
+   * continuous Investment Case document inside a single outer container. Even
+   * flatter than plainChrome (which keeps a thin-bordered card). Presentation
+   * only; editing/drafts/history unaffected. Default OFF.
+   */
+  documentChrome?: boolean
+  /**
+   * UX2 Phase 2 — keep Edit / Add-your-view visible without hovering (the blue
+   * Edit control in the section header). Discoverability requirement; does not
+   * change what the control does. Default OFF keeps the hover-reveal for other
+   * callers.
+   */
+  alwaysShowToolbar?: boolean
 }
 
 // Section color themes - unified blue accent with amber hover
@@ -618,6 +633,8 @@ export function ContributionSection({
   hideWhenEmpty = false,
   plainChrome = false,
   inlineEditor = false,
+  documentChrome = false,
+  alwaysShowToolbar = false,
 }: ContributionSectionProps) {
   // Get theme based on section type
   const theme = SECTION_THEMES[sectionType]
@@ -1394,7 +1411,7 @@ export function ContributionSection({
     : null
 
   // Show toolbar when hovering, editing, or history is open
-  const showToolbar = isHovered || isEditing || showHistory
+  const showToolbar = isHovered || isEditing || showHistory || alwaysShowToolbar
 
   // Flat mode: render just the contributions without wrapper/header (for aggregated view)
   if (flatMode && activeTab === 'aggregated') {
@@ -1478,12 +1495,19 @@ export function ContributionSection({
   return (
     <div
       className={clsx(
-        'bg-white border border-gray-200 rounded-lg transition-all duration-200 dark:border-gray-700 dark:bg-gray-800',
-        plainChrome
-          // Quiet reading chrome: a clean thin-bordered card, no coloured
-          // accent, no amber hover recolour, no shadow.
-          ? 'hover:border-gray-300 dark:hover:border-gray-600'
-          : ['border-l-4', theme.accent, theme.hoverBorder, theme.hoverBg, 'hover:shadow-sm'],
+        documentChrome
+          // UX2 P2 — flat document section: no card border/fill/radius; the
+          // single outer Investment Case container provides the frame and the
+          // hairline dividers between sections.
+          ? 'bg-transparent rounded-none transition-colors'
+          : [
+              'bg-white border border-gray-200 rounded-lg transition-all duration-200 dark:border-gray-700 dark:bg-gray-800',
+              plainChrome
+                // Quiet reading chrome: a clean thin-bordered card, no coloured
+                // accent, no amber hover recolour, no shadow.
+                ? 'hover:border-gray-300 dark:hover:border-gray-600'
+                : ['border-l-4', theme.accent, theme.hoverBorder, theme.hoverBg, 'hover:shadow-sm'],
+            ],
         className
       )}
       onMouseEnter={() => setIsHovered(true)}

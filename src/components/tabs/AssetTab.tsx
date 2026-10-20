@@ -3414,21 +3414,21 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 </div>
               )
             ) : (
-              /* Individual User "All" View - shows full layout with all sections */
-              displayedFieldsBySection.map((section, sectionIdx) => {
+              /* Individual User "All" View — the Investment Case as ONE
+                 continuous document (UX2 P2): a single container, sections
+                 separated by hairlines instead of a stack of heavy cards. */
+              <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+              {displayedFieldsBySection.map((section) => {
                 // Skip hidden sections
                 if (section.section_is_hidden) return null
-
-                // Alternating shade for visual separation
-                const sectionShade = sectionIdx % 2 === 1 ? '!bg-gray-50/60' : ''
 
               // Forecasts Section - render fields individually as tiles
               if (section.section_slug === 'forecasts') {
                 return (
-                  <Card key={section.section_id} padding="none" className={sectionShade}>
+                  <div key={section.section_id} className="border-t border-gray-200 first:border-t-0 dark:border-gray-700">
                     <button
                       onClick={() => toggleSection('outcomes')}
-                      className="w-full px-5 py-2 flex items-center gap-2 bg-gray-100/80 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
+                      className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800/40"
                     >
                       <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
                       {collapsedSections.outcomes ? (
@@ -3439,6 +3439,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     </button>
                     {!collapsedSections.outcomes && (
                       <div className="border-t border-gray-100 px-5 py-2 space-y-3 dark:border-gray-800">
+                        {/* UX2 P2 — keep the reader's personal valuation visibly
+                            distinct from the firm consensus (which lives in
+                            Organization). Shown only on the reader's own view. */}
+                        {isViewingOwnThesisTab && (
+                          <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            Your rating, price target and estimates — personal, not the firm consensus. The aggregated firm view is under Organization.
+                          </p>
+                        )}
                         {section.fields
                           .filter(f => f.is_visible)
                           .map(field => {
@@ -3521,13 +3530,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                   sharedTargetIds={sharedThesisTargetIds}
                                   plainChrome
                                   inlineEditor
+                                  documentChrome
+                                  alwaysShowToolbar
                                 />
                               </div>
                             )
                           })}
                       </div>
                     )}
-                  </Card>
+                  </div>
                 )
               }
 
@@ -3538,10 +3549,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
               // Generic Section - for all other section types
               return (
-                <Card key={section.section_id} padding="none" className={sectionShade}>
+                <div key={section.section_id} className="border-t border-gray-200 first:border-t-0 dark:border-gray-700">
                   <button
                     onClick={() => toggleSection(section.section_slug as any)}
-                    className="w-full px-5 py-2 flex items-center gap-2 bg-gray-100/80 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
+                    className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800/40"
                   >
                     <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
                     {collapsedSections[section.section_slug as keyof typeof collapsedSections] ? (
@@ -3719,15 +3730,18 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 sharedTargetIds={sharedThesisTargetIds}
                                 plainChrome
                                 inlineEditor
+                                documentChrome
+                                alwaysShowToolbar
                               />
                             </div>
                           )
                         })}
                     </div>
                   )}
-                </Card>
+                </div>
               )
-            })
+            })}
+              </div>
             )}
 
             {/* User-Added Widgets Section */}
