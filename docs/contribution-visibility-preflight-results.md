@@ -298,12 +298,91 @@ finding**, subject to A8. **No grants changed during the preflight.**
 
 ---
 
+---
+
+## A5 — Schema shape · **CONDITIONAL PASS, correction applied**
+
+All required columns exist on both revision tables: `asset_revisions` has
+`id`, `asset_id`, `actor_user_id`, `organization_id`; `asset_revision_events`
+has `revision_id`, `category`, `field_key`, `before_value`, `after_value`,
+`organization_id`. The inferred shape the policy was written against is
+correct. Hard stop clear.
+
+Three constraint findings, two of which close open questions and one of which
+forced a correction.
+
+### 1. The uniqueness is FOUR columns, not three
+
+```
+unique_user_asset_section_org
+  UNIQUE NULLS NOT DISTINCT (created_by, asset_id, section, organization_id)
+```
+
+The revision-event attribution in `10-` §4 matched on three of them. An author
+who belongs to two organizations can hold the same section on the same asset in
+each, so `(asset_id, section, created_by)` resolves to a **set**, not a row.
+
+**It did not widen anything.** `can_read_asset_contribution` itself requires
+`c.organization_id = current_org_id()`, so a foreign-org row returns false and
+cannot grant access. But that is the authorization happening to be tight while
+the attribution is loose — compensation, not design. Relax the helper's org
+clause one day and the join silently becomes a cross-org path.
+
+**Corrected:** added `AND c.organization_id = r.organization_id`, making the
+match exactly the unique tuple.
+
+### 2. A second defect found while correcting the first
+
+C1/06 keys its org check on the **event's** `organization_id`. The replacement
+keyed on the **revision's**. Both columns are nullable (A5 item 4).
+
+For a legacy row with event org `NULL` under a revision org A, C1/06 grants the
+**actor only**; the replacement would have granted **every org-A member who
+could read the contribution**. Bounded by the contribution check, but a
+widening that was neither intended nor stated — and the preflight is the only
+reason it was caught.
+
+**Corrected:** both the event's and the revision's `organization_id` must now
+match `current_org_id()`, so a `NULL` on either falls through to the actor-only
+branch, exactly as conservative as production is today.
+
+### 3. Two open questions closed
+
+- **A CHECK on `visibility` exists**, restricting it to
+  `portfolio, team, department, division, firm`. This **corrects the A1 note**:
+  arbitrary strings are already rejected at the database level, so the RPC's
+  scope validation is defence in depth rather than the only enforcement. The
+  RPC keeps it — it must still reject a scope/target mismatch, which the CHECK
+  cannot see.
+- **`contribution_visibility_targets` has `UNIQUE (contribution_id, node_id)`.**
+  No duplicate-prevention constraint is needed in the RPC, and a partial replace
+  cannot leave a node listed twice.
+
+### 4. Legacy null-org events fail closed
+
+Confirmed by construction after correction 2: `NULL = current_org_id()` is
+`NULL`, not true, so the org branch cannot be entered and only
+`r.actor_user_id = auth.uid()` grants access.
+
+### To prove in isolation
+
+Both corrections need assertions, and both must be shown failing against the
+uncorrected policy:
+
+- A multi-org author holding the same `(asset, section)` in two organizations:
+  a member of org A reading an org-A event must not be authorized by the org-B
+  contribution, and must still be authorized by the org-A one.
+- A legacy event with `organization_id NULL` under a revision with an
+  organization: readable by its actor, by nobody else.
+
+---
+
 ## Outstanding
 
 | Block | Question | Status |
 |---|---|---|
 | A3e | `EXECUTE` grants on `can_view_contribution`; full body | queued |
-| A5 | revision table columns; any CHECK on `visibility` | **next** |
+| A6 | history row shapes | **next** |
 | A5 | revision table columns, plus any CHECK on `visibility` | outstanding |
 | A6 | history row shapes | outstanding |
 | A7 | triggers on `asset_contributions` | outstanding |

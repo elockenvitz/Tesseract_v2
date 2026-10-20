@@ -223,6 +223,31 @@ CREATE POLICY asset_contribution_history_select ON public.asset_contribution_his
 --       outlived it. Nothing records who it was shared with, so it is denied
 --       to everyone but the actor. This is a real residual — the prose is
 --       still in the table, merely unreadable — and is documented as such.
+-- ── Corrected after preflight A5. Two tightenings, both load-bearing ───────
+--
+-- (i) THE ATTRIBUTION JOIN WAS LOOSE. Production's uniqueness is
+--     `unique_user_asset_section_org UNIQUE NULLS NOT DISTINCT
+--      (created_by, asset_id, section, organization_id)` — FOUR columns, not
+--     the three this policy originally matched on. An author who belongs to
+--     two organizations can hold the same section on the same asset in each,
+--     so (asset_id, section, created_by) resolves to a SET, not a row.
+--
+--     It did not widen anything, because `can_read_asset_contribution` itself
+--     requires `c.organization_id = current_org_id()`, so a foreign-org row
+--     returns false. But that is the authorization happening to be tight while
+--     the attribution is loose — compensation, not design. Relax the helper's
+--     org clause one day and the join silently becomes a cross-org path.
+--     `c.organization_id = r.organization_id` makes the match exactly the
+--     unique tuple, so the event is authorized by THE contribution it came
+--     from and no other.
+--
+-- (ii) THE ORG CHECK MOVED TABLES, AND THAT WAS A WIDENING. C1/06 keys on the
+--     EVENT's `organization_id`; this policy keyed on the REVISION's. Both
+--     columns are nullable (A5). For a legacy row with event org NULL under a
+--     revision org A, C1/06 grants the actor only — this policy would have
+--     granted every org-A member who could read the contribution. Bounded, but
+--     a widening that was neither intended nor stated. Requiring BOTH to match
+--     keeps legacy null-org events exactly as conservative as they are today.
 DROP POLICY IF EXISTS asset_revision_events_select ON public.asset_revision_events;
 CREATE POLICY asset_revision_events_select ON public.asset_revision_events
   FOR SELECT TO authenticated
@@ -234,7 +259,10 @@ CREATE POLICY asset_revision_events_select ON public.asset_revision_events
                -- The actor is the author of the prose in their own session.
                r.actor_user_id = auth.uid()
                OR (
-                 r.organization_id = public.current_org_id()
+                 -- (ii) both the event and its revision, so a NULL on either
+                 -- fails closed to the actor-only branch above.
+                 asset_revision_events.organization_id = public.current_org_id()
+                 AND r.organization_id = public.current_org_id()
                  AND public.is_active_member_of_current_org()
                  AND CASE
                        WHEN asset_revision_events.category = 'valuation_targets'
@@ -242,9 +270,11 @@ CREATE POLICY asset_revision_events_select ON public.asset_revision_events
                        ELSE EXISTS (
                               SELECT 1
                               FROM public.asset_contributions c
-                              WHERE c.asset_id    = r.asset_id
-                                AND c.section     = asset_revision_events.field_key
-                                AND c.created_by  = r.actor_user_id
+                              WHERE c.asset_id         = r.asset_id
+                                AND c.section          = asset_revision_events.field_key
+                                AND c.created_by       = r.actor_user_id
+                                -- (i) the fourth column of the unique tuple
+                                AND c.organization_id  = r.organization_id
                                 AND public.can_read_asset_contribution(c.id))
                      END
                )
