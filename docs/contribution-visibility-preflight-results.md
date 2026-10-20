@@ -620,6 +620,33 @@ Complete the preflight, test the fixes in isolation, deploy. Notification
 planning is deferred unless later evidence identifies genuine third-party
 confidential data or external exposure.
 
+## B1 — V2 blast radius · **ZERO**
+
+`n_1_exposed_now = 0` across all 28 organizations. No non-archived, non-firm
+contribution currently has `team_id IS NULL`.
+
+**V2 is latent, not active.** The policy defect is confirmed live in A1 and
+still gets fixed — but no contribution is being read beyond its stated audience
+through that branch today. Combined with B0, the release is hardening a defect
+before it bites, which is the cheapest moment to do it.
+
+### B2 skipped — subsumed
+
+B2 splits B1's population into "audience destroyed" and "targets intact". With
+B1 at zero that population is empty and B2 can only return zero rows. Skipping
+it is the proportionate call, not a gap.
+
+### What B1 does NOT cover, and why Part B continues
+
+B1 tests one predicate: `team_id IS NULL`. The other two confirmed defects are
+**unconditional** — they expose restricted prose regardless of `team_id`:
+
+- **V1** — `asset_contribution_history_select` is org-scoped and
+  visibility-blind. B3.
+- **V3** — `asset_revision_events_select`, likewise. B4.
+
+A zero here says nothing about either. They are measured next.
+
 ---
 
 ## Still queued, none blocking
