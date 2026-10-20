@@ -46,6 +46,24 @@ BEGIN
   END IF;
 END $$;
 
+/*
+ * `postgres` must be a MEMBER of the role to transfer ownership to it.
+ * Postgres requires direct or indirect membership in the new owning role for
+ * ALTER ... OWNER TO, and Supabase's `postgres` is not a superuser, so without
+ * this the ALTER at the foot of this file fails and the whole transaction
+ * rolls back.
+ *
+ * This does not weaken the pin. The trigger compares `current_user`, which
+ * becomes 'tesseract_audience_writer' only INSIDE the SECURITY DEFINER
+ * function; a session running as `postgres` still reads as `postgres` and has
+ * its audience fields pinned like any other caller. Membership grants the
+ * ability to administer the role, not to be it implicitly.
+ *
+ * It does mean the verification query must expect exactly ONE member —
+ * `postgres` — rather than none. `authenticated` and `anon` must never appear.
+ */
+GRANT tesseract_audience_writer TO postgres;
+
 COMMENT ON ROLE tesseract_audience_writer IS
   'Owns set_contribution_audience() and nothing else. NOLOGIN, NOBYPASSRLS, '
   'granted to no one. Its only purpose is to be a current_user value the pin '
@@ -259,12 +277,15 @@ COMMIT;
 -- ============================================================================
 -- VERIFY AFTER APPLYING — read-only
 -- ============================================================================
--- -- the role must be inert and unheld
+-- -- the role must be inert
 -- SELECT rolname, rolcanlogin, rolbypassrls, rolinherit FROM pg_roles
 --  WHERE rolname = 'tesseract_audience_writer';                   -- f, f, f
--- SELECT count(*) AS should_be_zero FROM pg_auth_members m
---   JOIN pg_roles r ON r.oid = m.roleid
---  WHERE r.rolname = 'tesseract_audience_writer';                 -- 0
+-- -- and held by postgres ALONE (needed for the ownership transfer).
+-- -- `authenticated` or `anon` appearing here is a boundary failure.
+-- SELECT r2.rolname AS member FROM pg_auth_members m
+--   JOIN pg_roles r  ON r.oid  = m.roleid
+--   JOIN pg_roles r2 ON r2.oid = m.member
+--  WHERE r.rolname = 'tesseract_audience_writer';                 -- postgres only
 --
 -- -- the direct write paths must be gone
 -- SELECT grantee, privilege_type FROM information_schema.role_table_grants
