@@ -7,9 +7,10 @@
  * dark palette keys off an ancestor `.dark` (what the app already toggles).
  */
 .ux2-scope{
-  --ux2-band:#101d31;      /* deep-navy identity band */
-  --ux2-band-2:#182a44;    /* chip / hover on the band */
-  --ux2-band-line:rgba(157,176,202,.18);
+  --ux2-band:#223049;      /* slate-navy identity band — lighter/desaturated so
+                              it sits better against Tesseract's light UI */
+  --ux2-band-2:#2d3d5a;    /* chip / hover on the band */
+  --ux2-band-line:rgba(157,176,202,.20);
   --ux2-ink:#eef3fa;       /* text on the band */
   --ux2-ink-2:#9db0ca;     /* muted text on the band */
   --ux2-pos:#6ee7a8;       /* positive change on navy */
@@ -17,8 +18,8 @@
   --ux2-crit:#b5362a;      /* attention count */
 }
 .dark .ux2-scope{
-  --ux2-band:#0a1322;
-  --ux2-band-2:#17263d;
+  --ux2-band:#16233a;
+  --ux2-band-2:#223150;
   --ux2-ink:#eaf1fb;
   --ux2-ink-2:#8ca0bd;
 }
@@ -37,14 +38,14 @@
   background:var(--ux2-band-2); color:var(--ux2-ink);
   border:1px solid var(--ux2-band-line); font-size:13px; font-weight:500;
 }
-.ux2-band-chip:hover{ background:#21365a; }
+.ux2-band-chip:hover{ background:#344665; }
 .ux2-band-iconbtn{
   position:relative; display:inline-flex; align-items:center; gap:7px;
   height:32px; padding:0 11px; border-radius:8px;
   background:var(--ux2-band-2); color:var(--ux2-ink);
   border:1px solid var(--ux2-band-line); font-weight:600;
 }
-.ux2-band-iconbtn:hover{ background:#21365a; }
+.ux2-band-iconbtn:hover{ background:#344665; }
 .ux2-attn-count{
   min-width:18px; height:18px; padding:0 5px; border-radius:9px;
   background:var(--ux2-crit); color:#fff; font-size:11px; font-weight:700;

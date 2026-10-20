@@ -2812,6 +2812,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         onOpenSubPage={(sub) => goToSubPage(sub)}
         onOpenList={(focus) => { setActiveSubPage('lists'); setListsFocus(focus) }}
         collapsed={headerCollapsed}
+        onToggleCollapse={toggleHeaderCollapsed}
       />
 
       {/* Sub-page Tab Selector */}
@@ -2897,21 +2898,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <span>Lists</span>
             </div>
           </button>
-
-          {/* UX2 Phase 1 — collapse/expand the investment-context strip to a
-              compact working header. Identity, price, attention, Ask AI and the
-              tabs stay visible either way. */}
-          <button
-            type="button"
-            onClick={toggleHeaderCollapsed}
-            aria-pressed={headerCollapsed}
-            className="ml-auto self-center inline-flex items-center gap-1.5 h-[30px] px-2.5 rounded-lg border border-gray-200 bg-white text-xs font-semibold text-gray-600 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-          >
-            <span>{headerCollapsed ? 'Expand header' : 'Collapse header'}</span>
-            {headerCollapsed
-              ? <ChevronDown className="h-3.5 w-3.5" />
-              : <ChevronUp className="h-3.5 w-3.5" />}
-          </button>
+          {/* UX2 P1/P2 refinement — the collapse/expand control moved INTO the
+              identity band (AssetWorkspaceHeader) as a compact icon. */}
         </nav>
       </div>
       </div>
@@ -3532,6 +3520,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                   inlineEditor
                                   documentChrome
                                   alwaysShowToolbar
+                                  overlayEditor
                                 />
                               </div>
                             )
@@ -3732,6 +3721,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 inlineEditor
                                 documentChrome
                                 alwaysShowToolbar
+                                overlayEditor
                               />
                             </div>
                           )

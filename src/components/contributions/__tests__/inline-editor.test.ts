@@ -24,7 +24,7 @@ describe('UX1c-2: inline editor expands in place, no viewport takeover', () => {
   it('skips the full-screen expand/scroll-lock effect when inline', () => {
     // The takeover effect animates the card to the scroll height and locks the
     // page scroll; inline must bail out of it before any of that runs.
-    expect(CONTRIB).toContain('if (inline) return')
+    expect(CONTRIB).toContain('if (inline || overlay) return')
   })
 
   it('bounds the inline editor height instead of filling the viewport', () => {
@@ -45,7 +45,7 @@ describe('UX1c-2: inline editor expands in place, no viewport takeover', () => {
 
 describe('UX1c-2: unsaved work is never silently discarded', () => {
   it('Cancel while dirty asks before discarding (inline only)', () => {
-    expect(CONTRIB).toMatch(/if \(inlineEditor && isDirty\)/)
+    expect(CONTRIB).toMatch(/if \(guardedEditor && isDirty\)/)
     expect(CONTRIB).toContain('setShowCancelConfirm(true)')
   })
 
@@ -57,7 +57,7 @@ describe('UX1c-2: unsaved work is never silently discarded', () => {
   it('warns on page unload while editing dirty (inline only)', () => {
     expect(CONTRIB).toContain("addEventListener('beforeunload'")
     // gated behind the inline flag, not fired for every section
-    expect(CONTRIB).toMatch(/if \(!inlineEditor\) return[\s\S]{0,400}addEventListener\('beforeunload'/)
+    expect(CONTRIB).toMatch(/if \(!guardedEditor\) return[\s\S]{0,400}addEventListener\('beforeunload'/)
   })
 
   it('shows a confirm dialog for the cancel case', () => {
@@ -75,7 +75,7 @@ describe('UX1c-2: persistence and permissions are unchanged', () => {
 
   it('inline and full-screen run the SAME action handler (no second save path)', () => {
     // The only difference is the collapse animation, not what the button does.
-    expect(CONTRIB).toContain('const run = (action: () => void) => (inline ? action() : collapseAndRun(action))')
+    expect(CONTRIB).toContain('const run = (action: () => void) => (inline || overlay ? action() : collapseAndRun(action))')
   })
 
   it('does not add a second editor implementation', () => {

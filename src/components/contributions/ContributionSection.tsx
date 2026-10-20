@@ -193,6 +193,12 @@ interface ContributionSectionProps {
    * callers.
    */
   alwaysShowToolbar?: boolean
+  /**
+   * UX2 P1/P2 refinement — open the editor as a near-full-screen focused
+   * workspace (overlay) instead of the bounded inline box, for serious research
+   * writing. Same editor/handlers; keeps the inlineEditor safeguards. Default OFF.
+   */
+  overlayEditor?: boolean
 }
 
 // Section color themes - unified blue accent with amber hover
@@ -338,7 +344,7 @@ function CollapsibleContent({ content }: { content: string }) {
 function EditingPane({
   title, smartInputRef, editContent, onContentChange, onKeyDown, placeholder, assetContext,
   onCancel, onSaveDraft, onPublish, onDiscardDraft, isSaving, isDraftSaving, isDiscarding, canSave,
-  inline = false,
+  inline = false, overlay = false, contextNode,
 }: {
   title: string
   smartInputRef: React.RefObject<UniversalSmartInputRef>
@@ -357,7 +363,17 @@ function EditingPane({
    * callers unchanged.
    */
   inline?: boolean
+  /**
+   * UX2 P1/P2 refinement — a near-full-screen focused writing workspace: the
+   * SAME rich-text editor, handlers and safeguards, lifted into a large overlay
+   * panel (not the fragile in-card DOM takeover, which the document layout
+   * broke). `contextNode` is optional read-only research context shown beside
+   * the editor so the writer never has to leave the workspace to check it.
+   */
+  overlay?: boolean
+  contextNode?: React.ReactNode
 }) {
+  const [showContext, setShowContext] = useState(false)
   const paneRef = useRef<HTMLDivElement>(null)
   const sectionCardRef = useRef<HTMLElement | null>(null)
   const scrollContainerRef = useRef<HTMLElement | null>(null)
@@ -451,10 +467,9 @@ function EditingPane({
   }, [isCollapsing, animate])
 
   useEffect(() => {
-    // Inline mode does NOT take over the viewport: it leaves the card at its
-    // natural height and never locks the page scroll, so the surrounding case
-    // stays visible and the reader is not scrolled away.
-    if (inline) return
+    // Inline and overlay modes do NOT run the in-card viewport takeover: inline
+    // leaves the card at its natural height; overlay renders its own fixed panel.
+    if (inline || overlay) return
 
     const el = paneRef.current
     if (!el) return
@@ -544,7 +559,70 @@ function EditingPane({
 
   // Inline buttons act immediately; the full-screen editor plays its collapse
   // animation first. Either way the SAME handler runs — persistence is unchanged.
-  const run = (action: () => void) => (inline ? action() : collapseAndRun(action))
+  const run = (action: () => void) => (inline || overlay ? action() : collapseAndRun(action))
+
+  // UX2 P1/P2 — near-full-screen focused writing workspace. Same RichTextEditor,
+  // same handlers, same safeguards (Cancel-confirm / beforeunload / unsaved-nav
+  // guard live in ContributionSection and are unaffected). Research context is
+  // reachable via the "Show published" rail without leaving the editor.
+  if (overlay) {
+    // z-40 sits below the shared ConfirmDialog (z-50), so the Cancel-while-dirty
+    // / Discard-draft confirmations render ABOVE this overlay.
+    return (
+      <div className="fixed inset-0 z-40 flex flex-col bg-slate-900/40" role="dialog" aria-modal="true" aria-label={`Editing ${title}`}>
+        <div className="relative m-2 flex min-h-0 w-auto flex-1 flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-gray-900 sm:m-3 lg:mx-auto lg:my-4 lg:w-[min(1040px,94vw)]">
+          <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 px-5 py-3 dark:border-gray-800">
+            <h2 className="text-[15px] font-semibold text-gray-900 dark:text-white">{title}</h2>
+            <span className="hidden text-[11px] font-medium uppercase tracking-wide text-gray-400 sm:inline">Focused editing</span>
+            {contextNode && (
+              <button
+                type="button"
+                onClick={() => setShowContext(v => !v)}
+                aria-pressed={showContext}
+                className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                {showContext ? 'Hide published' : 'Show published'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => run(onCancel)}
+              aria-label="Close editor"
+              className={clsx('rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800', !contextNode && 'ml-auto')}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex min-h-0 flex-1">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden [&_.editor-container]:relative [&_.editor-container]:min-h-0 [&_.editor-container]:flex-1 [&_.editor-container]:overflow-y-auto [&_.editor-container]:rounded-none [&_.editor-container]:border-0 [&_.rich-text-editor]:flex [&_.rich-text-editor]:min-h-0 [&_.rich-text-editor]:flex-1 [&_.rich-text-editor]:flex-col [&_.rich-text-editor]:overflow-hidden [&_.sticky]:static">
+              <RichTextEditor ref={richEditorRef} value={htmlContent} onChange={handleRichChange} placeholder={placeholder} minHeight="300px" editorClassName="px-5 py-3 text-[15px]" assetContext={assetContext} />
+            </div>
+            {contextNode && showContext && (
+              <aside className="hidden w-[340px] shrink-0 flex-col overflow-y-auto border-l border-gray-200 bg-gray-50/60 p-4 dark:border-gray-800 dark:bg-gray-800/30 sm:flex">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Currently published</div>
+                <div className="prose prose-sm max-w-none text-gray-600 dark:text-gray-300 [&>p]:m-0">{contextNode}</div>
+              </aside>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-gray-200 bg-gray-50/50 px-5 py-3 dark:border-gray-700 dark:bg-gray-800/20">
+            {onDiscardDraft && (
+              <button onClick={() => run(onDiscardDraft)} disabled={isDiscarding} className="mr-auto flex items-center rounded-lg px-3 py-1.5 text-sm text-red-600 hover:bg-red-50">
+                {isDiscarding ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-1.5 h-4 w-4" />}Discard Draft
+              </button>
+            )}
+            <button onClick={() => run(onCancel)} className="rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">Cancel</button>
+            <button onClick={() => run(onSaveDraft)} disabled={!canSave || isDraftSaving} className="flex items-center rounded-lg bg-amber-50 px-3 py-1.5 text-sm text-amber-700 hover:bg-amber-100 disabled:opacity-50">
+              {isDraftSaving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileEdit className="mr-1.5 h-4 w-4" />}Save Draft
+            </button>
+            <button onClick={() => run(onPublish)} disabled={!canSave || isSaving} className="flex items-center rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50">
+              {isSaving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}Publish
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -635,6 +713,7 @@ export function ContributionSection({
   inlineEditor = false,
   documentChrome = false,
   alwaysShowToolbar = false,
+  overlayEditor = false,
 }: ContributionSectionProps) {
   // Get theme based on section type
   const theme = SECTION_THEMES[sectionType]
@@ -848,17 +927,23 @@ export function ContributionSection({
     }
   }, [isFetching, isLoading, myContribution])
 
-  // Unsaved-work safeguard (inline editor): warn before the browser unloads the
-  // page while there are unsaved edits. Computed here (not from `isDirty`, which
-  // is declared after the early return) so the hook stays before it.
+  // UX2 refinement — the unsaved-work safeguards apply to BOTH the inline and the
+  // overlay editors (the overlay is just a different presentation of the same
+  // in-place editing session). The legacy full-screen-takeover callers (neither
+  // flag) keep their prior behaviour.
+  const guardedEditor = inlineEditor || overlayEditor
+
+  // Unsaved-work safeguard: warn before the browser unloads the page while there
+  // are unsaved edits. Computed here (not from `isDirty`, which is declared after
+  // the early return) so the hook stays before it.
   useEffect(() => {
-    if (!inlineEditor) return
+    if (!guardedEditor) return
     const dirty = isEditing && editContent.trim() !== (editBaselineRef.current ?? '').trim()
     if (!dirty) return
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
-  }, [inlineEditor, isEditing, editContent])
+  }, [guardedEditor, isEditing, editContent])
 
   // In-app unsaved-research guard (UX1c-2b): while this inline editor is mounted,
   // register it so any in-app navigation that would unmount it (Research mode /
@@ -866,12 +951,12 @@ export function ContributionSection({
   // first. Registered once per mount; the guard reads live state through the refs
   // above, so dirty content is never silently discarded by SPA navigation.
   useEffect(() => {
-    if (!inlineEditor) return
+    if (!guardedEditor) return
     return registerUnsavedEditor({
       isDirty: () => dirtyRef.current,
       saveDraft: () => saveDraftRef.current(),
     })
-  }, [inlineEditor])
+  }, [guardedEditor])
 
   // Hide section if no contributions and hideWhenEmpty is true
   // NOTE: This early return must come AFTER all hooks are called to follow React rules
@@ -934,7 +1019,7 @@ export function ContributionSection({
   const handleCancel = () => {
     // Don't silently discard unsaved work: when inline and dirty, confirm first.
     // (Non-inline callers keep the exact previous behaviour.)
-    if (inlineEditor && isDirty) {
+    if (guardedEditor && isDirty) {
       setShowCancelConfirm(true)
       return
     }
@@ -968,7 +1053,7 @@ export function ContributionSection({
   // Keep the guard's live mirrors current (UX1c-2b). Assignments, not hooks, so
   // they are safe after the early return; when the section is hidden there is no
   // editor and `isDirty` is false anyway.
-  dirtyRef.current = inlineEditor && isDirty
+  dirtyRef.current = guardedEditor && isDirty
   saveDraftRef.current = handleSaveDraft
 
   // Publish draft content
@@ -1514,7 +1599,7 @@ export function ContributionSection({
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-1.5 border-b border-gray-100 dark:border-gray-800">
+      <div className={clsx('flex items-center justify-between border-b border-gray-100 dark:border-gray-800', documentChrome ? 'px-5 pt-3.5 pb-2' : 'px-4 py-1.5')}>
         <div className="flex items-center space-x-3">
           {Icon && (
             <div className={clsx('p-1.5 rounded-lg', theme.iconBg)}>
@@ -1767,7 +1852,11 @@ export function ContributionSection({
                     isDraftSaving={saveDraft.isPending}
                     isDiscarding={discardDraft.isPending}
                     canSave={!!editContent.trim()}
-                    inline={inlineEditor}
+                    inline={inlineEditor && !overlayEditor}
+                    overlay={overlayEditor}
+                    contextNode={overlayEditor && selectedContribution?.content
+                      ? <SmartInputRenderer content={selectedContribution.content} />
+                      : undefined}
                   />
                 ) : showHistory ? (
                   <div className="space-y-2">
@@ -1839,11 +1928,11 @@ export function ContributionSection({
                         )}
                       </div>
                     ) : (
-                      <div className="text-center py-1">
+                      <div className={documentChrome ? 'py-0.5' : 'text-center py-1'}>
                         {activeTab === user?.id ? (
                           <button
                             onClick={handleStartEdit}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors"
+                            className="inline-flex items-center gap-1.5 -ml-2 px-2 py-1 text-sm font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors dark:hover:bg-primary-900/20"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                             Add your view

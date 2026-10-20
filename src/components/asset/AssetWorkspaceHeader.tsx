@@ -1,6 +1,6 @@
 import { useState, type ComponentProps, type ElementType } from 'react'
 import { clsx } from 'clsx'
-import { ChevronDown, ExternalLink, Briefcase, List, Tag, FolderKanban, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronUp, ExternalLink, Briefcase, List, Tag, FolderKanban, Sparkles } from 'lucide-react'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { AssetContextStrip } from './AssetContextStrip'
 import { AssetAttentionBand } from './AssetAttentionBand'
@@ -38,6 +38,8 @@ interface Props {
   /** When collapsed, the context strip is hidden but identity, price, attention,
    *  Ask AI and (below, in the page) the tabs stay — a compact working bar. */
   collapsed: boolean
+  /** Toggle the collapse state — the control now lives in the band itself. */
+  onToggleCollapse: () => void
 }
 
 const money = (n: number) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -54,7 +56,7 @@ const money = (n: number) => '$' + n.toLocaleString('en-US', { minimumFractionDi
  */
 export function AssetWorkspaceHeader({
   asset, sector, quote, spot, headerContext, coverage, thesisStatuses,
-  coveringUserIds, onFocus, onNavigate, onOpenSubPage, onOpenList, collapsed,
+  coveringUserIds, onFocus, onNavigate, onOpenSubPage, onOpenList, collapsed, onToggleCollapse,
 }: Props) {
   const [showTickerDropdown, setShowTickerDropdown] = useState(false)
 
@@ -82,7 +84,9 @@ export function AssetWorkspaceHeader({
   ]
 
   return (
-    <div className="ux2-band -mx-8 px-8 pt-3 pb-3">
+    // -mt-4 pulls the band up over the sticky header's pt-4, so the navy band
+    // meets the workspace tab bar with no white gutter between them.
+    <div className="ux2-band -mx-8 -mt-4 px-8 pt-4 pb-3">
       <div className="flex items-start justify-between gap-6">
         {/* Identity: ticker + company together, then price/change */}
         <div className="relative flex flex-col min-w-0">
@@ -190,6 +194,17 @@ export function AssetWorkspaceHeader({
             spot={spot}
             onFocus={onFocus}
           />
+          {/* Collapse/expand the investment-context strip — compact, in-band. */}
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            aria-pressed={collapsed}
+            aria-label={collapsed ? 'Expand header' : 'Collapse header'}
+            title={collapsed ? 'Show investment context' : 'Hide investment context'}
+            className="ux2-band-iconbtn"
+          >
+            {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          </button>
         </div>
       </div>
 

@@ -177,7 +177,7 @@ function AttentionPopover({
           role="dialog"
           aria-label="Needs attention"
           data-testid="attention-popover"
-          className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(380px,92vw)] rounded-xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-gray-700 dark:bg-gray-800"
+          className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(440px,92vw)] rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-700 dark:bg-gray-800"
         >
           <AttentionBand state={state} signals={signals} onOpen={(d, f) => { setOpen(false); onFocus(d, f) }} />
         </div>

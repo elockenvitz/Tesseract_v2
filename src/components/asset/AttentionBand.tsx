@@ -41,6 +41,17 @@ import type {
 } from '../../lib/asset-workspace/context'
 import { STATE_EMPHASIS } from '../../lib/asset-workspace/context'
 
+/** Where the deep-link takes the reader — a readable name for the destination
+ *  tab, so each item says WHAT, the records say WHY, and this says WHERE. The
+ *  resolver's destination value is unchanged; this only labels it. */
+const DEST_LABEL: Record<WorkspaceDestination, string> = {
+  snapshot: 'Overview',
+  research: 'Research',
+  workflow: 'Process',
+  decisions: 'Decisions',
+  lists: 'Lists',
+}
+
 const KIND: Record<SignalKind, { rule: string; icon: typeof AlertTriangle; tone: string }> = {
   pending: { rule: 'bg-blue-500', icon: Hourglass, tone: 'text-blue-700 dark:text-blue-400' },
   contradiction: { rule: 'bg-amber-400', icon: AlertTriangle, tone: 'text-amber-700 dark:text-amber-400' },
@@ -100,20 +111,26 @@ export function AttentionBand({ state, signals, onOpen, className }: AttentionBa
                 type="button"
                 onClick={() => onOpen(s.destination, s.focus)}
                 data-testid={`attention-${s.id}`}
-                className="group flex-1 px-3.5 py-1.5 text-left hover:bg-gray-50/70 dark:hover:bg-gray-800/40"
+                className="group flex-1 px-4 py-2.5 text-left hover:bg-gray-50/70 dark:hover:bg-gray-800/40"
               >
-                <span className="flex items-start gap-2">
-                  <Icon className={clsx('mt-[2px] h-3.5 w-3.5 shrink-0', k.tone)} />
-                  <span className="min-w-0">
-                    <span className="block text-[13px] leading-snug text-gray-900 group-hover:underline dark:text-gray-100">
+                <span className="flex items-start gap-2.5">
+                  <Icon className={clsx('mt-[2px] h-4 w-4 shrink-0', k.tone)} />
+                  <span className="min-w-0 flex-1">
+                    {/* WHAT happened — the only line at full contrast. */}
+                    <span className="block text-[13.5px] font-medium leading-snug text-gray-900 group-hover:underline dark:text-gray-100">
                       {s.headline}
                     </span>
-                    {/*
-                      The records behind the claim, named. This is what makes
-                      the line checkable rather than atmospheric.
-                    */}
-                    <span className="mt-0.5 block truncate text-[11px] text-gray-500 dark:text-gray-400">
-                      {s.evidence.map(e => e.label).join(' · ')}
+                    {/* WHY it matters — the records behind the claim, named, so
+                        the line is checkable rather than atmospheric. */}
+                    {s.evidence.length > 0 && (
+                      <span className="mt-1 block text-[12px] leading-snug text-gray-500 dark:text-gray-400">
+                        {s.evidence.map(e => e.label).join(' · ')}
+                      </span>
+                    )}
+                    {/* WHERE clicking goes. */}
+                    <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 dark:text-primary-400">
+                      Open {DEST_LABEL[s.destination]}
+                      <span aria-hidden className="transition-transform group-hover:translate-x-0.5">→</span>
                     </span>
                   </span>
                 </span>

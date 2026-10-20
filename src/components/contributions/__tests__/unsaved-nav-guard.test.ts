@@ -27,7 +27,7 @@ describe('UX1c-2b: the inline editor registers with the guard while mounted', ()
     expect(CONTRIB).toContain('registerUnsavedEditor')
     // Registration is opt-in: it bails when not the inline editor, so the other
     // (non-inline) callers never participate in the guard.
-    expect(CONTRIB).toMatch(/if \(!inlineEditor\) return[\s\S]{0,120}registerUnsavedEditor/)
+    expect(CONTRIB).toMatch(/if \(!guardedEditor\) return[\s\S]{0,120}registerUnsavedEditor/)
   })
 
   it('exposes live dirty state and the EXISTING draft-save handler (no new path)', () => {
@@ -35,7 +35,7 @@ describe('UX1c-2b: the inline editor registers with the guard while mounted', ()
     expect(CONTRIB).toMatch(/saveDraft:\s*\(\)\s*=>\s*saveDraftRef\.current\(\)/)
     // The mirror points at the already-shipped handler, not a second save path.
     expect(CONTRIB).toContain('saveDraftRef.current = handleSaveDraft')
-    expect(CONTRIB).toMatch(/dirtyRef\.current = inlineEditor && isDirty/)
+    expect(CONTRIB).toMatch(/dirtyRef\.current = guardedEditor && isDirty/)
   })
 })
 
