@@ -170,6 +170,13 @@ interface ContributionSectionProps {
    * isn't a card inside a card inside a coloured bar. Editing is unaffected.
    */
   plainChrome?: boolean
+  /**
+   * Edit a section IN PLACE within its card (bounded height, no viewport
+   * takeover, no scroll-lock), keeping the surrounding case visible. Also turns
+   * on the unsaved-change safeguards (confirm on Cancel-while-dirty, beforeunload
+   * warning). Default OFF keeps the existing full-screen editor for other callers.
+   */
+  inlineEditor?: boolean
 }
 
 // Section color themes - unified blue accent with amber hover
@@ -315,6 +322,7 @@ function CollapsibleContent({ content }: { content: string }) {
 function EditingPane({
   title, smartInputRef, editContent, onContentChange, onKeyDown, placeholder, assetContext,
   onCancel, onSaveDraft, onPublish, onDiscardDraft, isSaving, isDraftSaving, isDiscarding, canSave,
+  inline = false,
 }: {
   title: string
   smartInputRef: React.RefObject<UniversalSmartInputRef>
@@ -326,6 +334,13 @@ function EditingPane({
   onCancel: () => void; onSaveDraft: () => void; onPublish: () => void
   onDiscardDraft?: () => void
   isSaving: boolean; isDraftSaving: boolean; isDiscarding: boolean; canSave: boolean
+  /**
+   * Inline mode: the editor expands WITHIN its section card at a natural bounded
+   * height, so the surrounding case stays visible and the page scrolls normally.
+   * Default (false) keeps the existing full-screen-takeover editor for the other
+   * callers unchanged.
+   */
+  inline?: boolean
 }) {
   const paneRef = useRef<HTMLDivElement>(null)
   const sectionCardRef = useRef<HTMLElement | null>(null)
@@ -420,6 +435,11 @@ function EditingPane({
   }, [isCollapsing, animate])
 
   useEffect(() => {
+    // Inline mode does NOT take over the viewport: it leaves the card at its
+    // natural height and never locks the page scroll, so the surrounding case
+    // stays visible and the reader is not scrolled away.
+    if (inline) return
+
     const el = paneRef.current
     if (!el) return
 
@@ -506,13 +526,25 @@ function EditingPane({
     onContentChange(md, { mentions: [], references: [], dataSnapshots: [], aiGeneratedRanges: [] })
   }, [onContentChange])
 
+  // Inline buttons act immediately; the full-screen editor plays its collapse
+  // animation first. Either way the SAME handler runs — persistence is unchanged.
+  const run = (action: () => void) => (inline ? action() : collapseAndRun(action))
+
   return (
-    <div ref={paneRef} className={clsx('flex flex-col flex-1 min-h-0 transition-opacity duration-300', isCollapsing && 'opacity-50')}>
+    <div
+      ref={paneRef}
+      className={clsx('flex flex-col transition-opacity duration-300', !inline && 'flex-1 min-h-0', isCollapsing && 'opacity-50')}
+    >
 
       {/* Editor — toolbar fixed below header, content scrolls */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden [&_.rich-text-editor]:flex [&_.rich-text-editor]:flex-col [&_.rich-text-editor]:flex-1 [&_.rich-text-editor]:min-h-0 [&_.rich-text-editor]:overflow-hidden [&_.editor-container]:flex-1 [&_.editor-container]:min-h-0 [&_.editor-container]:overflow-y-auto [&_.editor-container]:border-0 [&_.editor-container]:rounded-none [&_.editor-container]:relative [&_.sticky]:static">
-        {/* Fold line injected into editor-container via CSS selector */}
-        <style>{`
+      <div
+        className={inline
+          ? 'flex flex-col [&_.rich-text-editor]:flex [&_.rich-text-editor]:flex-col [&_.editor-container]:max-h-[55vh] [&_.editor-container]:overflow-y-auto [&_.editor-container]:border-0 [&_.editor-container]:rounded-none [&_.sticky]:static'
+          : 'flex-1 min-h-0 flex flex-col overflow-hidden [&_.rich-text-editor]:flex [&_.rich-text-editor]:flex-col [&_.rich-text-editor]:flex-1 [&_.rich-text-editor]:min-h-0 [&_.rich-text-editor]:overflow-hidden [&_.editor-container]:flex-1 [&_.editor-container]:min-h-0 [&_.editor-container]:overflow-y-auto [&_.editor-container]:border-0 [&_.editor-container]:rounded-none [&_.editor-container]:relative [&_.sticky]:static'}
+      >
+        {/* Fold line (full-screen editor only — inline grows with its content). */}
+        {!inline && (
+          <style>{`
           .editor-container::after {
             content: '— show more fold —';
             position: absolute;
@@ -529,12 +561,13 @@ function EditingPane({
             letter-spacing: 0.5px;
           }
         `}</style>
+        )}
         <RichTextEditor
           ref={richEditorRef}
           value={htmlContent}
           onChange={handleRichChange}
           placeholder={placeholder}
-          minHeight="100px"
+          minHeight={inline ? '140px' : '100px'}
           editorClassName="px-4 py-1 text-sm"
           assetContext={assetContext}
         />
@@ -543,19 +576,19 @@ function EditingPane({
       {/* Action bar */}
       <div className="shrink-0 flex items-center justify-end gap-2 px-4 py-2.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/20">
         {onDiscardDraft && (
-          <button onClick={() => collapseAndRun(onDiscardDraft)} disabled={isDiscarding} className="flex items-center px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg mr-auto">
+          <button onClick={() => run(onDiscardDraft)} disabled={isDiscarding} className="flex items-center px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg mr-auto">
             {isDiscarding ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-1.5" />}
             Discard Draft
           </button>
         )}
-        <button onClick={() => collapseAndRun(onCancel)} className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-400">
+        <button onClick={() => run(onCancel)} className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-400">
           Cancel
         </button>
-        <button onClick={() => collapseAndRun(onSaveDraft)} disabled={!canSave || isDraftSaving} className="flex items-center px-3 py-1.5 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg disabled:opacity-50">
+        <button onClick={() => run(onSaveDraft)} disabled={!canSave || isDraftSaving} className="flex items-center px-3 py-1.5 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg disabled:opacity-50">
           {isDraftSaving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FileEdit className="w-4 h-4 mr-1.5" />}
           Save Draft
         </button>
-        <button onClick={() => collapseAndRun(onPublish)} disabled={!canSave || isSaving} className="flex items-center px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50">
+        <button onClick={() => run(onPublish)} disabled={!canSave || isSaving} className="flex items-center px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50">
           {isSaving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Upload className="w-4 h-4 mr-1.5" />}
           Publish
         </button>
@@ -583,6 +616,7 @@ export function ContributionSection({
   flatMode = false,
   hideWhenEmpty = false,
   plainChrome = false,
+  inlineEditor = false,
 }: ContributionSectionProps) {
   // Get theme based on section type
   const theme = SECTION_THEMES[sectionType]
@@ -610,6 +644,9 @@ export function ContributionSection({
   const [isDraftMode, setIsDraftMode] = useState(false) // When true, save goes to draft instead of publish
   const [viewingDraft, setViewingDraft] = useState(false) // When true, show draft content instead of published
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false) // Show discard draft confirmation dialog
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false) // Confirm before discarding unsaved inline edits
+  // The content the editor opened with, so Cancel/unload can tell dirty from clean.
+  const editBaselineRef = useRef<string>('')
   const smartInputRef = useRef<UniversalSmartInputRef>(null)
   const visibilityRef = useRef<HTMLDivElement>(null)
   const teamRef = useRef<HTMLDivElement>(null)
@@ -788,6 +825,18 @@ export function ContributionSection({
     }
   }, [isFetching, isLoading, myContribution])
 
+  // Unsaved-work safeguard (inline editor): warn before the browser unloads the
+  // page while there are unsaved edits. Computed here (not from `isDirty`, which
+  // is declared after the early return) so the hook stays before it.
+  useEffect(() => {
+    if (!inlineEditor) return
+    const dirty = isEditing && editContent.trim() !== (editBaselineRef.current ?? '').trim()
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [inlineEditor, isEditing, editContent])
+
   // Hide section if no contributions and hideWhenEmpty is true
   // NOTE: This early return must come AFTER all hooks are called to follow React rules
   if (hideWhenEmpty && !isLoading && contributions.length === 0) {
@@ -801,9 +850,11 @@ export function ContributionSection({
     // If there's a draft, load the draft content and enable draft mode
     if (hasDraft) {
       setEditContent(myContribution?.draft_content || '')
+      editBaselineRef.current = myContribution?.draft_content || ''
       setIsDraftMode(true)
     } else {
       setEditContent(myContribution?.content || '')
+      editBaselineRef.current = myContribution?.content || ''
       setIsDraftMode(false)
     }
     setSelectedVisibility(myContribution?.visibility || defaultVisibility)
@@ -833,10 +884,25 @@ export function ContributionSection({
     setEditContent('')
   }
 
-  const handleCancel = () => {
+  // Unsaved edits are dirty when the editor content differs from what it opened
+  // with. Used to guard Cancel and page unload (inline editor only).
+  const isDirty = isEditing && editContent.trim() !== (editBaselineRef.current ?? '').trim()
+
+  const doCancel = () => {
     setIsEditing(false)
     setEditContent('')
     setViewingDraft(false) // Go back to published view
+    setShowCancelConfirm(false)
+  }
+
+  const handleCancel = () => {
+    // Don't silently discard unsaved work: when inline and dirty, confirm first.
+    // (Non-inline callers keep the exact previous behaviour.)
+    if (inlineEditor && isDirty) {
+      setShowCancelConfirm(true)
+      return
+    }
+    doCancel()
   }
 
   const handleDelete = async () => {
@@ -1652,6 +1718,7 @@ export function ContributionSection({
                     isDraftSaving={saveDraft.isPending}
                     isDiscarding={discardDraft.isPending}
                     canSave={!!editContent.trim()}
+                    inline={inlineEditor}
                   />
                 ) : showHistory ? (
                   <div className="space-y-2">
@@ -1756,6 +1823,18 @@ export function ContributionSection({
         cancelText="Keep Editing"
         variant="warning"
         isLoading={discardDraft.isPending}
+      />
+
+      {/* Unsaved inline-edit confirmation: don't silently discard on Cancel. */}
+      <ConfirmDialog
+        isOpen={showCancelConfirm}
+        onClose={() => setShowCancelConfirm(false)}
+        onConfirm={doCancel}
+        title="Discard unsaved changes?"
+        message="You have unsaved edits in this section. Discard them? Your published version and any saved draft are unchanged."
+        confirmText="Discard changes"
+        cancelText="Keep editing"
+        variant="warning"
       />
     </div>
   )
