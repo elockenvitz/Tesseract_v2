@@ -123,11 +123,23 @@ BEGIN
 END
 $$;
 
--- Named with a leading `a_` so it runs before any existing BEFORE trigger that
--- rewrites `content` (Postgres fires BEFORE triggers in name order). It reads
--- OLD/NEW.content and writes only the two new columns, so it cannot interfere
--- with whatever maintains `updated_at` — see 00-verify-readonly.sql Q1/Q2 for
--- what that actually is in production.
+-- ── Ordering against the one BEFORE trigger that IS in version control ────
+--
+-- `asset_contributions_set_organization_id`
+-- (scripts/sql/security-c1/08-asset-contributions.sql:141) is BEFORE INSERT OR
+-- UPDATE on this table. Postgres fires BEFORE row triggers in name order, and
+-- `a_track...` < `asset_contributions_set...` ('_' = 0x5F sorts before 's'), so
+-- this one runs FIRST.
+--
+-- That is safe in both directions: the org trigger writes only
+-- NEW.organization_id and never returns NULL, so it cannot discard this
+-- trigger's work; this trigger reads OLD/NEW.content and writes only the two
+-- new columns, so it cannot disturb the tenant assignment. Neither touches
+-- `updated_at`.
+--
+-- Whatever maintains `updated_at` and `asset_contribution_history` is NOT in
+-- version control — 00-verify-readonly.sql Q1/Q2 are the only way to see it,
+-- and must be run before this file is applied.
 DROP TRIGGER IF EXISTS a_track_content_updated_at ON public.asset_contributions;
 CREATE TRIGGER a_track_content_updated_at
   BEFORE INSERT OR UPDATE ON public.asset_contributions

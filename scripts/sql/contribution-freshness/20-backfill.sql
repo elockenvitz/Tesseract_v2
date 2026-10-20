@@ -38,6 +38,23 @@ BEGIN
   END IF;
 END $$;
 
+-- ── THE TRIGGER MUST BE OFF FOR THIS FILE ──────────────────────────────────
+--
+-- 10-'s trigger exists precisely to stop a client writing `content_updated_at`
+-- without changing the prose — and that is exactly what this file does. With
+-- the trigger live, every UPDATE below hits its ELSE branch, which restores
+-- OLD.content_updated_at (NULL), and the whole backfill silently commits as a
+-- NO-OP. Every pass would report rows updated and nothing would change.
+--
+-- So it is disabled for the duration and re-enabled before COMMIT. DDL is
+-- transactional in Postgres, so if anything below fails and this transaction
+-- rolls back, the trigger is restored with it — it cannot be left off.
+--
+-- This also means the trigger stays strict: no "seed a NULL value" exception
+-- is carved into it, which would have let a client forge freshness on exactly
+-- the unknown-bucket rows that must read as unknown.
+ALTER TABLE public.asset_contributions DISABLE TRIGGER a_track_content_updated_at;
+
 -- A reversible record of every pre-backfill value. Keep it: without this the
 -- backfill cannot be undone, and 90-rollback.sql reads from it.
 CREATE TABLE IF NOT EXISTS public.contribution_freshness_backfill_log (
@@ -151,6 +168,22 @@ SELECT coalesce(content_updated_at_source, 'unknown') AS source, count(*) AS row
  WHERE public.contribution_prose_identity(content) <> ''
  GROUP BY 1 ORDER BY rows DESC;
 
+-- ── Restore the guard, and prove it is back on before committing ───────────
+ALTER TABLE public.asset_contributions ENABLE TRIGGER a_track_content_updated_at;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid
+     WHERE c.relname = 'asset_contributions'
+       AND t.tgname  = 'a_track_content_updated_at'
+       AND t.tgenabled = 'O'            -- 'O' = enabled, origin
+  ) THEN
+    RAISE EXCEPTION 'content_updated_at trigger is not enabled — refusing to commit';
+  END IF;
+END $$;
+
 COMMIT;
 
 -- ============================================================================
@@ -168,6 +201,10 @@ COMMIT;
 -- row is still in the unknown bucket.
 -- ============================================================================
 -- BEGIN;
+--   -- Same reason as the backfill above: with the trigger live this UPDATE is
+--   -- a no-op, because the prose is not changing.
+--   ALTER TABLE public.asset_contributions DISABLE TRIGGER a_track_content_updated_at;
+--
 --   INSERT INTO public.contribution_freshness_backfill_log
 --     (contribution_id, prior_content_updated_at, prior_content_updated_at_source,
 --      prior_updated_at, assigned_content_updated_at, assigned_source)
@@ -184,7 +221,12 @@ COMMIT;
 --     FROM public.assets a
 --    WHERE a.id = ac.asset_id AND a.symbol = 'LLY' AND ac.section = 'thesis';
 --
+--   ALTER TABLE public.asset_contributions ENABLE TRIGGER a_track_content_updated_at;
+--
 --   -- Expect exactly 1. Anything else means the row set changed: ROLLBACK.
 --   SELECT count(*) FROM public.asset_contributions ac JOIN public.assets a ON a.id = ac.asset_id
 --    WHERE a.symbol='LLY' AND ac.section='thesis' AND ac.content_updated_at_source='manual_date_only';
--- ROLLBACK;  -- change to COMMIT only after the count reads 1
+--   -- And the guard must be back on.
+--   SELECT tgenabled FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+--    WHERE c.relname='asset_contributions' AND t.tgname='a_track_content_updated_at';
+-- ROLLBACK;  -- change to COMMIT only after the count reads 1 and tgenabled = 'O'
