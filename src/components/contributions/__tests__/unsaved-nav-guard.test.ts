@@ -54,8 +54,9 @@ describe('UX1c-2b: in-tab navigation is routed through the guard', () => {
       expect(ASSET_TAB, `nav button for ${page}`).toContain(`goToSubPage('${page}')`)
     }
     // The persistent context strip is visible while editing, so its deep-link is
-    // guarded too.
-    expect(ASSET_TAB).toContain('onOpen={(sub) => goToSubPage(sub)}')
+    // guarded too. (UX2 P1 moved the strip into AssetWorkspaceHeader; AssetTab
+    // still routes its navigation through the guarded helper.)
+    expect(ASSET_TAB).toContain('onOpenSubPage={(sub) => goToSubPage(sub)}')
   })
 
   it('the four read-mode buttons use the guarded helper', () => {

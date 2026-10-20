@@ -1,8 +1,9 @@
-import { useState } from 'react'
-import { AlertTriangle, ChevronDown } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { AlertTriangle, ChevronDown, Zap } from 'lucide-react'
+import { clsx } from 'clsx'
 import { AttentionBand } from './AttentionBand'
 import { useAssetAttentionSignals, type AssetAttentionInput } from '../../hooks/useAssetAttentionSignals'
-import type { WorkspaceDestination, SignalFocus } from '../../lib/asset-workspace/context'
+import type { WorkspaceDestination, SignalFocus, WorkspaceState, WorkspaceSignal } from '../../lib/asset-workspace/context'
 
 /** Signals shown before the reader asks for the rest. Keeps the surface a
  *  short prioritized list, not a feed. */
@@ -18,6 +19,13 @@ export interface AssetAttentionBandProps extends AssetAttentionInput {
    * much of that is shown before the reader asks.
    */
   collapsible?: boolean
+  /**
+   * UX2 Phase 1: 'popover' moves the surface behind the header ⚡ trigger (count
+   * visible, panel on click) instead of an in-body band. Same resolver, signals,
+   * grouping, counts, priorities and deep-link focus — only where it is shown
+   * changes. Default 'inline' keeps every existing caller byte-for-byte.
+   */
+  variant?: 'inline' | 'popover'
   className?: string
 }
 
@@ -30,10 +38,24 @@ export interface AssetAttentionBandProps extends AssetAttentionInput {
  * placeholder while the facts load; it never asserts an all-clear or a count
  * for rows the reader cannot see.
  */
-export function AssetAttentionBand({ onFocus, className, collapsible = false, ...input }: AssetAttentionBandProps) {
+export function AssetAttentionBand({ onFocus, className, collapsible = false, variant = 'inline', ...input }: AssetAttentionBandProps) {
   const { signals, state, isLoading } = useAssetAttentionSignals(input)
   const [expanded, setExpanded] = useState(false) // within the band: top-N vs all
   const [open, setOpen] = useState(false) // collapsible: pill vs full band
+
+  // UX2 Phase 1: header-anchored popover presentation. Same signals/state/
+  // grouping/deep-links from the one resolver; only the container differs.
+  if (variant === 'popover') {
+    return (
+      <AttentionPopover
+        signals={signals}
+        state={state}
+        isLoading={isLoading}
+        onFocus={onFocus}
+        className={className}
+      />
+    )
+  }
 
   if (isLoading) {
     return (
@@ -100,6 +122,66 @@ export function AssetAttentionBand({ onFocus, className, collapsible = false, ..
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The ⚡ header trigger + popover. Renders the exact same `AttentionBand` over
+ * the same resolver output — no second data path. The count is `signals.length`
+ * (the surface the reader can actually see). Selecting a signal closes the
+ * popover and hands the destination + focus to `onFocus`, which performs the
+ * tab / book / anchor navigation. Absent (no trigger) until there is something
+ * to say, consistent with the inline band's "empty is absent" rule.
+ */
+function AttentionPopover({
+  signals, state, isLoading, onFocus, className,
+}: {
+  signals: WorkspaceSignal[]
+  state: WorkspaceState
+  isLoading: boolean
+  onFocus: (destination: WorkspaceDestination, focus?: SignalFocus) => void
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
+  if (isLoading || signals.length === 0) return null
+
+  const n = signals.length
+  return (
+    <div className={clsx('relative', className)} ref={ref}>
+      <button
+        type="button"
+        data-testid="attention-trigger"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+        className="ux2-band-iconbtn"
+        title={`${n} need${n === 1 ? 's' : ''} attention`}
+      >
+        <Zap className="h-4 w-4" />
+        <span className="ux2-attn-count">{n}</span>
+      </button>
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Needs attention"
+          data-testid="attention-popover"
+          className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(380px,92vw)] rounded-xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-gray-700 dark:bg-gray-800"
+        >
+          <AttentionBand state={state} signals={signals} onOpen={(d, f) => { setOpen(false); onFocus(d, f) }} />
+        </div>
+      )}
     </div>
   )
 }

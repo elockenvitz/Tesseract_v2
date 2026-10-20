@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat, LayoutDashboard } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat, LayoutDashboard, Edit3 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { fetchSignedUrl } from '../../lib/storage/signed-url'
 import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../../lib/storage/buckets'
@@ -39,7 +39,8 @@ import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { InvestmentSnapshot } from '../asset/InvestmentSnapshot'
-import { AssetContextStrip } from '../asset/AssetContextStrip'
+import { AssetWorkspaceHeader } from '../asset/AssetWorkspaceHeader'
+import '../asset/asset-ux2.css'
 // The component itself renders on the Snapshot now; this tab still derives
 // the FIELD list from the org's template and passes it down, so the two
 // surfaces cannot disagree about which sections exist.
@@ -49,7 +50,6 @@ import { contributionSectionsForSlug } from '../../lib/research/contribution-sec
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddToProjectButton } from '../projects/AddToProjectButton'
 import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView, ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
-import { AssetAttentionBand } from '../asset/AssetAttentionBand'
 import type { WorkspaceDestination, SignalFocus } from '../../lib/asset-workspace/context'
 import { attentionTarget } from '../../lib/asset-workspace/attention-target'
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
@@ -76,7 +76,6 @@ import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
 // `discuss` and `canDiscuss` are no longer imported here: the generic
 // asset-level entry point is withdrawn (see the note at its old site). Both
 // remain exported and in use from seven other surfaces.
-import { askAI, type EngagementTarget } from '../../lib/engagement'
 import { currentRows, type HoldingRow } from '../../lib/portfolio/holdings'
 import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
@@ -325,6 +324,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.activeSubPage || 'snapshot'
   })
+  // UX2 Phase 1 — whether the context strip is collapsed to a compact working
+  // header. Per-viewer convenience only (localStorage), wrapped so a blocked or
+  // private store never throws.
+  const [headerCollapsed, setHeaderCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('ux2-asset-header-collapsed') === '1' } catch { return false }
+  })
+  const toggleHeaderCollapsed = useCallback(() => {
+    setHeaderCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem('ux2-asset-header-collapsed', next ? '1' : '0') } catch { /* ignore */ }
+      return next
+    })
+  }, [])
   /*
    * Which book the Decision Memory narrative is scoped to. `null` is
    * organization-wide and is the default — the asset page's own context is
@@ -360,21 +372,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * below, and never over a choice the reader or a navigation already made.
    */
   const [researchViewFilter, setResearchViewFilter] = useState<'aggregated' | string>(() => {
-    const savedState = TabStateManager.loadTabState(asset.id)
     /*
-     * A RESTORED filter is an explicit past choice and is honoured as-is,
-     * including a restored 'aggregated' — a reader who deliberately chose the
-     * summary last time should not be moved off it.
+     * UX2 Phase 1 — My Research is the default on a fresh Asset Page visit,
+     * even when no personal case exists. A persisted perspective is deliberately
+     * NOT restored: a stale "Firm" preference must never strand the reader on a
+     * read-only view. Only an arriving navigation intent (asset.data) wins here;
+     * otherwise the resolver below settles it on the reader's own view. Within a
+     * mounted session the choice persists in React state (sub-tab switches do
+     * not remount), so a deliberate Organization switch is kept while navigating.
      *
-     * An arriving `researchViewFilter` in tab data is handled by its own
-     * effect further down and wins over everything.
-     *
-     * The value still starts at 'aggregated' when nothing is known, because
-     * fifteen downstream consumers treat any non-'aggregated' value as a
-     * user id — a sentinel here would be queried AS an id. The "not yet
-     * decided" fact lives in `researchDefaultDecided` instead.
+     * The sentinel starts at 'aggregated' because fifteen downstream consumers
+     * treat any non-'aggregated' value as a user id; the "not yet decided" fact
+     * lives in `researchDefaultDecided` instead.
      */
-    if (savedState?.researchViewFilter) return savedState.researchViewFilter
     if (asset.data?.researchViewFilter) return asset.data.researchViewFilter
     return 'aggregated'
   })
@@ -391,8 +401,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * leaves those alone.
    */
   const [researchDefaultDecided, setResearchDefaultDecided] = useState<boolean>(() => {
-    const savedState = TabStateManager.loadTabState(asset.id)
-    return !!(savedState?.researchViewFilter || asset.data?.researchViewFilter)
+    // UX2 Phase 1: only an arriving navigation intent pre-decides the view; a
+    // persisted perspective no longer seeds this, so the resolver runs on a
+    // fresh visit and lands on My Research.
+    return !!asset.data?.researchViewFilter
   })
 
   /**
@@ -404,8 +416,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * research, which is the exact outcome the new default exists to produce.
    */
   const [researchViewChosen, setResearchViewChosen] = useState<boolean>(() => {
-    const savedState = TabStateManager.loadTabState(asset.id)
-    return !!(savedState?.researchViewFilter || asset.data?.researchViewFilter)
+    // UX2 Phase 1: a persisted perspective is not treated as a fresh-visit
+    // choice; only an arriving intent is.
+    return !!asset.data?.researchViewFilter
   })
 
   /**
@@ -1253,16 +1266,18 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     // Decided either way now, so this runs once.
     setResearchDefaultDecided(true)
 
-    const mine = user?.id && researchAnalysts.some(a => a.id === user.id) ? user.id : null
-    if (mine) {
-      setResearchViewFilter(mine)
+    // UX2 Phase 1 — My Research is the default landing whenever there is a
+    // signed-in reader, INCLUDING when they have not written a case yet (their
+    // own view then shows the "Add your view" prompts). Edit is therefore always
+    // reachable on arrival. Only with no user at all do we fall back to a
+    // covering analyst's view, and finally to the firm (aggregated) summary.
+    if (user?.id) {
+      setResearchViewFilter(user.id)
       return
     }
     const primary = researchAnalysts.find(a => a.isCovering && a.role === 'primary')
     const covering = researchAnalysts.find(a => a.isCovering)
     const fallback = primary ?? covering ?? researchAnalysts[0]
-    // No individual research exists at all -- Our View is then the honest
-    // landing state, not a fallback that hides an absence.
     setResearchViewFilter(fallback ? fallback.id : 'aggregated')
   }, [
     researchDefaultDecided, isLoadingContributorProfiles, coverage,
@@ -2777,12 +2792,34 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }
 
   return (
-    <div className="flex flex-col bg-gray-50 dark:bg-gray-900 -mx-8 -my-6 h-[calc(100%+48px)] overflow-hidden">
+    <div className="asset-ux2 ux2-scope flex flex-col bg-gray-50 dark:bg-gray-900 -mx-8 -my-6 h-[calc(100%+48px)] overflow-hidden">
       {/* Sticky Header Section */}
       {/* Tightened from pt-6/space-y-3: the identity row lost a line, and the
           vertical rhythm around it was still sized for the two-line block. */}
       <div className="flex-shrink-0 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-8 pt-4 space-y-2 shadow-sm">
-      {/* Asset Header */}
+      {/* UX2 Phase 1 — deep-navy identity band. Replaces the former identity row
+          + state chips + context strip + arrival row with one band: ticker +
+          company together, price/change, Ask AI, the ⚡ attention popover (one
+          A1 resolver), and the collapsible context strip. No new data path. */}
+      <AssetWorkspaceHeader
+        asset={asset}
+        sector={asset.sector || fullAsset?.sector}
+        quote={currentQuote ?? null}
+        spot={currentQuote?.price ?? null}
+        headerContext={headerContext}
+        coverage={coverage || []}
+        thesisStatuses={thesisStatuses}
+        coveringUserIds={(coverage || []).map((c: any) => c.user_id).filter(Boolean)}
+        onFocus={handleAttentionFocus}
+        onNavigate={onNavigate}
+        onOpenSubPage={(sub) => goToSubPage(sub)}
+        onOpenList={(focus) => { setActiveSubPage('lists'); setListsFocus(focus) }}
+        collapsed={headerCollapsed}
+      />
+      {/* LEGACY header block — inert during the Phase-1 cutover, superseded by
+          AssetWorkspaceHeader above. Kept to keep the diff reviewable; removed
+          in the Phase-1 cleanup follow-up. */}
+      {false && (
       <div className="space-y-2">
         {/* Single Row - All Summary Info and Controls */}
         <div className="flex items-center justify-between gap-6">
@@ -3054,31 +3091,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           </div>
         </div>
       </div>
-
-      {/* UX1a — persistent investment-context strip: the firm's load-bearing
-          numbers (rating, target, exposure, open work, case freshness), read
-          from the same org-scoped hooks the Snapshot uses and kept visible on
-          every tab. Read-only; the A1 attention band below is unchanged. */}
-      <AssetContextStrip
-        assetId={asset.id}
-        symbol={asset.symbol ?? null}
-        spot={currentQuote?.price ?? null}
-        onOpen={(sub) => goToSubPage(sub)}
-      />
-
-      {/* Why the reader is here, and who they can ask about it.
-          One quiet line above the sub-pages: the reason a lens sent them, and
-          the D1 engagement seam this page has never had. Nothing is fabricated
-          -- with no arrival context the line is absent and only the two verbs
-          remain. */}
-      <AssetArrivalBar
-        asset={asset}
-        focus={asset.focus ?? null}
-        portfolioId={asset.portfolioId ?? null}
-        portfolioName={asset.portfolioName ?? null}
-        issue={asset.issue ?? null}
-        origin={asset.origin ?? null}
-      />
+      )}
 
       {/* Sub-page Tab Selector */}
       <div className="border-b border-gray-200 dark:border-gray-700">
@@ -3163,6 +3176,21 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <span>Lists</span>
             </div>
           </button>
+
+          {/* UX2 Phase 1 — collapse/expand the investment-context strip to a
+              compact working header. Identity, price, attention, Ask AI and the
+              tabs stay visible either way. */}
+          <button
+            type="button"
+            onClick={toggleHeaderCollapsed}
+            aria-pressed={headerCollapsed}
+            className="ml-auto self-center inline-flex items-center gap-1.5 h-[30px] px-2.5 rounded-lg border border-gray-200 bg-white text-xs font-semibold text-gray-600 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+          >
+            <span>{headerCollapsed ? 'Expand header' : 'Collapse header'}</span>
+            {headerCollapsed
+              ? <ChevronDown className="h-3.5 w-3.5" />
+              : <ChevronUp className="h-3.5 w-3.5" />}
+          </button>
         </nav>
       </div>
       </div>
@@ -3177,6 +3205,23 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               {researchAnalysts.length <= 5 ? (
                 // Pills mode for 5 or fewer analysts
                 <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+                  {/* UX2 Phase 1 — two explicit perspectives: My Research (your
+                      editable case, the default landing) and Organization (the
+                      read-only, permission-aware firm view). Other analysts'
+                      views remain reachable as pills to the right. */}
+                  {user?.id && (
+                    <button
+                      onClick={() => chooseResearchView(user.id)}
+                      className={clsx(
+                        'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
+                        researchViewFilter === user.id
+                          ? 'bg-primary-600 text-white shadow-sm'
+                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                      )}
+                    >
+                      My Research
+                    </button>
+                  )}
                   <button
                     onClick={() => chooseResearchView('aggregated')}
                     className={clsx(
@@ -3201,9 +3246,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       on the Snapshot and in each analyst's own document.
                     */}
                     <Users className="w-3.5 h-3.5" />
-                    Firm valuation
+                    Organization
                   </button>
-                  {researchAnalysts.map(analyst => {
+                  {researchAnalysts.filter(a => a.id !== user?.id).map(analyst => {
                     const isCurrentUser = analyst.id === user?.id
                     const isPrimary = analyst.isCovering && analyst.role === 'primary'
                     const roleLabel = analyst.isCovering
@@ -3241,8 +3286,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   onChange={(e) => chooseResearchView(e.target.value)}
                   className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-200"
                 >
-                  <option value="aggregated">Firm valuation (targets & ratings)</option>
-                  {researchAnalysts.map(analyst => {
+                  {user?.id && <option value={user.id}>My Research</option>}
+                  <option value="aggregated">Organization (firm valuation)</option>
+                  {researchAnalysts.filter(a => a.id !== user?.id).map(analyst => {
                     const roleTag = analyst.isCovering
                       ? analyst.role === 'primary' ? '★ ' : '☆ '
                       : ''
@@ -3479,22 +3525,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       {/* Sub-page Content */}
       <div className="flex-1 overflow-auto px-8 py-4">
 
-        {/* One connected attention surface for the whole asset, shown above
-            every sub-page. The Snapshot's inline band was removed so the
-            reader never sees two copies. */}
-        {user && (
-          <div className="mb-4">
-            <AssetAttentionBand
-              assetId={asset.id}
-              symbol={asset.symbol ?? null}
-              portfolioId={null}
-              coveringUserIds={(coverage || []).map((c: any) => c.user_id).filter(Boolean)}
-              spot={currentQuote?.price ?? null}
-              onFocus={handleAttentionFocus}
-              collapsible
-            />
-          </div>
-        )}
+        {/* UX2 Phase 1 — the attention surface moved to the header ⚡ popover
+            (same A1 resolver, signals, grouping, counts, priorities, deep-links).
+            No persistent banner in the tab body. */}
 
         {/* ========== INVESTMENT SNAPSHOT SUB-PAGE ========== */}
         {activeSubPage === 'snapshot' && (
@@ -3591,6 +3624,27 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 </Card>
               ) : (
                 <div className="space-y-3">
+                  {/* UX2 Phase 1 — Organization is read-only (attributed firm
+                      research + aggregated valuation). "Edit my research" is the
+                      clearly-visible way back to the reader's own editable case.
+                      Perspective (what you're viewing) stays distinct from
+                      contribution visibility (who can see what you publish). */}
+                  {user?.id && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        Read-only firm view — attributed research and aggregated valuation, not a firm-authored conclusion.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => chooseResearchView(user.id)}
+                        className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-primary-700"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                        Edit my research
+                      </button>
+                    </div>
+                  )}
+
                   {/* Aggregated Price Targets (Bull/Bear/Base) - only shows when data exists */}
                   <PriceTargetsSummary
                     assetId={asset.id}
@@ -4977,92 +5031,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 }
 
 
-/**
- * The arrival line, and Ask AI / Team.
- *
- * ── Why it is here and not in a new page ─────────────────────────────────
- *
- * The Asset page had no engagement wiring at all: the D1 pane is mounted once
- * in Layout and binds to whatever object is passed, and this page never passed
- * one. That was the single real capability the replacement workspace added, and
- * it turns out to be about forty lines -- no reason to replace a page for it.
- *
- * The target is built from what the sender actually knew. Nothing is invented:
- * no issue means no issue, and the pane composes its own prompt from structured
- * context rather than a hand-written sentence.
+/*
+ * UX2 Phase 1 — the asset arrival/Ask-AI row moved into AssetWorkspaceHeader
+ * (the navy identity band). Ask AI uses the same `askAI` engagement target;
+ * arrival provenance ("Opened from …") was dropped from the dedicated row per
+ * the approved design. The D1 pane in Layout and every other discuss() call
+ * site are untouched.
  */
-function AssetArrivalBar({
-  asset, focus, portfolioId, portfolioName, issue, origin,
-}: {
-  asset: any
-  focus: string | null
-  portfolioId: string | null
-  portfolioName: string | null
-  issue: any
-  origin: string | null
-}) {
-  const issueText = !issue ? null : typeof issue === 'string' ? issue : issue.title
-  const issueDetail = issue && typeof issue !== 'string' ? issue.detail : null
-
-  const target: EngagementTarget = {
-    // `asset` is already in DISCUSSABLE_OBJECT_TYPES, so Team works without
-    // widening any constraint.
-    objectType: 'asset',
-    objectId: asset.id,
-    label: asset.company_name ? `${asset.symbol} — ${asset.company_name}` : (asset.symbol ?? 'Asset'),
-    symbol: asset.symbol ?? undefined,
-    assetId: asset.id,
-    portfolioId: portfolioId ?? undefined,
-    portfolioName: portfolioName ?? undefined,
-    origin: { itemId: asset.id, surface: origin ?? 'asset' },
-    ...(issueText
-      ? { issue: { title: issueText, detail: issueDetail ?? undefined, reason: `asset:${focus ?? 'overview'}` } }
-      : {}),
-  }
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 pb-2 pt-1">
-      {origin && (
-        <span className="text-[11px] text-gray-500 dark:text-gray-400">
-          Opened from {ASSET_ORIGIN_NAME[origin] ?? origin}
-          {issueText && <> · <span className="font-medium text-gray-700 dark:text-gray-300">{issueText}</span></>}
-          {portfolioName && <> · {portfolioName}</>}
-        </span>
-      )}
-      <div className="ml-auto flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => askAI(target)}
-          className="rounded-md px-2.5 py-1 text-[12px] font-medium text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
-        >
-          Ask AI
-        </button>
-        {/*
-          ─── The generic Discuss entry point is withdrawn from this page ───
-
-          Nothing was deleted from the system: `messages` keeps every row, RLS
-          is untouched, the engagement pane is still mounted in `Layout`, and
-          the other SEVEN `discuss()` call sites — Ideas, Decisions, Research,
-          Portfolio positions, the opportunity grid and the parked workspace —
-          are unaffected.
-
-          Withdrawn because a bare "discuss this security" is the wrong unit.
-          A conversation worth finding again is about a THESIS, a
-          recommendation, a decision or a review: something with a subject and
-          a time. An asset-level thread has neither, so it accumulates remarks
-          nobody can place, and this page gave no indication a thread even
-          existed — so nobody returned to one.
-
-          The audit, the storage model and the contextual design that should
-          replace it are in docs/tickets/asset-discussions-and-messages.md.
-        */}
-      </div>
-    </div>
-  )
-}
-
-/** Sender names, shared with the vocabulary the lenses use. */
-const ASSET_ORIGIN_NAME: Record<string, string> = {
-  today: 'Dashboard', research: 'Research', portfolio: 'Portfolio',
-  ideas: 'Ideas', decisions: 'Decisions',
-}

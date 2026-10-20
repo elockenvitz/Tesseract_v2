@@ -1,0 +1,57 @@
+/*
+ * UX2 — scoped visual tokens for the Asset Page (Phase 1 foundation).
+ *
+ * These variables and helper classes are deliberately scoped under `.ux2-scope`
+ * (the Asset Page root) so the rest of the application's theme is untouched.
+ * No change to tailwind.config.js or src/index.css. darkMode is 'class', so the
+ * dark palette keys off an ancestor `.dark` (what the app already toggles).
+ */
+.ux2-scope{
+  --ux2-band:#101d31;      /* deep-navy identity band */
+  --ux2-band-2:#182a44;    /* chip / hover on the band */
+  --ux2-band-line:rgba(157,176,202,.18);
+  --ux2-ink:#eef3fa;       /* text on the band */
+  --ux2-ink-2:#9db0ca;     /* muted text on the band */
+  --ux2-pos:#6ee7a8;       /* positive change on navy */
+  --ux2-neg:#ffb4ab;       /* negative change on navy */
+  --ux2-crit:#b5362a;      /* attention count */
+}
+.dark .ux2-scope{
+  --ux2-band:#0a1322;
+  --ux2-band-2:#17263d;
+  --ux2-ink:#eaf1fb;
+  --ux2-ink-2:#8ca0bd;
+}
+
+/* The identity band itself. Full-bleed navy in both themes. */
+.ux2-band{ background:var(--ux2-band); color:var(--ux2-ink); }
+.ux2-band-ink{ color:var(--ux2-ink); }
+.ux2-band-muted{ color:var(--ux2-ink-2); }
+.ux2-pos{ color:var(--ux2-pos); }
+.ux2-neg{ color:var(--ux2-neg); }
+
+/* A control that sits on the navy band (Ask AI, attention trigger). */
+.ux2-band-chip{
+  display:inline-flex; align-items:center; gap:7px;
+  height:32px; padding:0 12px; border-radius:8px;
+  background:var(--ux2-band-2); color:var(--ux2-ink);
+  border:1px solid var(--ux2-band-line); font-size:13px; font-weight:500;
+}
+.ux2-band-chip:hover{ background:#21365a; }
+.ux2-band-iconbtn{
+  position:relative; display:inline-flex; align-items:center; gap:7px;
+  height:32px; padding:0 11px; border-radius:8px;
+  background:var(--ux2-band-2); color:var(--ux2-ink);
+  border:1px solid var(--ux2-band-line); font-weight:600;
+}
+.ux2-band-iconbtn:hover{ background:#21365a; }
+.ux2-attn-count{
+  min-width:18px; height:18px; padding:0 5px; border-radius:9px;
+  background:var(--ux2-crit); color:#fff; font-size:11px; font-weight:700;
+  display:grid; place-items:center;
+}
+
+/* Context-strip "band" variant: navy cells instead of white. */
+.ux2-strip-cell{ background:var(--ux2-band) !important; }
+.ux2-strip-cell:hover{ background:var(--ux2-band-2) !important; }
+.ux2-strip-wrap{ background:var(--ux2-band-line) !important; border-color:var(--ux2-band-line) !important; }

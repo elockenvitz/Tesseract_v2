@@ -30,8 +30,11 @@ describe('UX1c-1: the four Research modes are clearly labelled', () => {
     }
   })
 
-  it('still offers the Firm-vs-analyst perspective selector', () => {
-    expect(ASSET_TAB).toContain('Firm valuation')
+  it('offers the two-mode perspective selector (UX2 P1: My Research / Organization)', () => {
+    // UX2 Phase 1 renamed the "Firm valuation" pill to "Organization" and added
+    // an explicit "My Research" pill; the aggregated destination is unchanged.
+    expect(ASSET_TAB).toContain('Organization')
+    expect(ASSET_TAB).toContain('>My Research<')
     expect(ASSET_TAB).toMatch(/chooseResearchView\('aggregated'\)/)
   })
 })

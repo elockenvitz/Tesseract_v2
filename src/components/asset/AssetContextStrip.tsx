@@ -33,6 +33,9 @@ interface Props {
   spot: number | null
   /** Reuses the page's existing sub-page navigation; no new routing. */
   onOpen?: (sub: Sub) => void
+  /** UX2 Phase 1: 'band' renders navy cells + light text for the dark identity
+   *  band. Presentation only — the data, hooks and query keys are identical. */
+  variant?: 'default' | 'band'
   className?: string
 }
 
@@ -52,16 +55,20 @@ const SUB = 'text-[11px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5 t
 const DASH = 'text-[14px] font-semibold text-gray-300 dark:text-gray-600 leading-tight'
 
 function Cell({
-  label, onClick, title, children,
+  label, onClick, title, children, band, eyebrow,
 }: {
   label: string
   onClick?: () => void
   title?: string
   children: React.ReactNode
+  band?: boolean
+  eyebrow: string
 }) {
+  const base = band ? 'ux2-strip-cell' : 'bg-white dark:bg-gray-800'
+  const hover = band ? 'ux2-strip-cell' : 'hover:bg-gray-50 dark:hover:bg-gray-700/60'
   const inner = (
     <>
-      <span className={EYEBROW}>{label}</span>
+      <span className={eyebrow}>{label}</span>
       <div className="mt-1 min-w-0">{children}</div>
     </>
   )
@@ -71,18 +78,37 @@ function Cell({
         type="button"
         onClick={onClick}
         title={title}
-        className="flex-1 min-w-[132px] text-left bg-white dark:bg-gray-800 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-inset"
+        className={`flex-1 min-w-[132px] text-left ${base} ${hover} px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-inset`}
       >
         {inner}
       </button>
     )
   }
-  return <div className="flex-1 min-w-[132px] bg-white dark:bg-gray-800 px-3 py-2">{inner}</div>
+  return <div className={`flex-1 min-w-[132px] ${base} px-3 py-2`}>{inner}</div>
 }
 
-export function AssetContextStrip({ assetId, symbol, spot, onOpen, className }: Props) {
+export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'default', className }: Props) {
   const { data, isLoading } = useAssetWorkspace(assetId, symbol, 'overview')
   const { consensus, ratings, myRating } = useAnalystRatings({ assetId })
+
+  const band = variant === 'band'
+  // Band variant swaps the cell text to the light-on-navy tokens; default keeps
+  // the existing light-surface styling. Logic below is identical either way.
+  const EYEBROW_C = band
+    ? 'block text-[10px] font-semibold uppercase tracking-wide text-[color:var(--ux2-ink-2)]'
+    : EYEBROW
+  const VALUE_C = band
+    ? 'text-[14px] font-semibold text-[color:var(--ux2-ink)] leading-tight'
+    : VALUE
+  const SUB_C = band
+    ? 'text-[11px] text-[color:var(--ux2-ink-2)] leading-tight mt-0.5 truncate'
+    : SUB
+  const DASH_C = band
+    ? 'text-[14px] font-semibold text-[color:var(--ux2-ink-2)] leading-tight'
+    : DASH
+  const wrapC = band
+    ? 'ux2-strip-wrap flex flex-nowrap overflow-x-auto gap-px rounded-lg border'
+    : 'flex flex-nowrap overflow-x-auto gap-px rounded-lg bg-gray-200 dark:bg-gray-700 border border-gray-200 dark:border-gray-700'
 
   const ws = data ?? null
   const price = spot ?? ws?.spot ?? null
@@ -114,7 +140,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, className }: 
   if (isLoading && !ws) {
     return (
       <div
-        className={`flex flex-nowrap overflow-x-auto gap-px rounded-lg bg-gray-200 dark:bg-gray-700 border border-gray-200 dark:border-gray-700 ${className ?? ''}`}
+        className={`${wrapC} ${className ?? ''}`}
         aria-hidden="true"
       >
         {Array.from({ length: 5 }).map((_, i) => (
@@ -131,14 +157,14 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, className }: 
     <div
       role="group"
       aria-label="Investment context"
-      className={`flex flex-nowrap overflow-x-auto gap-px rounded-lg bg-gray-200 dark:bg-gray-700 border border-gray-200 dark:border-gray-700 ${className ?? ''}`}
+      className={`${wrapC} ${className ?? ''}`}
     >
       {/* Firm rating */}
-      <Cell label="Firm rating" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm consensus rating">
+      <Cell label="Firm rating" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm consensus rating" band={band} eyebrow={EYEBROW_C}>
         {topRating ? (
           <>
-            <div className={VALUE + ' truncate'}>{topRating.value}</div>
-            <div className={SUB}>
+            <div className={VALUE_C + ' truncate'}>{topRating.value}</div>
+            <div className={SUB_C}>
               {myDiffers
                 ? <span className="text-primary-600 dark:text-primary-400 font-medium">You: {myRating!.rating_value}</span>
                 : `${topRating.count} of ${totalRaters}`}
@@ -146,17 +172,17 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, className }: 
           </>
         ) : (
           <>
-            <div className={DASH}>—</div>
-            <div className={SUB}>No rating yet</div>
+            <div className={DASH_C}>—</div>
+            <div className={SUB_C}>No rating yet</div>
           </>
         )}
       </Cell>
 
       {/* Price target + upside */}
-      <Cell label="Price target" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm price target">
+      <Cell label="Price target" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm price target" band={band} eyebrow={EYEBROW_C}>
         {target != null ? (
           <>
-            <div className={VALUE + ' tabular-nums flex items-baseline gap-1.5'}>
+            <div className={VALUE_C + ' tabular-nums flex items-baseline gap-1.5'}>
               {money(target)}
               {upside != null && (
                 <span className={`text-[11px] font-semibold ${upside >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
@@ -164,67 +190,67 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, className }: 
                 </span>
               )}
             </div>
-            <div className={SUB}>firm target</div>
+            <div className={SUB_C}>firm target</div>
           </>
         ) : (
           <>
-            <div className={DASH}>—</div>
-            <div className={SUB}>No target yet</div>
+            <div className={DASH_C}>—</div>
+            <div className={SUB_C}>No target yet</div>
           </>
         )}
       </Cell>
 
       {/* Exposure, attributed to a book */}
-      <Cell label="Exposure" onClick={onOpen ? () => onOpen('decisions') : undefined} title="Our position">
+      <Cell label="Exposure" onClick={onOpen ? () => onOpen('decisions') : undefined} title="Our position" band={band} eyebrow={EYEBROW_C}>
         {primary && primary.weightPct != null ? (
           <>
-            <div className={VALUE + ' tabular-nums'}>{primary.weightPct.toFixed(1)}%</div>
-            <div className={SUB}>
+            <div className={VALUE_C + ' tabular-nums'}>{primary.weightPct.toFixed(1)}%</div>
+            <div className={SUB_C}>
               {primary.portfolioName}{bookCount > 1 ? ` · +${bookCount - 1} book${bookCount - 1 > 1 ? 's' : ''}` : ''}
             </div>
           </>
         ) : (
           <>
-            <div className={VALUE + ' text-gray-500 dark:text-gray-400'}>Not held</div>
-            <div className={SUB}>no book you can see</div>
+            <div className={VALUE_C + ' text-gray-500 dark:text-gray-400'}>Not held</div>
+            <div className={SUB_C}>no book you can see</div>
           </>
         )}
       </Cell>
 
       {/* Open work */}
-      <Cell label="Active work" onClick={onOpen ? () => onOpen('decisions') : undefined} title="Open ideas and decisions">
+      <Cell label="Active work" onClick={onOpen ? () => onOpen('decisions') : undefined} title="Open ideas and decisions" band={band} eyebrow={EYEBROW_C}>
         {openWork > 0 ? (
           <>
-            <div className={VALUE}>{openWork} open</div>
-            <div className={SUB}>
+            <div className={VALUE_C}>{openWork} open</div>
+            <div className={SUB_C}>
               {[topIdea?.action, topIdea?.portfolioName].filter(Boolean).join(' · ') || 'in play'}
             </div>
           </>
         ) : (
           <>
-            <div className={VALUE + ' text-gray-500 dark:text-gray-400'}>None open</div>
-            <div className={SUB}>nothing waiting</div>
+            <div className={VALUE_C + ' text-gray-500 dark:text-gray-400'}>None open</div>
+            <div className={SUB_C}>nothing waiting</div>
           </>
         )}
       </Cell>
 
       {/* Case freshness */}
-      <Cell label="Case freshness" onClick={onOpen ? () => onOpen('research') : undefined} title="How current the investment case is">
+      <Cell label="Case freshness" onClick={onOpen ? () => onOpen('research') : undefined} title="How current the investment case is" band={band} eyebrow={EYEBROW_C}>
         {age != null ? (
           <>
-            <div className={VALUE + (stale ? ' text-amber-700 dark:text-amber-400' : '')}>
+            <div className={VALUE_C + (stale ? ' text-amber-700 dark:text-amber-400' : '')}>
               {age === 0 ? 'This month' : `${age} mo old`}
             </div>
             {/* Evidence freshness is a SEPARATE fact from the case's age: an old
                 case with no newer research is still old, never "up to date". */}
-            <div className={SUB}>
+            <div className={SUB_C}>
               {newSince > 0 ? `${newSince} new item${newSince > 1 ? 's' : ''} since` : 'no new research since'}
             </div>
           </>
         ) : (
           <>
-            <div className={DASH}>—</div>
-            <div className={SUB}>No case yet</div>
+            <div className={DASH_C}>—</div>
+            <div className={SUB_C}>No case yet</div>
           </>
         )}
       </Cell>
