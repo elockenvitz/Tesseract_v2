@@ -672,6 +672,34 @@ B1, B3 and B4 together, and is needed to interpret any zero B4 returns: without
 it, "no revision-event exposure" is indistinguishable between *the policy is
 not reached* and *there is nothing for it to reach*. Queued as **B3b**.
 
+## B3b — the denominator · **ZERO restricted contributions**
+
+Zero non-archived `asset_contributions` with `visibility <> 'firm'`, across all
+28 organizations.
+
+**This explains B1, B3 and B4 in one fact.** The three authorization defects
+are not merely unexposed — among active contributions they are **unreachable**,
+because the feature they govern has no live rows. The release is purely
+preventative.
+
+B4 was not run; B3b supersedes it. A zero there would have been uninterpretable
+on its own, which is why the denominator came first.
+
+### Scope limit, stated rather than glossed
+
+**B3b excludes archived records, so it does not establish that restricted
+visibility was never used historically.** Two related facts bound that gap:
+
+- B3 did **not** filter `is_archived`, and returned zero — so no restricted
+  contribution, archived or not, has a non-empty history row.
+- Whether archived restricted contributions exist at all is **unmeasured**.
+  `asset_contributions_select` does not filter `is_archived` either, so an
+  archived restricted contribution would be exposed by the same defects; only
+  the application filters archived rows out.
+
+Not pursued: it would not change the fix, and with no live customers it would
+only refine a description. Recorded as a known residual.
+
 ---
 
 ## Still queued, none blocking
