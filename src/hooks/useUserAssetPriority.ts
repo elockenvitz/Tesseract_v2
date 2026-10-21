@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 // Priority types
 export type Priority = 'critical' | 'high' | 'medium' | 'low' | 'none'
@@ -95,6 +96,7 @@ function calculateFirmPriority(
 
 export function useUserAssetPriority(assetId: string | undefined) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   // Fetch all priorities for this asset (for aggregation)
@@ -160,17 +162,33 @@ export function useUserAssetPriority(assetId: string | undefined) {
       reason?: string
     }) => {
       if (!assetId || !user?.id) throw new Error('Missing asset or user')
+      if (!currentOrgId) throw new Error('No active organization')
 
       const { data, error } = await supabase
         .from('user_asset_priorities')
         .upsert({
+          organization_id: currentOrgId,
           asset_id: assetId,
           user_id: user.id,
           priority,
           reason: reason || null,
           updated_at: new Date().toISOString()
         }, {
-          onConflict: 'asset_id,user_id'
+          /*
+           * The org-composite key, which the table does have. It is NOT
+           * sufficient on its own: the older `UNIQUE (asset_id, user_id)`
+           * still exists alongside it, and that one forbids the same user
+           * holding a priority on the same asset in two organizations. Eight
+           * users are in more than one org today, so the first of them to
+           * prioritise one asset in both gets a 23505.
+           *
+           * Targeting the narrower key instead would be worse — it would
+           * match the OTHER org's row and try to rewrite its organization_id,
+           * which the org-scoped UPDATE policy then refuses anyway. A loud
+           * failure beats a silent cross-tenant write, so this stays until the
+           * superseded constraint is dropped. See the lane report.
+           */
+          onConflict: 'organization_id,asset_id,user_id'
         })
         .select()
         .single()

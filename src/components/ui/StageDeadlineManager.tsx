@@ -2,11 +2,24 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Clock, AlertTriangle, Check, X, Edit3 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useOrganization } from '../../contexts/OrganizationContext'
+import {
+  STAGE_DEADLINE_ORG_SELECT, STAGE_DEADLINE_ORG_FILTER, STAGE_DEADLINE_CONFLICT_TARGET,
+  buildStageDeadlineRow, stageDeadlineKey, workflowDeadlinesKey,
+} from '../../lib/deadlines/stage-deadlines'
 import { Button } from './Button'
 import { Badge } from './Badge'
 
 interface StageDeadlineManagerProps {
   assetId: string
+  /**
+   * The workflow this stage belongs to.
+   *
+   * Part of the table's unique key, and the row's only route to an
+   * organization — `asset_stage_deadlines` has no org column of its own. The
+   * component cannot read or write correctly without it.
+   */
+  workflowId: string
   stageId: string
   stageName: string
   isCurrentStage: boolean
@@ -24,6 +37,7 @@ interface StageDeadline {
 
 export function StageDeadlineManager({
   assetId,
+  workflowId,
   stageId,
   stageName,
   isCurrentStage,
@@ -33,6 +47,14 @@ export function StageDeadlineManager({
   const [deadlineDate, setDeadlineDate] = useState('')
   const [notes, setNotes] = useState('')
   const queryClient = useQueryClient()
+  /*
+   * A deadline's organization is the one that owns its WORKFLOW — the table
+   * has no org column, and the asset side is global reference data. So every
+   * read filters through the embedded workflow, and the org id leads the query
+   * key so switching organizations refetches instead of serving the previous
+   * org's deadline from cache. See lib/deadlines/stage-deadlines.ts.
+   */
+  const { currentOrgId } = useOrganization()
   const dropdownRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -57,24 +79,27 @@ export function StageDeadlineManager({
 
   // Query for existing deadline
   const { data: deadline, isLoading } = useQuery({
-    queryKey: ['stage-deadline', assetId, stageId],
+    queryKey: stageDeadlineKey(currentOrgId, assetId, workflowId, stageId),
+    enabled: !!currentOrgId && !!workflowId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('asset_stage_deadlines')
-        .select('*')
+        .select(STAGE_DEADLINE_ORG_SELECT)
+        .eq(STAGE_DEADLINE_ORG_FILTER, currentOrgId)
         /*
          * maybeSingle: a stage with no deadline set is the normal case — the
          * table holds zero rows today — and `.single()` made every such read
          * an HTTP 406 that the guard below then swallowed.
          *
-         * Note this filter does NOT cover the whole unique key, which is
-         * (asset_id, workflow_id, stage_id). That is why the PGRST116 guard is
-         * kept rather than removed: if one asset ever carries the same stage
-         * in two workflows, maybeSingle raises PGRST116 client-side and this
-         * returns null — exactly what `.single()` did. Behaviour is unchanged
-         * in every case; only the spurious 406 goes away.
+         * These three filters now cover the WHOLE unique key
+         * (asset_id, workflow_id, stage_id), so at most one row can match and
+         * PGRST116 can no longer be raised by a legitimate second row. The
+         * guard stays anyway: it costs nothing, and it is the difference
+         * between a null result and a thrown error if the constraint is ever
+         * relaxed.
          */
         .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
         .eq('stage_id', stageId)
         .maybeSingle()
 
@@ -88,19 +113,21 @@ export function StageDeadlineManager({
     mutationFn: async ({ date, notes: deadlineNotes }: { date: string; notes: string }) => {
       const { data: user } = await supabase.auth.getUser()
 
-      const deadlineData = {
-        asset_id: assetId,
-        stage_id: stageId,
-        deadline_date: date,
-        notes: deadlineNotes || null,
-        set_by: user.user?.id,
-        updated_at: new Date().toISOString()
-      }
+      if (!currentOrgId) throw new Error('No active organization')
+
+      const deadlineData = buildStageDeadlineRow({
+        assetId,
+        workflowId,
+        stageId,
+        deadlineDate: date,
+        notes: deadlineNotes,
+        setBy: user.user?.id,
+      })
 
       const { data, error } = await supabase
         .from('asset_stage_deadlines')
         .upsert(deadlineData, {
-          onConflict: 'asset_id,stage_id'
+          onConflict: STAGE_DEADLINE_CONFLICT_TARGET
         })
         .select()
         .single()
@@ -109,8 +136,11 @@ export function StageDeadlineManager({
       return data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['stage-deadline', assetId, stageId] })
-      queryClient.invalidateQueries({ queryKey: ['asset-deadlines', assetId] })
+      queryClient.invalidateQueries({ queryKey: stageDeadlineKey(currentOrgId, assetId, workflowId, stageId) })
+      // The timeline reads its deadlines under this key. The previous
+      // invalidation named 'asset-deadlines', which no query uses, so the
+      // timeline kept showing the old deadline until something else refetched.
+      queryClient.invalidateQueries({ queryKey: workflowDeadlinesKey(currentOrgId, assetId, workflowId) })
       setIsEditing(false)
       setDeadlineDate('')
       setNotes('')
@@ -124,17 +154,26 @@ export function StageDeadlineManager({
   // Mutation to delete deadline
   const deleteDeadlineMutation = useMutation({
     mutationFn: async () => {
+      if (!currentOrgId) throw new Error('No active organization')
+      if (!workflowId) throw new Error('No workflow for this stage')
+      /*
+       * Scoped by the full unique key. There is no org filter because the
+       * column does not exist — the workflow id is what confines this to one
+       * organization's row, and it is supplied by the timeline, which only
+       * renders workflows the active org can see.
+       */
       const { error } = await supabase
         .from('asset_stage_deadlines')
         .delete()
         .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
         .eq('stage_id', stageId)
 
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['stage-deadline', assetId, stageId] })
-      queryClient.invalidateQueries({ queryKey: ['asset-deadlines', assetId] })
+      queryClient.invalidateQueries({ queryKey: stageDeadlineKey(currentOrgId, assetId, workflowId, stageId) })
+      queryClient.invalidateQueries({ queryKey: workflowDeadlinesKey(currentOrgId, assetId, workflowId) })
     },
     onError: (error) => {
       console.error('Error deleting deadline:', error)

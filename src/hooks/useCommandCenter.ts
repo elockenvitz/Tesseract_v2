@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useOrganization } from '../contexts/OrganizationContext'
+import { STAGE_DEADLINE_ORG_FILTER } from '../lib/deadlines/stage-deadlines'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, addDays, isBefore, isAfter, isToday, parseISO } from 'date-fns'
 
 export type WorkItemType =
@@ -90,9 +92,13 @@ function parseDateSafe(dateStr?: string | null): Date | undefined {
 
 export function useCommandCenter() {
   const queryClient = useQueryClient()
+  // Stage deadlines are org-private; key the aggregate on the active org and scope the query so a switch
+  // refetches rather than surfacing another org's deadlines in the command center.
+  const { currentOrgId } = useOrganization()
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['command-center'],
+    queryKey: ['command-center', currentOrgId],
+    enabled: !!currentOrgId,
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return { items: [], stats: null }
@@ -300,11 +306,18 @@ export function useCommandCenter() {
       // 3. Fetch Stage Deadlines for assets user is working on
       const { data: stageDeadlines } = await supabase
         .from('asset_stage_deadlines')
+        /*
+         * Scoped through the workflow, which is what owns the organization —
+         * `asset_stage_deadlines` has no org column. `workflows!inner` was
+         * already here, so this costs no extra join: it adds the org id to the
+         * projection and filters the parent rows on it.
+         */
         .select(`
           id, deadline_date, notes, stage_id, created_at,
           assets!inner(id, symbol, company_name),
-          workflows!inner(id, name, color)
+          workflows!inner(id, name, color, organization_id)
         `)
+        .eq(STAGE_DEADLINE_ORG_FILTER, currentOrgId)
         .gte('deadline_date', new Date().toISOString().split('T')[0])
         .order('deadline_date', { ascending: true })
         .limit(50)

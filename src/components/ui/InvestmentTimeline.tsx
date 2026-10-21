@@ -13,6 +13,10 @@ import { OperationalItemCard } from './checklist/OperationalItemCard'
 import { type ProcessItemType, userName as chUserName } from './checklist/types'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
+import {
+  STAGE_DEADLINE_ORG_SELECT, STAGE_DEADLINE_ORG_FILTER, workflowDeadlinesKey,
+} from '../../lib/deadlines/stage-deadlines'
 
 interface ChecklistItem {
   id: string
@@ -180,6 +184,9 @@ export function InvestmentTimeline({
   onPriorityChange
 }: InvestmentTimelineProps) {
   const { user } = useAuth()
+  // asset_stage_deadlines is org-private; scope reads to the active org and key the query on it so an
+  // org switch refetches rather than showing another org's deadlines.
+  const { currentOrgId } = useOrganization()
   const [showStageDetails, setShowStageDetails] = useState<string | null>(null)
   const [lastClickedStageId, setLastClickedStageId] = useState<string | null>(null) // Track clicked stage for focus ring
   const [hasAutoSelected, setHasAutoSelected] = useState(false) // Track if we've auto-selected on mount
@@ -633,18 +640,19 @@ export function InvestmentTimeline({
 
   // Query to load workflow-specific stage deadlines
   const { data: stageDeadlines } = useQuery({
-    queryKey: ['asset-workflow-deadlines', assetId, workflowId],
+    queryKey: workflowDeadlinesKey(currentOrgId, assetId, workflowId),
     queryFn: async () => {
-      if (!assetId || !workflowId) return []
+      if (!assetId || !workflowId || !currentOrgId) return []
       const { data, error } = await supabase
         .from('asset_stage_deadlines')
-        .select('*')
+        .select(STAGE_DEADLINE_ORG_SELECT)
+        .eq(STAGE_DEADLINE_ORG_FILTER, currentOrgId)
         .eq('asset_id', assetId)
         .eq('workflow_id', workflowId)
       if (error) throw error
       return data || []
     },
-    enabled: !!assetId && !!workflowId,
+    enabled: !!assetId && !!workflowId && !!currentOrgId,
     gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
   })
 
@@ -1723,6 +1731,7 @@ export function InvestmentTimeline({
                   <div className="mt-2">
                     <StageDeadlineManager
                       assetId={assetId || ''}
+                      workflowId={workflowId || ''}
                       stageId={showStageDetails}
                       stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
                       isCurrentStage={showStageDetails === effectiveCurrentStage}
