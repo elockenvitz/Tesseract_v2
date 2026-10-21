@@ -135,9 +135,144 @@ DROP POLICY IF EXISTS asset_contributions_writer_update ON public.asset_contribu
 CREATE POLICY asset_contributions_writer_update ON public.asset_contributions
   FOR UPDATE TO tesseract_audience_writer USING (true) WITH CHECK (true);
 
+-- ── 3a. The caller's identity, reachable without the auth schema ───────────
+--
+-- Declared BEFORE the policies below, which call it.
+--
+-- auth.uid() lives in schema `auth`, owned by supabase_admin, and is not
+-- SECURITY DEFINER — so whichever role evaluates it needs USAGE on that schema.
+-- tesseract_audience_writer has none and CANNOT be given any: `postgres` holds
+-- auth USAGE *without* grant option, so `GRANT USAGE ON SCHEMA auth` issued as
+-- postgres emits a WARNING and changes nothing. This wrapper is owned by
+-- postgres, which does hold it.
+--
+-- SECURITY DEFINER changes `current_user` but NOT the session's
+-- request.jwt.claims, so this returns the ORIGINAL CALLER — which is what keeps
+-- the author-only model intact. No argument, so it cannot be asked about anyone
+-- else; no dynamic SQL; no row data returned; explicit minimal search_path.
+CREATE OR REPLACE FUNCTION public.current_user_id()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT auth.uid();
+$$;
+
+ALTER FUNCTION public.current_user_id() OWNER TO postgres;
+
+COMMENT ON FUNCTION public.current_user_id() IS
+  'auth.uid() for roles without USAGE on the auth schema. SECURITY DEFINER and '
+  'owned by postgres, which holds that USAGE; auth.uid() reads '
+  'request.jwt.claims, which SECURITY DEFINER does not change, so this still '
+  'returns the ORIGINAL CALLER. Takes no argument, so it cannot be asked about '
+  'anyone else, and returns no row data. EXECUTE is granted only to '
+  'tesseract_audience_writer, which needs it inside '
+  'set_contribution_audience() and its writer SELECT policy.';
+
+REVOKE ALL ON FUNCTION public.current_user_id() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.current_user_id() FROM anon;
+REVOKE ALL ON FUNCTION public.current_user_id() FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.current_user_id() TO tesseract_audience_writer;
+
+-- current_org_id()'s EXECUTE was revoked from PUBLIC and re-granted role by
+-- role; this role was not on the list. Called by the RPC body and by all three
+-- writer SELECT policies below.
+GRANT EXECUTE ON FUNCTION public.current_org_id() TO tesseract_audience_writer;
+
+/*
+ * SELECT POLICIES — added after 20- was first applied to production, where the
+ * RPC then refused EVERY call with 42501 'contribution not found or not yours'.
+ *
+ * A GRANT permits a command; a POLICY decides the rows. The role held
+ * `GRANT SELECT` on asset_contributions but no SELECT policy, and RLS is
+ * enabled on these tables with the role not their owner — so the function's
+ * own ownership lookup returned zero rows for every caller and fell into its
+ * NOT FOUND branch. Granting without a policy is a silent denial.
+ *
+ * These are NARROW, not `USING (true)`. SECURITY DEFINER changes
+ * `current_user`; it does NOT change `request.jwt.claims`, so
+ * `current_user_id()` and `current_org_id()` still resolve to the CALLER inside
+ * the function. The role can therefore read only the caller's own
+ * contributions in the caller's own organization — the same author-only,
+ * tenant-pinned predicate the function re-enforces and the same one
+ * asset_contributions_select uses. There is no unrestricted read path: with no
+ * JWT (a direct session as the role, which is NOLOGIN anyway)
+ * current_user_id() is NULL and all three policies match nothing.
+ *
+ * org_chart_nodes is tenant-scoped only, because the function reads it to
+ * validate that each target node belongs to the caller's org and is of the
+ * right type — it needs to see candidate nodes, never contributions.
+ */
+DROP POLICY IF EXISTS asset_contributions_writer_select ON public.asset_contributions;
+CREATE POLICY asset_contributions_writer_select ON public.asset_contributions
+  FOR SELECT TO tesseract_audience_writer
+  USING (created_by = public.current_user_id()
+         AND organization_id = public.current_org_id());
+
+DROP POLICY IF EXISTS org_chart_nodes_writer_select ON public.org_chart_nodes;
+CREATE POLICY org_chart_nodes_writer_select ON public.org_chart_nodes
+  FOR SELECT TO tesseract_audience_writer
+  USING (organization_id = public.current_org_id());
+
+-- Postgres applies SELECT policies to an UPDATE/DELETE carrying a WHERE clause.
+-- Without this, the RPC's `DELETE … WHERE contribution_id = …` matches no rows
+-- and a REPLACE silently becomes an APPEND — which then trips the
+-- (contribution_id, node_id) unique constraint on the next change. Tenant-scoped
+-- rather than USING (true): the role only needs to see target rows in the
+-- caller's own organization.
+DROP POLICY IF EXISTS contribution_visibility_targets_writer_select ON public.contribution_visibility_targets;
+CREATE POLICY contribution_visibility_targets_writer_select ON public.contribution_visibility_targets
+  FOR SELECT TO tesseract_audience_writer
+  USING (organization_id = public.current_org_id());
+
 GRANT SELECT, UPDATE ON public.asset_contributions TO tesseract_audience_writer;
 GRANT SELECT, INSERT, DELETE ON public.contribution_visibility_targets TO tesseract_audience_writer;
 GRANT SELECT ON public.org_chart_nodes, public.organizations TO tesseract_audience_writer;
+
+/*
+ * THE REST OF THE EXECUTION PATH — reconstructed after this file was applied to
+ * production and the RPC failed four times, each one dependency further in.
+ *
+ * The role is created with NOTHING, so every object the function body and its
+ * policies reach must be granted explicitly — and for an RLS table a GRANT is
+ * only half of it. A GRANT permits a COMMAND; a POLICY decides the ROWS. The
+ * role held `GRANT SELECT` on asset_contributions and on
+ * contribution_visibility_targets with no SELECT policy on either, which does
+ * not error — it silently returns nothing. That is what produced, in order:
+ *
+ *   1. 42501 'contribution not found or not yours' on every call
+ *      — no SELECT policy on asset_contributions; the ownership lookup saw
+ *        zero rows. Fixed by asset_contributions_writer_select above.
+ *   2. 42501 'permission denied for schema auth'
+ *      — the function body and that policy called auth.uid() directly while
+ *        running AS the role, which has no USAGE on the auth schema. NOT
+ *        fixable by granting it: schema auth is owned by supabase_admin and
+ *        `postgres` holds USAGE *without* grant option, so
+ *        `GRANT USAGE ON SCHEMA auth` issued as postgres emits a WARNING and
+ *        changes nothing. Fixed by public.current_user_id() below.
+ *   3. 42501 permission denied for function current_org_id
+ *      — EXECUTE had been revoked from PUBLIC and re-granted role by role;
+ *        this role was not on the list. Fixed by the GRANT below.
+ *   4. Audiences APPENDED instead of replacing, then 23505 duplicate key
+ *      — no SELECT policy on contribution_visibility_targets. Postgres applies
+ *        SELECT policies to an UPDATE/DELETE that carries a WHERE clause, so
+ *        the RPC's `DELETE … WHERE contribution_id = …` matched no rows and the
+ *        replace became an append. Fixed by
+ *        contribution_visibility_targets_writer_select above.
+ *
+ * Nothing else is required. `is_active_member_of_current_org()` is already
+ * EXECUTE to PUBLIC; `gen_random_uuid()` and `now()` are PUBLIC; there are no
+ * sequences on this path; and `asset_contribution_history` INSERT is
+ * deliberately NOT granted, because that insert happens only inside
+ * track_contribution_history(), which is SECURITY DEFINER owned by postgres,
+ * and an audience-only UPDATE does not change content so it never fires.
+ *
+ * The helper and both EXECUTE grants are declared in section 3a above, BEFORE
+ * the policies that call them, so this file runs top-to-bottom on a clean
+ * baseline.
+ */
 
 -- ── 4. The one operation ───────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.set_contribution_audience(
@@ -150,7 +285,10 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_uid   uuid := auth.uid();     -- the CALLER. Never a parameter — see below.
+  -- the CALLER. Never a parameter — see below. Routed through the wrapper in
+  -- section 3a because this body runs as tesseract_audience_writer, which has
+  -- no USAGE on the auth schema and cannot be granted any.
+  v_uid   uuid := public.current_user_id();
   v_org   uuid := public.current_org_id();
   v_row   public.asset_contributions%ROWTYPE;
   v_bad   int;
@@ -161,7 +299,8 @@ BEGIN
    * re-enforced here. A contribution id is an opaque uuid anyone can hold;
    * possessing one grants nothing.
    *
-   * The caller's identity is read from auth.uid() and is NOT a parameter.
+   * The caller's identity is read from current_user_id() (auth.uid() behind a
+   * postgres-owned definer wrapper, section 3a) and is NOT a parameter.
    * can_view_contribution (preflight A3d) takes p_user_id as an argument and
    * is consequently a membership oracle — the mistake is not repeated.
    */
@@ -265,8 +404,34 @@ BEGIN
   );
 END $$;
 
+/*
+ * F1, SECOND HALF — found when 20- was first applied to production and failed
+ * with `42501: permission denied for schema public`, rolling the whole
+ * transaction back.
+ *
+ * `ALTER … OWNER TO` needs TWO things, and F1 originally fixed only the first:
+ *   (a) `postgres` must be a member of the new owning role  → GRANT above.
+ *   (b) the NEW OWNER must hold CREATE on the schema containing the object.
+ * The role is created with no privileges at all, so (b) fails.
+ *
+ * USAGE is NOT granted here and must not be: the `public` schema ACL carries
+ * `=U/pg_database_owner`, i.e. PUBLIC already has USAGE, which the role
+ * inherits — and which the SECURITY DEFINER function needs at run time to
+ * resolve public.* objects. Granting it explicitly would be a permanent
+ * broadening for no gain.
+ *
+ * CREATE is granted and revoked inside this same transaction, so no other
+ * session ever observes the role holding it. Ownership survives the revoke.
+ * The role therefore ends up exactly as inert as designed: NOLOGIN,
+ * NOBYPASSRLS, no schema CREATE, and only the seven table privileges granted
+ * above. Step 6 check 5 still passes unchanged.
+ */
+GRANT CREATE ON SCHEMA public TO tesseract_audience_writer;
+
 ALTER FUNCTION public.set_contribution_audience(uuid, text, uuid[])
   OWNER TO tesseract_audience_writer;
+
+REVOKE CREATE ON SCHEMA public FROM tesseract_audience_writer;
 
 REVOKE ALL ON FUNCTION public.set_contribution_audience(uuid, text, uuid[]) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.set_contribution_audience(uuid, text, uuid[]) FROM anon;

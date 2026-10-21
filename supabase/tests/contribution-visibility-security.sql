@@ -16,17 +16,31 @@
 -- ── Expected results ────────────────────────────────────────────────────────
 --
 --   BEFORE scripts/sql/contribution-visibility/10-policy-fix.sql:
---       9 PASS, 7 FAIL — assertions 3, 4, 6, 8, 13, 15 and 16 MUST fail.
+--       10 PASS, 6 FAIL — assertions 3, 4, 6, 8, 13 and 16 MUST fail.
 --       If they pass, this test is decoration and must not be trusted.
+--
+--       15 is deliberately NOT among them. The live
+--       asset_revision_events_select already carries the null-org actor-only
+--       branch (shipped by the C1 lane, scripts/sql/security-c1/
+--       06-asset-revisions-events.sql), so 15 passes BEFORE 10- as well as
+--       after. It is a preserve-access regression guard — it proves 10- does
+--       not BREAK the quarantine, not that 10- establishes it.
 --
 --   AFTER 10-policy-fix.sql:
 --       16 PASS, 0 FAIL.
 --
--- 15 and 16 were added after the production preflight. 15 asserts the
--- legacy null-org shape B8 found three of and could not exercise; 16 asserts
--- the four-column attribution A5 showed the original policy had got wrong.
+-- 15 and 16 were added after the production preflight and NEITHER had ever
+-- been executed anywhere. 15's original fixture was unreachable against the
+-- live schema: the asset_revisions BEFORE INSERT OR UPDATE trigger overwrites
+-- organization_id with current_org_id() and RAISES when that is NULL, so a
+-- synthetic quarantined revision cannot be produced by any DML path — on
+-- INSERT the supplied value is discarded, and the NULL-preserving branch is
+-- UPDATE-only and requires the row to be NULL already. 15 is therefore now a
+-- READ-ONLY check against the quarantined rows that already exist in
+-- production, and it writes nothing. 16 asserts the four-column attribution
+-- A5 showed the original policy had got wrong.
 --
--- Assertions 1, 2, 5, 7, 9, 10, 11, 12 and 14 pass in BOTH states by design:
+-- Assertions 1, 2, 5, 7, 9, 10, 11, 12, 14 and 15 pass in BOTH states by design:
 -- they are the preserve-legitimate-access controls, and a fix that breaks one
 -- is too tight.
 --
@@ -524,52 +538,90 @@ BEGIN
   ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (14, 'FAIL', v_msg); END IF;
 
   -- ===========================================================================
-  -- 15. LEGACY NULL-ORG REVISION: actor only.
+  -- 15. LEGACY NULL-ORG REVISION: actor only. READ-ONLY, against existing rows.
   --
-  --     Preflight B8 found exactly three non-valuation events in production,
-  --     all on revisions with organization_id NULL and none with a matching
-  --     contribution. The invariant check was therefore VACUOUS, so this
-  --     asserts the shape directly instead of trusting that result.
+  --     The security meaning is unchanged from the original assertion: prose on
+  --     a quarantined (organization_id IS NULL) revision must be readable by
+  --     its actor and by NOBODY ELSE, not even an active member of the actor's
+  --     own organization. `organization_id = current_org_id()` yields NULL for
+  --     these rows, so the org branch is unreachable and only
+  --     `r.actor_user_id = auth.uid()` can grant. Fails closed to the actor.
   --
-  --     The corrected policy requires BOTH the event's and the revision's
-  --     organization_id to equal current_org_id(). With the revision's NULL,
-  --     NULL = uuid yields NULL, the org branch is unreachable, and only
-  --     `r.actor_user_id = auth.uid()` grants. Fails closed to the owner.
+  --     WHAT CHANGED, AND WHY. The original fixture INSERTed a synthetic
+  --     revision with organization_id NULL. That is unreachable: the live
+  --     BEFORE INSERT OR UPDATE trigger asset_revisions_set_organization_id()
+  --     assigns current_org_id() on every INSERT and RAISES when it is NULL, so
+  --     the value supplied is always discarded. Reproducing the state would
+  --     require disabling the trigger, changing the schema or elevating
+  --     privileges — none of which a test may do to production.
+  --
+  --     COVERAGE LIMITATION, stated rather than hidden: this no longer
+  --     exercises a fixture it controls. It verifies the property against
+  --     whatever quarantined rows production happens to hold, so it is only as
+  --     strong as that data. If no usable row exists it records SKIP — never
+  --     PASS. A SKIP is not a pass and must not be counted as one.
+  --
+  --     This is the only assertion in either suite that reads pre-existing
+  --     rows. It reads COUNTS ONLY — no prose column is selected into a result
+  --     — and it writes nothing, so it has no cleanup.
   -- ===========================================================================
-  DECLARE v_rev_legacy uuid := gen_random_uuid();
+  DECLARE
+    v_leg_rev   uuid;
+    v_leg_actor uuid;
+    v_leg_other uuid;
+    v_leg_cnt   int;
   BEGIN
     SET LOCAL request.jwt.claims = '';
-    INSERT INTO asset_revisions(id, asset_id, actor_user_id, view_scope_type, organization_id)
-    VALUES (v_rev_legacy, v_asset, v_owner, 'firm', NULL);
-    INSERT INTO asset_revision_events(revision_id, category, field_key, before_value, after_value, significance_tier)
-    VALUES (v_rev_legacy, 'thesis', 'thesis', 'ZZ OLD LEGACY '||v_suffix,
-            'ZZ LEGACY NULL ORG PROSE '||v_suffix, 2);
+    -- A quarantined revision that (a) carries at least one event, (b) has an
+    -- actor with an active organization, and (c) has a DIFFERENT active member
+    -- of that same organization available as the negative reader. Without (c)
+    -- the deny half would be vacuous.
+    SELECT r.id, r.actor_user_id, m.user_id
+      INTO v_leg_rev, v_leg_actor, v_leg_other
+      FROM asset_revisions r
+      JOIN users u ON u.id = r.actor_user_id
+      JOIN organization_memberships m
+        ON  m.organization_id = u.current_organization_id
+        AND m.status = 'active'
+        AND m.user_id <> r.actor_user_id
+     WHERE r.organization_id IS NULL
+       AND u.current_organization_id IS NOT NULL
+       AND EXISTS (SELECT 1 FROM asset_revision_events e WHERE e.revision_id = r.id)
+     LIMIT 1;
 
-    v_msg := '';
-    BEGIN
-      EXECUTE format('SET LOCAL request.jwt.claims = %L',
-                     json_build_object('sub', v_owner, 'role','authenticated')::text);
-      SET LOCAL ROLE authenticated;
-      SELECT count(*) INTO v_n FROM asset_revision_events WHERE revision_id = v_rev_legacy;
-      RESET ROLE;
-    EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1; END;
-    IF v_n <> 1 THEN v_msg := v_msg || format('actor cannot read own legacy event (%s) ', v_n); END IF;
+    IF v_leg_rev IS NULL THEN
+      INSERT INTO _sec_results VALUES (15, 'SKIP',
+        'no quarantined null-org revision with an event, an active-org actor and a same-org non-actor exists — scenario NOT verified');
+    ELSE
+      v_msg := '';
+      -- (a) the actor still reads their own quarantined prose
+      BEGIN
+        EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                       json_build_object('sub', v_leg_actor, 'role','authenticated')::text);
+        SET LOCAL ROLE authenticated;
+        SELECT count(*) INTO v_leg_cnt FROM asset_revision_events WHERE revision_id = v_leg_rev;
+        RESET ROLE;
+      EXCEPTION WHEN OTHERS THEN RESET ROLE; v_leg_cnt := -1; END;
+      IF v_leg_cnt < 1 THEN
+        v_msg := v_msg || format('actor cannot read own legacy events (%s) ', v_leg_cnt); END IF;
 
-    BEGIN
-      EXECUTE format('SET LOCAL request.jwt.claims = %L',
-                     json_build_object('sub', v_other, 'role','authenticated')::text);
-      SET LOCAL ROLE authenticated;
-      SELECT count(*) INTO v_n FROM asset_revision_events WHERE revision_id = v_rev_legacy;
-      RESET ROLE;
-    EXCEPTION WHEN OTHERS THEN RESET ROLE; v_n := -1; END;
-    IF v_n <> 0 THEN v_msg := v_msg || format('same-org non-actor READ legacy prose (%s) ', v_n); END IF;
+      -- (b) an active member of the actor's own org reads NONE of it
+      BEGIN
+        EXECUTE format('SET LOCAL request.jwt.claims = %L',
+                       json_build_object('sub', v_leg_other, 'role','authenticated')::text);
+        SET LOCAL ROLE authenticated;
+        SELECT count(*) INTO v_leg_cnt FROM asset_revision_events WHERE revision_id = v_leg_rev;
+        RESET ROLE;
+      EXCEPTION WHEN OTHERS THEN RESET ROLE; v_leg_cnt := -1; END;
+      IF v_leg_cnt <> 0 THEN
+        v_msg := v_msg || format('same-org non-actor READ quarantined prose (%s) ', v_leg_cnt); END IF;
 
-    IF v_msg = '' THEN v_pass := v_pass + 1;
-      INSERT INTO _sec_results VALUES (15, 'PASS', 'legacy null-org event: actor only');
-    ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (15, 'FAIL', v_msg); END IF;
-
-    DELETE FROM asset_revision_events WHERE revision_id = v_rev_legacy;
-    DELETE FROM asset_revisions       WHERE id = v_rev_legacy;
+      IF v_msg = '' THEN v_pass := v_pass + 1;
+        INSERT INTO _sec_results VALUES (15, 'PASS',
+          'quarantined null-org event: actor yes, same-org non-actor no (read-only, existing rows)');
+      ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (15, 'FAIL', v_msg); END IF;
+    END IF;
+    SET LOCAL request.jwt.claims = '';
   END;
 
   -- ===========================================================================
@@ -639,6 +691,16 @@ BEGIN
     DELETE FROM asset_contributions WHERE id = v_c_b;
     DELETE FROM organization_memberships WHERE user_id IN (v_owner, v_mem_b) AND organization_id = v_org_b;
     UPDATE users SET current_organization_id = NULL WHERE id = v_mem_b;
+    -- Creating a user seeds default lists (handle_new_user_lists ->
+    -- create_default_lists_for_user) and four statuses per list
+    -- (seed_default_list_statuses). Deleting the user then fires TWO conflicting
+    -- referential actions on the same row: asset_lists.created_by is ON DELETE
+    -- CASCADE while list_statuses.created_by is ON DELETE SET NULL, and the
+    -- SET NULL re-validates list_statuses.list_id against a list the cascade has
+    -- already removed. Children first, scoped to this synthetic user's own lists.
+    DELETE FROM list_statuses
+     WHERE list_id IN (SELECT id FROM asset_lists WHERE created_by = v_mem_b);
+    DELETE FROM asset_lists WHERE created_by = v_mem_b;
     DELETE FROM auth.users WHERE id = v_mem_b;
   END;
 
@@ -665,10 +727,17 @@ BEGIN
   UPDATE users SET current_organization_id = NULL
    WHERE id IN (v_owner, v_member, v_other, v_outsider);
   DELETE FROM organizations WHERE id IN (v_org_a, v_org_b);
+  -- Seeded default lists and their statuses, scoped to the four synthetic users.
+  -- Must precede the auth.users delete: see the note in assertion 16's cleanup.
+  DELETE FROM list_statuses
+   WHERE list_id IN (SELECT id FROM asset_lists
+                      WHERE created_by IN (v_owner, v_member, v_other, v_outsider));
+  DELETE FROM asset_lists WHERE created_by IN (v_owner, v_member, v_other, v_outsider);
   DELETE FROM auth.users WHERE id IN (v_owner, v_member, v_other, v_outsider);
 
   RAISE NOTICE '=== RESULTS: % passed, % failed out of 16 assertions ===', v_pass, v_fail;
-  RAISE NOTICE 'Before the fix, 3/4/6/8/13/15/16 MUST be among the failures.';
+  RAISE NOTICE 'Before the fix, 3/4/6/8/13/16 MUST be among the failures.';
+  RAISE NOTICE '15 passes in both states (C1 already quarantines null-org events); a SKIP there is not a pass.';
 END;
 $$;
 

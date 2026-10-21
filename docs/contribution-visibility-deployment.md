@@ -82,7 +82,12 @@ with less rigour and no rollback property.
 
 ## 3. Deployment procedure
 
-Every step is one command. Steps 1–2 are read-only.
+Every step is one command. **Step 1 is read-only. Step 2 is NOT** — each suite
+writes synthetic `ZZ`-prefixed fixtures and relies on its own cleanup and on
+statement-level atomicity to remove them (§2, §6). It is safe, not read-only.
+Visibility assertion 15 additionally *reads* existing quarantined revision
+rows — counts only, no prose, no writes — which is the one exception to the
+"no existing record is read" claim in §6.
 
 ### Step 1 — recoverable backup *(read-only)*
 
@@ -103,8 +108,19 @@ psql "$PROD_URL" -f supabase/tests/contribution-audience-management.sql
 
 | Suite | Required | Failures must include |
 |---|---|---|
-| visibility-security | **9 PASS / 7 FAIL** | 3, 4, 6, 8, 13, 15, 16 |
+| visibility-security | **10 PASS / 6 FAIL** | 3, 4, 6, 8, 13, 16 |
 | audience-management | **4 PASS / 10 FAIL** | all but 1, 2, 11, 14 |
+
+**Revised 2026-10-20.** The visibility baseline was 9/7 with 15 among the
+failures. Two corrections, both verified against the live database:
+
+- 15's fixture was **unreachable** — the `asset_revisions` BEFORE INSERT OR
+  UPDATE trigger overwrites `organization_id` with `current_org_id()` and
+  raises when that is NULL, so no synthetic quarantined revision can be
+  created. 15 is now a read-only check against existing quarantined rows.
+- 15 **passes before 10- as well as after**: the C1 lane's
+  `asset_revision_events_select` already carries the null-org actor-only
+  branch. It is a preserve-access guard, not a proof that 10- does anything.
 
 **More passes than required → STOP and report.** A suite that was never seen
 failing proves nothing when it passes.
