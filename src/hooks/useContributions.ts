@@ -12,6 +12,61 @@ import {
 
 export type ContributionVisibility = 'portfolio' | 'team' | 'department' | 'division' | 'firm'
 
+/**
+ * The ONLY path that may change a contribution's audience.
+ *
+ * Security Release C made the direct writes this replaces impossible rather
+ * than merely discouraged:
+ *   - a BEFORE UPDATE trigger on asset_contributions silently preserves
+ *     `visibility` and `team_id` for every caller except the function's owning
+ *     role, so a content save still succeeds but cannot widen an audience;
+ *   - `authenticated` no longer holds INSERT/UPDATE/DELETE on
+ *     contribution_visibility_targets, so a direct target write is refused.
+ *
+ * set_contribution_audience() re-checks authorship, tenancy, the
+ * scope/target-type match and the "a restricted audience must name at least
+ * one group" rule server-side, and replaces the target rows in ONE transaction
+ * instead of the delete-then-insert pair the client used to issue as two
+ * separate requests — where a dropped connection in between destroyed the
+ * audience entirely.
+ *
+ * Errors are thrown, not logged. The old code logged them, so the picker
+ * reported success while changing nothing.
+ */
+async function setContributionAudience(
+  contributionId: string,
+  visibility: ContributionVisibility,
+  targetIds: string[]
+) {
+  const { data, error } = await supabase.rpc('set_contribution_audience', {
+    p_contribution_id: contributionId,
+    p_visibility: visibility,
+    p_node_ids: targetIds
+  })
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Did the caller actually ask for a different audience?
+ *
+ * Content saves pass the picker's current values, which normally equal what is
+ * stored. Comparing first keeps an ordinary prose save from issuing an audience
+ * write at all, while still letting a deliberate change made in the same
+ * interaction through.
+ */
+function audienceDiffers(
+  stored: { visibility: string | null; targetIds: string[] },
+  requested: { visibility: ContributionVisibility; targetIds: string[] }
+): boolean {
+  if ((stored.visibility ?? 'firm') !== requested.visibility) return true
+
+  const before = [...stored.targetIds].sort()
+  const after = [...requested.targetIds].sort()
+  return before.length !== after.length || before.some((id, i) => id !== after[i])
+}
+
 export interface VisibilityTarget {
   id: string
   node_id: string
@@ -156,6 +211,12 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
   const otherContributions = contributions?.filter(c => c.created_by !== user?.id) || []
 
   // Save contribution (upsert - create or update)
+  //
+  // Audience handling moved to setContributionAudience() below. A content save
+  // no longer sends `visibility`, `team_id` or target rows: after Security
+  // Release C the database pins those fields for every caller except the RPC's
+  // owning role, so sending them is at best a silent no-op and at worst a
+  // refused target write whose error this code used to swallow.
   const saveContribution = useMutation({
     mutationFn: async ({
       content,
@@ -175,22 +236,21 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       // Check if user already has a contribution for this section
       const { data: existing } = await supabase
         .from('asset_contributions')
-        .select('id')
+        .select('id, visibility')
         .eq('asset_id', assetId)
         .eq('section', sectionKey)
         .eq('created_by', user?.id)
         .maybeSingle()
 
       if (existing) {
-        // Update existing contribution
+        // Content only. The audience is deliberately NOT in this payload --
+        // see the note on the mutation.
         const { data, error } = await supabase
           .from('asset_contributions')
           .update({
             content,
             supporting_detail: supportingDetail || null,
             attachments: attachments || [],
-            visibility,
-            team_id: targetIds.length === 1 ? targetIds[0] : null,
             updated_at: new Date().toISOString()
           })
           .eq('id', existing.id)
@@ -203,20 +263,22 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
         if (error) throw error
 
-        // Update visibility targets
-        await supabase
+        // Only when the caller actually asked for a DIFFERENT audience. An
+        // ordinary save passes the picker's current values, which match what is
+        // stored, so this does nothing -- the audience is never rewritten as a
+        // side effect of saving prose.
+        const { data: storedTargets } = await supabase
           .from('contribution_visibility_targets')
-          .delete()
+          .select('node_id')
           .eq('contribution_id', existing.id)
 
-        if (visibility !== 'firm' && targetIds.length > 0) {
-          await supabase
-            .from('contribution_visibility_targets')
-            .insert(targetIds.map(nodeId => ({
-              contribution_id: existing.id,
-              node_id: nodeId,
-              organization_id: currentOrgId
-            })))
+        const stored = {
+          visibility: existing.visibility,
+          targetIds: (storedTargets || []).map(t => t.node_id as string)
+        }
+
+        if (audienceDiffers(stored, { visibility, targetIds })) {
+          await setContributionAudience(existing.id, visibility, targetIds)
         }
 
         return {
@@ -247,15 +309,14 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
         if (error) throw error
 
-        // Save visibility targets
-        if (targetIds.length > 0) {
-          await supabase
-            .from('contribution_visibility_targets')
-            .insert(targetIds.map(nodeId => ({
-              contribution_id: data.id,
-              node_id: nodeId,
-              organization_id: currentOrgId
-            })))
+        // visibility and team_id above are honoured: the pin trigger is BEFORE
+        // UPDATE only, so a new row keeps the audience it is created with and
+        // is never wider than the author asked for. The TARGET rows still need
+        // the RPC, because `authenticated` no longer holds INSERT on them.
+        // If this call fails the contribution exists as restricted with no
+        // targets, which is author-only -- it fails closed, not open.
+        if (visibility !== 'firm' && targetIds.length > 0) {
+          await setContributionAudience(data.id, visibility, targetIds)
         }
 
         return {
@@ -369,7 +430,7 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       // Get the contribution with draft AND current published content (for revision diff)
       const { data: existing } = await supabase
         .from('asset_contributions')
-        .select('id, content, draft_content')
+        .select('id, content, draft_content, visibility')
         .eq('asset_id', assetId)
         .eq('section', sectionKey)
         .eq('created_by', user?.id)
@@ -382,15 +443,14 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       const oldContent = existing.content
       const newContent = existing.draft_content
 
-      // Move draft to published content
+      // Move draft to published content. Audience excluded, as in
+      // saveContribution -- publishing prose is a content write.
       const { data, error } = await supabase
         .from('asset_contributions')
         .update({
           content: newContent,
           draft_content: null,
           draft_updated_at: null,
-          visibility,
-          team_id: targetIds.length === 1 ? targetIds[0] : null,
           updated_at: new Date().toISOString()
         })
         .eq('id', existing.id)
@@ -403,20 +463,20 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
       if (error) throw error
 
-      // Update visibility targets
-      await supabase
+      // Publishing may also carry a deliberate audience change from the
+      // picker; apply it only when it differs from what is stored.
+      const { data: storedTargets } = await supabase
         .from('contribution_visibility_targets')
-        .delete()
+        .select('node_id')
         .eq('contribution_id', existing.id)
 
-      if (visibility !== 'firm' && targetIds.length > 0) {
-        await supabase
-          .from('contribution_visibility_targets')
-          .insert(targetIds.map(nodeId => ({
-            contribution_id: existing.id,
-            node_id: nodeId,
-            organization_id: currentOrgId
-          })))
+      const stored = {
+        visibility: existing.visibility,
+        targetIds: (storedTargets || []).map(t => t.node_id as string)
+      }
+
+      if (audienceDiffers(stored, { visibility, targetIds })) {
+        await setContributionAudience(existing.id, visibility, targetIds)
       }
 
       // Create revision event (fire-and-forget, don't block publish)
@@ -521,48 +581,17 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       const contribId = contributionId || myContribution?.id
       if (!contribId) throw new Error('No contribution to update')
 
-      const { data, error } = await supabase
-        .from('asset_contributions')
-        .update({
-          visibility,
-          team_id: targetIds.length === 1 ? targetIds[0] : null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', contribId)
-        .eq('created_by', user?.id)
-        .select()
-        .single()
-
-      if (error) {
-        console.error('Error updating visibility:', error)
-        throw error
-      }
-
-      // Update visibility targets
-      const { error: deleteError } = await supabase
-        .from('contribution_visibility_targets')
-        .delete()
-        .eq('contribution_id', contribId)
-
-      if (deleteError) {
-        console.error('Error deleting visibility targets:', deleteError)
-      }
-
-      if (visibility !== 'firm' && targetIds.length > 0) {
-        const { error: insertError } = await supabase
-          .from('contribution_visibility_targets')
-          .insert(targetIds.map(nodeId => ({
-            contribution_id: contribId,
-            node_id: nodeId,
-            organization_id: currentOrgId
-          })))
-
-        if (insertError) {
-          console.error('Error inserting visibility targets:', insertError)
-        }
-      }
-
-      return data
+      // One call, one transaction, errors RAISED rather than logged.
+      //
+      // This replaced a field write plus a delete-then-insert pair over three
+      // HTTP requests. Each failure was only console.error'd, so the picker
+      // reported success either way: a dropped connection between the delete
+      // and the insert destroyed the audience, and after Security Release C the
+      // field write is pinned and the target writes are revoked, so all three
+      // would silently do nothing. The RPC re-checks authorship, tenancy, the
+      // scope/target-type match and the "a restricted audience must name at
+      // least one group" rule server-side.
+      return await setContributionAudience(contribId, visibility, targetIds)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
