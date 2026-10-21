@@ -2,11 +2,25 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Clock, AlertTriangle, Check, X, Edit3 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import {
+  STAGE_DEADLINE_CONFLICT_TARGET, NO_WORKFLOW_MESSAGE,
+  buildStageDeadlineRow, stageDeadlineKey, workflowDeadlinesKey,
+} from '../../lib/deadlines/stage-deadlines'
 import { Button } from './Button'
 import { Badge } from './Badge'
 
 interface StageDeadlineManagerProps {
   assetId: string
+  /**
+   * The workflow this stage belongs to.
+   *
+   * Part of the table's unique key, and the row's only route to an
+   * organization — `asset_stage_deadlines` has no org column, so the server
+   * resolves tenancy through this column. Optional because the timeline's own
+   * `workflowId` is optional; when it is absent the component says why rather
+   * than writing a row the server would refuse.
+   */
+  workflowId?: string
   stageId: string
   stageName: string
   isCurrentStage: boolean
@@ -24,6 +38,7 @@ interface StageDeadline {
 
 export function StageDeadlineManager({
   assetId,
+  workflowId,
   stageId,
   stageName,
   isCurrentStage,
@@ -57,12 +72,25 @@ export function StageDeadlineManager({
 
   // Query for existing deadline
   const { data: deadline, isLoading } = useQuery({
-    queryKey: ['stage-deadline', assetId, stageId],
+    queryKey: stageDeadlineKey(assetId, workflowId, stageId),
+    // No workflow means no row can be identified; skip the request rather than
+    // fetching some other workflow's deadline for this stage.
+    enabled: !!workflowId,
     queryFn: async () => {
+      /*
+       * These three filters cover the whole unique key
+       * (asset_id, workflow_id, stage_id), so at most one row can match. The
+       * previous query omitted workflow_id and could return a deadline set
+       * under a different workflow.
+       *
+       * No organization filter: the column does not exist, and the server's
+       * policies resolve tenancy through the workflow already.
+       */
       const { data, error } = await supabase
         .from('asset_stage_deadlines')
         .select('*')
         .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
         .eq('stage_id', stageId)
         .single()
 
@@ -76,19 +104,21 @@ export function StageDeadlineManager({
     mutationFn: async ({ date, notes: deadlineNotes }: { date: string; notes: string }) => {
       const { data: user } = await supabase.auth.getUser()
 
-      const deadlineData = {
-        asset_id: assetId,
-        stage_id: stageId,
-        deadline_date: date,
-        notes: deadlineNotes || null,
-        set_by: user.user?.id,
-        updated_at: new Date().toISOString()
-      }
+      if (!workflowId) throw new Error(NO_WORKFLOW_MESSAGE)
+
+      const deadlineData = buildStageDeadlineRow({
+        assetId,
+        workflowId,
+        stageId,
+        deadlineDate: date,
+        notes: deadlineNotes,
+        setBy: user.user?.id,
+      })
 
       const { data, error } = await supabase
         .from('asset_stage_deadlines')
         .upsert(deadlineData, {
-          onConflict: 'asset_id,stage_id'
+          onConflict: STAGE_DEADLINE_CONFLICT_TARGET
         })
         .select()
         .single()
@@ -97,8 +127,11 @@ export function StageDeadlineManager({
       return data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['stage-deadline', assetId, stageId] })
-      queryClient.invalidateQueries({ queryKey: ['asset-deadlines', assetId] })
+      queryClient.invalidateQueries({ queryKey: stageDeadlineKey(assetId, workflowId, stageId) })
+      // The timeline reads its deadlines under this key. The previous
+      // invalidation named 'asset-deadlines', which no query uses, so a saved
+      // deadline did not appear until something else refetched.
+      queryClient.invalidateQueries({ queryKey: workflowDeadlinesKey(assetId, workflowId) })
       setIsEditing(false)
       setDeadlineDate('')
       setNotes('')
@@ -112,17 +145,23 @@ export function StageDeadlineManager({
   // Mutation to delete deadline
   const deleteDeadlineMutation = useMutation({
     mutationFn: async () => {
+      if (!workflowId) throw new Error(NO_WORKFLOW_MESSAGE)
+      /*
+       * Scoped by the full unique key. Without workflow_id this deleted every
+       * deadline for the stage across every workflow the caller could see.
+       */
       const { error } = await supabase
         .from('asset_stage_deadlines')
         .delete()
         .eq('asset_id', assetId)
+        .eq('workflow_id', workflowId)
         .eq('stage_id', stageId)
 
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['stage-deadline', assetId, stageId] })
-      queryClient.invalidateQueries({ queryKey: ['asset-deadlines', assetId] })
+      queryClient.invalidateQueries({ queryKey: stageDeadlineKey(assetId, workflowId, stageId) })
+      queryClient.invalidateQueries({ queryKey: workflowDeadlinesKey(assetId, workflowId) })
     },
     onError: (error) => {
       console.error('Error deleting deadline:', error)
@@ -145,6 +184,11 @@ export function StageDeadlineManager({
 
   const handleSave = () => {
     if (!deadlineDate) return
+    // Stop before the request. The server would refuse it anyway — the INSERT
+    // policy resolves the organization through workflow_id — but a refusal
+    // arrives as a bare 42501, and inventing an id to satisfy the key would
+    // write the deadline into somebody else's workflow.
+    if (!workflowId) return
     saveDeadlineMutation.mutate({ date: deadlineDate, notes })
   }
 
@@ -191,6 +235,26 @@ export function StageDeadlineManager({
     return (
       <div className={`${className}`}>
         <div className="animate-pulse h-4 bg-gray-200 rounded w-24"></div>
+      </div>
+    )
+  }
+
+  /*
+   * No workflow, no deadline — and say so.
+   *
+   * A deadline is identified by (asset, workflow, stage) and takes its
+   * organization from the workflow, so a stage rendered outside one cannot
+   * carry a deadline at all. Showing the ordinary "Set deadline" control here
+   * would offer an action that cannot succeed; the previous version did
+   * exactly that, and the save failed with a 42P10 nobody saw.
+   */
+  if (!workflowId) {
+    return (
+      <div className={`${className}`} data-testid="stage-deadline-no-workflow">
+        <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
+          <Calendar className="w-4 h-4" />
+          <span>{NO_WORKFLOW_MESSAGE}</span>
+        </div>
       </div>
     )
   }
