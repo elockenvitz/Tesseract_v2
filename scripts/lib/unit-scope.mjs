@@ -73,6 +73,12 @@ export const GATED_DIRS = [
   'src/lib/navigation',
   'src/lib/ops',
   'src/lib/guards',
+  // Stage-deadline ownership: the conflict target, the tenant filter path and
+  // the query keys. Gated because every failure here is silent — a wrong
+  // conflict target duplicates rows instead of replacing one, and a filter
+  // naming a column the table does not have fails the read rather than
+  // widening it, so nothing looks broken until a deadline will not save.
+  'src/lib/deadlines',
   'src/hooks/ideas',
   'src/hooks/mobile',
   'src/lib/signals',
