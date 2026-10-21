@@ -1075,6 +1075,29 @@ export interface Database {
         /** The deleted organization's id. */
         Returns: string
       }
+      /**
+       * Security Release C. The only way to change a contribution's audience.
+       * `authenticated` lost INSERT/UPDATE/DELETE on
+       * contribution_visibility_targets and a BEFORE UPDATE trigger pins
+       * asset_contributions.visibility and team_id, so the direct writes this
+       * replaces are refused or silently inert.
+       *
+       * No user id: the caller is read from auth.uid() server-side, so
+       * possessing a contribution id grants nothing.
+       */
+      set_contribution_audience: {
+        Args: {
+          p_contribution_id: string
+          p_visibility: string
+          p_node_ids?: string[]
+        }
+        /**
+         * What was actually stored:
+         * { contribution_id, visibility, node_ids, node_count }.
+         * Returned so the client confirms rather than assumes.
+         */
+        Returns: Json
+      }
     }
     Enums: {
       priority_level: 'high' | 'medium' | 'low'
