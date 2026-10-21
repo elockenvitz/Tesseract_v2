@@ -1,23 +1,28 @@
 /**
  * Which org-chart nodes a contribution can actually be shared with.
  *
- * ── The gap this closes ──────────────────────────────────────────────────
+ * ── Reach is now inherited ───────────────────────────────────────────────
  *
- * The picker offers the author their department and division by walking UP
- * the org chart from their own memberships. Authorization, however, matches
- * DIRECT membership only — a reader must be a member of the targeted node
- * itself, not of a team beneath it. Subtree descent is unimplemented, by a
- * convention this codebase set deliberately in an earlier security change
- * (`20260827090400_quick_thoughts_tenant_rls.sql:52-56`) and is not being
- * changed here.
+ * Membership is inherited UPWARD: a member of a Team is an effective member
+ * of its Department and Division. Read the same relation from the other end
+ * and sharing with a node reaches its direct members AND everyone beneath it.
  *
- * So the picker could promise an audience the policy would never deliver:
- * pick "Equity Division", and if nobody is a direct member of that division
- * node, the contribution reaches the author and nobody else — silently.
+ * So a node's reach is the count of distinct users in its SUBTREE, not the
+ * count of rows naming it. Those two numbers differ by a lot — on the
+ * production org chart, 6 direct (user, node) pairs become 15 effective ones.
  *
- * This module makes that reachability explicit so the UI can SAY it. It does
- * not change who can read anything; it describes what selecting a node would
- * do.
+ * This module previously described the opposite, because authorization
+ * matched the targeted node exactly and descent was unimplemented — a
+ * convention set in `20260827090400_quick_thoughts_tenant_rls.sql:52-56`,
+ * which recorded "whether a division-level post should reach its sub-teams is
+ * a product question and is deliberately left open". It is now answered, and
+ * `user_effective_node_ids()` implements it on the server. The counts here
+ * must agree with that function or the picker goes back to describing an
+ * audience the policy does not deliver — in the generous direction this time,
+ * which is the one nobody notices.
+ *
+ * This module still decides nothing. It describes what selecting a node would
+ * do, so the UI can say it.
  *
  * ── Two rules worth stating, because both protect a saved audience ───────
  *
@@ -41,7 +46,10 @@ export interface AudienceNode {
 }
 
 export interface AudienceOption extends AudienceNode {
-  /** Direct members of this node. The only count authorization acts on. */
+  /**
+   * Distinct users this node reaches: its direct members plus every member of
+   * a group beneath it. Matches `user_effective_node_ids()` on the server.
+   */
   memberCount: number
   /** False when selecting this node would share with nobody. */
   reachable: boolean
@@ -52,6 +60,57 @@ export interface AudienceOption extends AudienceNode {
    * it from their own memberships today.
    */
   storedOnly: boolean
+}
+
+/**
+ * How many distinct people each node reaches, counting the whole subtree.
+ *
+ * The server answers this by walking UP from one user; the UI needs it for
+ * every node at once, so it walks DOWN from each. Same relation, and the
+ * assertions in the test file pin the two together.
+ *
+ * Distinct USERS, not membership rows — somebody in two teams under the same
+ * department is one person to that department, and counting rows would tell
+ * an author they reach more people than exist.
+ *
+ * Cycle-safe. `parent_id` has no cycle guard in the schema, and the server's
+ * recursion bounds itself at 32 for the same reason; here a per-walk visited
+ * set does it, which also stops a node being counted twice through a diamond.
+ */
+export function effectiveMemberCounts(
+  nodes: readonly AudienceNode[],
+  members: readonly { node_id: string; user_id: string }[],
+): Map<string, number> {
+  const childrenOf = new Map<string, string[]>()
+  for (const n of nodes) {
+    if (!n.parent_id) continue
+    const siblings = childrenOf.get(n.parent_id)
+    if (siblings) siblings.push(n.id)
+    else childrenOf.set(n.parent_id, [n.id])
+  }
+
+  const directMembers = new Map<string, string[]>()
+  for (const m of members) {
+    const existing = directMembers.get(m.node_id)
+    if (existing) existing.push(m.user_id)
+    else directMembers.set(m.node_id, [m.user_id])
+  }
+
+  const counts = new Map<string, number>()
+  for (const node of nodes) {
+    const reached = new Set<string>()
+    const seen = new Set<string>()
+    const stack = [node.id]
+    while (stack.length) {
+      const id = stack.pop()!
+      if (seen.has(id)) continue
+      seen.add(id)
+      for (const u of directMembers.get(id) ?? []) reached.add(u)
+      for (const child of childrenOf.get(id) ?? []) stack.push(child)
+    }
+    counts.set(node.id, reached.size)
+  }
+  return counts
 }
 
 export interface BuildAudienceOptionsInput {
@@ -136,12 +195,12 @@ export function isLevelSelectable(options: readonly AudienceOption[]): boolean {
 export function unreachableReason(option: AudienceOption): string | null {
   if (option.reachable) return null
   if (option.selected) {
-    return `Already shared with ${option.name}, but nobody is a direct member of it right now, so no one else can see it. Members of groups beneath it are not included.`
+    return `Already shared with ${option.name}, but it has no members — not in the group itself and not in any group beneath it — so no one else can see it.`
   }
-  return `No one is a direct member of ${option.name}. Sharing here would reach only you — members of groups beneath it are not included.`
+  return `${option.name} has no members, in it or beneath it. Sharing here would reach only you.`
 }
 
 /** The same explanation for a whole level whose options are all unreachable. */
 export function emptyLevelReason(level: string): string {
-  return `No ${level} can be reached directly. Sharing is limited to groups you are a direct member of; members of groups beneath a ${level} are not included.`
+  return `No ${level} you belong to has any members yet. Sharing with a ${level} reaches everyone in it and in the groups beneath it — there is nobody there yet.`
 }

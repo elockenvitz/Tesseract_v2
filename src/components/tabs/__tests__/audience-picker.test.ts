@@ -19,10 +19,15 @@ const TAB = readFileSync(join(process.cwd(), 'src/components/tabs/AssetTab.tsx')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '')
 
-describe('reachability is read from direct membership', () => {
-  it('counts direct members per node rather than assuming a node has any', () => {
-    expect(TAB).toMatch(/from\('org_chart_node_members'\)[\s\S]{0,120}select\('node_id'\)/)
-    expect(TAB).toMatch(/memberCounts\.set\(m\.node_id/)
+describe('reachability is read from effective membership', () => {
+  it('rolls membership up the hierarchy instead of counting rows per node', () => {
+    // user_id is selected because the rollup counts distinct PEOPLE: one
+    // person in two teams under one department is one reader, not two.
+    expect(TAB).toMatch(/from\('org_chart_node_members'\)[\s\S]{0,160}select\('node_id, user_id'\)/)
+    expect(TAB).toMatch(/effectiveMemberCounts\(/)
+    // The direct-only tally must be gone, or the picker understates an
+    // audience while the server delivers the larger one.
+    expect(TAB).not.toMatch(/memberCounts\.set\(m\.node_id/)
   })
 
   it('feeds those counts into the shared reachability helper', () => {

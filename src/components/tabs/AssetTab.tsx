@@ -4,6 +4,7 @@ import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clo
 import { clsx } from 'clsx'
 import {
   buildAudienceOptions,
+  effectiveMemberCounts,
   isLevelSelectable,
   unreachableReason,
   emptyLevelReason,
@@ -899,22 +900,24 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       if (!allNodes) return empty
 
       /*
-       * Direct member counts per node — the only count authorization acts on.
+       * EFFECTIVE member counts per node — distinct people the node reaches,
+       * counting its own members and everyone in the groups beneath it.
        *
-       * The picker offers the author ancestor nodes (their department, their
-       * division) by walking UP from their own memberships, but a reader is
-       * matched on DIRECT membership of the targeted node; descent is
-       * deliberately unimplemented. Without these counts the menu can promise
-       * an audience nobody is in. See src/lib/contributions/audience-reach.ts.
+       * Membership is inherited upward, so sharing with a department reaches
+       * its teams. The count has to say that, or the picker understates an
+       * audience and an author shares more widely than the number implied.
+       * `user_id` is selected because the rollup counts distinct PEOPLE: one
+       * person in two teams under the same department is one reader, not two.
+       * See src/lib/contributions/audience-reach.ts.
        */
       const { data: allMembers } = await supabase
         .from('org_chart_node_members')
-        .select('node_id')
+        .select('node_id, user_id')
 
-      const memberCounts = new Map<string, number>()
-      for (const m of (allMembers ?? []) as { node_id: string }[]) {
-        memberCounts.set(m.node_id, (memberCounts.get(m.node_id) ?? 0) + 1)
-      }
+      const memberCounts = effectiveMemberCounts(
+        allNodes as AudienceNode[],
+        (allMembers ?? []) as { node_id: string; user_id: string }[],
+      )
       // Every node by id, so a target the author can no longer pick can still
       // be shown by name instead of as a bare id.
       const nodeById = new Map<string, AudienceNode>(
