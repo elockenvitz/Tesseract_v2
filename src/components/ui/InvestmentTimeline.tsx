@@ -12,6 +12,7 @@ import { DecisionItemCard } from './checklist/DecisionItemCard'
 import { OperationalItemCard } from './checklist/OperationalItemCard'
 import { type ProcessItemType, userName as chUserName } from './checklist/types'
 import { supabase } from '../../lib/supabase'
+import { workflowDeadlinesKey } from '../../lib/deadlines/stage-deadlines'
 import { useAuth } from '../../hooks/useAuth'
 
 interface ChecklistItem {
@@ -633,7 +634,10 @@ export function InvestmentTimeline({
 
   // Query to load workflow-specific stage deadlines
   const { data: stageDeadlines } = useQuery({
-    queryKey: ['asset-workflow-deadlines', assetId, workflowId],
+    // The shared builder, so the manager's invalidation after a save names the
+    // same key this reads. They used to disagree, and a saved deadline did not
+    // appear here until something else refetched.
+    queryKey: workflowDeadlinesKey(assetId, workflowId),
     queryFn: async () => {
       if (!assetId || !workflowId) return []
       const { data, error } = await supabase
@@ -1723,6 +1727,7 @@ export function InvestmentTimeline({
                   <div className="mt-2">
                     <StageDeadlineManager
                       assetId={assetId || ''}
+                      workflowId={workflowId}
                       stageId={showStageDetails}
                       stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
                       isCurrentStage={showStageDetails === effectiveCurrentStage}

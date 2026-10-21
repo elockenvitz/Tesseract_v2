@@ -73,6 +73,12 @@ export const GATED_DIRS = [
   'src/lib/navigation',
   'src/lib/ops',
   'src/lib/guards',
+  // Stage-deadline identity: the conflict target, the workflow that carries
+  // both the unique key and the row's organization, and the query keys. Gated
+  // because every failure here is silent — a conflict target matching no index
+  // fails the save with a code nobody reads, and a read missing workflow_id
+  // returns another workflow's deadline rather than an error.
+  'src/lib/deadlines',
   'src/hooks/ideas',
   'src/hooks/mobile',
   'src/lib/signals',
