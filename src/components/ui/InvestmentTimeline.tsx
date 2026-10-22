@@ -12,6 +12,7 @@ import { DecisionItemCard } from './checklist/DecisionItemCard'
 import { OperationalItemCard } from './checklist/OperationalItemCard'
 import { type ProcessItemType, userName as chUserName } from './checklist/types'
 import { StageActionBar } from '../workflow/StageActionBar'
+import { RequirementsNavigator } from '../workflow/RequirementsNavigator'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
@@ -78,6 +79,15 @@ interface InvestmentTimelineProps {
   assetId?: string
   viewingStageId?: string | null
   onViewingStageChange?: (stageId: string | null) => void
+  /**
+   * The requirement the reader was working on, restored from tab state.
+   *
+   * An `asset_checklist_items.id`. Null means none selected, which is the
+   * honest first-entry state — the surface shows a stage overview rather
+   * than implying work already in progress.
+   */
+  viewingRequirementId?: string | null
+  onViewingRequirementChange?: (requirementId: string | null) => void
   workflowId?: string
   currentPriority?: string // kept for backward compatibility but not used
   onPriorityChange?: (priority: string) => void // kept for backward compatibility but not used
@@ -180,6 +190,8 @@ export function InvestmentTimeline({
   assetId,
   viewingStageId,
   onViewingStageChange,
+  viewingRequirementId,
+  onViewingRequirementChange,
   workflowId,
   currentPriority = 'none',
   onPriorityChange
@@ -206,6 +218,54 @@ export function InvestmentTimeline({
    * one. The control is disabled while it runs.
    */
   const [isAdvancing, setIsAdvancing] = useState(false)
+
+  /*
+   * ── Which requirement the reader is working on ─────────────────────────
+   *
+   * An `asset_checklist_items.id`, never an array index: the checklist
+   * reloads on every toggle and the rows can reorder, and a positional
+   * selection would quietly follow whichever requirement happened to land
+   * there.
+   *
+   * It starts null on purpose. Auto-selecting the first requirement would
+   * tell the reader they had been working on it.
+   *
+   * Local state, and never written anywhere — selecting is reading.
+   */
+  const [selectedRequirement, setSelectedRequirement] = useState<string | null>(
+    () => viewingRequirementId ?? null,
+  )
+
+  /*
+   * Let it go when the requirement goes.
+   *
+   * A requirement that was deleted, or that belongs to a stage the reader
+   * has navigated away from, must not leave a detail pane showing work that
+   * is no longer there. Clearing returns the surface to the stage overview,
+   * which is an honest "nothing selected" rather than a different
+   * requirement wearing the last one's place.
+   *
+   * An empty stage is not evidence of a missing requirement. On first mount
+   * `stageChecklists` is `{}` while the templates and saved items are still
+   * in flight, and recovering against it discarded the selection restored
+   * from the reader's session — then reported that null upwards, erasing it
+   * from storage too. Only a stage that has items can say a requirement is
+   * gone.
+   */
+  React.useEffect(() => {
+    if (!selectedRequirement || !showStageDetails) return
+    const stageItems = stageChecklists[showStageDetails] || []
+    if (!stageItems.length) return
+    if (!stageItems.some(i => i.id === selectedRequirement)) {
+      setSelectedRequirement(null)
+    }
+  }, [selectedRequirement, showStageDetails, stageChecklists])
+
+  /* Report the selection up so the Asset page can persist it. */
+  React.useEffect(() => {
+    onViewingRequirementChange?.(selectedRequirement)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRequirement])
   const queryClient = useQueryClient()
 
   // Helper function to get default checklist items for a stage
@@ -1887,7 +1947,6 @@ export function InvestmentTimeline({
                         screen-width apart. Nothing about the items or the
                         bar's behaviour changed.
                       */}
-                      <div className="max-w-[78ch]">
                       <StageActionBar
                         viewingStageId={showStageDetails}
                         currentStageId={effectiveCurrentStage}
@@ -1899,21 +1958,73 @@ export function InvestmentTimeline({
                         onAdvance={handleAdvanceStage}
                         isAdvancing={isAdvancing}
                       />
-                      <div className="space-y-1.5">
-                        {items.map(item => {
-                          const props = {
-                            item, stageId: showStageDetails, assetId, workflowId, isEditable,
-                            isExpanded: expandedItemId === item.id,
-                            onToggleExpand: () => setExpandedItemId(expandedItemId === item.id ? null : item.id),
-                            onToggleStatus: () => handleChecklistToggle(showStageDetails, item.id),
-                            onRemoveCustom: item.isCustom ? () => handleRemoveCustomItem(showStageDetails, item.id) : undefined,
-                            currentUser: user,
-                          }
-                          return (item.item_type || 'operational') === 'thinking'
-                            ? <DecisionItemCard key={item.id} {...props} />
-                            : <OperationalItemCard key={item.id} {...props} />
-                        })}
-                      </div>
+                      {/*
+                        ── The requirement, not the checklist ──────────────
+
+                        Requirements were a column of accordions: opening one
+                        pushed the rest down and showed owner, notes, files
+                        and comments in about 670px, while the remaining
+                        ~900px of surface stayed empty. Now the list is a
+                        280px rail and whichever requirement is selected
+                        takes the space.
+
+                        `selectedRequirement` is an id, never an index, so
+                        the selection survives the checklist reloading and
+                        the rows reordering.
+                      */}
+                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+                        <RequirementsNavigator
+                          items={items}
+                          selectedId={selectedRequirement}
+                          onSelect={setSelectedRequirement}
+                          onToggleStatus={(id) => handleChecklistToggle(showStageDetails, id)}
+                          isEditable={isEditable}
+                        />
+
+                        <div className="min-w-0" data-testid="requirement-detail">
+                          {(() => {
+                            const selected = items.find(i => i.id === selectedRequirement)
+                            if (!selected) {
+                              /*
+                                No requirement selected — and deliberately
+                                none chosen for the reader. Auto-selecting
+                                the first would imply they had been working
+                                on it.
+                              */
+                              return (
+                                <div
+                                  data-testid="requirement-none-selected"
+                                  className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-700"
+                                >
+                                  <p className="text-[13px] text-gray-500 dark:text-gray-400">
+                                    {doneCount} of {items.length} requirements complete.
+                                  </p>
+                                  <p className="mt-1 text-[11px] text-gray-400">
+                                    Select a requirement to work on it.
+                                  </p>
+                                </div>
+                              )
+                            }
+                            const props = {
+                              item: selected, stageId: showStageDetails, assetId, workflowId,
+                              isEditable,
+                              /* `detail` renders the body with no accordion;
+                                 these two are unused in that layout but the
+                                 contract is shared with the row. */
+                              isExpanded: true,
+                              onToggleExpand: () => {},
+                              onToggleStatus: () => handleChecklistToggle(showStageDetails, selected.id),
+                              onRemoveCustom: selected.isCustom
+                                ? () => handleRemoveCustomItem(showStageDetails, selected.id)
+                                : undefined,
+                              currentUser: user,
+                              layout: 'detail' as const,
+                            }
+                            return (selected.item_type || 'operational') === 'thinking'
+                              ? <DecisionItemCard key={selected.id} {...props} />
+                              : <OperationalItemCard key={selected.id} {...props} />
+                          })()}
+                        </div>
                       </div>
                     </>
                   )

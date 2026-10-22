@@ -1,0 +1,121 @@
+/**
+ * The requirements of one stage, as a navigator.
+ *
+ * ── What changed ────────────────────────────────────────────────────────
+ *
+ * Requirements were a list of accordions: clicking one pushed everything
+ * below it down and revealed owner, notes, attachments and comments in a
+ * column about 670px wide, while the rest of the working surface sat empty.
+ * The list is now a rail and the selected requirement gets the space.
+ *
+ * ── Completion and selection are different gestures ─────────────────────
+ *
+ * The circle completes; the row selects. They were already distinct in the
+ * accordion (the circle stopped propagation) and they stay distinct here,
+ * because a reader moving between requirements to read them must never
+ * discover they have been ticking them off.
+ *
+ * This component owns no data. `onToggleStatus` is the existing
+ * `handleChecklistToggle`, which is the only thing that writes completion.
+ */
+import { clsx } from 'clsx'
+import { Check, Paperclip, MessageSquare } from 'lucide-react'
+import type { ChecklistItemData } from '../ui/checklist/types'
+import { userName } from '../ui/checklist/types'
+
+export interface RequirementsNavigatorProps {
+  items: readonly ChecklistItemData[]
+  /** `asset_checklist_items.id` — stable, never an array index. */
+  selectedId: string | null
+  onSelect: (id: string) => void
+  onToggleStatus: (id: string) => void
+  isEditable: boolean
+  /** The existing "Add item" control, passed in rather than rebuilt. */
+  addSlot?: React.ReactNode
+  className?: string
+}
+
+const statusOf = (item: ChecklistItemData) =>
+  item.status || (item.completed ? 'completed' : 'unchecked')
+
+export function RequirementsNavigator({
+  items, selectedId, onSelect, onToggleStatus, isEditable, addSlot, className,
+}: RequirementsNavigatorProps) {
+  return (
+    <div className={clsx('flex min-h-0 flex-col', className)} data-testid="requirements-navigator">
+      <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+        {items.map(item => {
+          const status = statusOf(item)
+          const selected = item.id === selectedId
+          const done = status === 'completed' || status === 'na'
+          return (
+            <li key={item.id}>
+              <div
+                className={clsx(
+                  'flex items-start gap-2 rounded-md px-2 py-1.5 transition-colors',
+                  selected
+                    ? 'bg-primary-50 ring-1 ring-primary-200 dark:bg-primary-500/10 dark:ring-primary-400/30'
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-800',
+                )}
+              >
+                {/* The completion control. Separate from selection, and the
+                    only thing here that writes. */}
+                <button
+                  type="button"
+                  onClick={() => onToggleStatus(item.id)}
+                  disabled={!isEditable}
+                  aria-label={done ? `Reopen ${item.text}` : `Complete ${item.text}`}
+                  data-testid={`requirement-toggle-${item.id}`}
+                  className={clsx(
+                    'mt-[2px] flex h-[17px] w-[17px] flex-shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors',
+                    status === 'completed' ? 'border-emerald-500 bg-emerald-500 text-white'
+                      : status === 'na' ? 'border-gray-400 bg-gray-400 text-white'
+                      : isEditable ? 'border-gray-300 hover:border-gray-400 dark:border-gray-600'
+                      : 'border-gray-200 dark:border-gray-700',
+                    !isEditable && 'cursor-not-allowed',
+                  )}
+                >
+                  {status === 'completed' && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+                  {status === 'na' && <span className="text-[7px] font-bold leading-none">N/A</span>}
+                </button>
+
+                {/* The selection control. */}
+                <button
+                  type="button"
+                  onClick={() => onSelect(item.id)}
+                  aria-current={selected ? 'true' : undefined}
+                  data-testid={`requirement-select-${item.id}`}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className={clsx(
+                    'block text-[12px] leading-snug',
+                    done ? 'text-gray-400' : 'text-gray-900 dark:text-gray-100',
+                    selected && 'font-medium',
+                  )}>
+                    {item.text}
+                  </span>
+                  {/*
+                    Indicators only where the row's own data supports them.
+                    No counts are fetched for the rail — an attachment count
+                    per requirement would be one query per row to decorate a
+                    list, and the detail surface shows the real thing.
+                  */}
+                  {(item.assignee || item.notes) && (
+                    <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-400">
+                      {item.assignee && <span className="truncate">{userName(item.assignee)}</span>}
+                      {item.notes && <MessageSquare className="h-2.5 w-2.5 shrink-0" aria-label="Has notes" />}
+                      {item.attachments && item.attachments.length > 0 && (
+                        <Paperclip className="h-2.5 w-2.5 shrink-0" aria-label="Has attachments" />
+                      )}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+      {addSlot && <div className="mt-1 shrink-0">{addSlot}</div>}
+    </div>
+  )
+}

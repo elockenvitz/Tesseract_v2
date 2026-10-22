@@ -22,9 +22,11 @@ const TL = strip(read('src/components/ui/InvestmentTimeline.tsx'))
 const BAR = strip(read('src/components/workflow/StageActionBar.tsx'))
 
 describe('the next action sits with the work', () => {
-  it('renders the action bar above the checklist items', () => {
+  it('renders the action bar above the requirements', () => {
+    // The row loop moved into `RequirementsNavigator`; the ordering this
+    // pins did not. The bar still sits above the requirements it acts on.
     const bar = TL.indexOf('<StageActionBar')
-    const items = TL.indexOf('items.map(item =>')
+    const items = TL.indexOf('<RequirementsNavigator')
     expect(bar).toBeGreaterThan(-1)
     expect(items).toBeGreaterThan(-1)
     expect(bar).toBeLessThan(items)

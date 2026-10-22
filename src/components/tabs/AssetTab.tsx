@@ -580,6 +580,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.viewingStageId || null
   })
+  /* The requirement inside that stage, restored the same way. An
+     `asset_checklist_items.id`; null is "none selected", which is what a
+     first visit should be. */
+  const [viewingRequirementId, setViewingRequirementId] = useState<string | null>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.viewingRequirementId || null
+  })
   const [pendingWorkflowSwitch, setPendingWorkflowSwitch] = useState<{workflowId: string, stageId: string | null} | null>(null)
   const [showTimelineView, setShowTimelineView] = useState(false)
   const [showTemplatesView, setShowTemplatesView] = useState(false)
@@ -907,6 +914,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         thesisViewMode,
         collapsedSections,
         viewingStageId,
+        viewingRequirementId,
         // Decision Memory's book scope, so leaving and returning to the asset
         // restores the narrative the reader was reading.
         decisionBookId,
@@ -922,7 +930,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       }
       TabStateManager.saveTabState(asset.id, stateToSave)
     }
-  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, decisionBookId, workItemKey, isTabStateInitialized])
+  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, viewingRequirementId, decisionBookId, workItemKey, isTabStateInitialized])
 
   /*
    * The newest execution on this asset that the reader is authorized to see,
@@ -4508,6 +4516,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   assetSymbol={asset.symbol}
                   assetId={effectiveAsset.id}
                   viewingStageId={viewingStageId}
+                  viewingRequirementId={viewingRequirementId}
+                  onViewingRequirementChange={setViewingRequirementId}
                   onViewingStageChange={setViewingStageId}
                   workflowId={effectiveWorkflowId}
                   currentPriority={workflowPriorityState}

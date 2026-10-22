@@ -82,6 +82,12 @@ interface DecisionItemCardProps {
   currentUser: { id: string; email?: string; user_metadata?: { first_name?: string; last_name?: string } } | null
   /** Scope for table selection: 'asset' (default) or 'portfolio' */
   scopeType?: 'asset' | 'portfolio'
+  /**
+   * How this requirement is presented. See `OperationalItemCard` — the same
+   * switch, for the same reason: `detail` drops the accordion chrome and
+   * promotes the title, sharing every query and mutation with `row`.
+   */
+  layout?: 'row' | 'detail'
 }
 
 // ─── Component ──────────────────────────────────────────────────────────
@@ -89,8 +95,11 @@ interface DecisionItemCardProps {
 export function DecisionItemCard({
   item, stageId, assetId, workflowId, isEditable, isExpanded,
   onToggleExpand, onToggleStatus, onRemoveCustom, currentUser,
-  scopeType = 'asset',
+  scopeType = 'asset', layout = 'row',
 }: DecisionItemCardProps) {
+  /* In the detail layout the body IS the surface. */
+  const detail = layout === 'detail'
+  const bodyOpen = detail || isExpanded
   const itemsTable = scopeType === 'portfolio' ? 'portfolio_checklist_items' : 'asset_checklist_items'
   const attachTable = scopeType === 'portfolio' ? 'portfolio_checklist_attachments' : 'asset_checklist_attachments'
   const scopeIdField = scopeType === 'portfolio' ? 'portfolio_id' : 'asset_id'
@@ -551,11 +560,57 @@ export function DecisionItemCard({
 
   return (
     <>
-      <div className={`rounded-lg border transition-all ${
-        isExpanded ? 'border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800' : 'border-gray-100 hover:border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-800'
-      } ${!isEditable ? 'opacity-75' : ''}`}>
+      <div className={detail
+        ? `flex min-h-0 flex-col ${!isEditable ? 'opacity-75' : ''}`
+        : `rounded-lg border transition-all ${
+            isExpanded ? 'border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800' : 'border-gray-100 hover:border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-800'
+          } ${!isEditable ? 'opacity-75' : ''}`}>
+
+        {/* ── Detail header: the requirement as the subject ─────── */}
+        {detail && (
+          <div className="mb-3 flex items-start gap-3">
+            <button
+              onClick={onToggleStatus}
+              disabled={!isEditable}
+              aria-label={status === 'completed' ? 'Reopen this requirement' : 'Complete this requirement'}
+              data-testid="requirement-detail-status"
+              className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors ${
+                status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white'
+                : status === 'na' ? 'bg-gray-400 border-gray-400 text-white'
+                : isEditable ? 'border-gray-300 hover:border-gray-400 dark:border-gray-600' : 'border-gray-200 dark:border-gray-700'
+              } ${!isEditable ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              {status === 'completed' && <Check className="h-3 w-3" strokeWidth={3} />}
+              {status === 'na' && <span className="text-[7px] font-bold leading-none">N/A</span>}
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h3
+                  data-testid="requirement-detail-title"
+                  className={`text-[15px] font-semibold leading-snug ${status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}
+                >
+                  {item.text}
+                </h3>
+                {stateBadge && (
+                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${stateBadge.color}`}>{stateBadge.text}</span>
+                )}
+              </div>
+              <p className="mt-0.5 text-[11px] text-gray-400">Analysis requirement</p>
+            </div>
+            {item.isCustom && isEditable && (
+              <button
+                onClick={() => onRemoveCustom?.()}
+                aria-label="Remove this requirement"
+                className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-500"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
 
         {/* ── Row ────────────────────────────────────────────────── */}
+        {!detail && (
         <div className="flex items-start gap-2.5 px-3 py-2.5 cursor-pointer select-none" onClick={onToggleExpand}>
           <button
             onClick={e => { e.stopPropagation(); onToggleStatus() }}
@@ -592,10 +647,13 @@ export function DecisionItemCard({
             )}
           </div>
         </div>
+        )}
 
-        {/* ── Expanded ────────────────────────────────────────────── */}
-        {isExpanded && (
-          <div className="border-t border-gray-100 dark:border-gray-800">
+        {/* ── Body ────────────────────────────────────────────────── */}
+        {bodyOpen && (
+          <div className={detail
+            ? 'min-h-0 flex-1 overflow-y-auto rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'
+            : 'border-t border-gray-100 dark:border-gray-800'}>
             {/* Commentary — per-user entries */}
             <div className="px-4 pt-3 pb-2 space-y-2.5">
               {/* Other people's commentary */}
