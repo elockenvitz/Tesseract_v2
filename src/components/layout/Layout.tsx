@@ -574,6 +574,24 @@ export function Layout({
         contextId={contextId}
         contextTitle={contextTitle}
         engagementTarget={engagementTarget}
+        /*
+          Where the reader is ACTUALLY standing — the active tab, before the
+          override above is applied.
+
+          `commPaneContext` and `engagementTarget` are both set on every
+          engagement and neither is cleared on navigation, so after resuming
+          a thread from AAPL and walking to MSFT all three of the pane's
+          notions of "what this is about" still said AAPL. The tab is the
+          only one that follows the reader, so it is the one the pane
+          compares the open conversation against.
+        */
+        tabSubject={tabContext.contextType && tabContext.contextId
+          ? {
+              type: tabContext.contextType,
+              id: tabContext.contextId,
+              label: tabContext.contextTitle ?? null,
+            }
+          : null}
         citedContent={currentCitation?.content}
         fieldName={currentCitation?.fieldName}
         onCite={cite}

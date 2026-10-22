@@ -123,3 +123,83 @@ describe('no private content leaks into shared research', () => {
     expect(TAB.slice(at, at + 1200)).not.toMatch(/saveSectionReferences|attachments/)
   })
 })
+
+describe('the pane cannot claim a subject the open conversation does not have', () => {
+  const PANE = strip(read('src/components/communication/CommunicationPane.tsx'))
+
+  it('compares the open conversation against the ACTIVE TAB, not the target', () => {
+    /*
+     * `engagementTarget` is a request that was true when dispatched and is
+     * never cleared by Layout, so after resuming AAPL's thread and walking
+     * to MSFT it still said AAPL. Only the tab follows the reader.
+     */
+    /*
+     * And not from `contextType`/`contextId` either: those are the
+     * `commPaneContext` OVERRIDE when one is set, which the engagement also
+     * writes and also never clears. Layout passes the raw tab context.
+     */
+    const LAYOUT = strip(read('src/components/layout/Layout.tsx'))
+    expect(LAYOUT).toMatch(/tabSubject=\{tabContext\.contextType && tabContext\.contextId/)
+    expect(LAYOUT).toMatch(/type: tabContext\.contextType/)
+    expect(PANE).toMatch(/currentSubject=\{tabSubject\}/)
+    expect(AI).toMatch(/conversationContextState\(\{/)
+    expect(AI).toMatch(/conversationTags: tags/)
+    expect(AI).toMatch(/currentSubject,/)
+  })
+
+  it('hides the bound-object header on both ways of lying', () => {
+    /*
+     * Two separate falsehoods, both measured:
+     *  - a FOREIGN thread open: it announced "context already supplied:
+     *    Asset AAPL" over a thread the reader had walked away from;
+     *  - no thread at all: the state is `empty`, not foreign, and it STILL
+     *    announced AAPL on an MSFT page, because the target is frozen.
+     */
+    expect(AI).toMatch(/engagementTarget && contextState !== 'foreign' && headerDescribesHere && \(/)
+    expect(AI).toMatch(/const headerDescribesHere = subjectsAgree\(targetSubject, currentSubject\)/)
+  })
+
+  it('says which conversation a message would join, and offers the other', () => {
+    expect(AI).toMatch(/contextState === 'foreign' && \(/)
+    expect(AI).toMatch(/describeSendTarget\(contextState, openConversationTitle\)/)
+    expect(AI).toMatch(/data-testid="ai-start-here"/)
+    expect(AI).toMatch(/onClick=\{startHere\}/)
+  })
+
+  it('starts the new thread tagged to the page, not to the stale target', () => {
+    /*
+     * `newConversation()` resets to `initialTags`, which derive from the
+     * SAME frozen target — so a button reading "Start one about MSFT"
+     * started a thread tagged AAPL. Verified in the browser: the pane's
+     * suggestions read MSFT only after the tag is set explicitly.
+     */
+    const at = AI.indexOf('const startHere')
+    const body = AI.slice(at, at + 300)
+    expect(body).toMatch(/newConversation\(\)/)
+    expect(body).toMatch(/subjectTag\(currentSubject\)/)
+    expect(body).toMatch(/setTags\(\[tag as TagRef\]\)/)
+    // Local state only — no row until the user sends.
+    expect(body).not.toMatch(/supabase|mutate|insert/)
+  })
+
+  it('moves, retags and clears nothing', () => {
+    /*
+     * A thread that spans companies is an investigation, not a mistake.
+     * Continuing stays available; only the silence is removed. The remedy
+     * offered is `newConversation`, which resets local state to the current
+     * page's tags and writes no row until something is sent.
+     */
+    const at = AI.indexOf("contextState === 'foreign' && (")
+    const block = AI.slice(at, at + 1400)
+    expect(block).not.toMatch(/addTag\(|removeTag\(/)
+    expect(block).not.toMatch(/supabase/)
+    expect(block).not.toMatch(/archiveConversation|deleteConversation|renameConversation/)
+    expect(block).not.toMatch(/selectConversation\(/)
+  })
+
+  it('leaves the resume path untouched', () => {
+    // Step D behaviour: explicit selection still loads that exact thread.
+    expect(AI).toMatch(/selectConversation\(requestedConversationId\)/)
+    expect(AI).toMatch(/if \(requestedConversationId === conversationId\) return/)
+  })
+})

@@ -29,6 +29,14 @@ interface CommunicationPaneProps {
    * what contextType/contextId alone could never express.
    */
   engagementTarget?: EngagementTarget | null
+  /**
+   * The active tab's subject, BEFORE the `commPaneContext` override.
+   *
+   * `contextType`/`contextId` above are the override when one is set, and
+   * both it and `engagementTarget` are frozen at the last engagement — so
+   * neither can answer "where is the reader now". Only this can.
+   */
+  tabSubject?: { type: string; id: string; label?: string | null } | null
   citedContent?: string
   fieldName?: string
   onCite?: (content: string, fieldName?: string) => void
@@ -54,6 +62,7 @@ export function CommunicationPane({
   view,
   onViewChange,
   engagementTarget = null,
+  tabSubject = null,
   contextType,
   contextId,
   contextTitle,
@@ -190,6 +199,17 @@ export function CommunicationPane({
             // it had no notion of a budget at all.
             initialTags={aiTags}
             engagementTarget={engagementTarget}
+            /*
+              Where the reader is standing, from the ACTIVE TAB — deliberately
+              not from the engagement target.
+
+              The target is a request that was true when it was dispatched and
+              is never cleared, so after resuming a thread from AAPL and
+              walking to MSFT it still said AAPL. The tab is the only thing
+              that actually follows the reader, so it is what the pane
+              compares the open conversation against.
+            */
+            currentSubject={tabSubject}
             onOpenSettings={onOpenSettings}
           />
         )

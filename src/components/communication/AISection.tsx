@@ -30,6 +30,10 @@ import { AIMessageContent } from './AIMessageContent'
 import { AIConversationList } from './AIConversationList'
 import { AISuggestedActions } from './AISuggestedActions'
 import type { AiAction } from '../../lib/ai'
+import {
+  conversationContextState, describeSendTarget, shortSubjectLabel,
+  subjectsAgree, subjectTag,
+} from '../../lib/ai/conversation-context'
 
 interface AISectionProps {
   isOpen: boolean
@@ -52,6 +56,16 @@ interface AISectionProps {
    * edit or ignore.
    */
   engagementTarget?: EngagementTarget | null
+  /**
+   * The object the reader is currently looking at, from the active tab.
+   *
+   *
+   * Distinct from `engagementTarget`, which is a request that was true when
+   * it was dispatched and is never cleared. This is what the open
+   * conversation is compared against, because it is the only one of the two
+   * that follows the reader.
+   */
+  currentSubject?: { type: string; id: string; label?: string | null } | null
   onOpenSettings?: () => void
 }
 
@@ -62,6 +76,7 @@ export function AISection({
   onToggleFullscreen,
   initialTags = [],
   engagementTarget = null,
+  currentSubject = null,
   onOpenSettings
 }: AISectionProps) {
   const {
@@ -86,6 +101,7 @@ export function AISection({
     isLoadingList,
     selectConversation,
     newConversation,
+    setTags,
     renameConversation,
     archiveConversation,
     togglePin,
@@ -131,6 +147,58 @@ export function AISection({
    * switching away by hand, then asking for the same thread again must work
    * the second time, and a dep on the bare id would make that a no-op.
    */
+  /*
+   * ── Does the open thread belong to where the reader is standing? ────────
+   *
+   * `tags` is the OPEN conversation's own tag set — `selectConversation`
+   * loads it with the thread — so this compares the conversation against the
+   * active tab, never against the engagement target, which does not follow
+   * navigation and is exactly what made the pane claim AAPL on an MSFT page.
+   */
+  const contextState = conversationContextState({
+    conversationId,
+    conversationTags: tags,
+    currentSubject,
+  })
+  const openConversationTitle =
+    conversations.find(c => c.id === conversationId)?.title ?? null
+  const subjectName = shortSubjectLabel(currentSubject?.label)
+
+  /*
+   * Does the bound-object header still describe where the reader is?
+   *
+   * `engagementTarget` is frozen at the last engagement, so after walking
+   * from AAPL to MSFT it still announces "context already supplied: Asset
+   * AAPL". With no conversation open that is not a FOREIGN thread — there is
+   * no thread — but it is still a false claim about the page, so the header
+   * is suppressed whenever the two disagree.
+   */
+  const targetSubject = engagementTarget
+    ? {
+        type: engagementTarget.objectType,
+        id: engagementTarget.objectId,
+      }
+    : null
+  const headerDescribesHere = subjectsAgree(targetSubject, currentSubject)
+
+  /**
+   * Begin an investigation in the CURRENT page's context.
+   *
+   * `newConversation()` resets to `initialTags`, and those are derived from
+   * the same stale target — so on its own it would have started a thread
+   * tagged AAPL from a button labelled "Start one about MSFT". The tag for
+   * where the reader actually is, is set explicitly after the reset.
+   *
+   * Still no write: both calls are local state. The row is created when the
+   * user sends something, which is the only point at which they have said
+   * anything to record.
+   */
+  const startHere = () => {
+    newConversation()
+    const tag = subjectTag(currentSubject)
+    if (tag) setTags([tag as TagRef])
+  }
+
   const requestedConversationId = engagementTarget?.conversationId ?? null
   useEffect(() => {
     if (!requestedConversationId) return
@@ -359,8 +427,49 @@ export function AISection({
 
       {/* Main pane */}
       <div className="flex flex-col flex-1 min-w-0 h-full">
-      {engagementTarget && (
+      {/*
+        The bound-object header, but NOT while it would be lying.
+
+        It renders the engagement target, which is never cleared. With a
+        conversation open that the current page is not part of, it announced
+        "context already supplied: Asset AAPL" over a thread the reader had
+        walked away from. In that one state the banner below says what is
+        actually open instead.
+      */}
+      {engagementTarget && contextState !== 'foreign' && headerDescribesHere && (
         <EngagementContextHeader target={engagementTarget} mode="ai" />
+      )}
+
+      {/*
+        Continuing and beginning, as two visible choices.
+
+        A conversation that spans companies is a legitimate investigation,
+        not a mistake, so continuing stays available and nothing is moved,
+        re-tagged or cleared. What changes is that it is no longer silent:
+        the reader is told which thread a message would join, and offered the
+        other option by name.
+
+        `newConversation` only resets local state to the current page's tags;
+        no row is written until something is sent.
+      */}
+      {contextState === 'foreign' && (
+        <div
+          data-testid="ai-context-mismatch"
+          className="flex-shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-400/30 dark:bg-amber-500/[0.08]"
+        >
+          <span className="text-[11px] text-amber-800 dark:text-amber-300">
+            {describeSendTarget(contextState, openConversationTitle)}
+            {subjectName ? ` Not about ${subjectName}.` : ''}
+          </span>
+          <button
+            type="button"
+            data-testid="ai-start-here"
+            onClick={startHere}
+            className="ml-auto rounded bg-amber-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-amber-700"
+          >
+            {subjectName ? `Start one about ${subjectName}` : 'Start a new conversation'}
+          </button>
+        </div>
       )}
       {/* Minimal header — sidebar toggle only. The AI knows what page
           you're on; no need to spell it out in the chat surface. */}
