@@ -30,7 +30,20 @@
 -- Assertion 8 pins the fail-closed direction: workflow_id is nullable, and a
 -- row without a workflow has no tenant, so nobody may read it.
 --
--- Self-cleaning. 8 assertions.
+-- EXECUTED 2026-10-22 against production inside BEGIN … ROLLBACK, twice:
+-- once against the live policies (baseline) and once with the proposed
+-- policies applied transaction-locally. Baseline: assertions 2, 3 and 5
+-- FAILED — org B read org A's row, an asset-only read returned 2 rows, and
+-- org B successfully inserted against org A's workflow. Proposed: all 10
+-- passed. Nothing was committed; see the report in the lane's history.
+--
+-- Note on assertions 6 and 7: cross-org UPDATE and DELETE already passed at
+-- baseline, because `uploaded_by = auth.uid()` happened to block them. They
+-- are kept because they were protected by accident rather than by a tenant
+-- predicate, and the next edit to that predicate should not silently open
+-- them.
+--
+-- Self-cleaning. 10 assertions.
 -- =============================================================================
 
 DROP TABLE IF EXISTS _sec_results;
@@ -165,6 +178,38 @@ BEGIN
   ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (5, 'FAIL', 'org B inserted an attachment against org A''s workflow'); END IF;
 
   -- ===========================================================================
+  -- 5b. Org B cannot UPDATE org A's attachment.
+  --     Passed at baseline too, via `uploaded_by = auth.uid()` — kept so that
+  --     predicate cannot be loosened without this noticing.
+  -- ===========================================================================
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user_b, 'role', 'authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    UPDATE asset_checklist_attachments SET description = 'TAMPERED BY ORG B' WHERE id = v_att_a;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE;
+  END;
+  SET LOCAL request.jwt.claims = '';
+  SELECT count(*) INTO v_count FROM asset_checklist_attachments WHERE id = v_att_a AND description = 'TAMPERED BY ORG B';
+  IF v_count = 0 THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (9, 'PASS', 'org A''s attachment was not altered by org B');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (9, 'FAIL', 'org B updated org A''s attachment description'); END IF;
+
+  -- ===========================================================================
+  -- 7b. The uploader can still edit their own row's description.
+  -- ===========================================================================
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user_a, 'role', 'authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    UPDATE asset_checklist_attachments SET description = 'owner edit' WHERE id = v_att_a;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE;
+  END;
+  SET LOCAL request.jwt.claims = '';
+  SELECT count(*) INTO v_count FROM asset_checklist_attachments WHERE id = v_att_a AND description = 'owner edit';
+  IF v_count = 1 THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (10, 'PASS', 'uploader can still edit their own attachment');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (10, 'FAIL', 'uploader CANNOT edit their own attachment — over-tightened'); END IF;
+
+  -- ===========================================================================
   -- 6. Org B cannot DELETE org A's attachment
   -- ===========================================================================
   BEGIN
@@ -225,7 +270,7 @@ BEGIN
   DELETE FROM auth.users WHERE id IN (v_user_a, v_user_a2, v_user_b);
 
   RAISE NOTICE '';
-  RAISE NOTICE '=== RESULTS: % passed, % failed out of 8 assertions ===', v_pass, v_fail;
+  RAISE NOTICE '=== RESULTS: % passed, % failed out of 10 assertions ===', v_pass, v_fail;
 END;
 $$;
 
