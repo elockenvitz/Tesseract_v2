@@ -80,11 +80,15 @@ import {
   type AssetMode, type AssetSubPage,
 } from '../../lib/asset-workspace/modes'
 import { scrollToSection } from '../../lib/asset-workspace/scroll-to-section'
+import { focusIntentKey, shouldApplyFocus } from '../../lib/asset-workspace/arrival-focus'
 import { useAssetListMemberships } from '../../hooks/lists/useAssetListMemberships'
 import { useAssetConversations } from '../../hooks/ai/useAssetConversations'
 import { askAI } from '../../lib/engagement'
 import {
   buildWorkItems, resolveSelection, type WorkItem,
+  /* Aliased: `workItemKey` is also the name of this component's selection
+     state, and the two must not shadow each other. */
+  workItemKey as workItemKeyFor,
 } from '../../lib/asset-work/work-items'
 import { WorkNavigator } from '../asset/work/WorkNavigator'
 import { IdeaWorkSurface } from '../asset/work/IdeaWorkSurface'
@@ -388,6 +392,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const [activeSubPage, setActiveSubPage] = useState<AssetSubPage>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.activeSubPage || 'snapshot'
+  })
+  /*
+   * The arrival focus this tab has already acted on.
+   *
+   * Held in state only so the save effect below keeps writing it —
+   * `saveTabState` REPLACES a tab's record rather than merging into it, so a
+   * key left out of `stateToSave` is dropped on the next save and the focus
+   * becomes replayable again. The effect that consumes it reads storage
+   * directly; see the arrival-focus effect.
+   */
+  const [consumedFocusIntent, setConsumedFocusIntent] = useState<string | null>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.consumedFocusIntent ?? null
   })
   /*
    * ── The four modes ─────────────────────────────────────────────────────
@@ -784,12 +801,58 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    *   framework  -> unchanged     The framework lives in Research's outcomes;
    *                               it has no home of its own yet, and guessing
    *                               is worse than leaving the saved page alone.
+   *
+   * ── Consumed ONCE per request, not re-applied on every mount ────────────
+   *
+   * `focus` lives in tab DATA, which is durable — the shell merges it into
+   * the open tab and keeps it. Only the active tab renders, so leaving for
+   * another tab unmounts this component and coming back remounts it. This
+   * effect then saw the same `focus` and applied it again, discarding
+   * whatever the reader had navigated to since. Arriving from "Edit on the
+   * asset" meant being returned to Research on every single return.
+   *
+   * `focusRequestId` is stamped per `openAsset` call, and the id we last
+   * acted on is written to the SAME per-asset tab state that already restores
+   * the sub-page. A component ref cannot do this job: the component is the
+   * thing being unmounted.
+   *
+   * Consuming and landing are persisted together, immediately, rather than
+   * left to the batched save effect below — a reader can leave the tab in the
+   * same breath as arriving, and a consumption that had not reached storage
+   * would replay exactly as before.
+   *
+   * A descriptor with no `focusRequestId` is a hand-built one from an older
+   * sender (none of which set `focus` today). It falls back to a key derived
+   * from the focus itself, so it is still applied once rather than forever;
+   * what it gives up is re-requesting the SAME focus twice, which only
+   * `openAsset` can express.
    */
   useEffect(() => {
-    if (asset.focus === 'research') setActiveSubPage('research')
-    else if (asset.focus === 'decisions') setActiveSubPage('decisions')
-    else if (asset.focus === 'overview' || asset.focus === 'position') setActiveSubPage('snapshot')
-  }, [asset.focus, asset.id])
+    const focus = asset.focus
+    if (!focus) return
+
+    const target: AssetSubPage | null =
+      focus === 'research' ? 'research'
+      : focus === 'decisions' ? 'decisions'
+      : (focus === 'overview' || focus === 'position') ? 'snapshot'
+      : null
+    /* `framework` and anything unrecognised still leave the saved page alone. */
+    if (!target) return
+
+    const intent = focusIntentKey(focus, asset.focusRequestId)
+    /* Read through to storage rather than through state: this component may be
+       reused for a different asset, and the saved record is asset-scoped. */
+    const saved = TabStateManager.loadTabState(asset.id)
+    if (!shouldApplyFocus(intent, saved?.consumedFocusIntent)) return
+
+    setActiveSubPage(target)
+    setConsumedFocusIntent(intent)
+    TabStateManager.saveTabState(asset.id, {
+      ...(saved ?? {}),
+      activeSubPage: target,
+      consumedFocusIntent: intent,
+    })
+  }, [asset.focus, asset.focusRequestId, asset.id])
 
   // Handle researchViewFilter from navigation data (e.g., Trade Queue linking to proposer's research view)
   useEffect(() => {
@@ -950,10 +1013,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
          * that. Persisting the item itself would resurrect work that is gone.
          */
         activeWorkItem: workItemKey,
+        /* Carried on every save because `saveTabState` replaces the record;
+           omitting it here would let the arrival focus replay. */
+        consumedFocusIntent,
       }
       TabStateManager.saveTabState(asset.id, stateToSave)
     }
-  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, viewingRequirementId, decisionBookId, workItemKey, isTabStateInitialized])
+  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, viewingRequirementId, decisionBookId, workItemKey, consumedFocusIntent, isTabStateInitialized])
 
   /*
    * The newest execution on this asset that the reader is authorized to see,
@@ -2901,8 +2967,27 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     queryClient.setQueryData(['asset-effective-workflow', effectiveAsset.id], workflowId)
     asset.workflow_id = workflowId
 
+    /*
+     * ── One switch moves BOTH the workspace and the sidebar ───────────────
+     *
+     * The Work sidebar reads `workItemKey`; this surface reads
+     * `effectiveWorkflowId`. They were moved by different code paths, so each
+     * could be pointing at a different run. Setting the selection key here
+     * makes this function the single place a process switch happens, whether
+     * it was asked for from the dropdown or from the sidebar.
+     */
+    setWorkItemKey(workItemKeyFor.process(workflowId))
+
     // Clear the viewing stage initially to prevent showing stale information from previous workflow
     setViewingStageId(null)
+    /*
+     * And the requirement with it. A requirement id belongs to one run's
+     * checklist; carrying it across a switch points the workbench — and
+     * therefore completion and assignment — at an item the displayed process
+     * does not contain. The new run's stage selection below decides what
+     * opens instead.
+     */
+    setViewingRequirementId(null)
 
     try {
       // Get the first stage of the new workflow and check if there's an existing workflow progress
@@ -4247,7 +4332,29 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 workSlot={
               <WorkNavigator
                 items={workItems}
-                selectedKey={selectedWorkItem?.key ?? null}
+                /*
+                 * ── The highlight is the DISPLAYED process, not a near miss ─
+                 *
+                 * When the selection is a process, the row that lights up is
+                 * the one the surface is actually showing. Normally these are
+                 * the same thing, because selecting a row and choosing from the
+                 * dropdown both go through `handleWorkflowChange`.
+                 *
+                 * They come apart in one case: the dropdown can switch to a
+                 * process the sidebar does not list — one not started, or
+                 * already complete — and `resolveSelection` answers an
+                 * unresolvable key by falling back to the FIRST in-progress
+                 * item. That fallback is right for a selection whose work was
+                 * deleted, and wrong here, because it would highlight some
+                 * other run beside a surface showing this one. Keying the
+                 * highlight off the displayed workflow means no row matches
+                 * and nothing is highlighted, which is true.
+                 */
+                selectedKey={
+                  selectedWorkItem?.kind === 'process'
+                    ? (effectiveWorkflowId ? workItemKeyFor.process(effectiveWorkflowId) : null)
+                    : (selectedWorkItem?.key ?? null)
+                }
                 recoveredFrom={workSelection.recovered}
                 isLoading={workAttentionLoading || openItemsLoading || conversationsLoading}
                 onSelect={(item: WorkItem) => {
@@ -4258,6 +4365,30 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                      ac779006 live there too. */
                   if (item.kind === 'conversation') {
                     askAI({ ...assetEngagementTarget, conversationId: item.id })
+                    return
+                  }
+                  /*
+                   * ── A process row moves the WORKSPACE, not just the list ──
+                   *
+                   * This used to set `workItemKey` alone. The sidebar highlight
+                   * followed, and nothing else did: the Process surface, its
+                   * header, its stages and its requirements all read
+                   * `effectiveWorkflowId`, which only the Process dropdown ever
+                   * moved. So a reader could select the Apr 3 run, see it
+                   * highlighted, and complete requirements on Apr 10 — the one
+                   * failure an investment workflow must not have.
+                   *
+                   * `handleWorkflowChange` is the switch the dropdown already
+                   * performs, and it is the whole operation: it moves the
+                   * effective workflow, drops the previous run's stage so no
+                   * stale stage shows, and restores the new run's own current
+                   * stage. Calling it here makes selection one action with one
+                   * implementation rather than two half-switches, and it sets
+                   * `workItemKey` itself — so the dropdown now moves the
+                   * sidebar too, and the two can no longer disagree.
+                   */
+                  if (item.kind === 'process') {
+                    void handleWorkflowChange(item.id)
                     return
                   }
                   setWorkItemKey(item.key)
