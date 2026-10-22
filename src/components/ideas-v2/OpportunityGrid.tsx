@@ -162,9 +162,38 @@ export function OpportunityGrid({
       detail: o.item.title ?? null,
     })), [opportunities])
 
+  /*
+   * ── The skeleton sizes by INDEX, never by content ─────────────────────────
+   *
+   * This branch used to call `opportunitySize` with a hand-built stand-in:
+   *
+   *     opportunitySize({ composed: { emphasis: 'standard' } } as Opportunity, i)
+   *
+   * `Opportunity` requires `item`, and that literal has none. `opportunitySize`
+   * returns 'hero' for index 0 without looking, then reads `o.item` for every
+   * index after it — so the first placeholder rendered and the second threw
+   * `Cannot read properties of undefined (reading 'subtype')`, taking the whole
+   * app to its error boundary. The `as Opportunity` cast is what let it compile:
+   * it asserted a contract the literal did not meet. (Reached from the Asset
+   * Page: a History event drilling through to its idea mounts this grid cold,
+   * so the skeleton always ran.)
+   *
+   * The stand-in could never have worked, because a skeleton has no content to
+   * size by. `exploreCardSize` reads the ITEM; the one field the literal did
+   * supply, `composed.emphasis`, is never consulted by it.
+   *
+   * So size by the only thing a placeholder actually knows — its index. That is
+   * `GallerySkeleton`'s own default (`sizeByRank`), and it is what the two
+   * sibling workspaces already do: Decisions passes `sizeByRecency`, Research
+   * passes nothing at all. No stand-in object, nothing to go undefined.
+   *
+   * `flow="packed"` matches the loaded grid below, which also packs. The
+   * skeleton defaulted to 'ranked' and therefore laid its placeholders out on a
+   * different span table than the grid replacing them — a re-layout on load,
+   * which is the one thing this skeleton exists to avoid.
+   */
   if (isLoading && opportunities.length === 0) {
-    return <GallerySkeleton title="Ideas" sizeAt={i => opportunitySize(
-      { composed: { emphasis: 'standard' } } as Opportunity, i) as TileSize} />
+    return <GallerySkeleton title="Ideas" flow="packed" />
   }
 
   /*

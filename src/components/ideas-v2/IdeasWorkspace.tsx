@@ -575,10 +575,14 @@ export function toRailCard(
 
   It was built from `spanForRank` so its placeholders would occupy the columns
   the authored grid was about to occupy -- a fade rather than a re-layout. That
-  property still matters and is still honoured, one level down: `OpportunityGrid`
-  renders `GallerySkeleton` sized by `opportunitySize`, the same function the
-  loaded field uses. The skeleton moved to the field because the loading state
+  property still matters and is still honoured, one level down, in
+  `OpportunityGrid`. The skeleton moved to the field because the loading state
   belongs to whoever is doing the loading.
+
+  It is sized by INDEX, not by `opportunitySize`. Sizing a placeholder by the
+  content function needs an item the skeleton does not have yet; the attempt to
+  do it anyway, via a cast stand-in, is what crashed the app. See the note on
+  that branch in `OpportunityGrid`.
 */
 
 /*
