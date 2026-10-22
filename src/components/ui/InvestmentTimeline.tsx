@@ -1319,7 +1319,18 @@ export function InvestmentTimeline({
                         }`}
                       >
                         <current.icon className="w-3 h-3" />
-                        <span>Process: {current.label}</span>
+                        {/*
+                          "Priority", not "Process".
+                          This chip sets the workflow's PRIORITY — its value
+                          comes from priorityConfig and its handler is
+                          handleWorkflowPriorityChange — but it rendered
+                          "Process: None" directly beneath the workflow
+                          selector, so the page appeared to carry two process
+                          controls and this one looked like the redundant copy.
+                          It is the only way to set priority; the duplication
+                          was in the label, not the function.
+                        */}
+                        <span>Priority: {current.label}</span>
                         <ChevronDown className="w-3 h-3" />
                       </button>
 
