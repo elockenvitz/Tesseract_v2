@@ -20,9 +20,14 @@ const INVEST   = strip(read('src/components/ui/InvestmentTimeline.tsx'))
 
 // ───────────────────────────────────────────────── 1. Open Items filters
 
-describe('Open Items filters use the canonical pipeline', () => {
+describe('the idea stage filter uses the canonical pipeline', () => {
+  /*
+   * The filter moved out of the Open Items header and into the Work
+   * navigator when that section was removed. Same options, same model, same
+   * normalization boundary — only the place it is rendered changed.
+   */
   it('offers All plus the four canonical stages, built from the model', () => {
-    expect(TAB).toMatch(/\{ key: 'all' as const, label: 'All' \}/)
+    expect(TAB).toMatch(/\{ key: 'all', label: 'All' \}/)
     expect(TAB).toMatch(/IDEA_STAGES\.map\(s => \(\{ key: s, label: IDEA_STAGE_CONFIG\[s\]\.label \}\)\)/)
   })
 
@@ -34,7 +39,9 @@ describe('Open Items filters use the canonical pipeline', () => {
   })
 
   it('filters through the canonical normalization boundary', () => {
-    expect(TAB).toMatch(/openItems\.filter\(item => toIdeaStage\(item\.stage\) === openItemsFilter\)/)
+    // Normalizing the ROW is what makes a canonical pill match legacy
+    // records: a row stored as 'thesis_forming' answers 'developing'.
+    expect(TAB).toMatch(/workIdeas\.filter\(i => toIdeaStage\(i\.stage\) === openItemsFilter\)/)
   })
 
   it('removes the local two-value normalizer it replaces', () => {
@@ -74,10 +81,18 @@ describe('every stored stage answers exactly one filter', () => {
   })
 
   it('keeps an empty filtered result distinguishable from an empty asset', () => {
-    // "No items match this filter." vs "No open items." — a filter that
-    // silently reads as an empty asset is how a reader concludes there is no
-    // work when there is.
-    expect(TAB).toMatch(/openItems\.length === 0 \? 'No open items\.' : 'No items match this filter\.'/)
+    /*
+     * "No ideas at this stage" vs "No active work on this asset" — a filter
+     * that silently reads as an empty asset is how a reader concludes there
+     * is no work when there is. The statement moved to the navigator with
+     * the filter itself.
+     */
+    const NAV = readFileSync(
+      join(process.cwd(), 'src/components/asset/work/WorkNavigator.tsx'), 'utf8',
+    )
+    expect(NAV).toMatch(/stageFilter && !items\.some\(i => i\.kind === 'idea'\)/)
+    expect(NAV).toMatch(/No ideas at this stage\./)
+    expect(NAV).toMatch(/No active work on this asset\./)
   })
 })
 

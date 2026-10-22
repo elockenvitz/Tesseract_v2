@@ -73,17 +73,24 @@ describe('the three merged destinations are all still reachable', () => {
   it('renders Process, Ideas and Lists together under Work', () => {
     const work = (TAB.match(/\{activeMode === 'work' && \(/g) ?? []).length
     /*
-     * Three now, not four: the shell (context strip + navigator + surface),
-     * Open Items, and the themes/portfolios/projects block. The orientation
-     * band that was the fourth is gone — the navigator carries what it held.
+     * Two now: the shell (context strip + navigator + surface) and the
+     * themes/portfolios/projects block. The orientation band and the
+     * duplicate Open Items list are both gone — the navigator lists the
+     * ideas and the surface shows the one in hand.
      */
-    expect(work).toBeGreaterThanOrEqual(3)
+    expect(work).toBeGreaterThanOrEqual(2)
   })
 
-  it('anchors each Work section to the id the model names', () => {
+  it('anchors the Work sections that still exist', () => {
+    /*
+     * `decisions` no longer names a section: the Open Items list it
+     * anchored is gone, and the ideas it held are navigator rows whose
+     * surface is selected rather than scrolled to. `lists` is the shell and
+     * `workflow` is the process surface inside it.
+     */
     expect(TAB).toMatch(/id=\{WORK_SECTION_ID\.workflow\}/)
-    expect(TAB).toMatch(/id=\{WORK_SECTION_ID\.decisions\}/)
     expect(TAB).toMatch(/id=\{WORK_SECTION_ID\.lists\}/)
+    expect(TAB).not.toMatch(/id=\{WORK_SECTION_ID\.decisions\}/)
   })
 
   it('orders them Lists → Process → Ideas', () => {
@@ -96,13 +103,13 @@ describe('the three merged destinations are all still reachable', () => {
     const shell = TAB.indexOf('id={WORK_SECTION_ID.lists}')
     const strip = TAB.indexOf('<AssetContextStrip')
     const nav = TAB.indexOf('<WorkNavigator')
+    const surface = TAB.indexOf('data-testid="work-surface"')
     const proc = TAB.indexOf('id={WORK_SECTION_ID.workflow}')
-    const ideas = TAB.indexOf('id={WORK_SECTION_ID.decisions}')
     expect(shell).toBeGreaterThan(-1)
     expect(shell).toBeLessThan(strip)
     expect(strip).toBeLessThan(nav)
-    expect(nav).toBeLessThan(proc)
-    expect(proc).toBeLessThan(ideas)
+    expect(nav).toBeLessThan(surface)
+    expect(surface).toBeLessThan(proc)
   })
 
   it('keeps every membership surface the Lists tab had', () => {
@@ -112,7 +119,7 @@ describe('the three merged destinations are all still reachable', () => {
     for (const section of ['themesContent', 'portfoliosContent', 'projectsContent']) {
       expect(TAB).toMatch(new RegExp(`id="lists-section-${section}"`))
     }
-    expect(strip(read('src/components/asset/work/AssetWorkPane.tsx')))
+    expect(strip(read('src/components/asset/work/AssetContextStrip.tsx')))
       .toMatch(/id="lists-section-listsContent"/)
     // The grouping that collapsed every list onto an absent 'list' key is gone.
     expect(TAB).not.toMatch(/listsByType/)
@@ -157,8 +164,10 @@ describe('handoffs land where they used to', () => {
      * their own retry loops and are deliberately untouched here; a fourth
      * appearing inside Work would be the overshoot bug returning.
      */
-    expect(TAB).toMatch(/scrollToSection\('decisions-open-items'\)/)
-    expect(TAB).not.toMatch(/getElementById\('decisions-open-items'\)/)
+    /* The Open Items scroll is gone with the section: an attention signal
+       about open items now selects the work instead of scrolling to a list
+       of it. */
+    expect(TAB).not.toMatch(/decisions-open-items/)
     expect((TAB.match(/scrollIntoView/g) ?? []).length).toBe(2)
   })
 

@@ -16,8 +16,9 @@
  * CoAnalyst" would be the old vertical stack turned on its side, and would
  * also be a second mode bar competing with the page's own.
  */
+import { useState } from 'react'
 import { clsx } from 'clsx'
-import { AlertTriangle, GitBranch, Lightbulb, MessageSquare, ExternalLink } from 'lucide-react'
+import { AlertTriangle, GitBranch, Lightbulb, MessageSquare, ExternalLink, Plus } from 'lucide-react'
 import {
   GROUP_LABEL, GROUP_ORDER, itemsInGroup,
   type WorkItem, type WorkItemKind,
@@ -29,11 +30,29 @@ const KIND_ICON: Record<WorkItemKind, typeof GitBranch> = {
   conversation: MessageSquare,
 }
 
+/**
+ * How many rows a group shows before it offers the rest.
+ *
+ * Chosen so the whole navigator stays shorter than the surface beside it on
+ * the measured 661px viewport. "Needs your action" is deliberately exempt —
+ * see below.
+ */
+export const GROUP_PREVIEW = 4
+
 export interface WorkNavigatorProps {
   items: readonly WorkItem[]
   /** The key of the item the surface is showing. */
   selectedKey: string | null
   onSelect: (item: WorkItem) => void
+  /**
+   * The idea stage filter, carried over from the Open Items section this
+   * replaced. `null` is "all".
+   */
+  stageFilter?: string | null
+  stageFilterOptions?: readonly { key: string; label: string }[]
+  onStageFilter?: (key: string | null) => void
+  /** Creates a trade idea, through the existing event. */
+  onNewIdea?: () => void
   /**
    * Set when a saved selection could not be honoured, so the navigator can
    * say so instead of letting a different item pose as the reader's last one.
@@ -44,8 +63,17 @@ export interface WorkNavigatorProps {
 }
 
 export function WorkNavigator({
-  items, selectedKey, onSelect, recoveredFrom = false, isLoading = false, className,
+  items, selectedKey, onSelect,
+  stageFilter = null, stageFilterOptions = [], onStageFilter, onNewIdea,
+  recoveredFrom = false, isLoading = false, className,
 }: WorkNavigatorProps) {
+  /*
+   * Which groups the reader has asked to see in full.
+   *
+   * Local, and deliberately not persisted: it is a glance, not a setting,
+   * and restoring an expanded group days later would be restoring noise.
+   */
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   if (isLoading) {
     return (
       <div className={clsx('space-y-1.5', className)} data-testid="work-nav-loading">
@@ -68,11 +96,26 @@ export function WorkNavigator({
   }
 
   return (
-    <nav className={clsx('space-y-3', className)} aria-label="Work items" data-testid="work-navigator">
+    /*
+      Below `xl` the navigator sits ABOVE the surface rather than beside it,
+      and a single column of groups cost 215px of a 559px viewport — enough
+      to push the first checklist row below the fold at 1150×900, measured.
+      The groups flow into columns there instead, which halves the height
+      without turning the list into a toolbar. At `xl` it is one column in a
+      248px rail again.
+    */
+    <nav
+      className={clsx(
+        'grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 xl:grid-cols-1 xl:gap-x-0',
+        className,
+      )}
+      aria-label="Work items"
+      data-testid="work-navigator"
+    >
       {recoveredFrom && (
         <p
           data-testid="work-nav-recovered"
-          className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800 dark:border-amber-400/30 dark:bg-amber-500/[0.08] dark:text-amber-300"
+          className="col-span-full rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800 dark:border-amber-400/30 dark:bg-amber-500/[0.08] dark:text-amber-300"
         >
           The item you were on is no longer available.
         </p>
@@ -85,16 +128,56 @@ export function WorkNavigator({
            interrupt them. */
         if (rows.length === 0) return null
 
+        /*
+         * ── Keeping the sidebar finite ───────────────────────────────────
+         *
+         * "Needs your action" is never truncated: every row in it is work
+         * the reader is empowered to resolve, and hiding some of it behind
+         * a disclosure would be the surface deciding which of their
+         * obligations matters — exactly the invented priority this model
+         * refuses. The other groups show a few and offer the rest.
+         *
+         * The selected item is always shown even when it falls past the
+         * preview, so the navigator can never highlight nothing while the
+         * surface displays something.
+         */
+        const isOpen = !!expanded[group]
+        const capped = group !== 'needs-you' && !isOpen && rows.length > GROUP_PREVIEW
+        const shown = capped
+          ? (() => {
+              const head = rows.slice(0, GROUP_PREVIEW)
+              const sel = rows.find(r => r.key === selectedKey)
+              return sel && !head.includes(sel) ? [...head.slice(0, GROUP_PREVIEW - 1), sel] : head
+            })()
+          : rows
+
         return (
           <div key={group} data-testid={`work-nav-group-${group}`}>
-            <p className="mb-1 flex items-center gap-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-              {group === 'needs-you' && (
-                <AlertTriangle className="h-3 w-3 text-amber-500" aria-hidden="true" />
+            <div className="mb-1 flex items-center gap-1 px-1">
+              <p className="flex flex-1 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                {group === 'needs-you' && (
+                  <AlertTriangle className="h-3 w-3 text-amber-500" aria-hidden="true" />
+                )}
+                {GROUP_LABEL[group]}
+              </p>
+              {/* Idea creation, kept from the Open Items section this
+                  replaced. On the group that holds ideas, not in the list
+                  membership strip, which is about something else. */}
+              {group === 'in-progress' && onNewIdea && (
+                <button
+                  type="button"
+                  onClick={onNewIdea}
+                  title="New trade idea"
+                  aria-label="New trade idea"
+                  data-testid="work-nav-new-idea"
+                  className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700"
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
               )}
-              {GROUP_LABEL[group]}
-            </p>
+            </div>
             <ul className="space-y-0.5">
-              {rows.map(item => {
+              {shown.map(item => {
                 const Icon = KIND_ICON[item.kind]
                 const current = !item.launchesPane && item.key === selectedKey
                 return (
@@ -145,9 +228,64 @@ export function WorkNavigator({
                 )
               })}
             </ul>
+
+            {rows.length > GROUP_PREVIEW && group !== 'needs-you' && (
+              <button
+                type="button"
+                onClick={() => setExpanded(p => ({ ...p, [group]: !p[group] }))}
+                data-testid={`work-nav-more-${group}`}
+                className="mt-0.5 w-full rounded px-2 py-1 text-left text-[11px] font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800"
+              >
+                {isOpen ? 'Show fewer' : `Show all ${rows.length}`}
+              </button>
+            )}
           </div>
         )
       })}
+
+      {/*
+        The idea stage filter, carried over from the Open Items section.
+
+        It sits at the foot because it narrows the list above it, and because
+        a filter at the top of a navigator reads as a page control. The
+        options are the canonical stages the pills used; nothing here invents
+        a stage.
+      */}
+      {onStageFilter && stageFilterOptions.length > 0 && (
+        <div className="col-span-full flex flex-wrap gap-1 border-t border-gray-100 px-1 pt-2 dark:border-gray-800" data-testid="work-nav-stage-filter">
+          {stageFilterOptions.map(opt => {
+            const active = (stageFilter ?? 'all') === opt.key
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => onStageFilter(opt.key === 'all' ? null : opt.key)}
+                aria-pressed={active}
+                data-testid={`work-nav-filter-${opt.key}`}
+                className={clsx(
+                  'rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors',
+                  active
+                    ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+                    : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800',
+                )}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
+          {/*
+            "No ideas at this stage" is not the same statement as "no ideas",
+            and the Open Items section this replaced was careful to tell them
+            apart. A filter that silently reads as an empty asset is how a
+            reader concludes there is no work when there is.
+          */}
+          {stageFilter && !items.some(i => i.kind === 'idea') && (
+            <p className="w-full px-1 pt-0.5 text-[10px] text-gray-400" data-testid="work-nav-filter-empty">
+              No ideas at this stage.
+            </p>
+          )}
+        </div>
+      )}
     </nav>
   )
 }

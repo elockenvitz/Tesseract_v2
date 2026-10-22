@@ -54,6 +54,32 @@ export function isOpenRequest(status: DecisionRequestStatus): boolean {
   return OPEN_STATUSES.has(String(status).toLowerCase())
 }
 
+/**
+ * One pending decision request, as a surface receives it.
+ *
+ * Lived in `AssetWorkPane` while that component was the only thing that
+ * rendered them. The band is gone; the shape is not, so it moved next to
+ * `splitAttention`, which is what produces it.
+ */
+export interface WorkAttentionItem {
+  id: string
+  /**
+   * The `trade_queue_items` row this decision request is about.
+   *
+   * Carried so the Work navigator can recognise that a request and an open
+   * idea are the same piece of work. The column was already selected by the
+   * query and dropped in the mapping, which is why the two datasets could
+   * not be reconciled and the same BUY would have been listed twice.
+   */
+  tradeQueueItemId?: string | null
+  /** 'buy' | 'sell' | 'add' | 'trim' — as stored. */
+  action?: string | null
+  portfolioName?: string | null
+  requesterName?: string | null
+  contextNote?: string | null
+  createdAgo?: string | null
+}
+
 export interface AttentionSplit<T> {
   /** Open requests this user is empowered to resolve. */
   needsYourAction: T[]

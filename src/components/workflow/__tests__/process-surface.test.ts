@@ -96,7 +96,9 @@ describe('the footer gave up its copies', () => {
 
 describe('the stage rail states its progress once', () => {
   it('keeps the count', () => {
-    expect(TL).toMatch(/\{completedTasks\}\/\{totalTasks\} tasks/)
+    // "tasks" went with the compaction: the chip is 61px now, the word was
+    // the widest thing on it, and "0/5" under a stage name is unambiguous.
+    expect(TL).toMatch(/\{completedTasks\}\/\{totalTasks\}/)
   })
 
   it('drops the percentage beside it', () => {

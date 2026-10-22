@@ -1304,10 +1304,12 @@ export function InvestmentTimeline({
   }
 
   return (
-    <div className={`space-y-6 ${className}`}>
+    <div className={`space-y-3 ${className}`}>
       {/* Timeline Visualization */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6 dark:border-gray-700 dark:bg-gray-800">
-        <div className="mb-4 flex items-center justify-between">
+      {/* p-6 → p-3 and mb-4 → mb-2: the stage rail card was 199px tall to
+          hold a 61px rail and a priority chip. */}
+      <div className="bg-white border border-gray-200 rounded-lg p-3 dark:border-gray-700 dark:bg-gray-800">
+        <div className="mb-2 flex items-center justify-between">
           {/* Workflow Priority on the left */}
           {assetId && workflowId && (
             <div className="flex items-center space-x-2">
@@ -1434,7 +1436,9 @@ export function InvestmentTimeline({
 
         {/* Desktop Chevron Timeline - Executive Design */}
         <div className="hidden md:block">
-          <div className="relative py-6 px-8">
+          {/* py-6 px-8 → py-1 px-2. The chevrons need room to overlap, not
+              48px of vertical air above and below a 61px rail. */}
+          <div className="relative py-1 px-2">
             <div className="flex items-center gap-0.5 w-full">
               {timelineStages.map((stage, index) => {
                 const status = getStageStatus(index)
@@ -1513,8 +1517,17 @@ export function InvestmentTimeline({
                     )}
                     <button
                       onClick={() => handleStageClick(stage, index)}
+                      /*
+                        py-5 px-6 → py-2.5 px-4.
+
+                        The rail was 173px tall for four stages, on a surface
+                        whose viewport is 661px — a quarter of the screen to
+                        say which of four steps you are on. The chevron shape,
+                        the colours, the click target and the handler are
+                        unchanged; only the padding and the type scale moved.
+                      */
                       className={`
-                        relative w-full py-5 px-6 transition-all duration-300 min-w-0
+                        relative w-full py-2.5 px-4 transition-all duration-300 min-w-0
                         ${colors.bg} ${colors.text}
                         ${isSelected
                           ? 'z-[3]'
@@ -1534,13 +1547,13 @@ export function InvestmentTimeline({
                       }}
                     >
                       {/* Content */}
-                      <div className="relative z-10 space-y-2.5 min-h-[85px] flex flex-col justify-center min-w-0 w-full" style={{ marginLeft: isFirst ? '0' : '16px' }}>
+                      <div className="relative z-10 space-y-1 flex flex-col justify-center min-w-0 w-full" style={{ marginLeft: isFirst ? '0' : '16px' }}>
 
 
                         {/* Header */}
                         <div className="flex items-center min-w-0">
                           {/* Stage Number - Fixed width container with checkmark for completed */}
-                          <div className="relative flex items-center justify-center w-7 h-7 rounded-md bg-black/15 text-sm font-bold flex-shrink-0 mr-2">
+                          <div className="relative flex items-center justify-center w-5 h-5 rounded bg-black/15 text-[11px] font-bold flex-shrink-0 mr-1.5">
                             {index + 1}
                             {/* Completed checkmark - upper right of stage number */}
                             {status === 'completed' && (
@@ -1554,29 +1567,33 @@ export function InvestmentTimeline({
                             )}
                           </div>
                           {/* Stage Name - Left aligned */}
-                          <h4 className="text-base font-semibold leading-tight truncate min-w-0">
+                          <h4 className="text-[13px] font-semibold leading-tight truncate min-w-0">
                             {stage.label}
                           </h4>
                         </div>
 
                         {/* Progress */}
-                        {totalTasks > 0 ? (
-                          <div className="space-y-1.5 pr-8">
-                            <div className={`h-1.5 ${colors.progressTrack} rounded-full overflow-hidden`}>
+                        {/*
+                          The bar and the count on ONE line rather than
+                          stacked, and no spacer standing in for an absent
+                          bar — a stage with no requirements now takes the
+                          height it needs instead of 34px of nothing.
+                        */}
+                        {totalTasks > 0 && (
+                          <div className="flex items-center gap-2 pr-6">
+                            <div className={`h-1 flex-1 ${colors.progressTrack} rounded-full overflow-hidden`}>
                               <div
                                 className={`h-full ${colors.progressFill} rounded-full transition-all duration-500`}
                                 style={{ width: `${progressPercent}%` }}
                               />
                             </div>
-                            {/* The bar above already IS the percentage, and
-                                "2/5 tasks" says it exactly. Printing 40%
-                                beside it was the same fact three ways. */}
-                            <div className={`flex items-center text-xs font-semibold ${colors.accent}`}>
-                              <span className="truncate">{completedTasks}/{totalTasks} tasks</span>
-                            </div>
+                            {/* The bar already IS the percentage, and
+                                "2/5" says it exactly. Printing 40% beside it
+                                was the same fact three ways. */}
+                            <span className={`shrink-0 text-[11px] font-semibold tabular-nums ${colors.accent}`}>
+                              {completedTasks}/{totalTasks}
+                            </span>
                           </div>
-                        ) : (
-                          <div className="h-[34px]" /> // Spacer to match progress section height
                         )}
 
                         {/* Deadline */}
@@ -1858,6 +1875,19 @@ export function InvestmentTimeline({
                         the rail and the Work band read — no second
                         derivation — and `onAdvance` is the existing handler.
                       */}
+                      {/*
+                        One reading measure for the whole working column.
+
+                        "Read/Summarize News" is 19 characters and was set
+                        across 1,789 pixels, with its chevron a thousand
+                        pixels from its label. 78ch lands near 720px at this
+                        type size. The action bar shares the measure so that
+                        "4 open" and "Advance to Earnings Print" sit directly
+                        over the requirements they describe rather than a
+                        screen-width apart. Nothing about the items or the
+                        bar's behaviour changed.
+                      */}
+                      <div className="max-w-[78ch]">
                       <StageActionBar
                         viewingStageId={showStageDetails}
                         currentStageId={effectiveCurrentStage}
@@ -1883,6 +1913,7 @@ export function InvestmentTimeline({
                             ? <DecisionItemCard key={item.id} {...props} />
                             : <OperationalItemCard key={item.id} {...props} />
                         })}
+                      </div>
                       </div>
                     </>
                   )

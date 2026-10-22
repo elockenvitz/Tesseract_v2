@@ -33,7 +33,7 @@ import { useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { splitAttention, type AttentionSplit } from '../lib/asset-work/attention'
-import type { WorkAttentionItem } from '../components/asset/work/AssetWorkPane'
+import type { WorkAttentionItem } from '../lib/asset-work/attention'
 
 type Row = WorkAttentionItem & {
   portfolioId: string | null

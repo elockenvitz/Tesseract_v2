@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3 } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3 } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   buildAudienceOptions,
@@ -9,7 +9,9 @@ import {
 } from '../../lib/contributions/audience-reach'
 import { AudiencePicker } from '../contributions/AudiencePicker'
 import {
-  stageLabel, stageColor, toIdeaStage,
+  /* `stageColor` went with the Open Items rows that used it; the idea
+     surface imports it where the chip now lives. */
+  stageLabel, toIdeaStage,
   IDEA_STAGES, IDEA_STAGE_CONFIG, type IdeaStage,
 } from '../../lib/ideas/stage-model'
 import { fetchSignedUrl } from '../../lib/storage/signed-url'
@@ -38,13 +40,10 @@ import { DecisionTimeline } from '../asset/DecisionTimeline'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
 import { ResearchToolbarMenu } from '../asset/ResearchToolbarMenu'
 /*
- * `AssetWorkPane` — the orientation band — is no longer mounted. The
- * navigator carries the attention split, the ideas and the process summary,
- * and the context strip carries the lists, so every capability it held is
- * reachable without it. The component and its tests remain in the tree for
- * one slice as the fallback if the navigator is rejected; slice 2 removes
- * them. `WorkAttentionItem` still lives there and is the shape the attention
- * hook returns.
+ * `AssetWorkPane` — the orientation band — is gone, along with its tests.
+ * The navigator carries the attention split, the ideas and the process
+ * summary; the context strip carries the lists. `WorkAttentionItem` moved to
+ * `lib/asset-work/attention`, beside the function that produces it.
  */
 import { useAssetWorkAttention } from '../../hooks/useAssetWorkAttention'
 import { useAssetProcessSummary } from '../../hooks/useAssetProcessSummary'
@@ -608,7 +607,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const { models: assetModels = [] } = useAssetModels(asset.id)
 
   // Fetch active trade ideas for Open Items section
-  const { ideas: openItems, isLoading: openItemsLoading, totalHint: openItemsTotalHint } = useAssetTradeIdeas({ assetId: asset.id })
+  /* `totalHint` went with the Open Items header that displayed it; the
+     navigator states the count by listing the rows. */
+  const { ideas: openItems, isLoading: openItemsLoading } = useAssetTradeIdeas({ assetId: asset.id })
 
   // Refs for EditableSectionWithHistory components
   const thesisRef = useRef<EditableSectionWithHistoryRef>(null)
@@ -875,19 +876,18 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     if (t.researchMode) setThesisViewMode(t.researchMode)
     if (t.openItems) {
       /*
-       * Scroll to the existing Open Items section once Work is in the DOM.
-       * Short poll because the sub-page switch is a state update.
+       * An attention signal about open items now SELECTS the work rather
+       * than scrolling to a list of it.
        *
-       * Through the shared helper: this is a Work section under the same
-       * nested scroll container as the others, so plain `scrollIntoView`
-       * overshot it exactly the way it overshot Process.
+       * This used to poll for `decisions-open-items` and scroll there. That
+       * section is gone — the navigator lists the same ideas and the surface
+       * shows the one in hand — so clearing the saved selection hands the
+       * choice to `resolveSelection`, whose first preference is precisely
+       * the thing an attention signal is about: an item this reader is
+       * empowered to act on. No second ranking rule, and no scroll to a
+       * section that no longer exists.
        */
-      let tries = 0
-      const tick = () => {
-        if (scrollToSection('decisions-open-items')) return
-        if (tries++ < 20) window.setTimeout(tick, 80)
-      }
-      window.setTimeout(tick, 80)
+      setWorkItemKey(null)
     }
   }, [researchViewFilter, user?.id])
 
@@ -2266,11 +2266,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     [allAssetWorkflows, effectiveWorkflowId, workProcessSummary],
   )
 
+  /*
+   * The idea stage filter, carried over from the Open Items section.
+   *
+   * It narrows the IDEA rows only. A process is not at an idea stage, and a
+   * filter that hid the running process because the reader wanted to see
+   * "Researching" ideas would hide the one thing they can always act on.
+   */
+  const filteredWorkIdeas = React.useMemo(
+    () => (openItemsFilter === 'all'
+      ? workIdeas
+      : workIdeas.filter(i => toIdeaStage(i.stage) === openItemsFilter)),
+    [workIdeas, openItemsFilter],
+  )
+
   const workItems = React.useMemo(
     () => buildWorkItems({
       needsYourAction: workAttention.needsYourAction,
       awaitingOthers: workAttention.awaitingOthers,
-      ideas: workIdeas.map(i => ({
+      ideas: filteredWorkIdeas.map(i => ({
         id: i.id,
         action: i.action,
         stageLabel: i.stage ? stageLabel(i.stage) : null,
@@ -2286,7 +2300,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           : null,
       })),
     }),
-    [workAttention, workIdeas, workProcesses, assetConversations],
+    [workAttention, filteredWorkIdeas, workProcesses, assetConversations],
   )
 
   const workSelection = React.useMemo(
@@ -4172,6 +4186,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   }
                   setWorkItemKey(item.key)
                 }}
+                /* Both carried over from the Open Items section, which this
+                   replaces: the canonical stage pills and idea creation
+                   through the existing event. */
+                stageFilter={openItemsFilter === 'all' ? null : openItemsFilter}
+                stageFilterOptions={[
+                  { key: 'all', label: 'All' },
+                  ...IDEA_STAGES.map(s => ({ key: s, label: IDEA_STAGE_CONFIG[s].label })),
+                ]}
+                onStageFilter={(key) => setOpenItemsFilter((key ?? 'all') as 'all' | IdeaStage)}
+                onNewIdea={() => {
+                  window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                    detail: { type: 'new-trade-idea', data: { assetId: asset.id, symbol: asset.symbol } }
+                  }))
+                }}
                 className="xl:sticky xl:top-2"
               />
 
@@ -4546,171 +4574,23 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 below, and the capital bar keeps the one-price rule
                 documented in its own comment.
               */}
-              {/* ─────────── Work · Ideas ───────────
-                  The open items in full, below the band that summarises
-                  them. `decisions-open-items` keeps its id: the attention
-                  deep-links and a test both target it. */}
-              {activeMode === 'work' && (
-              <div id={WORK_SECTION_ID.decisions} className="scroll-mt-4">
-              <Card padding="none" id="decisions-open-items">
-                <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-3 dark:border-gray-800">
-                  <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Open Items</h4>
-                  <span className="text-[10px] font-medium text-gray-400 tabular-nums">({openItemsTotalHint})</span>
-                  <div className="flex items-center gap-1 ml-1">
-                    {/*
-                      The canonical pipeline, not the v1 vocabulary.
-                      These pills read 'Idea / Working On / Modeling /
-                      Deciding' — four stage names the model retired. Because
-                      the filter compared them to the row's stage, an item at
-                      any CURRENT stage matched nothing but "All": the controls
-                      were dead for every row today's writers produce.
-                    */}
-                    {([
-                      { key: 'all' as const, label: 'All' },
-                      ...IDEA_STAGES.map(s => ({ key: s, label: IDEA_STAGE_CONFIG[s].label })),
-                    ]).map(({ key, label }) => (
-                      <button
-                        key={key}
-                        onClick={() => setOpenItemsFilter(key)}
-                        className={`px-2.5 py-0.5 rounded text-[10px] font-semibold transition-colors ${
-                          openItemsFilter === key
-                            ? 'bg-gray-900 text-white shadow-sm'
-                            : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {openItemsLoading ? (
-                  <div className="px-4 py-3 space-y-2">
-                    {[1, 2].map((i) => (
-                      <div key={i} className="h-8 bg-gray-50 rounded animate-pulse dark:bg-gray-900" />
-                    ))}
-                  </div>
-                ) : (() => {
-                  /*
-                   * toIdeaStage is THE normalization boundary — it maps every
-                   * legacy vocabulary onto the four canonical stages and sends
-                   * anything unrecognised to 'exploring'. The local normalizer
-                   * this replaces knew two legacy values out of ten and left
-                   * the rest unmatched.
-                   *
-                   * Normalizing the ROW, not the filter, is what makes a
-                   * canonical pill match legacy records too: a row stored as
-                   * 'thesis_forming' answers the 'developing' filter.
-                   */
-                  const filteredItems = openItemsFilter === 'all'
-                    ? openItems
-                    : openItems.filter(item => toIdeaStage(item.stage) === openItemsFilter)
-                  return filteredItems.length === 0 ? (
-                    <div className="px-4 py-3 flex items-center gap-4">
-                      <span className="text-[13px] text-gray-400">
-                        {openItems.length === 0 ? 'No open items.' : 'No items match this filter.'}
-                      </span>
-                      {openItems.length === 0 && (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                                detail: {
-                                  type: 'new-trade-idea',
-                                  data: { assetId: asset.id, symbol: asset.symbol }
-                                }
-                              }))
-                            }}
-                            className="px-2.5 py-1 rounded text-[11px] font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 transition-colors"
-                          >
-                            New Trade Idea
-                          </button>
-                          <button
-                            onClick={() => {
-                              window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                                detail: {
-                                  type: 'trade-queue',
-                                  data: { filterAssetId: asset.id, filterSymbol: asset.symbol }
-                                }
-                              }))
-                            }}
-                            className="px-2.5 py-1 rounded text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors dark:text-gray-400 dark:bg-gray-800"
-                          >
-                            Open Idea Pipeline
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                      {filteredItems.map((item) => {
-                        const actionConfig: Record<string, { bg: string; text: string; border: string }> = {
-                          buy:  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-l-emerald-400' },
-                          add:  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-l-emerald-400' },
-                          sell: { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-l-red-400' },
-                          trim: { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-l-red-400' },
-                        }
-                        /*
-                         * Stage presentation comes from the canonical model.
-                         *
-                         * This used to be two local maps keyed on the v1
-                         * vocabulary — idea / working_on / discussing /
-                         * modeling / simulating / deciding — none of which is
-                         * a canonical stage, with `|| item.stage` behind them.
-                         * So every CURRENT stage fell through and rendered its
-                         * raw enum: `ready_for_decision`, `thesis_forming`,
-                         * `ready_to_recommend`. Measured against production,
-                         * 173 of 241 queue rows displayed a raw string.
-                         *
-                         * This is the pipeline STAGE — how mature the idea is.
-                         * It is deliberately not the decision status and not
-                         * urgency; those are different questions and belong to
-                         * the bands above, not to this chip.
-                         */
-                        const ac = actionConfig[item.action] || { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-600 dark:text-gray-400', border: 'border-l-gray-300' }
-                        const creatorName = item.creator
-                          ? [item.creator.first_name, item.creator.last_name].filter(Boolean).join(' ') || 'Unknown'
-                          : null
-                        return (
-                          <button
-                            key={item.id}
-                            onClick={() => {
-                              window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                                detail: {
-                                  type: 'trade-queue',
-                                  data: { filterAssetId: asset.id, filterSymbol: asset.symbol }
-                                }
-                              }))
-                            }}
-                            className={`w-full px-4 py-2.5 flex items-center gap-3 hover:bg-blue-50/50 active:bg-blue-100/40 transition-colors text-left group border-l-[3px] ${ac.border}`}
-                          >
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide flex-shrink-0 ${ac.bg} ${ac.text}`}>
-                              {item.action}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <span className="text-[13px] font-semibold text-gray-900 block truncate leading-tight dark:text-white">
-                                {item.rationale || 'No rationale'}
-                              </span>
-                              <span className="text-[10px] text-gray-400 block mt-0.5 leading-tight">
-                                {item.portfolio && <>{item.portfolio.name}</>}
-                                {item.portfolio && creatorName && <> &middot; </>}
-                                {creatorName}
-                                {(item.portfolio || creatorName) && <> &middot; </>}
-                                {formatDistanceToNow(new Date(item.updated_at), { addSuffix: true })}
-                              </span>
-                            </div>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0 ring-1 ring-inset ${stageColor(item.stage)}`}>
-                              {stageLabel(item.stage)}
-                            </span>
-                            <ChevronRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-primary-500 flex-shrink-0 transition-colors" />
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )
-                })()}
-              </Card>
-              </div>
-              )}
+              {/* ─────────── Work · Ideas — REMOVED ───────────
+                  The Open Items list rendered the same ideas the navigator
+                  now lists, 1,092px down a 661px viewport, and clicking one
+                  left the Asset page for the Ideas tab. Everything it could
+                  do is reachable in the shell above:
+
+                    the list          → the navigator's idea rows
+                    the stage pills   → the navigator's stage filter
+                    New Trade Idea    → the navigator's + control
+                    opening an idea   → the idea surface, which also carries
+                                        the rationale and the decision module
+                    Open Idea Pipeline→ "Edit in the idea pipeline" on that
+                                        surface, the same event
+
+                  The attention deep-link that used to scroll here now clears
+                  the selection and lets `resolveSelection` choose, which
+                  lands on an item this reader can act on. */}
 
               {/* ─────────── History ───────────
                   The record: what was decided, in which book, and the

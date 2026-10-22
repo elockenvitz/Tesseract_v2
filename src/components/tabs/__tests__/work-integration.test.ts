@@ -67,10 +67,38 @@ describe('the shell: a strip, a navigator and one surface', () => {
     expect(TAB).toMatch(/<IdeaWorkSurface/)
   })
 
-  it('keeps Open Items, whose filters and creation the navigator does not yet own', () => {
-    // Slice 1 removes nothing whose capability is not reachable elsewhere.
-    expect(TAB).toMatch(/id="decisions-open-items"/)
-    expect(TAB).toMatch(/toIdeaStage\(item\.stage\) === openItemsFilter/)
+  it('no longer renders the duplicate Open Items section', () => {
+    /*
+     * It listed the same ideas the navigator lists, 1,092px down a 661px
+     * viewport, and clicking one left the Asset page. Removed only once
+     * every capability was reachable above: the rows, the stage filter,
+     * idea creation, and opening an idea for editing.
+     */
+    expect(TAB).not.toMatch(/id="decisions-open-items"/)
+    expect(TAB).not.toMatch(/Open Items/)
+  })
+
+  it('kept the stage filter, applied to ideas and not to processes', () => {
+    // Filtering to "Researching" must not hide the running process, which
+    // is the one thing the reader can always act on.
+    expect(TAB).toMatch(/toIdeaStage\(i\.stage\) === openItemsFilter/)
+    expect(TAB).toMatch(/ideas: filteredWorkIdeas\.map/)
+    expect(TAB).toMatch(/processes: workProcesses/)
+  })
+
+  it('kept idea creation, through the same event', () => {
+    expect(TAB).toMatch(/onNewIdea=\{\(\) => \{/)
+    expect(TAB).toMatch(/type: 'new-trade-idea'/)
+  })
+
+  it('redirects the attention deep-link that used to scroll to the list', () => {
+    // The section is gone; clearing the selection hands the choice to
+    // `resolveSelection`, whose first preference is an item this reader can
+    // act on — which is what an attention signal means.
+    expect(TAB).not.toMatch(/scrollToSection\('decisions-open-items'\)/)
+    const at = TAB.indexOf('if (t.openItems)')
+    expect(at).toBeGreaterThan(-1)
+    expect(TAB.slice(at, at + 700)).toMatch(/setWorkItemKey\(null\)/)
   })
 
   it('keeps the Decision Timeline, the capital bar and Current Exposure', () => {
