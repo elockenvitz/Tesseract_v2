@@ -33,9 +33,58 @@ describe('the selected requirement is the working surface', () => {
     expect(TL).toMatch(/<OperationalItemCard key=\{selected\.id\}/)
   })
 
-  it('completes through the one existing toggle handler', () => {
-    expect(TL).toMatch(/onToggleStatus=\{\(id\) => handleChecklistToggle\(showStageDetails, id\)\}/)
-    expect((TL.match(/const handleChecklistToggle/g) ?? []).length).toBe(1)
+  it('changes status through the one named-transition handler', () => {
+    // The cycling `handleChecklistToggle` is gone: a control now asks for
+    // a specific transition and the handler decides whether it applies.
+    expect(TL).toMatch(/onAction=\{\(id, action\) => applyRequirementAction\(showStageDetails, id, action\)\}/)
+    expect((TL.match(/const applyRequirementAction/g) ?? []).length).toBe(1)
+    expect(TL).not.toMatch(/const handleChecklistToggle/)
+    // One place still owns the status write. The stage advance uses the
+    // same mutation via `mutateAsync` to stamp requirements that were
+    // already done, and reports its own failures — see the `previous`
+    // guard in `onError`.
+    expect((TL.match(/saveChecklistItemMutation\.mutate\(\{/g) ?? []).length).toBe(1)
+    expect(TL).toMatch(/if \(!vars\.previous\) return/)
+  })
+
+  it('refuses a second click while the first write is in flight', () => {
+    expect(TL).toMatch(/if \(requirementWritesInFlight\.current\.has\(inFlightKey\)\) return/)
+    expect(TL).toMatch(/requirementWritesInFlight\.current\.add\(inFlightKey\)/)
+    // Released on success AND failure, or one failed write wedges the row.
+    expect(TL).toMatch(/onSettled:[\s\S]{0,200}requirementWritesInFlight\.current\.delete/)
+  })
+
+  it('puts an optimistic row back when the write is refused', () => {
+    expect(TL).toMatch(/previous: \{/)
+    expect(TL).toMatch(/item\.id === vars\.itemId \? \{ \.\.\.item, \.\.\.vars\.previous \}/)
+  })
+
+  it('refuses a transition that does not apply, rather than cycling', () => {
+    expect(TL).toMatch(/resolveTransition\(currentStatus, action\)/)
+    expect(TL).toMatch(/if \(!transition\.ok \|\| !transition\.to\)/)
+  })
+
+  it('no longer opens a browser dialog anywhere in the process surface', () => {
+    for (const [name, src] of [['InvestmentTimeline', TL], ['OperationalItemCard', OP], ['DecisionItemCard', DEC]] as const) {
+      expect(src, `${name} still calls alert()`).not.toMatch(/\balert\(/)
+      expect(src, `${name} still calls confirm()`).not.toMatch(/\bconfirm\(/)
+    }
+  })
+
+  it('confirms destructive requirement actions in the product dialog', () => {
+    expect(OP).toMatch(/<ConfirmDialog/)
+    expect(OP).toMatch(/pendingCommentDelete/)
+    expect(DEC).toMatch(/pendingSignalDelete/)
+    expect(DEC).toMatch(/pendingEvidenceDelete/)
+    // The file dialog must not promise a deletion the product does not do.
+    expect(DEC).toMatch(/The stored file itself is not deleted/)
+  })
+
+  it('offers a way back to unassigned', () => {
+    expect(OP).toMatch(/data-testid="requirement-unassign"/)
+    expect(OP).toMatch(/assignee_id: null/)
+    // Clearing an assignment touches one column and nothing else.
+    expect(OP).not.toMatch(/assignee_id: null[\s\S]{0,120}(notes|completed|status):/)
   })
 })
 
@@ -105,9 +154,14 @@ describe('the requirement reads as a workbench, not four thin rows', () => {
   })
 
   it('names the completion action instead of offering a bare circle', () => {
-    expect(OP).toMatch(/Mark complete/)
-    expect(OP).toMatch(/'Reopen'/)
+    // The words now come from one table, so the label and the transition
+    // cannot disagree.
+    expect(OP).toMatch(/\{ACTION_LABEL\[primary\]\}/)
     expect(OP).toMatch(/data-testid="requirement-detail-status"/)
+    expect(OP).toMatch(/data-action=\{primary\}/)
+    // And the secondary action is offered by name where it is legal.
+    expect(OP).toMatch(/secondaryActions\(status\)\.map/)
+    expect(OP).toMatch(/data-testid=\{`requirement-detail-action-\$\{a\}`\}/)
   })
 
   it('makes the notes the primary surface at a reading width', () => {

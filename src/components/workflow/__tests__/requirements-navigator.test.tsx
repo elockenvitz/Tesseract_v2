@@ -31,40 +31,40 @@ const ITEMS: ChecklistItemData[] = [
 
 const setup = (over: Partial<React.ComponentProps<typeof RequirementsNavigator>> = {}) => {
   const onSelect = vi.fn()
-  const onToggleStatus = vi.fn()
+  const onAction = vi.fn()
   render(
     <RequirementsNavigator
       items={ITEMS}
       selectedId={null}
       onSelect={onSelect}
-      onToggleStatus={onToggleStatus}
+      onAction={onAction}
       isEditable
       {...over}
     />,
   )
-  return { onSelect, onToggleStatus, user: userEvent.setup() }
+  return { onSelect, onAction, user: userEvent.setup() }
 }
 
 describe('completion and selection are different gestures', () => {
   it('selecting a requirement does not complete it', async () => {
-    const { onSelect, onToggleStatus, user } = setup()
+    const { onSelect, onAction, user } = setup()
     await user.click(screen.getByTestId('requirement-select-a1'))
     expect(onSelect).toHaveBeenCalledWith('a1')
-    expect(onToggleStatus).not.toHaveBeenCalled()
+    expect(onAction).not.toHaveBeenCalled()
   })
 
   it('completing a requirement does not move the selection', async () => {
-    const { onSelect, onToggleStatus, user } = setup({ selectedId: 'a3' })
+    const { onSelect, onAction, user } = setup({ selectedId: 'a3' })
     await user.click(screen.getByTestId('requirement-toggle-a1'))
-    expect(onToggleStatus).toHaveBeenCalledWith('a1')
+    expect(onAction).toHaveBeenCalledWith('a1', 'complete')
     expect(onSelect).not.toHaveBeenCalled()
   })
 
   it('reading every requirement in turn completes none of them', async () => {
-    const { onSelect, onToggleStatus, user } = setup()
+    const { onSelect, onAction, user } = setup()
     for (const i of ITEMS) await user.click(screen.getByTestId(`requirement-select-${i.id}`))
     expect(onSelect.mock.calls.map(c => c[0])).toEqual(['a1', 'a2', 'a3', 'a4'])
-    expect(onToggleStatus).not.toHaveBeenCalled()
+    expect(onAction).not.toHaveBeenCalled()
   })
 })
 
@@ -91,7 +91,7 @@ describe('identity is the requirement id', () => {
         items={reordered}
         selectedId="a3"
         onSelect={vi.fn()}
-        onToggleStatus={vi.fn()}
+        onAction={vi.fn()}
         isEditable
       />,
     )
@@ -104,19 +104,42 @@ describe('identity is the requirement id', () => {
 
 describe('what the rail will and will not do', () => {
   it('disables completion when the reader cannot edit, but never selection', async () => {
-    const { onSelect, onToggleStatus, user } = setup({ isEditable: false })
+    const { onSelect, onAction, user } = setup({ isEditable: false })
     expect(screen.getByTestId('requirement-toggle-a1')).toBeDisabled()
     await user.click(screen.getByTestId('requirement-select-a1'))
     expect(onSelect).toHaveBeenCalledWith('a1')
-    expect(onToggleStatus).not.toHaveBeenCalled()
+    expect(onAction).not.toHaveBeenCalled()
   })
 
-  it('names the completion control by what it will do', () => {
+  it('names the control by the transition it performs, per state', () => {
     setup()
-    expect(screen.getByTestId('requirement-toggle-a1')).toHaveAttribute('aria-label', 'Complete Read/Summarize News')
-    // Completed and n/a are both "done" — the control reopens either.
-    expect(screen.getByTestId('requirement-toggle-a2')).toHaveAttribute('aria-label', 'Reopen Review Our Model')
-    expect(screen.getByTestId('requirement-toggle-a4')).toHaveAttribute('aria-label', 'Reopen Where are We?')
+    // The label IS the action, so it cannot promise one thing and do
+    // another — which is exactly what "Reopen" did to a completed
+    // requirement before, by marking it not applicable.
+    expect(screen.getByTestId('requirement-toggle-a1')).toHaveAttribute('aria-label', 'Mark complete: Read/Summarize News')
+    expect(screen.getByTestId('requirement-toggle-a2')).toHaveAttribute('aria-label', 'Reopen: Review Our Model')
+    // Not applicable is restored, never "reopened" and never completed:
+    // a requirement ruled irrelevant was not done by anybody.
+    expect(screen.getByTestId('requirement-toggle-a4')).toHaveAttribute('aria-label', 'Restore: Where are We?')
+  })
+
+  it('asks for the right transition from each state', async () => {
+    const { onAction, user } = setup()
+    await user.click(screen.getByTestId('requirement-toggle-a1'))   // unchecked
+    await user.click(screen.getByTestId('requirement-toggle-a2'))   // completed
+    await user.click(screen.getByTestId('requirement-toggle-a4'))   // na
+    expect(onAction.mock.calls).toEqual([
+      ['a1', 'complete'],
+      ['a2', 'reopen'],
+      ['a4', 'restore'],
+    ])
+  })
+
+  it('never asks for mark_na from the rail, where there is no room to name it', () => {
+    setup()
+    for (const el of screen.getAllByTestId(/^requirement-toggle-/)) {
+      expect(el.getAttribute('data-action')).not.toBe('mark_na')
+    }
   })
 
   it('shows an indicator only where the row data supports one', () => {

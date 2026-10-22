@@ -22,24 +22,32 @@ import { clsx } from 'clsx'
 import { Check, Paperclip, MessageSquare } from 'lucide-react'
 import type { ChecklistItemData } from '../ui/checklist/types'
 import { userName } from '../ui/checklist/types'
+import {
+  statusOf, primaryAction, isSatisfied, ACTION_LABEL,
+  type RequirementAction,
+} from '../../lib/asset-work/requirement-status'
 
 export interface RequirementsNavigatorProps {
   items: readonly ChecklistItemData[]
   /** `asset_checklist_items.id` — stable, never an array index. */
   selectedId: string | null
   onSelect: (id: string) => void
-  onToggleStatus: (id: string) => void
+  /**
+   * The named transition this row's control performs. The rail has room
+   * for one, so it is the primary action for the row's current state —
+   * complete when open, reopen when complete, restore when not
+   * applicable. Marking a requirement not applicable is offered on the
+   * detail surface, where a control can be named in words.
+   */
+  onAction: (id: string, action: RequirementAction) => void
   isEditable: boolean
   /** The existing "Add item" control, passed in rather than rebuilt. */
   addSlot?: React.ReactNode
   className?: string
 }
 
-const statusOf = (item: ChecklistItemData) =>
-  item.status || (item.completed ? 'completed' : 'unchecked')
-
 export function RequirementsNavigator({
-  items, selectedId, onSelect, onToggleStatus, isEditable, addSlot, className,
+  items, selectedId, onSelect, onAction, isEditable, addSlot, className,
 }: RequirementsNavigatorProps) {
   return (
     <div className={clsx('flex min-h-0 flex-col', className)} data-testid="requirements-navigator">
@@ -47,7 +55,8 @@ export function RequirementsNavigator({
         {items.map(item => {
           const status = statusOf(item)
           const selected = item.id === selectedId
-          const done = status === 'completed' || status === 'na'
+          const done = isSatisfied(status)
+          const action = primaryAction(status)
           return (
             <li key={item.id}>
               <div
@@ -62,10 +71,13 @@ export function RequirementsNavigator({
                     only thing here that writes. */}
                 <button
                   type="button"
-                  onClick={() => onToggleStatus(item.id)}
+                  onClick={() => onAction(item.id, action)}
                   disabled={!isEditable}
-                  aria-label={done ? `Reopen ${item.text}` : `Complete ${item.text}`}
+                  /* The label is the action, so it can never promise a
+                     transition the handler will not perform. */
+                  aria-label={`${ACTION_LABEL[action]}: ${item.text}`}
                   data-testid={`requirement-toggle-${item.id}`}
+                  data-action={action}
                   className={clsx(
                     'mt-[2px] flex h-[17px] w-[17px] flex-shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors',
                     status === 'completed' ? 'border-emerald-500 bg-emerald-500 text-white'

@@ -17,6 +17,12 @@ import { supabase } from '../../../lib/supabase'
 import { useSidebarStore } from '../../../stores/sidebarStore'
 import { useOrganizationOptional } from '../../../contexts/OrganizationContext'
 import { assetsPath } from '../../../lib/storage/asset-paths'
+import {
+  statusOf, primaryAction, secondaryActions, ACTION_LABEL,
+  type RequirementAction,
+} from '../../../lib/asset-work/requirement-status'
+import { ConfirmDialog } from '../ConfirmDialog'
+import { useToastOptional } from '../../common/Toast'
 import { MentionInput } from '../MentionInput'
 import { WorkRequestModal } from './WorkRequestModal'
 import {
@@ -77,7 +83,15 @@ interface DecisionItemCardProps {
   isEditable: boolean
   isExpanded: boolean
   onToggleExpand: () => void
-  onToggleStatus: () => void
+  /**
+   * The row layout's circle — the primary action for the current status.
+   * Optional because the `row` layout currently has no caller: the
+   * accordion it belonged to was replaced by the detail surface, which
+   * uses the named `onStatusAction` controls instead.
+   */
+  onToggleStatus?: () => void
+  /** The detail layout's named controls. See `OperationalItemCard`. */
+  onStatusAction?: (action: RequirementAction) => void
   onRemoveCustom?: () => void
   currentUser: { id: string; email?: string; user_metadata?: { first_name?: string; last_name?: string } } | null
   /** Scope for table selection: 'asset' (default) or 'portfolio' */
@@ -94,7 +108,7 @@ interface DecisionItemCardProps {
 
 export function DecisionItemCard({
   item, stageId, assetId, workflowId, isEditable, isExpanded,
-  onToggleExpand, onToggleStatus, onRemoveCustom, currentUser,
+  onToggleExpand, onToggleStatus, onStatusAction, onRemoveCustom, currentUser,
   scopeType = 'asset', layout = 'row',
 }: DecisionItemCardProps) {
   /* In the detail layout the body IS the surface. */
@@ -109,7 +123,13 @@ export function DecisionItemCard({
   // instead fails loudly at upload time, where assetsPath() rejects it.
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const openInspector = useSidebarStore(s => s.openInspector)
-  const status = item.status || (item.completed ? 'completed' : 'unchecked')
+  const status = statusOf(item)
+  const primary = primaryAction(status)
+  const toast = useToastOptional()
+  /* Awaiting confirmation, in the product's dialog rather than the
+     browser's. Both used to be a bare `confirm('Delete?')`. */
+  const [pendingSignalDelete, setPendingSignalDelete] = useState<string | null>(null)
+  const [pendingEvidenceDelete, setPendingEvidenceDelete] = useState<{ id: string; name: string } | null>(null)
 
   // ─── Local state ────────────────────────────────────────────────────
   const [editingCommentary, setEditingCommentary] = useState(false)
@@ -569,21 +589,38 @@ export function DecisionItemCard({
         {/* ── Detail header: the requirement as the subject ─────── */}
         {detail && (
           <div className="mb-3 flex items-start gap-3">
-            <button
-              onClick={onToggleStatus}
-              disabled={!isEditable}
-              aria-label={status === 'completed' ? 'Reopen this requirement' : 'Complete this requirement'}
-              data-testid="requirement-detail-status"
-              className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors ${
-                status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white'
-                : status === 'na' ? 'bg-gray-400 border-gray-400 text-white'
-                : isEditable ? 'border-gray-300 hover:border-gray-400 dark:border-gray-600' : 'border-gray-200 dark:border-gray-700'
-              } ${!isEditable ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-            >
-              {status === 'completed' && <Check className="h-3 w-3" strokeWidth={3} />}
-              {status === 'na' && <span className="text-[7px] font-bold leading-none">N/A</span>}
-            </button>
-            <div className="min-w-0 flex-1">
+            {/* Named actions, matching the operational card: the label is
+                the transition, and a completed requirement cannot be made
+                not applicable in one step. */}
+            <div className="order-2 flex flex-shrink-0 items-center gap-1.5">
+              <button
+                onClick={() => onStatusAction?.(primary)}
+                disabled={!isEditable}
+                data-testid="requirement-detail-status"
+                data-action={primary}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  !isEditable ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800'
+                  : primary === 'complete'
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                }`}
+              >
+                {primary === 'complete' && <Check className="h-3 w-3" strokeWidth={3} />}
+                {ACTION_LABEL[primary]}
+              </button>
+              {isEditable && secondaryActions(status).map(a => (
+                <button
+                  key={a}
+                  onClick={() => onStatusAction?.(a)}
+                  data-testid={`requirement-detail-action-${a}`}
+                  data-action={a}
+                  className="rounded-md px-2 py-1 text-[11px] font-medium text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                >
+                  {ACTION_LABEL[a]}
+                </button>
+              ))}
+            </div>
+            <div className="order-1 min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <h3
                   data-testid="requirement-detail-title"
@@ -613,7 +650,7 @@ export function DecisionItemCard({
         {!detail && (
         <div className="flex items-start gap-2.5 px-3 py-2.5 cursor-pointer select-none" onClick={onToggleExpand}>
           <button
-            onClick={e => { e.stopPropagation(); onToggleStatus() }}
+            onClick={e => { e.stopPropagation(); onToggleStatus?.() }}
             disabled={!isEditable}
             className={`flex-shrink-0 w-[18px] h-[18px] mt-[1px] rounded-full border-[1.5px] flex items-center justify-center transition-colors ${
               status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white'
@@ -771,11 +808,11 @@ export function DecisionItemCard({
                     <div key={s.id} className="group/sig">{isEditing ? (
                       <div className="p-2.5 bg-gray-50 rounded-lg dark:bg-gray-900"><textarea value={editingSignalText} onChange={e => setEditingSignalText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); editSignalM.mutate({ id: s.id, text: editingSignalText.trim() }) }; if (e.key === 'Escape') setEditingSignalId(null) }} className="w-full text-[12px] px-0 py-0 border-0 focus:outline-none focus:ring-0 resize-none bg-transparent" rows={2} autoFocus /><div className="flex gap-2 mt-1.5"><button onClick={() => editSignalM.mutate({ id: s.id, text: editingSignalText.trim() })} className="text-[11px] font-medium bg-gray-900 text-white px-3 py-0.5 rounded-md">Save</button><button onClick={() => setEditingSignalId(null)} className="text-[11px] text-gray-400">Cancel</button></div></div>
                     ) : (
-                      <div className="flex items-start gap-2.5"><span className={`text-[11px] mt-[1px] flex-shrink-0 ${meta.color}`}>{meta.icon}</span><div className="flex-1 min-w-0"><p className="text-[12px] text-gray-700 leading-relaxed dark:text-gray-300">{s.comment_text}</p><div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-gray-400"><span>{userName(s.user)} · {relativeTime(s.created_at)}</span>{isOwn && <><span className="mx-0.5">·</span><button onClick={() => { setEditingSignalId(s.id); setEditingSignalText(s.comment_text) }} className="hover:text-blue-600">Edit</button><span className="mx-0.5">·</span><button onClick={() => { if (confirm('Delete?')) deleteSignalM.mutate(s.id) }} className="hover:text-red-500">Delete</button></>}</div></div></div>
+                      <div className="flex items-start gap-2.5"><span className={`text-[11px] mt-[1px] flex-shrink-0 ${meta.color}`}>{meta.icon}</span><div className="flex-1 min-w-0"><p className="text-[12px] text-gray-700 leading-relaxed dark:text-gray-300">{s.comment_text}</p><div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-gray-400"><span>{userName(s.user)} · {relativeTime(s.created_at)}</span>{isOwn && <><span className="mx-0.5">·</span><button onClick={() => { setEditingSignalId(s.id); setEditingSignalText(s.comment_text) }} className="hover:text-blue-600">Edit</button><span className="mx-0.5">·</span><button onClick={() => setPendingSignalDelete(s.id)} className="hover:text-red-500">Delete</button></>}</div></div></div>
                     )}</div>
                   ) })}
                   {evidence.map(ev => (
-                    <div key={ev.id} className="group/ev flex items-center gap-2.5 py-0.5"><Paperclip className="w-3 h-3 text-gray-300 flex-shrink-0" /><div className="flex-1 min-w-0"><span className="text-[12px] text-gray-700 dark:text-gray-300">{ev.file_name}</span>{ev.description && <span className="text-[10px] ml-1.5 text-gray-400">{ev.description}</span>}</div><div className="flex gap-1.5 text-[10px] text-gray-400 flex-shrink-0"><button onClick={() => handleDownload(ev)} className="hover:text-blue-600">Download</button>{isEditable && <button onClick={() => { if (confirm('Remove?')) deleteEvidenceM.mutate(ev.id) }} className="hover:text-red-500">Remove</button>}</div></div>
+                    <div key={ev.id} className="group/ev flex items-center gap-2.5 py-0.5"><Paperclip className="w-3 h-3 text-gray-300 flex-shrink-0" /><div className="flex-1 min-w-0"><span className="text-[12px] text-gray-700 dark:text-gray-300">{ev.file_name}</span>{ev.description && <span className="text-[10px] ml-1.5 text-gray-400">{ev.description}</span>}</div><div className="flex gap-1.5 text-[10px] text-gray-400 flex-shrink-0"><button onClick={() => handleDownload(ev)} className="hover:text-blue-600">Download</button>{isEditable && <button onClick={() => setPendingEvidenceDelete({ id: ev.id, name: ev.file_name })} className="hover:text-red-500">Remove</button>}</div></div>
                   ))}
                 </div>
               </div>
@@ -907,6 +944,36 @@ export function DecisionItemCard({
           onClose={() => setShowWorkRequestModal(false)}
         />
       )}
+
+      {/* Destructive confirmations. Cancel mutates nothing, and neither
+          path touches the commentary or any other open editor. */}
+      <ConfirmDialog
+        isOpen={pendingSignalDelete !== null}
+        onClose={() => setPendingSignalDelete(null)}
+        onConfirm={() => {
+          if (pendingSignalDelete) deleteSignalM.mutate(pendingSignalDelete)
+          setPendingSignalDelete(null)
+        }}
+        title="Delete this note?"
+        message="Your supporting note will be removed from this requirement for everyone. This cannot be undone."
+        confirmText="Delete note"
+        isLoading={deleteSignalM.isPending}
+      />
+      <ConfirmDialog
+        isOpen={pendingEvidenceDelete !== null}
+        onClose={() => setPendingEvidenceDelete(null)}
+        onConfirm={() => {
+          if (pendingEvidenceDelete) deleteEvidenceM.mutate(pendingEvidenceDelete.id)
+          setPendingEvidenceDelete(null)
+        }}
+        title="Remove this file?"
+        message={pendingEvidenceDelete
+          ? `“${pendingEvidenceDelete.name}” will be detached from this requirement. The stored file itself is not deleted.`
+          : ''}
+        confirmText="Remove file"
+        variant="warning"
+        isLoading={deleteEvidenceM.isPending}
+      />
     </>
   )
 }

@@ -50,6 +50,26 @@ export function useToast() {
   return context
 }
 
+/**
+ * The same thing, for a component that must not take the page down when
+ * nobody mounted a provider — a leaf rendered by a harness, a story, or a
+ * test. Matches `useOrganizationOptional`: a throw in a leaf costs the
+ * whole surface, and a missing toast costs a message.
+ *
+ * The returned object has the same shape, so callers need no null checks.
+ */
+const NO_TOAST: Pick<ToastContextType, 'showToast' | 'success' | 'error' | 'info' | 'warning'> = {
+  showToast: () => {},
+  success: () => {},
+  error: () => {},
+  info: () => {},
+  warning: () => {},
+}
+
+export function useToastOptional() {
+  return useContext(ToastContext) ?? NO_TOAST
+}
+
 interface ToastProviderProps {
   children: ReactNode
   maxToasts?: number

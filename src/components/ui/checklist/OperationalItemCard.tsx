@@ -18,6 +18,12 @@ import { useOrganizationOptional } from '../../../contexts/OrganizationContext'
 import { assetsPath } from '../../../lib/storage/asset-paths'
 import { draftKey, readDraft, writeDraft, clearDraft } from '../../../lib/asset-work/requirement-drafts'
 import {
+  statusOf, primaryAction, secondaryActions, ACTION_LABEL,
+  type RequirementAction,
+} from '../../../lib/asset-work/requirement-status'
+import { ConfirmDialog } from '../ConfirmDialog'
+import { useToastOptional } from '../../common/Toast'
+import {
   ChecklistItemData,
   userName, userInitials, avatarColor, relativeTime,
 } from './types'
@@ -32,7 +38,17 @@ interface OperationalItemCardProps {
   isEditable: boolean
   isExpanded: boolean
   onToggleExpand: () => void
-  onToggleStatus: () => void
+  /**
+   * The row layout's circle: performs the primary action for the current
+   * status, which the parent resolves. Kept as a nullary callback because
+   * the row has one control and one destination.
+   */
+  onToggleStatus?: () => void
+  /**
+   * The detail layout's named controls. Each asks for one explicit
+   * transition; the card never decides where a status should go next.
+   */
+  onStatusAction?: (action: RequirementAction) => void
   onRemoveCustom?: () => void
   currentUser: { id: string; email?: string; user_metadata?: { first_name?: string; last_name?: string } } | null
   scopeType?: 'asset' | 'portfolio'
@@ -56,7 +72,7 @@ interface OperationalItemCardProps {
 
 export function OperationalItemCard({
   item, stageId, assetId, workflowId, isEditable, isExpanded,
-  onToggleExpand, onToggleStatus, onRemoveCustom, currentUser,
+  onToggleExpand, onToggleStatus, onStatusAction, onRemoveCustom, currentUser,
   scopeType = 'asset', layout = 'row',
 }: OperationalItemCardProps) {
   /* In the detail layout the body is the surface; there is nothing to
@@ -71,7 +87,9 @@ export function OperationalItemCard({
   // a throw in a leaf like this takes the whole surface down. A null org
   // instead fails loudly at upload time, where assetsPath() rejects it.
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
-  const status = item.status || (item.completed ? 'completed' : 'unchecked')
+  const toast = useToastOptional()
+  const status = statusOf(item)
+  const primary = primaryAction(status)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ─── Local state ────────────────────────────────────────────────────
@@ -95,6 +113,12 @@ export function OperationalItemCard({
   const [ownerSearch, setOwnerSearch] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  /*
+   * The comment awaiting confirmation. A native `confirm()` used to sit
+   * here: it blocked the whole tab, carried no product styling, and said
+   * only "Delete comment?" — not whose, and not that it cannot be undone.
+   */
+  const [pendingCommentDelete, setPendingCommentDelete] = useState<string | null>(null)
   const [addingComment, setAddingComment] = useState(() => keptComment !== null)
   const [commentText, setCommentText] = useState(() => keptComment ?? '')
 
@@ -183,6 +207,18 @@ export function OperationalItemCard({
       if ('notes' in fields) clearDraft(notesDraftKey)
       qc.invalidateQueries({ queryKey: ['existing-checklist-items', assetId, workflowId] })
       qc.invalidateQueries({ queryKey: ['asset-checklist', assetId, workflowId] })
+    },
+    /*
+     * This wrote assignment, notes and the due date and reported nothing
+     * when it failed: the picker closed, the row looked assigned, and the
+     * database had not changed. Refetching is what puts the row back.
+     */
+    onError: (_e, fields) => {
+      qc.invalidateQueries({ queryKey: ['existing-checklist-items', assetId, workflowId] })
+      toast.error(
+        'assignee_id' in fields ? 'The assignment was not saved.' : 'That change was not saved.',
+        { description: 'The requirement has been put back as it was.' },
+      )
     },
   })
 
@@ -321,26 +357,41 @@ export function OperationalItemCard({
             </div>
 
             {/*
-              Named, not a circle. The rail's circles complete a requirement
-              you are not reading; this is the one you are, and it says what
-              it will do. Still the only control on the surface that changes
-              status, and still separate from selecting.
+              Named actions, not a cycle. Each button states its
+              destination and performs exactly that transition; there is no
+              control here that can take a finished requirement somewhere
+              the reader did not ask for. Marking a completed requirement
+              not applicable takes two deliberate steps — Reopen, then Mark
+              not applicable — because it is two decisions.
             */}
-            <button
-              onClick={onToggleStatus}
-              disabled={!isEditable}
-              data-testid="requirement-detail-status"
-              className={`flex flex-shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                !isEditable ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800'
-                : status === 'completed' || status === 'na'
-                  ? 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
-                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
-              }`}
-            >
-              {status === 'completed' || status === 'na'
-                ? 'Reopen'
-                : <><Check className="h-3 w-3" strokeWidth={3} /> Mark complete</>}
-            </button>
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              <button
+                onClick={() => onStatusAction?.(primary)}
+                disabled={!isEditable}
+                data-testid="requirement-detail-status"
+                data-action={primary}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  !isEditable ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800'
+                  : primary === 'complete'
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                }`}
+              >
+                {primary === 'complete' && <Check className="h-3 w-3" strokeWidth={3} />}
+                {ACTION_LABEL[primary]}
+              </button>
+              {isEditable && secondaryActions(status).map(a => (
+                <button
+                  key={a}
+                  onClick={() => onStatusAction?.(a)}
+                  data-testid={`requirement-detail-action-${a}`}
+                  data-action={a}
+                  className="rounded-md px-2 py-1 text-[11px] font-medium text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                >
+                  {ACTION_LABEL[a]}
+                </button>
+              ))}
+            </div>
 
             {item.isCustom && isEditable && (
               <button
@@ -362,7 +413,7 @@ export function OperationalItemCard({
         onClick={onToggleExpand}
       >
         <button
-          onClick={e => { e.stopPropagation(); onToggleStatus() }}
+          onClick={e => { e.stopPropagation(); onToggleStatus?.() }}
           disabled={!isEditable}
           className={`flex-shrink-0 w-[18px] h-[18px] mt-[1px] rounded-full border-[1.5px] flex items-center justify-center transition-colors ${
             status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white'
@@ -449,11 +500,33 @@ export function OperationalItemCard({
                         <span>{userName(u)}</span>
                       </button>
                     ))}
+                    {/*
+                      The way back to nobody. Assignment had no inverse at
+                      all: once a requirement was given to someone there
+                      was no control that could take it back, so a wrong
+                      pick was permanent. Same mutation, same picker, one
+                      more row — and `assignee_id: null` touches only that
+                      column, so notes, files, comments and completion are
+                      untouched.
+                    */}
+                    {item.assignee_id && (
+                      <button
+                        data-testid="requirement-unassign"
+                        className="w-full border-t border-gray-100 px-2 py-1 text-left text-[11px] text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                        onClick={() => {
+                          updateFieldM.mutate({ assignee_id: null })
+                          setAssigningOwner(false); setOwnerSearch('')
+                        }}
+                      >
+                        Clear assignment
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : assigneeName ? (
                 <button
                   onClick={() => isEditable && setAssigningOwner(true)}
+                  aria-label={`Change or clear the assignee, currently ${assigneeName}`}
                   className="flex items-center gap-1.5 text-[11px] text-gray-700 hover:text-blue-600 transition-colors dark:text-gray-300"
                 >
                   <div className={`w-4 h-4 rounded-full ${avatarColor(assigneeName)} flex items-center justify-center`}>
@@ -671,7 +744,8 @@ export function OperationalItemCard({
                           <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">{userName(cUser)}</span>
                           <span className="text-[10px] text-gray-400">{relativeTime(c.created_at)}</span>
                           {isOwn && (
-                            <button onClick={() => { if (confirm('Delete comment?')) deleteCommentM.mutate(c.id) }}
+                            <button onClick={() => setPendingCommentDelete(c.id)}
+                              aria-label="Delete this comment"
                               className="opacity-0 group-hover/c:opacity-100 p-0.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 ml-auto">
                               <Trash2 className="w-2.5 h-2.5" />
                             </button>
@@ -727,6 +801,22 @@ export function OperationalItemCard({
           )}
         </div>
       )}
+
+      {/* Destructive confirmation, in the product's own dialog. States
+          what goes and that it does not come back; Cancel mutates
+          nothing, and neither path touches the notes or comment drafts. */}
+      <ConfirmDialog
+        isOpen={pendingCommentDelete !== null}
+        onClose={() => setPendingCommentDelete(null)}
+        onConfirm={() => {
+          if (pendingCommentDelete) deleteCommentM.mutate(pendingCommentDelete)
+          setPendingCommentDelete(null)
+        }}
+        title="Delete this comment?"
+        message="Your comment will be removed from this requirement for everyone. This cannot be undone."
+        confirmText="Delete comment"
+        isLoading={deleteCommentM.isPending}
+      />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { Check, Info, AlertTriangle, Calendar, Plus, ChevronDown, Zap, Target, Clock, BrainCircuit, Settings2 } from 'lucide-react'
 import { Badge } from './Badge'
@@ -15,7 +15,12 @@ import { StageActionBar } from '../workflow/StageActionBar'
 import { RequirementsNavigator } from '../workflow/RequirementsNavigator'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useToastOptional } from '../common/Toast'
 import { useOrganization } from '../../contexts/OrganizationContext'
+import {
+  statusOf, resolveTransition, completionMetadata, isSatisfied,
+  type RequirementAction,
+} from '../../lib/asset-work/requirement-status'
 import {
   STAGE_DEADLINE_ORG_SELECT, STAGE_DEADLINE_ORG_FILTER, workflowDeadlinesKey,
 } from '../../lib/deadlines/stage-deadlines'
@@ -197,6 +202,13 @@ export function InvestmentTimeline({
   onPriorityChange
 }: InvestmentTimelineProps) {
   const { user } = useAuth()
+  const toast = useToastOptional()
+  /*
+   * Requirements with a write in flight, keyed `stageId:itemId`. A ref and
+   * not state: this guards a click, and re-rendering on it would be a
+   * render per keystroke of the mouse.
+   */
+  const requirementWritesInFlight = useRef<Set<string>>(new Set())
   // asset_stage_deadlines is org-private; scope reads to the active org and key the query on it so an
   // org switch refetches rather than showing another org's deadlines.
   const { currentOrgId } = useOrganization()
@@ -546,7 +558,7 @@ export function InvestmentTimeline({
     },
     onError: (error) => {
       console.error('Error saving workflow priority:', error)
-      alert('Failed to save process priority. Please try again.')
+      toast.error('The priority was not saved.', { description: 'Try again in a moment.' })
     }
   })
 
@@ -682,7 +694,7 @@ export function InvestmentTimeline({
     },
     onError: (error) => {
       console.error('Error managing workflow progress:', error)
-      alert('Failed to update process. Please try again.')
+      toast.error('The process was not updated.', { description: 'Nothing was changed. Try again in a moment.' })
     }
   })
 
@@ -776,6 +788,16 @@ export function InvestmentTimeline({
       comment?: string
       completedAt?: string
       completedBy?: string
+      /** Released in `onSettled`, so a failed write cannot wedge the row. */
+      inFlightKey?: string
+      /** The row as it was, for putting back when the write fails. */
+      previous?: {
+        completed: boolean
+        status: 'unchecked' | 'completed' | 'na'
+        completedAt?: string
+        completedBy?: string
+        completedByUser?: ChecklistItem['completedByUser']
+      }
     }) => {
       const { error } = await supabase
         .from('asset_checklist_items')
@@ -797,10 +819,33 @@ export function InvestmentTimeline({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist', assetId, workflowId] })
     },
-    onError: (error) => {
+    /*
+     * A failed write used to leave the optimistic row showing a status the
+     * database never accepted, behind a dialog the reader had to dismiss
+     * before they could see it. The row goes back to what it was, and the
+     * message says so.
+     */
+    onError: (error, vars) => {
       console.error('Error saving checklist item:', error)
-      alert('Failed to save checklist item. Please try again.')
-    }
+      /*
+       * Only the explicit-action path rolls back and reports. The stage
+       * advance also uses this mutation, to stamp requirements that were
+       * already done, and it catches and reports for itself — without
+       * this guard one failure there would raise two toasts saying
+       * different things.
+       */
+      if (!vars.previous) return
+      setStageChecklists(prev => ({
+        ...prev,
+        [vars.stageId]: prev[vars.stageId]?.map(item =>
+          item.id === vars.itemId ? { ...item, ...vars.previous } : item,
+        ) || [],
+      }))
+      toast.error('That change was not saved.', { description: 'The requirement has been put back as it was.' })
+    },
+    onSettled: (_d, _e, vars) => {
+      if (vars?.inFlightKey) requirementWritesInFlight.current.delete(vars.inFlightKey)
+    },
   })
 
   // Initialize checklists for all stages, merging with saved data and custom items
@@ -1058,7 +1103,7 @@ export function InvestmentTimeline({
 
   const handleAdvanceStage = async () => {
     if (!assetId) {
-      alert('No asset ID available. Cannot advance stage.')
+      toast.error('This asset could not be identified, so the stage was not advanced.')
       return
     }
     if (isAdvancing) return
@@ -1155,7 +1200,9 @@ export function InvestmentTimeline({
         setShowStageDetails(nextStage.id)
       } catch (error) {
         console.error('Error saving checklist state:', error)
-        alert('Failed to save checklist state. Please try again.')
+        toast.error('The stage advanced, but the requirement timestamps were not saved.', {
+          description: 'The requirements themselves are unchanged.',
+        })
       } finally {
         setIsAdvancing(false)
       }
@@ -1196,40 +1243,56 @@ export function InvestmentTimeline({
     }
   }
 
-  const handleChecklistToggle = (stageId: string, itemId: string) => {
+  /*
+   * One named transition, not a cycle.
+   *
+   * The caller says what it wants to happen — complete, reopen, mark not
+   * applicable, restore — and `resolveTransition` decides whether that
+   * applies from where the requirement actually is. A control can no
+   * longer be labelled one thing and do another, and a stale click that
+   * arrives after somebody else moved the row is refused with a reason
+   * instead of cycling it somewhere nobody asked for.
+   */
+  const applyRequirementAction = (
+    stageId: string,
+    itemId: string,
+    action: RequirementAction,
+  ) => {
     if (!isStageEditable(stageId)) {
-      if (workflowProgress?.is_completed) {
-        alert('This process has been marked complete. Click "Resume Process" to continue working on it.')
-      } else {
-        alert('This checklist is locked. You can only edit items from the current stage.')
-      }
+      toast.warning(
+        workflowProgress?.is_completed
+          ? 'This process is marked complete. Resume it to keep working.'
+          : 'This checklist is locked. Only the current stage can be edited.',
+      )
       return
     }
 
     if (!assetId) {
-      alert('No asset ID available. Cannot save checklist changes.')
+      toast.error('This asset could not be identified, so the change was not saved.')
       return
     }
 
     const currentItem = stageChecklists[stageId]?.find(item => item.id === itemId)
     if (!currentItem) return
 
-    // Cycle through states: unchecked -> completed -> na -> unchecked
-    const currentStatus = currentItem.status || (currentItem.completed ? 'completed' : 'unchecked')
-    let newStatus: 'unchecked' | 'completed' | 'na'
+    /* One write per requirement at a time. A second click while the first
+       is in flight would race it and could land the older status last. */
+    const inFlightKey = `${stageId}:${itemId}`
+    if (requirementWritesInFlight.current.has(inFlightKey)) return
 
-    if (currentStatus === 'unchecked') {
-      newStatus = 'completed'
-    } else if (currentStatus === 'completed') {
-      newStatus = 'na'
-    } else {
-      newStatus = 'unchecked'
+    const currentStatus = statusOf(currentItem)
+    const transition = resolveTransition(currentStatus, action)
+    if (!transition.ok || !transition.to) {
+      if (transition.reason) toast.warning(transition.reason)
+      return
     }
 
-    const newCompleted = newStatus === 'completed'
-    const isDone = newStatus === 'completed' || newStatus === 'na'
-    const newCompletedAt = isDone ? new Date().toISOString() : undefined
-    const newCompletedBy = isDone ? user?.id : undefined
+    const newStatus = transition.to
+    const meta = completionMetadata(newStatus, user?.id)
+    const newCompleted = meta.completed
+    const isDone = isSatisfied(newStatus)
+    const newCompletedAt = meta.completedAt
+    const newCompletedBy = meta.completedBy
     const newCompletedByUser = isDone && user ? {
       id: user.id,
       email: user.email || '',
@@ -1253,6 +1316,7 @@ export function InvestmentTimeline({
     }))
 
     // Save to database
+    requirementWritesInFlight.current.add(inFlightKey)
     saveChecklistItemMutation.mutate({
       assetId,
       stageId,
@@ -1261,7 +1325,17 @@ export function InvestmentTimeline({
       status: newStatus,
       comment: currentItem.comment,
       completedAt: newCompletedAt,
-      completedBy: newCompletedBy
+      completedBy: newCompletedBy,
+      /* Carried so the optimistic row can be put back if the write
+         fails, and so the guard is released on both paths. */
+      inFlightKey,
+      previous: {
+        completed: !!currentItem.completed,
+        status: currentStatus,
+        completedAt: currentItem.completedAt,
+        completedBy: currentItem.completedBy,
+        completedByUser: currentItem.completedByUser,
+      },
     })
   }
 
@@ -1977,7 +2051,7 @@ export function InvestmentTimeline({
                           items={items}
                           selectedId={selectedRequirement}
                           onSelect={setSelectedRequirement}
-                          onToggleStatus={(id) => handleChecklistToggle(showStageDetails, id)}
+                          onAction={(id, action) => applyRequirementAction(showStageDetails, id, action)}
                           isEditable={isEditable}
                         />
 
@@ -2005,6 +2079,15 @@ export function InvestmentTimeline({
                                 </div>
                               )
                             }
+                            /*
+                              No asset, no requirement surface. The cards
+                              require an asset id and gate every query on
+                              it; rendering one without it produced a card
+                              that could read nothing and write nothing.
+                              This was previously masked by a missing-prop
+                              type error on the same object.
+                            */
+                            if (!assetId) return null
                             const props = {
                               item: selected, stageId: showStageDetails, assetId, workflowId,
                               isEditable,
@@ -2013,7 +2096,8 @@ export function InvestmentTimeline({
                                  contract is shared with the row. */
                               isExpanded: true,
                               onToggleExpand: () => {},
-                              onToggleStatus: () => handleChecklistToggle(showStageDetails, selected.id),
+                              onStatusAction: (action: RequirementAction) =>
+                                applyRequirementAction(showStageDetails, selected.id, action),
                               onRemoveCustom: selected.isCustom
                                 ? () => handleRemoveCustomItem(showStageDetails, selected.id)
                                 : undefined,
