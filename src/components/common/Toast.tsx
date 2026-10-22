@@ -5,42 +5,14 @@
  * Uses React Context for global toast management.
  */
 
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react'
+import React, { useContext, useState, useCallback, ReactNode } from 'react'
 import { CheckCircle, XCircle, Info, AlertTriangle, X } from 'lucide-react'
+import { ToastContext } from './toast-context'
+import type { Toast, ToastAction, ToastOptions, ToastType } from './toast-context'
 
-export type ToastType = 'success' | 'error' | 'info' | 'warning'
-
-export interface ToastAction {
-  label: string
-  onClick: () => void
-}
-
-export interface Toast {
-  id: string
-  type: ToastType
-  message: string
-  description?: string
-  duration?: number
-  action?: ToastAction
-}
-
-export interface ToastOptions {
-  description?: string
-  duration?: number
-  action?: ToastAction
-}
-
-interface ToastContextType {
-  toasts: Toast[]
-  showToast: (type: ToastType, message: string, options?: ToastOptions) => void
-  hideToast: (id: string) => void
-  success: (message: string, options?: string | ToastOptions) => void
-  error: (message: string, options?: string | ToastOptions) => void
-  info: (message: string, options?: string | ToastOptions) => void
-  warning: (message: string, options?: string | ToastOptions) => void
-}
-
-const ToastContext = createContext<ToastContextType | undefined>(undefined)
+/* Re-exported so the 46 files that import these from here keep working.
+   Type-only exports do not cost the fast-refresh boundary. */
+export type { Toast, ToastAction, ToastOptions, ToastType }
 
 export function useToast() {
   const context = useContext(ToastContext)
@@ -50,25 +22,6 @@ export function useToast() {
   return context
 }
 
-/**
- * The same thing, for a component that must not take the page down when
- * nobody mounted a provider — a leaf rendered by a harness, a story, or a
- * test. Matches `useOrganizationOptional`: a throw in a leaf costs the
- * whole surface, and a missing toast costs a message.
- *
- * The returned object has the same shape, so callers need no null checks.
- */
-const NO_TOAST: Pick<ToastContextType, 'showToast' | 'success' | 'error' | 'info' | 'warning'> = {
-  showToast: () => {},
-  success: () => {},
-  error: () => {},
-  info: () => {},
-  warning: () => {},
-}
-
-export function useToastOptional() {
-  return useContext(ToastContext) ?? NO_TOAST
-}
 
 interface ToastProviderProps {
   children: ReactNode

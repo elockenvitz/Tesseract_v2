@@ -15,7 +15,7 @@ import { StageActionBar } from '../workflow/StageActionBar'
 import { RequirementsNavigator } from '../workflow/RequirementsNavigator'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
-import { useToastOptional } from '../common/Toast'
+import { useToastOptional } from '../common/toast-context'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import {
   statusOf, resolveTransition, completionMetadata, isSatisfied,
