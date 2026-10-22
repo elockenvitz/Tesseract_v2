@@ -97,6 +97,108 @@ describe('selection is reading, not writing', () => {
   })
 })
 
+describe('the requirement reads as a workbench, not four thin rows', () => {
+  it('states the requirement and its status once, in the header', () => {
+    // The body carried a second "Completed by …" strip under the sections
+    // while the header already said it.
+    expect(OP).toMatch(/item\.completedAt && !detail/)
+  })
+
+  it('names the completion action instead of offering a bare circle', () => {
+    expect(OP).toMatch(/Mark complete/)
+    expect(OP).toMatch(/'Reopen'/)
+    expect(OP).toMatch(/data-testid="requirement-detail-status"/)
+  })
+
+  it('makes the notes the primary surface at a reading width', () => {
+    expect(OP).toMatch(/Working notes/)
+    expect((OP.match(/max-w-\[78ch\]/g) ?? []).length).toBeGreaterThanOrEqual(3)
+    expect(DEC).toMatch(/max-w-\[78ch\]/)
+  })
+
+  it('makes the saved notes their own edit affordance', () => {
+    // An "Edit" link above a paragraph is discoverable only if you look.
+    const at = OP.indexOf('data-testid="requirement-notes-body"')
+    expect(at).toBeGreaterThan(-1)
+    expect(OP.slice(Math.max(0, at - 300), at)).toMatch(/onClick=\{\(\) => \{ if \(isEditable\) openNotesEditor\(\) \}\}/)
+  })
+
+  it('lets Enter be a new paragraph in the detail notes editor', () => {
+    // A field that saves and closes on Enter cannot hold several
+    // sentences, which is what this field is for.
+    expect(OP).toMatch(/const save = detail\s*\?\s*e\.key === 'Enter' && \(e\.metaKey \|\| e\.ctrlKey\)\s*:\s*e\.key === 'Enter' && !e\.shiftKey/)
+  })
+
+  it('splits the supporting pair only where the pane is actually wide', () => {
+    // `lg` split a ~725px pane into two 340px columns, narrower than the
+    // single column they replaced.
+    expect(OP).toMatch(/xl:grid-cols-2/)
+    expect(OP).not.toMatch(/lg:grid-cols-2/)
+  })
+
+  it('keeps an empty requirement to one line and one action per area', () => {
+    expect(OP).toMatch(/data-testid="requirement-notes-empty"/)
+    expect(OP).toMatch(/No files attached\./)
+    expect(OP).toMatch(/No discussion yet\./)
+  })
+
+  it('reports a failed upload instead of just stopping the spinner', () => {
+    expect(OP).toMatch(/data-testid="requirement-upload-error"/)
+    expect(OP).toMatch(/setUploadError\(err instanceof Error \? err\.message : 'Upload failed'\)/)
+  })
+
+  it('does not promise a deletion the product does not perform', () => {
+    // `deleteFileM` drops the row and leaves the stored object. Reported
+    // separately; the control must not call that "delete".
+    expect(OP).toMatch(/Remove \$\{att\.file_name\} from this requirement/)
+    expect(OP).toMatch(/title="Remove from this requirement"/)
+  })
+
+  it('opens its own queries without depending on the caller faking expansion', () => {
+    expect(OP).not.toMatch(/enabled: !!item\.dbId && isExpanded/)
+    expect(OP).toMatch(/enabled: !!item\.dbId && bodyOpen/)
+    expect(OP).toMatch(/enabled: !!assetId && !!workflowId && bodyOpen/)
+  })
+})
+
+describe('unsent text is not discarded when the requirement changes', () => {
+  it('opens each editor from the kept draft', () => {
+    expect(OP).toMatch(/useState\(\(\) => keptNotes !== null\)/)
+    expect(OP).toMatch(/useState\(\(\) => keptNotes \?\? item\.notes \?\? ''\)/)
+    expect(OP).toMatch(/useState\(\(\) => keptComment !== null\)/)
+  })
+
+  it('writes a draft when typing, never merely on opening an editor', () => {
+    // Opening wrote a draft identical to the saved text, which reopened
+    // the editor next visit and claimed unsaved work that did not exist.
+    expect(OP).toMatch(/const openNotesEditor = \(\) => \{ setNotesDraft\(item\.notes \|\| ''\); setEditingNotes\(true\) \}/)
+    expect(OP).toMatch(/onChange=\{e => editNotes\(e\.target\.value\)\}/)
+    expect(OP).toMatch(/onChange=\{e => editComment\(e\.target\.value\)\}/)
+  })
+
+  it('shows the unsaved marker only when the text really differs', () => {
+    expect(OP).toMatch(/const notesDirty = notesDraft !== \(item\.notes \?\? ''\)/)
+    expect(OP).toMatch(/editingNotes && notesDirty/)
+  })
+
+  it('clears the draft once the text is saved, and only then', () => {
+    expect(OP).toMatch(/if \('notes' in fields\) clearDraft\(notesDraftKey\)/)
+    expect(OP).toMatch(/clearDraft\(commentDraftKey\)/)
+  })
+
+  it('keeps the draft when the editor is dismissed with Escape', () => {
+    const at = OP.indexOf("if (e.key === 'Escape') setEditingNotes(false)")
+    expect(at).toBeGreaterThan(-1)
+    expect(OP).toMatch(/if \(e\.key === 'Escape'\) setAddingComment\(false\)/)
+  })
+
+  it('never sends a draft to the database', () => {
+    const DRAFTS = strip(read('src/lib/asset-work/requirement-drafts.ts'))
+    expect(DRAFTS).not.toMatch(/supabase/)
+    expect(DRAFTS).toMatch(/sessionStorage/)
+  })
+})
+
 describe('the Asset tab remembers which requirement was open', () => {
   it('restores it, passes it down and saves it back', () => {
     expect(TAB).toMatch(/viewingRequirementId/)

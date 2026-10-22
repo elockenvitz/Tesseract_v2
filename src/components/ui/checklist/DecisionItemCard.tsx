@@ -654,8 +654,11 @@ export function DecisionItemCard({
           <div className={detail
             ? 'min-h-0 flex-1 overflow-y-auto rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'
             : 'border-t border-gray-100 dark:border-gray-800'}>
-            {/* Commentary — per-user entries */}
-            <div className="px-4 pt-3 pb-2 space-y-2.5">
+            {/* Commentary — per-user entries.
+                Already the primary surface of this card; in the detail
+                layout it only needs a reading width, because 1,194px of
+                prose is a line the eye loses. */}
+            <div className={detail ? 'max-w-[78ch] px-4 pt-3 pb-2 space-y-2.5' : 'px-4 pt-3 pb-2 space-y-2.5'}>
               {/* Other people's commentary */}
               {commentaries.filter(c => c.user_id !== currentUser?.id).map(c => (
                 <div key={c.id}>
