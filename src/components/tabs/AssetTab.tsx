@@ -37,7 +37,15 @@ import { AssetDecisionView } from '../asset/AssetDecisionView'
 import { DecisionTimeline } from '../asset/DecisionTimeline'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
 import { ResearchToolbarMenu } from '../asset/ResearchToolbarMenu'
-import { AssetWorkPane } from '../asset/work/AssetWorkPane'
+/*
+ * `AssetWorkPane` — the orientation band — is no longer mounted. The
+ * navigator carries the attention split, the ideas and the process summary,
+ * and the context strip carries the lists, so every capability it held is
+ * reachable without it. The component and its tests remain in the tree for
+ * one slice as the fallback if the navigator is rejected; slice 2 removes
+ * them. `WorkAttentionItem` still lives there and is the shape the attention
+ * hook returns.
+ */
 import { useAssetWorkAttention } from '../../hooks/useAssetWorkAttention'
 import { useAssetProcessSummary } from '../../hooks/useAssetProcessSummary'
 import { BookFilter } from '../shared/BookFilter'
@@ -74,6 +82,13 @@ import { scrollToSection } from '../../lib/asset-workspace/scroll-to-section'
 import { useAssetListMemberships } from '../../hooks/lists/useAssetListMemberships'
 import { useAssetConversations } from '../../hooks/ai/useAssetConversations'
 import { askAI } from '../../lib/engagement'
+import {
+  buildWorkItems, resolveSelection, type WorkItem,
+} from '../../lib/asset-work/work-items'
+import { WorkNavigator } from '../asset/work/WorkNavigator'
+import { IdeaWorkSurface } from '../asset/work/IdeaWorkSurface'
+import { AssetContextStrip } from '../asset/work/AssetContextStrip'
+import { openIdeaDetail } from '../../lib/navigation/open-idea'
 
 /* The nav's icons, beside the labels the model owns. Kept here rather than in
    the model so the model stays free of React imports. */
@@ -339,6 +354,23 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const toggleSection = (section: string) => {
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }))
   }
+
+  /*
+   * Which piece of work the reader was on, restored from the same tab state
+   * that restores the sub-page.
+   *
+   * Declared HERE, beside the other restored state, because the save effect
+   * a few hundred lines below lists it as a dependency — and a dependency
+   * array is evaluated on every render, so declaring it further down threw
+   * "Cannot access 'workItemKey' before initialization" and took the whole
+   * Asset page to the error boundary. The items it resolves against are
+   * built much later, once every source hook has run; only the KEY lives up
+   * here, which is all the save effect needs.
+   */
+  const [workItemKey, setWorkItemKey] = useState<string | null>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.activeWorkItem ?? null
+  })
 
   /*
    * Active sub-page selector (Snapshot, Research, Workflow, Decisions, Lists).
@@ -876,10 +908,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         // Decision Memory's book scope, so leaving and returning to the asset
         // restores the narrative the reader was reading.
         decisionBookId,
+        /*
+         * Which piece of work the reader was on.
+         *
+         * Only the KEY is stored, never a resolved item: the item it names
+         * may have completed or become unauthorized by the time the tab is
+         * reopened, and `resolveSelection` is what decides what to do about
+         * that. Persisting the item itself would resurrect work that is gone.
+         */
+        activeWorkItem: workItemKey,
       }
       TabStateManager.saveTabState(asset.id, stateToSave)
     }
-  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, decisionBookId, isTabStateInitialized])
+  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, decisionBookId, workItemKey, isTabStateInitialized])
 
   /*
    * The newest execution on this asset that the reader is authorized to see,
@@ -910,9 +951,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       stage: i.stage,
       rationale: i.rationale,
       portfolioName: i.portfolio?.name ?? null,
+      creatorName: i.creator
+        ? [i.creator.first_name, i.creator.last_name].filter(Boolean).join(' ') || null
+        : null,
+      updatedAgo: i.updated_at
+        ? formatDistanceToNow(new Date(i.updated_at), { addSuffix: true })
+        : null,
     })),
     [openItems],
   )
+
 
   const { events: decisionTimelineEvents } = useAssetDecisionTimeline({
     assetId: asset.id,
@@ -2192,6 +2240,66 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     assetId: asset.id,
     origin: { itemId: asset.id, surface: 'asset-work' },
   }), [asset.id, asset.symbol, asset.company_name])
+
+  /*
+   * ── The work items, and which one the surface is showing ───────────────
+   *
+   * Built from the data Work already loads: the attention split (the existing
+   * `portfolio_team` pm/admin rule), the open ideas, the running processes
+   * and the reader's own CoAnalyst threads. No new query, and no new notion
+   * of priority — the grouping is categorical and the order within a group is
+   * the order each source query returned.
+   */
+  const workProcesses = React.useMemo(
+    () => (allAssetWorkflows ?? []).map((w: any) => ({
+      workflowId: w.workflow_id as string,
+      name: (w.workflows?.name as string) || 'Process',
+      /* The stage label only when the summary hook actually knows it. A
+         running process whose stages have not loaded says nothing rather
+         than guessing one. */
+      stageLabel: w.workflow_id === effectiveWorkflowId
+        ? (workProcessSummary?.openStageLabel ?? null)
+        : null,
+      isStarted: !!w.is_started,
+      isCompleted: !!w.is_completed,
+    })),
+    [allAssetWorkflows, effectiveWorkflowId, workProcessSummary],
+  )
+
+  const workItems = React.useMemo(
+    () => buildWorkItems({
+      needsYourAction: workAttention.needsYourAction,
+      awaitingOthers: workAttention.awaitingOthers,
+      ideas: workIdeas.map(i => ({
+        id: i.id,
+        action: i.action,
+        stageLabel: i.stage ? stageLabel(i.stage) : null,
+        rationale: i.rationale,
+        portfolioName: i.portfolioName,
+      })),
+      processes: workProcesses,
+      conversations: assetConversations.map(c => ({
+        id: c.id,
+        title: c.title,
+        lastActivity: c.lastActivityAt
+          ? formatDistanceToNow(new Date(c.lastActivityAt), { addSuffix: true })
+          : null,
+      })),
+    }),
+    [workAttention, workIdeas, workProcesses, assetConversations],
+  )
+
+  const workSelection = React.useMemo(
+    () => resolveSelection(workItems, workItemKey),
+    [workItems, workItemKey],
+  )
+  const selectedWorkItem = workSelection.selected
+  const selectedWorkIdea = React.useMemo(
+    () => (selectedWorkItem?.kind === 'idea'
+      ? workIdeas.find(i => i.id === selectedWorkItem.id) ?? null
+      : null),
+    [selectedWorkItem, workIdeas],
+  )
 
   // Fetch themes that contain this asset
   const { data: assetThemes, isLoading: themesLoading } = useQuery({
@@ -3990,27 +4098,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             from a saved sub-page — therefore lands on the lists themselves,
             not on the themes-and-portfolios block at the foot of Work.
           */
-          <div id={WORK_SECTION_ID.lists} className="space-y-6 scroll-mt-4">
+          <div id={WORK_SECTION_ID.lists} className="space-y-3 scroll-mt-4">
             {/*
-              The orientation band.
+              Context, in one line.
 
-              Process carries the active workflow's NAME and, when the Process
-              section below has populated the cache, its stage progress. The
-              distinction between "none" and "not fetched" is load-bearing:
-              passing null for the latter made the band say "none running" on
-              an asset that has a running process.
+              The band this replaces was 286px of a 661px viewport and
+              described work rather than offering it. Membership is a fact
+              about the name, true whatever the reader is doing, so it sits
+              above every surface instead of behind a selection — and it is
+              the Step B implementation moved, not rebuilt: the chips, the
+              permission-gated remove and the existing Add dialog.
             */}
-            <AssetWorkPane
-              attention={workAttention}
-              ideas={workIdeas}
-              process={workProcessSummary}
-              researchLinks={[]}
-              /*
-                Membership, manageable in place. `null` while loading means
-                "not known" — the row renders nothing rather than asserting
-                "not in any lists" at an asset that is in four.
-              */
-              lists={listsLoading ? null : assetListMemberships}
+            <AssetContextStrip
+              lists={listsLoading ? null : assetListMemberships.map(l => ({
+                itemId: l.itemId,
+                listId: l.listId,
+                name: l.name,
+                listType: l.listType,
+                canRemove: l.canRemove,
+              }))}
               onOpenList={(listId) => {
                 const m = assetListMemberships.find(l => l.listId === listId)
                 if (m && onNavigate) {
@@ -4033,50 +4139,86 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               }}
               onRemoveFromList={(itemId) => removeFromList.mutate(itemId)}
               removingListItemId={removeFromList.isPending ? (removeFromList.variables ?? null) : null}
-              /* `assetSymbol` is a declared prop the component never reads,
-                 so passing it would be dead wiring. */
               addToListSlot={<AddToListButton assetId={asset.id} size="sm" variant="ghost" />}
-              /*
-                `null` while loading is "not known" — the area renders
-                nothing rather than stating "none yet" at an asset the
-                reader has three threads about.
-              */
-              conversations={conversationsLoading ? null : assetConversations.map(c => ({
-                id: c.id,
-                title: c.title,
-                lastActivity: c.lastActivityAt
-                  ? formatDistanceToNow(new Date(c.lastActivityAt), { addSuffix: true })
-                  : null,
-              }))}
-              /* Resumes that exact thread. The pane SELECTS it; nothing here
-                 creates a conversation. */
-              onOpenConversation={(conversationId) =>
-                askAI({ ...assetEngagementTarget, conversationId })}
-              /* No conversationId: the pane keeps its own thread state and
-                 a new thread starts tagged with this asset. */
-              onAskCoAnalyst={() => askAI(assetEngagementTarget)}
-              isLoading={workAttentionLoading || openItemsLoading}
-              onOpenIdeas={() => {
-                window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                  detail: { type: 'trade-queue', data: { filterAssetId: asset.id, filterSymbol: asset.symbol } }
-                }))
-              }}
-              onNewIdea={() => {
-                window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                  detail: { type: 'new-trade-idea', data: { assetId: asset.id, symbol: asset.symbol } }
-                }))
-              }}
-              /* The process is on this page now, so this scrolls. It used to
-                 switch to the 'workflow' sub-page — and briefly to a
-                 'process' key that rendered nothing at all. */
-              onOpenProcess={() => focusWorkSection(WORK_SECTION_ID.workflow)}
+              /* List-driven workflows are cross-asset, and this page is not
+                 where they happen. The full Lists surface stays one click
+                 away rather than being folded in here. */
+              onOpenAllLists={() => onNavigate?.({ id: 'lists', title: 'Lists', type: 'lists', data: null })}
             />
-          </div>
-        )}
 
-        {/* ─────────── Work · Process ─────────── */}
-        {activeMode === 'work' && (
-          <div id={WORK_SECTION_ID.workflow} className="scroll-mt-4 pt-2">
+            {/*
+              The navigator and the one surface it drives.
+
+              Rows are the reader's actual work — this earnings review, this
+              BUY awaiting a decision — not the application's features. A
+              sidebar reading Process / Ideas / Lists / CoAnalyst would be the
+              old vertical stack rotated, and a second mode bar besides.
+            */}
+            <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[248px_minmax(0,1fr)]">
+              <WorkNavigator
+                items={workItems}
+                selectedKey={selectedWorkItem?.key ?? null}
+                recoveredFrom={workSelection.recovered}
+                isLoading={workAttentionLoading || openItemsLoading || conversationsLoading}
+                onSelect={(item: WorkItem) => {
+                  /* A conversation opens the existing CoAnalyst pane and
+                     leaves the surface alone. The pane is where threads live;
+                     a second chat here would be a second implementation of
+                     it, and the cross-asset context protections from
+                     ac779006 live there too. */
+                  if (item.kind === 'conversation') {
+                    askAI({ ...assetEngagementTarget, conversationId: item.id })
+                    return
+                  }
+                  setWorkItemKey(item.key)
+                }}
+                className="xl:sticky xl:top-2"
+              />
+
+              <div className="min-w-0" data-testid="work-surface">
+                {!selectedWorkItem && (
+                  <div
+                    data-testid="work-surface-empty"
+                    className="rounded-lg border border-dashed border-gray-300 px-4 py-10 text-center dark:border-gray-700"
+                  >
+                    <p className="text-[13px] text-gray-500 dark:text-gray-400">
+                      No active work on this asset.
+                    </p>
+                    <p className="mt-1 text-[11px] text-gray-400">
+                      Start a process, or open an idea, to begin.
+                    </p>
+                  </div>
+                )}
+
+                {selectedWorkItem?.kind === 'idea' && (
+                  selectedWorkIdea ? (
+                    <IdeaWorkSurface idea={selectedWorkIdea} assetId={asset.id} />
+                  ) : (
+                    /* The navigator listed a request whose idea the open-items
+                       query did not return. Say so and offer the real editor
+                       rather than rendering a blank panel. */
+                    <div className="rounded-lg border border-gray-200 px-4 py-6 dark:border-gray-700">
+                      <p className="text-[13px] text-gray-600 dark:text-gray-300">
+                        This idea is no longer in the open pipeline.
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="work-surface-open-closed-idea"
+                        onClick={() => openIdeaDetail(selectedWorkItem.id)}
+                        className="mt-2 text-[12px] font-medium text-primary-600 hover:underline"
+                      >
+                        Open it in the idea pipeline
+                      </button>
+                    </div>
+                  )
+                )}
+
+                {/* ─────────── The process, as the surface ───────────
+                    `InvestmentTimeline` itself, mounted rather than linked
+                    to: the authoritative engine, stages, checklist,
+                    assignments, deadlines and permissions, unchanged. */}
+                {selectedWorkItem?.kind === 'process' && (
+          <div id={WORK_SECTION_ID.workflow} className="scroll-mt-4">
             {(() => {
             return (
               <div className="space-y-6">
@@ -4315,6 +4457,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             </div>
             )
           })()}
+          </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

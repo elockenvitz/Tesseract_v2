@@ -79,6 +79,9 @@ export function useAssetWorkAttention(assetId: string, enabled = true) {
       if (error) throw error
       return (data ?? []).map((r: any) => ({
         id: r.id,
+        /* The idea this decision is about. Already selected above; it was
+           dropped here, which left the two datasets unreconcilable. */
+        tradeQueueItemId: r.trade_queue_item?.id ?? null,
         portfolioId: r.portfolio_id ?? null,
         requestedBy: r.requested_by ?? null,
         status: r.status ?? null,

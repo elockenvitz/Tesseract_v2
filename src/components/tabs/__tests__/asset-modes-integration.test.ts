@@ -72,8 +72,12 @@ describe('every mode renders something', () => {
 describe('the three merged destinations are all still reachable', () => {
   it('renders Process, Ideas and Lists together under Work', () => {
     const work = (TAB.match(/\{activeMode === 'work' && \(/g) ?? []).length
-    // The band, Process, Ideas and Lists.
-    expect(work).toBeGreaterThanOrEqual(4)
+    /*
+     * Three now, not four: the shell (context strip + navigator + surface),
+     * Open Items, and the themes/portfolios/projects block. The orientation
+     * band that was the fourth is gone — the navigator carries what it held.
+     */
+    expect(work).toBeGreaterThanOrEqual(3)
   })
 
   it('anchors each Work section to the id the model names', () => {
@@ -84,18 +88,20 @@ describe('the three merged destinations are all still reachable', () => {
 
   it('orders them Lists → Process → Ideas', () => {
     /*
-     * The `work-lists` anchor moved to the band, because the band's first
-     * child is the membership row. Lists used to be the LAST thing on Work —
-     * below the process and every open idea — and read-only; the 'lists'
-     * destination now lands on the row that can change the membership.
+     * `work-lists` is the shell wrapper, whose first child is the context
+     * strip, so the 'lists' destination still lands on the memberships. The
+     * process is now INSIDE that wrapper as the active surface rather than a
+     * sibling section below it, and Open Items follows.
      */
-    const band = TAB.indexOf('<AssetWorkPane')
+    const shell = TAB.indexOf('id={WORK_SECTION_ID.lists}')
+    const strip = TAB.indexOf('<AssetContextStrip')
+    const nav = TAB.indexOf('<WorkNavigator')
     const proc = TAB.indexOf('id={WORK_SECTION_ID.workflow}')
     const ideas = TAB.indexOf('id={WORK_SECTION_ID.decisions}')
-    const lists = TAB.indexOf('id={WORK_SECTION_ID.lists}')
-    expect(lists).toBeGreaterThan(-1)
-    expect(lists).toBeLessThan(band)
-    expect(band).toBeLessThan(proc)
+    expect(shell).toBeGreaterThan(-1)
+    expect(shell).toBeLessThan(strip)
+    expect(strip).toBeLessThan(nav)
+    expect(nav).toBeLessThan(proc)
     expect(proc).toBeLessThan(ideas)
   })
 

@@ -24,11 +24,20 @@ describe('the request travels on the existing seam', () => {
   it('carries the conversation id on the engagement target', () => {
     // Not a second route into CoAnalyst: the same `askAI` the header uses.
     expect(TYPES).toMatch(/conversationId\?: string/)
-    expect(TAB).toMatch(/askAI\(\{ \.\.\.assetEngagementTarget, conversationId \}\)/)
+    /* The call site moved from the orientation band to the Work navigator
+       when the band was replaced; the seam it goes through is unchanged. */
+    expect(TAB).toMatch(/askAI\(\{ \.\.\.assetEngagementTarget, conversationId: item\.id \}\)/)
   })
 
-  it('starts a new thread with no id, rather than a different mechanism', () => {
-    expect(TAB).toMatch(/onAskCoAnalyst=\{\(\) => askAI\(assetEngagementTarget\)\}/)
+  it('launches the pane without taking the working surface', () => {
+    /* A conversation is an investigation, not the thing being worked on, so
+       picking one opens the existing pane and leaves the selected process or
+       idea exactly where it was. */
+    const at = TAB.indexOf("if (item.kind === 'conversation')")
+    expect(at).toBeGreaterThan(-1)
+    expect(TAB.slice(at, at + 200)).toMatch(/return/)
+    const NAV = strip(read('src/components/asset/work/WorkNavigator.tsx'))
+    expect(NAV).toMatch(/item\.launchesPane/)
   })
 
   it('keeps the asset bound, so a resumed thread still has its context', () => {
