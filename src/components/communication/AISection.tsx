@@ -115,6 +115,29 @@ export function AISection({
     seededRef.current = seedPrompt
     setInput(prev => (prev.trim() ? prev : seedPrompt))
   }, [seedPrompt])
+
+  /**
+   * Resume the conversation the surface asked for.
+   *
+   * SELECTS, never creates: `selectConversation` loads an existing thread's
+   * messages and tags and does not write. The guard on `conversationId` is
+   * what makes re-opening the same thread safe — the request is already
+   * satisfied, so nothing is re-fetched and an in-progress reply is not
+   * discarded. A request for a different thread is honoured, which is
+   * exactly what clicking another row in the sidebar already does.
+   *
+   * Keyed on the target object rather than on the id string, because each
+   * engagement dispatch carries a fresh target: asking for a thread,
+   * switching away by hand, then asking for the same thread again must work
+   * the second time, and a dep on the bare id would make that a no-op.
+   */
+  const requestedConversationId = engagementTarget?.conversationId ?? null
+  useEffect(() => {
+    if (!requestedConversationId) return
+    if (requestedConversationId === conversationId) return
+    void selectConversation(requestedConversationId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engagementTarget])
   const [showModelSelector, setShowModelSelector] = useState(false)
   // Sidebar visibility — separate state for inline (fullscreen) vs screen
   // (compact). In fullscreen the sidebar lives alongside chat and the

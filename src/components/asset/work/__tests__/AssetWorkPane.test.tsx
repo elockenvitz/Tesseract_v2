@@ -366,3 +366,126 @@ describe('list membership', () => {
     expect(screen.getByTestId('work-lists-add')).toHaveTextContent('Add to List')
   })
 })
+
+// ──────────────────────────────────────────── CoAnalyst conversations
+
+/**
+ * Discovery, not interpretation.
+ *
+ * The asset tag records that a thread was opened with the company bound as
+ * context. There is no message-level entity index, so the surface may show
+ * the title and the timestamp the conversation already has, and must not
+ * manufacture an excerpt, a finding or a relevance claim.
+ */
+const convo = (over = {}) => ({
+  id: 'conv1', title: "Apple's AI Monetization and Regulatory Risks",
+  lastActivity: '6 months ago', ...over,
+})
+
+describe('CoAnalyst conversations', () => {
+  it('summarises as a count when shut, and lists titles when opened', async () => {
+    // An area, not a panel: one line until the reader asks for it.
+    const user = userEvent.setup()
+    setup({ conversations: [convo()] })
+    const toggle = screen.getByTestId('work-toggle-conversations')
+    expect(toggle).toHaveTextContent('1')
+    expect(toggle).not.toHaveTextContent("Apple's AI Monetization")
+    await user.click(toggle)
+    expect(screen.getByTestId('work-panel-conversations'))
+      .toHaveTextContent("Apple's AI Monetization and Regulatory Risks")
+  })
+
+  it('shows when each was last worked on', async () => {
+    const user = userEvent.setup()
+    setup({ conversations: [convo()] })
+    await user.click(screen.getByTestId('work-toggle-conversations'))
+    expect(screen.getByTestId('work-panel-conversations')).toHaveTextContent('6 months ago')
+  })
+
+  it('says plainly when there are none, and offers a way to start one', async () => {
+    const user = userEvent.setup()
+    const onAskCoAnalyst = vi.fn()
+    render(
+      <AssetWorkPane
+        attention={EMPTY} ideas={[idea()]} process={null} researchLinks={[]}
+        conversations={[]} onAskCoAnalyst={onAskCoAnalyst} onOpenIdeas={vi.fn()}
+      />
+    )
+    await user.click(screen.getByTestId('work-toggle-conversations'))
+    expect(screen.getByTestId('work-conversations-none')).toBeInTheDocument()
+    await user.click(screen.getByTestId('work-open-coanalyst'))
+    expect(onAskCoAnalyst).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not label the entry point as starting a new conversation', () => {
+    /*
+     * It opens the pane with the asset bound; it does not start a fresh
+     * thread, because the pane keeps whatever thread it already holds
+     * rather than discarding a reply in progress. "New conversation" would
+     * have been wrong on every click where one was already open.
+     */
+    setup({ conversations: [convo()] })
+    expect(screen.queryByTestId('work-new-conversation')).not.toBeInTheDocument()
+    expect(screen.getByTestId('work-area-conversations')).not.toHaveTextContent('New conversation')
+  })
+
+  it('renders no area at all while they are unknown', () => {
+    // null is "not loaded", [] is "none yet". Collapsing them would state
+    // "no conversations" at an asset the reader has three threads about.
+    setup({ conversations: null, ideas: [idea()] })
+    expect(screen.queryByTestId('work-area-conversations')).not.toBeInTheDocument()
+  })
+
+  it('opens the exact conversation that was clicked', async () => {
+    const user = userEvent.setup()
+    const onOpenConversation = vi.fn()
+    render(
+      <AssetWorkPane
+        attention={EMPTY} ideas={[]} process={null} researchLinks={[]}
+        conversations={[convo(), convo({ id: 'conv2', title: 'Second thread' })]}
+        onOpenConversation={onOpenConversation} onOpenIdeas={vi.fn()}
+      />
+    )
+    await user.click(screen.getByTestId('work-toggle-conversations'))
+    await user.click(screen.getByTestId('work-conversation-conv2'))
+    expect(onOpenConversation).toHaveBeenCalledWith('conv2')
+    expect(onOpenConversation).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the same conversation again on a second click', async () => {
+    // Resuming is not a one-shot. Going to a thread, coming back to Work and
+    // going again must work the second time.
+    const user = userEvent.setup()
+    const onOpenConversation = vi.fn()
+    render(
+      <AssetWorkPane
+        attention={EMPTY} ideas={[]} process={null} researchLinks={[]}
+        conversations={[convo()]} onOpenConversation={onOpenConversation}
+        onOpenIdeas={vi.fn()}
+      />
+    )
+    await user.click(screen.getByTestId('work-toggle-conversations'))
+    await user.click(screen.getByTestId('work-conversation-conv1'))
+    await user.click(screen.getByTestId('work-conversation-conv1'))
+    expect(onOpenConversation).toHaveBeenCalledTimes(2)
+    expect(onOpenConversation).toHaveBeenNthCalledWith(2, 'conv1')
+  })
+
+  it('shows a conversation even when there is no other active work', () => {
+    // An asset with no ideas and no process that the reader HAS been
+    // investigating is not an asset with no work.
+    setup({ conversations: [convo()], ideas: [], process: null })
+    expect(screen.queryByTestId('work-empty')).not.toBeInTheDocument()
+    expect(screen.getByTestId('work-area-conversations')).toBeInTheDocument()
+  })
+
+  it('invents no excerpt, citation or finding', async () => {
+    const user = userEvent.setup()
+    setup({ conversations: [convo()] })
+    await user.click(screen.getByTestId('work-toggle-conversations'))
+    const panel = screen.getByTestId('work-panel-conversations')
+    // Only what the conversation row itself carries.
+    expect(panel.textContent).toContain("Apple's AI Monetization and Regulatory Risks")
+    expect(panel.textContent).not.toMatch(/said|wrote|according to|summary|finding/i)
+  })
+})

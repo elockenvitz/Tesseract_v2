@@ -28,7 +28,7 @@
 
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { ChevronDown, ChevronRight, ExternalLink, AlertTriangle, Clock, X, Users } from 'lucide-react'
+import { ChevronDown, ChevronRight, ExternalLink, AlertTriangle, Clock, X, Users, MessageSquare } from 'lucide-react'
 import { stageLabel, stageColor, IDEA_STAGES, IDEA_STAGE_CONFIG, toIdeaStage } from '../../../lib/ideas/stage-model'
 import { attentionSummary, type AttentionSplit } from '../../../lib/asset-work/attention'
 
@@ -95,6 +95,21 @@ function processDetailLine(p: WorkProcess): string | null {
   return p.deadline ? null : 'No assignee, deadline or priority set.'
 }
 
+/**
+ * One of the reader's own CoAnalyst conversations about this asset.
+ *
+ * Title and timestamp only. There is no message-level entity index, so the
+ * asset tag means "this thread was started with the company bound as
+ * context" and nothing stronger — no excerpt, no finding, no claim that the
+ * conversation substantively investigates it.
+ */
+export interface WorkConversation {
+  id: string
+  title: string
+  /** Already formatted by the caller — this component owns no clock. */
+  lastActivity?: string | null
+}
+
 /** One list this asset sits in, with the removal answer already decided. */
 export interface WorkListMembership {
   /** `asset_list_items.id` — what a removal deletes. Not the list id. */
@@ -142,6 +157,17 @@ export interface AssetWorkPaneProps {
    * all stay where they are.
    */
   addToListSlot?: React.ReactNode
+
+  /**
+   * The reader's own CoAnalyst conversations about this asset. `null` means
+   * "not loaded" and renders no area at all — distinct from `[]`, which is
+   * the honest statement that there are none yet.
+   */
+  conversations?: WorkConversation[] | null
+  /** Opens CoAnalyst on that exact conversation. */
+  onOpenConversation?: (conversationId: string) => void
+  /** Starts a new CoAnalyst conversation about this asset. */
+  onAskCoAnalyst?: () => void
   /** Opens the existing idea experience. The caller supplies it so this
    *  component does not own navigation. */
   onOpenIdeas: () => void
@@ -205,6 +231,7 @@ function Area({
 export function AssetWorkPane({
   attention, ideas, process, researchLinks,
   lists = null, onOpenList, onRemoveFromList, removingListItemId = null, addToListSlot,
+  conversations = null, onOpenConversation, onAskCoAnalyst,
   onOpenIdeas, onOpenIdea, onOpenProcess, onNewIdea, onStartProcess,
   isLoading = false, className,
 }: AssetWorkPaneProps) {
@@ -299,8 +326,15 @@ export function AssetWorkPane({
     </div>
   )
 
-  /* Nothing at all: one line and two entry points, not three empty cards. */
-  if (!hasAttention && !hasIdeas && !hasProcess) {
+  /*
+   * Nothing at all: one line and two entry points, not three empty cards.
+   *
+   * A prior conversation counts as work in progress. An asset with no ideas
+   * and no process that the reader has nonetheless been investigating should
+   * not be described as having none.
+   */
+  const hasConversations = !!conversations && conversations.length > 0
+  if (!hasAttention && !hasIdeas && !hasProcess && !hasConversations) {
     return (
       <div className={clsx('space-y-2', className)}>
         {membership}
@@ -509,6 +543,76 @@ export function AssetWorkPane({
           </p>
         )}
       </Area>
+
+      {/*
+        CoAnalyst — the reader's OWN threads about this company.
+
+        An area, not a panel: the same collapsible the rest of this band uses,
+        one line when shut. It carries titles and timestamps and nothing else.
+        There is no message-level entity index, so an asset tag means "this
+        thread was opened with the company bound as context" — not that it
+        investigates it — and an excerpt or a "finding" here would be invented.
+
+        `null` renders nothing (not loaded); `[]` renders the empty state,
+        which is a statement of fact and an entry point.
+      */}
+      {conversations !== null && (
+        <Area
+          id="conversations"
+          title="CoAnalyst"
+          summary={hasConversations ? `${conversations.length}` : 'none yet'}
+        >
+          {hasConversations ? (
+            <>
+              <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+                {conversations.map(c => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      data-testid={`work-conversation-${c.id}`}
+                      onClick={() => onOpenConversation?.(c.id)}
+                      disabled={!onOpenConversation}
+                      className="flex w-full items-baseline gap-2 py-1.5 text-left hover:bg-gray-50 disabled:cursor-default dark:hover:bg-gray-700/40"
+                    >
+                      <MessageSquare className="h-3 w-3 shrink-0 translate-y-0.5 text-gray-400" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-gray-900 dark:text-gray-100">
+                        {c.title}
+                      </span>
+                      {c.lastActivity && (
+                        <span className="shrink-0 text-[10px] text-gray-400">{c.lastActivity}</span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {/*
+                "Open CoAnalyst", not "New conversation".
+
+                This opens the pane with the asset bound; it does not start a
+                fresh thread, because the pane deliberately keeps whatever
+                thread it already holds rather than discarding a reply in
+                progress. Starting a new one is the pane's own control. A
+                label promising a new conversation would have been wrong on
+                every click where one was already open.
+              */}
+              {onAskCoAnalyst && (
+                <button type="button" onClick={onAskCoAnalyst} data-testid="work-open-coanalyst"
+                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-primary-600 hover:underline">
+                  Open CoAnalyst <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                </button>
+              )}
+            </>
+          ) : (
+            <p className="py-1 text-[12px] text-gray-500 dark:text-gray-400" data-testid="work-conversations-none">
+              No conversations about this asset yet.{' '}
+              {onAskCoAnalyst && (
+                <button type="button" onClick={onAskCoAnalyst} data-testid="work-open-coanalyst"
+                  className="font-medium text-primary-600 hover:underline">Ask CoAnalyst</button>
+              )}
+            </p>
+          )}
+        </Area>
+      )}
 
       {/*
         Research links appear only when the caller could PROVE a relationship —

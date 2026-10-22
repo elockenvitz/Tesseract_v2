@@ -132,6 +132,23 @@ export interface EngagementTarget {
   seedPrompt?: string
 
   /**
+   * Resume THIS existing AI conversation rather than starting a new one.
+   *
+   * The pane's default is to continue whatever thread it last held, or to
+   * begin a fresh one. A surface that is offering a specific prior
+   * conversation — the Asset page lists the reader's own threads about the
+   * company — needs the pane to land on that exact thread, so the id travels
+   * with the target.
+   *
+   * It only ever SELECTS. Nothing here creates a conversation, and the pane
+   * ignores it when the thread is already open, so re-opening the same one
+   * cannot discard an in-progress reply. Ownership is not asserted by this
+   * field: `ai_conversations` is `user_id = auth.uid()`, so an id the reader
+   * does not own loads nothing.
+   */
+  conversationId?: string
+
+  /**
    * What the pane should show as already-supplied context.
    *
    * Display only in D1. The model's real context is assembled server-side by

@@ -72,6 +72,8 @@ import {
 } from '../../lib/asset-workspace/modes'
 import { scrollToSection } from '../../lib/asset-workspace/scroll-to-section'
 import { useAssetListMemberships } from '../../hooks/lists/useAssetListMemberships'
+import { useAssetConversations } from '../../hooks/ai/useAssetConversations'
+import { askAI } from '../../lib/engagement'
 
 /* The nav's icons, beside the labels the model owns. Kept here rather than in
    the model so the model stays free of React imports. */
@@ -2162,6 +2164,35 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     remove: removeFromList,
   } = useAssetListMemberships(asset.id)
 
+  /*
+   * ── The reader's own CoAnalyst threads about this name ──────────────────
+   *
+   * Gated on the Work mode, like the other Work-only reads. Strictly
+   * private: `ai_conversations` is `user_id = auth.uid()` and the hook
+   * filters on the owner again on top of that. No message content is
+   * fetched — the surface shows titles and timestamps only.
+   */
+  const {
+    conversations: assetConversations,
+    isLoading: conversationsLoading,
+  } = useAssetConversations(asset.id, activeMode === 'work')
+
+  /*
+   * The engagement target for this asset, built once.
+   *
+   * `askAI` is the existing seam — the same one the header's Ask AI button
+   * uses — so opening a thread from here goes through the pane that already
+   * exists rather than a second route into CoAnalyst.
+   */
+  const assetEngagementTarget = React.useMemo(() => ({
+    objectType: 'asset' as const,
+    objectId: asset.id,
+    label: asset.company_name ? `${asset.symbol} — ${asset.company_name}` : (asset.symbol ?? 'Asset'),
+    symbol: asset.symbol ?? undefined,
+    assetId: asset.id,
+    origin: { itemId: asset.id, surface: 'asset-work' },
+  }), [asset.id, asset.symbol, asset.company_name])
+
   // Fetch themes that contain this asset
   const { data: assetThemes, isLoading: themesLoading } = useQuery({
     queryKey: ['asset-themes', asset.id],
@@ -4005,6 +4036,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               /* `assetSymbol` is a declared prop the component never reads,
                  so passing it would be dead wiring. */
               addToListSlot={<AddToListButton assetId={asset.id} size="sm" variant="ghost" />}
+              /*
+                `null` while loading is "not known" — the area renders
+                nothing rather than stating "none yet" at an asset the
+                reader has three threads about.
+              */
+              conversations={conversationsLoading ? null : assetConversations.map(c => ({
+                id: c.id,
+                title: c.title,
+                lastActivity: c.lastActivityAt
+                  ? formatDistanceToNow(new Date(c.lastActivityAt), { addSuffix: true })
+                  : null,
+              }))}
+              /* Resumes that exact thread. The pane SELECTS it; nothing here
+                 creates a conversation. */
+              onOpenConversation={(conversationId) =>
+                askAI({ ...assetEngagementTarget, conversationId })}
+              /* No conversationId: the pane keeps its own thread state and
+                 a new thread starts tagged with this asset. */
+              onAskCoAnalyst={() => askAI(assetEngagementTarget)}
               isLoading={workAttentionLoading || openItemsLoading}
               onOpenIdeas={() => {
                 window.dispatchEvent(new CustomEvent('decision-engine-action', {
