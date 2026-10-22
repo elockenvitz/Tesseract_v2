@@ -1134,7 +1134,8 @@ export function DashboardPage() {
         // page that already holds workflow, lists, estimates, consensus,
         // projects and activity. Those lenses now route here (carrying focus,
         // book and issue in tab data); the replacement workspace is parked.
-        return <AssetTab asset={activeTab.data} onNavigate={handleSearchResult} />
+        /* Keyed: see `lib/asset-workspace/arrival-focus.ts`. */
+        return <AssetTab key={activeTab.id} asset={activeTab.data} onNavigate={handleSearchResult} />
       case 'assets-list':
         return <AssetsListPage onAssetSelect={handleSearchResult} />
       case 'portfolios-list':

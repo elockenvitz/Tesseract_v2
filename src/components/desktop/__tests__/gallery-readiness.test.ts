@@ -205,15 +205,30 @@ describe('the skeleton is the shape of the page it replaces', () => {
 
   it('Ideas skeletons the field, sized by the field’s own rule', () => {
     /*
-     * The same property as the cases above, asserted where Ideas keeps it.
-     * `GallerySkeleton` sized by `opportunitySize` means the placeholders
-     * stand in the columns the real tiles will take, so the handover is a
-     * fade rather than a re-layout -- and the lens itself no longer holds a
-     * competing skeleton for a grid it does not draw.
+     * The same property as the cases above, asserted where Ideas keeps it:
+     * the placeholders stand in the columns the real tiles will take, so the
+     * handover is a fade rather than a re-layout -- and the lens itself no
+     * longer holds a competing skeleton for a grid it does not draw.
+     *
+     * ── Why this no longer asserts `sizeAt={i => opportunitySize(` ─────────
+     *
+     * That was the mechanism, and it was the crash. `opportunitySize` sizes
+     * by CONTENT, which a skeleton does not have, so the branch fed it a cast
+     * stand-in with no `item`; it returned 'hero' for index 0 without looking
+     * and threw on index 1, taking the app to its error boundary whenever a
+     * History event drilled through to an idea.
+     *
+     * The property survives, carried by `flow` instead: the skeleton packs
+     * exactly as the loaded grid below it packs, which is what makes the two
+     * layouts agree. Sizing is by index, GallerySkeleton's own default.
      */
     const field = src('components/ideas-v2/OpportunityGrid.tsx')
+    const fieldCode = code('components/ideas-v2/OpportunityGrid.tsx')
     expect(field).toContain('GallerySkeleton')
-    expect(field).toContain('sizeAt={i => opportunitySize(')
+    expect(fieldCode).toContain('<GallerySkeleton title="Ideas" flow="packed" />')
+    expect(fieldCode).toContain('flow="packed"')
+    /* The crash, as a prohibition: a skeleton must never size by content. */
+    expect(fieldCode).not.toMatch(/sizeAt=\{[^}]*opportunitySize/)
     expect(code('components/ideas-v2/IdeasWorkspace.tsx')).not.toContain('function Loading()')
   })
 

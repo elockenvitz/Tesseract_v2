@@ -180,8 +180,11 @@ describe('handoffs land where they used to', () => {
   })
 
   it('still routes asset.focus to a destination', () => {
-    expect(TAB).toMatch(/asset\.focus === 'decisions'\) setActiveSubPage\('decisions'\)/)
-    expect(TAB).toMatch(/asset\.focus === 'research'\) setActiveSubPage\('research'\)/)
+    /* The mapping became a table when the arrival effect learned to consume a
+       focus once per request rather than on every mount. Same two routes. */
+    expect(TAB).toMatch(/focus === 'decisions' \? 'decisions'/)
+    expect(TAB).toMatch(/focus === 'research' \? 'research'/)
+    expect(TAB).toMatch(/setActiveSubPage\(target\)/)
   })
 
   it('keeps the Lists deep-link, with its within-section scroll', () => {

@@ -64,8 +64,17 @@ describe('the Snapshot is the default landing', () => {
 })
 
 describe('an explicit arrival focus still wins', () => {
-  /** The one effect that maps `openAsset({ focus })` onto a sub-page. */
-  const effect = TAB.match(/if \(asset\.focus === 'research'\)[\s\S]{0,400}?\}, \[asset\.focus, asset\.id\]\)/)?.[0] ?? ''
+  /**
+   * The one effect that maps `openAsset({ focus })` onto a sub-page.
+   *
+   * The mapping became a table rather than an if/else chain when the effect
+   * learned to consume a focus once per request instead of on every mount;
+   * the four rules below are unchanged and are still asserted on the effect
+   * itself rather than on the file.
+   */
+  const effect = TAB.match(
+    /const focus = asset\.focus[\s\S]{0,1600}?\}, \[asset\.focus, asset\.focusRequestId, asset\.id\]\)/,
+  )?.[0] ?? ''
 
   it('exists', () => {
     expect(effect, 'the arrival-focus effect was renamed or removed').not.toBe('')
@@ -74,16 +83,21 @@ describe('an explicit arrival focus still wins', () => {
   it('keeps research and decisions landing where their senders meant', () => {
     // ResearchDetail, ResearchWorkspace, IdeaDetail and DecisionDetail all
     // send `focus: 'research'`; DecisionDetail also sends 'decisions'.
-    expect(effect).toMatch(/asset\.focus === 'research'\) setActiveSubPage\('research'\)/)
-    expect(effect).toMatch(/asset\.focus === 'decisions'\) setActiveSubPage\('decisions'\)/)
+    expect(effect).toMatch(/focus === 'research' \? 'research'/)
+    expect(effect).toMatch(/focus === 'decisions' \? 'decisions'/)
   })
 
   it('gives overview and position the Snapshot, which is what they always meant', () => {
     // Both were no-ops before this page existed: `lib/ai/actions.ts` sends
     // 'overview' and PositionDetail sends 'position', and each landed the
     // reader on whatever sub-page they happened to use last.
-    expect(effect).toMatch(/'overview'[\s\S]{0,60}setActiveSubPage\('snapshot'\)/)
-    expect(effect).toMatch(/'position'[\s\S]{0,60}setActiveSubPage\('snapshot'\)/)
+    expect(effect).toMatch(/'overview' \|\| focus === 'position'\) \? 'snapshot'/)
+  })
+
+  it('applies the landing, rather than only computing one', () => {
+    // The table is inert without this; a refactor that dropped the call would
+    // otherwise satisfy every mapping assertion above.
+    expect(effect).toMatch(/setActiveSubPage\(target\)/)
   })
 
   it('does not guess a home for framework', () => {
