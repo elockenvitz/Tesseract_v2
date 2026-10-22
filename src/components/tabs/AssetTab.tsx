@@ -2287,6 +2287,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     () => (allAssetWorkflows ?? []).map((w: any) => ({
       workflowId: w.workflow_id as string,
       name: (w.workflows?.name as string) || 'Process',
+      /* Already selected by the query above. It is what tells the Apr 10 run
+         of a weekly review from the Apr 3 one. */
+      branchSuffix: (w.workflows?.branch_suffix as string | null) ?? null,
       /* The stage label only when the summary hook actually knows it. A
          running process whose stages have not loaded says nothing rather
          than guessing one. */

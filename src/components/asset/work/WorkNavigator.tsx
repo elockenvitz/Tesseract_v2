@@ -186,6 +186,14 @@ export function WorkNavigator({
                       type="button"
                       onClick={() => onSelect(item)}
                       aria-current={current ? 'true' : undefined}
+                      /*
+                        A row whose label is an abbreviation carries the whole
+                        name for the pointer and for a screen reader. Several
+                        runs of one process can share a suffix, and this is
+                        what still separates them when they do.
+                      */
+                      title={item.fullName ?? undefined}
+                      aria-label={item.fullName ?? undefined}
                       data-testid={`work-nav-${item.key}`}
                       className={clsx(
                         'flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors',

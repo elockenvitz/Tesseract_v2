@@ -61,6 +61,15 @@ export interface WorkItem {
   label: string
   /** ONE state fact. Never a restatement of the surface. */
   detail?: string | null
+  /**
+   * The full, unabbreviated name, when `label` is an abbreviation of it.
+   *
+   * Set for process runs, whose label is the process and whose run identity
+   * moved to `detail`. It is what the row exposes as its tooltip and its
+   * accessible name, so the whole string is still reachable from a row that
+   * cannot show it all.
+   */
+  fullName?: string | null
   /** Conversations open the existing pane; they never become the surface. */
   launchesPane?: boolean
 }
@@ -86,6 +95,12 @@ export interface IdeaInput {
 export interface ProcessInput {
   workflowId: string
   name: string
+  /**
+   * `workflows.branch_suffix` — what tells one run of a process from another.
+   *
+   * "Apr 10 2026", "Q2 2026". Null on a process that is not a branch.
+   */
+  branchSuffix?: string | null
   /** The stage it is on, when known. Never guessed. */
   stageLabel?: string | null
   isStarted: boolean
@@ -111,6 +126,55 @@ const processKey = (id: string) => `process:${id}`
 const conversationKey = (id: string) => `conversation:${id}`
 
 export const workItemKey = { idea: ideaKey, process: processKey, conversation: conversationKey }
+
+/**
+ * Split a run's name into the process it belongs to and the run it is.
+ *
+ * ── What was wrong ────────────────────────────────────────────────────────
+ *
+ * Three rows of the sidebar read, identically:
+ *
+ *     Weekly Portfolio Review - Vision Fund 10K - …
+ *     Weekly Portfolio Review - Vision Fund 10K - …
+ *     Weekly Portfolio Review - Vision Fund 10K - …
+ *
+ * They are the Apr 10, Apr 3 and Mar 27 runs. A 296px column truncates from
+ * the END, so the shared 40-character prefix always survived and the only
+ * thing that distinguished them never did. There was no `title` either, so
+ * hovering said nothing: the reader had to open rows until one was right.
+ *
+ * ── Why a split and not a wider column or a middle ellipsis ───────────────
+ *
+ * The information is already two things. `workflows.branch_suffix` holds the
+ * run's identity and the name is the process plus that suffix, so the row can
+ * say both without inventing anything or stealing width:
+ *
+ *     Weekly Portfolio Review - Vision Fund 10K      <- what it is
+ *     Apr 10 2026 · Momentum Check                   <- which run, where it is
+ *
+ * The discriminator now LEADS the second line, so it is the part that
+ * survives truncation rather than the part that is lost.
+ *
+ * The suffix is removed from the head only when the name actually ends with
+ * it. `generate_unique_workflow_name` builds the name as `parent - suffix`,
+ * but it also uniquifies collisions, and a name that has been edited by hand
+ * owes this function nothing. When the tail does not match, the full name
+ * stays as the label and the suffix still shows beneath it — duplicated
+ * wording in a rare case, never a dropped fact.
+ */
+export function splitRunName(
+  name: string,
+  branchSuffix: string | null | undefined,
+): { process: string; run: string | null } {
+  const full = (name ?? '').trim()
+  const run = (branchSuffix ?? '').trim()
+  if (!run) return { process: full, run: null }
+  if (!full.toLowerCase().endsWith(run.toLowerCase())) return { process: full, run }
+
+  /* Drop the suffix, then any separator left dangling. */
+  const head = full.slice(0, full.length - run.length).replace(/[\s–—·|-]+$/, '').trim()
+  return { process: head || full, run }
+}
 
 /** "BUY · Large Cap Growth", or just the action, or a neutral name. */
 function ideaLabel(action: string | null | undefined, portfolioName: string | null | undefined): string {
@@ -154,13 +218,25 @@ export function buildWorkItems(input: BuildWorkItemsInput): WorkItem[] {
     /* Not started or already finished is not work in progress. Neither is
        invented: both flags are columns on `asset_workflow_progress`. */
     if (!p.isStarted || p.isCompleted) continue
+    /*
+     * The run's identity leads the detail line, ahead of the stage. Several
+     * runs of one process are the case that needs telling apart; which stage
+     * each is on is the next question, not the first.
+     */
+    const { process, run } = splitRunName(p.name, p.branchSuffix)
+    const detail = [run, p.stageLabel].filter(Boolean).join(' · ')
+
     items.push({
       key: processKey(p.workflowId),
       kind: 'process',
       id: p.workflowId,
       group: 'in-progress',
-      label: p.name,
-      detail: p.stageLabel ?? null,
+      label: process,
+      detail: detail || null,
+      /* The unabbreviated name, for the row's tooltip and its accessible
+         name. Two runs can still share a suffix, and this is what separates
+         them when they do. */
+      fullName: p.name,
     })
   }
 
