@@ -11,6 +11,7 @@ import { AssignmentSelector } from './AssignmentSelector'
 import { DecisionItemCard } from './checklist/DecisionItemCard'
 import { OperationalItemCard } from './checklist/OperationalItemCard'
 import { type ProcessItemType, userName as chUserName } from './checklist/types'
+import { StageActionBar } from '../workflow/StageActionBar'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
@@ -196,6 +197,15 @@ export function InvestmentTimeline({
   const [newItemType, setNewItemType] = useState<ProcessItemType>('operational')
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
+  /*
+   * In-flight guard for stage advancement.
+   *
+   * `handleAdvanceStage` awaits a batch of checklist writes and then an
+   * upsert, and nothing stopped a second click landing in that window —
+   * which advances twice, two stages, from one reader's intent to move on by
+   * one. The control is disabled while it runs.
+   */
+  const [isAdvancing, setIsAdvancing] = useState(false)
   const queryClient = useQueryClient()
 
   // Helper function to get default checklist items for a stage
@@ -991,6 +1001,8 @@ export function InvestmentTimeline({
       alert('No asset ID available. Cannot advance stage.')
       return
     }
+    if (isAdvancing) return
+    setIsAdvancing(true)
 
     const currentIndex = getCurrentStageIndex()
     if (currentIndex < timelineStages.length - 1) {
@@ -1084,7 +1096,12 @@ export function InvestmentTimeline({
       } catch (error) {
         console.error('Error saving checklist state:', error)
         alert('Failed to save checklist state. Please try again.')
+      } finally {
+        setIsAdvancing(false)
       }
+    } else {
+      // Nothing to advance to; release the guard rather than wedging it on.
+      setIsAdvancing(false)
     }
   }
 
@@ -1551,9 +1568,11 @@ export function InvestmentTimeline({
                                 style={{ width: `${progressPercent}%` }}
                               />
                             </div>
-                            <div className={`flex items-center justify-between text-xs font-semibold ${colors.accent}`}>
-                              <span className="truncate mr-2">{completedTasks}/{totalTasks} tasks</span>
-                              <span className="flex-shrink-0">{Math.round(progressPercent)}%</span>
+                            {/* The bar above already IS the percentage, and
+                                "2/5 tasks" says it exactly. Printing 40%
+                                beside it was the same fact three ways. */}
+                            <div className={`flex items-center text-xs font-semibold ${colors.accent}`}>
+                              <span className="truncate">{completedTasks}/{totalTasks} tasks</span>
                             </div>
                           </div>
                         ) : (
@@ -1829,7 +1848,27 @@ export function InvestmentTimeline({
 
                   return (
                     <>
-                      <div className="mb-2 px-1 text-[10px] text-gray-400">{doneCount}/{items.length} complete</div>
+                      {/*
+                        Progress and the next action, beside the work.
+
+                        This line used to read "0/5 complete" in 10px grey and
+                        nothing else; the stage position and the advance
+                        button were 783px further down, past every
+                        requirement. The counts are the same `stageChecklists`
+                        the rail and the Work band read — no second
+                        derivation — and `onAdvance` is the existing handler.
+                      */}
+                      <StageActionBar
+                        viewingStageId={showStageDetails}
+                        currentStageId={effectiveCurrentStage}
+                        stages={timelineStages.map(s => ({ id: s.id, label: s.label }))}
+                        isStarted={!!isWorkflowStarted}
+                        isCompleted={!!workflowProgress?.is_completed}
+                        done={doneCount}
+                        total={items.length}
+                        onAdvance={handleAdvanceStage}
+                        isAdvancing={isAdvancing}
+                      />
                       <div className="space-y-1.5">
                         {items.map(item => {
                           const props = {
@@ -1958,53 +1997,60 @@ export function InvestmentTimeline({
             )}
           </div>
 
-          {/* Stage Progression Actions */}
-          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                <div>Stage {currentIndex + 1} of {timelineStages.length}</div>
-                {showStageDetails === effectiveCurrentStage && (
-                  <div className="text-xs mt-1 text-blue-600">
-                    {effectiveCurrentStage === 'outdated'
-                      ? '✓ Portfolio review stage - ready to prioritize'
-                      : `${stageChecklists[effectiveCurrentStage]?.filter(item => isItemDone(item)).length || 0} of ${stageChecklists[effectiveCurrentStage]?.length || 0} items completed`
-                    }
-                  </div>
-                )}
+          {/*
+            Stage progression — what is left of it.
+
+            "Stage N of M" went: the rail directly above numbers every stage
+            and highlights the one you are on. "N of M items completed" went:
+            the rail chip, the stage action bar and the Work band all carried
+            the same number, which made four copies of one fact. The advance
+            button moved up beside the checklist it acts on.
+
+            What stays here is the step BACKWARDS, which is rare, destructive
+            of position, and correctly out of the way — and the completed
+            message, which has nowhere else to live because a finished process
+            renders no checklist.
+          */}
+          {(() => {
+            /*
+              On the current stage only — the same rule the advance control
+              follows. Both were governed by the WORKFLOW's index while this
+              card renders whichever stage the reader clicked, so browsing
+              stage 3 of a workflow sitting on stage 2 offered to move the
+              workflow backwards from a stage the reader was not looking at.
+              What regress DOES is unchanged.
+            */
+            const canRegress = currentIndex > 0 && isWorkflowStarted
+              && !workflowProgress?.is_completed
+              && showStageDetails === effectiveCurrentStage
+            const isFinished = currentIndex === timelineStages.length - 1
+              && showStageDetails === effectiveCurrentStage
+              && effectiveCurrentStage === 'completed'
+            /* An empty bordered strip is worse than no strip. */
+            if (!canRegress && !isFinished) return null
+
+            return (
+              <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-end gap-2">
+                  {isFinished && (
+                    <div className="mr-auto text-sm text-green-600 font-medium">
+                      🎉 Process completed!
+                    </div>
+                  )}
+                  {canRegress && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRegressStage}
+                      className="text-gray-600 hover:text-gray-800 dark:text-gray-400"
+                    >
+                      ← Move to {timelineStages[currentIndex - 1]?.label}
+                    </Button>
+                  )}
+                </div>
               </div>
-
-              {/* Stage Action Buttons */}
-              <div className="flex items-center space-x-2">
-                {currentIndex > 0 && isWorkflowStarted && !workflowProgress?.is_completed && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleRegressStage}
-                    className="text-gray-600 hover:text-gray-800 dark:text-gray-400"
-                  >
-                    ← Move to {timelineStages[currentIndex - 1]?.label}
-                  </Button>
-                )}
-
-                {currentIndex < timelineStages.length - 1 && isWorkflowStarted && !workflowProgress?.is_completed && (
-                  <Button
-                    size="sm"
-                    onClick={handleAdvanceStage}
-                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                    title={timelineStages[currentIndex + 1]?.id === 'completed' ? 'Complete process' : 'Advance to next stage'}
-                  >
-                    {timelineStages[currentIndex + 1]?.id === 'completed' ? 'Complete Process ✓' : 'Advance Stage →'}
-                  </Button>
-                )}
-
-                {currentIndex === timelineStages.length - 1 && showStageDetails === effectiveCurrentStage && effectiveCurrentStage === 'completed' && (
-                  <div className="text-sm text-green-600 font-medium">
-                    🎉 Process completed!
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+            )
+          })()}
         </Card>
       )}
 

@@ -18,7 +18,7 @@
  * process; the type now makes that confusion hard to repeat.
  */
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, skipToken } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
@@ -74,10 +74,17 @@ export function useAssetProcessSummary(
    * hand the Process surface the wrong shape. Giving them different keys
    * instead would duplicate the fetch, which this hook exists to avoid.
    *
-   * So each one is `useQuery` with NO queryFn and `enabled: false`: it
-   * subscribes to the entry and never requests anything. When Process is
-   * mounted — which, in the Work mode, it is, directly below this summary —
-   * the band and the stage rail show the same numbers at the same time.
+   * So each one is `useQuery` with `queryFn: skipToken`: it subscribes to the
+   * entry and never requests anything. When Process is mounted — which, in
+   * the Work mode, it is, directly below this summary — the band and the
+   * stage rail show the same numbers at the same time.
+   *
+   * `skipToken`, not `enabled: false` with the queryFn omitted. Both behave
+   * identically, but React Query logs an error for every observer it finds
+   * without a queryFn, whatever `enabled` says — five observers across the
+   * remounts of one Work session produced 170 console errors, which is how a
+   * real error stops being visible. `skipToken` is the supported way to say
+   * "this query deliberately never runs".
    *
    * `getQueryData` was the first attempt. It reads the entry but does not
    * subscribe to it, so the band rendered once, before Process had fetched,
@@ -88,11 +95,11 @@ export function useAssetProcessSummary(
    * report UNKNOWN — not zero, not "no open stage".
    */
   /*
-   * An OBSERVER, not a fetcher. `useQuery` with no `queryFn` and
-   * `enabled: false` subscribes to the cache entry without ever issuing a
-   * request: if InvestmentTimeline is mounted, its data arrives here and
-   * re-renders this hook; if it is not, the entry is empty and the selectors
-   * below report UNKNOWN.
+   * An OBSERVER, not a fetcher. `useQuery` with `queryFn: skipToken`
+   * subscribes to the cache entry without ever issuing a request: if
+   * InvestmentTimeline is mounted, its data arrives here and re-renders this
+   * hook; if it is not, the entry is empty and the selectors below report
+   * UNKNOWN.
    *
    * `getQueryData` was the first attempt and was wrong in a way that only
    * showed once Process and the summary sat on the same screen: a plain read
@@ -105,25 +112,25 @@ export function useAssetProcessSummary(
    */
   const { data: stages } = useQuery<
     { id?: string; stage_key?: string; name?: string; stage_label?: string }[]
-  >({ queryKey: ['workflow-stages', workflowId], enabled: false })
+  >({ queryKey: ['workflow-stages', workflowId], queryFn: skipToken })
 
   const { data: checklist } = useQuery<
     { stage_id?: string | null; completed?: boolean | null }[]
-  >({ queryKey: ['asset-workflow-checklist', assetId, workflowId], enabled: false })
+  >({ queryKey: ['asset-workflow-checklist', assetId, workflowId], queryFn: skipToken })
 
   const { data: progress } = useQuery<
     { current_stage_id?: string | null } | null
-  >({ queryKey: ['asset-workflow-progress', assetId, workflowId], enabled: false })
+  >({ queryKey: ['asset-workflow-progress', assetId, workflowId], queryFn: skipToken })
 
   const { data: deadlines } = useQuery<
     { stage_id?: string | null; deadline_date?: string | null }[]
-  >({ queryKey: workflowDeadlinesKey(currentOrgId, assetId, workflowId), enabled: false })
+  >({ queryKey: workflowDeadlinesKey(currentOrgId, assetId, workflowId), queryFn: skipToken })
 
   /* The stage's TEMPLATE — what the checklist is supposed to contain. The
      saved rows alone under-count: they hold only items somebody has touched. */
   const { data: templates } = useQuery<
     { stage_id?: string | null }[]
-  >({ queryKey: ['workflow-checklist-templates', workflowId], enabled: false })
+  >({ queryKey: ['workflow-checklist-templates', workflowId], queryFn: skipToken })
 
   return useMemo(() => {
     /* Normalize the two stage shapes — a root workflow's `workflow_stages`

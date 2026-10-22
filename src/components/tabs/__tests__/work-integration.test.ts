@@ -123,15 +123,22 @@ describe('no duplicate fetching', () => {
     }
     /*
      * Five observers, one fetcher. Every query but `workflow-identity` is
-     * `enabled: false` with no queryFn: it subscribes to the cache and never
-     * issues a request. A plain `getQueryData` was the first attempt and is
-     * NOT reactive — the band stayed blank while the stage rail beneath it
+     * `queryFn: skipToken`: it subscribes to the cache and never issues a
+     * request. A plain `getQueryData` was the first attempt and is NOT
+     * reactive — the band stayed blank while the stage rail beneath it
      * showed 0/4, because nothing re-rendered when the data landed.
      */
-    expect((HOOK.match(/enabled: false/g) ?? []).length).toBe(5)
+    expect((HOOK.match(/queryFn: skipToken/g) ?? []).length).toBe(5)
     expect(HOOK).not.toMatch(/getQueryData/)
-    // Exactly one queryFn in the file: the workflow's name.
-    expect((HOOK.match(/queryFn:/g) ?? []).length).toBe(1)
+    /*
+     * And NOT `enabled: false` with the queryFn simply omitted, which behaves
+     * the same but makes React Query log an error for every such observer it
+     * finds — 170 of them in one measured Work session, which is how a real
+     * error stops being visible.
+     */
+    expect(HOOK).not.toMatch(/enabled: false/)
+    // Exactly one real fetcher: the workflow's name.
+    expect((HOOK.match(/queryFn: async/g) ?? []).length).toBe(1)
     expect(HOOK).toMatch(/queryKey: \['workflow-identity', workflowId\]/)
   })
 
