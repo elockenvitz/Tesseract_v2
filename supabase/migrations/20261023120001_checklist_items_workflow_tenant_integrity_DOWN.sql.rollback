@@ -1,0 +1,60 @@
+-- =============================================================================
+-- ROLLBACK — asset_checklist_items requirement/workflow tenant integrity
+--
+-- Fully reversible. The forward migration adds two constraints and touches no
+-- data: no row was inserted, updated, deleted or backfilled, so there is
+-- nothing to restore.
+--
+-- READ THIS BEFORE RUNNING IT
+--
+-- Dropping these constraints REOPENS the verified defect: a member of one
+-- organization can again create or repoint a requirement whose workflow
+-- belongs to another. Run it only to clear a production incident, and only
+-- until the forward migration can be re-applied.
+--
+-- Order matters. The foreign key depends on the unique constraint, so the FK
+-- goes first; dropping the unique constraint while the FK references it fails
+-- with 2BP01 (dependent objects still exist).
+-- =============================================================================
+
+BEGIN;
+
+-- --- Dependency check ---------------------------------------------------------
+-- Refuses to run if anything other than the expected FK depends on the unique
+-- constraint — another table may have adopted the same composite reference
+-- since, and dropping its support silently is not a rollback.
+DO $$
+DECLARE
+  v_others text;
+BEGIN
+  SELECT string_agg(c.conname || ' on ' || c.conrelid::regclass::text, ', ')
+    INTO v_others
+    FROM pg_constraint c
+   WHERE c.contype = 'f'
+     AND c.confrelid = 'public.workflows'::regclass
+     AND c.conname <> 'asset_checklist_items_workflow_same_org_fkey'
+     AND EXISTS (
+       SELECT 1 FROM pg_constraint u
+        WHERE u.conname = 'workflows_id_org_key'
+          AND u.conrelid = 'public.workflows'::regclass
+          AND c.conindid = u.conindid
+     );
+
+  IF v_others IS NOT NULL THEN
+    RAISE EXCEPTION
+      'rollback refused: other foreign keys depend on workflows_id_org_key (%). Drop or re-point them first.',
+      v_others;
+  END IF;
+END $$;
+
+ALTER TABLE asset_checklist_items
+  DROP CONSTRAINT IF EXISTS asset_checklist_items_workflow_same_org_fkey;
+
+ALTER TABLE workflows
+  DROP CONSTRAINT IF EXISTS workflows_id_org_key;
+
+COMMIT;
+
+-- The single-column FK `asset_checklist_items_workflow_id_fkey` is NOT touched
+-- by either direction. It predates this work and still governs workflow
+-- deletion.
