@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Briefcase, FileText, Layers, ListChecks, TrendingUp } from 'lucide-react'
 import { MobileInvestmentSnapshot } from './MobileInvestmentSnapshot'
@@ -26,6 +26,12 @@ interface MobileAssetPageProps {
     symbol: string
     company_name?: string | null
     focus?: 'cases' | 'target' | 'thesis'
+    /**
+     * Stamped per `openAsset` call, so a SECOND request to an already-open
+     * asset is distinguishable from the one this page already acted on.
+     * See `lib/desktop-asset/navigate.ts`.
+     */
+    focusRequestId?: string | null
     /** Seeds the book scope when the reader arrives from a portfolio surface. */
     portfolioId?: string | null
   }
@@ -81,6 +87,43 @@ export function MobileAssetPage({ asset, onNavigate }: MobileAssetPageProps) {
    * scoped to that book rather than organization-wide.
    */
   const [bookId, setBookId] = useState<string | null>(asset.portfolioId ?? null)
+
+  /*
+   * ── A SECOND arrival at an already-open asset ────────────────────────────
+   *
+   * Both values above are seeded once, at mount. That was enough while the
+   * shell rendered this page unkeyed, because nothing ever remounted it — and
+   * that was the bug: one instance was reused when the reader moved to a
+   * DIFFERENT asset, carrying the previous asset's tab and, worse, its
+   * `bookId` into panels that scope a position by it.
+   *
+   * Keying by tab fixed the contamination and gave each asset its own mount.
+   * It also means a new navigation to an asset that is ALREADY open no longer
+   * remounts anything, so a feed card saying "edit the target" on the name
+   * already on screen would land nowhere. This effect is that case, and only
+   * that case.
+   *
+   * A ref is the right store here, where it would be wrong on desktop. The
+   * desktop page is unmounted whenever the reader visits another tab, so its
+   * consumed-arrival record has to outlive the component and lives in tab
+   * state. This page keeps nothing across an unmount by design — it has no
+   * persistence at all — so the only window in which a repeat request must be
+   * told from a replay is the one the instance is alive for, which is exactly
+   * a ref's lifetime.
+   */
+  const appliedFocusRequest = useRef<string | null>(asset.focusRequestId ?? null)
+  useEffect(() => {
+    const requestId = asset.focusRequestId ?? null
+    if (!requestId || requestId === appliedFocusRequest.current) return
+    appliedFocusRequest.current = requestId
+    /* Only a focused request moves the tab; a plain re-open leaves the reader
+       wherever they were. */
+    if (asset.focus) setSubPage('case')
+    /* The book is re-seeded even when absent, because the descriptor writes
+       it explicitly either way — inheriting the previous sender's book would
+       scope this asset to a portfolio the new request did not ask for. */
+    setBookId(asset.portfolioId ?? null)
+  }, [asset.focusRequestId, asset.focus, asset.portfolioId])
 
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950">

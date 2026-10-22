@@ -1125,7 +1125,8 @@ export function DashboardPage() {
         // Phones get a purpose-built asset page. AssetTab is 4,300 lines of
         // four sub-pages, view filters and analyst panels built for a wide
         // screen; see MobileAssetPage.
-        if (isMobile) return <MobileAssetPage asset={activeTab.data} onNavigate={handleSearchResult} />
+        /* Keyed: see `mobile/asset/MobileAssetPage.tsx`. */
+        if (isMobile) return <MobileAssetPage key={activeTab.id} asset={activeTab.data} onNavigate={handleSearchResult} />
         // AssetTab is the canonical deep asset workspace, and stays that way.
         //
         // Stage 2D2 briefly made a new, reduced workspace the default here.
@@ -1643,9 +1644,15 @@ export function DashboardPage() {
           symbol: activeTab.data?.symbol ?? activeTab.data?.assets?.symbol ?? '',
           company_name: activeTab.data?.company_name ?? null,
         }
+        /* Keyed on the same grounds as the `asset` case above. This branch
+           was missed when that one was fixed: a model tab renders the SAME
+           two components, so moving between two model tabs for different
+           assets reused one instance — and here AssetTab does persist, so it
+           could write the previous asset's state under this asset's id.
+           `modelAssetId` is guarded non-null above, so the tab id is stable. */
         return isMobile
-          ? <MobileAssetPage asset={modelAsset} onNavigate={handleSearchResult} />
-          : <AssetTab asset={modelAsset} onNavigate={handleSearchResult} initialSection="models" />
+          ? <MobileAssetPage key={activeTab.id} asset={modelAsset} onNavigate={handleSearchResult} />
+          : <AssetTab key={activeTab.id} asset={modelAsset} onNavigate={handleSearchResult} initialSection="models" />
       }
       case 'text-template':
         // Text template - go to templates tab
