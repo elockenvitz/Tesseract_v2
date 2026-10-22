@@ -28,6 +28,7 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { ChevronDown, ChevronRight, ExternalLink, X, Users } from 'lucide-react'
+import { WorkSidebarToggle, WORK_SIDEBAR_REGION_ID } from './WorkSidebarToggle'
 
 /** Rows a relationship section shows before offering the rest. */
 export const SECTION_PREVIEW = 5
@@ -89,6 +90,15 @@ export interface AssetWorkSidebarProps {
   collapsed: Record<string, boolean>
   onToggleSection: (key: string) => void
   className?: string
+
+  /**
+   * Whole-sidebar visibility, as distinct from `collapsed`, which is the
+   * per-section map. Hidden renders nothing at all — see the note in the
+   * component for why this is the sidebar's job and not the caller's.
+   */
+  hidden?: boolean
+  /** Omit to render no collapse control, which is how tests mount it bare. */
+  onCollapse?: () => void
 }
 
 /** A section header: name, optional actions, and the collapse affordance. */
@@ -165,10 +175,23 @@ export function AssetWorkSidebar({
   portfolios = null, onOpenPortfolio, onOpenAllPortfolios,
   projectsSlot, addToProjectSlot,
   collapsed, onToggleSection, className,
+  hidden = false, onCollapse,
 }: AssetWorkSidebarProps) {
   const listPreview = usePreview(lists)
   const themePreview = usePreview(themes)
   const portfolioPreview = usePreview(portfolios)
+
+  /*
+    Rendering nothing, rather than the caller rendering nothing.
+
+    The grid holds two children: this and the working surface. If the caller
+    dropped this one, the surface would move from the second slot to the
+    first, React would see a different element type there and rebuild the
+    whole working surface — losing the selected requirement, the open
+    editor and any unsent draft. Returning null keeps the element in place
+    and puts no node in the DOM, so there is no column and no gutter.
+  */
+  if (hidden) return null
 
   return (
     /*
@@ -188,7 +211,17 @@ export function AssetWorkSidebar({
       )}
       aria-label="Asset work and relationships"
       data-testid="asset-work-sidebar"
+      id={WORK_SIDEBAR_REGION_ID}
     >
+      {/* ── The collapse control ────────────────────────────────────────
+          A single quiet row, not a toolbar: the sidebar has no header of
+          its own and does not need one to carry a 24px button. */}
+      {onCollapse && (
+        <div className="col-span-full -mb-1 flex justify-end">
+          <WorkSidebarToggle direction="collapse" onToggle={onCollapse} />
+        </div>
+      )}
+
       {/* ── The work itself ─────────────────────────────────────────── */}
       <div className="col-span-full">{workSlot}</div>
 

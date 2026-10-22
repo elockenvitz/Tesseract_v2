@@ -89,6 +89,7 @@ import {
 import { WorkNavigator } from '../asset/work/WorkNavigator'
 import { IdeaWorkSurface } from '../asset/work/IdeaWorkSurface'
 import { AssetWorkSidebar } from '../asset/work/AssetWorkSidebar'
+import { WorkSidebarToggle } from '../asset/work/WorkSidebarToggle'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 
 /* The nav's icons, beside the labels the model owns. Kept here rather than in
@@ -426,6 +427,28 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       return next
     })
   }, [])
+  /*
+   * Whether the Work sidebar is hidden, so the working surface gets its
+   * 296px.
+   *
+   * localStorage and not the tab state: the tab state is per-asset and
+   * per-session, and this is neither. A reader who hides the sidebar to
+   * write a model means it for AAPL, for MSFT, for tomorrow — so the key
+   * carries the user and nothing else. Wrapped, because a private window
+   * or blocked site data throws on access and a layout preference must
+   * never be what takes the page down.
+   */
+  const workSidebarPrefKey = `tesseract:work-sidebar-collapsed:${user?.id ?? 'anon'}`
+  const [workSidebarCollapsed, setWorkSidebarCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(`tesseract:work-sidebar-collapsed:${user?.id ?? 'anon'}`) === '1' } catch { return false }
+  })
+  const toggleWorkSidebar = useCallback(() => {
+    setWorkSidebarCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem(workSidebarPrefKey, next ? '1' : '0') } catch { /* ignore */ }
+      return next
+    })
+  }, [workSidebarPrefKey])
   /*
    * Which book the Decision Memory narrative is scoped to. `null` is
    * organization-wide and is the default — the asset page's own context is
@@ -4130,8 +4153,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               centre's 78ch reading measure stops fitting beside it at the
               narrow end of "wide desktop".
             */}
-            <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[296px_minmax(0,1fr)]">
+            {/*
+              Collapsed, the sidebar's column is gone rather than emptied —
+              one track, so there is no 296px gutter and no implicit second
+              row. Only the container's class changes; both children keep
+              their slots, so nothing in the working surface is rebuilt.
+            */}
+            <div className={workSidebarCollapsed
+              ? 'grid grid-cols-1 items-start gap-5'
+              : 'grid grid-cols-1 items-start gap-5 xl:grid-cols-[296px_minmax(0,1fr)]'}>
               <AssetWorkSidebar
+                key="work-sidebar"
+                hidden={workSidebarCollapsed}
+                onCollapse={toggleWorkSidebar}
                 collapsed={collapsedSections}
                 onToggleSection={toggleSection}
                 className="xl:sticky xl:top-2"
@@ -4243,7 +4277,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 }
               />
 
-              <div className="min-w-0" data-testid="work-surface">
+              <div key="work-surface" className="min-w-0" data-testid="work-surface">
+                {/* The way back in. Only while the sidebar is away, at the
+                    top left of the work it made room for. */}
+                {workSidebarCollapsed && (
+                  <div className="mb-2 flex">
+                    <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
+                  </div>
+                )}
                 {!selectedWorkItem && (
                   <div
                     data-testid="work-surface-empty"
