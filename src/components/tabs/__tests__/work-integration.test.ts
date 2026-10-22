@@ -30,13 +30,19 @@ const TAB  = strip(read('src/components/tabs/AssetTab.tsx'))
 const HOOK = strip(read('src/hooks/useAssetWorkAttention.ts'))
 const NAV  = strip(read('src/components/asset/work/WorkNavigator.tsx'))
 const IDEA = strip(read('src/components/asset/work/IdeaWorkSurface.tsx'))
-const STRIP = strip(read('src/components/asset/work/AssetContextStrip.tsx'))
+const SIDEBAR = strip(read('src/components/asset/work/AssetWorkSidebar.tsx'))
 
 describe('the shell: a strip, a navigator and one surface', () => {
-  it('mounts all three', () => {
-    expect(TAB).toMatch(/<AssetContextStrip/)
+  it('mounts one sidebar and one surface', () => {
+    /*
+     * The strip is gone: list membership is a section of the sidebar now,
+     * beside themes, portfolios and projects, rather than a horizontal band
+     * in a third idiom above the work.
+     */
+    expect(TAB).toMatch(/<AssetWorkSidebar/)
     expect(TAB).toMatch(/<WorkNavigator/)
     expect(TAB).toMatch(/data-testid="work-surface"/)
+    expect(TAB).not.toMatch(/<AssetContextStrip/)
   })
 
   it('no longer mounts the orientation band', () => {
@@ -48,7 +54,9 @@ describe('the shell: a strip, a navigator and one surface', () => {
     // A 248px navigator beside a surface that takes the rest. Every element
     // used to run the full 1,841px, so a 25-character requirement was set
     // across 1,789 pixels.
-    expect(TAB).toMatch(/xl:grid-cols-\[248px_minmax\(0,1fr\)\]/)
+    // 296px: the widest the sidebar can be before the centre's reading
+    // measure stops fitting beside it at the narrow end of wide desktop.
+    expect(TAB).toMatch(/xl:grid-cols-\[296px_minmax\(0,1fr\)\]/)
   })
 
   it('renders the process surface by mounting the real thing', () => {
@@ -237,20 +245,20 @@ describe('navigation handoffs are the existing ones', () => {
 })
 
 describe('lists survive as context, with their Step B behaviour', () => {
-  it('passes the permission-gated rows to the strip', () => {
-    expect(TAB).toMatch(/<AssetContextStrip/)
+  it('passes the permission-gated rows to the sidebar', () => {
+    expect(TAB).toMatch(/<AssetWorkSidebar/)
     expect(TAB).toMatch(/canRemove: l\.canRemove/)
-    expect(STRIP).toMatch(/l\.canRemove && onRemoveFromList/)
+    expect(SIDEBAR).toMatch(/l\.canRemove && onRemoveFromList/)
   })
 
   it('distinguishes "not loaded" from "in no lists"', () => {
     expect(TAB).toMatch(/lists=\{listsLoading \? null : assetListMemberships\.map/)
-    expect(STRIP).toMatch(/if \(lists === null\) return null/)
+    expect(SIDEBAR).toMatch(/lists !== null &&/)
   })
 
   it('reuses the existing Add control rather than a second dialog', () => {
     expect(TAB).toMatch(/addToListSlot=\{<AddToListButton assetId=\{asset\.id\}/)
-    expect(STRIP).not.toMatch(/supabase|useMutation/)
+    expect(SIDEBAR).not.toMatch(/supabase|useMutation|useQuery/)
   })
 
   it('hands the List tab a row whose ownership it can read', () => {
@@ -260,7 +268,20 @@ describe('lists survive as context, with their Step B behaviour', () => {
 
   it('keeps the cross-asset Lists experience reachable', () => {
     expect(TAB).toMatch(/onOpenAllLists=/)
-    expect(STRIP).toMatch(/data-testid="context-open-all-lists"/)
+    expect(SIDEBAR).toMatch(/data-testid=\{`sidebar-all-\$\{id\}`\}/)
+  })
+
+  it('brings themes, portfolios and projects into the sidebar with their controls', () => {
+    /*
+     * They were full-width Cards 708px BELOW the working surface. Every
+     * control came with them; the one that did not is `AddToQueueButton`,
+     * labelled "New Trade Idea", which is not a portfolio relationship.
+     */
+    expect(TAB).toMatch(/addToThemeSlot=\{<AddToThemeButton/)
+    expect(TAB).toMatch(/addToProjectSlot=\{<AddToProjectButton/)
+    expect(TAB).toMatch(/projectsSlot=\{[\s\S]{0,120}<RelatedProjects/)
+    expect(TAB).not.toMatch(/AddToQueueButton/)
+    expect(TAB).not.toMatch(/id="work-memberships"/)
   })
 })
 

@@ -73,12 +73,12 @@ describe('the three merged destinations are all still reachable', () => {
   it('renders Process, Ideas and Lists together under Work', () => {
     const work = (TAB.match(/\{activeMode === 'work' && \(/g) ?? []).length
     /*
-     * Two now: the shell (context strip + navigator + surface) and the
-     * themes/portfolios/projects block. The orientation band and the
-     * duplicate Open Items list are both gone — the navigator lists the
-     * ideas and the surface shows the one in hand.
+     * One now: the shell, which is the sidebar and the working surface.
+     * The orientation band, the duplicate Open Items list and the stranded
+     * themes/portfolios/projects cards are all gone — the sidebar holds the
+     * relationships and the surface shows the selected work.
      */
-    expect(work).toBeGreaterThanOrEqual(2)
+    expect(work).toBeGreaterThanOrEqual(1)
   })
 
   it('anchors the Work sections that still exist', () => {
@@ -101,26 +101,27 @@ describe('the three merged destinations are all still reachable', () => {
      * sibling section below it, and Open Items follows.
      */
     const shell = TAB.indexOf('id={WORK_SECTION_ID.lists}')
-    const strip = TAB.indexOf('<AssetContextStrip')
+    const sidebar = TAB.indexOf('<AssetWorkSidebar')
     const nav = TAB.indexOf('<WorkNavigator')
     const surface = TAB.indexOf('data-testid="work-surface"')
     const proc = TAB.indexOf('id={WORK_SECTION_ID.workflow}')
     expect(shell).toBeGreaterThan(-1)
-    expect(shell).toBeLessThan(strip)
-    expect(strip).toBeLessThan(nav)
+    expect(shell).toBeLessThan(sidebar)
+    expect(sidebar).toBeLessThan(nav)
     expect(nav).toBeLessThan(surface)
     expect(surface).toBeLessThan(proc)
   })
 
   it('keeps every membership surface the Lists tab had', () => {
-    // Themes, portfolios and projects stayed as their collapsible cards, and
-    // the header's context chips still scroll to them by id. Lists itself is
-    // the band's membership row, which carries `lists-section-listsContent`.
-    for (const section of ['themesContent', 'portfoliosContent', 'projectsContent']) {
-      expect(TAB).toMatch(new RegExp(`id="lists-section-${section}"`))
+    /*
+     * All four are sections of the sidebar now, and they carry the same
+     * `lists-section-*Content` ids, so the header's context chips still
+     * deep-link to them. Nothing was dropped on the way across.
+     */
+    const SIDEBAR = strip(read('src/components/asset/work/AssetWorkSidebar.tsx'))
+    for (const section of ['listsContent', 'themesContent', 'portfoliosContent', 'projectsContent']) {
+      expect(SIDEBAR).toMatch(new RegExp(`id="lists-section-${section}"`))
     }
-    expect(strip(read('src/components/asset/work/AssetContextStrip.tsx')))
-      .toMatch(/id="lists-section-listsContent"/)
     // The grouping that collapsed every list onto an absent 'list' key is gone.
     expect(TAB).not.toMatch(/listsByType/)
   })

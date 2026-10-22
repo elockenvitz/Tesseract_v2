@@ -28,7 +28,7 @@ import { TabStateManager } from '../../lib/tabStateManager'
 import { requestUnsavedNavigation } from '../../lib/contributions/unsaved-edits-guard'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
-import { Badge } from '../ui/Badge'
+/* `Badge` went with the Themes card, its last reader on this page. */
 // PriorityBadge and BadgeSelect removed — priority selector replaced by state chips
 import { EditableSectionWithHistory, type EditableSectionWithHistoryRef } from '../ui/EditableSectionWithHistory'
 import { InvestmentTimeline } from '../ui/InvestmentTimeline'
@@ -53,7 +53,9 @@ import { WorkflowManager } from '../ui/WorkflowManager'
 import { CaseCard } from '../ui/CaseCard'
 import { AddToListButton } from '../lists/AddToListButton'
 import { AddToThemeButton } from '../lists/AddToThemeButton'
-import { AddToQueueButton } from '../lists/AddToQueueButton'
+/* `AddToQueueButton` is gone with the Portfolios card that carried it. Its
+   label was "New Trade Idea", which is not a portfolio relationship; the
+   control lives on the sidebar's In Progress header. */
 import { useAssetTradeIdeas } from '../../hooks/useAssetTradeIdeas'
 import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
@@ -86,7 +88,7 @@ import {
 } from '../../lib/asset-work/work-items'
 import { WorkNavigator } from '../asset/work/WorkNavigator'
 import { IdeaWorkSurface } from '../asset/work/IdeaWorkSurface'
-import { AssetContextStrip } from '../asset/work/AssetContextStrip'
+import { AssetWorkSidebar } from '../asset/work/AssetWorkSidebar'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 
 /* The nav's icons, beside the labels the model owns. Kept here rather than in
@@ -2368,16 +2370,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Fetch per-user key references (new system)
   const { references: userKeyReferences = [] } = useKeyReferences(asset.id)
 
-  const getThemeTypeColor = (type: string | null) => {
-    switch (type) {
-      case 'sector': return 'primary'
-      case 'geography': return 'success'
-      case 'strategy': return 'warning'
-      case 'macro': return 'error'
-      case 'general': return 'default'
-      default: return 'default'
-    }
-  }
+  /* `getThemeTypeColor` went with the Themes card that coloured its Badge.
+     The sidebar shows the theme type as a neutral tag, so there is no
+     variant to pick. */
 
   // ---------- Mutations ----------
   const updateAssetMutation = useMutation({
@@ -4112,63 +4107,99 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             from a saved sub-page — therefore lands on the lists themselves,
             not on the themes-and-portfolios block at the foot of Work.
           */
-          <div id={WORK_SECTION_ID.lists} className="space-y-3 scroll-mt-4">
+          <div id={WORK_SECTION_ID.lists} className="scroll-mt-4">
             {/*
-              Context, in one line.
+              ── One sidebar, one working surface ──────────────────────────
 
-              The band this replaces was 286px of a 661px viewport and
-              described work rather than offering it. Membership is a fact
-              about the name, true whatever the reader is doing, so it sits
-              above every surface instead of behind a selection — and it is
-              the Step B implementation moved, not rebuilt: the chips, the
-              permission-gated remove and the existing Add dialog.
+              The left column holds everything this asset IS and everything
+              there is to DO about it; the centre holds the doing. Before
+              this, those were four places in three idioms: a 248px work
+              rail, a horizontal list strip above it, and full-width theme /
+              portfolio / project Cards stranded 708px BELOW the surface,
+              where a reader working a process never saw them.
+
+              296px, which is the widest the sidebar can be before the
+              centre's 78ch reading measure stops fitting beside it at the
+              narrow end of "wide desktop".
             */}
-            <AssetContextStrip
-              lists={listsLoading ? null : assetListMemberships.map(l => ({
-                itemId: l.itemId,
-                listId: l.listId,
-                name: l.name,
-                listType: l.listType,
-                canRemove: l.canRemove,
-              }))}
-              onOpenList={(listId) => {
-                const m = assetListMemberships.find(l => l.listId === listId)
-                if (m && onNavigate) {
-                  /* The List tab derives its own permissions from the row it
-                     is handed, so `list_type` and `created_by` travel with
-                     it. Dropping them opens a list the owner cannot edit. */
-                  onNavigate({
-                    id: m.listId,
-                    title: m.name,
-                    type: 'list',
-                    data: {
+            <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[296px_minmax(0,1fr)]">
+              <AssetWorkSidebar
+                collapsed={collapsedSections}
+                onToggleSection={toggleSection}
+                className="xl:sticky xl:top-2"
+                /* Lists — the Step B implementation, moved not rebuilt. */
+                lists={listsLoading ? null : assetListMemberships.map(l => ({
+                  itemId: l.itemId,
+                  listId: l.listId,
+                  name: l.name,
+                  listType: l.listType,
+                  canRemove: l.canRemove,
+                }))}
+                onOpenList={(listId) => {
+                  const m = assetListMemberships.find(l => l.listId === listId)
+                  if (m && onNavigate) {
+                    /* The List tab derives its own permissions from the row
+                       it is handed, so `list_type` and `created_by` travel
+                       with it. Dropping them opens a list its owner cannot
+                       edit. */
+                    onNavigate({
                       id: m.listId,
-                      name: m.name,
-                      description: m.description,
-                      list_type: m.listType,
-                      created_by: m.createdBy,
-                    },
-                  })
+                      title: m.name,
+                      type: 'list',
+                      data: {
+                        id: m.listId,
+                        name: m.name,
+                        description: m.description,
+                        list_type: m.listType,
+                        created_by: m.createdBy,
+                      },
+                    })
+                  }
+                }}
+                onRemoveFromList={(itemId) => removeFromList.mutate(itemId)}
+                removingListItemId={removeFromList.isPending ? (removeFromList.variables ?? null) : null}
+                addToListSlot={<AddToListButton assetId={asset.id} size="sm" variant="ghost" />}
+                onOpenAllLists={() => onNavigate?.({ id: 'lists', title: 'Lists', type: 'lists', data: null })}
+                /* Themes — the same rows and the same Add dialog the card had. */
+                themes={assetThemes === undefined ? null : (assetThemes as any[]).map(t => ({
+                  id: t.id, name: t.name, themeType: t.theme_type || 'general',
+                }))}
+                onOpenTheme={(t) => onNavigate?.({ id: t.id, title: t.name, type: 'theme', data: t })}
+                onOpenAllThemes={() => onNavigate?.({ id: 'themes-list', title: 'All Themes', type: 'themes-list', data: null })}
+                /* `ghost`/`sm` so the three Add controls carry the same
+                   weight as each other and none of them outweighs the work
+                   above. The dialogs behind them are untouched. */
+                addToThemeSlot={<AddToThemeButton assetId={asset.id} variant="ghost" size="sm" />}
+                /* Portfolios — the same dedupe and the same weight maths. */
+                portfolios={portfolioHoldings === undefined ? null : Array.from(
+                  new Map((portfolioHoldings as any[]).map((h: any) => [h.portfolio_id, h])).values()
+                ).map((h: any) => {
+                  const shares = parseFloat(h.shares)
+                  const cost = parseFloat(h.cost)
+                  const ptotal = portfolioTotals?.[h.portfolio_id] || 0
+                  const held = parseFloat(h.price ?? cost)
+                  return {
+                    id: h.portfolio_id,
+                    name: h.portfolios?.name || 'Unknown Portfolio',
+                    weight: ptotal > 0 ? ((shares * held) / ptotal * 100).toFixed(2) : null,
+                  }
+                })}
+                onOpenPortfolio={(id) => onNavigate?.({ id, title: 'Portfolio', type: 'portfolio', data: { id } })}
+                onOpenAllPortfolios={() => onNavigate?.({ id: 'portfolios-list', title: 'All Portfolios', type: 'portfolios-list', data: null })}
+                /* Projects — the real component, which owns its own data. */
+                addToProjectSlot={<AddToProjectButton assetId={asset.id} variant="ghost" size="sm" />}
+                projectsSlot={
+                  <RelatedProjects
+                    contextType="asset"
+                    contextId={asset.id}
+                    contextTitle={`${asset.symbol} - ${asset.company_name}`}
+                    onProjectClick={(projectId) => onNavigate?.({
+                      id: projectId, title: 'Project', type: 'project', data: { id: projectId },
+                    })}
+                    hideCreateButton
+                  />
                 }
-              }}
-              onRemoveFromList={(itemId) => removeFromList.mutate(itemId)}
-              removingListItemId={removeFromList.isPending ? (removeFromList.variables ?? null) : null}
-              addToListSlot={<AddToListButton assetId={asset.id} size="sm" variant="ghost" />}
-              /* List-driven workflows are cross-asset, and this page is not
-                 where they happen. The full Lists surface stays one click
-                 away rather than being folded in here. */
-              onOpenAllLists={() => onNavigate?.({ id: 'lists', title: 'Lists', type: 'lists', data: null })}
-            />
-
-            {/*
-              The navigator and the one surface it drives.
-
-              Rows are the reader's actual work — this earnings review, this
-              BUY awaiting a decision — not the application's features. A
-              sidebar reading Process / Ideas / Lists / CoAnalyst would be the
-              old vertical stack rotated, and a second mode bar besides.
-            */}
-            <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[248px_minmax(0,1fr)]">
+                workSlot={
               <WorkNavigator
                 items={workItems}
                 selectedKey={selectedWorkItem?.key ?? null}
@@ -4200,7 +4231,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     detail: { type: 'new-trade-idea', data: { assetId: asset.id, symbol: asset.symbol } }
                   }))
                 }}
-                className="xl:sticky xl:top-2"
+              />
+                }
               />
 
               <div className="min-w-0" data-testid="work-surface">
@@ -4838,215 +4870,31 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           )
         })()}
 
-        {/* ─────────── Work · Other memberships ───────────
-            Themes, portfolios and projects — the groupings this name also
-            sits in, each still the collapsible card the Lists tab had.
+        {/* ─────────── Work · Other memberships — REMOVED ───────────
 
-            The LISTS card that used to open this block is gone, and not
-            because lists matter less. Two reasons:
+            Themes, portfolios and projects were full-width collapsible Cards
+            here, 708px BELOW the working surface, where a reader working a
+            process never saw them. They are sections of the sidebar now,
+            beside the work they relate to, with the same rows, the same
+            navigation and the same Add dialogs:
 
-             1. It was wrong. It grouped on `list.list_type || 'list'`, and
-                `list_type` is `'mutual' | 'collaborative'` on every row in
-                the database — never null. So `listsByType.list` was always
-                undefined and the card said "Not in any lists." at every
-                asset, including one filed in four of them.
-             2. It was read-only, and at the very bottom of Work. Membership
-                is now a line in the orientation band at the top, where it
-                can be changed. Keeping a second copy here would have been
-                the same fact in two places, one of them stale. */}
-        {activeMode === 'work' && (
-          <div id="work-memberships" className="space-y-2 scroll-mt-4 pt-2">
-            {(() => {
-              return (
-                <>
-                  {/* Themes Section */}
-                  <Card padding="none" id="lists-section-themesContent">
-                    <button
-                      onClick={() => toggleSection('themesContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
-                    >
-                      <div className="flex justify-between items-center flex-1 mr-2">
-                        <h4
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (onNavigate) {
-                              onNavigate({
-                                id: 'themes-list',
-                                title: 'All Themes',
-                                type: 'themes-list',
-                                data: null
-                              })
-                            }
-                          }}
-                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
-                        >
-                          Themes
-                        </h4>
-                        <AddToThemeButton assetId={asset.id} />
-                      </div>
-                      {collapsedSections.themesContent ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronUp className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                    {!collapsedSections.themesContent && (
-                      <div className="border-t border-gray-100 px-4 py-2 dark:border-gray-800">
-                        {assetThemes && assetThemes.length > 0 ? (
-                          <div className="divide-y divide-gray-50">
-                            {assetThemes.map((theme: any) => (
-                              <div
-                                key={theme.id}
-                                className="flex items-center gap-2 py-1.5 hover:bg-gray-50/50 -mx-1 px-1 rounded transition-colors"
-                              >
-                                <span
-                                  onClick={() => {
-                                    if (onNavigate) {
-                                      onNavigate({
-                                        id: theme.id,
-                                        title: theme.name,
-                                        type: 'theme',
-                                        data: theme
-                                      })
-                                    }
-                                  }}
-                                  className="text-[13px] font-medium text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
-                                >
-                                  {theme.name}
-                                </span>
-                                <Badge variant={getThemeTypeColor(theme.theme_type)} size="sm">
-                                  {theme.theme_type || 'general'}
-                                </Badge>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="py-1">
-                            <p className="text-[13px] text-gray-500 dark:text-gray-400">Not in any themes.</p>
-                            <p className="text-[11px] text-gray-400 mt-0.5">Themes group assets by investment thesis or macro trend.</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Card>
+              Add to Theme      → the Themes section header
+              Add to Project    → the Projects section header
+              RelatedProjects   → the Projects section body, unchanged
+              theme rows        → open the theme
+              portfolio rows    → open the portfolio, weight beside the name
+              "All themes" /
+              "All portfolios"  → the ↗ on each header
 
-                  {/* Portfolios Section */}
-                  <Card padding="none" id="lists-section-portfoliosContent">
-                    <button
-                      onClick={() => toggleSection('portfoliosContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
-                    >
-                      <div className="flex justify-between items-center flex-1 mr-2">
-                        <h4
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (onNavigate) {
-                              onNavigate({
-                                id: 'portfolios-list',
-                                title: 'All Portfolios',
-                                type: 'portfolios-list',
-                                data: null
-                              })
-                            }
-                          }}
-                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
-                        >
-                          Portfolios
-                        </h4>
-                        <AddToQueueButton assetId={asset.id} />
-                      </div>
-                      {collapsedSections.portfoliosContent ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronUp className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                    {!collapsedSections.portfoliosContent && (
-                      <div className="border-t border-gray-100 px-4 py-2.5 dark:border-gray-800">
-                        {portfolioHoldings && portfolioHoldings.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {/* Deduplicate by portfolio_id, compute weight for tooltip */}
-                            {Array.from(new Map(portfolioHoldings.map((h: any) => [h.portfolio_id, h])).values()).map((holding: any) => {
-                              const shares = parseFloat(holding.shares)
-                              const cost = parseFloat(holding.cost)
-                              const ptotal = portfolioTotals?.[holding.portfolio_id] || 0
-                              const held = parseFloat((holding as any).price ?? cost)
-                              const weight = ptotal > 0 ? ((shares * held) / ptotal * 100).toFixed(2) : null
-                              return (
-                                <button
-                                  key={holding.portfolio_id}
-                                  onClick={() => {
-                                    if (onNavigate) {
-                                      onNavigate({
-                                        id: holding.portfolio_id,
-                                        title: holding.portfolios?.portfolio_id || holding.portfolios?.name || 'Portfolio',
-                                        type: 'portfolio',
-                                        data: { id: holding.portfolio_id }
-                                      })
-                                    }
-                                  }}
-                                  title={weight ? `Open portfolio \u00B7 Port Wgt: ${weight}%` : 'Open portfolio'}
-                                  className="group/chip inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold text-gray-800 bg-gray-50 border border-gray-200 cursor-pointer hover:border-primary-400 hover:text-primary-700 hover:bg-primary-50 hover:shadow-sm transition-all dark:border-gray-700 dark:text-gray-100 dark:bg-gray-900"
-                                >
-                                  <Briefcase className="w-3.5 h-3.5 text-gray-400 group-hover/chip:text-primary-500 transition-colors" />
-                                  {holding.portfolios?.name || 'Unknown Portfolio'}
-                                  <ExternalLink className="w-3 h-3 text-gray-300 group-hover/chip:text-primary-400 transition-colors" />
-                                </button>
-                              )
-                            })}
-                          </div>
-                        ) : (
-                          <div className="py-0.5">
-                            <p className="text-[13px] text-gray-500 dark:text-gray-400">Not in any portfolios.</p>
-                            <p className="text-[11px] text-gray-400 mt-0.5">This asset has no current holdings across portfolios.</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Card>
+            The one thing deliberately NOT carried over is the Portfolios
+            card's `AddToQueueButton`, labelled "New Trade Idea": creating an
+            idea is not a portfolio relationship, and the control already
+            exists on In Progress. One action, one place.
 
-                  {/* Projects Section */}
-                  <Card padding="none" id="lists-section-projectsContent">
-                    <button
-                      onClick={() => toggleSection('projectsContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
-                    >
-                      <div className="flex justify-between items-center flex-1 mr-2">
-                        <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Projects</h4>
-                        <AddToProjectButton assetId={asset.id} />
-                      </div>
-                      {collapsedSections.projectsContent ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronUp className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                    {!collapsedSections.projectsContent && (
-                      <div className="border-t border-gray-100 px-4 py-1.5 dark:border-gray-800">
-                        <RelatedProjects
-                          contextType="asset"
-                          contextId={asset.id}
-                          contextTitle={`${asset.symbol} - ${asset.company_name}`}
-                          onProjectClick={(projectId) => {
-                            if (onNavigate) {
-                              onNavigate({
-                                id: projectId,
-                                title: 'Project',
-                                type: 'project',
-                                data: { id: projectId }
-                              })
-                            }
-                          }}
-                          hideCreateButton
-                        />
-                      </div>
-                    )}
-                  </Card>
-                </>
-              )
-            })()}
-          </div>
-        )}
+            The `lists-section-*Content` ids moved with the sections, so the
+            header's context chips still deep-link to them. */}
+
+
       </div>
 
       {/* Workflow Manager Modal */}
