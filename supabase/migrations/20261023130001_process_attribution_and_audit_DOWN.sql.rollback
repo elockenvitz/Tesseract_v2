@@ -1,0 +1,77 @@
+-- =============================================================================
+-- ROLLBACK — Process attribution and audit history
+--
+-- PARTIALLY REVERSIBLE, AND THAT IS DELIBERATE.
+--
+--   Fully reversed:  the five triggers and five functions. Attribution stops
+--                    being written and events stop being emitted.
+--
+--   NOT reversed:    the widened `valid_entity_type` CHECK constraint, and
+--                    every `process_run` / `process_requirement` row already
+--                    in `audit_events`.
+--
+-- Why the constraint stays: narrowing it would make the events written while
+-- the migration was live violate their own table. Postgres would refuse to
+-- re-add the narrow constraint while they exist, so the only way to narrow it
+-- is to delete them first — and deleting legitimate audit history to tidy a
+-- schema is the one thing an audit trail must never do. The widened
+-- constraint is inert on its own: it permits two more entity types and
+-- nothing writes them once the triggers are gone.
+--
+-- Attribution already written to `started_by` / `completed_by` also stays. It
+-- is true: those actors did start and complete those runs. Clearing it would
+-- replace facts with nulls.
+--
+-- READ THIS BEFORE RUNNING IT
+--
+-- After this rollback, process state changes are once again unattributed and
+-- unaudited. The `completed_by` forgery closed by
+-- `process_requirement_attribution` is reopened: any active organization
+-- member can again attribute any requirement completion to any user.
+-- =============================================================================
+
+BEGIN;
+
+-- --- Triggers first, then the functions they call --------------------------
+DROP TRIGGER IF EXISTS process_requirement_audit_trg      ON asset_checklist_items;
+DROP TRIGGER IF EXISTS process_run_audit_upd_trg          ON asset_workflow_progress;
+DROP TRIGGER IF EXISTS process_run_audit_ins_trg          ON asset_workflow_progress;
+DROP TRIGGER IF EXISTS zz_process_requirement_attribution_trg ON asset_checklist_items;
+DROP TRIGGER IF EXISTS zz_process_run_attribution_trg     ON asset_workflow_progress;
+
+DROP FUNCTION IF EXISTS public.process_requirement_audit();
+DROP FUNCTION IF EXISTS public.process_run_audit();
+DROP FUNCTION IF EXISTS public.process_requirement_attribution();
+DROP FUNCTION IF EXISTS public.process_run_attribution();
+
+-- The writer goes last: the trigger functions above are its only callers.
+DROP FUNCTION IF EXISTS public.record_process_event(
+  text, uuid, text, text, uuid, text, text, uuid, jsonb, jsonb, text[], jsonb, uuid, text
+);
+
+-- --- What is deliberately NOT dropped ---------------------------------------
+-- valid_entity_type keeps 'process_run' and 'process_requirement'.
+-- Uncomment the block below ONLY if you have separately decided to destroy
+-- the process audit history, and know how many rows that is:
+--
+--   SELECT count(*) FROM audit_events WHERE entity_type IN ('process_run','process_requirement');
+--
+--   DELETE FROM audit_events WHERE entity_type IN ('process_run','process_requirement');
+--   ALTER TABLE audit_events DROP CONSTRAINT valid_entity_type;
+--   ALTER TABLE audit_events ADD CONSTRAINT valid_entity_type CHECK (entity_type = ANY (ARRAY[
+--     'trade_idea','pair_trade','order','execution','asset','coverage','portfolio',
+--     'simulation','user','team','comment','attachment','audit_explorer','lab_variant',
+--     'trade_lab_view','layout_template','organization','morph_session']));
+
+COMMIT;
+
+-- --- Verification (run after rolling back) -----------------------------------
+--   SELECT tgname FROM pg_trigger WHERE NOT tgisinternal
+--    AND tgrelid IN ('asset_workflow_progress'::regclass, 'asset_checklist_items'::regclass);
+--   -- expect only the four that predate this work:
+--   --   asset_checklist_items_set_org_trg, update_asset_checklist_items_updated_at_trigger,
+--   --   trigger_auto_create_workflow_branch, update_asset_workflow_progress_updated_at
+--
+--   SELECT count(*) FROM pg_proc WHERE proname LIKE 'process_%audit%'
+--      OR proname LIKE 'process_%attribution%' OR proname = 'record_process_event';
+--   -- expect 0
