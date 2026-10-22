@@ -45,7 +45,7 @@
 -- verified afterwards to carry none of the new functions, triggers, events or
 -- fixtures.
 --
--- Self-cleaning. 19 assertions.
+-- Self-cleaning. 26 assertions (20-26 are the run-attribution forgery matrix).
 --
 -- HOW TO RUN: this file asserts behaviour that only exists once the migration
 -- is applied. Against an unmigrated database assertions 1-14 and 17-19 fail
@@ -373,6 +373,88 @@ BEGIN
   ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (19, 'FAIL', format('%s events in another org', v_count)); END IF;
 
   -- ===========================================================================
+  -- 20-26. ACTOR FORGERY ON A RUN.
+  --
+  -- The first draft set `started_by` on the transition and left it alone
+  -- otherwise, which read as safe and was not: "otherwise" included the
+  -- forgery, so `UPDATE … SET started_by = <somebody else>` on an
+  -- already-started run simply stood. Attribution is now write-once by
+  -- transition, and these seven assertions are what that means.
+  -- ===========================================================================
+
+  -- 20. INSERT already-started, with a forged starter in the payload
+  EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user, 'role', 'authenticated')::text);
+  SET LOCAL ROLE authenticated;
+  INSERT INTO asset_workflow_progress (asset_id, workflow_id, is_started, current_stage_key, started_by)
+    VALUES (v_asset, v_wf2, true, 'f1', v_user2) RETURNING id INTO v_run;
+  RESET ROLE; SET LOCAL request.jwt.claims = '';
+  SELECT started_by::text INTO v_a FROM asset_workflow_progress WHERE id = v_run;
+  IF v_a = v_user::text THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (20, 'PASS', 'forged starter on INSERT replaced by the real actor');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (20, 'FAIL', format('started_by=%s', coalesce(v_a,'NULL'))); END IF;
+
+  -- 21. THE FIXED HOLE: rewrite started_by on an already-started run
+  EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user, 'role', 'authenticated')::text);
+  SET LOCAL ROLE authenticated;
+  UPDATE asset_workflow_progress SET started_by = v_user2 WHERE id = v_run;
+  RESET ROLE; SET LOCAL request.jwt.claims = '';
+  SELECT started_by::text INTO v_a FROM asset_workflow_progress WHERE id = v_run;
+  IF v_a = v_user::text THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (21, 'PASS', 'started_by is immutable outside a transition');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (21, 'FAIL', 'started_by was forged on a started run'); END IF;
+
+  -- 22. An unrelated stage update by a DIFFERENT user preserves the starter
+  EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user2, 'role', 'authenticated')::text);
+  SET LOCAL ROLE authenticated;
+  UPDATE asset_workflow_progress SET current_stage_key = 'f2' WHERE id = v_run;
+  RESET ROLE; SET LOCAL request.jwt.claims = '';
+  SELECT started_by::text INTO v_a FROM asset_workflow_progress WHERE id = v_run;
+  IF v_a = v_user::text THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (22, 'PASS', 'unrelated update preserved the starter');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (22, 'FAIL', format('started_by=%s', coalesce(v_a,'NULL'))); END IF;
+
+  -- 23. An upsert cannot rewrite it either — this is how the application's
+  --     `onConflict: 'asset_id,workflow_id'` writes actually arrive.
+  EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user2, 'role', 'authenticated')::text);
+  SET LOCAL ROLE authenticated;
+  INSERT INTO asset_workflow_progress (asset_id, workflow_id, is_started, current_stage_key, started_by)
+    VALUES (v_asset, v_wf2, true, 'f3', v_user2)
+    ON CONFLICT (asset_id, workflow_id) DO UPDATE
+      SET current_stage_key = excluded.current_stage_key, started_by = excluded.started_by;
+  RESET ROLE; SET LOCAL request.jwt.claims = '';
+  SELECT started_by::text INTO v_a FROM asset_workflow_progress WHERE id = v_run;
+  IF v_a = v_user::text THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (23, 'PASS', 'upsert cannot rewrite the starter');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (23, 'FAIL', 'an upsert rewrote the starter'); END IF;
+
+  -- 24. INSERT not-started with a forged starter: no starter at all
+  EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user, 'role', 'authenticated')::text);
+  SET LOCAL ROLE authenticated;
+  INSERT INTO asset_workflow_progress (asset_id, workflow_id, is_started, current_stage_key, started_by)
+    VALUES (v_asset, v_wf3, false, 'f1', v_user2);
+  RESET ROLE; SET LOCAL request.jwt.claims = '';
+  SELECT coalesce(started_by::text,'NULL') INTO v_a
+    FROM asset_workflow_progress WHERE asset_id = v_asset AND workflow_id = v_wf3;
+  IF v_a = 'NULL' THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (24, 'PASS', 'a not-started row carries no starter');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (24, 'FAIL', format('started_by=%s', v_a)); END IF;
+
+  -- 25. completed_by cannot be rewritten on an already-completed run
+  EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user2, 'role', 'authenticated')::text);
+  SET LOCAL ROLE authenticated;
+  UPDATE asset_workflow_progress SET is_completed = true, completed_by = v_user WHERE id = v_run;
+  UPDATE asset_workflow_progress SET completed_by = v_user WHERE id = v_run;
+  RESET ROLE; SET LOCAL request.jwt.claims = '';
+  SELECT completed_by::text INTO v_a FROM asset_workflow_progress WHERE id = v_run;
+  IF v_a = v_user2::text THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (25, 'PASS', 'completed_by held at the real completer through a forgery');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (25, 'FAIL', format('completed_by=%s', coalesce(v_a,'NULL'))); END IF;
+
+  -- 26. The audit event carries the same actor as the row. Selected BY ACTOR,
+  --     not by time: `now()` is transaction-start time, so every event
+  --     written in one transaction shares `occurred_at` and cannot be
+  --     ordered by it. The same is true of `record_audit_event`.
+  SELECT count(*) INTO v_count FROM audit_events
+   WHERE entity_type = 'process_run' AND entity_id = v_run
+     AND action_type = 'process.completed' AND actor_id = v_user2;
+  IF v_count >= 1 THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (26, 'PASS', 'the completion event names the real completer');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (26, 'FAIL', 'no completion event attributed to the real completer'); END IF;
+
+  -- ===========================================================================
   -- CLEANUP
   -- ===========================================================================
   RAISE NOTICE '';
@@ -390,7 +472,7 @@ BEGIN
   DELETE FROM auth.users WHERE id IN (v_user, v_user2);
 
   RAISE NOTICE '';
-  RAISE NOTICE '=== RESULTS: % passed, % failed out of 19 assertions ===', v_pass, v_fail;
+  RAISE NOTICE '=== RESULTS: % passed, % failed out of 26 assertions ===', v_pass, v_fail;
 END;
 $$;
 

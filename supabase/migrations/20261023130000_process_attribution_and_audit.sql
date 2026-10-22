@@ -179,6 +179,15 @@ REVOKE ALL ON FUNCTION public.record_process_event(
 -- `IS NOT TRUE` throughout, never `= false`: `is_completed` is nullable, and
 -- `NULL = false` is NULL — the comparison that would silently skip every
 -- transition out of a null.
+-- Attribution is write-once, by transition. Every path that is not a genuine
+-- lifecycle transition is forced back to the stored value, so these columns
+-- are not writable by a client at all — only earnable.
+--
+-- The earlier draft set them ON the transition and left them alone otherwise,
+-- which read as safe and was not: `UPDATE asset_workflow_progress SET
+-- started_by = <somebody else>` on an already-started run simply stood,
+-- because "otherwise" included the forgery. The ELSE branches below are the
+-- fix, and they are the whole fix.
 CREATE OR REPLACE FUNCTION public.process_run_attribution()
   RETURNS trigger
   LANGUAGE plpgsql
@@ -187,33 +196,60 @@ CREATE OR REPLACE FUNCTION public.process_run_attribution()
 AS $function$
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    -- Only a row that arrives already started or completed gets an actor.
+    -- A row that arrives started is attributed to whoever is inserting it —
+    -- `auth.uid()`, never the supplied value, and NULL under cron rather
+    -- than a fabricated human. A row that arrives not-started carries no
+    -- starter at all, whatever the caller put there.
     IF NEW.is_started IS TRUE THEN
       NEW.started_by := auth.uid();
+    ELSE
+      NEW.started_by := NULL;
     END IF;
+
     IF NEW.is_completed IS TRUE THEN
       NEW.completed_by := auth.uid();
+    ELSE
+      NEW.completed_by := NULL;
+      NEW.completed_at := NULL;
     END IF;
     RETURN NEW;
   END IF;
 
-  -- UPDATE. Each branch guards exactly one transition; anything else leaves
-  -- both columns as they are.
+  -- UPDATE — including the UPDATE half of an upsert, which is how the
+  -- application's `onConflict: 'asset_id,workflow_id'` writes arrive.
+
   IF OLD.is_started IS NOT TRUE AND NEW.is_started IS TRUE THEN
-    NEW.started_by := auth.uid();
+    NEW.started_by := auth.uid();                 -- genuine start
+  ELSE
+    NEW.started_by := OLD.started_by;             -- immutable otherwise
   END IF;
 
   IF OLD.is_completed IS NOT TRUE AND NEW.is_completed IS TRUE THEN
-    NEW.completed_by := auth.uid();
+    NEW.completed_by := auth.uid();               -- genuine completion
   ELSIF OLD.is_completed IS TRUE AND NEW.is_completed IS NOT TRUE THEN
-    -- Reopened. A run that is open again was completed by nobody, and a later
-    -- recompletion must attribute to whoever actually recompletes it.
+    -- Reopened. A run that is open again was completed by nobody, and a
+    -- later recompletion must attribute to whoever recompletes it.
     NEW.completed_by := NULL;
     NEW.completed_at := NULL;
+  ELSE
+    NEW.completed_by := OLD.completed_by;         -- immutable otherwise
+    NEW.completed_at := OLD.completed_at;
   END IF;
 
   RETURN NEW;
 END $function$;
+--
+-- COMPATIBILITY, checked rather than assumed:
+--
+-- `InvestmentTimeline.tsx` does supply attribution on two paths — it upserts
+-- `started_by: user?.id` when starting a run (:655) and `completed_by:
+-- user?.id` when completing one (:677). Both send the session's OWN user, so
+-- `auth.uid()` substitutes the identical value and neither path changes
+-- behaviour. No other client path writes these columns.
+--
+-- `completed_at` is now also held to the stored value outside a transition.
+-- The same two paths set it together with `is_completed`, which is a genuine
+-- transition, so they are unaffected. Nothing else in the codebase writes it.
 
 -- ─── 4. Requirement attribution ──────────────────────────────────────────────
 -- `asset_checklist_items`' UPDATE policy carries no column restrictions, so
