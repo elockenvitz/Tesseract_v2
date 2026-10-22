@@ -86,7 +86,10 @@ describe('the capital bar strikes every figure at one price', () => {
    * `useAssetLiveWeights.ts:34-37`: "repricing only the numerator against a
    * stale denominator is worse than leaving both stale."
    */
-  const bar = /activeSubPage === 'decisions'[\s\S]{0,1400}?holdingMetrics\.reduce/.exec(ASSET_TAB)?.[0] ?? ''
+  /* The block is guarded on the mode now — Work and History share it,
+     because History's capital bar needs the holdings arithmetic. */
+  const bar = /activeMode === 'work' \|\| activeMode === 'history'[\s\S]{0,1600}?holdingMetrics\.reduce/
+    .exec(ASSET_TAB)?.[0] ?? ''
 
   it('finds the capital bar', () => {
     expect(bar, 'the decisions sub-page block should be locatable').toContain('holdingMetrics')

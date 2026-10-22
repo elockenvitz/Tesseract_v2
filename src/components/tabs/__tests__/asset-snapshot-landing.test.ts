@@ -26,8 +26,12 @@ const code = (s: string) =>
 const TAB = code(src('components/tabs/AssetTab.tsx'))
 
 describe('the Snapshot is the default landing', () => {
-  it('is a real sub-page in the union, not a special case', () => {
-    expect(TAB).toMatch(/useState<'snapshot' \| 'research' \| 'workflow' \| 'decisions' \| 'lists'>/)
+  it('is a real destination in the union, not a special case', () => {
+    /* The union moved into the mode model, which is where the nav reads it
+       from; 'snapshot' is still the key tab state persists. */
+    expect(TAB).toMatch(/useState<AssetSubPage>/)
+    const MODES = code(src('lib/asset-workspace/modes.ts'))
+    expect(MODES).toMatch(/snapshot: 'overview'/)
   })
 
   it('is what an asset opens on when nothing else is asked for', () => {
@@ -39,17 +43,23 @@ describe('the Snapshot is the default landing', () => {
     expect(TAB).toMatch(/TabStateManager\.loadTabState\(asset\.id\)[\s\S]{0,120}activeSubPage \|\| 'snapshot'/)
   })
 
-  it('renders the Snapshot for that sub-page, and passes the already-fetched coverage', () => {
-    expect(TAB).toMatch(/activeSubPage === 'snapshot' &&[\s\S]{0,400}<InvestmentSnapshot/)
+  it('renders the Snapshot for that destination, and passes the already-fetched coverage', () => {
+    // 'snapshot' is the only destination in the Overview mode.
+    expect(TAB).toMatch(/activeMode === 'overview' &&[\s\S]{0,400}<InvestmentSnapshot/)
     // A second coverage read for data the page already holds would be the
     // "collection of widgets" failure expressed as queries.
     expect(TAB).toMatch(/<InvestmentSnapshot[\s\S]{0,400}coverage=\{coverage \|\| \[\]\}/)
     expect(TAB).toMatch(/<InvestmentSnapshot[\s\S]{0,400}currentQuote=\{currentQuote\}/)
   })
 
-  it('offers it in the tab bar', () => {
-    expect(TAB).toMatch(/setActiveSubPage\('snapshot'\)/)
-    expect(TAB).toMatch(/<span>Snapshot<\/span>/)
+  it('offers it in the nav, as the Overview mode', () => {
+    // The five tab buttons became four mode buttons driven by the model, so
+    // the label lives there rather than in a hand-written <span>.
+    expect(TAB).toMatch(/ASSET_MODES\.map\(mode =>/)
+    expect(TAB).toMatch(/\{MODE_LABEL\[mode\]\}/)
+    const MODES = code(src('lib/asset-workspace/modes.ts'))
+    expect(MODES).toMatch(/overview: 'Overview'/)
+    expect(MODES).toMatch(/overview: 'snapshot'/)
   })
 })
 

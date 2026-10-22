@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Repeat, LayoutDashboard, Edit3 } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3 } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   buildAudienceOptions,
   effectiveMemberCounts,
-  isLevelSelectable,
-  unreachableReason,
-  emptyLevelReason,
   type AudienceNode,
 } from '../../lib/contributions/audience-reach'
+import { AudiencePicker } from '../contributions/AudiencePicker'
+import {
+  stageLabel, stageColor, toIdeaStage,
+  IDEA_STAGES, IDEA_STAGE_CONFIG, type IdeaStage,
+} from '../../lib/ideas/stage-model'
 import { fetchSignedUrl } from '../../lib/storage/signed-url'
 import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../../lib/storage/buckets'
 import { useAuth } from '../../hooks/useAuth'
@@ -33,6 +35,11 @@ import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
 import { AssetWorkflowSelectorEnhanced } from '../asset/AssetWorkflowSelectorEnhanced'
 import { AssetDecisionView } from '../asset/AssetDecisionView'
 import { DecisionTimeline } from '../asset/DecisionTimeline'
+import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
+import { ResearchToolbarMenu } from '../asset/ResearchToolbarMenu'
+import { AssetWorkPane } from '../asset/work/AssetWorkPane'
+import { useAssetWorkAttention } from '../../hooks/useAssetWorkAttention'
+import { useAssetProcessSummary } from '../../hooks/useAssetProcessSummary'
 import { BookFilter } from '../shared/BookFilter'
 import { WorkflowActionButton } from '../asset/WorkflowActionButton'
 import { WorkflowManager } from '../ui/WorkflowManager'
@@ -58,6 +65,20 @@ import { AddToProjectButton } from '../projects/AddToProjectButton'
 import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView, ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
 import type { WorkspaceDestination, SignalFocus } from '../../lib/asset-workspace/context'
 import { attentionTarget } from '../../lib/asset-workspace/attention-target'
+import {
+  ASSET_MODES, MODE_LABEL, MODE_LANDING, WORK_SECTION_ID,
+  modeOf, workSectionId,
+  type AssetMode, type AssetSubPage,
+} from '../../lib/asset-workspace/modes'
+
+/* The nav's icons, beside the labels the model owns. Kept here rather than in
+   the model so the model stays free of React imports. */
+const MODE_ICON: Record<AssetMode, typeof FileText> = {
+  overview: LayoutDashboard,
+  research: FileText,
+  work: Briefcase,
+  history: History,
+}
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
 import { useKeyReferences } from '../../hooks/useKeyReferences'
 import { useUserAssetPriority, type Priority } from '../../hooks/useUserAssetPriority'
@@ -326,10 +347,35 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * back to Process: the default answers "where does an asset open", not
    * "where must you be". `loadTabState` is per-asset and per-session.
    */
-  const [activeSubPage, setActiveSubPage] = useState<'snapshot' | 'research' | 'workflow' | 'decisions' | 'lists'>(() => {
+  const [activeSubPage, setActiveSubPage] = useState<AssetSubPage>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.activeSubPage || 'snapshot'
   })
+  /*
+   * ── The four modes ─────────────────────────────────────────────────────
+   *
+   * The nav shows Overview / Research / Work / History; the sub-page is still
+   * the destination underneath, because tab state, `asset.focus` and every
+   * existing handoff are keyed on it. In Work the three work sub-pages render
+   * together on one surface, and the sub-page picks the section to scroll to
+   * rather than the content to show.
+   */
+  const activeMode: AssetMode = modeOf(activeSubPage)
+  /*
+   * Set only by an explicit handoff ("show me the Lists", "open the
+   * process"), never by entering Work — entering a mode should land at the
+   * top of it.
+   *
+   * It carries a NONCE, the same way `attentionAnchor` below does, because a
+   * bare id made every second click dead: if the scroll frame was cancelled
+   * the id was never cleared, and setting state to the value it already holds
+   * is a no-op in React, so the next identical request never re-ran the
+   * effect. Two clicks on "go to the process", one scroll.
+   */
+  const [workAnchor, setWorkAnchor] = useState<{ id: string; nonce: number } | null>(null)
+  const focusWorkSection = useCallback((id: string | null) => {
+    setWorkAnchor(id ? { id, nonce: Date.now() } : null)
+  }, [])
   // UX2 Phase 1 — whether the context strip is collapsed to a compact working
   // header. Per-viewer convenience only (localStorage), wrapped so a blocked or
   // private store never throws.
@@ -443,9 +489,22 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Research read-mode also unmounts an open inline editor, so route the user
   // controls through the unsaved-research guard. Clean editors pass through
   // synchronously, so behaviour is unchanged when nothing is being edited.
-  const goToSubPage = useCallback((next: typeof activeSubPage) => {
-    requestUnsavedNavigation(() => setActiveSubPage(next))
-  }, [])
+  const goToSubPage = useCallback((next: AssetSubPage) => {
+    requestUnsavedNavigation(() => {
+      setActiveSubPage(next)
+      /* A Work destination asked for explicitly is a scroll, because all
+         three already render. Anything else clears a stale anchor. */
+      focusWorkSection(workSectionId(next))
+    })
+  }, [focusWorkSection])
+  /* The nav. Picking a mode lands on that mode's destination and never sets
+     an anchor, so Work opens at the top. */
+  const goToMode = useCallback((mode: AssetMode) => {
+    requestUnsavedNavigation(() => {
+      setActiveSubPage(MODE_LANDING[mode])
+      focusWorkSection(null)
+    })
+  }, [focusWorkSection])
   // Thesis view mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline
   const [thesisViewMode, setThesisViewMode] = useState<'all' | 'summary' | 'history' | 'references'>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
@@ -467,8 +526,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Shared visibility state for all thesis sections
   const [sharedThesisVisibility, setSharedThesisVisibility] = useState<ContributionVisibility>('firm')
   const [sharedThesisTargetIds, setSharedThesisTargetIds] = useState<string[]>([])
-  const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false)
-  const [visibilityStep, setVisibilityStep] = useState<'level' | 'targets'>('level')
   const [hasInitializedVisibility, setHasInitializedVisibility] = useState(false)
   /** The visibility level the shared picker was last LOADED with. */
   const rehydratedVisibilityRef = useRef<ContributionVisibility | null>(null)
@@ -479,7 +536,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    */
   const [savedAudience, setSavedAudience] =
     useState<{ visibility: ContributionVisibility; targetIds: string[] } | null>(null)
-  const visibilityRef = useRef<HTMLDivElement>(null)
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
   const [showCoverageManager, setShowCoverageManager] = useState(false)
@@ -495,7 +551,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // showAssetPriorityDropdown removed — priority selector replaced by state chips
   const [showWorkflowPriorityDropdown, setShowWorkflowPriorityDropdown] = useState(false)
   const [listsFocus, setListsFocus] = useState<string | null>(null)
-  const [openItemsFilter, setOpenItemsFilter] = useState<'all' | 'idea' | 'working_on' | 'modeling' | 'deciding'>('all')
+  const [openItemsFilter, setOpenItemsFilter] = useState<'all' | IdeaStage>('all')
   const headerContext = useAssetHeaderContext(asset.id)
   const [addRefType, setAddRefType] = useState<'none' | 'note' | 'file' | 'model' | 'url'>('none')
   const [newRefUrl, setNewRefUrl] = useState('')
@@ -606,8 +662,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
     if (effectiveWorkflowId || navigationTaskId) {
 
-      // Switch to Workflow sub-page
+      /* A task notification lands in Work and scrolls to the Process
+         section, which is where the task lives now. */
       setActiveSubPage('workflow')
+      focusWorkSection(WORK_SECTION_ID.workflow)
 
       // Only optimistically cache if this is from a fresh navigation (not stale session data)
       // The actual effectiveWorkflowId query will fetch fresh from DB and correct if needed
@@ -767,6 +825,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     // waiting requests are identifiable (null = every book).
     if (t.decisionsBook !== undefined) setDecisionBookId(t.decisionsBook ?? null)
     setActiveSubPage(t.subPage)
+    focusWorkSection(workSectionId(t.subPage))
     if (t.researchMode) setThesisViewMode(t.researchMode)
     if (t.openItems) {
       // Scroll to the existing Open Items section once the Decisions tab is in
@@ -803,6 +862,51 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
   }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, decisionBookId, isTabStateInitialized])
 
+  /*
+   * The newest execution on this asset that the reader is authorized to see,
+   * for the Last Action tile on Decisions.
+   *
+   * Called at component level, unconditionally — the Decisions block below is
+   * an IIFE inside JSX, and a hook there would be a conditional hook.
+   *
+   * Same arguments as the DecisionTimeline render, so it shares that query's
+   * cache key and costs no extra request. `enabled` keeps it off every other
+   * sub-page. Executions are portfolio-team scoped by RLS; nothing here
+   * widens that.
+   */
+  /*
+   * Work-pane integration (prototype).
+   *
+   * Mounted ABOVE Open Items on the existing Decisions tab; nothing is
+   * removed. The duplication that creates is deliberate and temporary — see
+   * the comment at the render site.
+   */
+  const { attention: workAttention, isLoading: workAttentionLoading } =
+    useAssetWorkAttention(asset.id, activeMode === 'work')
+
+  const workIdeas = React.useMemo(
+    () => openItems.map(i => ({
+      id: i.id,
+      action: i.action,
+      stage: i.stage,
+      rationale: i.rationale,
+      portfolioName: i.portfolio?.name ?? null,
+    })),
+    [openItems],
+  )
+
+  const { events: decisionTimelineEvents } = useAssetDecisionTimeline({
+    assetId: asset.id,
+    portfolioId: decisionBookId,
+    /* The timeline is History's content now. Work reads the same rows only
+       through `useAssetWorkAttention`, which has its own gate. */
+    enabled: activeMode === 'history',
+  })
+  const lastExecution = React.useMemo(
+    () => decisionTimelineEvents.find(e => e.phase === 'execution') ?? null,
+    [decisionTimelineEvents]
+  )
+
   // Focus-scroll into a Lists tab section when listsFocus is set
   useEffect(() => {
     if (!listsFocus || activeSubPage !== 'lists') return
@@ -816,6 +920,45 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     setListsFocus(null)
     return () => cancelAnimationFrame(raf)
   }, [listsFocus, activeSubPage])
+
+  /*
+   * ── Work handoffs scroll instead of switching ──────────────────────────
+   *
+   * Process, Ideas and Lists are sections of one surface now, so "open the
+   * process" is a scroll, not a tab change. The anchor is cleared after one
+   * scroll so re-rendering Work does not yank the reader back.
+   */
+  useEffect(() => {
+    if (!workAnchor || activeMode !== 'work') return
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(workAnchor.id)
+      if (!el) return
+      /*
+       * Not `scrollIntoView`. The sub-page body is a nested scroll container
+       * under a sticky header, and scrollIntoView adjusts every scrollable
+       * ancestor — it overshot by ~600px and left the Process section above
+       * the viewport. The rect delta against the container that actually
+       * scrolls is exact.
+       */
+      let sc: HTMLElement | null = el.parentElement
+      while (sc) {
+        const style = getComputedStyle(sc)
+        if (/(auto|scroll)/.test(style.overflowY) && sc.scrollHeight > sc.clientHeight) break
+        sc = sc.parentElement
+      }
+      if (!sc) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return }
+      const delta = el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 8
+      sc.scrollBy({ top: delta, behavior: 'smooth' })
+      /*
+       * Cleared INSIDE the frame, after the scroll. Clearing it in the effect
+       * body instead re-renders immediately, which changes this effect's deps
+       * and runs its cleanup — cancelling the very frame that was going to
+       * scroll. Nothing moved, and nothing said so.
+       */
+      setWorkAnchor(null)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [workAnchor, activeMode])
 
   // ---------- Queries ----------
   const { data: coverage } = useQuery({
@@ -1076,31 +1219,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
   }, [userOrgContext])
 
-  /**
-   * The option list for one visibility level, with reachability.
-   *
-   * `storedTargetIds` is the union of what is SAVED at this level and what is
-   * selected right now. The saved half is what stops the picker from being the
-   * reason an audience shrinks: a node the author has left, or whose last
-   * member has, must still be listed and checked, because confirming a list
-   * that omits it would quietly drop it.
+  /*
+   * Building the option list — candidates, stored targets, reachability —
+   * moved into AudiencePicker, which needs it per scope as the author browses
+   * rather than only for the level currently applied. It still calls
+   * `buildAudienceOptions` with the same inputs, so a saved group the author
+   * can no longer pick stays listed and checked.
    */
-  const audienceOptionsFor = useCallback((visibility: ContributionVisibility) => {
-    if (!userOrgContext || visibility === 'firm') return []
-    const savedForLevel = savedAudience?.visibility === visibility ? savedAudience.targetIds : []
-    const liveForLevel  = sharedThesisVisibility === visibility ? sharedThesisTargetIds : []
-    const storedTargetIds = [...new Set([...savedForLevel, ...liveForLevel])]
-    return buildAudienceOptions({
-      candidates: getTargetOptions(visibility) as AudienceNode[],
-      storedTargetIds,
-      memberCounts: userOrgContext.memberCounts,
-      storedNodes: storedTargetIds
-        .map(id => userOrgContext.nodeById.get(id))
-        .filter((n): n is AudienceNode => !!n),
-    })
-  }, [userOrgContext, getTargetOptions, savedAudience, sharedThesisVisibility, sharedThesisTargetIds])
-
-  const targetOptions = audienceOptionsFor(sharedThesisVisibility)
 
   // Initialize visibility from user's existing contributions
   useEffect(() => {
@@ -1151,58 +1276,37 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     setSharedThesisTargetIds([])
   }, [sharedThesisVisibility])
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (visibilityRef.current && !visibilityRef.current.contains(event.target as Node)) {
-        setShowVisibilityDropdown(false)
-        setVisibilityStep('level')
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  /*
+   * The dropdown's own click-outside handler, level selector and target
+   * confirmation moved into AudiencePicker, which owns its draft, its
+   * dismissal and its focus. What is left here is the page-level state the
+   * picker commits into, and the save path that reads it.
+   */
 
-  // Handle visibility level selection
-  const handleVisibilitySelect = useCallback((newVisibility: ContributionVisibility) => {
-    const options = audienceOptionsFor(newVisibility)
-
-    // From here on, a level change is the USER's, so the level-change effect
-    // must be allowed to clear the loaded targets again. Without this, picking
-    // another level and then returning to the saved one would keep the other
-    // level's node ids.
-    rehydratedVisibilityRef.current = null
-
-    if (newVisibility === 'firm') {
-      setSharedThesisVisibility('firm')
-      setSharedThesisTargetIds([])
-      setShowVisibilityDropdown(false)
-      setVisibilityStep('level')
-      return
-    }
-
+  /**
+   * Commit the picker's draft.
+   *
+   * This STAGES the audience; it does not write. The only write path remains
+   * `set_contribution_audience`, which `ContributionSection` calls when the
+   * section is saved — unchanged by this lane, and the reason the picker can
+   * be explored freely.
+   *
+   * It is async because the picker treats a rejection as "nothing changed" and
+   * keeps the panel open; a future version that writes on Apply can slot in
+   * here without the component learning anything new.
+   */
+  const handleAudienceApply = useCallback(async (next: { visibility: ContributionVisibility; targetIds: string[] }) => {
     /*
-     * A level that can reach nobody cannot be applied.
-     *
-     * Not merely "has no options": a level whose every node has no DIRECT
-     * members would store a restricted contribution with an audience of one.
-     * It used to be applied anyway with an empty target list. The level is
-     * left unchanged, and the menu renders the reason in place rather than
-     * doing nothing visible.
-     *
-     * A level that is unreachable but ALREADY in use stays selectable, so the
-     * author can still see and edit an audience that exists.
+     * The ref is set to the INCOMING level before the state, so the
+     * level-change effect below bails instead of clearing the targets this
+     * call is setting. Without it the two setState calls batch, the effect
+     * sees the level change, and wipes the ids — the same defect that once
+     * saved `targetIds: []` and destroyed a restriction while still showing a
+     * lock (see the comment on that effect).
      */
-    if (!isLevelSelectable(options)) return
-
-    setSharedThesisVisibility(newVisibility)
-    setVisibilityStep('targets')
-  }, [audienceOptionsFor])
-
-  // Handle target selection confirmation
-  const handleTargetsConfirm = useCallback(() => {
-    setShowVisibilityDropdown(false)
-    setVisibilityStep('level')
+    rehydratedVisibilityRef.current = next.visibility
+    setSharedThesisVisibility(next.visibility)
+    setSharedThesisTargetIds(next.targetIds)
   }, [])
 
   // Check if user is viewing their own tab
@@ -1939,6 +2043,38 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     if (!workflowIdLoading) {
     }
   }, [effectiveWorkflowId, workflowIdLoading, asset.symbol])
+
+  /*
+   * The active workflow's identity for the Work summary.
+   *
+   * Declared HERE rather than beside the other Work state, because it reads
+   * `effectiveWorkflowId` and `availableWorkflows`, which are declared above
+   * this line — referencing them earlier is a temporal dead zone, which this
+   * repo has a guard for.
+   *
+   * Name only. Progress is deliberately absent (see the render site), and
+   * `null` means "this asset has no running process", never "I did not look".
+   */
+  const processSummary = useAssetProcessSummary(
+    asset.id, effectiveWorkflowId, activeMode === 'work'
+  )
+  const workProcessSummary = React.useMemo(() => {
+    if (processSummary.status === 'none') return null
+    return {
+      workflowName: processSummary.workflowName ?? 'Active process',
+      stages: processSummary.stages.map(s => ({
+        id: s.id,
+        label: s.label,
+        done: s.done ?? undefined,
+        total: s.total ?? undefined,
+        active: s.active,
+      })),
+      openStageLabel: processSummary.active?.label ?? null,
+      openStageDone: processSummary.active?.done ?? undefined,
+      openStageTotal: processSummary.active?.total ?? undefined,
+      deadline: processSummary.nextDeadlineDate ?? null,
+    }
+  }, [processSummary])
 
   // Fetch templates for the asset's workflow
   const { data: workflowTemplates, isLoading: templatesLoading } = useQuery({
@@ -2922,102 +3058,62 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         onFocus={handleAttentionFocus}
         onNavigate={onNavigate}
         onOpenSubPage={(sub) => goToSubPage(sub)}
-        onOpenList={(focus) => { setActiveSubPage('lists'); setListsFocus(focus) }}
+        onOpenList={(focus) => {
+          /* Lists is a section of Work now; `listsFocus` still does the
+             within-section scroll, so no Work anchor is needed here. */
+          setActiveSubPage('lists')
+          setListsFocus(focus)
+        }}
         collapsed={headerCollapsed}
         onToggleCollapse={toggleHeaderCollapsed}
       />
 
-      {/* Sub-page Tab Selector */}
+      {/*
+        ── Mode selector ──────────────────────────────────────────────────
+        Four modes, not five features. Overview answers "what is the state of
+        this name", Research holds the written case, Work holds everything
+        with an open loop (ideas, the running process, the lists this name
+        sits in — one surface, not three tabs), History is the record.
+
+        The count on Work is the running processes, the same number and the
+        same source the Process tab carried.
+      */}
       <div className="border-b border-gray-200 dark:border-gray-700">
-        <nav className="flex space-x-1" aria-label="Tabs">
-          {/*
-            * Snapshot leads because it is the landing, and because it is the
-            * only one of the five that answers "what is the state of this
-            * name" rather than "let me go do a specific job".
-            */}
-          <button
-            onClick={() => goToSubPage('snapshot')}
-            className={clsx(
-              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
-              activeSubPage === 'snapshot'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
-            )}
-          >
-            <div className="flex items-center space-x-2">
-              <LayoutDashboard className="h-4 w-4" />
-              <span>Snapshot</span>
-            </div>
-          </button>
-          <button
-            onClick={() => goToSubPage('research')}
-            className={clsx(
-              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
-              activeSubPage === 'research'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
-            )}
-          >
-            <div className="flex items-center space-x-2">
-              <FileText className="h-4 w-4" />
-              <span>Research</span>
-            </div>
-          </button>
-          <button
-            onClick={() => goToSubPage('workflow')}
-            className={clsx(
-              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
-              activeSubPage === 'workflow'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
-            )}
-          >
-            <div className="flex items-center space-x-2">
-              <Repeat className="h-4 w-4" />
-              <span>Process</span>
-              {activeProcessCount > 0 && (
-                <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-px rounded-full min-w-[18px] text-center">
-                  {activeProcessCount}
-                </span>
-              )}
-            </div>
-          </button>
-          <button
-            onClick={() => goToSubPage('decisions')}
-            className={clsx(
-              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
-              activeSubPage === 'decisions'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
-            )}
-          >
-            <div className="flex items-center space-x-2">
-              <Layers className="h-4 w-4" />
-              <span>Decisions</span>
-            </div>
-          </button>
-          <button
-            onClick={() => goToSubPage('lists')}
-            className={clsx(
-              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
-              activeSubPage === 'lists'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
-            )}
-          >
-            <div className="flex items-center space-x-2">
-              <List className="h-4 w-4" />
-              <span>Lists</span>
-            </div>
-          </button>
-          {/* UX2 P1/P2 refinement — the collapse/expand control moved INTO the
-              identity band (AssetWorkspaceHeader) as a compact icon. */}
+        <nav className="flex space-x-1" aria-label="Asset modes">
+          {ASSET_MODES.map(mode => {
+            const Icon = MODE_ICON[mode]
+            const current = activeMode === mode
+            return (
+              <button
+                key={mode}
+                onClick={() => goToMode(mode)}
+                aria-current={current ? 'page' : undefined}
+                className={clsx(
+                  'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+                  current
+                    ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
+                )}
+              >
+                <div className="flex items-center space-x-2">
+                  <Icon className="h-4 w-4" />
+                  <span>{MODE_LABEL[mode]}</span>
+                  {mode === 'work' && activeProcessCount > 0 && (
+                    <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-px rounded-full min-w-[18px] text-center">
+                      {activeProcessCount}
+                    </span>
+                  )}
+                </div>
+              </button>
+            )
+          })}
         </nav>
       </div>
       </div>
 
+
       {/* Research View Filter - Fixed bar that doesn't scroll */}
-      {activeSubPage === 'research' && (
+      {activeMode === 'research' && (
         <div className="px-8 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
           {/* flex-wrap lets the perspective (left) and the view/utility controls
               (right) drop to a second row on narrow widths instead of
@@ -3130,199 +3226,37 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             <div className="flex items-center gap-2">
               {/* Visibility control - only show when viewing own view (placed first so view buttons don't shift) */}
               {researchViewFilter === user?.id && (
-                <div className="relative" ref={visibilityRef}>
-                  <button
-                    onClick={() => setShowVisibilityDropdown(!showVisibilityDropdown)}
-                    className={clsx(
-                      'inline-flex items-center px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors',
-                      VISIBILITY_CONFIG[sharedThesisVisibility].bgColor,
-                      VISIBILITY_CONFIG[sharedThesisVisibility].color,
-                      'hover:ring-1 hover:ring-gray-300'
-                    )}
-                    title="Research visibility"
-                  >
-                    {React.createElement(VISIBILITY_CONFIG[sharedThesisVisibility].icon, { className: 'w-4 h-4 mr-1.5' })}
-                    <span className="hidden sm:inline">{VISIBILITY_CONFIG[sharedThesisVisibility].label}</span>
-                    {sharedThesisTargetIds.length > 0 && (
-                      <span className="ml-1 opacity-75">({sharedThesisTargetIds.length})</span>
-                    )}
-                    <ChevronDown className="w-4 h-4 ml-1" />
-                  </button>
-
-                  {showVisibilityDropdown && (
-                    <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg py-1">
-                      {visibilityStep === 'level' ? (
-                        <>
-                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 border-b dark:border-gray-700">
-                            Research visibility
-                          </div>
-                          {VISIBILITY_OPTIONS.map((option) => {
-                            const OptionIcon = option.icon
-                            const isSelected = sharedThesisVisibility === option.value
-                            const options = audienceOptionsFor(option.value)
-                            /* A level is offered when it can reach somebody, or
-                               when it is already in use. Firm always can. */
-                            const selectable = option.value === 'firm' || isLevelSelectable(options)
-                            const needsTargets = option.value !== 'firm' && selectable
-                            return (
-                              <button
-                                key={option.value}
-                                onClick={() => handleVisibilitySelect(option.value)}
-                                disabled={!selectable}
-                                title={selectable ? undefined : emptyLevelReason(option.label.toLowerCase())}
-                                className={clsx(
-                                  'w-full flex items-start px-3 py-2 text-sm text-left',
-                                  selectable
-                                    ? 'hover:bg-gray-50 dark:hover:bg-gray-700'
-                                    : 'cursor-not-allowed opacity-60',
-                                  isSelected && 'bg-primary-50 dark:bg-primary-900/20'
-                                )}
-                              >
-                                <OptionIcon className="w-4 h-4 mr-2 mt-0.5 text-gray-500 dark:text-gray-400 shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  <span className="font-medium text-gray-900 dark:text-gray-100">{option.label}</span>
-                                  {needsTargets && (
-                                    <span className="text-xs text-gray-400 ml-1">→</span>
-                                  )}
-                                  {/* The limitation is stated where the choice is
-                                      made, not after the fact. */}
-                                  {!selectable && (
-                                    <p className="mt-0.5 text-xs leading-snug text-gray-500 dark:text-gray-400">
-                                      No one is a direct member. Groups beneath it aren’t included.
-                                    </p>
-                                  )}
-                                </div>
-                                {isSelected && <Check className="w-4 h-4 mt-0.5 text-primary-600 dark:text-primary-400 shrink-0" />}
-                              </button>
-                            )
-                          })}
-                        </>
-                      ) : (
-                        <>
-                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 border-b dark:border-gray-700 flex items-center">
-                            <button
-                              onClick={() => setVisibilityStep('level')}
-                              className="mr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                            >
-                              ←
-                            </button>
-                            Select {sharedThesisVisibility === 'portfolio' ? 'portfolios' :
-                                    sharedThesisVisibility === 'team' ? 'teams' :
-                                    sharedThesisVisibility === 'department' ? 'departments' : 'divisions'}
-                          </div>
-                          <div className="max-h-56 overflow-y-auto">
-                            {targetOptions.map((target) => {
-                              const isSelected = sharedThesisTargetIds.includes(target.id)
-                              const reason = unreachableReason(target)
-                              return (
-                                <button
-                                  key={target.id}
-                                  /* An unreachable node is still clickable when it
-                                     is already part of the audience — the author
-                                     must be able to remove it deliberately. Only a
-                                     node that is neither reachable nor selected is
-                                     disabled, because selecting it would share with
-                                     nobody. */
-                                  disabled={!target.reachable && !isSelected}
-                                  onClick={() => {
-                                    setSharedThesisTargetIds(prev =>
-                                      prev.includes(target.id)
-                                        ? prev.filter(id => id !== target.id)
-                                        : [...prev, target.id]
-                                    )
-                                  }}
-                                  className={clsx(
-                                    'w-full flex items-start px-3 py-2 text-sm',
-                                    !target.reachable && !isSelected
-                                      ? 'cursor-not-allowed opacity-60'
-                                      : 'hover:bg-gray-50 dark:hover:bg-gray-700',
-                                    isSelected && 'bg-primary-50 dark:bg-primary-900/20'
-                                  )}
-                                >
-                                  <div className={clsx(
-                                    'w-4 h-4 rounded border mr-3 mt-0.5 flex items-center justify-center shrink-0',
-                                    isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600'
-                                  )}>
-                                    {isSelected && <Check className="w-3 h-3 text-white" />}
-                                  </div>
-                                  <span
-                                    className="w-3 h-3 rounded-full mr-2 mt-1 shrink-0"
-                                    style={{ backgroundColor: target.color || '#6b7280' }}
-                                  />
-                                  <span className="flex-1 min-w-0 text-left">
-                                    <span className="block text-gray-900 dark:text-gray-100">
-                                      {target.name}
-                                      {target.storedOnly && (
-                                        <span className="ml-1.5 text-xs text-gray-400">already shared</span>
-                                      )}
-                                    </span>
-                                    {target.reachable ? (
-                                      <span className="block text-xs text-gray-400">
-                                        {target.memberCount} direct {target.memberCount === 1 ? 'member' : 'members'}
-                                      </span>
-                                    ) : (
-                                      <span className="block text-xs leading-snug text-amber-700 dark:text-amber-400">
-                                        {reason}
-                                      </span>
-                                    )}
-                                  </span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                          <div className="border-t dark:border-gray-700 px-3 py-2 flex justify-end">
-                            <button
-                              onClick={() => handleTargetsConfirm()}
-                              disabled={sharedThesisTargetIds.length === 0}
-                              className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              Done
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
+                <AudiencePicker
+                  saved={savedAudience ?? { visibility: sharedThesisVisibility, targetIds: sharedThesisTargetIds }}
+                  nodesFor={(v) => getTargetOptions(v) as AudienceNode[]}
+                  memberCounts={userOrgContext?.memberCounts ?? new Map()}
+                  nodeById={userOrgContext?.nodeById ?? new Map()}
+                  isLoading={!userOrgContext}
+                  onApply={handleAudienceApply}
+                />
               )}
 
               {/* View warnings indicator - shows next to visibility */}
-              {activeSubPage === 'research' && (
+              {activeMode === 'research' && (
                 <ViewWarningIndicator warnings={viewWarnings} />
               )}
 
-              {/* Utilities cluster (Customize, Export) — deliberately quieter than
-                  the read-mode nav: icon-only, so the primary "how to read the
-                  case" controls lead. A divider sets them off from the
-                  visibility / warning status to the left. Labels live in the
-                  tooltip; discoverability is preserved. */}
-              <div className="mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
-              {researchViewFilter === user?.id && (
-                <button
-                  onClick={() => setShowFieldCustomizer(true)}
-                  className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-gray-200"
-                  title="Customize asset page layout"
-                  aria-label="Customize asset page layout"
-                >
-                  <Settings2 className="w-4 h-4" />
-                </button>
-              )}
-              <button
-                onClick={() => setShowCaseBuilder(true)}
-                className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-gray-200"
-                title="Export investment case as PDF"
-                aria-label="Export investment case as PDF"
-              >
-                <Download className="w-4 h-4" />
-              </button>
-
               {/*
-                How to read the case — the four Research modes, the PRIMARY nav on
-                this bar. Labels show from xl so a narrow desktop keeps the compact
-                icons (titles intact); the pill group + divider set this nav apart
-                from the quieter utilities to its left.
+                How to read the case — the four Research modes, the PRIMARY nav
+                on this bar, now the last thing before the overflow. Labels show
+                from xl so a narrow desktop keeps the compact icons (titles
+                intact).
+
+                Customize and Export used to sit here as bare icons at the same
+                weight as these modes. They are one-shot actions nobody uses
+                twice in a session, so they moved into the `⋯` menu after the
+                modes — two fewer permanent controls, and their labels are now
+                spelled out rather than hidden in a tooltip.
+
+                One divider, not two: the audience and view-checks to the left
+                are contextual status about THIS view, and the modes are how to
+                read it. That is one boundary.
               */}
-              {/* Divider: utilities to the left, the read-mode nav to the right. */}
               <div className="mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
               <div className="flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
                 <button
@@ -3333,10 +3267,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                   )}
-                  title="All sections"
+                  title="Investment Case"
                 >
                   <Layers className="w-4 h-4" />
-                  <span className="hidden xl:inline">All sections</span>
+                  {/* "Investment Case" names the thing being read. "All
+                      sections" described the renderer. */}
+                  <span className="hidden xl:inline">Investment Case</span>
                 </button>
                 <button
                   onClick={() => goToThesisMode('summary')}
@@ -3384,6 +3320,29 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 </button>
               </div>
 
+              {/*
+                Overflow. Customize is offered only in the reader's own view,
+                because it edits THEIR layout — showing it while reading a
+                colleague's research would promise something it cannot do.
+              */}
+              <ResearchToolbarMenu
+                items={[
+                  {
+                    key: 'customize',
+                    label: 'Customize layout',
+                    icon: Settings2,
+                    available: researchViewFilter === user?.id,
+                    onSelect: () => setShowFieldCustomizer(true),
+                  },
+                  {
+                    key: 'export',
+                    label: 'Export investment case',
+                    icon: Download,
+                    onSelect: () => setShowCaseBuilder(true),
+                  },
+                ]}
+              />
+
             </div>
           </div>
         </div>
@@ -3396,8 +3355,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             (same A1 resolver, signals, grouping, counts, priorities, deep-links).
             No persistent banner in the tab body. */}
 
-        {/* ========== INVESTMENT SNAPSHOT SUB-PAGE ========== */}
-        {activeSubPage === 'snapshot' && (
+        {/* ========== OVERVIEW ========== */}
+        {activeMode === 'overview' && (
           <InvestmentSnapshot
             asset={asset}
             /* Already fetched above for the ticker dropdown — passed down so
@@ -3423,7 +3382,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               chooseResearchView(userId)
               setActiveSubPage('research')
             }}
-            onOpenSubPage={setActiveSubPage}
+            /* Through `goToSubPage`, so an Overview link into Work both
+               lands in Work and scrolls to the section it named. */
+            onOpenSubPage={goToSubPage}
             currentUserId={user?.id}
             /* The existing note navigation — opens the note in its own tab.
                Lets "What changed" name the research items instead of counting
@@ -3432,8 +3393,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           />
         )}
 
-        {/* ========== RESEARCH SUB-PAGE ========== */}
-        {activeSubPage === 'research' && (
+        {/* ========== RESEARCH ========== */}
+        {activeMode === 'research' && (
           <div className="space-y-3 min-h-full">
 
             {thesisViewMode === 'summary' ? (
@@ -3682,6 +3643,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                   sharedVisibility={sharedThesisVisibility}
                                   sharedTargetIds={sharedThesisTargetIds}
                                   fullPageEditor
+                                  onOpenNote={handleNoteClick}
                                 />
                               </div>
                             )
@@ -3879,6 +3841,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 sharedVisibility={sharedThesisVisibility}
                                 sharedTargetIds={sharedThesisTargetIds}
                                 fullPageEditor
+                                onOpenNote={handleNoteClick}
                               />
                             </div>
                           )
@@ -3947,9 +3910,62 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           </div>
         )}
 
-        {/* ========== WORKFLOW SUB-PAGE ========== */}
-        {activeSubPage === 'workflow' && (
-          <div>
+        {/*
+          ══════════════════ WORK ══════════════════
+
+          One surface, four sections, in order of immediacy:
+
+            1. the orientation band — what needs you, right now
+            2. Process  — the running workflow
+            3. Ideas    — the open items in full
+            4. Lists    — the lists this name sits in
+
+          Process, Ideas and Lists were three peer tabs. They are sections
+          now, and the handoffs that used to switch tabs scroll instead, so
+          "open the process" no longer costs the reader their place.
+
+          The band at the top is the only thing here that aggregates: it is
+          what makes this a surface rather than three accordions. Everything
+          below it is the detail behind one of its lines.
+        */}
+        {activeMode === 'work' && (
+          <div className="space-y-6">
+            {/*
+              The orientation band.
+
+              Process carries the active workflow's NAME and, when the Process
+              section below has populated the cache, its stage progress. The
+              distinction between "none" and "not fetched" is load-bearing:
+              passing null for the latter made the band say "none running" on
+              an asset that has a running process.
+            */}
+            <AssetWorkPane
+              attention={workAttention}
+              ideas={workIdeas}
+              process={workProcessSummary}
+              researchLinks={[]}
+              isLoading={workAttentionLoading || openItemsLoading}
+              onOpenIdeas={() => {
+                window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                  detail: { type: 'trade-queue', data: { filterAssetId: asset.id, filterSymbol: asset.symbol } }
+                }))
+              }}
+              onNewIdea={() => {
+                window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                  detail: { type: 'new-trade-idea', data: { assetId: asset.id, symbol: asset.symbol } }
+                }))
+              }}
+              /* The process is on this page now, so this scrolls. It used to
+                 switch to the 'workflow' sub-page — and briefly to a
+                 'process' key that rendered nothing at all. */
+              onOpenProcess={() => focusWorkSection(WORK_SECTION_ID.workflow)}
+            />
+          </div>
+        )}
+
+        {/* ─────────── Work · Process ─────────── */}
+        {activeMode === 'work' && (
+          <div id={WORK_SECTION_ID.workflow} className="scroll-mt-4 pt-2">
             {(() => {
             return (
               <div className="space-y-6">
@@ -4192,7 +4208,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         )}
 
         {/* ========== DECISIONS SUB-PAGE ========== */}
-        {activeSubPage === 'decisions' && (() => {
+        {/*
+          Work and History both render from this block, because both need the
+          same holdings arithmetic: Work does not use it, but History's
+          capital bar and Current Exposure do, and the book filter that
+          governs the timeline is derived from it. The two halves are guarded
+          separately inside.
+        */}
+        {(activeMode === 'work' || activeMode === 'history') && (() => {
           // Derive summary metrics from portfolio holdings
           const portfolioCount = portfolioHoldings?.length ?? 0
           /*
@@ -4266,19 +4289,29 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 below, and the capital bar keeps the one-price rule
                 documented in its own comment.
               */}
-              {/* ─── Open Items ──────────────────────────────────── */}
+              {/* ─────────── Work · Ideas ───────────
+                  The open items in full, below the band that summarises
+                  them. `decisions-open-items` keeps its id: the attention
+                  deep-links and a test both target it. */}
+              {activeMode === 'work' && (
+              <div id={WORK_SECTION_ID.decisions} className="scroll-mt-4">
               <Card padding="none" id="decisions-open-items">
                 <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-3 dark:border-gray-800">
                   <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Open Items</h4>
                   <span className="text-[10px] font-medium text-gray-400 tabular-nums">({openItemsTotalHint})</span>
                   <div className="flex items-center gap-1 ml-1">
+                    {/*
+                      The canonical pipeline, not the v1 vocabulary.
+                      These pills read 'Idea / Working On / Modeling /
+                      Deciding' — four stage names the model retired. Because
+                      the filter compared them to the row's stage, an item at
+                      any CURRENT stage matched nothing but "All": the controls
+                      were dead for every row today's writers produce.
+                    */}
                     {([
-                      { key: 'all', label: 'All' },
-                      { key: 'idea', label: 'Idea' },
-                      { key: 'working_on', label: 'Working On' },
-                      { key: 'modeling', label: 'Modeling' },
-                      { key: 'deciding', label: 'Deciding' },
-                    ] as const).map(({ key, label }) => (
+                      { key: 'all' as const, label: 'All' },
+                      ...IDEA_STAGES.map(s => ({ key: s, label: IDEA_STAGE_CONFIG[s].label })),
+                    ]).map(({ key, label }) => (
                       <button
                         key={key}
                         onClick={() => setOpenItemsFilter(key)}
@@ -4300,11 +4333,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     ))}
                   </div>
                 ) : (() => {
-                  // Normalize legacy stage names: 'simulating' → 'modeling', 'discussing' → 'working_on'
-                  const normalizeStage = (s: string) => s === 'simulating' ? 'modeling' : s === 'discussing' ? 'working_on' : s
+                  /*
+                   * toIdeaStage is THE normalization boundary — it maps every
+                   * legacy vocabulary onto the four canonical stages and sends
+                   * anything unrecognised to 'exploring'. The local normalizer
+                   * this replaces knew two legacy values out of ten and left
+                   * the rest unmatched.
+                   *
+                   * Normalizing the ROW, not the filter, is what makes a
+                   * canonical pill match legacy records too: a row stored as
+                   * 'thesis_forming' answers the 'developing' filter.
+                   */
                   const filteredItems = openItemsFilter === 'all'
                     ? openItems
-                    : openItems.filter(item => normalizeStage(item.stage) === openItemsFilter)
+                    : openItems.filter(item => toIdeaStage(item.stage) === openItemsFilter)
                   return filteredItems.length === 0 ? (
                     <div className="px-4 py-3 flex items-center gap-4">
                       <span className="text-[13px] text-gray-400">
@@ -4350,22 +4392,23 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           sell: { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-l-red-400' },
                           trim: { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-l-red-400' },
                         }
-                        const stageColors: Record<string, string> = {
-                          idea: 'bg-gray-100 text-gray-700 ring-gray-300 dark:text-gray-300 dark:bg-gray-800',
-                          working_on: 'bg-blue-100/80 text-blue-800 ring-blue-300',
-                          discussing: 'bg-blue-100/80 text-blue-800 ring-blue-300',
-                          modeling: 'bg-purple-100/80 text-purple-800 ring-purple-300',
-                          simulating: 'bg-purple-100/80 text-purple-800 ring-purple-300',
-                          deciding: 'bg-amber-100/80 text-amber-800 ring-amber-300',
-                        }
-                        const stageLabels: Record<string, string> = {
-                          idea: 'Idea',
-                          working_on: 'Working On',
-                          discussing: 'Working On',
-                          modeling: 'Modeling',
-                          simulating: 'Modeling',
-                          deciding: 'Deciding',
-                        }
+                        /*
+                         * Stage presentation comes from the canonical model.
+                         *
+                         * This used to be two local maps keyed on the v1
+                         * vocabulary — idea / working_on / discussing /
+                         * modeling / simulating / deciding — none of which is
+                         * a canonical stage, with `|| item.stage` behind them.
+                         * So every CURRENT stage fell through and rendered its
+                         * raw enum: `ready_for_decision`, `thesis_forming`,
+                         * `ready_to_recommend`. Measured against production,
+                         * 173 of 241 queue rows displayed a raw string.
+                         *
+                         * This is the pipeline STAGE — how mature the idea is.
+                         * It is deliberately not the decision status and not
+                         * urgency; those are different questions and belong to
+                         * the bands above, not to this chip.
+                         */
                         const ac = actionConfig[item.action] || { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-600 dark:text-gray-400', border: 'border-l-gray-300' }
                         const creatorName = item.creator
                           ? [item.creator.first_name, item.creator.last_name].filter(Boolean).join(' ') || 'Unknown'
@@ -4398,8 +4441,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 {formatDistanceToNow(new Date(item.updated_at), { addSuffix: true })}
                               </span>
                             </div>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0 ring-1 ring-inset ${stageColors[item.stage] || 'bg-gray-100 text-gray-600 ring-gray-200 dark:text-gray-400 dark:bg-gray-800'}`}>
-                              {stageLabels[item.stage] || item.stage}
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0 ring-1 ring-inset ${stageColor(item.stage)}`}>
+                              {stageLabel(item.stage)}
                             </span>
                             <ChevronRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-primary-500 flex-shrink-0 transition-colors" />
                           </button>
@@ -4409,8 +4452,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   )
                 })()}
               </Card>
+              </div>
+              )}
 
-              {/* ─── Decision Memory ──────────────────────────────── */}
+              {/* ─────────── History ───────────
+                  The record: what was decided, in which book, and the
+                  capital behind it. This was the lower half of the old
+                  Decisions tab. */}
+              {activeMode === 'history' && (<>
               {/*
                 * The book selector sits ABOVE the timeline rather than inside
                 * it, so the same control governs the capital bar and the
@@ -4484,11 +4533,30 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     sub: null,
                     active: false,
                   },
+                  /*
+                   * The newest EXECUTION the reader is allowed to see.
+                   *
+                   * Same hook, same arguments and therefore the same React
+                   * Query key as the DecisionTimeline directly above, so this
+                   * reads the cached result rather than issuing a second
+                   * request \u2014 and inherits that query's authorization exactly.
+                   * Executions are portfolio-team scoped by RLS, so a reader
+                   * who cannot see a book does not see its trades here either.
+                   *
+                   * Still an em-dash when there is nothing: an asset with no
+                   * execution the reader may see has no last action, and
+                   * substituting a recommendation or an idea would answer a
+                   * different question than the label asks.
+                   */
                   {
                     label: 'Last Action',
-                    value: '\u2014',
-                    sub: null,
-                    active: false,
+                    value: lastExecution
+                      ? lastExecution.title
+                      : '\u2014',
+                    sub: lastExecution
+                      ? formatDistanceToNow(new Date(lastExecution.timestamp), { addSuffix: true })
+                      : null,
+                    active: !!lastExecution,
                   },
                 ].map((metric) => (
                   <div
@@ -4628,13 +4696,17 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   </div>
                 )}
               </Card>
+              </>)}
             </div>
           )
         })()}
 
-        {/* ========== LISTS SUB-PAGE ========== */}
-        {activeSubPage === 'lists' && (
-          <div className="space-y-2">
+        {/* ─────────── Work · Lists ───────────
+            Lists are membership, not a destination: which lists this name
+            sits in is part of the work on it. The section is the old Lists
+            tab, unchanged, now reached by scrolling. */}
+        {activeMode === 'work' && (
+          <div id={WORK_SECTION_ID.lists} className="space-y-2 scroll-mt-4 pt-2">
             {(() => {
               const listsByType = (assetLists as any[] || []).reduce((acc, list) => {
                 // `list_type` is the column; `type` never existed, so this

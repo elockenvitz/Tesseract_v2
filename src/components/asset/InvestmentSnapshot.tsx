@@ -102,7 +102,10 @@ import {
 import { ourViewExcerpt, hasLiveProse, OurViewSummary, type OurViewField } from './OurViewSummary'
 import type { Contribution } from '../../hooks/useContributions'
 
-export type SnapshotSubPage = 'research' | 'workflow' | 'decisions' | 'lists'
+/* 'decisions' lands in Work (the open items); 'history' lands in History (the
+   decision record). The Overview links to both and they are not the same
+   place any more. */
+export type SnapshotSubPage = 'research' | 'workflow' | 'decisions' | 'lists' | 'history'
 
 /** The tab-data blob AssetTab is handed; only these three fields are read. */
 export interface SnapshotAsset {
@@ -769,7 +772,8 @@ export function InvestmentSnapshot({
         portfolioId={portfolioId}
         symbol={symbol}
         heldBookIds={data.positions.map(p => p.portfolioId)}
-        onOpenTimeline={() => onOpenSubPage('decisions')}
+        /* The timeline is History's content, not Work's. */
+        onOpenTimeline={() => onOpenSubPage('history')}
       />
     </SnapBlock>
   )

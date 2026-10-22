@@ -73,6 +73,25 @@ export const GATED_DIRS = [
   'src/lib/navigation',
   'src/lib/ops',
   'src/lib/guards',
+  // The research-editing safety net: the audience picker, the inline editor
+  // and the unsaved-work guard. Gated because every failure here is silent —
+  // an audience that stages but never saves, or a nav gesture that drops an
+  // edit, looks exactly like success.
+  'src/components/contributions',
+  // Audience reachability: who a group actually reaches, now that membership
+  // is inherited. An understated count makes an author share more narrowly
+  // than they meant; an overstated one, more widely. Neither throws.
+  'src/lib/contributions',
+  // Whose move it is. Mislabelling a decision request sends an analyst after
+  // something the server will refuse, or leaves a PM unaware a book is waiting
+  // on them — and both read as a quiet UI, not as an error.
+  'src/lib/asset-work',
+  'src/components/asset/work',
+  // Which mode renders which destination. A sub-page that maps to no mode,
+  // or a mode that lands on a destination another mode renders, is a nav
+  // button that appears to do nothing — and the three Work sub-pages share
+  // one surface, so a missing anchor is a section nobody can reach.
+  'src/lib/asset-workspace',
   // Stage-deadline ownership: the conflict target, the tenant filter path and
   // the query keys. Gated because every failure here is silent — a wrong
   // conflict target duplicates rows instead of replacing one, and a filter
