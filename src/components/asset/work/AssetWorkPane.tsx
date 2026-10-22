@@ -28,7 +28,7 @@
 
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { ChevronDown, ChevronRight, ExternalLink, AlertTriangle, Clock } from 'lucide-react'
+import { ChevronDown, ChevronRight, ExternalLink, AlertTriangle, Clock, X, Users } from 'lucide-react'
 import { stageLabel, stageColor, IDEA_STAGES, IDEA_STAGE_CONFIG, toIdeaStage } from '../../../lib/ideas/stage-model'
 import { attentionSummary, type AttentionSplit } from '../../../lib/asset-work/attention'
 
@@ -77,6 +77,40 @@ function stageProgressLabel(s: { label: string; done?: number; total?: number })
   return s.total != null && s.done != null ? `${s.label} ${s.done}/${s.total}` : s.label
 }
 
+/**
+ * Assignment and priority, or a statement that nothing is set.
+ *
+ * The deadline is deliberately NOT here. It is already in the area's summary
+ * line ("… · due Nov 1"), under the same condition, so printing it again two
+ * lines down was the same fact twice — one of the places this surface was
+ * repeating itself. It still counts against "nothing is set", because that
+ * sentence would otherwise deny a deadline the reader can see above it.
+ */
+function processDetailLine(p: WorkProcess): string | null {
+  const parts = [
+    p.assigneeName && `Assigned to ${p.assigneeName}`,
+    p.priorityLabel && `Priority ${p.priorityLabel}`,
+  ].filter(Boolean) as string[]
+  if (parts.length > 0) return parts.join(' · ')
+  return p.deadline ? null : 'No assignee, deadline or priority set.'
+}
+
+/** One list this asset sits in, with the removal answer already decided. */
+export interface WorkListMembership {
+  /** `asset_list_items.id` — what a removal deletes. Not the list id. */
+  itemId: string
+  listId: string
+  name: string
+  listType: 'mutual' | 'collaborative'
+  /**
+   * The existing per-row rule from `lib/lists/list-permissions`, already
+   * asked. This component does not re-derive it: on a collaborative list
+   * write access is NOT permission to remove somebody else's row, and a
+   * surface that re-guesses that rule is how the two drift apart.
+   */
+  canRemove: boolean
+}
+
 /** A link the caller could PROVE — a section with evidence attached, or a
  *  contribution this work references. Never inferred from a ticker match. */
 export interface WorkResearchLink {
@@ -91,6 +125,23 @@ export interface AssetWorkPaneProps {
   ideas: WorkIdea[]
   process: WorkProcess | null
   researchLinks: WorkResearchLink[]
+  /**
+   * The lists this asset belongs to. `null` means "not loaded", which renders
+   * nothing — distinct from `[]`, which states that it belongs to none.
+   */
+  lists?: WorkListMembership[] | null
+  /** Opens one list. Omitted means the names are not links. */
+  onOpenList?: (listId: string) => void
+  /** Removes one membership by `asset_list_items.id`. */
+  onRemoveFromList?: (itemId: string) => void
+  /** The membership currently being deleted, so its chip can say so. */
+  removingListItemId?: string | null
+  /**
+   * The existing "Add to List" control, passed in rather than rebuilt. The
+   * dialog, its search, its create-and-link path and its own permission read
+   * all stay where they are.
+   */
+  addToListSlot?: React.ReactNode
   /** Opens the existing idea experience. The caller supplies it so this
    *  component does not own navigation. */
   onOpenIdeas: () => void
@@ -153,6 +204,7 @@ function Area({
 
 export function AssetWorkPane({
   attention, ideas, process, researchLinks,
+  lists = null, onOpenList, onRemoveFromList, removingListItemId = null, addToListSlot,
   onOpenIdeas, onOpenIdea, onOpenProcess, onNewIdea, onStartProcess,
   isLoading = false, className,
 }: AssetWorkPaneProps) {
@@ -169,27 +221,108 @@ export function AssetWorkPane({
     )
   }
 
+  /*
+   * ── Membership, not a panel ─────────────────────────────────────────────
+   *
+   * Which lists a name sits in is one line, so it is one line: a label, the
+   * chips, and the existing Add control. It used to be a collapsible card at
+   * the very bottom of Work, below the process and every open idea, and it
+   * showed nothing but names.
+   *
+   * It carries `lists-section-listsContent` because that id is the contract
+   * the header's list chip scrolls to. The chip now lands on the surface that
+   * can actually change the membership instead of a read-only card.
+   *
+   * It is deliberately OUTSIDE the "no active work" branch below: an asset
+   * with no ideas and no process can still be on three lists, and that was
+   * the one thing the old empty state hid.
+   */
+  const membership = lists === null ? null : (
+    <div
+      id="lists-section-listsContent"
+      data-testid="work-lists"
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-800"
+    >
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Lists</span>
+      {lists.length === 0 ? (
+        <span className="text-[12px] text-gray-500 dark:text-gray-400" data-testid="work-lists-none">
+          Not in any lists.
+        </span>
+      ) : (
+        lists.map(l => {
+          const removing = removingListItemId === l.itemId
+          return (
+            <span
+              key={l.itemId}
+              data-testid={`work-list-${l.listId}`}
+              className={clsx(
+                'inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 pl-2 text-[12px] font-medium text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100',
+                l.canRemove ? 'pr-0.5' : 'pr-2',
+                removing && 'opacity-50'
+              )}
+            >
+              {onOpenList ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenList(l.listId)}
+                  data-testid={`work-list-open-${l.listId}`}
+                  className="py-0.5 hover:text-primary-600 hover:underline"
+                >
+                  {l.name}
+                </button>
+              ) : (
+                <span className="py-0.5">{l.name}</span>
+              )}
+              {l.listType === 'collaborative' && (
+                <Users className="h-3 w-3 shrink-0 text-gray-400" aria-hidden="true" />
+              )}
+              {/* Shown only when the existing rule says this reader may
+                  remove THIS row. A disabled control here would advertise a
+                  capability the list's owner has not granted. */}
+              {l.canRemove && onRemoveFromList && (
+                <button
+                  type="button"
+                  onClick={() => onRemoveFromList(l.itemId)}
+                  disabled={removing}
+                  aria-label={`Remove from ${l.name}`}
+                  data-testid={`work-list-remove-${l.listId}`}
+                  className="rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700 disabled:cursor-default dark:hover:bg-gray-700"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              )}
+            </span>
+          )
+        })
+      )}
+      {addToListSlot && <span className="ml-auto" data-testid="work-lists-add">{addToListSlot}</span>}
+    </div>
+  )
+
   /* Nothing at all: one line and two entry points, not three empty cards. */
   if (!hasAttention && !hasIdeas && !hasProcess) {
     return (
-      <div
-        data-testid="work-empty"
-        className={clsx('rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center dark:border-gray-700', className)}
-      >
-        <p className="text-[13px] text-gray-500 dark:text-gray-400">No active work on this asset.</p>
-        <div className="mt-2 flex items-center justify-center gap-2">
-          {onNewIdea && (
-            <button type="button" onClick={onNewIdea} data-testid="work-new-idea"
-              className="rounded px-2.5 py-1 text-[11px] font-medium text-primary-700 bg-primary-50 hover:bg-primary-100">
-              New trade idea
-            </button>
-          )}
-          {onStartProcess && (
-            <button type="button" onClick={onStartProcess} data-testid="work-start-process"
-              className="rounded px-2.5 py-1 text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800">
-              Start a process
-            </button>
-          )}
+      <div className={clsx('space-y-2', className)}>
+        {membership}
+        <div
+          data-testid="work-empty"
+          className="rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center dark:border-gray-700"
+        >
+          <p className="text-[13px] text-gray-500 dark:text-gray-400">No active work on this asset.</p>
+          <div className="mt-2 flex items-center justify-center gap-2">
+            {onNewIdea && (
+              <button type="button" onClick={onNewIdea} data-testid="work-new-idea"
+                className="rounded px-2.5 py-1 text-[11px] font-medium text-primary-700 bg-primary-50 hover:bg-primary-100">
+                New trade idea
+              </button>
+            )}
+            {onStartProcess && (
+              <button type="button" onClick={onStartProcess} data-testid="work-start-process"
+                className="rounded px-2.5 py-1 text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800">
+                Start a process
+              </button>
+            )}
+          </div>
         </div>
       </div>
     )
@@ -197,6 +330,7 @@ export function AssetWorkPane({
 
   return (
     <div className={clsx('space-y-2', className)} data-testid="work-pane">
+      {membership}
       {/*
         Attention is ABSENT when nothing is waiting, not empty. An "0 items"
         row in the one place meant to interrupt you teaches you to skip it.
@@ -345,13 +479,11 @@ export function AssetWorkPane({
                 </span>
               ))}
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400">
-              {[
-                process.assigneeName && `Assigned to ${process.assigneeName}`,
-                process.deadline && `Due ${process.deadline}`,
-                process.priorityLabel && `Priority ${process.priorityLabel}`,
-              ].filter(Boolean).join(' · ') || 'No assignee, deadline or priority set.'}
-            </p>
+            {processDetailLine(process) && (
+              <p className="text-[11px] text-gray-500 dark:text-gray-400" data-testid="work-process-detail">
+                {processDetailLine(process)}
+              </p>
+            )}
             {process.stages.every(s => s.total == null) && (
               <p className="mt-0.5 text-[11px] text-gray-400" data-testid="work-process-no-progress">
                 Checklist progress has not loaded yet.

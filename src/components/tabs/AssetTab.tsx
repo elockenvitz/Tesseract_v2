@@ -70,6 +70,8 @@ import {
   modeOf, workSectionId,
   type AssetMode, type AssetSubPage,
 } from '../../lib/asset-workspace/modes'
+import { scrollToSection } from '../../lib/asset-workspace/scroll-to-section'
+import { useAssetListMemberships } from '../../hooks/lists/useAssetListMemberships'
 
 /* The nav's icons, beside the labels the model owns. Kept here rather than in
    the model so the model stays free of React imports. */
@@ -550,7 +552,17 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   // showAssetPriorityDropdown removed — priority selector replaced by state chips
   const [showWorkflowPriorityDropdown, setShowWorkflowPriorityDropdown] = useState(false)
-  const [listsFocus, setListsFocus] = useState<string | null>(null)
+  /*
+   * The within-Work scroll target the header's context chips set.
+   *
+   * It carries a nonce for the same reason `workAnchor` does: setting state to
+   * the value it already holds is a React no-op, so a bare id made the SECOND
+   * click on the same chip do nothing at all.
+   */
+  const [listsFocus, setListsFocus] = useState<{ id: string; nonce: number } | null>(null)
+  const focusListsSection = useCallback((id: string | null) => {
+    setListsFocus(id ? { id, nonce: Date.now() } : null)
+  }, [])
   const [openItemsFilter, setOpenItemsFilter] = useState<'all' | IdeaStage>('all')
   const headerContext = useAssetHeaderContext(asset.id)
   const [addRefType, setAddRefType] = useState<'none' | 'note' | 'file' | 'model' | 'url'>('none')
@@ -828,12 +840,17 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     focusWorkSection(workSectionId(t.subPage))
     if (t.researchMode) setThesisViewMode(t.researchMode)
     if (t.openItems) {
-      // Scroll to the existing Open Items section once the Decisions tab is in
-      // the DOM. Short poll because the sub-page switch is a state update.
+      /*
+       * Scroll to the existing Open Items section once Work is in the DOM.
+       * Short poll because the sub-page switch is a state update.
+       *
+       * Through the shared helper: this is a Work section under the same
+       * nested scroll container as the others, so plain `scrollIntoView`
+       * overshot it exactly the way it overshot Process.
+       */
       let tries = 0
       const tick = () => {
-        const el = document.getElementById('decisions-open-items')
-        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return }
+        if (scrollToSection('decisions-open-items')) return
         if (tries++ < 20) window.setTimeout(tick, 80)
       }
       window.setTimeout(tick, 80)
@@ -907,19 +924,34 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     [decisionTimelineEvents]
   )
 
-  // Focus-scroll into a Lists tab section when listsFocus is set
+  /*
+   * ── Focus-scroll into a membership section ──────────────────────────────
+   *
+   * Set by the header's context chips (portfolios / lists / themes / projects).
+   * Two defects lived in the three lines this replaces:
+   *
+   *  1. `setListsFocus(null)` ran in the EFFECT BODY. That re-renders at once,
+   *     which changes this effect's deps and runs its cleanup — cancelling the
+   *     frame that was about to scroll. The same self-cancelling frame the
+   *     Work anchor had. The clear now happens inside the frame, after the
+   *     scroll, and only if the target was actually found.
+   *  2. With the clear repaired, a bare string id would then make every second
+   *     click on the same chip a no-op, because React skips a state write that
+   *     changes nothing. Hence the nonce.
+   *
+   * The scroll itself is the shared helper — `scrollIntoView` moves every
+   * scrollable ancestor and overshoots this page's nested container.
+   */
   useEffect(() => {
-    if (!listsFocus || activeSubPage !== 'lists') return
+    if (!listsFocus || activeMode !== 'work') return
     // Expand the target section if collapsed
-    setCollapsedSections(prev => ({ ...prev, [listsFocus]: false }))
-    // Wait a tick for DOM to update, then scroll
+    setCollapsedSections(prev => ({ ...prev, [listsFocus.id]: false }))
+    // Wait a tick for the expansion to land in the DOM, then scroll.
     const raf = requestAnimationFrame(() => {
-      const el = document.getElementById(`lists-section-${listsFocus}`)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      if (scrollToSection(`lists-section-${listsFocus.id}`)) setListsFocus(null)
     })
-    setListsFocus(null)
     return () => cancelAnimationFrame(raf)
-  }, [listsFocus, activeSubPage])
+  }, [listsFocus, activeMode])
 
   /*
    * ── Work handoffs scroll instead of switching ──────────────────────────
@@ -931,31 +963,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   useEffect(() => {
     if (!workAnchor || activeMode !== 'work') return
     const raf = requestAnimationFrame(() => {
-      const el = document.getElementById(workAnchor.id)
-      if (!el) return
       /*
-       * Not `scrollIntoView`. The sub-page body is a nested scroll container
-       * under a sticky header, and scrollIntoView adjusts every scrollable
-       * ancestor — it overshot by ~600px and left the Process section above
-       * the viewport. The rect delta against the container that actually
-       * scrolls is exact.
-       */
-      let sc: HTMLElement | null = el.parentElement
-      while (sc) {
-        const style = getComputedStyle(sc)
-        if (/(auto|scroll)/.test(style.overflowY) && sc.scrollHeight > sc.clientHeight) break
-        sc = sc.parentElement
-      }
-      if (!sc) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return }
-      const delta = el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 8
-      sc.scrollBy({ top: delta, behavior: 'smooth' })
-      /*
+       * `scrollToSection`, not `scrollIntoView`. The sub-page body is a nested
+       * scroll container under a sticky header, and scrollIntoView adjusts
+       * every scrollable ancestor — it overshot by ~600px and left the Process
+       * section above the viewport. The helper measures the rect delta against
+       * the container that actually scrolls, and the membership chips use the
+       * same one.
+       *
        * Cleared INSIDE the frame, after the scroll. Clearing it in the effect
        * body instead re-renders immediately, which changes this effect's deps
        * and runs its cleanup — cancelling the very frame that was going to
        * scroll. Nothing moved, and nothing said so.
        */
-      setWorkAnchor(null)
+      if (scrollToSection(workAnchor.id)) setWorkAnchor(null)
     })
     return () => cancelAnimationFrame(raf)
   }, [workAnchor, activeMode])
@@ -2126,20 +2147,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    *
    * Scope needs no filter. RLS on these tables is owner-or-collaborator, so
    * this returns the lists this reader may see and no others.
+   *
+   * ── Then it had to answer one more question ──────────────────────────────
+   *
+   * Naming the lists is not managing membership. The select above dropped the
+   * membership row's own id and `added_by`, so there was nothing to delete and
+   * no way to ask whether this reader may. `useAssetListMemberships` is that
+   * same single request, widened to carry both, with the existing per-row rule
+   * applied. It replaces this query rather than joining it.
    */
-  const { data: assetLists, isLoading: listsLoading } = useQuery({
-    queryKey: ['asset-lists', asset.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('asset_list_items')
-        .select('added_at, asset_lists(id, name, description, list_type, created_at)')
-        .eq('asset_id', asset.id)
-        .order('added_at', { ascending: false })
-
-      if (error) throw error
-      return data?.map((item: any) => item.asset_lists).filter(Boolean) || []
-    }
-  })
+  const {
+    memberships: assetListMemberships,
+    isLoading: listsLoading,
+    remove: removeFromList,
+  } = useAssetListMemberships(asset.id)
 
   // Fetch themes that contain this asset
   const { data: assetThemes, isLoading: themesLoading } = useQuery({
@@ -3060,9 +3081,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         onOpenSubPage={(sub) => goToSubPage(sub)}
         onOpenList={(focus) => {
           /* Lists is a section of Work now; `listsFocus` still does the
-             within-section scroll, so no Work anchor is needed here. */
+             within-section scroll, so no Work anchor is needed here. The
+             'listsContent' target is the membership row in the band — the
+             chip lands on the surface that can change the membership, not on
+             a card that only names it. */
           setActiveSubPage('lists')
-          setListsFocus(focus)
+          focusListsSection(focus)
         }}
         collapsed={headerCollapsed}
         onToggleCollapse={toggleHeaderCollapsed}
@@ -3929,7 +3953,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           below it is the detail behind one of its lines.
         */}
         {activeMode === 'work' && (
-          <div className="space-y-6">
+          /*
+            The band carries the `work-lists` anchor because its first child is
+            the membership row. The 'lists' destination — from the Overview and
+            from a saved sub-page — therefore lands on the lists themselves,
+            not on the themes-and-portfolios block at the foot of Work.
+          */
+          <div id={WORK_SECTION_ID.lists} className="space-y-6 scroll-mt-4">
             {/*
               The orientation band.
 
@@ -3944,6 +3974,37 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               ideas={workIdeas}
               process={workProcessSummary}
               researchLinks={[]}
+              /*
+                Membership, manageable in place. `null` while loading means
+                "not known" — the row renders nothing rather than asserting
+                "not in any lists" at an asset that is in four.
+              */
+              lists={listsLoading ? null : assetListMemberships}
+              onOpenList={(listId) => {
+                const m = assetListMemberships.find(l => l.listId === listId)
+                if (m && onNavigate) {
+                  /* The List tab derives its own permissions from the row it
+                     is handed, so `list_type` and `created_by` travel with
+                     it. Dropping them opens a list the owner cannot edit. */
+                  onNavigate({
+                    id: m.listId,
+                    title: m.name,
+                    type: 'list',
+                    data: {
+                      id: m.listId,
+                      name: m.name,
+                      description: m.description,
+                      list_type: m.listType,
+                      created_by: m.createdBy,
+                    },
+                  })
+                }
+              }}
+              onRemoveFromList={(itemId) => removeFromList.mutate(itemId)}
+              removingListItemId={removeFromList.isPending ? (removeFromList.variables ?? null) : null}
+              /* `assetSymbol` is a declared prop the component never reads,
+                 so passing it would be dead wiring. */
+              addToListSlot={<AddToListButton assetId={asset.id} size="sm" variant="ghost" />}
               isLoading={workAttentionLoading || openItemsLoading}
               onOpenIdeas={() => {
                 window.dispatchEvent(new CustomEvent('decision-engine-action', {
@@ -4701,89 +4762,27 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           )
         })()}
 
-        {/* ─────────── Work · Lists ───────────
-            Lists are membership, not a destination: which lists this name
-            sits in is part of the work on it. The section is the old Lists
-            tab, unchanged, now reached by scrolling. */}
-        {activeMode === 'work' && (
-          <div id={WORK_SECTION_ID.lists} className="space-y-2 scroll-mt-4 pt-2">
-            {(() => {
-              const listsByType = (assetLists as any[] || []).reduce((acc, list) => {
-                // `list_type` is the column; `type` never existed, so this
-                // grouping has been collapsing everything onto 'list' for as
-                // long as the query above returned anything — which it did not.
-                const type = list.list_type || 'list'
-                if (!acc[type]) acc[type] = []
-                acc[type].push(list)
-                return acc
-              }, {} as Record<string, any[]>)
+        {/* ─────────── Work · Other memberships ───────────
+            Themes, portfolios and projects — the groupings this name also
+            sits in, each still the collapsible card the Lists tab had.
 
+            The LISTS card that used to open this block is gone, and not
+            because lists matter less. Two reasons:
+
+             1. It was wrong. It grouped on `list.list_type || 'list'`, and
+                `list_type` is `'mutual' | 'collaborative'` on every row in
+                the database — never null. So `listsByType.list` was always
+                undefined and the card said "Not in any lists." at every
+                asset, including one filed in four of them.
+             2. It was read-only, and at the very bottom of Work. Membership
+                is now a line in the orientation band at the top, where it
+                can be changed. Keeping a second copy here would have been
+                the same fact in two places, one of them stale. */}
+        {activeMode === 'work' && (
+          <div id="work-memberships" className="space-y-2 scroll-mt-4 pt-2">
+            {(() => {
               return (
                 <>
-                  {/* Lists Section */}
-                  <Card padding="none" id="lists-section-listsContent">
-                    <button
-                      onClick={() => toggleSection('listsContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
-                    >
-                      <div className="flex justify-between items-center flex-1 mr-2">
-                        <h4
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (onNavigate) {
-                              onNavigate({
-                                id: 'lists',
-                                title: 'Lists',
-                                type: 'lists',
-                                data: null
-                              })
-                            }
-                          }}
-                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
-                        >
-                          Lists
-                        </h4>
-                        <AddToListButton assetId={asset.id} />
-                      </div>
-                      {collapsedSections.listsContent ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronUp className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                    {!collapsedSections.listsContent && (
-                      <div className="border-t border-gray-100 px-4 py-2 dark:border-gray-800">
-                        {listsByType.list && listsByType.list.length > 0 ? (
-                          <div className="divide-y divide-gray-50">
-                            {listsByType.list.map((list: any) => (
-                              <div key={list.id} className="flex items-center justify-between py-1.5 hover:bg-gray-50/50 -mx-1 px-1 rounded transition-colors cursor-pointer">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="text-[13px] font-medium text-gray-900 truncate dark:text-white">{list.name}</span>
-                                  {list.description && (
-                                    <span className="text-[11px] text-gray-400 truncate hidden sm:inline">{list.description}</span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                  {list.created_at && (
-                                    <span className="text-[10px] text-gray-400">
-                                      {formatDistanceToNow(new Date(list.created_at), { addSuffix: true })}
-                                    </span>
-                                  )}
-                                  <Badge variant="default" size="sm">list</Badge>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="py-1">
-                            <p className="text-[13px] text-gray-500 dark:text-gray-400">Not in any lists.</p>
-                            <p className="text-[11px] text-gray-400 mt-0.5">Add this asset to a list to organize and track it.</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Card>
-
                   {/* Themes Section */}
                   <Card padding="none" id="lists-section-themesContent">
                     <button

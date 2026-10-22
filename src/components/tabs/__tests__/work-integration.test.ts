@@ -20,6 +20,16 @@ const TAB  = strip(read('src/components/tabs/AssetTab.tsx'))
 const HOOK = strip(read('src/hooks/useAssetWorkAttention.ts'))
 const PANE = strip(read('src/components/asset/work/AssetWorkPane.tsx'))
 
+/*
+ * The `<AssetWorkPane .../>` call site.
+ *
+ * Bounded by the next Work section rather than a character count: the call
+ * grew when membership was wired into it, and every assertion below that used
+ * a fixed window silently stopped covering the end of the call.
+ */
+const PANE_AT = TAB.indexOf('<AssetWorkPane')
+const PANE_CALL = TAB.slice(PANE_AT, TAB.indexOf('id={WORK_SECTION_ID.workflow}', PANE_AT))
+
 describe('it is mounted above Open Items, and removes nothing', () => {
   it('renders the pane on the Decisions tab', () => {
     expect(TAB).toMatch(/<AssetWorkPane/)
@@ -83,8 +93,7 @@ describe('no duplicate fetching', () => {
      * look" — passing null for the latter made the pane say "none running"
      * on an asset with a running process.
      */
-    const at = TAB.indexOf('<AssetWorkPane')
-    expect(TAB.slice(at, at + 900)).toMatch(/process=\{workProcessSummary\}/)
+    expect(PANE_CALL).toMatch(/process=\{workProcessSummary\}/)
     // 'none' is the only thing that becomes null — never an unloaded state.
     expect(TAB).toMatch(/processSummary\.status === 'none'/)
     // "not loaded yet", never "0/4" — Process is on this surface now, so the
@@ -158,10 +167,8 @@ describe('authorization is the existing one', () => {
 
 describe('navigation handoffs are the existing ones', () => {
   it('opens the asset-filtered Ideas pipeline', () => {
-    const at = TAB.indexOf('<AssetWorkPane')
-    const block = TAB.slice(at, at + 1400)
-    expect(block).toMatch(/type: 'trade-queue'/)
-    expect(block).toMatch(/filterAssetId: asset\.id/)
+    expect(PANE_CALL).toMatch(/type: 'trade-queue'/)
+    expect(PANE_CALL).toMatch(/filterAssetId: asset\.id/)
   })
 
   it('labels it "Open in Ideas", because no per-idea route is verified', () => {
@@ -170,27 +177,23 @@ describe('navigation handoffs are the existing ones', () => {
   })
 
   it('invents no per-idea handler at the call site', () => {
-    const at = TAB.indexOf('<AssetWorkPane')
-    expect(TAB.slice(at, at + 1400)).not.toMatch(/onOpenIdea=/)
+    expect(PANE_CALL).not.toMatch(/onOpenIdea=/)
   })
 
   it('creates a new idea through the existing event', () => {
-    const at = TAB.indexOf('<AssetWorkPane')
-    expect(TAB.slice(at, at + 1400)).toMatch(/type: 'new-trade-idea'/)
+    expect(PANE_CALL).toMatch(/type: 'new-trade-idea'/)
   })
 
   it('reaches Process by scrolling, because Process is on this surface now', () => {
     // It used to switch sub-pages. The section is below the band, so the
     // handoff costs the reader nothing.
-    const at = TAB.indexOf('<AssetWorkPane')
-    expect(TAB.slice(at, at + 1800)).toMatch(/onOpenProcess=\{\(\) => focusWorkSection\(WORK_SECTION_ID\.workflow\)\}/)
+    expect(PANE_CALL).toMatch(/onOpenProcess=\{\(\) => focusWorkSection\(WORK_SECTION_ID\.workflow\)\}/)
   })
 })
 
 describe('research links are not inferred', () => {
   it('passes none until a real relationship can be proven', () => {
-    const at = TAB.indexOf('<AssetWorkPane')
-    expect(TAB.slice(at, at + 1400)).toMatch(/researchLinks=\{\[\]\}/)
+    expect(PANE_CALL).toMatch(/researchLinks=\{\[\]\}/)
   })
 
   it('the pane renders no research area when there are none', () => {
@@ -200,7 +203,68 @@ describe('research links are not inferred', () => {
 
 describe('loading', () => {
   it('waits for both the attention and the ideas queries', () => {
-    const at = TAB.indexOf('<AssetWorkPane')
-    expect(TAB.slice(at, at + 1400)).toMatch(/isLoading=\{workAttentionLoading \|\| openItemsLoading\}/)
+    expect(PANE_CALL).toMatch(/isLoading=\{workAttentionLoading \|\| openItemsLoading\}/)
+  })
+})
+
+describe('list membership is managed on this surface', () => {
+  const MEMB = strip(read('src/hooks/lists/useAssetListMemberships.ts'))
+  const ADD = strip(read('src/components/lists/AddToListButton.tsx'))
+
+  it('replaced the read-only lists query rather than adding a second one', () => {
+    /*
+     * The page used to run its own `['asset-lists', asset.id]` query that
+     * selected only the joined list row — no membership id, no `added_by` —
+     * so the surface could name the lists and change nothing. That query is
+     * gone; this is the same single request, widened.
+     */
+    expect(TAB).toMatch(/useAssetListMemberships\(asset\.id\)/)
+    expect(TAB).not.toMatch(/queryKey: \['asset-lists', asset\.id\]/)
+    expect(TAB).not.toMatch(/listsByType/)
+    expect((MEMB.match(/from\('asset_list_items'\)/g) ?? []).length).toBe(2) // one read, one delete
+  })
+
+  it('asks the existing rule per row instead of re-deriving one', () => {
+    // `listPermissions` is the List tab's rule, extracted so it can be asked
+    // without calling a hook in a loop. A local `canWrite ? ...` here would
+    // be a second answer to the same question.
+    expect(MEMB).toMatch(/listPermissions\(\{/)
+    expect(MEMB).toMatch(/canRemove: perms\.canRemoveItem\(\{ added_by: row\.added_by \?\? null \}\)/)
+    expect(MEMB).not.toMatch(/list_type === 'collaborative' \?/)
+  })
+
+  it('deletes the membership row, never the list', () => {
+    expect(MEMB).toMatch(/from\('asset_list_items'\)\.delete\(\)\.eq\('id', itemId\)/)
+    expect(MEMB).not.toMatch(/from\('asset_lists'\)\.delete/)
+  })
+
+  it('distinguishes "not loaded" from "in no lists" at the call site', () => {
+    // `[]` asserts a fact. `null` is silence. Collapsing them is how the old
+    // card said "Not in any lists." at an asset filed in four.
+    expect(PANE_CALL).toMatch(/lists=\{listsLoading \? null : assetListMemberships\}/)
+  })
+
+  it('reuses the existing Add control rather than a second dialog', () => {
+    expect(PANE_CALL).toMatch(/addToListSlot=\{<AddToListButton assetId=\{asset\.id\}/)
+  })
+
+  it('shares one invalidation set between the add and the remove paths', () => {
+    /*
+     * The add path invalidated three keys and missed `asset-context-lists`,
+     * which the header's list chip counts — so filing an asset left the chip
+     * on its old number. Both paths call the same function now.
+     */
+    expect(ADD).toMatch(/invalidateAssetListMembership\(queryClient, assetId\)/)
+    expect(MEMB).toMatch(/queryKey: \['asset-context-lists', assetId\]/)
+    expect(MEMB).toMatch(/invalidateAssetListMembership\(queryClient, assetId\)/)
+    // No hand-rolled list of keys left behind in the add path.
+    expect(ADD).not.toMatch(/invalidateQueries\(\{ queryKey: \['asset-lists'\] \}\)/)
+  })
+
+  it('hands the List tab a row whose ownership it can read', () => {
+    // ListTab derives its own permissions from the row it is given;
+    // `{ id }` alone opens a list its owner cannot edit.
+    expect(PANE_CALL).toMatch(/list_type: m\.listType/)
+    expect(PANE_CALL).toMatch(/created_by: m\.createdBy/)
   })
 })

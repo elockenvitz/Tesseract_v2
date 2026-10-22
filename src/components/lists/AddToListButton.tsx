@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
 import { formatDistanceToNow } from 'date-fns'
+import { invalidateAssetListMembership } from '../../hooks/lists/useAssetListMemberships'
 
 interface AddToListButtonProps {
   assetId: string
@@ -102,11 +103,16 @@ export function AddToListButton({
     enabled: showDialog,
   })
 
-  const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ['asset-lists-for-link', assetId] })
-    queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
-    queryClient.invalidateQueries({ queryKey: ['asset-list-items'] })
-  }
+  /*
+   * The shared set, not a local one.
+   *
+   * This used to invalidate three keys and miss `asset-context-lists`, which
+   * is what the Asset page header's list chip counts — so filing an asset
+   * left the chip on its old number until something else happened to refetch.
+   * The membership row on Work reads a fourth key. One function owns all of
+   * them now, and the removal path calls the same one.
+   */
+  const invalidateAll = () => invalidateAssetListMembership(queryClient, assetId)
 
   // Add asset to list
   const linkMutation = useMutation({

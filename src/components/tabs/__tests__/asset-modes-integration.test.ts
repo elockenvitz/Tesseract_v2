@@ -82,21 +82,34 @@ describe('the three merged destinations are all still reachable', () => {
     expect(TAB).toMatch(/id=\{WORK_SECTION_ID\.lists\}/)
   })
 
-  it('orders them band → Process → Ideas → Lists', () => {
+  it('orders them Lists → Process → Ideas', () => {
+    /*
+     * The `work-lists` anchor moved to the band, because the band's first
+     * child is the membership row. Lists used to be the LAST thing on Work —
+     * below the process and every open idea — and read-only; the 'lists'
+     * destination now lands on the row that can change the membership.
+     */
     const band = TAB.indexOf('<AssetWorkPane')
     const proc = TAB.indexOf('id={WORK_SECTION_ID.workflow}')
     const ideas = TAB.indexOf('id={WORK_SECTION_ID.decisions}')
     const lists = TAB.indexOf('id={WORK_SECTION_ID.lists}')
-    expect(band).toBeGreaterThan(-1)
+    expect(lists).toBeGreaterThan(-1)
+    expect(lists).toBeLessThan(band)
     expect(band).toBeLessThan(proc)
     expect(proc).toBeLessThan(ideas)
-    expect(ideas).toBeLessThan(lists)
   })
 
-  it('keeps the Lists section content, rather than dropping the tab', () => {
-    // The old Lists tab's grouping, intact.
-    expect(TAB).toMatch(/lists-section-/)
-    expect(TAB).toMatch(/listsByType/)
+  it('keeps every membership surface the Lists tab had', () => {
+    // Themes, portfolios and projects stayed as their collapsible cards, and
+    // the header's context chips still scroll to them by id. Lists itself is
+    // the band's membership row, which carries `lists-section-listsContent`.
+    for (const section of ['themesContent', 'portfoliosContent', 'projectsContent']) {
+      expect(TAB).toMatch(new RegExp(`id="lists-section-${section}"`))
+    }
+    expect(strip(read('src/components/asset/work/AssetWorkPane.tsx')))
+      .toMatch(/id="lists-section-listsContent"/)
+    // The grouping that collapsed every list onto an absent 'list' key is gone.
+    expect(TAB).not.toMatch(/listsByType/)
   })
 })
 
@@ -125,13 +138,22 @@ describe('handoffs land where they used to', () => {
     expect(TAB).toMatch(/useState<\{ id: string; nonce: number \} \| null>\(null\)/)
   })
 
-  it('scrolls the container that actually scrolls, not every ancestor', () => {
+  it('scrolls through the one helper, which scrolls the right container', () => {
     // scrollIntoView adjusts every scrollable ancestor; under this page's
     // sticky header it overshot by ~600px and left the section off-screen.
+    // The measurement lives in `scroll-to-section` now, because the Lists
+    // deep-link needed the identical fix and had the identical bug.
     const at = TAB.indexOf("if (!workAnchor || activeMode !== 'work') return")
-    const body = TAB.slice(at, at + 1200)
-    expect(body).toMatch(/sc\.scrollBy\(\{ top: delta, behavior: 'smooth' \}\)/)
-    expect(body).toMatch(/getBoundingClientRect\(\)\.top - sc\.getBoundingClientRect\(\)\.top/)
+    expect(TAB.slice(at, at + 1200)).toMatch(/scrollToSection\(workAnchor\.id\)/)
+    /*
+     * Every scroll INTO a Work section goes through the helper. The three
+     * remaining `scrollIntoView` calls in the file are Research anchors with
+     * their own retry loops and are deliberately untouched here; a fourth
+     * appearing inside Work would be the overshoot bug returning.
+     */
+    expect(TAB).toMatch(/scrollToSection\('decisions-open-items'\)/)
+    expect(TAB).not.toMatch(/getElementById\('decisions-open-items'\)/)
+    expect((TAB.match(/scrollIntoView/g) ?? []).length).toBe(2)
   })
 
   it('does not scroll merely because the reader entered Work', () => {
@@ -148,8 +170,30 @@ describe('handoffs land where they used to', () => {
 
   it('keeps the Lists deep-link, with its within-section scroll', () => {
     expect(TAB).toMatch(/setActiveSubPage\('lists'\)/)
-    expect(TAB).toMatch(/setListsFocus\(focus\)/)
-    expect(TAB).toMatch(/activeSubPage !== 'lists'\) return/)
+    expect(TAB).toMatch(/focusListsSection\(focus\)/)
+    // Gated on the MODE, not on one sub-page: every Work destination renders
+    // all of Work's sections, so 'decisions' must reach a membership card too.
+    expect(TAB).toMatch(/if \(!listsFocus \|\| activeMode !== 'work'\) return/)
+  })
+
+  it('gives the lists deep-link the same nonce and in-frame clear as the Work anchor', () => {
+    /*
+     * This effect had BOTH defects the Work anchor had, and they were found
+     * only after the first was fixed:
+     *
+     *  1. `setListsFocus(null)` ran in the effect body, re-rendering at once,
+     *     changing the deps and running the cleanup — which cancelled the
+     *     frame that was about to scroll.
+     *  2. With that repaired, a bare string id made every SECOND click on the
+     *     same chip a no-op, because React skips a write that changes nothing.
+     */
+    expect(TAB).toMatch(/setListsFocus\(id \? \{ id, nonce: Date\.now\(\) \} : null\)/)
+    const at = TAB.indexOf("if (!listsFocus || activeMode !== 'work') return")
+    expect(at).toBeGreaterThan(-1)
+    const body = TAB.slice(at, at + 700)
+    // Cleared inside the frame, and only when the target was found.
+    expect(body).toMatch(/if \(scrollToSection\(`lists-section-\$\{listsFocus\.id\}`\)\) setListsFocus\(null\)/)
+    expect(body).toMatch(/setListsFocus\(null\)[\s\S]{0,60}\}\)[\s\S]{0,80}cancelAnimationFrame/)
   })
 
   it('carries the attention target into the Work section it names', () => {

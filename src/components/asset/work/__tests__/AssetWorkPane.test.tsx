@@ -35,12 +35,14 @@ const setup = (over: Partial<AssetWorkPaneProps> = {}) => {
   const onNewIdea = vi.fn()
   const onStartProcess = vi.fn()
   const onOpenIdea = vi.fn()
+  const onRemoveFromList = vi.fn()
   render(
     <AssetWorkPane
       attention={EMPTY}
       ideas={[]}
       process={null}
       researchLinks={[]}
+      onRemoveFromList={onRemoveFromList}
       onOpenIdeas={onOpenIdeas}
       onOpenIdea={onOpenIdea}
       onOpenProcess={onOpenProcess}
@@ -49,7 +51,7 @@ const setup = (over: Partial<AssetWorkPaneProps> = {}) => {
       {...over}
     />
   )
-  return { onOpenIdeas, onOpenProcess, onNewIdea, onStartProcess, onOpenIdea }
+  return { onOpenIdeas, onOpenProcess, onNewIdea, onStartProcess, onOpenIdea, onRemoveFromList }
 }
 
 describe('the four emptiness cases', () => {
@@ -153,18 +155,34 @@ describe('ideas use the canonical pipeline and the existing navigation', () => {
 })
 
 describe('the process summary never replaces the full surface', () => {
-  it('shows assignee, deadline and priority as read-only context', () => {
+  it('shows assignee and priority as read-only context', () => {
     setup({ process: process() })
     const panel = screen.getByTestId('work-panel-process')
     expect(panel).toHaveTextContent('Assigned to E. Lockenvitz')
-    expect(panel).toHaveTextContent('Due Nov 1')
     expect(panel).toHaveTextContent('Priority High')
+  })
+
+  it('states the deadline once, in the summary, not twice', () => {
+    // It was in both the area's summary line and the detail line, under the
+    // same condition — the same fact in two places two lines apart.
+    setup({ process: process() })
+    expect(screen.getByTestId('work-toggle-process')).toHaveTextContent('due Nov 1')
+    expect(screen.getByTestId('work-panel-process')).not.toHaveTextContent('Due Nov 1')
   })
 
   it('says so plainly when none of them is set', () => {
     setup({ process: process({ assigneeName: null, deadline: null, priorityLabel: null }) })
     expect(screen.getByTestId('work-panel-process'))
       .toHaveTextContent('No assignee, deadline or priority set.')
+  })
+
+  it('never claims nothing is set while a deadline is on screen', () => {
+    // The deadline moved out of the detail line, so the sentence that denies
+    // it had to stop firing when only the deadline is known.
+    setup({ process: process({ assigneeName: null, priorityLabel: null }) })
+    const panel = screen.getByTestId('work-panel-process')
+    expect(panel).not.toHaveTextContent('No assignee, deadline or priority set.')
+    expect(screen.getByTestId('work-toggle-process')).toHaveTextContent('due Nov 1')
   })
 
   it('hands off to the full process, which keeps the real controls', async () => {
@@ -231,5 +249,120 @@ describe('summary to detail', () => {
     setup({ isLoading: true })
     expect(screen.getByTestId('work-loading')).toBeInTheDocument()
     expect(screen.queryByTestId('work-empty')).not.toBeInTheDocument()
+  })
+})
+
+// ──────────────────────────────────────────────── list membership
+
+/**
+ * Membership is the one thing Work could previously only READ.
+ *
+ * The old Lists card sat at the foot of the surface, below the process and
+ * every open idea, and did nothing but print names — and because it grouped
+ * on `list_type || 'list'` while every stored row is 'mutual' or
+ * 'collaborative', it printed "Not in any lists." at an asset filed in four.
+ */
+const membership = (over = {}) => ({
+  itemId: 'it1', listId: 'l1', name: 'Core Watchlist',
+  listType: 'mutual' as const, canRemove: true, ...over,
+})
+
+describe('list membership', () => {
+  it('names each list the asset is in', () => {
+    setup({ lists: [membership(), membership({ itemId: 'it2', listId: 'l2', name: 'Q3 Earnings' })] })
+    expect(screen.getByTestId('work-lists')).toHaveTextContent('Core Watchlist')
+    expect(screen.getByTestId('work-lists')).toHaveTextContent('Q3 Earnings')
+  })
+
+  it('says so when the asset is in none', () => {
+    setup({ lists: [] })
+    expect(screen.getByTestId('work-lists-none')).toBeInTheDocument()
+  })
+
+  it('renders nothing at all while membership is unknown', () => {
+    /*
+     * null is "not loaded", [] is "none". Collapsing the two is how a
+     * surface asserts "Not in any lists." at an asset that is in four — the
+     * exact defect the old card shipped with.
+     */
+    setup({ lists: null })
+    expect(screen.queryByTestId('work-lists')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('work-lists-none')).not.toBeInTheDocument()
+  })
+
+  it('shows membership even when there is no active work', () => {
+    // The empty state used to be the whole render, so an asset with no ideas
+    // and no process showed no lists either.
+    setup({ lists: [membership()], process: null, ideas: [] })
+    expect(screen.getByTestId('work-empty')).toBeInTheDocument()
+    expect(screen.getByTestId('work-lists')).toHaveTextContent('Core Watchlist')
+  })
+
+  it('carries the id the header list chip scrolls to', () => {
+    // AssetWorkspaceHeader's chip sets a focus of 'listsContent', and the
+    // Asset page scrolls to `lists-section-listsContent`. The chip now lands
+    // on the surface that can change the membership.
+    setup({ lists: [membership()] })
+    expect(screen.getByTestId('work-lists')).toHaveAttribute('id', 'lists-section-listsContent')
+  })
+
+  it('removes a membership by the membership row id, not the list id', async () => {
+    const user = userEvent.setup()
+    const onRemoveFromList = vi.fn()
+    render(
+      <AssetWorkPane
+        attention={EMPTY} ideas={[]} process={null} researchLinks={[]}
+        lists={[membership()]} onRemoveFromList={onRemoveFromList}
+        onOpenIdeas={vi.fn()}
+      />
+    )
+    await user.click(screen.getByTestId('work-list-remove-l1'))
+    // 'it1', not 'l1' — deleting by list_id would empty the list.
+    expect(onRemoveFromList).toHaveBeenCalledWith('it1')
+  })
+
+  it('offers no remove control where the existing rule says no', () => {
+    // On a collaborative list, write access is not permission to remove a
+    // row somebody else added. A disabled button would still advertise a
+    // capability the owner has not granted.
+    setup({ lists: [membership({ canRemove: false })] })
+    expect(screen.getByTestId('work-list-l1')).toBeInTheDocument()
+    expect(screen.queryByTestId('work-list-remove-l1')).not.toBeInTheDocument()
+  })
+
+  it('offers no remove control when the caller supplies no handler', () => {
+    setup({ lists: [membership({ canRemove: true })], onRemoveFromList: undefined })
+    expect(screen.queryByTestId('work-list-remove-l1')).not.toBeInTheDocument()
+  })
+
+  it('does not re-derive the permission from the list type', () => {
+    // canRemove is the answer, already given. A collaborative list whose row
+    // this reader added is removable, and the component must not second-guess
+    // that from the type alone.
+    setup({ lists: [membership({ listType: 'collaborative', canRemove: true })] })
+    expect(screen.getByTestId('work-list-remove-l1')).toBeInTheDocument()
+  })
+
+  it('marks the row being removed and blocks a second click', () => {
+    setup({ lists: [membership()], removingListItemId: 'it1' })
+    expect(screen.getByTestId('work-list-remove-l1')).toBeDisabled()
+  })
+
+  it('opens a list when the caller supplies a destination', async () => {
+    const user = userEvent.setup()
+    const onOpenList = vi.fn()
+    render(
+      <AssetWorkPane
+        attention={EMPTY} ideas={[]} process={null} researchLinks={[]}
+        lists={[membership()]} onOpenList={onOpenList} onOpenIdeas={vi.fn()}
+      />
+    )
+    await user.click(screen.getByTestId('work-list-open-l1'))
+    expect(onOpenList).toHaveBeenCalledWith('l1')
+  })
+
+  it('hosts the existing Add control rather than rebuilding one', () => {
+    setup({ lists: [], addToListSlot: <button type="button">Add to List</button> })
+    expect(screen.getByTestId('work-lists-add')).toHaveTextContent('Add to List')
   })
 })
