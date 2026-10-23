@@ -1911,10 +1911,24 @@ export function InvestmentTimeline({
             so they cost one row rather than two.
           */}
           <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-            <p className="min-w-0 flex-1 truncate text-[12px] text-gray-600 dark:text-gray-400">
-              {assetSymbol && <span className="text-gray-400">{assetSymbol} · </span>}
-              {timelineStages.find(s => s.id === showStageDetails)?.description}
-            </p>
+            {/*
+              The separator belongs to the description, not to the symbol.
+
+              Rendering "{symbol} · " unconditionally left a dangling "AMZN ·"
+              on every stage that carries no description — Catalyst Check is
+              one, so the defect was one click away. A stage with nothing to
+              say renders nothing at all rather than punctuation.
+            */}
+            {(() => {
+              const description = timelineStages.find(s => s.id === showStageDetails)?.description
+              if (!description) return <span className="flex-1" />
+              return (
+                <p className="min-w-0 flex-1 truncate text-[12px] text-gray-600 dark:text-gray-400">
+                  {assetSymbol && <span className="text-gray-400">{assetSymbol} · </span>}
+                  {description}
+                </p>
+              )
+            })()}
 
             {showStageDetails && showStageDetails !== 'completed' && showStageDetails !== 'outdated' && assetId && workflowId && (
               <div className="flex flex-shrink-0 items-center gap-3">
