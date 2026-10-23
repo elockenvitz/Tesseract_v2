@@ -13,6 +13,7 @@ import { OperationalItemCard } from './checklist/OperationalItemCard'
 import { type ProcessItemType, userName as chUserName } from './checklist/types'
 import { StageActionBar } from '../workflow/StageActionBar'
 import { RequirementsNavigator } from '../workflow/RequirementsNavigator'
+import { StageRail } from '../workflow/StageRail'
 import { RequirementWorkspace } from '../asset/work/RequirementWorkspace'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -1575,10 +1576,49 @@ export function InvestmentTimeline({
             </div>
           )}
 
+        {/*
+          ── Two sizes, one rule ───────────────────────────────────────────
+
+          Full while the reader is choosing where to work; a strip while they
+          are working. The chevrons answer "where am I in this Process?" and
+          cost ~70px of a 772px viewport to do it — worth it on the stage
+          overview, where that is the question being asked, and not worth it
+          on the requirement surface, where the workspace header below
+          already names the stage, the requirement and the progress.
+
+          Nothing is dropped in the compact form: every stage keeps its
+          number, label, count, status colour, current marker and click
+          handler. `StageRail` is handed the same `getStageStatus`,
+          `stageChecklists` and `handleStageClick` the chevrons use, so the
+          two presentations cannot disagree.
+        */}
+        {selectedRequirement && (
+          <div className="hidden md:block flex-1 min-w-0">
+            <StageRail
+              stages={timelineStages.map((stage, index) => {
+                const items = stageChecklists[stage.id] || []
+                return {
+                  id: stage.id,
+                  label: stage.label,
+                  status: getStageStatus(index) as 'completed' | 'current' | 'future',
+                  done: items.filter(i => isItemDone(i)).length,
+                  total: items.length,
+                }
+              })}
+              selectedId={showStageDetails}
+              onSelect={(stageId, index) => {
+                const stage = timelineStages.find(s => s.id === stageId)
+                if (stage) handleStageClick(stage, index)
+              }}
+            />
+          </div>
+        )}
+
         {/* Desktop Chevron Timeline - Executive Design.
             Shares the row with the priority chip above: `flex-1` so the
             chevrons take whatever width the chip does not, instead of the
             chip reserving a 24px row of its own above them. */}
+        {!selectedRequirement && (
         <div className="hidden md:block flex-1 min-w-0">
           {/* py-6 px-8 → py-1 px-2. The chevrons need room to overlap, not
               48px of vertical air above and below a 61px rail. */}
@@ -1782,6 +1822,7 @@ export function InvestmentTimeline({
             </div>
           </div>
         </div>
+        )}
         </div>
 
         {/* Mobile Timeline */}
@@ -1922,7 +1963,11 @@ export function InvestmentTimeline({
             */}
             {(() => {
               const description = timelineStages.find(s => s.id === showStageDetails)?.description
-              if (!description) return <span className="flex-1" />
+              /* While a requirement is open the workspace quotes this same
+                 description as the stage's objective, directly above the
+                 evidence. Printing it twice, 200px apart, is the duplication
+                 this surface keeps accumulating. */
+              if (!description || selectedRequirement) return <span className="flex-1" />
               return (
                 <p className="min-w-0 flex-1 truncate text-[12px] text-gray-600 dark:text-gray-400">
                   {assetSymbol && <span className="text-gray-400">{assetSymbol} · </span>}
