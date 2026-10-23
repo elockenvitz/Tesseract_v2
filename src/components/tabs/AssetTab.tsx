@@ -4481,7 +4481,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           <div id={WORK_SECTION_ID.workflow} className="scroll-mt-4">
             {(() => {
             return (
-              <div className="space-y-6">
+              /* space-y-6 → space-y-3. 24px between the Process identity row
+                 and the stage rail is the gap of a page that stacks sections;
+                 this is one workbench, and the rail belongs to the Process
+                 named directly above it. */
+              <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center space-x-3">
                     {/* The way back to navigation, on the row the Process

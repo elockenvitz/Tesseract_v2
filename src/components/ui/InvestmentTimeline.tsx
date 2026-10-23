@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Check, Info, AlertTriangle, Calendar, Plus, ChevronDown, Zap, Target, Clock, BrainCircuit, Settings2 } from 'lucide-react'
+import { Check, AlertTriangle, Calendar, Plus, ChevronDown, Zap, Target, Clock, BrainCircuit, Settings2 } from 'lucide-react'
 import { Badge } from './Badge'
 import { BadgeSelect } from './BadgeSelect'
 import { Button } from './Button'
@@ -1443,8 +1443,16 @@ export function InvestmentTimeline({
       {/* p-6 → p-3 and mb-4 → mb-2: the stage rail card was 199px tall to
           hold a 61px rail and a priority chip. */}
       <div className="bg-white border border-gray-200 rounded-lg p-3 dark:border-gray-700 dark:bg-gray-800">
-        <div className="mb-2 flex items-center justify-between">
-          {/* Workflow Priority on the left */}
+        {/*
+          ── The priority chip rides the rail's row ───────────────────────
+          It had a 24px row of its own, containing one chip and nothing else,
+          directly above the stage rail. It is a PROCESS-level control, so it
+          belongs on this card rather than in the stage block below — but not
+          on a row of its own. `md:hidden` keeps the phone layout stacked,
+          where a chip beside a vertical stage list would not fit; from `md`
+          up the same chip renders inside the rail row instead.
+        */}
+        <div className="mb-2 flex items-start gap-3" data-testid="process-rail-row">
           {assetId && workflowId && (
             <div className="flex items-center space-x-2">
               <div className="relative">
@@ -1566,10 +1574,11 @@ export function InvestmentTimeline({
             </div>
           )}
 
-        </div>
-
-        {/* Desktop Chevron Timeline - Executive Design */}
-        <div className="hidden md:block">
+        {/* Desktop Chevron Timeline - Executive Design.
+            Shares the row with the priority chip above: `flex-1` so the
+            chevrons take whatever width the chip does not, instead of the
+            chip reserving a 24px row of its own above them. */}
+        <div className="hidden md:block flex-1 min-w-0">
           {/* py-6 px-8 → py-1 px-2. The chevrons need room to overlap, not
               48px of vertical air above and below a 61px rail. */}
           <div className="relative py-1 px-2">
@@ -1772,6 +1781,7 @@ export function InvestmentTimeline({
             </div>
           </div>
         </div>
+        </div>
 
         {/* Mobile Timeline */}
         <div className="md:hidden">
@@ -1877,47 +1887,50 @@ export function InvestmentTimeline({
       </div>
 
       {/* Stage Details Modal/Card */}
+      {/* `sm` padding, not the 24px `md` default: this card is the working
+          surface, and its frame should not cost more than the stage context
+          row inside it. */}
       {showStageDetails && (
-        <Card key={`${workflowId}-${showStageDetails}`} className="transition-all duration-300 animate-in fade-in slide-in-from-top-4">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className={`w-10 h-10 rounded-full ${getStageColor(getStageStatus(timelineStages.findIndex(s => s.id === showStageDetails)), timelineStages.findIndex(s => s.id === showStageDetails))} flex items-center justify-center`}>
-                {getStageStatus(timelineStages.findIndex(s => s.id === showStageDetails)) === 'completed' ? (
-                  <Check className="w-5 h-5 text-white" />
-                ) : (
-                  <Info className="w-5 h-5 text-white" />
-                )}
-              </div>
-              <div className="flex-1">
-                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {timelineStages.find(s => s.id === showStageDetails)?.label} Stage
-                </h4>
-                <p className="text-sm text-gray-600 mb-3 dark:text-gray-400">
-                  {assetSymbol && `For ${assetSymbol} • `}
-                  {timelineStages.find(s => s.id === showStageDetails)?.description}
-                </p>
-              </div>
-            </div>
+        <Card key={`${workflowId}-${showStageDetails}`} padding="sm" className="transition-all duration-300 animate-in fade-in slide-in-from-top-4">
+          {/*
+            ── One line of stage context, not a second stage header ────────
 
-            {/* Stage Assignment Section - Upper Right */}
+            This was a 40px status disc, an 18px "<Stage> Stage" heading, a
+            description line and a right-hand block stacking assignment over
+            deadline — about 104px announcing a stage the rail directly above
+            had already named, numbered and coloured. Measured at 1920x889 the
+            first requirement sat at y=579, two thirds of the viewport spent
+            before any work.
+
+            What is kept is what the rail does NOT say: the stage's question,
+            and who owns it by when. The disc is gone because the rail already
+            carries stage status as colour and position; the heading is gone
+            because repeating a title under a title is the duplication this
+            slice exists to remove. The ownership controls are the same two
+            components with the same props — side by side instead of stacked,
+            so they cost one row rather than two.
+          */}
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <p className="min-w-0 flex-1 truncate text-[12px] text-gray-600 dark:text-gray-400">
+              {assetSymbol && <span className="text-gray-400">{assetSymbol} · </span>}
+              {timelineStages.find(s => s.id === showStageDetails)?.description}
+            </p>
+
             {showStageDetails && showStageDetails !== 'completed' && showStageDetails !== 'outdated' && assetId && workflowId && (
-              <div className="flex-shrink-0">
+              <div className="flex flex-shrink-0 items-center gap-3">
                 <AssignmentSelector
                   assetId={assetId}
                   workflowId={workflowId}
                   stageId={showStageDetails}
                   type="stage"
                 >
-                  {/* Stage Deadline - Below Assigned To */}
-                  <div className="mt-2">
-                    <StageDeadlineManager
-                      assetId={assetId || ''}
-                      workflowId={workflowId || ''}
-                      stageId={showStageDetails}
-                      stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
-                      isCurrentStage={showStageDetails === effectiveCurrentStage}
-                    />
-                  </div>
+                  <StageDeadlineManager
+                    assetId={assetId || ''}
+                    workflowId={workflowId || ''}
+                    stageId={showStageDetails}
+                    stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
+                    isCurrentStage={showStageDetails === effectiveCurrentStage}
+                  />
                 </AssignmentSelector>
               </div>
             )}
@@ -2070,12 +2083,50 @@ export function InvestmentTimeline({
                                   data-testid="requirement-none-selected"
                                   className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-700"
                                 >
-                                  <p className="text-[13px] text-gray-500 dark:text-gray-400">
-                                    {doneCount} of {items.length} requirements complete.
-                                  </p>
-                                  <p className="mt-1 text-[11px] text-gray-400">
-                                    Select a requirement to work on it.
-                                  </p>
+                                  {/*
+                                    The count moved out of here.
+
+                                    "{done} of {total} requirements complete."
+                                    was the THIRD statement of the same fact
+                                    on this screen — the rail's bar, the
+                                    action bar's sentence, and then this — and
+                                    it is the least useful of the three,
+                                    because it answers a question the reader
+                                    did not ask of an empty panel. What they
+                                    want to know here is what to do, and which
+                                    one to do first.
+
+                                    Still not auto-selected: opening a
+                                    requirement implies the reader has started
+                                    it, and the panel below is where notes and
+                                    drafts live. Naming the next one is a
+                                    prompt; opening it would be a claim.
+                                  */}
+                                  {(() => {
+                                    const next = items.find(i => !isItemDone(i))
+                                    if (!next) {
+                                      return (
+                                        <p className="text-[13px] text-gray-500 dark:text-gray-400">
+                                          Every requirement in this stage is done.
+                                        </p>
+                                      )
+                                    }
+                                    return (
+                                      <>
+                                        <p className="text-[13px] text-gray-500 dark:text-gray-400">
+                                          Pick a requirement to record what you found.
+                                        </p>
+                                        <button
+                                          type="button"
+                                          data-testid="requirement-start-next"
+                                          onClick={() => setSelectedRequirement(next.id)}
+                                          className="mt-2 rounded border border-gray-300 px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                                        >
+                                          Start with "{next.text}"
+                                        </button>
+                                      </>
+                                    )
+                                  })()}
                                 </div>
                               )
                             }
