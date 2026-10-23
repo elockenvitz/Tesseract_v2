@@ -25,6 +25,9 @@
 /** A fact the Work surface can show, each with its own provenance. */
 export type EvidenceFacet = 'price' | 'position' | 'target' | 'case' | 'ideas'
 
+/** The horizons the performance panel offers. */
+export type PeriodKey = 'YTD' | '1M' | '3M'
+
 export interface RequirementGuidance {
   /**
    * The stage description, verbatim, when the Process defines one. Null
@@ -38,6 +41,15 @@ export interface RequirementGuidance {
   questions: string[]
   /** Evidence to lead with, most relevant first. Never empty. */
   facets: EvidenceFacet[]
+  /**
+   * The horizon the requirement NAMES, when it names one.
+   *
+   * "Check YTD performance" opening on a 400-day return was the defect
+   * this answers: the window was honestly stamped and still not the one
+   * asked for. Null when the requirement names no period and none is
+   * implied, which is every requirement whose subject is not performance.
+   */
+  defaultPeriod: PeriodKey | null
 }
 
 interface Topic {
@@ -56,10 +68,22 @@ const TOPICS: Topic[] = [
   {
     label: 'Performance',
     match: /\b(performance|ytd|return|returns|price action|momentum|moved|move|drawdown|rally|underperform|outperform)\b/,
+    /*
+     * These were "How large is the move, and over what window?", which the
+     * panel beside them now answers outright, and "Is it the company, the
+     * sector, or the market?", which NOTHING on this surface can answer —
+     * no benchmark series is held, so the question sent the reader away
+     * with no way back. A question whose evidence is absent is worse than
+     * no question: it implies the surface could settle it.
+     *
+     * What is left is answerable from what is on screen: the series, the
+     * official target, the book weight and the written case.
+     */
     questions: [
-      'How large is the move, and over what window?',
-      'Is it the company, the sector, or the market?',
-      'Does the move change anything the thesis depends on?',
+      'Did the move arrive in a few sessions, or accumulate across the period?',
+      'Does the price now sit through the official target, or further from it?',
+      'Is the book weight still the one the case argues for at this price?',
+      'Which claim in the written case does this move test?',
     ],
     facets: ['price', 'position', 'target', 'case'],
   },
@@ -124,16 +148,36 @@ export interface GuidanceInput {
   stageDescription?: string | null
 }
 
+/**
+ * The horizon a requirement names, read from its own words.
+ *
+ * Only an explicit naming counts. "Check performance" names no period, and
+ * guessing one for it would put a figure under a heading the reader never
+ * asked for — the YTD default below is applied by the performance topic,
+ * where year-to-date is the conventional reading, and nowhere else.
+ */
+function periodNamedIn(haystack: string): PeriodKey | null {
+  if (/\b(ytd|year[- ]to[- ]date|this year|calendar year)\b/.test(haystack)) return 'YTD'
+  if (/\b(3m|three[- ]month|quarter|quarterly|last quarter)\b/.test(haystack)) return '3M'
+  if (/\b(1m|one[- ]month|past month|last month|monthly)\b/.test(haystack)) return '1M'
+  return null
+}
+
 export function guidanceFor({ text, stageDescription }: GuidanceInput): RequirementGuidance {
   const objective = stageDescription?.trim() ? stageDescription.trim() : null
   const haystack = (text ?? '').toLowerCase()
   const topic = haystack ? TOPICS.find(t => t.match.test(haystack)) : undefined
+  const named = haystack ? periodNamedIn(haystack) : null
 
   return {
     objective,
     topic: topic?.label ?? null,
     questions: topic ? [...topic.questions] : [],
     facets: topic ? [...topic.facets] : [...DEFAULT_FACETS],
+    /* A performance requirement that names no period opens on YTD, the
+       conventional reading; any other requirement opens on what it named,
+       or on nothing. */
+    defaultPeriod: named ?? (topic?.label === 'Performance' ? 'YTD' : null),
   }
 }
 

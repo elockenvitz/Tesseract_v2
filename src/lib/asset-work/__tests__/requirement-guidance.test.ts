@@ -118,6 +118,33 @@ describe('no question may carry a claim about the asset', () => {
   })
 })
 
+describe('the horizon comes from the requirement, not from the cache', () => {
+  /*
+   * The defect: "Check YTD performance" opened on the whole 400-day cache
+   * window, honestly stamped and not the period asked for.
+   */
+  it('opens a YTD requirement on YTD', () => {
+    expect(guidanceFor({ text: 'Check YTD performance' }).defaultPeriod).toBe('YTD')
+    expect(guidanceFor({ text: 'Review year-to-date return' }).defaultPeriod).toBe('YTD')
+  })
+
+  it('opens on the period the requirement actually names', () => {
+    expect(guidanceFor({ text: 'Three-month price action' }).defaultPeriod).toBe('3M')
+    expect(guidanceFor({ text: 'Performance over the past month' }).defaultPeriod).toBe('1M')
+    expect(guidanceFor({ text: 'Quarterly performance check' }).defaultPeriod).toBe('3M')
+  })
+
+  it('falls back to YTD only for a performance requirement naming no period', () => {
+    expect(guidanceFor({ text: 'Check performance' }).defaultPeriod).toBe('YTD')
+  })
+
+  it('offers no period at all where performance is not the subject', () => {
+    for (const text of ['Does the thesis still hold?', 'Check 13F', 'Ping the specialist']) {
+      expect(guidanceFor({ text }).defaultPeriod).toBeNull()
+    }
+  })
+})
+
 describe('every requirement is offered the same facts', () => {
   /*
    * The ordering differs by topic and the SET does not. This is the

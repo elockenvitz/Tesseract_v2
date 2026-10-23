@@ -2192,6 +2192,10 @@ export function InvestmentTimeline({
                             const nextItem = after.find(i => !isItemDone(i)) ?? after[0] ?? null
                             return (
                               <RequirementWorkspace
+                                /* Keyed, so the period ladder opens on the
+                                   next requirement's own horizon rather
+                                   than inheriting this one's. */
+                                key={selected.id}
                                 assetId={assetId}
                                 symbol={assetSymbol ?? null}
                                 requirementText={selected.text}

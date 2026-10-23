@@ -2,7 +2,12 @@ import React from 'react'
 import { clsx } from 'clsx'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { useAssetWorkspace, primaryPosition } from '../../../hooks/useAssetWorkspace'
-import { guidanceFor, type EvidenceFacet } from '../../../lib/asset-work/requirement-guidance'
+import {
+  guidanceFor,
+  type EvidenceFacet,
+  type PeriodKey,
+} from '../../../lib/asset-work/requirement-guidance'
+import { readPerformance, describeBasis, PERIODS } from '../../../lib/asset-work/performance'
 
 /**
  * The requirement as an assignment rather than a checkbox.
@@ -108,12 +113,129 @@ interface Cell {
   sub: string
 }
 
+/**
+ * The performance block: three horizons at once, one of them expanded.
+ *
+ * ── Why all three are on screen ─────────────────────────────────────────
+ *
+ * "Check YTD performance" is not answerable by a year-to-date number
+ * alone. A name up 12% on the year and down 9% over the month is a
+ * different investment question from one that drifted up all year, and a
+ * reader who has to click to find that out will not click. So the chips
+ * carry their own figures and the selected horizon gets the basis dates
+ * and the arithmetic spelled out.
+ *
+ * Every figure is stamped with the two closes it was measured between,
+ * because a return without its endpoints is not checkable. A horizon the
+ * series cannot support says why in words rather than showing a dash.
+ */
+function PerformanceBlock({
+  history, period, onPeriodChange,
+}: {
+  history: { date: string; close: number }[]
+  period: PeriodKey
+  onPeriodChange: (p: PeriodKey) => void
+}) {
+  const reading = readPerformance(history)
+  const active = reading.periods[period]
+  const basis = describeBasis(active)
+
+  return (
+    <div data-testid="performance-block">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <span className={EYEBROW}>{period} price return</span>
+          {active.pct === null ? (
+            <>
+              <p className={CELL_DASH}>—</p>
+              <p className={clsx(CELL_SUB, 'max-w-[46ch]')} data-testid="performance-unavailable">
+                {active.unavailable}
+              </p>
+            </>
+          ) : (
+            <>
+              <p
+                className={clsx(
+                  'text-[26px] font-semibold leading-none tracking-tight',
+                  active.pct >= 0
+                    ? 'text-emerald-700 dark:text-emerald-400'
+                    : 'text-rose-700 dark:text-rose-400',
+                )}
+                data-testid="performance-headline"
+              >
+                {signed(active.pct)}
+              </p>
+              <p className={CELL_SUB}>
+                {basis}
+                {active.from && active.to
+                  ? ` · ${money(active.from.close)} → ${money(active.to.close)}`
+                  : ''}
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* The ladder. Each chip carries its own figure, so the comparison
+            across horizons needs no clicking. */}
+        <div className="flex items-center gap-1" role="group" aria-label="Return period">
+          {PERIODS.map(key => {
+            const p = reading.periods[key]
+            const on = key === period
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onPeriodChange(key)}
+                data-testid={`period-${key}`}
+                aria-pressed={on}
+                title={p.unavailable ?? describeBasis(p) ?? undefined}
+                className={clsx(
+                  'rounded border px-2 py-1 text-left leading-tight transition-colors',
+                  on
+                    ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-400 dark:border-gray-700 dark:text-gray-300',
+                )}
+              >
+                <span className="block text-[10px] font-semibold uppercase tracking-wider opacity-70">{key}</span>
+                <span className="block text-[12px] font-semibold tabular-nums">
+                  {p.pct === null ? '—' : signed(p.pct)}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <p className="mt-2 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+        {reading.latest
+          ? `Latest close ${money(reading.latest.close)} on ${shortDate(reading.latest.date)}`
+          : 'No close held'}
+        {reading.latestAgeDays !== null && reading.latestAgeDays > 0
+          ? `, ${reading.latestAgeDays} days ago`
+          : ''}
+        {reading.coverage
+          /* "loaded", not "held": the page fetches a bounded window, and a
+             reader told the cache holds 261 closes would be told wrong. */
+          ? ` · ${reading.coverage.observations} closes loaded, ${shortDate(reading.coverage.from)} to ${shortDate(reading.coverage.to)}`
+          : ''}
+        {/* Two refusals stated once, where the figures are, rather than
+            left for the reader to assume either way. */}
+        {' · '}Price return from stored closes: no dividend adjustment is recorded, so this is not total
+        return, and no benchmark series is held for this organization, so relative performance is not shown.
+      </p>
+    </div>
+  )
+}
+
 function Evidence({
-  facets, assetId, symbol,
+  facets, assetId, symbol, period, onPeriodChange,
 }: {
   facets: EvidenceFacet[]
   assetId: string
   symbol: string | null
+  /** Non-null only where the requirement's subject is performance. */
+  period: PeriodKey | null
+  onPeriodChange: (p: PeriodKey) => void
 }) {
   /*
    * ── Always the deep window, and never a conditional one ─────────────
@@ -220,17 +342,38 @@ function Evidence({
     }
   }
 
-  const cells = facets.slice(0, 4).map(build)
+  /*
+   * Where performance IS the subject, the single price cell is replaced by
+   * the block above — three horizons, their basis dates and their
+   * refusals. Leaving the cell in beside it would print the same close
+   * twice under two different headings.
+   */
+  const cells = (period ? facets.filter(f => f !== 'price') : facets).slice(0, 4).map(build)
 
   return (
-    <div className="grid grid-cols-2 gap-x-5 gap-y-3 lg:grid-cols-4" data-testid="requirement-evidence">
-      {cells.map(c => (
-        <div key={c.key} data-testid={`evidence-${c.key}`}>
-          <span className={EYEBROW}>{c.label}</span>
-          <p className={c.value === null ? CELL_DASH : CELL_VALUE}>{c.value ?? '—'}</p>
-          <p className={CELL_SUB}>{c.sub}</p>
-        </div>
-      ))}
+    <div className="space-y-3" data-testid="requirement-evidence">
+      {period && (
+        <PerformanceBlock
+          history={data.history}
+          period={period}
+          onPeriodChange={onPeriodChange}
+        />
+      )}
+      <div
+        className={clsx(
+          'grid gap-x-5 gap-y-3',
+          period ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-2 lg:grid-cols-4',
+          period && 'border-t border-gray-100 pt-3 dark:border-gray-800',
+        )}
+      >
+        {cells.map(c => (
+          <div key={c.key} data-testid={`evidence-${c.key}`}>
+            <span className={EYEBROW}>{c.label}</span>
+            <p className={c.value === null ? CELL_DASH : CELL_VALUE}>{c.value ?? '—'}</p>
+            <p className={CELL_SUB}>{c.sub}</p>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -240,6 +383,12 @@ export function RequirementWorkspace({
   index, total, doneCount, onBack, next, onOpenNext, children, className,
 }: Props) {
   const guidance = guidanceFor({ text: requirementText, stageDescription })
+  /*
+   * The horizon opens on the one the requirement NAMES and is the reader's
+   * from then on. Keyed on the requirement by the caller, so moving to the
+   * next one opens on its own period rather than inheriting this one's.
+   */
+  const [period, setPeriod] = React.useState<PeriodKey | null>(guidance.defaultPeriod)
 
   return (
     <section className={clsx('min-w-0', className)} data-testid="requirement-workspace">
@@ -281,7 +430,13 @@ export function RequirementWorkspace({
       {/* ── What is already known ───────────────────────────────────── */}
       <div className="border-b border-gray-200 py-3 dark:border-gray-700">
         <span className={clsx(EYEBROW, 'mb-2 block')}>What you already know</span>
-        <Evidence facets={guidance.facets} assetId={assetId} symbol={symbol} />
+        <Evidence
+          facets={guidance.facets}
+          assetId={assetId}
+          symbol={symbol}
+          period={period}
+          onPeriodChange={setPeriod}
+        />
       </div>
 
       {/*
