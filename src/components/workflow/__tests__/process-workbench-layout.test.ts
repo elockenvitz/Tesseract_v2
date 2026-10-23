@@ -127,11 +127,28 @@ describe('no control owns a row by itself', () => {
 
 describe('the workbench is one block, not stacked sections', () => {
   it('spaces the Process identity and its rail as one unit', () => {
-    /* space-y-6 was the gap of a page that stacks sections; the rail belongs
-       to the Process named directly above it. Asserted on the structure, not
-       on the note explaining it — the note is stripped before matching. */
-    expect(TAB).toMatch(/<div className="space-y-3">\s*<div className="flex justify-between items-center">/)
+    /*
+     * This used to assert that the identity row sat directly above the rail
+     * with a 12px gap rather than 24px. It is now ON the rail's row: the
+     * identity is handed to `InvestmentTimeline` as `headerSlot` and drawn
+     * inside `process-rail-row`, so "which Process, which stage" is one
+     * line. That is the same intent — one workbench, not stacked sections —
+     * held more strongly, so the assertion moves rather than relaxes.
+     */
+    expect(TAB).toMatch(/headerSlot=\{processHeader\}/)
+    expect(TIMELINE).toMatch(/data-testid="process-rail-row"[\s\S]{0,200}\{headerSlot\}/)
     expect(TAB).not.toMatch(/<div className="space-y-6">\s*<div className="flex justify-between items-center">/)
+  })
+
+  it('keeps the way back when a view REPLACES the rail', () => {
+    /*
+     * Timeline and Files render instead of the rail, so the identity row
+     * cannot live only inside it — the control that switches back would be
+     * inside the thing it switches away from. Same JSX, rendered standalone
+     * for exactly those two views.
+     */
+    expect(TAB).toMatch(/\{\(showTemplatesView \|\| showTimelineView\) && \(/)
+    expect(TAB).toMatch(/\{processHeader\}/)
   })
 
   it('does not spend 24px of card padding framing the working surface', () => {

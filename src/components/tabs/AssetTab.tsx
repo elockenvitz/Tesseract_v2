@@ -4555,14 +4555,29 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 {selectedWorkItem?.kind === 'process' && (
           <div id={WORK_SECTION_ID.workflow} className="scroll-mt-4">
             {(() => {
-            return (
-              /* space-y-6 → space-y-3. 24px between the Process identity row
-                 and the stage rail is the gap of a page that stacks sections;
-                 this is one workbench, and the rail belongs to the Process
-                 named directly above it. */
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center space-x-3">
+            /*
+              ── Which Process, which stage: one line ────────────────────
+
+              This was a band of its own above the rail — selector and Mark
+              Complete on the left, two labelled view buttons pushed to the
+              far right of a 1,500px row. Below it sat the rail, and below
+              that a second band for the stage's own controls. Three bands
+              of chrome, each holding a handful of short controls, before
+              any analysis.
+
+              The identity and its actions now ride the rail's row, in the
+              order a reader asks the questions: which Process, what can I
+              do to it, which stage. Timeline and Files keep their single
+              click and lose their labels to their own icons — they are
+              view switches used once a session, and they were spending two
+              labels and 150px to say so on every render.
+
+              The row is still rendered standalone for the Timeline and
+              Files views, which replace the rail entirely: the way back
+              must not live inside the thing it is replacing.
+            */
+            const processHeader = (
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
                     {/* The way back to navigation, on the row the Process
                         identity already occupies rather than a reserved one
                         above it. Only while the sidebar is away. */}
@@ -4599,43 +4614,59 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         />
                       </>
                     )}
-                  </div>
-                <div className="flex items-center space-x-2">
+                {/*
+                  Icon-only, with the name on the control rather than beside
+                  it. `title` and `aria-label` carry it for a pointer and for
+                  assistive technology; the active view is stated by the
+                  button's own fill, which is what "Stage View" as a label was
+                  doing in prose.
+                */}
+                <div className="flex items-center gap-1">
                   <button
+                    type="button"
+                    aria-label={showTimelineView ? 'Back to stage view' : 'Activity timeline'}
+                    aria-pressed={showTimelineView}
+                    title={showTimelineView ? 'Back to stage view' : 'Activity timeline'}
                     onClick={() => {
                       setShowTimelineView(!showTimelineView)
                       setShowTemplatesView(false)
                     }}
-                    className="flex items-center space-x-2 px-3 py-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors duration-200 text-xs font-medium border border-gray-200 hover:border-gray-300 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400"
+                    className={`rounded-lg border p-1.5 transition-colors duration-200 ${
+                      showTimelineView
+                        ? 'bg-blue-50 text-blue-700 border-blue-300'
+                        : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100 border-gray-200 hover:border-gray-300 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400'
+                    }`}
                   >
-                    {showTimelineView ? (
-                      <>
-                        <Activity className="w-4 h-4" />
-                        <span>Stage View</span>
-                      </>
-                    ) : (
-                      <>
-                        <Clock className="w-4 h-4" />
-                        <span>Timeline</span>
-                      </>
-                    )}
+                    {showTimelineView
+                      ? <Activity className="w-4 h-4" />
+                      : <Clock className="w-4 h-4" />}
                   </button>
                   <button
+                    type="button"
+                    aria-label="Process files"
+                    aria-pressed={showTemplatesView}
+                    title="Process files"
                     onClick={() => {
                       setShowTemplatesView(!showTemplatesView)
                       setShowTimelineView(false)
                     }}
-                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-colors duration-200 text-xs font-medium border ${
+                    className={`rounded-lg border p-1.5 transition-colors duration-200 ${
                       showTemplatesView
                         ? 'bg-blue-50 text-blue-700 border-blue-300'
-                        : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100 border-gray-200 hover:border-gray-300 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400'
+                        : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100 border-gray-200 hover:border-gray-300 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400'
                     }`}
                   >
                     <FileText className="w-4 h-4" />
-                    <span>Files</span>
                   </button>
                 </div>
               </div>
+            )
+            return (
+              <div className="space-y-3">
+                {/* Standalone only for the views that REPLACE the rail. */}
+                {(showTemplatesView || showTimelineView) && (
+                  <div className="flex items-center justify-between">{processHeader}</div>
+                )}
 
               {showTemplatesView ? (
                 <div className="mt-6 space-y-6">
@@ -4799,6 +4830,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   workflowId={effectiveWorkflowId}
                   currentPriority={workflowPriorityState}
                   onPriorityChange={handleWorkflowPriorityChange}
+                  headerSlot={processHeader}
                 />
               )}
             </div>

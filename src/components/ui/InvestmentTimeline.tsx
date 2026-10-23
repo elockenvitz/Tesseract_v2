@@ -98,6 +98,16 @@ interface InvestmentTimelineProps {
   workflowId?: string
   currentPriority?: string // kept for backward compatibility but not used
   onPriorityChange?: (priority: string) => void // kept for backward compatibility but not used
+  /**
+   * The Process's own identity and actions — selector, Mark Complete, the
+   * overflow menu — placed on the rail's row instead of a band above it.
+   *
+   * It is a slot and not a set of props because this component must not
+   * learn how a Process is chosen or completed; the caller keeps owning
+   * every handler. What changes is only where the row is drawn: "which
+   * Process, which stage" reads as one line, which is what it is.
+   */
+  headerSlot?: React.ReactNode
 }
 
 const TIMELINE_STAGES: TimelineStage[] = [
@@ -201,7 +211,8 @@ export function InvestmentTimeline({
   onViewingRequirementChange,
   workflowId,
   currentPriority = 'none',
-  onPriorityChange
+  onPriorityChange,
+  headerSlot
 }: InvestmentTimelineProps) {
   const { user } = useAuth()
   const toast = useToastOptional()
@@ -1454,7 +1465,9 @@ export function InvestmentTimeline({
           where a chip beside a vertical stage list would not fit; from `md`
           up the same chip renders inside the rail row instead.
         */}
-        <div className="mb-2 flex items-start gap-3" data-testid="process-rail-row">
+        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2" data-testid="process-rail-row">
+          {/* Which Process, then which stage — one line, read left to right. */}
+          {headerSlot}
           {assetId && workflowId && (
             <div className="flex items-center space-x-2">
               <div className="relative">
@@ -1952,49 +1965,31 @@ export function InvestmentTimeline({
             components with the same props — side by side instead of stacked,
             so they cost one row rather than two.
           */}
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-            {/*
-              The separator belongs to the description, not to the symbol.
+          {/*
+            ── The ownership row is gone; its contents moved down one line ──
 
-              Rendering "{symbol} · " unconditionally left a dangling "AMZN ·"
-              on every stage that carries no description — Catalyst Check is
-              one, so the defect was one click away. A stage with nothing to
-              say renders nothing at all rather than punctuation.
-            */}
-            {(() => {
-              const description = timelineStages.find(s => s.id === showStageDetails)?.description
-              /* While a requirement is open the workspace quotes this same
-                 description as the stage's objective, directly above the
-                 evidence. Printing it twice, 200px apart, is the duplication
-                 this surface keeps accumulating. */
-              if (!description || selectedRequirement) return <span className="flex-1" />
-              return (
-                <p className="min-w-0 flex-1 truncate text-[12px] text-gray-600 dark:text-gray-400">
-                  {assetSymbol && <span className="text-gray-400">{assetSymbol} · </span>}
-                  {description}
-                </p>
-              )
-            })()}
+            It held the stage's question on the left and ownership on the
+            right. While a requirement is open the question is suppressed —
+            the workspace quotes it as the objective — which left a 28px band
+            carrying two controls on its far right and nothing else. They
+            describe the stage that the action bar below already describes,
+            so they ride it as its `trailing` slot. Same two components, same
+            props, same place in the reading order; one fewer band.
 
-            {showStageDetails && showStageDetails !== 'completed' && showStageDetails !== 'outdated' && assetId && workflowId && (
-              <div className="flex flex-shrink-0 items-center gap-3">
-                <AssignmentSelector
-                  assetId={assetId}
-                  workflowId={workflowId}
-                  stageId={showStageDetails}
-                  type="stage"
-                >
-                  <StageDeadlineManager
-                    assetId={assetId || ''}
-                    workflowId={workflowId || ''}
-                    stageId={showStageDetails}
-                    stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
-                    isCurrentStage={showStageDetails === effectiveCurrentStage}
-                  />
-                </AssignmentSelector>
-              </div>
-            )}
-          </div>
+            The question keeps a line of its own only when there IS one and
+            no requirement is open, so a stage with nothing to say renders
+            nothing at all rather than punctuation or an empty row.
+          */}
+          {(() => {
+            const description = timelineStages.find(s => s.id === showStageDetails)?.description
+            if (!description || selectedRequirement) return null
+            return (
+              <p className="mb-2 min-w-0 truncate text-[12px] text-gray-600 dark:text-gray-400">
+                {assetSymbol && <span className="text-gray-400">{assetSymbol} · </span>}
+                {description}
+              </p>
+            )
+          })()}
 
           <div className="grid grid-cols-1 gap-6">
 
@@ -2104,6 +2099,30 @@ export function InvestmentTimeline({
                         total={items.length}
                         onAdvance={handleAdvanceStage}
                         isAdvancing={isAdvancing}
+                        /* The stage's ownership and deadline, on the row that
+                           already states the stage's progress and its one
+                           action. Same components, same props as the row
+                           they came from. */
+                        trailing={
+                          showStageDetails !== 'completed' && showStageDetails !== 'outdated' && assetId && workflowId
+                            ? (
+                              <AssignmentSelector
+                                assetId={assetId}
+                                workflowId={workflowId}
+                                stageId={showStageDetails}
+                                type="stage"
+                              >
+                                <StageDeadlineManager
+                                  assetId={assetId || ''}
+                                  workflowId={workflowId || ''}
+                                  stageId={showStageDetails}
+                                  stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
+                                  isCurrentStage={showStageDetails === effectiveCurrentStage}
+                                />
+                              </AssignmentSelector>
+                            )
+                            : null
+                        }
                       />
                       {/*
                         ── The requirement, not the checklist ──────────────

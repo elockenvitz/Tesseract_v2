@@ -37,11 +37,24 @@ export interface StageActionBarProps extends StageAdvanceInput {
   /** Runs the EXISTING advance handler. This component owns no workflow state. */
   onAdvance: () => void
   isAdvancing?: boolean
+  /**
+   * Stage-scoped controls that belong on this row rather than above it.
+   *
+   * Ownership and the deadline had a row of their own, directly over this
+   * one: two 28px bands carrying four short facts about the same stage,
+   * one of them ("who owns it") on the far right of a row whose left half
+   * was empty while a requirement was open. They describe the stage this
+   * bar already describes, so they ride it.
+   *
+   * A slot, not a prop pair: this component must not learn what an
+   * assignment or a deadline is, and the caller keeps owning both.
+   */
+  trailing?: React.ReactNode
   className?: string
 }
 
 export function StageActionBar({
-  onAdvance, isAdvancing = false, className, ...input
+  onAdvance, isAdvancing = false, trailing, className, ...input
 }: StageActionBarProps) {
   const state = stageAdvanceState(input)
   const [confirming, setConfirming] = useState(false)
@@ -84,6 +97,9 @@ export function StageActionBar({
           </span>
         )}
       </div>
+
+      <div className="flex min-w-0 items-center gap-3">
+      {trailing}
 
       {state.kind !== 'hidden' && (
         confirming ? (
@@ -130,6 +146,7 @@ export function StageActionBar({
           </button>
         )
       )}
+      </div>
     </div>
   )
 }
