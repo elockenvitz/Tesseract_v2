@@ -97,13 +97,26 @@ describe('the capital bar strikes every figure at one price', () => {
 
   it('does not mix a live quote into market value', () => {
     expect(bar).not.toMatch(/currentPrice\s*\|\|\s*held/)
-    expect(bar).toMatch(/const mktVal = shares \* held/)
   })
 
   it('uses the same price in the numerator and the weight', () => {
-    // Both must be `shares * held`; the weight additionally divides by the
-    // book-priced NAV, which is the same basis.
-    expect(bar).toMatch(/const weight = ptotal > 0 \? \(\(shares \* held\) \/ ptotal\) \* 100 : 0/)
+    /*
+     * Both sides now come out of ONE book, which is a stronger form of the
+     * same property: `exposureIn` returns `weightPct` and `marketValue` from
+     * a single `buildBook` reduction, so there is no second denominator to
+     * disagree with.
+     *
+     * This used to pin the literal expression
+     * `(shares * held) / ptotal * 100`, which is how the snapshot-mixing
+     * defect survived — that expression was present and correct about price
+     * basis while being wrong about WHICH BOOK the denominator came from.
+     * See src/lib/holdings/__tests__/asset-page-weight-snapshot.test.ts for
+     * the arithmetic; this only holds the component to reading one source.
+     */
+    expect(bar).toMatch(/weight:\s*exposure\?\.weightPct/)
+    expect(bar).toMatch(/mktVal:\s*exposure\?\.marketValue/)
+    // And no separately-fetched total survives anywhere on the page.
+    expect(ASSET_TAB).not.toContain('portfolioTotals?.[')
   })
 
   it('prices the Current Exposure row the same way', () => {
@@ -118,10 +131,21 @@ describe('the capital bar strikes every figure at one price', () => {
   })
 
   it('still reads the newest row per portfolio, not every upload', () => {
-    // The documented holdings-collapse class: `portfolio_holdings` is dated,
-    // so a book uploaded three times otherwise appears three times.
+    /*
+     * The documented holdings-collapse class: `portfolio_holdings` is dated,
+     * so a book uploaded three times otherwise appears three times.
+     *
+     * `latestSnapshotRows` is deliberately gone. It reduced to the
+     * portfolio's newest snapshot DATE while the numerator reduced to the
+     * newest row PER ASSET, and dividing one by the other is the 190.91%
+     * defect. `buildBook` runs `currentRows` and then sums exactly the rows
+     * it kept, so one reduction serves both sides.
+     * `scripts/holdings-collapse-audit.mjs` recognises both as satisfying the
+     * collapse invariant and records why they are not interchangeable.
+     */
     expect(ASSET_TAB).toMatch(/currentRows\(/)
-    expect(ASSET_TAB).toMatch(/latestSnapshotRows\(/)
+    expect(ASSET_TAB).toMatch(/buildBook\(portfolioId/)
+    expect(ASSET_TAB).not.toMatch(/latestSnapshotRows\(/)
   })
 })
 

@@ -124,11 +124,10 @@ import { useUserAssetWidgets, type WidgetType } from '../../hooks/useUserAssetWi
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
-import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
 // `discuss` and `canDiscuss` are no longer imported here: the generic
 // asset-level entry point is withdrawn (see the note at its old site). Both
 // remain exported and in use from seven other surfaces.
-import { currentRows, type HoldingRow } from '../../lib/portfolio/holdings'
+import { currentRows, buildBook, type HoldingRow, type Book } from '../../lib/portfolio/holdings'
 import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
 // Visibility options for thesis sections
@@ -1763,43 +1762,87 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     },
   })
 
-  // Get all holdings for each portfolio to calculate weights
-  const { data: portfolioTotals } = useQuery({
-    queryKey: ['portfolio-totals', portfolioHoldings?.map(h => h.portfolio_id)],
+  /*
+   * ── One book per portfolio, so a weight divides by its own book ─────────
+   *
+   * This used to return a bare total per portfolio, built with
+   * `latestSnapshotRows` — the portfolio's newest snapshot DATE. The
+   * numerator, meanwhile, came from `portfolioHoldings` → `currentRows` —
+   * the newest row PER ASSET. Those are two different books whenever an
+   * asset's newest row predates the portfolio's newest upload, and the page
+   * divided one by the other.
+   *
+   * On Vision Fund 10K that is not hypothetical. Its uploads are 2026-04-24
+   * (2 rows, $2.07m), 2026-04-15 (1 row) and 2026-04-13 (26 rows, $95.4m).
+   * AMZN appears only in the 2026-04-13 book, so its $3.95m was divided by
+   * the $2.07m of a two-line upload it was never part of: 190.91%. Twenty-
+   * seven weights were struck this way and twenty-five of them printed above
+   * 100%; the remaining two were simply wrong and said nothing.
+   *
+   * `buildBook` is the fix because it does not have two books. It reduces
+   * with `currentRows` and then takes its denominator from exactly the rows
+   * it kept, so numerator and denominator cannot disagree, and it reports
+   * the `asOf` of each line so a weight can say which upload it is from.
+   * `scripts/holdings-collapse-audit.mjs` records why that reduction and
+   * `latestSnapshotRows` are not interchangeable: this one keeps a position
+   * that is absent from the latest upload instead of dropping it.
+   *
+   * Books, not totals, because every caller on this page needs the same
+   * line — weight, market value, shares and as-of together — and deriving
+   * them separately is how the two definitions arose in the first place.
+   */
+  const { data: portfolioBooks } = useQuery({
+    queryKey: ['portfolio-books', portfolioHoldings?.map(h => h.portfolio_id)],
     queryFn: async () => {
       if (!portfolioHoldings || portfolioHoldings.length === 0) return {}
 
       const portfolioIds = [...new Set(portfolioHoldings.map(h => h.portfolio_id))]
-      const totals: Record<string, number> = {}
+      const books: Record<string, Book> = {}
 
       for (const portfolioId of portfolioIds) {
-        const { data: costRows, error } = await supabase
+        /*
+         * Every row of the book, not just this asset's: a weight is a ratio
+         * and the denominator is the whole book. `asset_id` and the symbol
+         * travel too — `buildBook` keys positions by asset and classifies
+         * cash lines by symbol, and cash is a book line that belongs in the
+         * denominator.
+         */
+        const { data: bookRows, error } = await supabase
           .from('portfolio_holdings')
-          .select('shares, cost, price, date')
+          .select('portfolio_id, asset_id, shares, cost, price, date, assets ( symbol )')
           .eq('portfolio_id', portfolioId)
 
         if (error) throw error
-        // Dated snapshots: summing every row multiplies the book by the
-        // number of uploads. See src/lib/holdings/latest-snapshot.ts.
-        const data = latestSnapshotRows(costRows ?? [])
-
-        // The book's MARKET value, not its cost basis. Weight has one
-        // definition across Tesseract -- current market value over the book's
-        // own current market value -- and this page was the only place still
-        // dividing cost by cost, which is a different number for the same
-        // position. See src/lib/portfolio/holdings.ts.
-        totals[portfolioId] = ((data || []) as any[]).reduce((sum, holding) => {
-          const shares = parseFloat(holding.shares)
-          const price = parseFloat(holding.price ?? holding.cost)
-          if (!Number.isFinite(shares) || !Number.isFinite(price)) return sum
-          return sum + shares * price
-        }, 0)
+        books[portfolioId] = buildBook(portfolioId, (bookRows ?? []) as unknown as HoldingRow[])
       }
 
-      return totals
+      return books
     },
     enabled: !!portfolioHoldings && portfolioHoldings.length > 0,
   })
+
+  /*
+   * This asset's line in a given book, or null when there is no book yet.
+   *
+   * The one accessor all three exposure surfaces read, so the Work sidebar,
+   * the Net Exposure tiles and the holdings table cannot drift apart again.
+   * Returns null rather than zero while the books are loading: an unknown
+   * weight is not a weight of nothing.
+   */
+  const exposureIn = useCallback((portfolioId: string) => {
+    const book = portfolioBooks?.[portfolioId]
+    if (!book) return null
+    const position = book.positions.find(p => p.assetId === asset.id)
+    if (!position) return null
+    return {
+      weightPct: position.weightPct,
+      marketValue: position.marketValue,
+      shares: position.shares,
+      /* The upload THIS line came from, which is what the number is as of. */
+      asOf: position.asOf,
+      bookValue: book.totalValue,
+    }
+  }, [portfolioBooks, asset.id])
 
   // Current stock price for P&L calculations
   const { data: currentQuote } = useQuery({
@@ -4300,18 +4343,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                    weight as each other and none of them outweighs the work
                    above. The dialogs behind them are untouched. */
                 addToThemeSlot={<AddToThemeButton assetId={asset.id} variant="ghost" size="sm" />}
-                /* Portfolios — the same dedupe and the same weight maths. */
+                /* Portfolios — the same dedupe; the weight now comes from the
+                   book it belongs to. `null` while the books load, so the
+                   sidebar says nothing rather than saying zero. */
                 portfolios={portfolioHoldings === undefined ? null : Array.from(
                   new Map((portfolioHoldings as any[]).map((h: any) => [h.portfolio_id, h])).values()
                 ).map((h: any) => {
-                  const shares = parseFloat(h.shares)
-                  const cost = parseFloat(h.cost)
-                  const ptotal = portfolioTotals?.[h.portfolio_id] || 0
-                  const held = parseFloat(h.price ?? cost)
+                  const exposure = exposureIn(h.portfolio_id)
                   return {
                     id: h.portfolio_id,
                     name: h.portfolios?.name || 'Unknown Portfolio',
-                    weight: ptotal > 0 ? ((shares * held) / ptotal * 100).toFixed(2) : null,
+                    weight: exposure && exposure.bookValue > 0
+                      ? exposure.weightPct.toFixed(2)
+                      : null,
                   }
                 })}
                 onOpenPortfolio={(id) => onNavigate?.({ id, title: 'Portfolio', type: 'portfolio', data: { id } })}
@@ -4763,7 +4807,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
            * tempting move. `useAssetLiveWeights.ts:34-37` states the rule:
            * "weight is a ratio, and repricing only the numerator against a
            * stale denominator is worse than leaving both stale." The
-           * denominator here (`portfolioTotals`, :1055) is every holding at
+           * denominator here is the book `exposureIn` reads, every holding at
            * its upload price, and repricing it means a quote for every name
            * in every book — ~40 requests per portfolio, which the mapping
            * document marks desktop opt-in at most.
@@ -4782,12 +4826,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
            * ratio whose denominator it does not reach.
            */
           const holdingMetrics = portfolioHoldings?.map((h: any) => {
-            const shares = parseFloat(h.shares)
-            const held = parseFloat(h.price ?? h.cost)
-            const mktVal = shares * held
-            const ptotal = portfolioTotals?.[h.portfolio_id] || 0
-            const weight = ptotal > 0 ? ((shares * held) / ptotal) * 100 : 0
-            return { weight, mktVal, shares, name: h.portfolios?.name || 'Unknown', portfolioId: h.portfolio_id }
+            const exposure = exposureIn(h.portfolio_id)
+            /*
+             * `weight` feeds Largest Position, which compares weights ACROSS
+             * books. That comparison is only meaningful while each weight is
+             * struck against its own book — the previous denominator came
+             * from a different upload per portfolio, so the comparison was
+             * between numbers that measured different things.
+             *
+             * `mktVal` is a sum, not a ratio, so it was never affected by the
+             * denominator defect; it is read from the book here only so one
+             * reduction feeds every figure in this block.
+             */
+            return {
+              weight: exposure?.weightPct ?? 0,
+              mktVal: exposure?.marketValue ?? parseFloat(h.shares) * parseFloat(h.price ?? h.cost),
+              shares: parseFloat(h.shares),
+              name: h.portfolios?.name || 'Unknown',
+              portfolioId: h.portfolio_id,
+            }
           }) || []
 
           // Net exposure = sum of all market values across portfolios
@@ -4986,8 +5043,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         // Book price, matching the weight beside it. See the
                         // note above `holdingMetrics`.
                         const currentValue = shares * held
-                        const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
-                        const weight = portfolioTotal > 0 ? ((shares * held) / portfolioTotal) * 100 : 0
+                        /*
+                         * The weight and its as-of come from the same book.
+                         * `exposure` is null while the books load, and the
+                         * cell shows an em dash rather than a percentage of
+                         * an unknown denominator.
+                         */
+                        const exposure = exposureIn(holding.portfolio_id)
+                        const weight = exposure?.weightPct ?? null
+                        const weightAsOf = exposure?.asOf ?? null
 
                         return (
                           <tr key={holding.id} className="hover:bg-blue-50/40 group transition-colors">
@@ -4995,8 +5059,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               <span className="text-[13px] font-medium text-gray-900 dark:text-white">{holding.portfolios?.name || 'Unknown'}</span>
                             </td>
                             <td className="px-4 py-1.5 text-right">
-                              <span className="text-[13px] font-bold text-gray-900 tabular-nums dark:text-white">
-                                {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '\u2014'}
+                              <span
+                                className="text-[13px] font-bold text-gray-900 tabular-nums dark:text-white"
+                                /* A snapshot weight with no date invites the
+                                   reader to trade against a number that may
+                                   be weeks old. */
+                                title={weightAsOf ? `Weight as of ${weightAsOf}` : undefined}
+                              >
+                                {weight !== null && exposure && exposure.bookValue > 0
+                                  ? `${weight.toFixed(2)}%`
+                                  : '\u2014'}
                               </span>
                             </td>
                             <td className="px-4 py-1.5 text-right">
