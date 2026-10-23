@@ -1,0 +1,103 @@
+/*
+  # ROLLBACK for 20261023150000_workflow_stages_tenant_isolation
+
+  Restores the exact state captured from production before the forward
+  migration, read from pg_policies and pg_get_functiondef on 2026-10-22.
+
+  WARNING — this reopens the exposure it was written to close. After running
+  it, `workflow_stages` is readable by the anon key for every `is_public`
+  workflow in every organization (76 rows / 18 workflows / 4 organizations at
+  the time of capture). Run it only to recover from a regression in
+  legitimate same-organization Process use, and re-apply the forward
+  migration as soon as that regression is understood.
+
+  `user_has_workflow_edit_access` is NOT reverted to an unpinned search_path.
+  Pinning it changes no authorization outcome, and restoring an unpinned
+  search_path on a SECURITY DEFINER function would be reintroducing a
+  weakness for no behavioural gain. If a byte-identical restore is genuinely
+  required, run:
+
+      ALTER FUNCTION public.user_has_workflow_edit_access(UUID, UUID)
+        RESET search_path;
+*/
+
+-- 1. Restore the helper to its 2025-11-21 definition (no organization term,
+--    no pinned search_path).
+
+CREATE OR REPLACE FUNCTION public.user_has_workflow_access(
+  workflow_id_param UUID,
+  user_id_param UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+AS $$
+BEGIN
+  -- Check if user created the workflow
+  IF EXISTS (
+    SELECT 1 FROM workflows
+    WHERE id = workflow_id_param AND created_by = user_id_param
+  ) THEN
+    RETURN TRUE;
+  END IF;
+
+  -- Check if user is a collaborator
+  IF EXISTS (
+    SELECT 1 FROM workflow_collaborations
+    WHERE workflow_id = workflow_id_param AND user_id = user_id_param
+  ) THEN
+    RETURN TRUE;
+  END IF;
+
+  -- Check if user is a stakeholder
+  IF EXISTS (
+    SELECT 1 FROM workflow_stakeholders
+    WHERE workflow_id = workflow_id_param AND user_id = user_id_param
+  ) THEN
+    RETURN TRUE;
+  END IF;
+
+  -- Check if workflow is public
+  IF EXISTS (
+    SELECT 1 FROM workflows
+    WHERE id = workflow_id_param AND is_public = true
+  ) THEN
+    RETURN TRUE;
+  END IF;
+
+  RETURN FALSE;
+END;
+$$;
+
+ALTER FUNCTION public.user_has_workflow_access(UUID, UUID) RESET search_path;
+
+COMMENT ON FUNCTION public.user_has_workflow_access IS
+  'Security definer function to check if a user has access to a workflow (as creator, collaborator, stakeholder, or if public)';
+
+-- 2. Restore the two original policies, addressed to {public} as they were.
+
+DROP POLICY IF EXISTS "workflow_stages_select" ON public.workflow_stages;
+DROP POLICY IF EXISTS "workflow_stages_write" ON public.workflow_stages;
+
+CREATE POLICY "Users can view stages of accessible workflows"
+  ON public.workflow_stages
+  FOR SELECT
+  USING (
+    (workflow_id IN (
+      SELECT workflows.id FROM workflows
+      WHERE workflows.is_public = true OR workflows.created_by = auth.uid()
+    ))
+    OR user_has_workflow_access(workflow_id, auth.uid())
+  );
+
+CREATE POLICY "Users can manage stages of accessible workflows"
+  ON public.workflow_stages
+  FOR ALL
+  USING (user_has_workflow_edit_access(workflow_id, auth.uid()))
+  WITH CHECK (user_has_workflow_edit_access(workflow_id, auth.uid()));
+
+-- 3. Restore the anon grants that were present before.
+
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON public.workflow_stages TO anon;
