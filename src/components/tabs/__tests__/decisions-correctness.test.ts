@@ -138,8 +138,16 @@ describe('the priority chip says what it sets', () => {
     expect(INVEST.slice(at, at + 2500)).toMatch(/handleWorkflowPriorityChange/)
   })
 
-  it('leaves the workflow selector alone', () => {
-    expect(TAB).toMatch(/selectedWorkflowId=/)
+  it('leaves process switching alone', () => {
+    /*
+     * The point of this assertion is that relabelling the priority
+     * control did not take process switching with it. It used to name
+     * `AssetWorkflowSelectorEnhanced`'s `selectedWorkflowId` prop; that
+     * selector is gone and `ProcessSwitcher` carries the capability now,
+     * so the assertion names the seam rather than the old component.
+     */
+    expect(TAB).toMatch(/<ProcessSwitcher/)
+    expect(TAB).toMatch(/onSelect=\{handleWorkflowChange\}/)
   })
 })
 

@@ -1,6 +1,6 @@
 import React from 'react'
 import { clsx } from 'clsx'
-import { ArrowLeft, ArrowRight } from 'lucide-react'
+import { ArrowLeft, ArrowRight, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { useAssetWorkspace, primaryPosition } from '../../../hooks/useAssetWorkspace'
 import {
   guidanceFor,
@@ -76,6 +76,9 @@ interface Props {
 }
 
 const EYEBROW = 'text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500'
+
+/** One key for the reader's margin preference, shared by every requirement. */
+const CONTEXT_PREF = 'tesseract.work.requirementContext'
 const CELL_VALUE = 'text-[15px] font-semibold leading-tight text-gray-900 dark:text-gray-100'
 const CELL_DASH = 'text-[15px] font-semibold leading-tight text-gray-300 dark:text-gray-600'
 const CELL_SUB = 'mt-0.5 text-[11px] leading-tight text-gray-500 dark:text-gray-400'
@@ -411,6 +414,23 @@ export function RequirementWorkspace({
    */
   const [period, setPeriod] = React.useState<PeriodKey | null>(guidance.defaultPeriod)
 
+  /*
+   * Whether the context margin is showing.
+   *
+   * A per-viewer convenience, so it lives in `localStorage` rather than in
+   * the workspace's saved state: it is a preference about this reader's
+   * screen, not a fact about the asset, and it must not travel to anyone
+   * else or to another device. Every access is guarded — a private window
+   * or blocked site data makes the accessor throw, and the margin opening
+   * by default is the right answer when the preference cannot be read.
+   */
+  const [contextOpen, setContextOpen] = React.useState<boolean>(() => {
+    try { return window.localStorage.getItem(CONTEXT_PREF) !== 'hidden' } catch { return true }
+  })
+  React.useEffect(() => {
+    try { window.localStorage.setItem(CONTEXT_PREF, contextOpen ? 'shown' : 'hidden') } catch { /* no-op */ }
+  }, [contextOpen])
+
   return (
     <section className={clsx('min-w-0', className)} data-testid="requirement-workspace">
       {/*
@@ -477,7 +497,12 @@ export function RequirementWorkspace({
         writing measure, which is the one thing here that must stay
         readable.
       */}
-      <div className="grid grid-cols-1 gap-x-6 gap-y-4 py-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div
+        className={clsx(
+          'grid grid-cols-1 gap-x-6 gap-y-4 py-3',
+          contextOpen ? 'xl:grid-cols-[minmax(0,1fr)_320px]' : 'xl:grid-cols-1',
+        )}
+      >
         <div className="min-w-0" data-testid="requirement-work">
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3">
             <span className={EYEBROW}>Your assessment</span>
@@ -490,9 +515,45 @@ export function RequirementWorkspace({
           {children}
         </div>
 
-        <aside className="min-w-0 space-y-4 xl:border-l xl:border-gray-200 xl:pl-6 xl:dark:border-gray-700">
+        {/*
+          Collapsed, the margin leaves one line behind rather than
+          vanishing — a reader who hid it has to be able to find it again,
+          and a surface whose context disappears without trace reads as a
+          bug. Below `xl` the margin stacks under the work and the toggle
+          is pointless, so it is hidden there.
+        */}
+        {!contextOpen && (
+          <button
+            type="button"
+            data-testid="requirement-context-show"
+            onClick={() => setContextOpen(true)}
+            className="hidden items-center gap-1.5 self-start border-t border-gray-100 pt-2 text-[11px] font-medium text-gray-500 hover:text-gray-700 xl:flex dark:border-gray-800 dark:text-gray-400"
+          >
+            <PanelRightOpen className="h-3.5 w-3.5" aria-hidden="true" />
+            Show context
+          </button>
+        )}
+
+        <aside
+          className={clsx(
+            'min-w-0 space-y-4 xl:border-l xl:border-gray-200 xl:pl-6 xl:dark:border-gray-700',
+            !contextOpen && 'xl:hidden',
+          )}
+          data-testid="requirement-context"
+        >
           <div>
-            <span className={clsx(EYEBROW, 'mb-2 block')}>What you already know</span>
+            <div className="mb-2 flex items-baseline justify-between gap-2">
+              <span className={EYEBROW}>What you already know</span>
+              <button
+                type="button"
+                data-testid="requirement-context-hide"
+                onClick={() => setContextOpen(false)}
+                title="Hide context"
+                className="hidden text-gray-400 hover:text-gray-600 xl:block dark:hover:text-gray-200"
+              >
+                <PanelRightClose className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
             <Evidence
               facets={guidance.facets}
               assetId={assetId}

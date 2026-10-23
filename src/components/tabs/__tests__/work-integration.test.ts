@@ -196,9 +196,50 @@ describe('authorization is the existing one', () => {
      * Which portfolio tracks exist, which await an answer, and whether there
      * is anything to decide at all. Second-guessing any of it would put two
      * answers to one authorization question on one screen.
+     *
+     * `supabase` used to be banned from this file outright, because the
+     * surface was read-only and delegated everything. It now reads the
+     * idea row it edits, so the ban narrowed to what it was actually
+     * protecting: the DECISION's authorization, which still has exactly
+     * one implementation.
      */
     expect(IDEA).toMatch(/<DecisionModule ideaId=\{idea\.id\} assetId=\{assetId\}/)
-    expect(IDEA).not.toMatch(/canDecide|useIdeaDecision|supabase/)
+    expect(IDEA).not.toMatch(/canDecide|useIdeaDecision/)
+  })
+
+  it('never writes the fields that would decide, size or execute a trade', () => {
+    /*
+     * The line the editor must not cross. Writing `stage` or `outcome`
+     * from the analyst's half would let editing a thesis accept a trade;
+     * `moveTrade` and the decision mutations are the PM's, and are not
+     * called here.
+     */
+    expect(IDEA).not.toMatch(/moveTrade|portfolioDecisionMutation|deferTrade/)
+    expect(IDEA).not.toMatch(/from\('accepted_trades'\)|from\('trade_proposals'\)/)
+    /*
+     * Scoped to what is SAVED, not to the words appearing anywhere: the
+     * row type legitimately declares `stage`, and the surface legitimately
+     * reads it to render a chip. What it must never do is put `stage` or
+     * `outcome` in an update payload.
+     */
+    for (const call of IDEA.match(/save\(\{[\s\S]*?\}\)/g) ?? []) {
+      expect(call).not.toMatch(/\bstage\b|\boutcome\b|\bstatus\b/)
+    }
+    expect((IDEA.match(/save\(\{/g) ?? []).length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('writes every field through the one audited mutation', () => {
+    /* Not a second save path: same service, same ActionContext, same
+       invalidation as the modal. */
+    expect(IDEA).toMatch(/useTradeIdeaService\(\)/)
+    expect(IDEA).toMatch(/updateTrade\(\{ tradeId: idea\.id, updates, uiSource: 'asset_work' \}\)/)
+    /* The audit trail has to be able to tell this surface from the modal. */
+    expect(IDEA).not.toMatch(/uiSource: 'modal'/)
+  })
+
+  it('asks the shared rule who may edit, rather than re-deriving it', () => {
+    expect(IDEA).toMatch(/canEditIdea\(row, user\?\.id \?\? null\)/)
+    expect(IDEA).not.toMatch(/created_by === user/)
   })
 })
 
@@ -210,9 +251,22 @@ describe('the idea surface is not an approval form', () => {
     expect(IDEA).toMatch(/data-testid="idea-decision"/)
   })
 
-  it('hands off to the real editor rather than rebuilding one', () => {
+  it('edits the idea here and hands off only what it does not hold', () => {
+    /*
+     * This used to assert the opposite — that the surface linked out with
+     * "Edit in the idea pipeline" and contained no editor at all. The
+     * analyst now writes the idea's argument in place; the handoff
+     * survives for what genuinely lives elsewhere (discussion,
+     * counterviews, labs), which is why `openIdeaDetail` is still here.
+     */
     expect(IDEA).toMatch(/openIdeaDetail\(idea\.id\)/)
-    expect(IDEA).toMatch(/Edit in the idea pipeline/)
+    expect(IDEA).not.toMatch(/Edit in the idea pipeline/)
+    for (const id of [
+      'idea-field-rationale', 'idea-field-thesis',
+      'idea-field-conviction', 'idea-field-sizing',
+    ]) {
+      expect(IDEA).toContain(`testId="${id}"`)
+    }
   })
 
   it('sets the rationale at a readable measure', () => {
@@ -220,8 +274,10 @@ describe('the idea surface is not an approval form', () => {
   })
 
   it('renders the stage through the canonical model, never raw', () => {
-    expect(IDEA).toMatch(/stageLabel\(idea\.stage\)/)
-    expect(IDEA).not.toMatch(/\{idea\.stage\}/)
+    /* Prefers the freshly read row, falls back to the sidebar's copy, and
+       in both cases goes through `stageLabel`. */
+    expect(IDEA).toMatch(/stageLabel\(row\.stage \?\? idea\.stage!\)/)
+    expect(IDEA).not.toMatch(/>\{idea\.stage\}</)
   })
 })
 

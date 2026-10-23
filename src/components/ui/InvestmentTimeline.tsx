@@ -1954,6 +1954,9 @@ export function InvestmentTimeline({
                         total={items.length}
                         onAdvance={handleAdvanceStage}
                         isAdvancing={isAdvancing}
+                        /* The stage overview IS the stage boundary; a
+                           requirement in progress is not. */
+                        canAdvance={!selectedRequirement}
                         /* The stage's ownership and deadline, on the row that
                            already states the stage's progress and its one
                            action. Same components, same props as the row

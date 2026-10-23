@@ -50,11 +50,25 @@ export interface StageActionBarProps extends StageAdvanceInput {
    * assignment or a deadline is, and the caller keeps owning both.
    */
   trailing?: React.ReactNode
+  /**
+   * Whether this row may offer to leave the stage.
+   *
+   * False while a requirement is open. Advancing the stage is a STAGE
+   * boundary act, and offering it above the requirement someone is
+   * mid-sentence in put "Advance to Earnings Print" directly over the
+   * writing box as the most saturated control on the screen — a second
+   * primary action competing with the one the reader came to use. On the
+   * stage overview, which is the boundary, it is still offered.
+   *
+   * The progress line stays either way: knowing what is left is useful
+   * while working; being invited to leave is not.
+   */
+  canAdvance?: boolean
   className?: string
 }
 
 export function StageActionBar({
-  onAdvance, isAdvancing = false, trailing, className, ...input
+  onAdvance, isAdvancing = false, trailing, canAdvance = true, className, ...input
 }: StageActionBarProps) {
   const state = stageAdvanceState(input)
   const [confirming, setConfirming] = useState(false)
@@ -101,7 +115,7 @@ export function StageActionBar({
       <div className="flex min-w-0 items-center gap-3">
       {trailing}
 
-      {state.kind !== 'hidden' && (
+      {state.kind !== 'hidden' && canAdvance && (
         confirming ? (
           <div className="flex items-center gap-2" data-testid="stage-advance-confirm">
             <span className="text-[11px] text-amber-700 dark:text-amber-400">

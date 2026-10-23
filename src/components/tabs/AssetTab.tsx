@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, Activity, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3, GitBranch } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, Activity, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3, GitBranch, CheckCircle2, RotateCcw, Play } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   buildAudienceOptions,
@@ -34,7 +34,6 @@ import { EditableSectionWithHistory, type EditableSectionWithHistoryRef } from '
 import { InvestmentTimeline } from '../ui/InvestmentTimeline'
 import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
 // AssetWorkflowSelector and WorkflowSelector removed — header workflow dropdown replaced by state chips
-import { AssetWorkflowSelectorEnhanced } from '../asset/AssetWorkflowSelectorEnhanced'
 import { AssetDecisionView } from '../asset/AssetDecisionView'
 import { DecisionTimeline } from '../asset/DecisionTimeline'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
@@ -48,7 +47,6 @@ import { ResearchToolbarMenu } from '../asset/ResearchToolbarMenu'
 import { useAssetWorkAttention } from '../../hooks/useAssetWorkAttention'
 import { useAssetProcessSummary } from '../../hooks/useAssetProcessSummary'
 import { BookFilter } from '../shared/BookFilter'
-import { WorkflowActionButton } from '../asset/WorkflowActionButton'
 import { WorkflowManager } from '../ui/WorkflowManager'
 import { CaseCard } from '../ui/CaseCard'
 import { AddToListButton } from '../lists/AddToListButton'
@@ -89,9 +87,10 @@ import {
   /* Aliased: `workItemKey` is also the name of this component's selection
      state, and the two must not shadow each other. */
   workItemKey as workItemKeyFor,
-  splitRunName,
 } from '../../lib/asset-work/work-items'
 import { WorkActionsMenu } from '../asset/work/WorkActionsMenu'
+import { ProcessSwitcher } from '../asset/work/ProcessSwitcher'
+import { groupProcesses, type SwitcherRunRow } from '../../lib/asset-work/process-switcher'
 import { ProcessHistory } from '../asset/work/ProcessHistory'
 import { ProcessDocuments } from '../asset/work/ProcessDocuments'
 import {
@@ -4723,12 +4722,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               were two unlabelled icons.
             */
             const currentRun = allAssetWorkflows?.find(aw => aw.workflow_id === effectiveWorkflowId)
-            /* The joined workflow row, named rather than cast loose. */
-            const runRow = currentRun?.workflows as
-              { name?: string | null; branch_suffix?: string | null } | undefined
-            const runName = runRow?.name ?? undefined
-            const runSuffix = runRow?.branch_suffix ?? undefined
-            const identity = splitRunName(runName ?? selectedWorkItem?.label ?? 'Process')
+            /*
+              ── One switcher, anchored to the title ────────────────────
+
+              `groupProcesses` decides what is offered and in what order;
+              `ProcessSwitcher` renders it. Between them they replace the
+              "⋯" → selector-trigger → 384px panel stack, and they carry
+              Documents and Activity too, which were sitting in a menu
+              that had nothing else to do with them.
+            */
+            const switcherGroups = groupProcesses(
+              (allAssetWorkflows ?? []) as unknown as SwitcherRunRow[],
+              effectiveWorkflowId || null,
+              /* `availableWorkflows` infers as `never[]` from an untyped
+                 Supabase select, as most queries in this file do. Named
+                 at the boundary rather than spread untyped into the
+                 switcher. */
+              ((availableWorkflows ?? []) as unknown as Array<{
+                id: string; name: string; branch_suffix: string | null
+              }>).map(w => ({ id: w.id, name: w.name, branch_suffix: w.branch_suffix })),
+            )
             const processHeader = (
               <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
                 {/* The way back to navigation, on the row the Process
@@ -4743,76 +4756,74 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 ) : (
                   <>
                     <GitBranch className="h-4 w-4 flex-none text-gray-400" aria-hidden="true" />
-                    <span
-                      className="truncate text-[14px] font-semibold text-gray-900 dark:text-gray-100"
-                      data-testid="process-identity"
-                    >
-                      {identity.process}
-                    </span>
-                    {/* The run, once. `splitRunName` leaves the suffix in the
-                        process name for formats it does not recognise, and
-                        printing the column beside it then read
-                        "Earnings Season - Q2 2026   Q2 2026". */}
-                    {(() => {
-                      const run = identity.run || runSuffix || null
-                      if (!run || identity.process.includes(run)) return null
-                      return (
-                        <span className="flex-none text-[12px] text-gray-500 dark:text-gray-400">
-                          {run}
-                        </span>
-                      )
-                    })()}
-                    {currentRun?.is_completed && (
-                      <span className="flex-none rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
-                        Complete
-                      </span>
-                    )}
-                    {/* The one primary process action stays visible; it is
-                        what a reader comes to the header to do. */}
-                    <WorkflowActionButton
-                      workflowId={effectiveWorkflowId || null}
-                      workflowProgress={currentRun || null}
-                      onStart={(wfId) => startWorkflowMutation.mutate(wfId)}
-                      onComplete={(wfId) => markWorkflowCompleteMutation.mutate(wfId)}
-                      onRestart={(wfId) => restartWorkflowMutation.mutate(wfId)}
-                      onRemove={(wfId) => removeFromWorkflowMutation.mutate(wfId)}
-                      size="sm"
+                    <ProcessSwitcher
+                      groups={switcherGroups}
+                      fallbackLabel={selectedWorkItem?.label ?? 'Process'}
+                      onSelect={handleWorkflowChange}
+                      onJoin={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
+                      upcoming={(upcomingBranches ?? []) as unknown as Array<{
+                        workflowId: string; branchName: string; estimatedStartDate: Date
+                      }>}
+                      onOpenActivity={() => { setShowTimelineView(true); setShowTemplatesView(false) }}
+                      onOpenDocuments={() => { setShowTemplatesView(true); setShowTimelineView(false) }}
+                      activityActive={showTimelineView}
+                      documentsActive={showTemplatesView}
                     />
+                    {/*
+                      ── "Mark Complete" said what, exactly? ─────────────
+
+                      A solid blue primary button beside the process title
+                      that completed the whole PROCESS — the heaviest
+                      control on the Work tab, one of three things on the
+                      screen called some variant of "complete", and the
+                      only one that did not say what it finished.
+
+                      It keeps its handler, its permissions and its
+                      mutation; it is now named for what it ends and sits
+                      in a labelled process-actions menu, because
+                      finishing a process is a once-a-cycle act and was
+                      outranking the analysis on every render.
+                    */}
                     <WorkActionsMenu
                       label="Process actions"
                       actions={[
+                        /* Had no caller at all before: the old button took
+                           an `onStart` prop and never invoked it, so a run
+                           sitting unstarted could not be started from here. */
+                        ...(currentRun && !currentRun.is_started && !currentRun.is_completed ? [{
+                          key: 'start-process',
+                          label: 'Start process',
+                          icon: <Play className="h-3.5 w-3.5" />,
+                          onSelect: () => {
+                            if (effectiveWorkflowId) startWorkflowMutation.mutate(effectiveWorkflowId)
+                          },
+                        }] : []),
+                        ...(currentRun && !currentRun.is_completed ? [{
+                          key: 'complete-process',
+                          label: 'Complete process',
+                          icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+                          onSelect: () => {
+                            if (effectiveWorkflowId) markWorkflowCompleteMutation.mutate(effectiveWorkflowId)
+                          },
+                        }] : []),
+                        ...(currentRun?.is_completed ? [{
+                          key: 'resume-process',
+                          label: 'Reopen process',
+                          icon: <RotateCcw className="h-3.5 w-3.5" />,
+                          onSelect: () => {
+                            if (effectiveWorkflowId) restartWorkflowMutation.mutate(effectiveWorkflowId)
+                          },
+                        }] : []),
                         {
-                          key: 'history',
-                          label: 'Previous runs and activity',
-                          icon: <History className="h-3.5 w-3.5" />,
-                          active: showTimelineView,
-                          onSelect: () => { setShowTimelineView(true); setShowTemplatesView(false) },
-                        },
-                        {
-                          key: 'documents',
-                          label: 'Documents',
-                          icon: <FileText className="h-3.5 w-3.5" />,
-                          active: showTemplatesView,
-                          onSelect: () => { setShowTemplatesView(true); setShowTimelineView(false) },
+                          key: 'remove',
+                          label: 'Remove this asset from the process',
+                          icon: <X className="h-3.5 w-3.5" />,
+                          startsGroup: true,
+                          onSelect: () => {
+                            if (effectiveWorkflowId) removeFromWorkflowMutation.mutate(effectiveWorkflowId)
+                          },
                         },
                       ]}
-                      header={
-                        <div className="min-w-0">
-                          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                            Switch or add a process
-                          </span>
-                          <AssetWorkflowSelectorEnhanced
-                            mode="stage-tab"
-                            selectedWorkflowId={effectiveWorkflowId || null}
-                            allAssetWorkflows={allAssetWorkflows || []}
-                            availableWorkflows={availableWorkflows || []}
-                            upcomingBranches={upcomingBranches || []}
-                            onSelectWorkflow={handleWorkflowChange}
-                            onJoinWorkflow={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
-                            onRemoveWorkflow={(wfId) => removeFromWorkflowMutation.mutate(wfId)}
-                          />
-                        </div>
-                      }
                     />
                   </>
                 )}
