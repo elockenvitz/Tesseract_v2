@@ -140,13 +140,15 @@ describe('no control owns a row by itself', () => {
     expect(TIMELINE).toMatch(/assetId && workflowId && effectivePriority !== 'none'/)
   })
 
-  it('the sidebar toggle rides the navigator header', () => {
-    expect(TAB).toMatch(/headerAction=\{<WorkSidebarToggle direction="collapse"/)
-    expect(code(src('components/asset/work/AssetWorkSidebar.tsx'))).not.toMatch(/col-span-full -mb-1/)
-  })
-
-  it('the expand control rides the Process identity row when collapsed', () => {
-    expect(TAB).toMatch(/\{workSidebarCollapsed && \(\s*<WorkSidebarToggle direction="expand"/)
+  it('has no sidebar toggle left to place', () => {
+    /*
+     * Both of these pinned where the collapse and expand controls rode,
+     * so that neither owned a row of its own. There is no sidebar now —
+     * the Work overview is the only navigator — so the controls, the
+     * state and the per-viewer preference went with it.
+     */
+    expect(TAB).not.toMatch(/WorkSidebarToggle/)
+    expect(TAB).not.toMatch(/workSidebarCollapsed/)
   })
 })
 

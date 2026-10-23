@@ -30,17 +30,23 @@ const TAB  = strip(read('src/components/tabs/AssetTab.tsx'))
 const HOOK = strip(read('src/hooks/useAssetWorkAttention.ts'))
 const NAV  = strip(read('src/components/asset/work/WorkNavigator.tsx'))
 const IDEA = strip(read('src/components/asset/work/IdeaWorkSurface.tsx'))
-const SIDEBAR = strip(read('src/components/asset/work/AssetWorkSidebar.tsx'))
+const OVERVIEW = strip(read('src/components/asset/work/AssetWorkOverview.tsx'))
 
 describe('the shell: a strip, a navigator and one surface', () => {
-  it('mounts one sidebar and one surface', () => {
+  it('mounts ONE navigator — the overview — and one surface', () => {
     /*
-     * The strip is gone: list membership is a section of the sidebar now,
-     * beside themes, portfolios and projects, rather than a horizontal band
-     * in a third idiom above the work.
+     * This asserted a sidebar AND a navigator beside the surface. Both
+     * listed the same things the Work overview lists: processes, ideas,
+     * investigations, lists, themes, portfolios, projects. Two full
+     * navigators for one set of things, with no answer to which one you
+     * were meant to use.
+     *
+     * The overview is the navigator now. Everything the sidebar uniquely
+     * held moved into it, which the tests below check one by one.
      */
-    expect(TAB).toMatch(/<AssetWorkSidebar/)
-    expect(TAB).toMatch(/<WorkNavigator/)
+    expect(TAB).not.toMatch(/<AssetWorkSidebar/)
+    expect(TAB).not.toMatch(/<WorkNavigator/)
+    expect(TAB).toMatch(/<AssetWorkOverview/)
     expect(TAB).toMatch(/data-testid="work-surface"/)
     expect(TAB).not.toMatch(/<AssetContextStrip/)
   })
@@ -50,13 +56,15 @@ describe('the shell: a strip, a navigator and one surface', () => {
     expect(TAB).not.toMatch(/<AssetWorkPane/)
   })
 
-  it('gives the surface the width and the navigator a fixed, narrow column', () => {
-    // A 248px navigator beside a surface that takes the rest. Every element
-    // used to run the full 1,841px, so a 25-character requirement was set
-    // across 1,789 pixels.
-    // 296px: the widest the sidebar can be before the centre's reading
-    // measure stops fitting beside it at the narrow end of wide desktop.
-    expect(TAB).toMatch(/xl:grid-cols-\[296px_minmax\(0,1fr\)\]/)
+  it('gives the whole width to the surface', () => {
+    /*
+     * This pinned the 296px sidebar column. With the sidebar gone the
+     * surface takes the full width — measured 1,525px → 1,841px at a
+     * 1920px viewport — and the requirement's own reading measure, not a
+     * grid track, is what keeps a line from running too long.
+     */
+    expect(TAB).not.toMatch(/xl:grid-cols-\[296px_minmax\(0,1fr\)\]/)
+    expect(TAB).not.toMatch(/workSidebarCollapsed/)
   })
 
   it('renders the process surface by mounting the real thing', () => {
@@ -95,7 +103,8 @@ describe('the shell: a strip, a navigator and one surface', () => {
   })
 
   it('kept idea creation, through the same event', () => {
-    expect(TAB).toMatch(/onNewIdea=\{\(\) => \{/)
+    /* The `onNewIdea` prop went with the navigator; the event it fired
+       is still dispatched from the Work surface. */
     expect(TAB).toMatch(/type: 'new-trade-idea'/)
   })
 
@@ -283,15 +292,17 @@ describe('the idea surface is not an approval form', () => {
 
 describe('navigation handoffs are the existing ones', () => {
   it('opens a conversation through the existing engagement seam', () => {
-    // The pane is where threads live, and the cross-asset context
-    // protections from ac779006 live there too.
-    expect(TAB).toMatch(/askAI\(\{ \.\.\.assetEngagementTarget, conversationId: item\.id \}\)/)
+    /* The pane is where threads live, and the cross-asset context
+       protections from ac779006 live there too. The call moved from the
+       navigator's `onSelect` to `openConversationPane`, which the
+       overview calls — same seam, same target. */
+    expect(TAB).toMatch(/askAI\(\{ \.\.\.assetEngagementTarget, conversationId \}\)/)
   })
 
   it('leaves the surface alone when a conversation is picked', () => {
-    const at = TAB.indexOf("if (item.kind === 'conversation')")
+    const at = TAB.indexOf('if (item.launchesPane)')
     expect(at).toBeGreaterThan(-1)
-    expect(TAB.slice(at, at + 200)).toMatch(/return/)
+    expect(TAB.slice(at, at + 200)).toMatch(/openConversationPane\(item\.id\); return/)
   })
 
   it('keeps the Process destination reachable under its real key', () => {
@@ -301,20 +312,29 @@ describe('navigation handoffs are the existing ones', () => {
 })
 
 describe('lists survive as context, with their Step B behaviour', () => {
-  it('passes the permission-gated rows to the sidebar', () => {
-    expect(TAB).toMatch(/<AssetWorkSidebar/)
-    expect(TAB).toMatch(/canRemove: l\.canRemove/)
-    expect(SIDEBAR).toMatch(/l\.canRemove && onRemoveFromList/)
+  it('keeps removal permission-gated, on the list surface that owns it', () => {
+    /*
+     * The sidebar had a hover-X per row. Removal now lives on
+     * `ListWorkSurface` — the surface you get by opening the list — which
+     * already carried the same mutation and the same `canRemove` rule.
+     * One implementation, one place, still gated.
+     */
+    expect(TAB).toMatch(/canRemove: m\.canRemove/)
+    expect(TAB).toMatch(/onRemove=\{\(itemId\) => removeFromList\.mutate\(itemId\)\}/)
   })
 
   it('distinguishes "not loaded" from "in no lists"', () => {
-    expect(TAB).toMatch(/lists=\{listsLoading \? null : assetListMemberships\.map/)
-    expect(SIDEBAR).toMatch(/lists !== null &&/)
+    /* The overview stays quiet while memberships are arriving rather
+       than asserting "Not on a list" and then contradicting itself. */
+    expect(TAB).toMatch(/connectionsLoading=\{listsLoading\}/)
+    expect(OVERVIEW).toMatch(/connectionsLoading \?/)
   })
 
-  it('reuses the existing Add control rather than a second dialog', () => {
-    expect(TAB).toMatch(/addToListSlot=\{<AddToListButton assetId=\{asset\.id\}/)
-    expect(SIDEBAR).not.toMatch(/supabase|useMutation|useQuery/)
+  it('reuses the existing Add controls rather than a second dialog', () => {
+    expect(TAB).toMatch(/<AddToListButton assetId=\{asset\.id\}/)
+    /* The overview takes them as a slot, so it never learns what a list
+       is or opens a dialog of its own. */
+    expect(OVERVIEW).not.toMatch(/supabase|useMutation|useQuery/)
   })
 
   it('hands the List tab a row whose ownership it can read', () => {
@@ -323,19 +343,23 @@ describe('lists survive as context, with their Step B behaviour', () => {
   })
 
   it('keeps the cross-asset Lists experience reachable', () => {
-    expect(TAB).toMatch(/onOpenAllLists=/)
-    expect(SIDEBAR).toMatch(/data-testid=\{`sidebar-all-\$\{id\}`\}/)
+    /* The sidebar's "all lists" link went with it; the full list is
+       opened from the list surface, which states where it goes. */
+    expect(TAB).toMatch(/type: 'lists'/)
   })
 
-  it('brings themes, portfolios and projects into the sidebar with their controls', () => {
+  it('brings themes, portfolios and projects into the OVERVIEW with their controls', () => {
     /*
-     * They were full-width Cards 708px BELOW the working surface. Every
-     * control came with them; the one that did not is `AddToQueueButton`,
-     * labelled "New Trade Idea", which is not a portfolio relationship.
+     * They were full-width Cards below the surface, then sidebar
+     * sections, and are now rows and slots on the overview. Every
+     * control came along; the one that never did is `AddToQueueButton`,
+     * labelled "New Trade Idea", which is not a relationship.
      */
-    expect(TAB).toMatch(/addToThemeSlot=\{<AddToThemeButton/)
-    expect(TAB).toMatch(/addToProjectSlot=\{<AddToProjectButton/)
+    expect(TAB).toMatch(/<AddToThemeButton/)
+    expect(TAB).toMatch(/<AddToProjectButton/)
     expect(TAB).toMatch(/projectsSlot=\{[\s\S]{0,120}<RelatedProjects/)
+    expect(OVERVIEW).toMatch(/data-testid="work-overview-projects"/)
+    expect(OVERVIEW).toMatch(/data-testid="work-overview-connections"/)
     expect(TAB).not.toMatch(/AddToQueueButton/)
     expect(TAB).not.toMatch(/id="work-memberships"/)
   })
@@ -364,15 +388,20 @@ describe('selection persists and recovers honestly', () => {
     // Swapping in different work while implying it is the piece the reader
     // left is worse than showing nothing.
     /*
-     * Narrowed by one case, not relaxed. `resolveSelection` only knows
-     * navigator items, so a contextual key — a list or a portfolio, which
-     * now select in place — looks to it like a selection that vanished.
-     * It has not: it is on screen. Reporting recovery there printed "the
-     * item you were on is no longer available" directly above a list the
-     * reader had just opened.
+     * The `!contextual` guard existed because the navigator rendered
+     * alongside a contextual surface, and `resolveSelection` read a list
+     * or portfolio key as a vanished selection — printing "the item you
+     * were on is no longer available" above a list the reader had just
+     * opened.
+     *
+     * The overview replaced the navigator and renders only when nothing
+     * is selected and nothing is contextual, so the guard is structural
+     * now rather than a condition. The message itself still has to exist
+     * and still has to be honest.
      */
-    expect(TAB).toMatch(/recoveredFrom=\{!contextual && workSelection\.recovered\}/)
-    expect(NAV).toMatch(/data-testid="work-nav-recovered"/)
-    expect(NAV).toMatch(/The item you were on is no longer available\./)
+    expect(TAB).toMatch(/recoveredFrom=\{workSelection\.recovered\}/)
+    expect(TAB).toMatch(/!contextual && !selectedWorkItem/)
+    expect(OVERVIEW).toMatch(/data-testid="work-overview-recovered"/)
+    expect(OVERVIEW).toMatch(/no longer available/)
   })
 })

@@ -492,8 +492,12 @@ export function OperationalItemCard({
           {/* ── Owner row ──────────────────────────────────────── */}
           {/* Part of the header strip in the detail layout, not a section
               of its own: who owns the requirement is identity, not work. */}
+          {/* No rule under it in the detail layout: a border made one short
+              line — "Owner  + Assign" — read as a band of its own between
+              the status row and the writing box. It is identity, so it
+              sits quietly with the status above it. */}
           <div className={detail
-            ? 'mb-3 flex items-center gap-3 border-b border-gray-100 pb-2.5 dark:border-gray-800'
+            ? 'mb-2 flex items-center gap-3'
             : 'flex items-center gap-3 px-3 py-1.5 border-b border-gray-100 dark:border-gray-800'}>
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-[44px] flex-shrink-0">Owner</span>
@@ -660,7 +664,12 @@ export function OperationalItemCard({
                   like the smallest thing on the screen.
                 */
                 className={detail
-                  ? 'w-full max-w-[78ch] rounded-md border border-dashed border-gray-300 px-3.5 py-6 text-left text-[13px] leading-relaxed text-gray-400 transition-colors hover:border-gray-400 hover:bg-gray-50 hover:text-gray-500 dark:border-gray-700 dark:hover:bg-gray-900'
+                  /* A real writing area, not a field. At 71px this sat
+                     under 145px of chrome with 300px of empty surface
+                     below it — the smallest thing on a screen devoted to
+                     writing. `min-h` rather than padding so the invitation
+                     is the size of the work. */
+                  ? 'block w-full max-w-[78ch] min-h-[180px] rounded-md border border-dashed border-gray-300 px-3.5 py-4 text-left text-[13px] leading-relaxed text-gray-400 transition-colors hover:border-gray-400 hover:bg-gray-50 hover:text-gray-500 dark:border-gray-700 dark:hover:bg-gray-900'
                   : 'w-full max-w-[78ch] rounded border border-dashed border-gray-200 px-3 py-2.5 text-left text-[12px] text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-500 dark:border-gray-700'}
               >
                 Nothing documented yet — write what you found here.

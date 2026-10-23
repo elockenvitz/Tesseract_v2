@@ -36,9 +36,20 @@ const SWITCH = TAB.match(
   /const handleWorkflowChange = async \(workflowId: string\) => \{[\s\S]*?\n {2}\}/,
 )?.[0] ?? ''
 
-/** The sidebar's selection handler. */
-const ON_SELECT = TAB.match(
-  /onSelect=\{\(item: WorkItem\) => \{[\s\S]*?\n {16}\}\}/,
+/**
+ * The overview's selection handlers.
+ *
+ * These were the sidebar navigator's `onSelect`. The sidebar is gone —
+ * the Work overview is the only navigator — so the same rules are pinned
+ * against the props that replaced it. The rule itself is unchanged and is
+ * the reason this suite exists: a process selection must move the
+ * SURFACE, not just a highlight.
+ */
+const ON_OPEN_PROCESS = TAB.match(
+  /onOpenProcess=\{[\s\S]*?\}\}/,
+)?.[0] ?? ''
+const ON_OPEN_ITEM = TAB.match(
+  /onOpenItem=\{\(item: WorkItem\) => \{[\s\S]*?\n {20}\}\}/,
 )?.[0] ?? ''
 
 describe('one function performs a Process switch', () => {
@@ -66,50 +77,44 @@ describe('one function performs a Process switch', () => {
   })
 })
 
-describe('the sidebar routes a Process through that one function', () => {
-  it('the handler exists', () => {
-    expect(ON_SELECT, 'the WorkNavigator onSelect was renamed or removed').not.toBe('')
+describe('the overview routes a Process through that one function', () => {
+  it('the handlers exist', () => {
+    expect(ON_OPEN_PROCESS, 'onOpenProcess was renamed or removed').not.toBe('')
+    expect(ON_OPEN_ITEM, 'onOpenItem was renamed or removed').not.toBe('')
   })
 
   it('a process selection calls the switch, by id', () => {
-    expect(ON_SELECT).toMatch(/item\.kind === 'process'/)
-    expect(ON_SELECT).toMatch(/handleWorkflowChange\(item\.id\)/)
+    expect(ON_OPEN_PROCESS).toMatch(/handleWorkflowChange\(wfId\)/)
   })
 
-  it('does not set the selection key directly for a process', () => {
+  it('does not set the selection key alongside it', () => {
     /*
-     * The defect, stated as a prohibition. A bare `setWorkItemKey(item.key)`
-     * reached by a process is exactly what moved the highlight without the
-     * surface. Ideas still take that path, so the assertion is that the
-     * process branch RETURNS before it.
+     * The defect, stated as a prohibition. `handleWorkflowChange` already
+     * sets the key; a `setWorkItemKey` beside it is a second half-switch,
+     * and two half-switches are how the highlight and the surface came to
+     * disagree in the first place.
      */
-    const processBranch = ON_SELECT.match(/if \(item\.kind === 'process'\)[\s\S]*?\}/)?.[0] ?? ''
-    expect(processBranch).toMatch(/return/)
-    expect(processBranch).not.toMatch(/setWorkItemKey/)
+    expect(ON_OPEN_PROCESS).not.toMatch(/setWorkItemKey/)
   })
 
   it('still lets an Idea select without touching the workflow', () => {
-    expect(ON_SELECT).toMatch(/setWorkItemKey\(item\.key\)/)
+    expect(ON_OPEN_ITEM).toMatch(/setWorkItemKey\(item\.key\)/)
+    expect(ON_OPEN_ITEM).not.toMatch(/handleWorkflowChange/)
   })
 
   it('still sends a conversation to the pane instead of the surface', () => {
-    expect(ON_SELECT).toMatch(/item\.kind === 'conversation'/)
-    expect(ON_SELECT).toMatch(/askAI\(/)
+    expect(ON_OPEN_ITEM).toMatch(/item\.launchesPane/)
+    expect(ON_OPEN_ITEM).toMatch(/openConversationPane\(item\.id\)/)
+    expect(TAB).toMatch(/askAI\(\{ \.\.\.assetEngagementTarget, conversationId \}\)/)
   })
-})
 
-describe('the highlighted row is the displayed Process', () => {
-  it('keys the highlight off effectiveWorkflowId, not off a fallback', () => {
-    /*
-     * `resolveSelection` answers an unresolvable key with the FIRST
-     * in-progress item. That is right for work that was deleted and wrong
-     * here: the dropdown can switch to a process the sidebar does not list
-     * (not started, or complete), and the fallback would light up some other
-     * run beside a surface showing this one.
-     */
-    expect(TAB).toMatch(
-      /selectedWorkItem\?\.kind === 'process'[\s\S]{0,200}workItemKeyFor\.process\(effectiveWorkflowId\)/,
-    )
+  it('resumes into the requirement the overview named', () => {
+    /* Resume is the one path that carries a stage and a requirement, and
+       it must set them AFTER the switch, which clears them. */
+    const resume = TAB.match(/onResume=\{\(wfId, stageId, requirementId\) => \{[\s\S]*?\n {20}\}\}/)?.[0] ?? ''
+    expect(resume).not.toBe('')
+    expect(resume.indexOf('handleWorkflowChange')).toBeLessThan(resume.indexOf('setViewingStageId'))
+    expect(resume).toMatch(/setViewingRequirementId\(requirementId\)/)
   })
 })
 

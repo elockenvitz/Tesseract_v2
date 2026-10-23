@@ -108,6 +108,9 @@ interface InvestmentTimelineProps {
    * a second navigation.
    */
   onOpenRun?: (workflowId: string) => void
+  /** Opens one research note, and the asset's Research mode. */
+  onOpenNote?: (noteId: string) => void
+  onOpenResearch?: () => void
   /**
    * The Process's own identity and actions — selector, Mark Complete, the
    * overflow menu — placed on the rail's row instead of a band above it.
@@ -223,7 +226,9 @@ export function InvestmentTimeline({
   currentPriority = 'none',
   onPriorityChange,
   headerSlot,
-  onOpenRun
+  onOpenRun,
+  onOpenNote,
+  onOpenResearch,
 }: InvestmentTimelineProps) {
   const { user } = useAuth()
   const toast = useToastOptional()
@@ -1918,6 +1923,27 @@ export function InvestmentTimeline({
                 {(() => {
                   const items = stageChecklists[showStageDetails] || []
                   const isEditable = isStageEditable(showStageDetails)
+                  /* One definition, two homes: the stage bar on the stage
+                     overview, the requirement header while one is open. */
+                  const stageOwnershipControls =
+                    showStageDetails !== 'completed' && showStageDetails !== 'outdated' && assetId && workflowId
+                      ? (
+                        <AssignmentSelector
+                          assetId={assetId}
+                          workflowId={workflowId}
+                          stageId={showStageDetails}
+                          type="stage"
+                        >
+                          <StageDeadlineManager
+                            assetId={assetId || ''}
+                            workflowId={workflowId || ''}
+                            stageId={showStageDetails}
+                            stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
+                            isCurrentStage={showStageDetails === effectiveCurrentStage}
+                          />
+                        </AssignmentSelector>
+                      )
+                      : null
                   const doneCount = items.filter(i => isItemDone(i)).length
 
                   return (
@@ -1944,44 +1970,36 @@ export function InvestmentTimeline({
                         screen-width apart. Nothing about the items or the
                         bar's behaviour changed.
                       */}
-                      <StageActionBar
-                        viewingStageId={showStageDetails}
-                        currentStageId={effectiveCurrentStage}
-                        stages={timelineStages.map(s => ({ id: s.id, label: s.label }))}
-                        isStarted={!!isWorkflowStarted}
-                        isCompleted={!!workflowProgress?.is_completed}
-                        done={doneCount}
-                        total={items.length}
-                        onAdvance={handleAdvanceStage}
-                        isAdvancing={isAdvancing}
-                        /* The stage overview IS the stage boundary; a
-                           requirement in progress is not. */
-                        canAdvance={!selectedRequirement}
-                        /* The stage's ownership and deadline, on the row that
-                           already states the stage's progress and its one
-                           action. Same components, same props as the row
-                           they came from. */
-                        trailing={
-                          showStageDetails !== 'completed' && showStageDetails !== 'outdated' && assetId && workflowId
-                            ? (
-                              <AssignmentSelector
-                                assetId={assetId}
-                                workflowId={workflowId}
-                                stageId={showStageDetails}
-                                type="stage"
-                              >
-                                <StageDeadlineManager
-                                  assetId={assetId || ''}
-                                  workflowId={workflowId || ''}
-                                  stageId={showStageDetails}
-                                  stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
-                                  isCurrentStage={showStageDetails === effectiveCurrentStage}
-                                />
-                              </AssignmentSelector>
-                            )
-                            : null
-                        }
-                      />
+                      {/*
+                        ── The stage's own bar, on the stage's own screen ──
+
+                        With a requirement open this row had nothing left to
+                        say: the progress was a duplicate of the rail chip
+                        above it and the advance action belongs at the stage
+                        boundary, so all that remained was a 33px band
+                        carrying two stage-level controls over somebody's
+                        writing.
+
+                        It renders on the stage overview, where those are
+                        the screen's subject. While a requirement is open the
+                        same assignment and deadline components ride the
+                        requirement's own header row instead — same props,
+                        same behaviour, one band fewer.
+                      */}
+                      {!selectedRequirement && (
+                        <StageActionBar
+                          viewingStageId={showStageDetails}
+                          currentStageId={effectiveCurrentStage}
+                          stages={timelineStages.map(s => ({ id: s.id, label: s.label }))}
+                          isStarted={!!isWorkflowStarted}
+                          isCompleted={!!workflowProgress?.is_completed}
+                          done={doneCount}
+                          total={items.length}
+                          onAdvance={handleAdvanceStage}
+                          isAdvancing={isAdvancing}
+                          trailing={stageOwnershipControls}
+                        />
+                      )}
                       {/*
                         ── The requirement, not the checklist ──────────────
 
@@ -2185,9 +2203,6 @@ export function InvestmentTimeline({
                                 requirementText={selected.text}
                                 stageLabel={stage?.label ?? 'this stage'}
                                 stageDescription={stage?.description ?? null}
-                                index={position + 1}
-                                total={items.length}
-                                doneCount={doneCount}
                                 onBack={() => setSelectedRequirement(null)}
                                 next={nextItem ? { id: nextItem.id, text: nextItem.text } : null}
                                 onOpenNext={(id) => setSelectedRequirement(id)}
@@ -2202,6 +2217,12 @@ export function InvestmentTimeline({
                                     onOpenRun={onOpenRun}
                                   />
                                 ) : undefined}
+                                /* The case and the notes already written on
+                                   this name. Research still owns editing
+                                   them; these hand off. */
+                                onOpenNote={onOpenNote}
+                                onOpenResearch={onOpenResearch}
+                                stageControls={stageOwnershipControls}
                               >
                                 {card}
                               </RequirementWorkspace>

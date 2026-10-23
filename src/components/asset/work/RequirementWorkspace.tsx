@@ -56,10 +56,12 @@ interface Props {
   /** Stage label and the description the Process defines for it, if any. */
   stageLabel: string
   stageDescription?: string | null
-  /** 1-based position of this requirement among the stage's requirements. */
-  index: number
-  total: number
-  doneCount: number
+  /*
+   * `index`, `total` and `doneCount` used to render "Requirement 3 of 5 ·
+   * 0 done" in this header. The stage rail directly above already carries
+   * the same `done/total` on its chip, and the action bar said it a third
+   * time, so the props went with the line.
+   */
   /** Clears the selection and returns to the stage overview. */
   onBack: () => void
   next?: NextRequirement | null
@@ -72,6 +74,12 @@ interface Props {
    * and of a second read path.
    */
   priorWorkSlot?: React.ReactNode
+  /** The stage's assignment and deadline controls, owned by the caller. */
+  stageControls?: React.ReactNode
+  /** Opens one research note. Research still owns editing it. */
+  onOpenNote?: (noteId: string) => void
+  /** Switches the asset to its Research mode. */
+  onOpenResearch?: () => void
   className?: string
 }
 
@@ -236,6 +244,124 @@ function PerformanceBlock({
   )
 }
 
+/**
+ * The research that already exists on this name, beside the work.
+ *
+ * ── Why this is here at all ─────────────────────────────────────────────
+ *
+ * Research and process work had no connection whatsoever: no join table,
+ * no link row, and no affordance in either direction. An analyst working
+ * a requirement could not see the case they had written, or any note on
+ * the asset, without leaving for the Research mode.
+ *
+ * And `useAssetWorkspace` — the hook this very surface already calls for
+ * price, position and target — was fetching both the whole time and
+ * dropping them. `sections` (the Investment Case) was rendered as a bare
+ * age, "202d old"; `evidence` (every research note) was not rendered at
+ * all. So this costs no query: the same cache entry, read for the rows it
+ * was already carrying.
+ *
+ * It is READ-ONLY on purpose. Research owns writing the case and the
+ * notes, and a second editor here would be a second source of truth for
+ * the same rows. Links hand off; they do not copy.
+ */
+function RequirementResearch({
+  assetId, symbol, onOpenNote, onOpenResearch,
+}: {
+  assetId: string
+  symbol: string | null
+  onOpenNote?: (noteId: string) => void
+  onOpenResearch?: () => void
+}) {
+  const { data, isLoading } = useAssetWorkspace(assetId, symbol, 'overview', { deepHistory: true })
+
+  if (isLoading) {
+    return <div className="h-16 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+  }
+  if (!data) return null
+
+  const sections = data.sections.filter(s => s.content?.trim())
+  const notes = data.evidence
+
+  if (sections.length === 0 && notes.length === 0) {
+    return (
+      <p className="text-[12px] text-gray-500 dark:text-gray-400" data-testid="requirement-research-empty">
+        No case section or research note written on this name yet.
+        {onOpenResearch && (
+          <>
+            {' '}
+            <button
+              type="button"
+              onClick={onOpenResearch}
+              className="font-medium text-primary-600 hover:underline"
+            >
+              Start in Research
+            </button>
+          </>
+        )}
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-2.5" data-testid="requirement-research">
+      {sections.slice(0, 2).map(s => (
+        <button
+          key={s.section}
+          type="button"
+          data-testid={`requirement-research-section-${s.section}`}
+          onClick={() => onOpenResearch?.()}
+          className="block w-full text-left"
+        >
+          <span className="block text-[10px] font-medium uppercase tracking-wide text-gray-400">
+            {s.section.replace(/_/g, ' ')}
+          </span>
+          {/* Two lines, then it is read in Research — this is a pointer to
+              the case, not a second place to read it.
+
+              No `block` here: `line-clamp-2` sets `display:-webkit-box`
+              and a later `block` silently overrode it, so a long section
+              rendered its full text down the margin. */}
+          <span className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-gray-700 hover:text-primary-600 dark:text-gray-200">
+            {s.content}
+          </span>
+          <span className="mt-0.5 block text-[10px] text-gray-400">
+            {[s.authorName, shortDate(s.updatedAt)].filter(Boolean).join(' · ')}
+          </span>
+        </button>
+      ))}
+
+      {notes.length > 0 && (
+        <div className={sections.length > 0 ? 'border-t border-gray-100 pt-2 dark:border-gray-800' : undefined}>
+          <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-gray-400">
+            Notes on this name
+          </span>
+          <ul className="space-y-1">
+            {notes.slice(0, 4).map(n => (
+              <li key={n.id}>
+                <button
+                  type="button"
+                  data-testid={`requirement-research-note-${n.id}`}
+                  onClick={() => onOpenNote?.(n.id)}
+                  className="block w-full truncate text-left text-[12px] text-gray-700 hover:text-primary-600 hover:underline dark:text-gray-200"
+                >
+                  {n.title?.trim() || 'Untitled note'}
+                  <span className="ml-1.5 text-[10px] text-gray-400">
+                    {shortDate(n.createdAt)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {notes.length > 4 && (
+            <p className="mt-1 text-[10px] text-gray-400">{notes.length - 4} more in Research.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Evidence({
   facets, assetId, symbol, period, onPeriodChange, stacked = false,
 }: {
@@ -335,6 +461,8 @@ function Evidence({
         }
       }
       case 'case': {
+        /* The age only. What the case SAYS is in the research block
+           below, which quotes the sections and links into Research. */
         if (!data.caseWrittenAt) return { key: facet, label: 'Investment case', value: null, sub: 'No case section written yet' }
         return {
           key: facet,
@@ -404,7 +532,8 @@ function Evidence({
 
 export function RequirementWorkspace({
   assetId, symbol, requirementText, stageLabel, stageDescription,
-  index, total, doneCount, onBack, next, onOpenNext, children, priorWorkSlot, className,
+  onBack, next, onOpenNext, children, priorWorkSlot, stageControls,
+  onOpenNote, onOpenResearch, className,
 }: Props) {
   const guidance = guidanceFor({ text: requirementText, stageDescription })
   /*
@@ -438,45 +567,53 @@ export function RequirementWorkspace({
         One row that answers where this is and how much is left, so the
         reader does not have to look back up at the rail to find out.
       */}
-      <header className="border-b border-gray-200 pb-3 dark:border-gray-700">
-        {/*
-          ── The way back is at the top, where it is looked for ───────────
+      {/*
+        ── Three bands became one ──────────────────────────────────────
 
-          It used to be a footer control: to leave a requirement you scrolled
-          past the evidence, the questions and your own draft to find it. The
-          reader's position in the stage goes with it, so "where am I" and
-          "how do I get out" are one line rather than two ends of a page.
-        */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        This header used to spend three stacked rows on orientation: a
+        back-link carrying the stage name, a right-aligned "Requirement 3
+        of 5 · 0 DONE", the requirement title, and the stage objective on
+        a line of its own.
+
+        Two of those facts were already on screen. The stage rail above
+        names, numbers, colours and highlights the stage and carries its
+        own `0/5`; the action bar said "0 of 5 done · 5 open" a second
+        time. Counting the overview's progress bar, the same number was
+        stated four times on one page.
+
+        So the back control keeps the stage name — it has to say where it
+        goes — and everything else here is the requirement itself and the
+        question it answers, on one line each.
+      */}
+      <header className="border-b border-gray-200 pb-2 dark:border-gray-700">
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
           <button
             type="button"
             onClick={onBack}
             data-testid="requirement-back-top"
-            className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+            className="inline-flex flex-none items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             {stageLabel}
           </button>
-          <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">
-            Requirement {index} of {total} · {doneCount} done
-          </span>
-        </div>
-        <h3 className="mt-1 text-[17px] font-semibold leading-snug text-gray-900 dark:text-gray-100">
-          {requirementText}
-        </h3>
-        {guidance.objective ? (
-          <p className="mt-1.5 text-[13px] leading-relaxed text-gray-600 dark:text-gray-300">
-            {guidance.objective}
-            {/* Quoted, never composed: the reader can hold the Process to it. */}
-            <span className="ml-1 text-[11px] text-gray-400 dark:text-gray-500">
-              — this stage's objective, from your Process definition
+          <h3 className="min-w-0 text-[17px] font-semibold leading-snug text-gray-900 dark:text-gray-100">
+            {requirementText}
+          </h3>
+          {guidance.objective && (
+            /* Quoted, never composed: the reader can hold the Process to
+               it. Attribution is a tooltip now rather than a second line
+               of 11px grey repeating "from your Process definition". */
+            <span
+              className="min-w-0 truncate text-[12px] text-gray-500 dark:text-gray-400"
+              title="This stage's objective, from your Process definition"
+            >
+              — {guidance.objective}
             </span>
-          </p>
-        ) : (
-          <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
-            This Process defines no objective for {stageLabel}.
-          </p>
-        )}
+          )}
+          {/* The stage's assignment and deadline, which had a 33px band of
+              their own directly above this one. */}
+          {stageControls && <span className="ml-auto flex-none">{stageControls}</span>}
+        </div>
       </header>
 
       {/*
@@ -504,14 +641,17 @@ export function RequirementWorkspace({
         )}
       >
         <div className="min-w-0" data-testid="requirement-work">
-          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3">
-            <span className={EYEBROW}>Your assessment</span>
-            {/* Saving and completing are different acts, and the surface
-                says so before the reader finds out by pressing one. */}
-            <span className="text-[11px] text-gray-400 dark:text-gray-500">
-              saving keeps your work; completing records that it is done
-            </span>
-          </div>
+          {/*
+            One heading over one box. This said "YOUR ASSESSMENT" directly
+            above a card whose own section is headed "WORKING NOTES" — two
+            labels, 100px apart, for the same textarea. The card's heading
+            is the one that carries "+ Add note", so it is the one that
+            stays; what was worth keeping here is the sentence telling the
+            two buttons apart, which appears nowhere else.
+          */}
+          <p className="mb-1.5 text-[11px] text-gray-400 dark:text-gray-500">
+            Saving keeps your work; completing records that it is done.
+          </p>
           {children}
         </div>
 
@@ -561,6 +701,30 @@ export function RequirementWorkspace({
               period={period}
               onPeriodChange={setPeriod}
               stacked
+            />
+          </div>
+
+          {/* Research stands on its own: it exists whether or not this
+              Process has been run before. */}
+          <div data-testid="requirement-research-block">
+            <div className="mb-2 flex items-baseline justify-between gap-2">
+              <span className={EYEBROW}>Research on this name</span>
+              {onOpenResearch && (
+                <button
+                  type="button"
+                  data-testid="requirement-open-research"
+                  onClick={onOpenResearch}
+                  className="text-[11px] font-medium text-primary-600 hover:underline"
+                >
+                  Open
+                </button>
+              )}
+            </div>
+            <RequirementResearch
+              assetId={assetId}
+              symbol={symbol}
+              onOpenNote={onOpenNote}
+              onOpenResearch={onOpenResearch}
             />
           </div>
 

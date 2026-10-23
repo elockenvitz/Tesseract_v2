@@ -13,7 +13,10 @@
  * sized accordingly. Nothing gets a card for its own sake.
  */
 import { clsx } from 'clsx'
-import { ArrowRight, Clock, GitBranch, Lightbulb, MessageSquare, Play } from 'lucide-react'
+import {
+  ArrowRight, Briefcase, FileText, FolderKanban, GitBranch, Lightbulb, List,
+  MessageSquare, Play, StickyNote, Tag,
+} from 'lucide-react'
 import type { AssetWorkOverview as Overview, OverviewRun } from '../../../lib/asset-work/work-overview'
 import { progressOf } from '../../../lib/asset-work/work-overview'
 import type { WorkItem } from '../../../lib/asset-work/work-items'
@@ -35,12 +38,28 @@ export interface OverviewConnection {
   detail?: string | null
 }
 
+/** What Work shows about research. Read-only; Research still owns writing. */
+export interface OverviewResearch {
+  /** Newest `updated_at` across the core case sections. */
+  caseWrittenAt: string | null
+  notes: ReadonlyArray<{
+    id: string
+    title: string
+    authorName: string | null
+    at: string | null
+  }>
+}
+
 export interface AssetWorkOverviewProps {
   symbol: string | null
   overview: Overview
   /** Ideas and investigations, already built by the navigator's model. */
   items: readonly WorkItem[]
   connections: readonly OverviewConnection[]
+  /** True while memberships are still arriving, so the section can stay
+      quiet rather than assert "not on a list" and then contradict itself. */
+  connectionsLoading?: boolean
+  research: OverviewResearch
   loading?: boolean
   /** Set when a saved selection could not be reopened. */
   recoveredFrom?: boolean
@@ -48,7 +67,26 @@ export interface AssetWorkOverviewProps {
   onResume: (workflowId: string, stageId: string | null, requirementId: string | null) => void
   onOpenItem: (item: WorkItem) => void
   onOpenConnection: (c: OverviewConnection) => void
+  /** The cross-asset Lists / Themes / Portfolios apps. */
+  onOpenAll?: (kind: 'list' | 'theme' | 'portfolio') => void
+  onOpenResearch?: () => void
+  onOpenNote?: (noteId: string) => void
+  /**
+   * The three "Add to" buttons and the idea stage filter, which lived in
+   * the sidebar. They are passed as slots because each owns its own
+   * dialog and query, and this component must not learn what a list is.
+   */
+  addActions?: React.ReactNode
+  ideaFilter?: React.ReactNode
+  projectsSlot?: React.ReactNode
   className?: string
+}
+
+const CONNECTION_ICON: Record<OverviewConnection['kind'], React.ReactNode> = {
+  list: <List className="h-3.5 w-3.5 flex-none translate-y-0.5 text-gray-400" aria-hidden="true" />,
+  theme: <Tag className="h-3.5 w-3.5 flex-none translate-y-0.5 text-gray-400" aria-hidden="true" />,
+  portfolio: <Briefcase className="h-3.5 w-3.5 flex-none translate-y-0.5 text-gray-400" aria-hidden="true" />,
+  project: <FolderKanban className="h-3.5 w-3.5 flex-none translate-y-0.5 text-gray-400" aria-hidden="true" />,
 }
 
 function Bar({ fraction, tone }: { fraction: number; tone: 'normal' | 'late' }) {
@@ -117,8 +155,9 @@ function RunRow({ run, onOpen }: { run: OverviewRun; onOpen: () => void }) {
 }
 
 export function AssetWorkOverview({
-  symbol, overview, items, connections, loading, recoveredFrom,
-  onOpenProcess, onResume, onOpenItem, onOpenConnection, className,
+  symbol, overview, items, connections, connectionsLoading, research, loading, recoveredFrom,
+  onOpenProcess, onResume, onOpenItem, onOpenConnection, onOpenAll, onOpenResearch, onOpenNote,
+  addActions, ideaFilter, projectsSlot, className,
 }: AssetWorkOverviewProps) {
   if (loading) {
     return (
@@ -187,10 +226,142 @@ export function AssetWorkOverview({
         )}
       </section>
 
+      {/*
+        ── Research ──────────────────────────────────────────────────
+
+        One of the four things Work is for, and until now the only one
+        with no presence here at all. The case and the notes are read
+        from the same `useAssetWorkspace` the requirement context uses —
+        no new query — and both click through to Research, which still
+        owns writing them.
+      */}
+      <section data-testid="work-overview-research">
+        <div className="mb-1.5 flex items-baseline justify-between gap-2">
+          <span className={EYEBROW}>Research</span>
+          {onOpenResearch && (
+            <button
+              type="button"
+              data-testid="work-overview-open-research"
+              onClick={() => onOpenResearch()}
+              className="text-[11px] font-medium text-primary-600 hover:underline"
+            >
+              Open research
+            </button>
+          )}
+        </div>
+        {research.caseWrittenAt || research.notes.length > 0 ? (
+          <div className="space-y-1">
+            <button
+              type="button"
+              data-testid="work-overview-case"
+              onClick={() => onOpenResearch?.()}
+              className="flex w-full items-baseline gap-2 rounded px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+            >
+              <FileText className="h-3.5 w-3.5 flex-none translate-y-0.5 text-gray-400" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-900 dark:text-gray-100">
+                Investment case
+              </span>
+              <span className="flex-none text-[11px] text-gray-500">
+                {research.caseWrittenAt
+                  ? `last written ${shortDate(research.caseWrittenAt)}`
+                  : 'not written yet'}
+              </span>
+            </button>
+            {research.notes.slice(0, 4).map(n => (
+              <button
+                key={n.id}
+                type="button"
+                data-testid={`overview-note-${n.id}`}
+                onClick={() => onOpenNote?.(n.id)}
+                className="flex w-full items-baseline gap-2 rounded px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                <StickyNote className="h-3.5 w-3.5 flex-none translate-y-0.5 text-gray-400" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate text-[12px] text-gray-700 dark:text-gray-200">
+                  {n.title}
+                </span>
+                <span className="flex-none text-[11px] text-gray-400">
+                  {[n.authorName, shortDate(n.at)].filter(Boolean).join(' · ')}
+                </span>
+              </button>
+            ))}
+            {research.notes.length > 4 && (
+              <p className="px-2 text-[11px] text-gray-400">
+                {research.notes.length - 4} more in Research.
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-[12px] text-gray-500 dark:text-gray-400">
+            No case section or research note written on {symbol ?? 'this asset'} yet.
+          </p>
+        )}
+      </section>
+
+      {/* ── Lists and portfolios ──────────────────────────────────────── */}
+      <section data-testid="work-overview-connections">
+        <div className="mb-1.5 flex items-baseline justify-between gap-2">
+          <span className={EYEBROW}>Lists and portfolios</span>
+          {/* The cross-asset apps, which the sidebar reached with three
+              small ExternalLink icons. Still one click, now labelled. */}
+          {onOpenAll && (
+            <span className="flex gap-3">
+              {(['list', 'theme', 'portfolio'] as const).map(k => (
+                <button
+                  key={k}
+                  type="button"
+                  data-testid={`work-overview-all-${k}`}
+                  onClick={() => onOpenAll(k)}
+                  className="text-[11px] font-medium text-primary-600 hover:underline"
+                >
+                  All {k === 'list' ? 'lists' : k === 'theme' ? 'themes' : 'portfolios'}
+                </button>
+              ))}
+            </span>
+          )}
+        </div>
+        {connectionsLoading ? (
+          <div className="h-5 w-48 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+        ) : connections.length === 0 ? (
+          <p className="text-[12px] text-gray-500 dark:text-gray-400">
+            Not on a list and not held in any book.
+          </p>
+        ) : (
+          /*
+            Rows, not chips. These were a line of small pills under "Also
+            connected to", which ranked them below everything — and being
+            in a book is one of the four things this surface is for.
+          */
+          <div className="space-y-1">
+            {connections.map(c => (
+              <button
+                key={`${c.kind}:${c.id}`}
+                type="button"
+                data-testid={`overview-connection-${c.kind}-${c.id}`}
+                onClick={() => onOpenConnection(c)}
+                className="flex w-full items-baseline gap-2 rounded px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                {CONNECTION_ICON[c.kind]}
+                <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-900 dark:text-gray-100">
+                  {c.label}
+                </span>
+                <span className="flex-none text-[11px] text-gray-500">{c.detail}</span>
+                <span className="flex-none text-[10px] uppercase tracking-wide text-gray-400">
+                  {c.kind}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {addActions && <div className="mt-2 flex flex-wrap gap-1.5">{addActions}</div>}
+      </section>
+
       {/* ── Ideas and investigations ──────────────────────────────────── */}
       {(ideas.length > 0 || investigations.length > 0) && (
         <section data-testid="work-overview-ideas">
-          <span className={clsx(EYEBROW, 'mb-1.5 block')}>Ideas and investigations</span>
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <span className={EYEBROW}>Ideas and investigations</span>
+            {ideaFilter}
+          </div>
           <div className="space-y-1">
             {[...ideas, ...investigations].map(i => (
               <button
@@ -213,34 +384,12 @@ export function AssetWorkOverview({
         </section>
       )}
 
-      {/* ── Connections ───────────────────────────────────────────────── */}
-      {connections.length > 0 && (
-        <section data-testid="work-overview-connections">
-          <span className={clsx(EYEBROW, 'mb-1.5 block')}>Also connected to</span>
-          {/* Inline and small: belonging to a book is not a task, and
-              giving it a card would rank it with the work above. */}
-          <div className="flex flex-wrap gap-1.5">
-            {connections.map(c => (
-              <button
-                key={`${c.kind}:${c.id}`}
-                type="button"
-                data-testid={`overview-connection-${c.kind}-${c.id}`}
-                onClick={() => onOpenConnection(c)}
-                className="inline-flex items-baseline gap-1.5 rounded-full border border-gray-200 px-2.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-              >
-                <span className="truncate">{c.label}</span>
-                {c.detail && <span className="text-gray-400">{c.detail}</span>}
-              </button>
-            ))}
-          </div>
+      {/* ── Projects ──────────────────────────────────────────────────── */}
+      {projectsSlot && (
+        <section data-testid="work-overview-projects">
+          <span className={clsx(EYEBROW, 'mb-1.5 block')}>Projects</span>
+          {projectsSlot}
         </section>
-      )}
-
-      {/* One line, not a page of zeros. */}
-      {overview.quiet && connections.length === 0 && (
-        <p className="text-[12px] text-gray-500 dark:text-gray-400" data-testid="work-overview-quiet">
-          Nothing is being worked on for {symbol ?? 'this asset'} yet.
-        </p>
       )}
     </div>
   )
@@ -266,4 +415,3 @@ export function WorkOverviewReturn({
   )
 }
 
-export { Clock }

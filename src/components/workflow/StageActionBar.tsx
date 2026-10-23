@@ -93,24 +93,38 @@ export function StageActionBar({
         className
       )}
     >
-      <div className="flex items-baseline gap-2">
-        <span
-          data-testid="stage-progress"
-          className="text-[12px] font-semibold text-gray-700 dark:text-gray-200"
-        >
-          {progress}
-        </span>
-        {state.kind === 'outstanding' && (
-          <span className="text-[11px] text-gray-400" data-testid="stage-outstanding">
-            {state.outstanding} open
+      {/*
+        ── The count belongs where it is a summary, not a repeat ───────
+
+        `canAdvance` is false exactly while a requirement is open, and
+        there the stage rail directly above already shows this stage's
+        `done/total` on its chip. Printing "0 of 5 done · 5 open" under
+        it made the same number appear twice in 60px — and a third time
+        in the requirement header, and a fourth on the Work overview.
+
+        On the stage overview, where there is no requirement to read it
+        against, it is the summary of the stage and it stays.
+      */}
+      {canAdvance ? (
+        <div className="flex items-baseline gap-2">
+          <span
+            data-testid="stage-progress"
+            className="text-[12px] font-semibold text-gray-700 dark:text-gray-200"
+          >
+            {progress}
           </span>
-        )}
-        {state.kind === 'ready' && (
-          <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-            <Check className="h-3 w-3" aria-hidden="true" /> all done
-          </span>
-        )}
-      </div>
+          {state.kind === 'outstanding' && (
+            <span className="text-[11px] text-gray-400" data-testid="stage-outstanding">
+              {state.outstanding} open
+            </span>
+          )}
+          {state.kind === 'ready' && (
+            <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+              <Check className="h-3 w-3" aria-hidden="true" /> all done
+            </span>
+          )}
+        </div>
+      ) : <span />}
 
       <div className="flex min-w-0 items-center gap-3">
       {trailing}

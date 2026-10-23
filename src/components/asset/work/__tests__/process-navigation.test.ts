@@ -94,17 +94,38 @@ describe('the three completions are told apart', () => {
 
 describe('stage advancement sits at the stage boundary', () => {
   it('is suppressed while a requirement is open', () => {
+    /*
+     * The gate used to be inside the bar (`canAdvance`). With the
+     * duplicate progress gone too, the bar had nothing left to show over
+     * a requirement but two stage controls, so the whole row is now
+     * conditional and those controls ride the requirement's own header.
+     */
     expect(BAR).toMatch(/canAdvance = true/)
     expect(BAR).toMatch(/state\.kind !== 'hidden' && canAdvance/)
-    expect(TL).toMatch(/canAdvance=\{!selectedRequirement\}/)
+    expect(TL).toMatch(/\{!selectedRequirement && \(\s*<StageActionBar/)
+    /* Same components, not a second copy. */
+    expect(TL).toMatch(/trailing=\{stageOwnershipControls\}/)
+    expect(TL).toMatch(/stageControls=\{stageOwnershipControls\}/)
   })
 
-  it('still shows progress while a requirement is open', () => {
-    /* Knowing what is left is useful mid-requirement; being invited to
-       leave is not. The progress line is outside the gate. */
-    const at = BAR.indexOf('data-testid="stage-progress"')
-    expect(at).toBeGreaterThan(-1)
-    expect(BAR.indexOf('canAdvance &&')).toBeGreaterThan(at)
+  it('states the stage progress once, where it is a summary', () => {
+    /*
+     * This asserted the opposite — that progress stayed visible while a
+     * requirement was open. Measured, that meant the same number four
+     * times on one screen: the rail chip's `0/5` directly above, this
+     * bar's "0 of 5 done · 5 open", the requirement header's
+     * "REQUIREMENT 3 OF 5 · 0 DONE", and the Work overview's bar.
+     *
+     * The rail chip is the one that shows every stage at once, so it is
+     * the one that stays beside a requirement. This bar keeps the count
+     * on the stage overview, where there is no requirement to read it
+     * against and it is the screen's subject.
+     */
+    expect(BAR).toMatch(/data-testid="stage-progress"/)
+    expect(BAR).toMatch(/\{canAdvance \? \(/)
+    /* And the header no longer repeats it. */
+    const WS = strip(read('src/components/asset/work/RequirementWorkspace.tsx'))
+    expect(WS).not.toMatch(/Requirement \{index\} of \{total\}/)
   })
 
   it('never calls the advance action "complete"', () => {

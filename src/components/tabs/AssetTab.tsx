@@ -90,6 +90,7 @@ import {
 } from '../../lib/asset-work/work-items'
 import { WorkActionsMenu } from '../asset/work/WorkActionsMenu'
 import { ProcessSwitcher } from '../asset/work/ProcessSwitcher'
+import { useAssetWorkspace } from '../../hooks/useAssetWorkspace'
 import {
   AssetWorkOverview, WorkOverviewReturn, type OverviewConnection,
 } from '../asset/work/AssetWorkOverview'
@@ -106,12 +107,9 @@ import { ProcessDocuments } from '../asset/work/ProcessDocuments'
 import {
   contextualKey, contextualSelection, backTarget,
 } from '../../lib/asset-work/contextual-destination'
-import { WorkNavigator } from '../asset/work/WorkNavigator'
 import { IdeaWorkSurface } from '../asset/work/IdeaWorkSurface'
 import { ListWorkSurface } from '../asset/work/ListWorkSurface'
 import { PortfolioWorkSurface } from '../asset/work/PortfolioWorkSurface'
-import { AssetWorkSidebar } from '../asset/work/AssetWorkSidebar'
-import { WorkSidebarToggle } from '../asset/work/WorkSidebarToggle'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 
 /* The nav's icons, beside the labels the model owns. Kept here rather than in
@@ -462,27 +460,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     })
   }, [])
   /*
-   * Whether the Work sidebar is hidden, so the working surface gets its
-   * 296px.
-   *
-   * localStorage and not the tab state: the tab state is per-asset and
-   * per-session, and this is neither. A reader who hides the sidebar to
-   * write a model means it for AAPL, for MSFT, for tomorrow — so the key
-   * carries the user and nothing else. Wrapped, because a private window
-   * or blocked site data throws on access and a layout preference must
-   * never be what takes the page down.
+   * The Work sidebar's collapse preference used to live here. There is no
+   * sidebar any more — the Work overview is the only navigator — so the
+   * state, its localStorage key and the expand controls scattered through
+   * three branches went with it.
    */
-  const workSidebarPrefKey = `tesseract:work-sidebar-collapsed:${user?.id ?? 'anon'}`
-  const [workSidebarCollapsed, setWorkSidebarCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem(`tesseract:work-sidebar-collapsed:${user?.id ?? 'anon'}`) === '1' } catch { return false }
-  })
-  const toggleWorkSidebar = useCallback(() => {
-    setWorkSidebarCollapsed(prev => {
-      const next = !prev
-      try { localStorage.setItem(workSidebarPrefKey, next ? '1' : '0') } catch { /* ignore */ }
-      return next
-    })
-  }, [workSidebarPrefKey])
   /*
    * Which book the Decision Memory narrative is scoped to. `null` is
    * organization-wide and is the default — the asset page's own context is
@@ -2727,6 +2709,27 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }),
   ], [assetListMemberships, assetThemes, portfolioHoldings, exposureIn])
 
+  /*
+   * ── What Work shows about research ───────────────────────────────────
+   *
+   * Read from `useAssetWorkspace`, which the requirement context already
+   * calls — so this costs no query. Until now Work fetched the case and
+   * every research note on the asset and rendered neither: the case as a
+   * bare age ("202d old"), the notes not at all.
+   *
+   * Work shows what exists and hands off. Research still owns writing it.
+   */
+  const workspaceForResearch = useAssetWorkspace(asset.id, asset.symbol ?? null, 'overview')
+  const overviewResearch = React.useMemo(() => ({
+    caseWrittenAt: workspaceForResearch.data?.caseWrittenAt ?? null,
+    notes: (workspaceForResearch.data?.evidence ?? []).map(e => ({
+      id: e.id,
+      title: e.title?.trim() || 'Untitled note',
+      authorName: e.authorName ?? null,
+      at: e.createdAt ?? null,
+    })),
+  }), [workspaceForResearch.data])
+
   const openWorkConnection = React.useCallback((c: OverviewConnection) => {
     if (c.kind === 'list') { openContextual(contextualKey.list(c.id)); return }
     if (c.kind === 'portfolio') { openContextual(contextualKey.portfolio(c.id)); return }
@@ -4612,162 +4615,21 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               row. Only the container's class changes; both children keep
               their slots, so nothing in the working surface is rebuilt.
             */}
-            <div className={workSidebarCollapsed
-              ? 'grid grid-cols-1 items-start gap-5'
-              : 'grid grid-cols-1 items-start gap-5 xl:grid-cols-[296px_minmax(0,1fr)]'}>
-              <AssetWorkSidebar
-                key="work-sidebar"
-                hidden={workSidebarCollapsed}
-                onCollapse={toggleWorkSidebar}
-                collapsed={collapsedSections}
-                onToggleSection={toggleSection}
-                className="xl:sticky xl:top-2"
-                selectedKey={workItemKey}
-                /* Lists — the Step B implementation, moved not rebuilt. */
-                lists={listsLoading ? null : assetListMemberships.map(l => ({
-                  itemId: l.itemId,
-                  listId: l.listId,
-                  name: l.name,
-                  listType: l.listType,
-                  canRemove: l.canRemove,
-                }))}
-                /* Selects, inside this asset's workspace. Opening the full
-                   list is a labelled control on that surface. */
-                onOpenList={(listId) => openContextual(contextualKey.list(listId))}
-                onRemoveFromList={(itemId) => removeFromList.mutate(itemId)}
-                removingListItemId={removeFromList.isPending ? (removeFromList.variables ?? null) : null}
-                addToListSlot={<AddToListButton assetId={asset.id} size="sm" variant="ghost" />}
-                onOpenAllLists={() => onNavigate?.({ id: 'lists', title: 'Lists', type: 'lists', data: null })}
-                /* Themes — the same rows and the same Add dialog the card had. */
-                themes={assetThemes === undefined ? null : (assetThemes as any[]).map(t => ({
-                  id: t.id, name: t.name, themeType: t.theme_type || 'general',
-                }))}
-                onOpenTheme={(t) => onNavigate?.({ id: t.id, title: t.name, type: 'theme', data: t })}
-                onOpenAllThemes={() => onNavigate?.({ id: 'themes-list', title: 'All Themes', type: 'themes-list', data: null })}
-                /* `ghost`/`sm` so the three Add controls carry the same
-                   weight as each other and none of them outweighs the work
-                   above. The dialogs behind them are untouched. */
-                addToThemeSlot={<AddToThemeButton assetId={asset.id} variant="ghost" size="sm" />}
-                /* Portfolios — the same dedupe; the weight now comes from the
-                   book it belongs to. `null` while the books load, so the
-                   sidebar says nothing rather than saying zero. */
-                portfolios={portfolioHoldings === undefined ? null : Array.from(
-                  new Map((portfolioHoldings as any[]).map((h: any) => [h.portfolio_id, h])).values()
-                ).map((h: any) => {
-                  const exposure = exposureIn(h.portfolio_id)
-                  return {
-                    id: h.portfolio_id,
-                    name: h.portfolios?.name || 'Unknown Portfolio',
-                    weight: exposure && exposure.bookValue > 0
-                      ? exposure.weightPct.toFixed(2)
-                      : null,
-                  }
-                })}
-                onOpenPortfolio={(id) => openContextual(contextualKey.portfolio(id))}
-                onOpenAllPortfolios={() => onNavigate?.({ id: 'portfolios-list', title: 'All Portfolios', type: 'portfolios-list', data: null })}
-                /* Projects — the real component, which owns its own data. */
-                addToProjectSlot={<AddToProjectButton assetId={asset.id} variant="ghost" size="sm" />}
-                projectsSlot={
-                  <RelatedProjects
-                    contextType="asset"
-                    contextId={asset.id}
-                    contextTitle={`${asset.symbol} - ${asset.company_name}`}
-                    onProjectClick={(projectId) => onNavigate?.({
-                      id: projectId, title: 'Project', type: 'project', data: { id: projectId },
-                    })}
-                    hideCreateButton
-                  />
-                }
-                workSlot={
-              <WorkNavigator
-                /* The collapse control rides the navigator's first group
-                   header instead of a dedicated row above it. */
-                headerAction={<WorkSidebarToggle direction="collapse" onToggle={toggleWorkSidebar} />}
-                items={workItems}
-                /*
-                 * ── The highlight is the DISPLAYED process, not a near miss ─
-                 *
-                 * When the selection is a process, the row that lights up is
-                 * the one the surface is actually showing. Normally these are
-                 * the same thing, because selecting a row and choosing from the
-                 * dropdown both go through `handleWorkflowChange`.
-                 *
-                 * They come apart in one case: the dropdown can switch to a
-                 * process the sidebar does not list — one not started, or
-                 * already complete — and `resolveSelection` answers an
-                 * unresolvable key by falling back to the FIRST in-progress
-                 * item. That fallback is right for a selection whose work was
-                 * deleted, and wrong here, because it would highlight some
-                 * other run beside a surface showing this one. Keying the
-                 * highlight off the displayed workflow means no row matches
-                 * and nothing is highlighted, which is true.
-                 */
-                selectedKey={
-                  selectedWorkItem?.kind === 'process'
-                    ? (effectiveWorkflowId ? workItemKeyFor.process(effectiveWorkflowId) : null)
-                    : (selectedWorkItem?.key ?? null)
-                }
-                /* `resolveSelection` only knows navigator items, so a
-                   contextual key looks to it like a selection that vanished.
-                   It did not: it is on screen. Saying otherwise put "the
-                   item you were on is no longer available" above a list the
-                   reader had just opened. */
-                recoveredFrom={!contextual && workSelection.recovered}
-                isLoading={workIsResolving}
-                onSelect={(item: WorkItem) => {
-                  /* A conversation opens the existing CoAnalyst pane and
-                     leaves the surface alone. The pane is where threads live;
-                     a second chat here would be a second implementation of
-                     it, and the cross-asset context protections from
-                     ac779006 live there too. */
-                  if (item.kind === 'conversation') {
-                    askAI({ ...assetEngagementTarget, conversationId: item.id })
-                    return
-                  }
-                  /*
-                   * ── A process row moves the WORKSPACE, not just the list ──
-                   *
-                   * This used to set `workItemKey` alone. The sidebar highlight
-                   * followed, and nothing else did: the Process surface, its
-                   * header, its stages and its requirements all read
-                   * `effectiveWorkflowId`, which only the Process dropdown ever
-                   * moved. So a reader could select the Apr 3 run, see it
-                   * highlighted, and complete requirements on Apr 10 — the one
-                   * failure an investment workflow must not have.
-                   *
-                   * `handleWorkflowChange` is the switch the dropdown already
-                   * performs, and it is the whole operation: it moves the
-                   * effective workflow, drops the previous run's stage so no
-                   * stale stage shows, and restores the new run's own current
-                   * stage. Calling it here makes selection one action with one
-                   * implementation rather than two half-switches, and it sets
-                   * `workItemKey` itself — so the dropdown now moves the
-                   * sidebar too, and the two can no longer disagree.
-                   */
-                  if (item.kind === 'process') {
-                    void handleWorkflowChange(item.id)
-                    return
-                  }
-                  setWorkItemKey(item.key)
-                }}
-                /* Both carried over from the Open Items section, which this
-                   replaces: the canonical stage pills and idea creation
-                   through the existing event. */
-                stageFilter={openItemsFilter === 'all' ? null : openItemsFilter}
-                stageFilterOptions={[
-                  { key: 'all', label: 'All' },
-                  ...IDEA_STAGES.map(s => ({ key: s, label: IDEA_STAGE_CONFIG[s].label })),
-                ]}
-                onStageFilter={(key) => setOpenItemsFilter((key ?? 'all') as 'all' | IdeaStage)}
-                onNewIdea={() => {
-                  window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                    detail: { type: 'new-trade-idea', data: { assetId: asset.id, symbol: asset.symbol } }
-                  }))
-                }}
-              />
-                }
-              />
+            {/*
+              ── One navigator, not two ────────────────────────────────────
 
+              This was a 296px sidebar beside the working surface, listing
+              processes, ideas, investigations, lists, themes, portfolios
+              and projects — every one of which the Work overview also
+              lists. Two full navigators for one set of things, and no
+              answer to which one you were meant to use.
+
+              The overview is the navigator now and the surface is full
+              width. Everything the sidebar uniquely held moved into it:
+              projects, the three "Add to" controls, the escape links and
+              the idea stage filter. Nothing became unreachable.
+            */}
+            <div className="grid grid-cols-1 items-start gap-5">
               <div key="work-surface" className="min-w-0" data-testid="work-surface">
                 {/*
                   The way back in, while the sidebar is away.
@@ -4871,11 +4733,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 {!contextual && !selectedWorkItem && workIsResolving && (
                   /* The shape of what is coming, and no claim about it. */
                   <div data-testid="work-surface-loading" className="space-y-3">
-                    {workSidebarCollapsed && (
-                      <div className="flex justify-end">
-                        <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
-                      </div>
-                    )}
                     <div className="h-9 animate-pulse rounded-md bg-gray-100 dark:bg-gray-800" />
                     <div className="h-24 animate-pulse rounded-md bg-gray-100 dark:bg-gray-800" />
                     <div className="h-40 animate-pulse rounded-md bg-gray-100 dark:bg-gray-800" />
@@ -4900,11 +4757,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     overview={assetWorkOverview}
                     items={workItems}
                     connections={overviewConnections}
+                    connectionsLoading={listsLoading}
                     recoveredFrom={workSelection.recovered}
-                    onOpenProcess={(wfId) => {
-                      handleWorkflowChange(wfId)
-                      setWorkItemKey(workItemKeyFor.process(wfId))
-                    }}
+                    /* One call, not two. `handleWorkflowChange` moves the
+                       surface AND sets the selection key; setting the key
+                       beside it was a second half-switch of the kind that
+                       once let a reader complete Apr 10's requirements
+                       while looking at Apr 3. */
+                    onOpenProcess={(wfId) => { void handleWorkflowChange(wfId) }}
                     onResume={(wfId, stageId, requirementId) => {
                       handleWorkflowChange(wfId)
                       setWorkItemKey(workItemKeyFor.process(wfId))
@@ -4916,6 +4776,62 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       setWorkItemKey(item.key)
                     }}
                     onOpenConnection={(c) => openWorkConnection(c)}
+                    onOpenAll={(kind) => {
+                      if (kind === 'list') {
+                        onNavigate?.({ id: 'lists', title: 'Lists', type: 'lists', data: null })
+                      } else if (kind === 'theme') {
+                        onNavigate?.({ id: 'themes-list', title: 'All Themes', type: 'themes-list', data: null })
+                      } else {
+                        onNavigate?.({ id: 'portfolios-list', title: 'All Portfolios', type: 'portfolios-list', data: null })
+                      }
+                    }}
+                    /* Research is its own mode and still owns writing; Work
+                       shows what exists and hands off. */
+                    research={overviewResearch}
+                    onOpenResearch={() => goToSubPage('research')}
+                    onOpenNote={(noteId) => handleNoteClick(noteId)}
+                    /* The three dialogs and the stage filter the sidebar
+                       used to carry. Same components, same handlers. */
+                    addActions={
+                      <>
+                        <AddToListButton assetId={asset.id} size="sm" variant="ghost" />
+                        <AddToThemeButton assetId={asset.id} variant="ghost" size="sm" />
+                        <AddToProjectButton assetId={asset.id} variant="ghost" size="sm" />
+                      </>
+                    }
+                    ideaFilter={
+                      <div className="flex flex-wrap gap-1">
+                        {([{ key: 'all', label: 'All' },
+                           ...IDEA_STAGES.map(s => ({ key: s, label: IDEA_STAGE_CONFIG[s].label }))
+                        ]).map(o => (
+                          <button
+                            key={o.key}
+                            type="button"
+                            data-testid={`overview-idea-filter-${o.key}`}
+                            onClick={() => setOpenItemsFilter(o.key as 'all' | IdeaStage)}
+                            className={clsx(
+                              'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                              openItemsFilter === o.key
+                                ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+                                : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800',
+                            )}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    }
+                    projectsSlot={
+                      <RelatedProjects
+                        contextType="asset"
+                        contextId={asset.id}
+                        contextTitle={`${asset.symbol} - ${asset.company_name}`}
+                        onProjectClick={(projectId) => onNavigate?.({
+                          id: projectId, title: 'Project', type: 'project', data: { id: projectId },
+                        })}
+                        hideCreateButton
+                      />
+                    }
                   />
                 )}
 
@@ -4928,9 +4844,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                          out, not just the Process one. */
                       headerAction={
                         <span className="flex items-center gap-2">
-                          {workSidebarCollapsed && (
-                            <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
-                          )}
                           <WorkOverviewReturn onBack={() => setWorkItemKey(WORK_OVERVIEW_KEY)} />
                           <span className="text-gray-300" aria-hidden="true">/</span>
                         </span>
@@ -5021,11 +4934,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             )
             const processHeader = (
               <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
-                {/* The way back to navigation, on the row the Process
-                    identity already occupies. Only while the sidebar is away. */}
-                {workSidebarCollapsed && (
-                  <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
-                )}
                 {/* The way out of a focused workspace, named for where it
                     goes. Sets the sentinel rather than clearing the key, so
                     the overview is a destination the reader holds. */}
@@ -5125,15 +5033,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <div className="space-y-3">
                 {/* Standalone only for the views that REPLACE the rail. */}
                 {(showTemplatesView || showTimelineView || showReportView) && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">{processHeader}</div>
-                    {/*
-                      No generic subview bar here any more. Each subview now
-                      carries its own header — its name, what it is for, and
-                      one labelled return — so this row was a second title
-                      and a second Back, 40px above the real ones.
-                    */}
-                  </div>
+                  /*
+                    ── One title and one back, not two ──────────────────
+                    The comment that used to sit here claimed this row had
+                    been removed; it rendered the whole process header
+                    anyway. `ProcessReport`, `ProcessDocuments` and
+                    `ProcessHistory` each draw their own title and their
+                    own "Back to <process>", so above them that header was
+                    a second title and a second back control.
+
+                    What it uniquely carried is the breadcrumb out of the
+                    process entirely, so that is all that stays.
+                  */
+                  <WorkOverviewReturn
+                    onBack={() => {
+                      setShowReportView(false)
+                      setShowTimelineView(false)
+                      setShowTemplatesView(false)
+                      setWorkItemKey(WORK_OVERVIEW_KEY)
+                    }}
+                  />
                 )}
 
               {showReportView ? (
@@ -5244,6 +5163,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   /* Opening a previous cycle from the prior-work panel is
                      the same process switch the sidebar performs. */
                   onOpenRun={handleWorkflowChange}
+                  onOpenNote={handleNoteClick}
+                  onOpenResearch={() => goToSubPage('research')}
                 />
               )}
             </div>

@@ -93,23 +93,22 @@ describe('the three merged destinations are all still reachable', () => {
     expect(TAB).not.toMatch(/id=\{WORK_SECTION_ID\.decisions\}/)
   })
 
-  it('orders them Lists → Process → Ideas', () => {
+  it('nests the process inside the one Work shell', () => {
     /*
-     * `work-lists` is the shell wrapper, whose first child is the context
-     * strip, so the 'lists' destination still lands on the memberships. The
-     * process is now INSIDE that wrapper as the active surface rather than a
-     * sibling section below it, and Open Items follows.
+     * This asserted shell → sidebar → navigator → surface → process. The
+     * sidebar and the navigator are gone: the Work overview is the only
+     * navigator and the surface takes the full width. What the test was
+     * really protecting — that the process is INSIDE the shell as the
+     * active surface rather than a sibling section below it — is what
+     * remains.
      */
     const shell = TAB.indexOf('id={WORK_SECTION_ID.lists}')
-    const sidebar = TAB.indexOf('<AssetWorkSidebar')
-    const nav = TAB.indexOf('<WorkNavigator')
     const surface = TAB.indexOf('data-testid="work-surface"')
     const proc = TAB.indexOf('id={WORK_SECTION_ID.workflow}')
     expect(shell).toBeGreaterThan(-1)
-    expect(shell).toBeLessThan(sidebar)
-    expect(sidebar).toBeLessThan(nav)
-    expect(nav).toBeLessThan(surface)
+    expect(shell).toBeLessThan(surface)
     expect(surface).toBeLessThan(proc)
+    expect(TAB).not.toMatch(/<AssetWorkSidebar|<WorkNavigator/)
   })
 
   it('keeps every membership surface the Lists tab had', () => {

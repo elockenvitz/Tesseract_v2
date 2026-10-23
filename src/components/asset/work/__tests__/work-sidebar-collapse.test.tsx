@@ -1,224 +1,82 @@
 /**
- * Hiding the Work sidebar.
+ * The Work sidebar is gone, and must not come back by accident.
  *
- * Two rules are worth pinning, and both were deliberate choices rather
- * than incidental behaviour:
+ * ── What this file used to be ───────────────────────────────────────────
  *
- * 1. The sidebar renders nothing when hidden — the CALLER keeps rendering
- *    it. If the caller dropped the element instead, the working surface
- *    would move from the grid's second slot to its first, React would see a
- *    different element type at that position, and the whole surface would
- *    be rebuilt: selected requirement gone, open editor closed, unsent
- *    draft discarded. That is the failure this shape exists to avoid.
+ * Five tests over the sidebar's collapse behaviour: that collapsing
+ * dropped the 296px grid track rather than emptying it, that both grid
+ * children kept their slots across the toggle, that the expand control
+ * appeared only while the sidebar was away, that the preference was
+ * per-viewer rather than per-asset, and that a blocked `localStorage`
+ * could not take the page down.
  *
- * 2. Focus crosses the toggle. Collapsing removes the button that was just
- *    pressed, and a browser left alone drops focus to `body`.
+ * Every one of those was true and none of them matters now. The sidebar
+ * and the Work overview were two full navigators listing the same
+ * things — processes, ideas, investigations, lists, themes, portfolios,
+ * projects — with no answer to which one a reader was meant to use. The
+ * overview won; the sidebar, its collapse state, its localStorage key and
+ * its three scattered expand controls were removed.
+ *
+ * The tests are replaced rather than deleted because "put a navigator
+ * back beside the surface" is the obvious next suggestion, and the
+ * duplication is the thing that made Work confusing in the first place.
+ * The behaviours the old file protected now live in
+ * `work-integration.test.ts`, asserted against the overview.
  */
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AssetWorkSidebar, type AssetWorkSidebarProps } from '../AssetWorkSidebar'
-import { WorkNavigator } from '../WorkNavigator'
-import type { WorkItem } from '../../../../lib/asset-work/work-items'
-import {
-  WorkSidebarToggle,
-  WORK_SIDEBAR_COLLAPSE_ID,
-  WORK_SIDEBAR_EXPAND_ID,
-  WORK_SIDEBAR_REGION_ID,
-} from '../WorkSidebarToggle'
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 const strip = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/^\s*\/\/.*$/gm, '')
+
 const TAB = strip(read('src/components/tabs/AssetTab.tsx'))
+const OVERVIEW = strip(read('src/components/asset/work/AssetWorkOverview.tsx'))
 
-const ITEMS: WorkItem[] = [{
-  key: 'process:wf-1', kind: 'process', id: 'wf-1', group: 'in-progress',
-  label: 'Weekly Portfolio Review', detail: 'Apr 10 2026',
-}]
-
-const sidebar = (over: Partial<AssetWorkSidebarProps> = {}) =>
-  render(
-    <AssetWorkSidebar
-      workSlot={<div data-testid="work-slot">work</div>}
-      collapsed={{}}
-      onToggleSection={vi.fn()}
-      {...over}
-    />,
-  )
-
-describe('the control', () => {
-  it('names what it will do, in both directions', () => {
-    const { unmount } = render(<WorkSidebarToggle direction="collapse" onToggle={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'Collapse Work sidebar' })).toHaveAttribute('title', 'Collapse Work sidebar')
-    unmount()
-    render(<WorkSidebarToggle direction="expand" onToggle={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'Expand Work sidebar' })).toBeInTheDocument()
+describe('Work has one navigator', () => {
+  it('does not mount a sidebar beside the working surface', () => {
+    expect(TAB).not.toMatch(/<AssetWorkSidebar/)
+    expect(TAB).not.toMatch(/<WorkNavigator/)
   })
 
-  it('reports the sidebar state it governs', () => {
-    const { unmount } = render(<WorkSidebarToggle direction="collapse" onToggle={vi.fn()} />)
-    const collapse = screen.getByTestId('work-sidebar-collapse')
-    expect(collapse).toHaveAttribute('aria-expanded', 'true')
-    expect(collapse).toHaveAttribute('aria-controls', WORK_SIDEBAR_REGION_ID)
-    expect(collapse).toHaveAttribute('id', WORK_SIDEBAR_COLLAPSE_ID)
-    unmount()
-    render(<WorkSidebarToggle direction="expand" onToggle={vi.fn()} />)
-    const expand = screen.getByTestId('work-sidebar-expand')
-    expect(expand).toHaveAttribute('aria-expanded', 'false')
-    expect(expand).toHaveAttribute('id', WORK_SIDEBAR_EXPAND_ID)
+  it('keeps no collapse state, control or stored preference for one', () => {
+    expect(TAB).not.toMatch(/workSidebarCollapsed|toggleWorkSidebar|WorkSidebarToggle/)
+    expect(TAB).not.toMatch(/work-sidebar-collapsed/)
   })
 
-  it('toggles once per click', async () => {
-    const onToggle = vi.fn()
-    render(<WorkSidebarToggle direction="collapse" onToggle={onToggle} />)
-    const user = userEvent.setup()
-    await user.click(screen.getByTestId('work-sidebar-collapse'))
-    await user.click(screen.getByTestId('work-sidebar-collapse'))
-    expect(onToggle).toHaveBeenCalledTimes(2)
+  it('gives the surface the full width instead of a 296px track', () => {
+    expect(TAB).not.toMatch(/xl:grid-cols-\[296px_minmax\(0,1fr\)\]/)
   })
 
-  it('is reachable and operable from the keyboard', async () => {
-    const onToggle = vi.fn()
-    render(<WorkSidebarToggle direction="collapse" onToggle={onToggle} />)
-    const user = userEvent.setup()
-    await user.tab()
-    expect(screen.getByTestId('work-sidebar-collapse')).toHaveFocus()
-    await user.keyboard('{Enter}')
-    expect(onToggle).toHaveBeenCalled()
-  })
-
-  it('hands focus to its counterpart rather than dropping it', async () => {
-    // The counterpart stands in for the one the real layout renders.
-    const onToggle = vi.fn()
-    render(
-      <>
-        <WorkSidebarToggle direction="collapse" onToggle={onToggle} />
-        <button id={WORK_SIDEBAR_EXPAND_ID}>expand</button>
-      </>,
-    )
-    const user = userEvent.setup()
-    await user.click(screen.getByTestId('work-sidebar-collapse'))
-    await vi.waitFor(() => expect(document.getElementById(WORK_SIDEBAR_EXPAND_ID)).toHaveFocus())
-  })
-})
-
-describe('the sidebar when hidden', () => {
-  it('renders nothing at all — no node, so no column and no gutter', () => {
-    const { container } = sidebar({ hidden: true })
-    expect(container).toBeEmptyDOMElement()
-    expect(screen.queryByTestId('asset-work-sidebar')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('work-slot')).not.toBeInTheDocument()
-  })
-
-  it('renders its content when shown', () => {
-    sidebar()
-    expect(screen.getByTestId('asset-work-sidebar')).toBeInTheDocument()
-    expect(screen.getByTestId('work-slot')).toBeInTheDocument()
-  })
-
-  it('carries the region id the control points at', () => {
-    sidebar()
-    expect(screen.getByTestId('asset-work-sidebar')).toHaveAttribute('id', WORK_SIDEBAR_REGION_ID)
-  })
-
-  it('no longer carries the control itself, and reserves no row for one', () => {
+  it('still reaches everything the sidebar listed, from the overview', () => {
     /*
-     * The control used to live here, in `<div class="col-span-full -mb-1
-     * flex justify-end">` — a 296x24 row whose only child was a 24px button,
-     * directly above a group header that already had one. It is the
-     * navigator's header action now; see the navigator cases below.
+     * The point of removing it: nothing became unreachable. Processes,
+     * research, lists and portfolios, ideas and investigations, and
+     * projects are all sections of the overview.
      */
-    const { container } = sidebar()
-    expect(screen.queryByTestId('work-sidebar-collapse')).not.toBeInTheDocument()
-    expect(container.querySelector('.col-span-full.-mb-1')).toBeNull()
-  })
-})
-
-describe('the control rides the navigator header, never its own row', () => {
-  const navigator = (over: Partial<React.ComponentProps<typeof WorkNavigator>> = {}) =>
-    render(
-      <WorkNavigator
-        items={ITEMS}
-        selectedKey={ITEMS[0].key}
-        onSelect={vi.fn()}
-        headerAction={<WorkSidebarToggle direction="collapse" onToggle={vi.fn()} />}
-        {...over}
-      />,
-    )
-
-  it('renders the control inside the first group header', () => {
-    navigator()
-    const control = screen.getByTestId('work-sidebar-collapse')
-    const header = control.closest('div')!
-    /* The same row carries the group's label, which is what makes it a
-       header rather than a row reserved for a button. */
-    expect(header.textContent).toMatch(/IN PROGRESS/i)
+    for (const id of [
+      'work-overview-processes',
+      'work-overview-research',
+      'work-overview-connections',
+      'work-overview-ideas',
+      'work-overview-projects',
+    ]) {
+      expect(OVERVIEW).toContain(`data-testid="${id}"`)
+    }
   })
 
-  it('places it once, not on every group', () => {
-    navigator()
-    expect(screen.getAllByTestId('work-sidebar-collapse')).toHaveLength(1)
+  it('carries the three "Add to" dialogs and the idea filter it inherited', () => {
+    expect(TAB).toMatch(/<AddToListButton/)
+    expect(TAB).toMatch(/<AddToThemeButton/)
+    expect(TAB).toMatch(/<AddToProjectButton/)
+    expect(TAB).toMatch(/data-testid=\{`overview-idea-filter-\$\{o\.key\}`\}/)
   })
 
-  it('keeps it reachable while the work is still loading', () => {
-    navigator({ isLoading: true })
-    expect(screen.getByTestId('work-sidebar-collapse')).toBeInTheDocument()
-  })
-
-  it('keeps it reachable when there is no work at all', () => {
-    navigator({ items: [] })
-    expect(screen.getByTestId('work-sidebar-collapse')).toBeInTheDocument()
-    expect(screen.getByTestId('work-nav-empty')).toBeInTheDocument()
-  })
-
-  it('renders no control when the caller passes none', () => {
-    navigator({ headerAction: undefined })
-    expect(screen.queryByTestId('work-sidebar-collapse')).not.toBeInTheDocument()
-  })
-
-  it('reports the collapse through the handler and writes nothing itself', async () => {
-    const onToggle = vi.fn()
-    navigator({ headerAction: <WorkSidebarToggle direction="collapse" onToggle={onToggle} /> })
-    const user = userEvent.setup()
-    await user.click(screen.getByTestId('work-sidebar-collapse'))
-    expect(onToggle).toHaveBeenCalledTimes(1)
-    /* Visibility is the caller's state; the navigator does not hide itself,
-       or the preference could not outlive the component. */
-    expect(screen.getByTestId('work-navigator')).toBeInTheDocument()
-  })
-})
-
-describe('the layout and the preference, pinned against AssetTab', () => {
-  it('drops the sidebar track when collapsed instead of emptying it', () => {
-    expect(TAB).toMatch(/workSidebarCollapsed\s*\?\s*'grid grid-cols-1 items-start gap-5'\s*:\s*'grid grid-cols-1 items-start gap-5 xl:grid-cols-\[296px_minmax\(0,1fr\)\]'/)
-  })
-
-  it('keeps both grid children in their slots across the toggle', () => {
-    // Without the keys, removing the sidebar shifts the surface into slot
-    // one and React rebuilds it.
-    expect(TAB).toMatch(/key="work-sidebar"/)
-    expect(TAB).toMatch(/key="work-surface"/)
-    expect(TAB).toMatch(/hidden=\{workSidebarCollapsed\}/)
-  })
-
-  it('offers the way back only while the sidebar is away', () => {
-    expect(TAB).toMatch(/\{workSidebarCollapsed && \([\s\S]{0,200}direction="expand"/)
-  })
-
-  it('remembers the preference per viewer, not per asset or per process', () => {
-    expect(TAB).toMatch(/tesseract:work-sidebar-collapsed:\$\{user\?\.id \?\? 'anon'\}/)
-    // localStorage, so it survives a reload, an asset change and a mode
-    // change. The tab state would not: it is per-asset and per-session.
-    expect(TAB).toMatch(/localStorage\.setItem\(workSidebarPrefKey/)
-    expect(TAB).not.toMatch(/work-sidebar-collapsed[^\n]*asset\.id/)
-  })
-
-  it('never lets a blocked store take the page down', () => {
-    const at = TAB.indexOf('workSidebarPrefKey')
-    const body = TAB.slice(at, at + 700)
-    expect((body.match(/catch/g) ?? []).length).toBeGreaterThanOrEqual(2)
+  it('keeps the cross-asset Lists, Themes and Portfolios apps one click away', () => {
+    expect(OVERVIEW).toMatch(/data-testid=\{`work-overview-all-\$\{k\}`\}/)
+    expect(TAB).toMatch(/type: 'lists'/)
+    expect(TAB).toMatch(/type: 'themes-list'/)
+    expect(TAB).toMatch(/type: 'portfolios-list'/)
   })
 })
