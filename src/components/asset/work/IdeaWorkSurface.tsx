@@ -46,14 +46,21 @@ export interface IdeaWorkSurfaceProps {
   idea: IdeaWorkSurfaceIdea
   assetId: string
   className?: string
+  /**
+   * A control for the identity row — the sidebar expand button, while the
+   * sidebar is collapsed. It rides this header rather than a reserved row
+   * above the surface, which is what it used to have.
+   */
+  headerAction?: React.ReactNode
 }
 
-export function IdeaWorkSurface({ idea, assetId, className }: IdeaWorkSurfaceProps) {
+export function IdeaWorkSurface({ idea, assetId, className, headerAction }: IdeaWorkSurfaceProps) {
   return (
     <div className={clsx('space-y-5', className)} data-testid="idea-work-surface">
       {/* ── Identity ─────────────────────────────────────────────────── */}
       <div>
         <div className="flex flex-wrap items-center gap-2">
+          {headerAction}
           {idea.action && (
             <span className="rounded bg-gray-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white dark:bg-gray-100 dark:text-gray-900">
               {idea.action}

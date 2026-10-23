@@ -4331,6 +4331,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 }
                 workSlot={
               <WorkNavigator
+                /* The collapse control rides the navigator's first group
+                   header instead of a dedicated row above it. */
+                headerAction={<WorkSidebarToggle direction="collapse" onToggle={toggleWorkSidebar} />}
                 items={workItems}
                 /*
                  * ── The highlight is the DISPLAYED process, not a near miss ─
@@ -4412,18 +4415,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               />
 
               <div key="work-surface" className="min-w-0" data-testid="work-surface">
-                {/* The way back in. Only while the sidebar is away, at the
-                    top left of the work it made room for. */}
-                {workSidebarCollapsed && (
-                  <div className="mb-2 flex">
-                    <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
-                  </div>
-                )}
+                {/*
+                  The way back in, while the sidebar is away.
+
+                  It used to be one `mb-2` row above everything, which simply
+                  moved the dedicated row from the sidebar to the surface. It
+                  now rides whichever header the surface is already showing:
+                  the Process identity row below, the Idea surface's own
+                  header, or the empty state's text block. Nothing reserves a
+                  row for it in any of the three.
+                */}
                 {!selectedWorkItem && (
                   <div
                     data-testid="work-surface-empty"
                     className="rounded-lg border border-dashed border-gray-300 px-4 py-10 text-center dark:border-gray-700"
                   >
+                    {workSidebarCollapsed && (
+                      <div className="mb-3 flex justify-center">
+                        <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
+                      </div>
+                    )}
                     <p className="text-[13px] text-gray-500 dark:text-gray-400">
                       No active work on this asset.
                     </p>
@@ -4435,7 +4446,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
                 {selectedWorkItem?.kind === 'idea' && (
                   selectedWorkIdea ? (
-                    <IdeaWorkSurface idea={selectedWorkIdea} assetId={asset.id} />
+                    <IdeaWorkSurface
+                      idea={selectedWorkIdea}
+                      assetId={asset.id}
+                      headerAction={workSidebarCollapsed
+                        ? <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
+                        : undefined}
+                    />
                   ) : (
                     /* The navigator listed a request whose idea the open-items
                        query did not return. Say so and offer the real editor
@@ -4467,6 +4484,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center space-x-3">
+                    {/* The way back to navigation, on the row the Process
+                        identity already occupies rather than a reserved one
+                        above it. Only while the sidebar is away. */}
+                    {workSidebarCollapsed && (
+                      <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
+                    )}
                     {showTimelineView ? (
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Activity Timeline</h3>
                     ) : allWorkflowsLoading || (allWorkflowsFetching && !allAssetWorkflows) ? (

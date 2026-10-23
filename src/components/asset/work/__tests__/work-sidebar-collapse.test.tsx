@@ -20,6 +20,8 @@ import userEvent from '@testing-library/user-event'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AssetWorkSidebar, type AssetWorkSidebarProps } from '../AssetWorkSidebar'
+import { WorkNavigator } from '../WorkNavigator'
+import type { WorkItem } from '../../../../lib/asset-work/work-items'
 import {
   WorkSidebarToggle,
   WORK_SIDEBAR_COLLAPSE_ID,
@@ -31,6 +33,11 @@ const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 const strip = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/^\s*\/\/.*$/gm, '')
 const TAB = strip(read('src/components/tabs/AssetTab.tsx'))
+
+const ITEMS: WorkItem[] = [{
+  key: 'process:wf-1', kind: 'process', id: 'wf-1', group: 'in-progress',
+  label: 'Weekly Portfolio Review', detail: 'Apr 10 2026',
+}]
 
 const sidebar = (over: Partial<AssetWorkSidebarProps> = {}) =>
   render(
@@ -100,38 +107,87 @@ describe('the control', () => {
 
 describe('the sidebar when hidden', () => {
   it('renders nothing at all — no node, so no column and no gutter', () => {
-    const { container } = sidebar({ hidden: true, onCollapse: vi.fn() })
+    const { container } = sidebar({ hidden: true })
     expect(container).toBeEmptyDOMElement()
     expect(screen.queryByTestId('asset-work-sidebar')).not.toBeInTheDocument()
     expect(screen.queryByTestId('work-slot')).not.toBeInTheDocument()
   })
 
-  it('renders its content and the collapse control when shown', () => {
-    sidebar({ onCollapse: vi.fn() })
+  it('renders its content when shown', () => {
+    sidebar()
     expect(screen.getByTestId('asset-work-sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('work-slot')).toBeInTheDocument()
-    expect(screen.getByTestId('work-sidebar-collapse')).toBeInTheDocument()
   })
 
   it('carries the region id the control points at', () => {
-    sidebar({ onCollapse: vi.fn() })
+    sidebar()
     expect(screen.getByTestId('asset-work-sidebar')).toHaveAttribute('id', WORK_SIDEBAR_REGION_ID)
   })
 
-  it('omits the control when no handler is given, so nothing dangles', () => {
-    sidebar()
+  it('no longer carries the control itself, and reserves no row for one', () => {
+    /*
+     * The control used to live here, in `<div class="col-span-full -mb-1
+     * flex justify-end">` — a 296x24 row whose only child was a 24px button,
+     * directly above a group header that already had one. It is the
+     * navigator's header action now; see the navigator cases below.
+     */
+    const { container } = sidebar()
+    expect(screen.queryByTestId('work-sidebar-collapse')).not.toBeInTheDocument()
+    expect(container.querySelector('.col-span-full.-mb-1')).toBeNull()
+  })
+})
+
+describe('the control rides the navigator header, never its own row', () => {
+  const navigator = (over: Partial<React.ComponentProps<typeof WorkNavigator>> = {}) =>
+    render(
+      <WorkNavigator
+        items={ITEMS}
+        selectedKey={ITEMS[0].key}
+        onSelect={vi.fn()}
+        headerAction={<WorkSidebarToggle direction="collapse" onToggle={vi.fn()} />}
+        {...over}
+      />,
+    )
+
+  it('renders the control inside the first group header', () => {
+    navigator()
+    const control = screen.getByTestId('work-sidebar-collapse')
+    const header = control.closest('div')!
+    /* The same row carries the group's label, which is what makes it a
+       header rather than a row reserved for a button. */
+    expect(header.textContent).toMatch(/IN PROGRESS/i)
+  })
+
+  it('places it once, not on every group', () => {
+    navigator()
+    expect(screen.getAllByTestId('work-sidebar-collapse')).toHaveLength(1)
+  })
+
+  it('keeps it reachable while the work is still loading', () => {
+    navigator({ isLoading: true })
+    expect(screen.getByTestId('work-sidebar-collapse')).toBeInTheDocument()
+  })
+
+  it('keeps it reachable when there is no work at all', () => {
+    navigator({ items: [] })
+    expect(screen.getByTestId('work-sidebar-collapse')).toBeInTheDocument()
+    expect(screen.getByTestId('work-nav-empty')).toBeInTheDocument()
+  })
+
+  it('renders no control when the caller passes none', () => {
+    navigator({ headerAction: undefined })
     expect(screen.queryByTestId('work-sidebar-collapse')).not.toBeInTheDocument()
   })
 
   it('reports the collapse through the handler and writes nothing itself', async () => {
-    const onCollapse = vi.fn()
-    sidebar({ onCollapse })
+    const onToggle = vi.fn()
+    navigator({ headerAction: <WorkSidebarToggle direction="collapse" onToggle={onToggle} /> })
     const user = userEvent.setup()
     await user.click(screen.getByTestId('work-sidebar-collapse'))
-    expect(onCollapse).toHaveBeenCalledTimes(1)
-    // Visibility is the caller's state. The sidebar does not hide itself,
-    // or the preference could not outlive the component.
-    expect(screen.getByTestId('asset-work-sidebar')).toBeInTheDocument()
+    expect(onToggle).toHaveBeenCalledTimes(1)
+    /* Visibility is the caller's state; the navigator does not hide itself,
+       or the preference could not outlive the component. */
+    expect(screen.getByTestId('work-navigator')).toBeInTheDocument()
   })
 })
 

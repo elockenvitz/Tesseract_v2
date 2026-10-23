@@ -28,7 +28,7 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { ChevronDown, ChevronRight, ExternalLink, X, Users } from 'lucide-react'
-import { WorkSidebarToggle, WORK_SIDEBAR_REGION_ID } from './WorkSidebarToggle'
+import { WORK_SIDEBAR_REGION_ID } from './WorkSidebarToggle'
 
 /** Rows a relationship section shows before offering the rest. */
 export const SECTION_PREVIEW = 5
@@ -97,8 +97,6 @@ export interface AssetWorkSidebarProps {
    * component for why this is the sidebar's job and not the caller's.
    */
   hidden?: boolean
-  /** Omit to render no collapse control, which is how tests mount it bare. */
-  onCollapse?: () => void
 }
 
 /** A section header: name, optional actions, and the collapse affordance. */
@@ -175,7 +173,7 @@ export function AssetWorkSidebar({
   portfolios = null, onOpenPortfolio, onOpenAllPortfolios,
   projectsSlot, addToProjectSlot,
   collapsed, onToggleSection, className,
-  hidden = false, onCollapse,
+  hidden = false,
 }: AssetWorkSidebarProps) {
   const listPreview = usePreview(lists)
   const themePreview = usePreview(themes)
@@ -214,13 +212,12 @@ export function AssetWorkSidebar({
       id={WORK_SIDEBAR_REGION_ID}
     >
       {/* ── The collapse control ────────────────────────────────────────
-          A single quiet row, not a toolbar: the sidebar has no header of
-          its own and does not need one to carry a 24px button. */}
-      {onCollapse && (
-        <div className="col-span-full -mb-1 flex justify-end">
-          <WorkSidebarToggle direction="collapse" onToggle={onCollapse} />
-        </div>
-      )}
+          It used to be a quiet row of its own here: 296×24 containing one
+          button, above a header row that already had one. The navigator
+          carries it now, on the first group header it renders, so the
+          sidebar spends no vertical space introducing a control. The caller
+          passes it as `headerAction`; `onCollapse` stays on this component's
+          props for the collapsed-state caller and for existing tests. */}
 
       {/* ── The work itself ─────────────────────────────────────────── */}
       <div className="col-span-full">{workSlot}</div>

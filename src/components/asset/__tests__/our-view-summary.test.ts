@@ -255,7 +255,13 @@ describe('the aggregated document was replaced, not duplicated', () => {
 
   it('leaves Research a route to the contributors it no longer shows', () => {
     // Removing the pane without saying where it went would simply lose it.
-    expect(TAB_CODE).toContain("setActiveSubPage('snapshot')")
+    //
+    // The arrival-focus effect became a lookup table when it learned to
+    // consume a focus once per request, so the landing is no longer written
+    // as a bare `setActiveSubPage('snapshot')` call. The ROUTE is the rule,
+    // and it is unchanged: an overview or position arrival lands on Snapshot.
+    expect(TAB_CODE).toMatch(/focus === 'overview' \|\| focus === 'position'\) \? 'snapshot'/)
+    expect(TAB_CODE).toContain('setActiveSubPage(target)')
   })
 
   it('derives the summarised fields from the org template', () => {

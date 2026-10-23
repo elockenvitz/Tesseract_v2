@@ -60,13 +60,30 @@ export interface WorkNavigatorProps {
   recoveredFrom?: boolean
   isLoading?: boolean
   className?: string
+  /**
+   * A control for the navigator's own first header row — the sidebar
+   * collapse button.
+   *
+   * It is a slot rather than a prop pair because the navigator has no opinion
+   * about what the control does; it only owns the one row already on screen
+   * that can carry it. The alternative was the dedicated full-width row this
+   * replaces, which spent 24px of every Work session announcing a button.
+   */
+  headerAction?: React.ReactNode
 }
 
 export function WorkNavigator({
   items, selectedKey, onSelect,
   stageFilter = null, stageFilterOptions = [], onStageFilter, onNewIdea,
-  recoveredFrom = false, isLoading = false, className,
+  recoveredFrom = false, isLoading = false, className, headerAction,
 }: WorkNavigatorProps) {
+  /*
+   * The collapse control rides the FIRST group header that renders, so it is
+   * never on a row of its own and never disappears when a group is empty.
+   * Tracked by a mutable flag rather than an index because which group comes
+   * first depends on what work exists.
+   */
+  let headerActionPlaced = false
   /*
    * Which groups the reader has asked to see in full.
    *
@@ -77,6 +94,10 @@ export function WorkNavigator({
   if (isLoading) {
     return (
       <div className={clsx('space-y-1.5', className)} data-testid="work-nav-loading">
+        {/* The control stays reachable while work loads; a sidebar that
+            cannot be collapsed until its contents arrive is a sidebar that
+            cannot be collapsed when it is most in the way. */}
+        {headerAction && <div className="flex justify-end">{headerAction}</div>}
         {[0, 1, 2].map(i => (
           <div key={i} className="h-9 animate-pulse rounded-md bg-gray-100 dark:bg-gray-800" />
         ))}
@@ -90,7 +111,10 @@ export function WorkNavigator({
         data-testid="work-nav-empty"
         className={clsx('rounded-md border border-dashed border-gray-300 px-3 py-4 dark:border-gray-700', className)}
       >
-        <p className="text-[12px] text-gray-500 dark:text-gray-400">No active work on this asset.</p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[12px] text-gray-500 dark:text-gray-400">No active work on this asset.</p>
+          {headerAction}
+        </div>
       </div>
     )
   }
@@ -175,6 +199,11 @@ export function WorkNavigator({
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               )}
+              {(() => {
+                if (headerActionPlaced || !headerAction) return null
+                headerActionPlaced = true
+                return headerAction
+              })()}
             </div>
             <ul className="space-y-0.5">
               {shown.map(item => {
