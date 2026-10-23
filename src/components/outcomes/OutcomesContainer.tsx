@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useScenarios } from '../../hooks/useScenarios'
 import { useAnalystPriceTargets } from '../../hooks/useAnalystPriceTargets'
 import { useOutcomeAggregation, type AggregationMethod } from '../../hooks/useOutcomeAggregation'
+import { useTargetOutcomes } from '../../hooks/useTargetOutcomes'
 import { PriceTargetCard } from './PriceTargetCard'
 import { AggregatedView, AnalystComparisonTable } from './AggregatedView'
 import { AggregationToolbar } from './AggregationToolbar'
@@ -79,6 +80,21 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
     publishPriceTarget,
     discardDraft
   } = useAnalystPriceTargets({ assetId })
+
+  /*
+   * The evaluated outcomes, so each card shows the horizon the DATABASE holds
+   * rather than one derived from when the row was last touched. Joined by
+   * `price_target_id` -- never by scenario or price, which would merge two
+   * analysts who agree or two revisions of one case.
+   *
+   * The same hook Research reads, so this costs no extra request on an Asset
+   * Page that has already loaded it, and the two surfaces cannot drift.
+   */
+  const { outcomes: targetOutcomes } = useTargetOutcomes({ assetId })
+  const outcomeFor = useMemo(() => {
+    const byTarget = new Map(targetOutcomes.map(o => [o.price_target_id, o]))
+    return (targetId?: string) => (targetId ? byTarget.get(targetId) ?? null : null)
+  }, [targetOutcomes])
 
   // Fetch coverage data (ordered deterministically for stable results)
   const { data: coverageData = [] } = useQuery({
@@ -521,6 +537,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                       otherScenariosProbabilitySum={otherProbSum}
                       currentPrice={currentPrice}
                       triggerEditKey={scenario.is_default ? editTriggerKey : undefined}
+                      outcome={outcomeFor(target?.id)}
                     />
                   )
                 })}
@@ -553,6 +570,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                       onDiscardDraft={isOwnTab && target ? () => handleDiscardDraft(target.id) : undefined}
                       otherScenariosProbabilitySum={otherProbSum}
                       currentPrice={currentPrice}
+                      outcome={outcomeFor(target?.id)}
                     />
                   )
                 })}

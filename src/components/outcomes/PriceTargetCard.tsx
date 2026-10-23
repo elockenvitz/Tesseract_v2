@@ -4,36 +4,12 @@ import { DollarSign, Clock, Edit2, Trash2, MessageSquare, Calendar, RefreshCw, R
 import { formatDistanceToNow } from 'date-fns'
 import type { AnalystPriceTarget, TimeframeType } from '../../hooks/useAnalystPriceTargets'
 import { hasDraft } from '../../hooks/useAnalystPriceTargets'
+import {
+  targetFreshness, addTimeframe, FRESHNESS_LABEL, type FreshnessOutcomeInput,
+} from '../../lib/outcomes/target-freshness'
 
-// Calculate expiration date from created_at + timeframe
-function calculateExpirationDate(createdAt: string, timeframe: string | null): Date | null {
-  if (!timeframe || !createdAt) return null
-
-  const baseDate = new Date(createdAt)
-  const tf = timeframe.toLowerCase()
-
-  if (tf.includes('3 month')) {
-    baseDate.setMonth(baseDate.getMonth() + 3)
-  } else if (tf.includes('6 month')) {
-    baseDate.setMonth(baseDate.getMonth() + 6)
-  } else if (tf.includes('12 month') || tf.includes('1 year')) {
-    baseDate.setFullYear(baseDate.getFullYear() + 1)
-  } else if (tf.includes('18 month')) {
-    baseDate.setMonth(baseDate.getMonth() + 18)
-  } else if (tf.includes('24 month') || tf.includes('2 year')) {
-    baseDate.setFullYear(baseDate.getFullYear() + 2)
-  } else {
-    // Try to parse custom format like "11 months"
-    const match = timeframe.match(/(\d+)\s*month/i)
-    if (match) {
-      baseDate.setMonth(baseDate.getMonth() + parseInt(match[1]))
-    } else {
-      return null
-    }
-  }
-
-  return baseDate
-}
+/* `calculateExpirationDate` moved to `lib/outcomes/target-freshness` as
+   `addTimeframe`, unchanged, so one module owns what "12 months" means. */
 
 // Calculate remaining time until expiration
 function getTimeRemaining(expirationDate: Date): { text: string; isExpired: boolean; isUrgent: boolean } {
@@ -107,6 +83,14 @@ interface PriceTargetCardProps {
   currentPrice?: number
   /** When incremented, triggers edit mode on default scenarios */
   triggerEditKey?: number
+  /**
+   * The evaluated outcome for THIS target, joined by `price_target_id`.
+   *
+   * Authoritative for the horizon and the verdict. Absent only for a rolling
+   * target (the trigger deletes the row) or a legacy one, and the shared rule
+   * handles both rather than guessing.
+   */
+  outcome?: FreshnessOutcomeInput | null
 }
 
 const PRESET_TIMEFRAMES = [
@@ -130,7 +114,8 @@ export function PriceTargetCard({
   className,
   otherScenariosProbabilitySum = 0,
   currentPrice,
-  triggerEditKey
+  triggerEditKey,
+  outcome = null
 }: PriceTargetCardProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [viewingDraft, setViewingDraft] = useState(false)
@@ -152,32 +137,60 @@ export function PriceTargetCard({
   const totalProbability = otherScenariosProbabilitySum + currentProbability
   const isProbabilityValid = totalProbability <= 100
 
-  // Calculate expiration info for fixed targets
-  // Use updated_at as base since saving restarts the timer
+  /*
+   * ── The horizon, from the record that owns it ────────────────────────────
+   *
+   * This used to read `updated_at || created_at` as the anchor, with the
+   * comment "saving restarts the timer". `updated_at` moves on ANY save --
+   * `set_analyst_price_target_timestamp` is a BEFORE UPDATE trigger on every
+   * column -- so fixing a typo in the reasoning pushed the displayed expiry a
+   * whole timeframe into the future. AMZN's Bull target was evaluated
+   * `expired` on 2026-08-30 and this card showed it expiring 2027-08-23,
+   * because somebody had edited it on 2026-08-23.
+   *
+   * The database never believed that. `create_outcome_for_target` fires
+   * `AFTER UPDATE OF price, timeframe, timeframe_type, target_date,
+   * is_rolling` -- only a deliberate revision restarts the horizon, and when
+   * one does the trigger writes the new `target_date` onto the outcome and
+   * resets it to pending. An incidental edit fires nothing. So the outcome is
+   * both authoritative AND already correct; this card simply was not reading
+   * it.
+   *
+   * `targetFreshness` is the shared rule, the same one Research and Overview
+   * read, so the three cannot disagree. The editor needs one thing beyond a
+   * verdict -- how long is left -- and that is computed from the date the
+   * rule returns rather than from a second countdown of its own.
+   */
   const expirationInfo = useMemo(() => {
     if (!priceTarget) return null
     if (priceTarget.is_rolling) return null
-    if (priceTarget.timeframe_type === 'date' && priceTarget.target_date) {
-      const expDate = new Date(priceTarget.target_date)
-      return {
-        date: expDate,
-        formattedDate: expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        ...getTimeRemaining(expDate)
-      }
+
+    const freshness = targetFreshness(priceTarget, outcome ? [outcome] : [], new Date())
+    if (!freshness.asOf) return null
+
+    /* A DATE is stored, so it is read back at local midnight: parsed as UTC it
+       renders as the previous day west of Greenwich. */
+    const expDate = new Date(`${freshness.asOf.slice(0, 10)}T00:00:00`)
+    if (Number.isNaN(expDate.getTime())) return null
+
+    const remaining = getTimeRemaining(expDate)
+    return {
+      date: expDate,
+      formattedDate: expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      ...remaining,
+      /*
+       * An EVALUATED verdict outranks the countdown. A target the evaluator
+       * marked expired is expired even if arithmetic on today's date would
+       * say otherwise, and `hit` is not an expiry at all.
+       */
+      ...(freshness.basis === 'outcome'
+        ? {
+            isExpired: freshness.state === 'expired' || freshness.state === 'missed',
+            text: freshness.state === 'current' ? remaining.text : FRESHNESS_LABEL[freshness.state],
+          }
+        : {}),
     }
-    if (priceTarget.timeframe_type === 'preset' || !priceTarget.timeframe_type) {
-      // Use updated_at for Fixed targets - saving restarts the timer
-      const baseDate = priceTarget.updated_at || priceTarget.created_at
-      const expDate = calculateExpirationDate(baseDate, priceTarget.timeframe)
-      if (!expDate) return null
-      return {
-        date: expDate,
-        formattedDate: expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        ...getTimeRemaining(expDate)
-      }
-    }
-    return null
-  }, [priceTarget])
+  }, [priceTarget, outcome])
 
   // Calculate preview expiration for edit mode
   // Always calculate from NOW since saving will restart the timer
@@ -191,8 +204,32 @@ export function PriceTargetCard({
       }
     }
     if (timeframeType === 'preset') {
-      // Always calculate from NOW - saving restarts the timer
-      const expDate = calculateExpirationDate(new Date().toISOString(), timeframe)
+      /*
+       * ── Only a real revision previews a restarted horizon ────────────────
+       *
+       * This always measured from NOW, on the note that "saving restarts the
+       * timer". Saving does not. `create_outcome_for_target` fires
+       * `AFTER UPDATE OF price, timeframe, timeframe_type, target_date,
+       * is_rolling`, so publishing a commentary-only change never touches the
+       * outcome -- while this preview told the analyst their target would run
+       * a further twelve months from today. It promised a reset the save
+       * would not perform.
+       *
+       * The condition below is that trigger's column list, so the preview and
+       * the database restart the horizon on exactly the same edits. For
+       * anything else the existing horizon is shown, because that is what
+       * publishing will leave in place.
+       */
+      const revisesHorizon =
+        Number(price) !== Number(priceTarget?.price ?? NaN)
+        || timeframe !== (priceTarget?.timeframe ?? null)
+        || timeframeType !== (priceTarget?.timeframe_type ?? 'preset')
+        || (targetDate || null) !== (priceTarget?.target_date ?? null)
+        || isRolling !== !!priceTarget?.is_rolling
+
+      if (!revisesHorizon) return expirationInfo
+
+      const expDate = addTimeframe(new Date().toISOString(), timeframe)
       if (!expDate) return null
       return {
         formattedDate: expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -200,7 +237,7 @@ export function PriceTargetCard({
       }
     }
     return null
-  }, [isRolling, timeframeType, targetDate, timeframe])
+  }, [isRolling, timeframeType, targetDate, timeframe, price, priceTarget, expirationInfo])
 
   // Whether this card has a pending draft
   const isDraft = priceTarget ? hasDraft(priceTarget) : false

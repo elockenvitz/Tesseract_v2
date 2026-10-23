@@ -79,7 +79,7 @@ export interface TargetFreshness {
   /** The date the state refers to, ISO, when one is on record. */
   asOf: string | null
   /** Where the verdict came from, so a reader can tell evaluation from inference. */
-  basis: 'outcome' | 'target-date' | 'rolling' | 'none'
+  basis: 'outcome' | 'target-date' | 'rolling' | 'created-timeframe' | 'none'
 }
 
 /** The fields this rule needs from `analyst_price_targets`. */
@@ -87,6 +87,24 @@ export interface FreshnessTargetInput {
   id: string
   target_date?: string | null
   is_rolling?: boolean | null
+  /**
+   * The horizon anchor, and the reason this field is here.
+   *
+   * The target editor derived its countdown from `updated_at + timeframe`.
+   * `updated_at` moves on ANY save -- there is a BEFORE UPDATE trigger that
+   * touches it -- so correcting a typo in `reasoning` pushed the displayed
+   * expiry a full timeframe into the future, and a target the outcome had
+   * already evaluated as expired read as current in the editor.
+   *
+   * `created_at` is when the horizon began and does not move. The database
+   * agrees: `create_outcome_for_target` anchors `target_set_date` on
+   * `NEW.created_at` at INSERT, and the live AMZN rows show
+   * `target_set_date = 2025-08-30 = created_at` while `updated_at` has since
+   * moved to 2026-08-23.
+   */
+  created_at?: string | null
+  timeframe?: string | null
+  timeframe_type?: string | null
 }
 
 /** The fields this rule needs from `price_target_outcomes`. */
@@ -141,7 +159,60 @@ export function targetFreshness(
     }
   }
 
+  /*
+   * A preset-duration target with no outcome row yet.
+   *
+   * Anchored on `created_at` -- never `updated_at`, which is the whole point
+   * of this branch. In practice an outcome exists for every non-rolling
+   * target, because `create_outcome_for_target` makes one on INSERT, so this
+   * covers legacy rows and the window before that record lands.
+   */
+  const anchored = addTimeframe(target.created_at, target.timeframe)
+  if (anchored) {
+    return {
+      state: anchored.getTime() >= now.getTime() ? 'current' : 'expired',
+      asOf: toIsoDate(anchored),
+      basis: 'created-timeframe',
+    }
+  }
+
   return { state: 'unknown', asOf: null, basis: 'none' }
+}
+
+/** `2026-08-30`, the shape every date on this path is stored and compared in. */
+function toIsoDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
+ * Add a stored timeframe to an anchor date.
+ *
+ * Ported from the editor's own `calculateExpirationDate` so there is ONE
+ * implementation of "what does '12 months' mean" rather than a copy per
+ * surface. The behaviour is unchanged; only the anchor it is given has been
+ * corrected, and that is the caller's decision rather than this function's.
+ */
+export function addTimeframe(
+  anchorIso: string | null | undefined,
+  timeframe: string | null | undefined,
+): Date | null {
+  if (!anchorIso || !timeframe) return null
+  const base = new Date(anchorIso)
+  if (Number.isNaN(base.getTime())) return null
+
+  const tf = timeframe.toLowerCase()
+  if (tf.includes('3 month')) base.setMonth(base.getMonth() + 3)
+  else if (tf.includes('6 month')) base.setMonth(base.getMonth() + 6)
+  else if (tf.includes('12 month') || tf.includes('1 year')) base.setFullYear(base.getFullYear() + 1)
+  else if (tf.includes('18 month')) base.setMonth(base.getMonth() + 18)
+  else if (tf.includes('24 month') || tf.includes('2 year')) base.setFullYear(base.getFullYear() + 2)
+  else {
+    const match = timeframe.match(/(\d+)\s*month/i)
+    if (!match) return null
+    base.setMonth(base.getMonth() + parseInt(match[1], 10))
+  }
+  return base
 }
 
 /**
