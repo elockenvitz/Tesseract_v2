@@ -172,7 +172,10 @@ describe('the workbench is one block, not stacked sections', () => {
      * inside the thing it switches away from. Same JSX, rendered standalone
      * for exactly those two views.
      */
-    expect(TAB).toMatch(/\{\(showTemplatesView \|\| showTimelineView\) && \(/)
+    /* The Process Report joined Timeline and Files as a view that
+       replaces the rail, so it needs the standalone header for the same
+       reason they do. */
+    expect(TAB).toMatch(/\{\(showTemplatesView \|\| showTimelineView \|\| showReportView\) && \(/)
     expect(TAB).toMatch(/\{processHeader\}/)
   })
 

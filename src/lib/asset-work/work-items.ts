@@ -30,6 +30,8 @@
  * or updated descending — never a score, a weight or a model.
  */
 
+import { WORK_OVERVIEW_KEY } from './work-destination'
+
 export type WorkItemKind = 'idea' | 'process' | 'conversation'
 
 export type WorkItemGroup = 'needs-you' | 'in-progress' | 'investigations'
@@ -319,30 +321,69 @@ export interface SelectionResolution {
 /**
  * Which item the surface shows.
  *
- * A saved key wins whenever it still exists. Otherwise the first genuinely
- * actionable item, then the first item in progress — the same categorical
- * order the navigator renders, so "what opens first" and "what is listed
- * first" can never disagree.
+ * ── What changed, and why ───────────────────────────────────────────────
  *
- * A conversation is never auto-selected: it launches the CoAnalyst pane, and
- * opening a pane because a reader opened a tab is not something they asked
- * for.
+ * This used to auto-select the first actionable item when nothing was
+ * saved. That made the Work overview unreachable in practice: any asset
+ * with work had something selected the instant it opened, so the landing
+ * page could only ever be seen on an asset that had nothing to land on.
+ *
+ * Opening a piece of work is now something the reader does. No saved key
+ * means the overview; the explicit overview sentinel also means the
+ * overview, and is what a reader holds after choosing to go back to it.
+ * Neither is a failure, so neither sets `recovered`.
+ *
+ * A saved key that no longer resolves still does — that is a selection
+ * that was honoured once and cannot be now, which the surface must say.
+ *
+ * A conversation is never selected this way: it launches the CoAnalyst
+ * pane, and opening a pane because a reader opened a tab is not something
+ * they asked for.
  */
 export function resolveSelection(
   items: readonly WorkItem[],
   savedKey: string | null | undefined,
+  opts: {
+    /**
+     * The run the workspace is actually displaying.
+     *
+     * The navigator lists only LIVE processes, so a reader who opened a
+     * completed or historical cycle holds a key the list cannot match.
+     * That is not a vanished selection — the cycle is open on screen —
+     * but without this it resolved as one and bounced them to the
+     * overview under "the work you had open is no longer available".
+     * Observed switching AAPL to its completed Feb 2026 cycle.
+     */
+    activeProcessWorkflowId?: string | null
+    /** Label for the synthesized row, when one is needed. */
+    activeProcessLabel?: string | null
+  } = {},
 ): SelectionResolution {
   const selectable = items.filter(i => !i.launchesPane)
 
-  if (savedKey) {
-    const saved = selectable.find(i => i.key === savedKey)
-    if (saved) return { selected: saved, recovered: false }
+  if (!savedKey || savedKey === WORK_OVERVIEW_KEY) {
+    return { selected: null, recovered: false }
   }
 
-  const first =
-    selectable.find(i => i.group === 'needs-you') ??
-    selectable.find(i => i.group === 'in-progress') ??
-    null
+  const saved = selectable.find(i => i.key === savedKey)
+  if (saved) return { selected: saved, recovered: false }
 
-  return { selected: first, recovered: !!savedKey }
+  const active = opts.activeProcessWorkflowId
+  if (active && savedKey === workItemKey.process(active)) {
+    return {
+      selected: {
+        key: savedKey,
+        kind: 'process',
+        id: active,
+        /* Not in any navigator group: it is not listed, by definition. */
+        group: 'in-progress',
+        label: opts.activeProcessLabel ?? 'Process',
+      },
+      recovered: false,
+    }
+  }
+
+  /* Saved, and genuinely gone. The overview is the honest place to land,
+     and the caller tells the reader why they are there. */
+  return { selected: null, recovered: true }
 }

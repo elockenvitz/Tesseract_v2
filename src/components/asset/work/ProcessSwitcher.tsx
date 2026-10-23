@@ -22,7 +22,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { Check, ChevronDown, CornerUpLeft, FileText, History, Plus } from 'lucide-react'
+import { Check, ChevronDown, ClipboardList, CornerUpLeft, FileText, History, Plus } from 'lucide-react'
 import type { SwitcherEntry, SwitcherGroups } from '../../../lib/asset-work/process-switcher'
 
 const EYEBROW =
@@ -45,8 +45,11 @@ interface Props {
   /** The two views that used to be buried in an unrelated "⋯" menu. */
   onOpenDocuments?: () => void
   onOpenActivity?: () => void
+  /** The consolidated record of this cycle. */
+  onOpenReport?: () => void
   documentsActive?: boolean
   activityActive?: boolean
+  reportActive?: boolean
   /**
    * Cycles the cadence will cut but which do not exist yet.
    *
@@ -105,7 +108,8 @@ function Row({
 
 export function ProcessSwitcher({
   groups, fallbackLabel, onSelect, onJoin,
-  onOpenDocuments, onOpenActivity, documentsActive, activityActive,
+  onOpenDocuments, onOpenActivity, onOpenReport,
+  documentsActive, activityActive, reportActive,
   upcoming = [], busy, className,
 }: Props) {
   const [open, setOpen] = useState(false)
@@ -300,8 +304,23 @@ export function ProcessSwitcher({
             Documents and activity belong to the process, so they live with
             it rather than in a separate unlabelled "⋯" two controls away.
           */}
-          {(onOpenDocuments || onOpenActivity) && (
+          {(onOpenDocuments || onOpenActivity || onOpenReport) && (
             <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
+              {onOpenReport && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="process-switcher-report"
+                  onClick={() => { setOpen(false); onOpenReport() }}
+                  className={clsx(
+                    'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-gray-50 dark:hover:bg-gray-800',
+                    reportActive ? 'font-medium text-primary-600' : 'text-gray-700 dark:text-gray-200',
+                  )}
+                >
+                  <ClipboardList className="h-3.5 w-3.5 flex-none text-gray-400" aria-hidden="true" />
+                  Process report
+                </button>
+              )}
               {onOpenActivity && (
                 <button
                   type="button"

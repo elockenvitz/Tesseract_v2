@@ -90,7 +90,17 @@ import {
 } from '../../lib/asset-work/work-items'
 import { WorkActionsMenu } from '../asset/work/WorkActionsMenu'
 import { ProcessSwitcher } from '../asset/work/ProcessSwitcher'
+import {
+  AssetWorkOverview, WorkOverviewReturn, type OverviewConnection,
+} from '../asset/work/AssetWorkOverview'
+import { buildWorkOverview } from '../../lib/asset-work/work-overview'
+import { WORK_OVERVIEW_KEY, destinationFromTabData, shouldApplyArrival, arrivalKey } from '../../lib/asset-work/work-destination'
+import { splitProcessRun } from '../../lib/asset-work/process-switcher'
+import { ProcessReport } from '../asset/work/ProcessReport'
+import { EMPTY_REPORT } from '../../lib/asset-work/process-report'
+import { useProcessReport } from '../asset/work/useProcessReport'
 import { groupProcesses, type SwitcherRunRow } from '../../lib/asset-work/process-switcher'
+
 import { ProcessHistory } from '../asset/work/ProcessHistory'
 import { ProcessDocuments } from '../asset/work/ProcessDocuments'
 import {
@@ -637,6 +647,18 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const [pendingWorkflowSwitch, setPendingWorkflowSwitch] = useState<{workflowId: string, stageId: string | null} | null>(null)
   const [showTimelineView, setShowTimelineView] = useState(false)
   const [showTemplatesView, setShowTemplatesView] = useState(false)
+  /** The consolidated record of this cycle. A view, never a stored copy. */
+  const [showReportView, setShowReportView] = useState(false)
+  /*
+   * Which Process-dashboard deep link has already been honoured.
+   *
+   * Declared here, with the other persisted state, because the save
+   * effect lists it as a dependency and a dependency array is evaluated
+   * during render — a `const` declared further down would still be in its
+   * temporal dead zone at that point.
+   */
+  const [consumedArrival, setConsumedArrival] = useState<string | null>(() =>
+    TabStateManager.loadTabState(asset.id)?.consumedWorkArrival ?? null)
   const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   // showAssetPriorityDropdown removed — priority selector replaced by state chips
@@ -1023,10 +1045,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         /* Carried on every save because `saveTabState` replaces the record;
            omitting it here would let the arrival focus replay. */
         consumedFocusIntent,
+        /* Same reason, for the Process-dashboard deep link. Dropping it
+           here would make every save re-arm the arrival, and returning to
+           the tab would yank the reader back to the linked requirement. */
+        consumedWorkArrival: consumedArrival,
       }
       TabStateManager.saveTabState(asset.id, stateToSave)
     }
-  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, viewingRequirementId, decisionBookId, workItemKey, consumedFocusIntent, isTabStateInitialized])
+  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, viewingRequirementId, decisionBookId, workItemKey, consumedFocusIntent, consumedArrival, isTabStateInitialized])
 
   /*
    * The newest execution on this asset that the reader is authorized to see,
@@ -2457,10 +2483,145 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   )
 
   const workSelection = React.useMemo(
-    () => resolveSelection(workItems, workItemKey),
-    [workItems, workItemKey],
+    () => resolveSelection(workItems, workItemKey, {
+      /* A completed or historical cycle is open on screen but absent from
+         the navigator, which lists live runs only. */
+      activeProcessWorkflowId: effectiveWorkflowId || null,
+      activeProcessLabel: (allAssetWorkflows ?? [])
+        .find((w: any) => w.workflow_id === effectiveWorkflowId)?.workflows?.name ?? null,
+    }),
+    [workItems, workItemKey, effectiveWorkflowId, allAssetWorkflows],
   )
   const selectedWorkItem = workSelection.selected
+
+  /*
+   * ── Requirement counts for every run, not just the open one ──────────
+   *
+   * The overview states progress for each active process, so it needs the
+   * counts across all of them. One query per run would be N round trips
+   * on a page that opens cold; this is two `in()` reads over the same
+   * tables the workspace uses.
+   *
+   * The TEMPLATE is the denominator. A requirement nobody has touched has
+   * no `asset_checklist_items` row at all, so counting rows would report
+   * "0 of 0 done" for a cycle that has not been started and make an
+   * untouched process look finished.
+   */
+  const workflowIdsForCounts = React.useMemo(
+    () => (allAssetWorkflows ?? [])
+      .map((w: any) => w.workflow_id as string)
+      .filter(Boolean)
+      .sort(),
+    [allAssetWorkflows],
+  )
+
+  const { data: runCounts } = useQuery({
+    queryKey: ['asset-work-run-counts', asset.id, workflowIdsForCounts.join(',')],
+    enabled: workflowIdsForCounts.length > 0,
+    staleTime: 15_000,
+    queryFn: async () => {
+      const [tmpl, rows] = await Promise.all([
+        supabase
+          .from('workflow_checklist_templates')
+          .select('workflow_id, stage_id, item_id')
+          .in('workflow_id', workflowIdsForCounts),
+        supabase
+          .from('asset_checklist_items')
+          .select('workflow_id, stage_id, item_id, status, completed, notes, updated_at')
+          .eq('asset_id', asset.id)
+          .in('workflow_id', workflowIdsForCounts),
+      ])
+
+      const totals = new Map<string, number>()
+      const firstOpen = new Map<string, { stageId: string | null; itemId: string | null }>()
+      for (const t of ((tmpl.data ?? []) as any[])) {
+        totals.set(t.workflow_id, (totals.get(t.workflow_id) ?? 0) + 1)
+      }
+
+      const done = new Map<string, number>()
+      const updated = new Map<string, string | null>()
+      const satisfied = new Set<string>()
+      const rowIdByPair = new Map<string, string>()
+      for (const r of ((rows.data ?? []) as any[])) {
+        const pair = `${r.workflow_id}|${r.stage_id ?? ''}|${r.item_id ?? ''}`
+        if (r.completed || r.status === 'completed' || r.status === 'na') {
+          satisfied.add(pair)
+          done.set(r.workflow_id, (done.get(r.workflow_id) ?? 0) + 1)
+        }
+        if (r.id) rowIdByPair.set(pair, r.id)
+        const prev = updated.get(r.workflow_id) ?? null
+        if (r.updated_at && (!prev || r.updated_at > prev)) updated.set(r.workflow_id, r.updated_at)
+      }
+
+      /* The next thing to do: the first template requirement in the run
+         that is not yet satisfied. Template order, so it matches the rail. */
+      const ordered = [...((tmpl.data ?? []) as any[])].sort((a, b) =>
+        String(a.item_id ?? '').localeCompare(String(b.item_id ?? '')))
+      for (const t of ordered) {
+        const pair = `${t.workflow_id}|${t.stage_id ?? ''}|${t.item_id ?? ''}`
+        if (satisfied.has(pair)) continue
+        if (!firstOpen.has(t.workflow_id)) {
+          firstOpen.set(t.workflow_id, { stageId: t.stage_id ?? null, itemId: t.item_id ?? null })
+        }
+      }
+
+      return { totals, done, updated, firstOpen }
+    },
+  })
+
+  /** Labels for the first open requirement of each run, from the template. */
+  const { data: nextRequirementLabels } = useQuery({
+    queryKey: ['asset-work-next-labels', asset.id, workflowIdsForCounts.join(',')],
+    enabled: workflowIdsForCounts.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('workflow_checklist_templates')
+        .select('workflow_id, stage_id, item_id, item_text')
+        .in('workflow_id', workflowIdsForCounts)
+      const m = new Map<string, string>()
+      for (const t of ((data ?? []) as any[])) {
+        m.set(`${t.workflow_id}|${t.stage_id ?? ''}|${t.item_id ?? ''}`, t.item_text ?? '')
+      }
+      return m
+    },
+  })
+
+  const assetWorkOverview = React.useMemo(() => {
+    const runs = (allAssetWorkflows ?? []).map((w: any) => {
+      const id = w.workflow_id as string
+      const split = splitProcessRun(w.workflows?.name, w.workflows?.branch_suffix)
+      const open = runCounts?.firstOpen.get(id) ?? null
+      const pair = open ? `${id}|${open.stageId ?? ''}|${open.itemId ?? ''}` : null
+      return {
+        workflowId: id,
+        name: split.name,
+        cycle: split.run,
+        currentStageId: (w.current_stage_key as string | null) ?? null,
+        currentStageLabel: id === effectiveWorkflowId
+          ? (workProcessSummary?.openStageLabel ?? null)
+          : null,
+        isStarted: !!w.is_started,
+        isCompleted: !!w.is_completed,
+        requirementsTotal: runCounts?.totals.get(id) ?? 0,
+        requirementsDone: runCounts?.done.get(id) ?? 0,
+        /* The per-run row id if the requirement has been touched,
+           otherwise null — the workspace opens the stage and the reader
+           picks it up from the rail. */
+        nextRequirementId: null,
+        nextRequirementText: pair ? (nextRequirementLabels?.get(pair) ?? null) : null,
+        assigneeName: null,
+        dueDate: null,
+        updatedAt: runCounts?.updated.get(id) ?? (w.updated_at as string | null) ?? null,
+      }
+    })
+    return buildWorkOverview(runs, {
+      lastOpenedWorkflowId: effectiveWorkflowId || null,
+      hasIdeas: workItems.some(i => i.kind === 'idea'),
+      hasInvestigations: workItems.some(i => i.kind === 'conversation'),
+    })
+  }, [allAssetWorkflows, runCounts, nextRequirementLabels, effectiveWorkflowId, workProcessSummary, workItems])
+
 
   /*
    * ── Lists and portfolios select, they do not depart ──────────────────
@@ -2536,6 +2697,97 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       return themes
     }
   })
+
+  /*
+   * ── Overview wiring, deliberately placed here ────────────────────────
+   *
+   * These three read `assetThemes`, `portfolioHoldings` and
+   * `openContextual`, all declared above this line. Putting them beside
+   * `assetWorkOverview` — which is where they belong by subject — threw a
+   * ReferenceError on first render, because a `const` is in its temporal
+   * dead zone until its own declaration runs and a `useMemo` body runs
+   * during render. CLAUDE.md lists this as a recurring defect class here;
+   * it is the reason for the split.
+   */
+
+  /** Passive relationships, as chips rather than as work. */
+  const overviewConnections = React.useMemo<OverviewConnection[]>(() => [
+    ...assetListMemberships.map(l => ({ kind: 'list' as const, id: l.listId, label: l.name })),
+    ...(((assetThemes ?? []) as any[]).map(t => ({ kind: 'theme' as const, id: t.id, label: t.name }))),
+    ...Array.from(
+      new Map(((portfolioHoldings ?? []) as any[]).map((h: any) => [h.portfolio_id, h])).values()
+    ).map((h: any) => {
+      const exposure = exposureIn(h.portfolio_id)
+      return {
+        kind: 'portfolio' as const,
+        id: h.portfolio_id,
+        label: h.portfolios?.name || 'Portfolio',
+        detail: exposure && exposure.bookValue > 0 ? `${exposure.weightPct.toFixed(2)}%` : null,
+      }
+    }),
+  ], [assetListMemberships, assetThemes, portfolioHoldings, exposureIn])
+
+  const openWorkConnection = React.useCallback((c: OverviewConnection) => {
+    if (c.kind === 'list') { openContextual(contextualKey.list(c.id)); return }
+    if (c.kind === 'portfolio') { openContextual(contextualKey.portfolio(c.id)); return }
+    /* Themes have no in-asset surface, so they keep the existing
+       top-level navigation rather than a half-built one here. */
+    if (c.kind === 'theme') {
+      onNavigate?.({ id: c.id, title: c.label, type: 'theme', data: { id: c.id, name: c.label } })
+    }
+  }, [onNavigate, openContextual])
+
+  const openConversationPane = React.useCallback((conversationId: string) => {
+    askAI({ ...assetEngagementTarget, conversationId })
+  }, [assetEngagementTarget])
+
+  /*
+   * The report reads the CYCLE being viewed, so opening a previous run
+   * and opening its report are the same act: `effectiveWorkflowId` moves
+   * and the report follows. Nothing else is needed to keep a historical
+   * report historical.
+   */
+  const processReport = useProcessReport(
+    asset.id,
+    showReportView ? (effectiveWorkflowId || null) : null,
+  )
+
+  /*
+   * ── Arriving from the Process dashboard ──────────────────────────────
+   *
+   * Process-first and asset-first converge here. The dashboard hands over
+   * `{ workflowId, stageId, requirementId }` in tab data; this applies it
+   * to the SAME state the asset's own navigation sets, so there is one
+   * workspace and one set of records either way.
+   *
+   * Applied once. Tab data is durable and only the active tab renders, so
+   * without the consumed-id check this would re-apply on every remount
+   * and drag the reader back to the deep-linked requirement each time
+   * they returned to the tab — the defect `arrival-focus` documents for
+   * sub-pages, in a second place.
+   */
+  const workArrival = React.useMemo(
+    () => destinationFromTabData(asset.data as Record<string, unknown> | null | undefined),
+    [asset.data],
+  )
+  useEffect(() => {
+    if (!workArrival) return
+    const key = arrivalKey(workArrival, asset.focusRequestId ?? null)
+    const saved = TabStateManager.loadTabState(asset.id)
+    if (!shouldApplyArrival(key, saved?.consumedWorkArrival ?? null)) return
+
+    setActiveSubPage('workflow')
+    setWorkItemKey(workItemKeyFor.process(workArrival.workflowId))
+    void handleWorkflowChange(workArrival.workflowId)
+    if (workArrival.stageId) setViewingStageId(workArrival.stageId)
+    /* Identifiers only. A label or an index would resolve to the wrong
+       requirement the first time a Process definition is edited. */
+    if (workArrival.requirementId) setViewingRequirementId(workArrival.requirementId)
+
+    setConsumedArrival(key)
+    TabStateManager.saveTabState(asset.id, { ...(saved ?? {}), consumedWorkArrival: key })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workArrival, asset.focusRequestId, asset.id])
 
   // Thesis references (crucial supporting documents). Was
   // assets.thesis_references, a jsonb column on the globally shared asset row;
@@ -4631,23 +4883,40 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   </div>
                 )}
 
+                {/*
+                  ── The landing page ────────────────────────────────────
+
+                  This used to be a dashed box reading "No active work on
+                  this asset", reachable only when the asset genuinely had
+                  none — because `resolveSelection` auto-opened the first
+                  item otherwise. Now nothing is selected until the reader
+                  selects it, so this is what Work opens on, and it has to
+                  carry the answer to "what is being done about this
+                  name".
+                */}
                 {!contextual && !selectedWorkItem && !workIsResolving && (
-                  <div
-                    data-testid="work-surface-empty"
-                    className="rounded-lg border border-dashed border-gray-300 px-4 py-10 text-center dark:border-gray-700"
-                  >
-                    {workSidebarCollapsed && (
-                      <div className="mb-3 flex justify-center">
-                        <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
-                      </div>
-                    )}
-                    <p className="text-[13px] text-gray-500 dark:text-gray-400">
-                      No active work on this asset.
-                    </p>
-                    <p className="mt-1 text-[11px] text-gray-400">
-                      Start a process, or open an idea, to begin.
-                    </p>
-                  </div>
+                  <AssetWorkOverview
+                    symbol={asset.symbol ?? null}
+                    overview={assetWorkOverview}
+                    items={workItems}
+                    connections={overviewConnections}
+                    recoveredFrom={workSelection.recovered}
+                    onOpenProcess={(wfId) => {
+                      handleWorkflowChange(wfId)
+                      setWorkItemKey(workItemKeyFor.process(wfId))
+                    }}
+                    onResume={(wfId, stageId, requirementId) => {
+                      handleWorkflowChange(wfId)
+                      setWorkItemKey(workItemKeyFor.process(wfId))
+                      if (stageId) setViewingStageId(stageId)
+                      if (requirementId) setViewingRequirementId(requirementId)
+                    }}
+                    onOpenItem={(item: WorkItem) => {
+                      if (item.launchesPane) { openConversationPane(item.id); return }
+                      setWorkItemKey(item.key)
+                    }}
+                    onOpenConnection={(c) => openWorkConnection(c)}
+                  />
                 )}
 
                 {!contextual && selectedWorkItem?.kind === 'idea' && (
@@ -4655,9 +4924,17 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     <IdeaWorkSurface
                       idea={selectedWorkIdea}
                       assetId={asset.id}
-                      headerAction={workSidebarCollapsed
-                        ? <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
-                        : undefined}
+                      /* Every focused workspace gets the same labelled way
+                         out, not just the Process one. */
+                      headerAction={
+                        <span className="flex items-center gap-2">
+                          {workSidebarCollapsed && (
+                            <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
+                          )}
+                          <WorkOverviewReturn onBack={() => setWorkItemKey(WORK_OVERVIEW_KEY)} />
+                          <span className="text-gray-300" aria-hidden="true">/</span>
+                        </span>
+                      }
                     />
                   ) : (
                     /* The navigator listed a request whose idea the open-items
@@ -4749,6 +5026,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 {workSidebarCollapsed && (
                   <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
                 )}
+                {/* The way out of a focused workspace, named for where it
+                    goes. Sets the sentinel rather than clearing the key, so
+                    the overview is a destination the reader holds. */}
+                <WorkOverviewReturn
+                  onBack={() => {
+                    setShowReportView(false)
+                    setShowTimelineView(false)
+                    setShowTemplatesView(false)
+                    setWorkItemKey(WORK_OVERVIEW_KEY)
+                  }}
+                  className="flex-none"
+                />
+                <span className="flex-none text-gray-300" aria-hidden="true">/</span>
                 {allWorkflowsLoading || (allWorkflowsFetching && !allAssetWorkflows) ? (
                   <div className="flex items-center space-x-3 animate-pulse">
                     <div className="h-6 w-44 rounded bg-gray-200 dark:bg-gray-700" />
@@ -4764,10 +5054,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       upcoming={(upcomingBranches ?? []) as unknown as Array<{
                         workflowId: string; branchName: string; estimatedStartDate: Date
                       }>}
-                      onOpenActivity={() => { setShowTimelineView(true); setShowTemplatesView(false) }}
-                      onOpenDocuments={() => { setShowTemplatesView(true); setShowTimelineView(false) }}
+                      onOpenReport={() => { setShowReportView(true); setShowTimelineView(false); setShowTemplatesView(false) }}
+                      onOpenActivity={() => { setShowTimelineView(true); setShowTemplatesView(false); setShowReportView(false) }}
+                      onOpenDocuments={() => { setShowTemplatesView(true); setShowTimelineView(false); setShowReportView(false) }}
                       activityActive={showTimelineView}
                       documentsActive={showTemplatesView}
+                      reportActive={showReportView}
                     />
                     {/*
                       ── "Mark Complete" said what, exactly? ─────────────
@@ -4832,7 +5124,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             return (
               <div className="space-y-3">
                 {/* Standalone only for the views that REPLACE the rail. */}
-                {(showTemplatesView || showTimelineView) && (
+                {(showTemplatesView || showTimelineView || showReportView) && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">{processHeader}</div>
                     {/*
@@ -4844,7 +5136,29 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   </div>
                 )}
 
-              {showTemplatesView ? (
+              {showReportView ? (
+                /*
+                  ── The cycle's record ──────────────────────────────────
+                  Assembled from the same rows the workspace writes, so
+                  it cannot disagree with them, and every requirement
+                  links back to itself in the rail.
+                */
+                <ProcessReport
+                  symbol={asset.symbol ?? null}
+                  processName={switcherGroups.current?.name ?? 'Process'}
+                  cycle={switcherGroups.current?.run ?? null}
+                  status={currentRun?.is_completed ? 'Complete' : 'In progress'}
+                  report={processReport.report ?? EMPTY_REPORT}
+                  loading={processReport.isLoading}
+                  error={processReport.error}
+                  backLabel={`Back to ${switcherGroups.current?.name ?? 'the process'}`}
+                  onBack={() => setShowReportView(false)}
+                  onOpenRequirement={(requirementId) => {
+                    setShowReportView(false)
+                    setViewingRequirementId(requirementId)
+                  }}
+                />
+              ) : showTemplatesView ? (
                 <ProcessDocuments
                   backLabel={`Back to ${selectedWorkItem?.label ?? 'the process'}`}
                   onBack={() => setShowTemplatesView(false)}

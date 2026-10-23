@@ -84,6 +84,67 @@ export function AssetRunDetailPanel({
     [coverageData]
   )
 
+  /*
+   * ── Requirement progress, and the next thing to do ───────────────────
+   *
+   * Read from the SAME rows the asset workspace writes, so the dashboard
+   * and the asset can never disagree about what is done. This is why
+   * there is no second task table: the numbers here are a read of
+   * `workflow_checklist_templates` (the cycle's requirement set) against
+   * `asset_checklist_items` (what has been recorded for each asset).
+   *
+   * The template is the denominator on purpose. A requirement nobody has
+   * touched has no row at all, so counting rows would report an untouched
+   * asset as "0 of 0" — which renders as complete.
+   */
+  const { data: requirementState } = useQuery({
+    queryKey: ['run-requirement-state', branchId],
+    enabled: !!branchId,
+    staleTime: 1000 * 15,
+    queryFn: async () => {
+      const [tmpl, rows] = await Promise.all([
+        supabase
+          .from('workflow_checklist_templates')
+          .select('stage_id, item_id, item_text, sort_order')
+          .eq('workflow_id', branchId),
+        supabase
+          .from('asset_checklist_items')
+          .select('asset_id, stage_id, item_id, status, completed')
+          .eq('workflow_id', branchId),
+      ])
+
+      const templates = [...((tmpl.data ?? []) as any[])].sort((a, b) =>
+        (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+        String(a.item_id ?? '').localeCompare(String(b.item_id ?? '')))
+
+      const satisfied = new Map<string, Set<string>>()
+      for (const r of ((rows.data ?? []) as any[])) {
+        if (!(r.completed || r.status === 'completed' || r.status === 'na')) continue
+        const set = satisfied.get(r.asset_id) ?? new Set<string>()
+        set.add(`${r.stage_id ?? ''}|${r.item_id ?? ''}`)
+        satisfied.set(r.asset_id, set)
+      }
+
+      return { templates, satisfied, total: templates.length }
+    },
+  })
+
+  /** Per asset: how many are done, and which requirement comes next. */
+  const progressFor = useCallback((assetId: string) => {
+    const st = requirementState
+    if (!st || st.total === 0) return null
+    const done = st.satisfied.get(assetId) ?? new Set<string>()
+    const next = st.templates.find(t => !done.has(`${t.stage_id ?? ''}|${t.item_id ?? ''}`)) ?? null
+    return {
+      done: done.size,
+      total: st.total,
+      /* Identifiers, so the deep link survives a definition edit. */
+      nextStageId: next?.stage_id ?? null,
+      nextItemId: next?.item_id ?? null,
+      nextText: (next?.item_text as string | null) ?? null,
+    }
+  }, [requirementState])
+
   const finalStageKey = useMemo(() => {
     if (workflowStages.length === 0) return null
     const sorted = [...workflowStages].sort((a, b) => b.sort_order - a.sort_order)
@@ -164,14 +225,41 @@ export function AssetRunDetailPanel({
     else { setSortKey(null); setSortDir(null) }
   }, [sortKey, sortDir])
 
-  const handleAssetClick = useCallback((record: any) => {
+  /**
+   * Open the asset's own workspace at this cycle — and, when asked, at
+   * one specific requirement.
+   *
+   * `data.data` is the tab payload the Asset page reads through
+   * `destinationFromTabData`. Identifiers only: `stage_id` and `item_id`
+   * are what the workspace's rail matches on, and a label or a row index
+   * would resolve to the wrong requirement the first time this Process
+   * definition is reordered.
+   *
+   * `_navTs` makes each click a NEW arrival. Without it the Asset page
+   * treats a repeat click as the one it already honoured and ignores it,
+   * so going back to the dashboard and opening a different requirement on
+   * the same asset would land on the first one.
+   */
+  const handleAssetClick = useCallback((
+    record: any,
+    target?: { stageId: string | null; itemId: string | null },
+  ) => {
     const asset = record.asset as any
     if (!asset?.id || !onNavigate) return
     onNavigate({
       id: asset.id,
       title: asset.symbol || asset.company_name || 'Asset',
       type: 'asset',
-      data: { ...asset, data: { workflowId: branchId } },
+      data: {
+        ...asset,
+        focus: 'work',
+        focusRequestId: `run-${branchId}-${target?.itemId ?? 'any'}-${Date.now()}`,
+        data: {
+          workflowId: branchId,
+          stageId: target?.stageId ?? null,
+          requirementId: target?.itemId ?? null,
+        },
+      },
     })
   }, [onNavigate, branchId])
 
@@ -279,6 +367,12 @@ export function AssetRunDetailPanel({
                   <th className={thClass} onClick={() => handleSort('status')}>
                     <span className="inline-flex items-center gap-1">Status <SortIcon col="status" /></span>
                   </th>
+                  <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Requirements
+                  </th>
+                  <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Next requirement
+                  </th>
                   <th className="w-32"></th>
                 </tr>
               </thead>
@@ -286,6 +380,7 @@ export function AssetRunDetailPanel({
                 {sortedAssets.map((record: any) => {
                   const asset = record.asset as any
                   const stage = stageMap.get(record.current_stage_key)
+                  const prog = progressFor(record.asset_id)
                   return (
                     <tr
                       key={record.id}
@@ -307,6 +402,45 @@ export function AssetRunDetailPanel({
                         <span className={`text-xs ${record.is_started ? 'text-blue-600' : 'text-gray-400'}`}>
                           {isRunEnded ? 'Not Completed' : (record.is_started ? 'In Progress' : 'Pending')}
                         </span>
+                      </td>
+                      <td className="py-2.5 px-4" data-testid={`run-progress-${record.asset_id}`}>
+                        {prog ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">
+                              {prog.done} / {prog.total}
+                            </span>
+                            <span className="h-1 w-12 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                              <span
+                                className="block h-full rounded-full bg-blue-500"
+                                style={{ width: `${prog.total ? Math.round((prog.done / prog.total) * 100) : 0}%` }}
+                              />
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-4">
+                        {/* The deep link. Opens the asset's workspace at
+                            this cycle, stage and requirement — the same
+                            rows this row is counting. */}
+                        {prog?.nextItemId ? (
+                          <button
+                            type="button"
+                            data-testid={`run-next-${record.asset_id}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleAssetClick(record, { stageId: prog.nextStageId, itemId: prog.nextItemId })
+                            }}
+                            className="max-w-[220px] truncate text-left text-xs font-medium text-blue-600 hover:underline"
+                          >
+                            {prog.nextText || 'Open next requirement'}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-400">
+                            {prog ? 'All requirements done' : '—'}
+                          </span>
+                        )}
                       </td>
                       <td className="py-2.5 px-4 text-right">
                         {!isRunEnded && (

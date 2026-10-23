@@ -149,15 +149,25 @@ describe('first entry prefers genuinely actionable work', () => {
     conversations: [{ id: 'c1', title: 'Apple AI' }],
   })
 
-  it('opens on the item that needs the reader', () => {
-    const { selected } = resolveSelection(items(), null)
-    expect(selected?.id).toBe('idea-2')
-    expect(selected?.group).toBe('needs-you')
+  /*
+   * These asserted an auto-selection on first entry. Work now opens on
+   * its overview instead, so what survives is the RANKING these two were
+   * really about — which item leads, and in which group — read from the
+   * groups rather than from a selection nobody made.
+   */
+  it('ranks the item that needs the reader first', () => {
+    const needsYou = itemsInGroup(items(), 'needs-you')
+    expect(needsYou[0]?.id).toBe('idea-2')
   })
 
-  it('falls back to work in progress when nothing needs them', () => {
+  it('leaves work in progress as the next group down', () => {
     const list = buildWorkItems({ ...EMPTY, ideas: [idea()], processes: [process()] })
-    expect(resolveSelection(list, null).selected?.group).toBe('in-progress')
+    expect(itemsInGroup(list, 'needs-you')).toHaveLength(0)
+    expect(itemsInGroup(list, 'in-progress').length).toBeGreaterThan(0)
+  })
+
+  it('opens on the overview, not on the most actionable item', () => {
+    expect(resolveSelection(items(), null).selected).toBeNull()
   })
 
   it('opens on nothing at all when there is nothing to open', () => {
@@ -228,19 +238,34 @@ describe('within "in progress", the process leads', () => {
     expect(inProgress.map(i => i.kind)).toEqual(['process', 'idea'])
   })
 
-  it('opens on the process, not on the blocked idea', () => {
+  /*
+   * ── These two used to assert an auto-selection ───────────────────────
+   *
+   * `resolveSelection(list, null)` once picked the first actionable item,
+   * so Work always opened ON something. That made the Work overview
+   * unreachable: any asset with work had an item selected the instant it
+   * opened, and the landing page could only be seen on an asset that had
+   * nothing to land on.
+   *
+   * Opening a piece of work is now the reader's act. What these tests
+   * protect — the ORDER the groups are listed in — is unchanged and is
+   * still asserted, because the overview and the navigator both read it.
+   */
+  it('lists the process ahead of the blocked idea, and opens on neither', () => {
     const list = buildWorkItems({
       ...EMPTY, ideas: [idea()], awaitingOthers: [request()], processes: [process()],
     })
-    expect(resolveSelection(list, null).selected?.kind).toBe('process')
+    expect(itemsInGroup(list, 'in-progress').map(i => i.kind)).toEqual(['process', 'idea'])
+    expect(resolveSelection(list, null).selected).toBeNull()
   })
 
-  it('still opens on the reader\'s own decision before either', () => {
+  it('still ranks the reader\'s own decision into "needs you"', () => {
     const list = buildWorkItems({
       ...EMPTY, ideas: [idea()], needsYourAction: [request()], processes: [process()],
     })
-    const { selected } = resolveSelection(list, null)
-    expect(selected?.kind).toBe('idea')
-    expect(selected?.group).toBe('needs-you')
+    const needsYou = itemsInGroup(list, 'needs-you')
+    expect(needsYou[0]?.kind).toBe('idea')
+    /* Still not auto-opened: even the most actionable item is a choice. */
+    expect(resolveSelection(list, null).selected).toBeNull()
   })
 })
