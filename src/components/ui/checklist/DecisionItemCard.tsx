@@ -603,7 +603,12 @@ export function DecisionItemCard({
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
                   !isEditable ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800'
                   : primary === 'complete'
-                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    /* Outlined, not filled. A solid green button was the
+                       loudest thing on the workspace, which put recording
+                       the work above doing it. Still the first control in
+                       the row and still named — moved down the hierarchy,
+                       not hidden. */
+                    ? 'border border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
                 }`}
               >

@@ -215,13 +215,26 @@ export function StageOverview({
         )}
       </div>
 
-      {/* ── What finishing looks like ───────────────────────────────── */}
-      <div className="py-3">
-        <span className={clsx(EYEBROW, 'mb-1.5 block')}>What this stage establishes</span>
-        <p className="max-w-[78ch] text-[12px] leading-relaxed text-gray-500 dark:text-gray-400" data-testid="stage-synthesis">
-          {synthesisNote(tally)}
-        </p>
-      </div>
+      {/*
+        ── What finishing looks like ─────────────────────────────────
+        Shown only when it says something the list above does not.
+
+        On an untouched stage both blocks reduced to the same sentence —
+        "Nothing has been written against this stage's requirements yet"
+        followed by "None of the 5 open requirements has an assessment
+        written yet" — which read as two findings rather than one fact
+        stated twice. The note earns its place when there ARE findings
+        (it quantifies how far they go) or when the stage is finished
+        (it separates ticked from argued, which the list cannot).
+      */}
+      {(findings.length > 0 || tally.finished) && (
+        <div className="py-3">
+          <span className={clsx(EYEBROW, 'mb-1.5 block')}>What this stage establishes</span>
+          <p className="max-w-[78ch] text-[12px] leading-relaxed text-gray-500 dark:text-gray-400" data-testid="stage-synthesis">
+            {synthesisNote(tally)}
+          </p>
+        </div>
+      )}
     </section>
   )
 }

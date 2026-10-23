@@ -4916,6 +4916,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   currentPriority={workflowPriorityState}
                   onPriorityChange={handleWorkflowPriorityChange}
                   headerSlot={processHeader}
+                  /* Opening a previous cycle from the prior-work panel is
+                     the same process switch the sidebar performs. */
+                  onOpenRun={handleWorkflowChange}
                 />
               )}
             </div>

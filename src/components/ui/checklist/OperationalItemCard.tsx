@@ -305,9 +305,16 @@ export function OperationalItemCard({
 
   return (
     <div className={detail
-      /* One frame around the whole workbench. The body used to carry it,
-         which drew a box around the sections and left the title outside. */
-      ? `flex min-h-0 flex-col rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 ${!isEditable ? 'opacity-75' : ''}`
+      /*
+        No frame of its own in the detail layout.
+
+        The workspace around this already heads the region "Your
+        assessment" and rules it off, so a card border here produced a
+        bordered box inside a bordered section — and the writing area a
+        third border inside that. Three nested frames for one piece of
+        text. The workspace owns the framing; this owns the content.
+      */
+      ? `flex min-h-0 flex-col ${!isEditable ? 'opacity-75' : ''}`
       : `rounded-lg border transition-all ${
           isExpanded ? 'border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800' : 'border-gray-100 hover:border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-800'
         } ${!isEditable ? 'opacity-75' : ''}`}>
@@ -387,7 +394,10 @@ export function OperationalItemCard({
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
                   !isEditable ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800'
                   : primary === 'complete'
-                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    /* Outlined for the same reason as the decision card:
+                       in the workspace, completing is the record of the
+                       work and must not outrank the work. */
+                    ? 'border border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
                 }`}
               >
@@ -639,7 +649,19 @@ export function OperationalItemCard({
               <button
                 onClick={openNotesEditor}
                 data-testid="requirement-notes-empty"
-                className="w-full max-w-[78ch] rounded border border-dashed border-gray-200 px-3 py-2.5 text-left text-[12px] text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-500 dark:border-gray-700"
+                /*
+                  Sized like the writing it invites, not like a form field.
+
+                  A one-line dashed strip read as a minor optional field,
+                  and "Read/Summarize News" is not a field — it is the
+                  place a summary gets written. In the detail layout this
+                  opens to a 10-row editor, so the resting state claims
+                  roughly that much room and stops the work area looking
+                  like the smallest thing on the screen.
+                */
+                className={detail
+                  ? 'w-full max-w-[78ch] rounded-md border border-dashed border-gray-300 px-3.5 py-6 text-left text-[13px] leading-relaxed text-gray-400 transition-colors hover:border-gray-400 hover:bg-gray-50 hover:text-gray-500 dark:border-gray-700 dark:hover:bg-gray-900'
+                  : 'w-full max-w-[78ch] rounded border border-dashed border-gray-200 px-3 py-2.5 text-left text-[12px] text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-500 dark:border-gray-700'}
               >
                 Nothing documented yet — write what you found here.
               </button>

@@ -16,6 +16,7 @@ import { RequirementsNavigator } from '../workflow/RequirementsNavigator'
 import { StageRail, type StageRailItem } from '../workflow/StageRail'
 import { RequirementWorkspace } from '../asset/work/RequirementWorkspace'
 import { StageOverview } from '../asset/work/StageOverview'
+import { PriorWorkPanel } from '../asset/work/PriorWorkPanel'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useToastOptional } from '../common/toast-context'
@@ -99,6 +100,14 @@ interface InvestmentTimelineProps {
   workflowId?: string
   currentPriority?: string // kept for backward compatibility but not used
   onPriorityChange?: (priority: string) => void // kept for backward compatibility but not used
+  /**
+   * Switches the workspace to another run of this Process.
+   *
+   * Passed through to the prior-work panel so "open that cycle" stays
+   * inside the asset, using the page's existing process switch rather than
+   * a second navigation.
+   */
+  onOpenRun?: (workflowId: string) => void
   /**
    * The Process's own identity and actions — selector, Mark Complete, the
    * overflow menu — placed on the rail's row instead of a band above it.
@@ -213,7 +222,8 @@ export function InvestmentTimeline({
   workflowId,
   currentPriority = 'none',
   onPriorityChange,
-  headerSlot
+  headerSlot,
+  onOpenRun
 }: InvestmentTimelineProps) {
   const { user } = useAuth()
   const toast = useToastOptional()
@@ -2060,20 +2070,46 @@ export function InvestmentTimeline({
                               }))
                               /* Newest first, one per requirement: the
                                  overview quotes the latest, and the rest are
-                                 on the requirement where they were written. */
+                                 on the requirement where they were written.
+
+                                 BOTH stores, not just commentary. A thinking
+                                 requirement's work lands in
+                                 `checklist_item_comments`; an operational
+                                 one's lands in `asset_checklist_items.notes`.
+                                 Reading only the first made the overview
+                                 contradict itself — the row said
+                                 "Documented" from `hasNotes` while the list
+                                 beneath it said nothing had been written.
+                                 Seen on AAPL / Expectations after saving a
+                                 summary against "Read/Summarize News".
+
+                                 A note carries no author or timestamp of its
+                                 own, so those stay null rather than being
+                                 borrowed from the row's completion fields,
+                                 which record a different act. */
                               const findings = items.flatMap(i => {
                                 const rows = i.dbId ? commentaryFor.get(i.dbId) ?? [] : []
                                 const latest = rows[rows.length - 1]
-                                if (!latest?.comment_text) return []
-                                const u: any = Array.isArray(latest.user) ? latest.user[0] : latest.user
+                                if (latest?.comment_text) {
+                                  const u: any = Array.isArray(latest.user) ? latest.user[0] : latest.user
+                                  return [{
+                                    requirementId: i.id,
+                                    requirementText: i.text,
+                                    text: latest.comment_text,
+                                    authorName: u ? chUserName(u) : null,
+                                    when: latest.created_at
+                                      ? new Date(latest.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                                      : null,
+                                  }]
+                                }
+                                const notes = i.notes?.trim()
+                                if (!notes) return []
                                 return [{
                                   requirementId: i.id,
                                   requirementText: i.text,
-                                  text: latest.comment_text,
-                                  authorName: u ? chUserName(u) : null,
-                                  when: latest.created_at
-                                    ? new Date(latest.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                                    : null,
+                                  text: notes,
+                                  authorName: null,
+                                  when: null,
                                 }]
                               })
                               return (
@@ -2152,6 +2188,17 @@ export function InvestmentTimeline({
                                 onBack={() => setSelectedRequirement(null)}
                                 next={nextItem ? { id: nextItem.id, text: nextItem.text } : null}
                                 onOpenNext={(id) => setSelectedRequirement(id)}
+                                /* What an earlier cycle wrote against the
+                                   same requirement. Read-only, matched on
+                                   the requirement's own label. */
+                                priorWorkSlot={workflowId ? (
+                                  <PriorWorkPanel
+                                    assetId={assetId}
+                                    workflowId={workflowId}
+                                    requirementText={selected.text}
+                                    onOpenRun={onOpenRun}
+                                  />
+                                ) : undefined}
                               >
                                 {card}
                               </RequirementWorkspace>

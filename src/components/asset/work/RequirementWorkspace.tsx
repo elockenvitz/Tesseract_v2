@@ -66,6 +66,12 @@ interface Props {
   onOpenNext?: (id: string) => void
   /** The existing item card: work product, completion, attribution. */
   children: React.ReactNode
+  /**
+   * What an earlier cycle of this Process recorded against this same
+   * requirement. A slot, so the workspace stays free of the matching rules
+   * and of a second read path.
+   */
+  priorWorkSlot?: React.ReactNode
   className?: string
 }
 
@@ -228,7 +234,7 @@ function PerformanceBlock({
 }
 
 function Evidence({
-  facets, assetId, symbol, period, onPeriodChange,
+  facets, assetId, symbol, period, onPeriodChange, stacked = false,
 }: {
   facets: EvidenceFacet[]
   assetId: string
@@ -236,6 +242,8 @@ function Evidence({
   /** Non-null only where the requirement's subject is performance. */
   period: PeriodKey | null
   onPeriodChange: (p: PeriodKey) => void
+  /** True in the narrow margin, where a grid of these cells breaks up. */
+  stacked?: boolean
 }) {
   /*
    * ── Always the deep window, and never a conditional one ─────────────
@@ -259,7 +267,10 @@ function Evidence({
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="requirement-evidence-loading">
+      <div
+        className={clsx('grid gap-3', stacked ? 'grid-cols-1' : 'grid-cols-2 lg:grid-cols-4')}
+        data-testid="requirement-evidence-loading"
+      >
         {[0, 1, 2, 3].map(i => (
           <div key={i} className="h-[52px] animate-pulse rounded-md bg-gray-100 dark:bg-gray-800" />
         ))}
@@ -359,10 +370,20 @@ function Evidence({
           onPeriodChange={onPeriodChange}
         />
       )}
+      {/*
+        One column in the margin, four across the page.
+
+        These cells carry a figure and a provenance line — "22,363 sh ·
+        $3,948,188 · book as of Apr 13, 2026" — which in a 320px column
+        split across four lines and read as broken rather than dense. The
+        margin stacks them; the full-width layout keeps the grid.
+      */}
       <div
         className={clsx(
           'grid gap-x-5 gap-y-3',
-          period ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-2 lg:grid-cols-4',
+          stacked
+            ? 'grid-cols-1'
+            : period ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-2 lg:grid-cols-4',
           period && 'border-t border-gray-100 pt-3 dark:border-gray-800',
         )}
       >
@@ -380,7 +401,7 @@ function Evidence({
 
 export function RequirementWorkspace({
   assetId, symbol, requirementText, stageLabel, stageDescription,
-  index, total, doneCount, onBack, next, onOpenNext, children, className,
+  index, total, doneCount, onBack, next, onOpenNext, children, priorWorkSlot, className,
 }: Props) {
   const guidance = guidanceFor({ text: requirementText, stageDescription })
   /*
@@ -438,44 +459,79 @@ export function RequirementWorkspace({
         )}
       </header>
 
-      {/* ── What is already known ───────────────────────────────────── */}
-      <div className="border-b border-gray-200 py-3 dark:border-gray-700">
-        <span className={clsx(EYEBROW, 'mb-2 block')}>What you already know</span>
-        <Evidence
-          facets={guidance.facets}
-          assetId={assetId}
-          symbol={symbol}
-          period={period}
-          onPeriodChange={setPeriod}
-        />
-      </div>
-
       {/*
-        ── What to establish ───────────────────────────────────────────
-        Omitted entirely when the wording matched no topic. A heading with
-        generic questions under it would read as the firm's guidance.
-      */}
-      {guidance.questions.length > 0 && (
-        <div className="border-b border-gray-200 py-3 dark:border-gray-700" data-testid="requirement-questions">
-          <span className={clsx(EYEBROW, 'mb-2 block')}>What to establish</span>
-          <ul className="space-y-1">
-            {guidance.questions.map(q => (
-              <li key={q} className="flex gap-2 text-[13px] leading-relaxed text-gray-700 dark:text-gray-200">
-                <span className="select-none text-gray-300 dark:text-gray-600">·</span>
-                <span>{q}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
-            Standard questions for a {guidance.topic!.toLowerCase()} requirement — not a reading of this asset.
-          </p>
-        </div>
-      )}
+        ── The analyst's work is the page; context is the margin ─────────
 
-      {/* ── The work itself: the existing card, unchanged ───────────── */}
-      <div className="py-3" data-testid="requirement-work">
-        <span className={clsx(EYEBROW, 'mb-2 block')}>Your work</span>
-        {children}
+        It used to be the other way round: evidence, then questions, then a
+        heading, and the writing surface last — below the fold on a 945px
+        viewport, reached by scrolling past four facts the reader had
+        already read. The most prominent control on the screen was "Mark
+        complete", which is the record of the work rather than the work.
+
+        So the work takes the wide column and the top of it, and everything
+        that INFORMS the work sits beside it in a 320px margin, in the
+        order it is consulted: what the firm already knows, what last cycle
+        concluded, and the standard questions for this kind of requirement.
+
+        Below `xl` the margin falls underneath rather than squeezing the
+        writing measure, which is the one thing here that must stay
+        readable.
+      */}
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 py-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0" data-testid="requirement-work">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3">
+            <span className={EYEBROW}>Your assessment</span>
+            {/* Saving and completing are different acts, and the surface
+                says so before the reader finds out by pressing one. */}
+            <span className="text-[11px] text-gray-400 dark:text-gray-500">
+              saving keeps your work; completing records that it is done
+            </span>
+          </div>
+          {children}
+        </div>
+
+        <aside className="min-w-0 space-y-4 xl:border-l xl:border-gray-200 xl:pl-6 xl:dark:border-gray-700">
+          <div>
+            <span className={clsx(EYEBROW, 'mb-2 block')}>What you already know</span>
+            <Evidence
+              facets={guidance.facets}
+              assetId={assetId}
+              symbol={symbol}
+              period={period}
+              onPeriodChange={setPeriod}
+              stacked
+            />
+          </div>
+
+          {priorWorkSlot && (
+            <div data-testid="requirement-prior-work">
+              <span className={clsx(EYEBROW, 'mb-2 block')}>Last time we ran this</span>
+              {priorWorkSlot}
+            </div>
+          )}
+
+          {/*
+            Omitted entirely when the wording matched no topic. A heading
+            with generic questions under it would read as the firm's
+            guidance.
+          */}
+          {guidance.questions.length > 0 && (
+            <div data-testid="requirement-questions">
+              <span className={clsx(EYEBROW, 'mb-2 block')}>What to establish</span>
+              <ul className="space-y-1">
+                {guidance.questions.map(q => (
+                  <li key={q} className="flex gap-2 text-[12px] leading-relaxed text-gray-700 dark:text-gray-200">
+                    <span className="select-none text-gray-300 dark:text-gray-600">·</span>
+                    <span>{q}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
+                Standard questions for a {guidance.topic!.toLowerCase()} requirement — not a reading of this asset.
+              </p>
+            </div>
+          )}
+        </aside>
       </div>
 
       {/* ── Where to go next ────────────────────────────────────────── */}

@@ -272,6 +272,39 @@ describe('unsent text is not discarded when the requirement changes', () => {
   })
 })
 
+describe('the stage overview reads every store work can land in', () => {
+  it('falls back to the notes column when a requirement has no commentary', () => {
+    /*
+     * The overview contradicted itself: a requirement whose work was
+     * saved as NOTES showed "Documented" in the list — `facts.hasNotes`
+     * sees that column — while "Findings so far" beneath it said nothing
+     * had been written, because the findings builder read only
+     * `checklist_item_comments`. Seen on AAPL / Expectations after
+     * saving a summary against "Read/Summarize News", which is an
+     * operational requirement and so writes to notes.
+     *
+     * Both halves of the fix are pinned: the fallback exists, and the
+     * status flag it has to agree with is still read from the same
+     * column.
+     */
+    const at = TL.indexOf('const findings = items.flatMap')
+    expect(at).toBeGreaterThan(-1)
+    const builder = TL.slice(at, at + 1400)
+    expect(builder).toMatch(/const notes = i\.notes\?\.trim\(\)/)
+    expect(builder).toMatch(/text: notes/)
+    /* A note has no author row of its own; borrowing one would attribute
+       the text to whoever completed or was assigned the requirement. */
+    expect(builder).toMatch(/authorName: null/)
+    expect(TL).toMatch(/hasNotes: !!i\.notes\?\.trim\(\)/)
+  })
+
+  it('drops the synthesis line when it would restate the empty findings line', () => {
+    /* Two paragraphs saying "nothing written yet" read as two findings. */
+    const SO = strip(read('src/components/asset/work/StageOverview.tsx'))
+    expect(SO).toMatch(/\{\(findings\.length > 0 \|\| tally\.finished\) && \(/)
+  })
+})
+
 describe('the Asset tab remembers which requirement was open', () => {
   it('restores it, passes it down and saves it back', () => {
     expect(TAB).toMatch(/viewingRequirementId/)

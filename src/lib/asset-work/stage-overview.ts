@@ -192,7 +192,16 @@ export function stageObjective(stage: { label?: string | null; description?: str
 export interface StageTally {
   total: number
   complete: number
+  /** Open requirements that already carry written work. */
   documented: number
+  /**
+   * SATISFIED requirements that carry written work — the ones that were
+   * argued rather than only ticked. Counted separately from `documented`
+   * because a finished stage has no open requirements left, and a single
+   * count would have reported a fully ticked, entirely unwritten stage as
+   * though the analysis were done.
+   */
+  argued: number
   open: number
   /** True when every requirement is satisfied — nothing left to resume. */
   finished: boolean
@@ -206,30 +215,46 @@ export function tallyStage(facts: readonly RequirementFacts[]): StageTally {
     total,
     complete,
     documented: facts.filter(f => !isSatisfied(statusOf(f)) && hasWorkProduct(f)).length,
+    argued: facts.filter(f => isSatisfied(statusOf(f)) && hasWorkProduct(f)).length,
     open,
     finished: total > 0 && open === 0,
   }
 }
 
 /**
- * What to say about the stage's conclusion.
+ * How far this stage's argument has actually been written.
  *
- * There is no stage-level work product in this schema — no column, no table,
- * nothing that a stage conclusion could be written to. So this states that
- * plainly and points at where findings DO live, rather than quietly
- * repurposing a requirement's commentary as the stage's summary, which would
- * put one analyst's note under a heading implying the firm's view.
+ * ── What this used to say, and why it no longer says it ─────────────────
+ *
+ * This explained the schema: "a stage conclusion is not stored separately",
+ * "recorded on the requirements themselves". True, and no business of the
+ * analyst's — it answered a question about tables for a reader asking a
+ * question about an investment. Where the stage's reasoning lives is the
+ * surface's problem, not something to narrate.
+ *
+ * So this now reports only the substance: how much of the stage is argued
+ * rather than merely ticked. It still never synthesises — a stage summary
+ * assembled from requirement commentary would put one analyst's note under
+ * a heading implying the firm's view.
  */
 export function synthesisNote(t: StageTally): string {
   if (t.total === 0) return 'This stage has no requirements yet.'
   if (t.finished) {
-    return `Every requirement is satisfied. ${t.complete === 1 ? 'Its finding is' : 'Their findings are'} recorded on the requirements themselves — this stage has no separate conclusion of its own.`
+    /* Satisfied is not the same as argued: a stage can be fully ticked with
+       nothing written down, and saying "every requirement is satisfied"
+       alone would let that pass as finished analysis. */
+    if (t.argued === 0) {
+      return `Every requirement is ticked, but ${t.complete === 1 ? 'it carries' : 'none carries'} a written assessment.`
+    }
+    if (t.argued === t.complete) {
+      return `Every requirement is satisfied, each with a written assessment.`
+    }
+    return `Every requirement is satisfied; ${t.argued} of ${t.complete} ${t.argued === 1 ? 'carries' : 'carry'} a written assessment.`
   }
   /* "None carries a written finding" read as a claim about the whole stage
      when a completed requirement's finding was displayed directly above it.
      Both branches now say which requirements they are counting. */
-  const documented = t.documented === 0
-    ? `None of the ${t.open} open ${t.open === 1 ? 'requirement carries' : 'requirements carries'} a written finding yet`
-    : `${t.documented} of ${t.open} open ${t.documented === 1 ? 'carries' : 'carry'} a written finding`
-  return `${documented}. A stage conclusion is not stored separately: what this stage establishes is the set of findings on its requirements.`
+  return t.documented === 0
+    ? `None of the ${t.open} open ${t.open === 1 ? 'requirement has' : 'requirements has'} an assessment written yet.`
+    : `${t.documented} of ${t.open} open ${t.documented === 1 ? 'has' : 'have'} an assessment written.`
 }

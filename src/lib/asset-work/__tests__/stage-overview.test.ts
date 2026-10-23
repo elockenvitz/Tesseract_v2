@@ -170,9 +170,12 @@ describe('the tally and the synthesis note', () => {
     req({ id: '3' }),
   ]
 
-  it('counts satisfied, documented and open', () => {
+  it('counts satisfied, documented, argued and open', () => {
     expect(tallyStage(stage)).toEqual({
-      total: 3, complete: 1, documented: 1, open: 2, finished: false,
+      /* `argued` is 0 here on purpose: the one satisfied requirement was
+         ticked without commentary, which is exactly the state the note
+         must not report as finished analysis. */
+      total: 3, complete: 1, documented: 1, argued: 0, open: 2, finished: false,
     })
   })
 
@@ -180,11 +183,17 @@ describe('the tally and the synthesis note', () => {
     expect(tallyStage([req({ id: '1', status: 'na' })]).finished).toBe(true)
   })
 
-  it('states that a stage conclusion has nowhere to live', () => {
-    /* The honest half: no column, no table, so the note must not imply a
-       synthesis field exists somewhere off screen. */
-    expect(synthesisNote(tallyStage(stage))).toMatch(/not stored separately/)
-    expect(synthesisNote(tallyStage(stage))).toMatch(/1 of 2 open carries a written finding/)
+  it('reports progress in substance, not where the text is stored', () => {
+    /*
+     * This used to assert the note said "not stored separately" — a true
+     * statement about the schema that answered a question nobody working
+     * the stage was asking. The note now reports only how much of the
+     * stage has been argued, and must not drift back into describing
+     * columns, tables or where findings "live".
+     */
+    const note = synthesisNote(tallyStage(stage))
+    expect(note).toMatch(/1 of 2 open has an assessment written/)
+    expect(note).not.toMatch(/stored|column|table|separately|on the requirements themselves/i)
   })
 
   it('says which requirements it is counting, in both branches', () => {
@@ -195,18 +204,39 @@ describe('the tally and the synthesis note', () => {
      * set they are counting.
      */
     const note = synthesisNote(tallyStage([req({ id: '1' }), req({ id: '2' })]))
-    expect(note).toMatch(/None of the 2 open requirements carries a written finding yet/)
+    expect(note).toMatch(/None of the 2 open requirements has an assessment written yet/)
     const one = synthesisNote(tallyStage([
       req({ id: '1', status: 'completed', completed: true, hasCommentary: true }),
       req({ id: '2' }),
     ]))
-    expect(one).toMatch(/None of the 1 open requirement carries a written finding yet/)
+    expect(one).toMatch(/None of the 1 open requirement has an assessment written yet/)
   })
 
-  it('changes what it says once the stage is finished', () => {
-    const note = synthesisNote(tallyStage([req({ id: '1', status: 'completed', completed: true })]))
-    expect(note).toMatch(/Every requirement is satisfied/)
-    expect(note).toMatch(/no separate conclusion of its own/)
+  it('does not let a fully ticked, entirely unwritten stage read as finished analysis', () => {
+    /*
+     * The regression this guards: `documented` counts only OPEN
+     * requirements, so a finished stage scores zero on it by definition.
+     * A note keyed on `documented` alone therefore said the same thing
+     * whether every requirement had been argued or none had.
+     */
+    const ticked = tallyStage([
+      req({ id: '1', status: 'completed', completed: true }),
+      req({ id: '2', status: 'completed', completed: true }),
+    ])
+    expect(ticked.argued).toBe(0)
+    expect(synthesisNote(ticked)).toMatch(/ticked, but none carries a written assessment/)
+
+    const argued = tallyStage([
+      req({ id: '1', status: 'completed', completed: true, hasCommentary: true }),
+      req({ id: '2', status: 'completed', completed: true, hasCommentary: true }),
+    ])
+    expect(synthesisNote(argued)).toMatch(/each with a written assessment/)
+
+    const partial = tallyStage([
+      req({ id: '1', status: 'completed', completed: true, hasCommentary: true }),
+      req({ id: '2', status: 'completed', completed: true }),
+    ])
+    expect(synthesisNote(partial)).toMatch(/1 of 2 carries a written assessment/)
   })
 
   it('says so for a stage with no requirements', () => {
