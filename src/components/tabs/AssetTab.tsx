@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3 } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, Activity, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3, GitBranch } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   buildAudienceOptions,
@@ -89,7 +89,11 @@ import {
   /* Aliased: `workItemKey` is also the name of this component's selection
      state, and the two must not shadow each other. */
   workItemKey as workItemKeyFor,
+  splitRunName,
 } from '../../lib/asset-work/work-items'
+import { WorkActionsMenu } from '../asset/work/WorkActionsMenu'
+import { ProcessHistory } from '../asset/work/ProcessHistory'
+import { ProcessDocuments } from '../asset/work/ProcessDocuments'
 import {
   contextualKey, contextualSelection, backTarget,
 } from '../../lib/asset-work/contextual-destination'
@@ -3076,16 +3080,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
      */
     setWorkItemKey(workItemKeyFor.process(workflowId))
 
-    // Clear the viewing stage initially to prevent showing stale information from previous workflow
-    setViewingStageId(null)
     /*
-     * And the requirement with it. A requirement id belongs to one run's
-     * checklist; carrying it across a switch points the workbench — and
-     * therefore completion and assignment — at an item the displayed process
-     * does not contain. The new run's stage selection below decides what
-     * opens instead.
+     * ── Returning is not switching ──────────────────────────────────────
+     *
+     * Clearing the stage and the requirement is right when the run CHANGES:
+     * a requirement id belongs to one run's checklist, and carrying it
+     * across points completion and assignment at an item the displayed
+     * process does not contain.
+     *
+     * It is wrong when the id is the one already open. This handler runs
+     * for every selection of a process row, including re-selecting the one
+     * you were on — so opening an idea and clicking back on Earnings Season
+     * threw away the requirement you had open and landed you on the stage
+     * overview. The reader had not switched anything; they had come back.
      */
-    setViewingRequirementId(null)
+    const isSameProcess = workflowId === effectiveWorkflowId
+    if (!isSameProcess) {
+      setViewingStageId(null)
+      setViewingRequirementId(null)
+    }
 
     try {
       // Get the first stage of the new workflow and check if there's an existing workflow progress
@@ -3115,10 +3128,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       setStage(effectiveCurrentStage)
 
-      // Auto-select the appropriate stage to show what needs to be done
-      setTimeout(() => {
-        setViewingStageId(effectiveCurrentStage)
-      }, 100)
+      // Auto-select the appropriate stage to show what needs to be done —
+      // but never over a stage the reader is already on in the same run.
+      if (!isSameProcess) {
+        setTimeout(() => {
+          setViewingStageId(effectiveCurrentStage)
+        }, 100)
+      }
 
       // Persist to DB — only invalidate after the write lands
       updateAssetMutation.mutate({ workflow_id: workflowId }, {
@@ -4692,89 +4708,114 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               Files views, which replace the rail entirely: the way back
               must not live inside the thing it is replacing.
             */
+            /*
+              ── Identity, not a second selector ─────────────────────────
+
+              The header opened with a dropdown listing the reader's
+              processes — the same list the sidebar to its left already
+              shows, permanently, with run dates and stage labels. Two
+              selectors for one choice, and no obvious answer to "where do I
+              switch process".
+
+              The sidebar is the answer. The header now STATES which process
+              is open, which run, and its status; switching and joining live
+              on one labelled menu, which also carries the view switches that
+              were two unlabelled icons.
+            */
+            const currentRun = allAssetWorkflows?.find(aw => aw.workflow_id === effectiveWorkflowId)
+            /* The joined workflow row, named rather than cast loose. */
+            const runRow = currentRun?.workflows as
+              { name?: string | null; branch_suffix?: string | null } | undefined
+            const runName = runRow?.name ?? undefined
+            const runSuffix = runRow?.branch_suffix ?? undefined
+            const identity = splitRunName(runName ?? selectedWorkItem?.label ?? 'Process')
             const processHeader = (
-              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-                    {/* The way back to navigation, on the row the Process
-                        identity already occupies rather than a reserved one
-                        above it. Only while the sidebar is away. */}
-                    {workSidebarCollapsed && (
-                      <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+                {/* The way back to navigation, on the row the Process
+                    identity already occupies. Only while the sidebar is away. */}
+                {workSidebarCollapsed && (
+                  <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
+                )}
+                {allWorkflowsLoading || (allWorkflowsFetching && !allAssetWorkflows) ? (
+                  <div className="flex items-center space-x-3 animate-pulse">
+                    <div className="h-6 w-44 rounded bg-gray-200 dark:bg-gray-700" />
+                  </div>
+                ) : (
+                  <>
+                    <GitBranch className="h-4 w-4 flex-none text-gray-400" aria-hidden="true" />
+                    <span
+                      className="truncate text-[14px] font-semibold text-gray-900 dark:text-gray-100"
+                      data-testid="process-identity"
+                    >
+                      {identity.process}
+                    </span>
+                    {/* The run, once. `splitRunName` leaves the suffix in the
+                        process name for formats it does not recognise, and
+                        printing the column beside it then read
+                        "Earnings Season - Q2 2026   Q2 2026". */}
+                    {(() => {
+                      const run = identity.run || runSuffix || null
+                      if (!run || identity.process.includes(run)) return null
+                      return (
+                        <span className="flex-none text-[12px] text-gray-500 dark:text-gray-400">
+                          {run}
+                        </span>
+                      )
+                    })()}
+                    {currentRun?.is_completed && (
+                      <span className="flex-none rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
+                        Complete
+                      </span>
                     )}
-                    {showTimelineView ? (
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Activity Timeline</h3>
-                    ) : allWorkflowsLoading || (allWorkflowsFetching && !allAssetWorkflows) ? (
-                      <div className="flex items-center space-x-3 animate-pulse">
-                        <div className="h-8 w-44 bg-gray-200 rounded-lg" />
-                        <div className="h-8 w-20 bg-gray-200 rounded-lg" />
-                      </div>
-                    ) : (
-                      <>
-                        <AssetWorkflowSelectorEnhanced
-                          mode="stage-tab"
-                          selectedWorkflowId={effectiveWorkflowId || null}
-                          allAssetWorkflows={allAssetWorkflows || []}
-                          availableWorkflows={availableWorkflows || []}
-                          upcomingBranches={upcomingBranches || []}
-                          onSelectWorkflow={handleWorkflowChange}
-                          onJoinWorkflow={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
-                          onRemoveWorkflow={(wfId) => removeFromWorkflowMutation.mutate(wfId)}
-                        />
-                        <WorkflowActionButton
-                          workflowId={effectiveWorkflowId || null}
-                          workflowProgress={allAssetWorkflows?.find(aw => aw.workflow_id === effectiveWorkflowId) || null}
-                          onStart={(wfId) => startWorkflowMutation.mutate(wfId)}
-                          onComplete={(wfId) => markWorkflowCompleteMutation.mutate(wfId)}
-                          onRestart={(wfId) => restartWorkflowMutation.mutate(wfId)}
-                          onRemove={(wfId) => removeFromWorkflowMutation.mutate(wfId)}
-                          size="sm"
-                        />
-                      </>
-                    )}
-                {/*
-                  Icon-only, with the name on the control rather than beside
-                  it. `title` and `aria-label` carry it for a pointer and for
-                  assistive technology; the active view is stated by the
-                  button's own fill, which is what "Stage View" as a label was
-                  doing in prose.
-                */}
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    aria-label={showTimelineView ? 'Back to stage view' : 'Activity timeline'}
-                    aria-pressed={showTimelineView}
-                    title={showTimelineView ? 'Back to stage view' : 'Activity timeline'}
-                    onClick={() => {
-                      setShowTimelineView(!showTimelineView)
-                      setShowTemplatesView(false)
-                    }}
-                    className={`rounded-lg border p-1.5 transition-colors duration-200 ${
-                      showTimelineView
-                        ? 'bg-blue-50 text-blue-700 border-blue-300'
-                        : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100 border-gray-200 hover:border-gray-300 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400'
-                    }`}
-                  >
-                    {showTimelineView
-                      ? <Activity className="w-4 h-4" />
-                      : <Clock className="w-4 h-4" />}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Process files"
-                    aria-pressed={showTemplatesView}
-                    title="Process files"
-                    onClick={() => {
-                      setShowTemplatesView(!showTemplatesView)
-                      setShowTimelineView(false)
-                    }}
-                    className={`rounded-lg border p-1.5 transition-colors duration-200 ${
-                      showTemplatesView
-                        ? 'bg-blue-50 text-blue-700 border-blue-300'
-                        : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100 border-gray-200 hover:border-gray-300 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400'
-                    }`}
-                  >
-                    <FileText className="w-4 h-4" />
-                  </button>
-                </div>
+                    {/* The one primary process action stays visible; it is
+                        what a reader comes to the header to do. */}
+                    <WorkflowActionButton
+                      workflowId={effectiveWorkflowId || null}
+                      workflowProgress={currentRun || null}
+                      onStart={(wfId) => startWorkflowMutation.mutate(wfId)}
+                      onComplete={(wfId) => markWorkflowCompleteMutation.mutate(wfId)}
+                      onRestart={(wfId) => restartWorkflowMutation.mutate(wfId)}
+                      onRemove={(wfId) => removeFromWorkflowMutation.mutate(wfId)}
+                      size="sm"
+                    />
+                    <WorkActionsMenu
+                      label="Process actions"
+                      actions={[
+                        {
+                          key: 'history',
+                          label: 'Previous runs and activity',
+                          icon: <History className="h-3.5 w-3.5" />,
+                          active: showTimelineView,
+                          onSelect: () => { setShowTimelineView(true); setShowTemplatesView(false) },
+                        },
+                        {
+                          key: 'documents',
+                          label: 'Documents',
+                          icon: <FileText className="h-3.5 w-3.5" />,
+                          active: showTemplatesView,
+                          onSelect: () => { setShowTemplatesView(true); setShowTimelineView(false) },
+                        },
+                      ]}
+                      header={
+                        <div className="min-w-0">
+                          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                            Switch or add a process
+                          </span>
+                          <AssetWorkflowSelectorEnhanced
+                            mode="stage-tab"
+                            selectedWorkflowId={effectiveWorkflowId || null}
+                            allAssetWorkflows={allAssetWorkflows || []}
+                            availableWorkflows={availableWorkflows || []}
+                            upcomingBranches={upcomingBranches || []}
+                            onSelectWorkflow={handleWorkflowChange}
+                            onJoinWorkflow={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
+                            onRemoveWorkflow={(wfId) => removeFromWorkflowMutation.mutate(wfId)}
+                          />
+                        </div>
+                      }
+                    />
+                  </>
+                )}
               </div>
             )
             return (
@@ -4784,177 +4825,66 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">{processHeader}</div>
                     {/*
-                      ── A subview says it is one, and names its way out ────
-
-                      Timeline and Files replace the stage rail entirely, and
-                      the only way back was the same icon that opened them —
-                      an unlabelled toggle whose current meaning depended on
-                      a state the reader could not see. They are subviews of
-                      a Process, so they say so and offer a named return.
-
-                      The stage and requirement selection are untouched by
-                      either: both are React state on the surface below,
-                      which is unmounted and remounted with its own
-                      `viewingStageId` / `viewingRequirementId` restored from
-                      tab state. Returning lands where you left.
+                      No generic subview bar here any more. Each subview now
+                      carries its own header — its name, what it is for, and
+                      one labelled return — so this row was a second title
+                      and a second Back, 40px above the real ones.
                     */}
-                    <div
-                      className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-2 dark:border-gray-700"
-                      data-testid="process-subview-bar"
-                    >
-                      <div className="min-w-0">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-                          Process subview
-                        </span>
-                        <p className="text-[14px] font-semibold leading-tight text-gray-900 dark:text-gray-100">
-                          {showTimelineView ? 'Activity timeline' : 'Files'}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        data-testid="process-subview-back"
-                        onClick={() => { setShowTimelineView(false); setShowTemplatesView(false) }}
-                        className="inline-flex items-center gap-1.5 rounded border border-gray-300 px-2.5 py-1 text-[12px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-                      >
-                        <ArrowLeft className="h-3.5 w-3.5" />
-                        Back to {selectedWorkItem?.label ?? 'the process'}
-                      </button>
-                    </div>
                   </div>
                 )}
 
               {showTemplatesView ? (
-                <div className="mt-6 space-y-6">
-                  {/* Workflow Templates Section */}
-                  <Card>
-                    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Process Templates</h3>
-                      <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Templates available for this process</p>
-                    </div>
-                    <div className="p-4">
-                      {templatesLoading ? (
-                        <div className="text-center py-8">
-                          <p className="text-gray-500 text-sm dark:text-gray-400">Loading templates...</p>
-                        </div>
-                      ) : workflowTemplates && workflowTemplates.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {workflowTemplates.map((template) => (
-                            <div key={template.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow dark:border-gray-700">
-                              <div className="flex items-start justify-between mb-3">
-                                <div className="flex items-center space-x-3 flex-1 min-w-0">
-                                  <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                                    <FileText className="w-5 h-5 text-blue-600" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-medium text-gray-900 truncate dark:text-white">{template.name}</h4>
-                                    <p className="text-xs text-gray-500 truncate dark:text-gray-400">{template.file_name}</p>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {template.description && (
-                                <p className="text-xs text-gray-600 mb-3 line-clamp-2 dark:text-gray-400">{template.description}</p>
-                              )}
-
-                              <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-800">
-                                <span className="text-xs text-gray-400">
-                                  {template.file_size ? `${(template.file_size / 1024).toFixed(1)} KB` : 'Unknown size'}
-                                </span>
-                                <button
-                                  onClick={async () => {
-                                    /*
-                                     * `file_url` holds a storage path in a
-                                     * private bucket, so it has to be signed
-                                     * before it can be opened. It used to hold
-                                     * a `getPublicUrl` result, which opened a
-                                     * tab onto a 400.
-                                     */
-                                    const url = await fetchSignedUrl(
-                                      queryClient,
-                                      WORKFLOW_TEMPLATES_BUCKET,
-                                      workflowTemplatePath(template.file_url),
-                                    )
-                                    if (url) window.open(url, '_blank')
-                                  }}
-                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                  title="Download template"
-                                >
-                                  <Download className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center dark:border-gray-600">
-                          <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-sm text-gray-500 font-medium dark:text-gray-400">No templates available</p>
-                          <p className="text-xs text-gray-400 mt-2">Process admins can upload templates in the Processes tab</p>
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-
-                  {/* Workflow Attachments Section */}
-                  <Card>
-                    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Process Attachments</h3>
-                      <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Files attached to process tasks and stages</p>
-                    </div>
-                    <div className="p-4">
-                      {attachmentsLoading ? (
-                        <div className="text-center py-8">
-                          <p className="text-gray-500 text-sm dark:text-gray-400">Loading attachments...</p>
-                        </div>
-                      ) : checklistAttachments && checklistAttachments.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {checklistAttachments.map((attachment) => (
-                            <div key={attachment.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow dark:border-gray-700">
-                              <div className="flex items-start justify-between mb-3">
-                                <div className="flex items-center space-x-3 flex-1 min-w-0">
-                                  <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                                    <FileText className="w-5 h-5 text-green-600" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-medium text-gray-900 truncate dark:text-white">{attachment.file_name}</h4>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">Stage: {attachment.stage_id}</p>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-800">
-                                <span className="text-xs text-gray-400">
-                                  {attachment.file_size ? `${(attachment.file_size / 1024).toFixed(1)} KB` : 'Unknown size'}
-                                </span>
-                                <button
-                                  onClick={() => window.open(attachment.file_path, '_blank')}
-                                  className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                  title="Download file"
-                                >
-                                  <Download className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center dark:border-gray-600">
-                          <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-sm text-gray-500 font-medium dark:text-gray-400">No attachments yet</p>
-                          <p className="text-xs text-gray-400 mt-2">Files can be attached to process tasks in the Stage view</p>
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-                </div>
+                <ProcessDocuments
+                  backLabel={`Back to ${selectedWorkItem?.label ?? 'the process'}`}
+                  onBack={() => setShowTemplatesView(false)}
+                  attachmentsLoading={attachmentsLoading}
+                  templatesLoading={templatesLoading}
+                  attachments={(checklistAttachments ?? []).map((a) => ({
+                    id: a.id,
+                    name: a.file_name,
+                    context: a.stage_id ? `Stage: ${a.stage_id}` : null,
+                    sizeBytes: a.file_size ?? null,
+                    onOpen: () => window.open(a.file_path, '_blank'),
+                  }))}
+                  templates={(workflowTemplates ?? []).map((t) => ({
+                    id: t.id,
+                    name: t.name,
+                    context: t.file_name ?? null,
+                    sizeBytes: t.file_size ?? null,
+                    /* `file_url` holds a storage path in a private bucket, so
+                       it has to be signed before it can be opened. It used to
+                       hold a `getPublicUrl` result, which opened a tab onto a
+                       400. Unchanged, moved. */
+                    onOpen: async () => {
+                      const url = await fetchSignedUrl(
+                        queryClient,
+                        WORKFLOW_TEMPLATES_BUCKET,
+                        workflowTemplatePath(t.file_url),
+                      )
+                      if (url) window.open(url, '_blank')
+                    },
+                  }))}
+                />
               ) : showTimelineView ? (
-                <AssetTimelineView
+                /* Previous runs lead; the activity feed is demoted into a
+                   collapsed section inside it, which is what it is. */
+                <ProcessHistory
                   assetId={effectiveAsset.id}
                   assetSymbol={asset.symbol}
-                  workflowId={effectiveWorkflowId}
-                  isOpen={true}
-                  onClose={() => setShowTimelineView(false)}
-                  inline={true}
+                  workflowId={effectiveWorkflowId || null}
+                  backLabel={`Back to ${selectedWorkItem?.label ?? 'the process'}`}
+                  onBack={() => setShowTimelineView(false)}
+                  onOpenRun={(wfId) => { setShowTimelineView(false); handleWorkflowChange(wfId) }}
+                  activitySlot={
+                    <AssetTimelineView
+                      assetId={effectiveAsset.id}
+                      assetSymbol={asset.symbol}
+                      workflowId={effectiveWorkflowId}
+                      isOpen={true}
+                      onClose={() => setShowTimelineView(false)}
+                      inline={true}
+                    />
+                  }
                 />
               ) : workflowIdLoading || pendingWorkflowSwitch || allWorkflowsLoading ? (
                 <div className="flex items-center justify-center py-16">

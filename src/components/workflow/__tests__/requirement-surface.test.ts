@@ -22,7 +22,18 @@ const TAB = strip(read('src/components/tabs/AssetTab.tsx'))
 
 describe('the selected requirement is the working surface', () => {
   it('gives the rail a fixed column and the requirement the rest', () => {
-    expect(TL).toMatch(/lg:grid-cols-\[280px_minmax\(0,1fr\)\]/)
+    expect(TL).toMatch(/lg:grid-cols-\[260px_minmax\(0,1fr\)\]/)
+  })
+
+  it('shows the rail only when a requirement is open', () => {
+    /*
+     * On the stage overview the rail was a SECOND copy of the list the
+     * overview itself renders — the same five titles in two columns, at two
+     * weights. The rail is navigation between requirements, so it appears
+     * once there is one to navigate from.
+     */
+    expect(TL).toMatch(/\{selectedRequirement && <RequirementsNavigator/)
+    expect(TL).toMatch(/selectedRequirement\s*\n?\s*\?\s*'grid grid-cols-1 gap-4 lg:grid-cols-\[260px/)
   })
 
   it('renders the requirement through the existing cards, not a third one', () => {

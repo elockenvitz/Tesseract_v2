@@ -97,18 +97,22 @@ describe('the footer gave up its copies', () => {
 })
 
 describe('the stage rail states its progress once', () => {
-  it('keeps the count', () => {
-    // "tasks" went with the compaction: the chip is 61px now, the word was
-    // the widest thing on it, and "0/5" under a stage name is unambiguous.
-    expect(TL).toMatch(/\{completedTasks\}\/\{totalTasks\}/)
+  /*
+   * These pinned the chevron chip's own markup — `{completedTasks}/{totalTasks}`
+   * and `width: ${progressPercent}%`. The chevrons are gone: four of them
+   * were 205 lines of clip-path polygons with a blurred glow layer, and the
+   * rail is now `StageRail`, whose count and progress rule are asserted in
+   * `stage-rail.test.tsx` against the rendered DOM rather than the source.
+   * What is pinned here is that the rail still receives both facts.
+   */
+  it('still hands the rail its count', () => {
+    expect(TL).toMatch(/done: items\.filter\(i => isItemDone\(i\)\)\.length/)
+    expect(TL).toMatch(/total: items\.length/)
   })
 
-  it('drops the percentage beside it', () => {
-    // The bar above IS the percentage and "2/5 tasks" is the same fact
-    // again — three renderings of one number on one chip.
-    expect(TL).not.toMatch(/\{Math\.round\(progressPercent\)\}%/)
-    // The bar itself stays.
-    expect(TL).toMatch(/width: `\$\{progressPercent\}%`/)
+  it('no longer draws a chevron', () => {
+    expect(TL).not.toMatch(/clipPath/)
+    expect(TL).not.toMatch(/chevronArrowSize/)
   })
 })
 

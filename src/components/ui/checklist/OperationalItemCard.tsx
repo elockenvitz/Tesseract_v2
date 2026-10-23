@@ -66,6 +66,8 @@ interface OperationalItemCardProps {
    * way — is two implementations of one capability, and they drift.
    */
   layout?: 'row' | 'detail'
+  /** The surface already names the requirement; see the note at the title. */
+  hideTitle?: boolean
 }
 
 // ─── Component ──────────────────────────────────────────────────────────
@@ -73,7 +75,7 @@ interface OperationalItemCardProps {
 export function OperationalItemCard({
   item, stageId, assetId, workflowId, isEditable, isExpanded,
   onToggleExpand, onToggleStatus, onStatusAction, onRemoveCustom, currentUser,
-  scopeType = 'asset', layout = 'row',
+  scopeType = 'asset', layout = 'row', hideTitle = false,
 }: OperationalItemCardProps) {
   /* In the detail layout the body is the surface; there is nothing to
      expand into and nothing to collapse. */
@@ -317,12 +319,24 @@ export function OperationalItemCard({
         <div className="mb-3">
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
-              <h3
-                data-testid="requirement-detail-title"
-                className={`text-[16px] font-semibold leading-snug ${status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}
-              >
-                {item.text}
-              </h3>
+              {/*
+                The title is the workspace's, not the card's.
+
+                `RequirementWorkspace` sets the requirement as the heading of
+                the whole surface, 17px, directly under the stage. The card
+                then set it AGAIN in 16px two hundred pixels below, which is
+                how "Your work" came to read as a separate checklist item
+                about the thing above it rather than the place to do it.
+                Rendered only when this card is the whole surface.
+              */}
+              {!hideTitle && (
+                <h3
+                  data-testid="requirement-detail-title"
+                  className={`text-[16px] font-semibold leading-snug ${status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}
+                >
+                  {item.text}
+                </h3>
+              )}
               {/*
                 The template carries a title, a type and an order — there is
                 no description column on `workflow_checklist_templates`, so

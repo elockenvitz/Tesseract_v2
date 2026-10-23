@@ -102,6 +102,8 @@ interface DecisionItemCardProps {
    * promotes the title, sharing every query and mutation with `row`.
    */
   layout?: 'row' | 'detail'
+  /** The surface already names the requirement; see OperationalItemCard. */
+  hideTitle?: boolean
 }
 
 // ─── Component ──────────────────────────────────────────────────────────
@@ -109,7 +111,7 @@ interface DecisionItemCardProps {
 export function DecisionItemCard({
   item, stageId, assetId, workflowId, isEditable, isExpanded,
   onToggleExpand, onToggleStatus, onStatusAction, onRemoveCustom, currentUser,
-  scopeType = 'asset', layout = 'row',
+  scopeType = 'asset', layout = 'row', hideTitle = false,
 }: DecisionItemCardProps) {
   /* In the detail layout the body IS the surface. */
   const detail = layout === 'detail'
@@ -622,12 +624,16 @@ export function DecisionItemCard({
             </div>
             <div className="order-1 min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h3
-                  data-testid="requirement-detail-title"
-                  className={`text-[15px] font-semibold leading-snug ${status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}
-                >
-                  {item.text}
-                </h3>
+                {/* The workspace heading already names the requirement;
+                    see the note in OperationalItemCard. */}
+                {!hideTitle && (
+                  <h3
+                    data-testid="requirement-detail-title"
+                    className={`text-[15px] font-semibold leading-snug ${status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}
+                  >
+                    {item.text}
+                  </h3>
+                )}
                 {stateBadge && (
                   <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${stateBadge.color}`}>{stateBadge.text}</span>
                 )}

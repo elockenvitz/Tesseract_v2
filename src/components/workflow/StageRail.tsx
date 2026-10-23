@@ -33,6 +33,14 @@ export interface StageRailItem {
   /** Requirements satisfied and total. Null where the stage carries none. */
   done: number
   total: number
+  /**
+   * The stage's deadline, already turned into words by the caller.
+   *
+   * The chevrons carried this as a coloured pill inside a 70px shape. It is
+   * a date, not a stage, so here it is one line of small text under the
+   * name — present only where a deadline is actually set.
+   */
+  deadline?: { label: string; tone: 'overdue' | 'today' | 'urgent' | 'upcoming' } | null
 }
 
 interface Props {
@@ -67,7 +75,7 @@ export function StageRail({ stages, selectedId, onSelect, className }: Props) {
             onClick={() => onSelect(stage.id, index)}
             title={stage.total > 0 ? `${stage.label} — ${stage.done} of ${stage.total} done` : stage.label}
             className={clsx(
-              'group relative flex flex-none items-center gap-1.5 rounded-md border px-2 py-1 text-[12px] leading-tight transition-colors',
+              'group relative flex flex-none items-start gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] leading-tight transition-colors',
               viewing
                 ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
                 : complete
@@ -84,12 +92,49 @@ export function StageRail({ stages, selectedId, onSelect, className }: Props) {
             >
               {complete ? <Check className="h-3 w-3" strokeWidth={3} /> : index + 1}
             </span>
-            <span className="max-w-[18ch] truncate font-medium">{stage.label}</span>
-            {stage.total > 0 && (
-              <span className={clsx('tabular-nums', viewing ? 'opacity-80' : 'text-gray-400 dark:text-gray-500')}>
-                {stage.done}/{stage.total}
+            <span className="flex min-w-0 flex-col items-start">
+              <span className="flex items-center gap-1.5">
+                <span className="max-w-[20ch] truncate font-medium">{stage.label}</span>
+                {stage.total > 0 && (
+                  <span className={clsx('tabular-nums', viewing ? 'opacity-80' : 'text-gray-400 dark:text-gray-500')}>
+                    {stage.done}/{stage.total}
+                  </span>
+                )}
               </span>
-            )}
+              {/* Progress as a rule under the name: the same fact the count
+                  states, at a glance, in 2px instead of a 70px shape. */}
+              {stage.total > 0 && (
+                <span
+                  aria-hidden
+                  className={clsx(
+                    'mt-1 h-[2px] w-full overflow-hidden rounded-full',
+                    viewing ? 'bg-white/25 dark:bg-gray-900/20' : 'bg-gray-200 dark:bg-gray-700',
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      'block h-full rounded-full transition-all duration-500',
+                      complete ? 'bg-emerald-500' : viewing ? 'bg-white dark:bg-gray-900' : 'bg-gray-400 dark:bg-gray-500',
+                    )}
+                    style={{ width: `${Math.round((stage.done / stage.total) * 100)}%` }}
+                  />
+                </span>
+              )}
+              {stage.deadline && (
+                <span
+                  className={clsx(
+                    'mt-0.5 text-[10px] font-medium',
+                    viewing ? 'opacity-80' :
+                      stage.deadline.tone === 'overdue' ? 'text-red-600 dark:text-red-400'
+                        : stage.deadline.tone === 'today' ? 'text-orange-600 dark:text-orange-400'
+                          : stage.deadline.tone === 'urgent' ? 'text-amber-600 dark:text-amber-500'
+                            : 'text-gray-400 dark:text-gray-500',
+                  )}
+                >
+                  {stage.deadline.label}
+                </span>
+              )}
+            </span>
             {/* Current, even while another stage is being viewed: a reader
                 looking ahead must still be able to find their place. */}
             {current && !viewing && (

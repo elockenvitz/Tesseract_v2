@@ -398,15 +398,26 @@ export function RequirementWorkspace({
         reader does not have to look back up at the rail to find out.
       */}
       <header className="border-b border-gray-200 pb-3 dark:border-gray-700">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className={EYEBROW}>{stageLabel}</span>
-          <span className="text-[10px] text-gray-300 dark:text-gray-600">·</span>
+        {/*
+          ── The way back is at the top, where it is looked for ───────────
+
+          It used to be a footer control: to leave a requirement you scrolled
+          past the evidence, the questions and your own draft to find it. The
+          reader's position in the stage goes with it, so "where am I" and
+          "how do I get out" are one line rather than two ends of a page.
+        */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            data-testid="requirement-back-top"
+            className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            {stageLabel}
+          </button>
           <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">
-            Requirement {index} of {total}
-          </span>
-          <span className="text-[10px] text-gray-300 dark:text-gray-600">·</span>
-          <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">
-            {doneCount} of {total} done
+            Requirement {index} of {total} · {doneCount} done
           </span>
         </div>
         <h3 className="mt-1 text-[17px] font-semibold leading-snug text-gray-900 dark:text-gray-100">
@@ -468,12 +479,14 @@ export function RequirementWorkspace({
       </div>
 
       {/* ── Where to go next ────────────────────────────────────────── */}
+      {/* The footer keeps the FORWARD move — what you do when the finding is
+          written — while the way back lives at the top. */}
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 pt-3 dark:border-gray-700">
         <button
           type="button"
           onClick={onBack}
           data-testid="requirement-back"
-          className="inline-flex items-center gap-1.5 rounded border border-gray-300 px-2.5 py-1 text-[12px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+          className="inline-flex items-center gap-1.5 text-[12px] font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to {stageLabel}

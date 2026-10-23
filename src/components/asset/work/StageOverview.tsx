@@ -96,10 +96,10 @@ export function StageOverview({
               <span className={EYEBROW}>{assetSymbol}</span>
             </>
           )}
-          <span className="text-[10px] text-gray-300 dark:text-gray-600">·</span>
-          <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">
-            {tally.complete} of {tally.total} done
-          </span>
+          {/* The count is NOT repeated here. The action bar directly above
+              states "n of m done · k open", and the stage chip above that
+              carries n/m. Three copies of one number was the pattern this
+              surface kept recreating. */}
         </div>
         {objective.source === 'definition' ? (
           <h3 className="mt-1 text-[17px] font-semibold leading-snug text-gray-900 dark:text-gray-100">

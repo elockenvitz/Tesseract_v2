@@ -13,7 +13,7 @@ import { OperationalItemCard } from './checklist/OperationalItemCard'
 import { type ProcessItemType, userName as chUserName } from './checklist/types'
 import { StageActionBar } from '../workflow/StageActionBar'
 import { RequirementsNavigator } from '../workflow/RequirementsNavigator'
-import { StageRail } from '../workflow/StageRail'
+import { StageRail, type StageRailItem } from '../workflow/StageRail'
 import { RequirementWorkspace } from '../asset/work/RequirementWorkspace'
 import { StageOverview } from '../asset/work/StageOverview'
 import { supabase } from '../../lib/supabase'
@@ -1507,7 +1507,14 @@ export function InvestmentTimeline({
         <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2" data-testid="process-rail-row">
           {/* Which Process, then which stage — one line, read left to right. */}
           {headerSlot}
-          {assetId && workflowId && (
+          {/*
+            Priority is STATUS, so it shows when there is a status to show.
+            "Priority: None" was a permanent control stating the absence of
+            one, competing with the process identity beside it. Setting a
+            priority on a process that has none is done from the sidebar
+            row's own menu, which is where processes are chosen.
+          */}
+          {assetId && workflowId && effectivePriority !== 'none' && (
             <div className="flex items-center space-x-2">
               <div className="relative">
                 {(() => {
@@ -1629,252 +1636,54 @@ export function InvestmentTimeline({
           )}
 
         {/*
-          ── Two sizes, one rule ───────────────────────────────────────────
+          ── One stage navigation, at every width and in every state ───────
 
-          Full while the reader is choosing where to work; a strip while they
-          are working. The chevrons answer "where am I in this Process?" and
-          cost ~70px of a 772px viewport to do it — worth it on the stage
-          overview, where that is the question being asked, and not worth it
-          on the requirement surface, where the workspace header below
-          already names the stage, the requirement and the progress.
+          The chevrons are gone. Four of them cost ~70px of a 945px viewport
+          and rendered as overlapping clip-path polygons with a blurred glow
+          layer behind the selected one — a 205-line shape to say which of
+          four steps you are on, which a row of chips says in 34px without
+          the arrow geometry breaking at narrow widths.
 
-          Nothing is dropped in the compact form: every stage keeps its
-          number, label, count, status colour, current marker and click
-          handler. `StageRail` is handed the same `getStageStatus`,
-          `stageChecklists` and `handleStageClick` the chevrons use, so the
-          two presentations cannot disagree.
+          Nothing it carried was dropped: number, name, done/total, status
+          colour, the marker for the CURRENT stage while another is being
+          viewed, the deadline, and the same `handleStageClick`. Progress is
+          a 2px rule under each name rather than a bar inside a polygon.
         */}
-        {selectedRequirement && (
-          <div className="hidden md:block flex-1 min-w-0">
-            <StageRail
-              stages={timelineStages.map((stage, index) => {
-                const items = stageChecklists[stage.id] || []
-                return {
-                  id: stage.id,
-                  label: stage.label,
-                  status: getStageStatus(index) as 'completed' | 'current' | 'future',
-                  done: items.filter(i => isItemDone(i)).length,
-                  total: items.length,
+        <div className="min-w-0 flex-1">
+          <StageRail
+            stages={timelineStages.map((stage, index) => {
+              const items = stageChecklists[stage.id] || []
+              const deadline = getStageDeadline(stage.id)
+              let deadlineLabel: StageRailItem['deadline'] = null
+              if (deadline?.deadline_date) {
+                const tone = getDeadlineStatus(deadline.deadline_date)
+                const due = new Date(deadline.deadline_date)
+                const today = new Date()
+                due.setHours(0, 0, 0, 0)
+                today.setHours(0, 0, 0, 0)
+                const days = Math.ceil((due.getTime() - today.getTime()) / 86_400_000)
+                deadlineLabel = {
+                  tone,
+                  label: days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : `${days}d left`,
                 }
-              })}
-              selectedId={showStageDetails}
-              onSelect={(stageId, index) => {
-                const stage = timelineStages.find(s => s.id === stageId)
-                if (stage) handleStageClick(stage, index)
-              }}
-            />
-          </div>
-        )}
-
-        {/* Desktop Chevron Timeline - Executive Design.
-            Shares the row with the priority chip above: `flex-1` so the
-            chevrons take whatever width the chip does not, instead of the
-            chip reserving a 24px row of its own above them. */}
-        {!selectedRequirement && (
-        <div className="hidden md:block flex-1 min-w-0">
-          {/* py-6 px-8 → py-1 px-2. The chevrons need room to overlap, not
-              48px of vertical air above and below a 61px rail. */}
-          <div className="relative py-1 px-2">
-            <div className="flex items-center gap-0.5 w-full">
-              {timelineStages.map((stage, index) => {
-                const status = getStageStatus(index)
-                const isLast = index === timelineStages.length - 1
-                const isFirst = index === 0
-
-                // Get task progress for this stage
-                const stageChecklistItems = stageChecklists[stage.id] || []
-                const completedTasks = stageChecklistItems.filter(item => isItemDone(item)).length
-                const totalTasks = stageChecklistItems.length
-                const progressPercent = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0
-
-                // Executive color schemes - minimal and sophisticated
-                const colorSchemes: Record<string, {
-                  bg: string
-                  text: string
-                  accent: string
-                  progressTrack: string
-                  progressFill: string
-                }> = {
-                  completed: {
-                    bg: 'bg-emerald-500',
-                    text: 'text-white',
-                    accent: 'text-emerald-50',
-                    progressTrack: 'bg-emerald-700/30',
-                    progressFill: 'bg-white dark:bg-gray-800'
-                  },
-                  current: {
-                    bg: 'bg-gradient-to-br from-blue-600 to-indigo-600',
-                    text: 'text-white',
-                    accent: 'text-blue-50',
-                    progressTrack: 'bg-white/20',
-                    progressFill: 'bg-white dark:bg-gray-800'
-                  },
-                  future: {
-                    bg: 'bg-slate-100',
-                    text: 'text-slate-700',
-                    accent: 'text-slate-500',
-                    progressTrack: 'bg-slate-200',
-                    progressFill: 'bg-slate-500'
-                  }
-                }
-
-                const colors = colorSchemes[status] || colorSchemes.future
-                const isSelected = lastClickedStageId === stage.id
-
-                // Responsive sizing for chevrons
-                const chevronArrowSize = '34px'
-
-                return (
-                  <div
-                    key={stage.id}
-                    className="relative flex items-center transition-all duration-300 flex-1 min-w-0"
-                    style={{ flexBasis: 0 }}
-                  >
-                    {/* Blue glow border for selected state */}
-                    {isSelected && (
-                      <div
-                        className="absolute pointer-events-none z-[2]"
-                        style={{
-                          top: '-5px',
-                          left: '-5px',
-                          right: '-5px',
-                          bottom: '-5px',
-                          background: 'linear-gradient(135deg, rgba(147, 197, 253, 0.9), rgba(96, 165, 250, 0.7))',
-                          clipPath: isLast
-                            ? isFirst
-                              ? 'none'
-                              : `polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, ${chevronArrowSize} 50%)`
-                            : isFirst
-                              ? `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%)`
-                              : `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%, ${chevronArrowSize} 50%)`,
-                          filter: 'blur(3px)'
-                        }}
-                      />
-                    )}
-                    <button
-                      onClick={() => handleStageClick(stage, index)}
-                      /*
-                        py-5 px-6 → py-2.5 px-4.
-
-                        The rail was 173px tall for four stages, on a surface
-                        whose viewport is 661px — a quarter of the screen to
-                        say which of four steps you are on. The chevron shape,
-                        the colours, the click target and the handler are
-                        unchanged; only the padding and the type scale moved.
-                      */
-                      className={`
-                        relative w-full py-2.5 px-4 transition-all duration-300 min-w-0
-                        ${colors.bg} ${colors.text}
-                        ${isSelected
-                          ? 'z-[3]'
-                          : 'shadow-lg hover:shadow-xl hover:z-[2]'
-                        }
-                        ${isFirst ? 'rounded-l-xl' : ''}
-                        ${isLast ? 'rounded-r-xl' : ''}
-                      `}
-                      style={{
-                        clipPath: isLast
-                          ? isFirst
-                            ? 'none'
-                            : `polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, ${chevronArrowSize} 50%)`
-                          : isFirst
-                            ? `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%)`
-                            : `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%, ${chevronArrowSize} 50%)`
-                      }}
-                    >
-                      {/* Content */}
-                      <div className="relative z-10 space-y-1 flex flex-col justify-center min-w-0 w-full" style={{ marginLeft: isFirst ? '0' : '16px' }}>
-
-
-                        {/* Header */}
-                        <div className="flex items-center min-w-0">
-                          {/* Stage Number - Fixed width container with checkmark for completed */}
-                          <div className="relative flex items-center justify-center w-5 h-5 rounded bg-black/15 text-[11px] font-bold flex-shrink-0 mr-1.5">
-                            {index + 1}
-                            {/* Completed checkmark - upper right of stage number */}
-                            {status === 'completed' && (
-                              <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-white rounded-full flex items-center justify-center shadow-sm dark:bg-gray-800">
-                                <Check className="w-3 h-3 text-green-600" strokeWidth={3} />
-                              </div>
-                            )}
-                            {/* Current stage indicator */}
-                            {status === 'current' && (
-                              <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full animate-pulse shadow-sm dark:bg-gray-800" />
-                            )}
-                          </div>
-                          {/* Stage Name - Left aligned */}
-                          <h4 className="text-[13px] font-semibold leading-tight truncate min-w-0">
-                            {stage.label}
-                          </h4>
-                        </div>
-
-                        {/* Progress */}
-                        {/*
-                          The bar and the count on ONE line rather than
-                          stacked, and no spacer standing in for an absent
-                          bar — a stage with no requirements now takes the
-                          height it needs instead of 34px of nothing.
-                        */}
-                        {totalTasks > 0 && (
-                          <div className="flex items-center gap-2 pr-6">
-                            <div className={`h-1 flex-1 ${colors.progressTrack} rounded-full overflow-hidden`}>
-                              <div
-                                className={`h-full ${colors.progressFill} rounded-full transition-all duration-500`}
-                                style={{ width: `${progressPercent}%` }}
-                              />
-                            </div>
-                            {/* The bar already IS the percentage, and
-                                "2/5" says it exactly. Printing 40% beside it
-                                was the same fact three ways. */}
-                            <span className={`shrink-0 text-[11px] font-semibold tabular-nums ${colors.accent}`}>
-                              {completedTasks}/{totalTasks}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Deadline */}
-                        {(() => {
-                          const deadline = getStageDeadline(stage.id)
-                          if (!deadline) return null
-
-                          const deadlineStatus = getDeadlineStatus(deadline.deadline_date)
-                          const getDaysUntilDeadline = (dateString: string) => {
-                            const deadline = new Date(dateString)
-                            const today = new Date()
-                            today.setHours(0, 0, 0, 0)
-                            deadline.setHours(0, 0, 0, 0)
-                            const diffTime = deadline.getTime() - today.getTime()
-                            return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-                          }
-
-                          const daysUntil = getDaysUntilDeadline(deadline.deadline_date)
-                          const statusText = daysUntil < 0 ? `${Math.abs(daysUntil)}d overdue` :
-                                           daysUntil === 0 ? 'Today' :
-                                           `${daysUntil}d remaining`
-
-                          const badgeStyles = {
-                            overdue: 'bg-red-600 text-white',
-                            today: 'bg-orange-500 text-white',
-                            urgent: 'bg-amber-500 text-white',
-                            upcoming: 'bg-black/10'
-                          }
-
-                          return (
-                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md ${badgeStyles[deadlineStatus]} text-xs font-semibold`}>
-                              <Calendar className="w-3 h-3" strokeWidth={2} />
-                              <span>{statusText}</span>
-                            </div>
-                          )
-                        })()}
-                      </div>
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+              }
+              return {
+                id: stage.id,
+                label: stage.label,
+                status: getStageStatus(index) as 'completed' | 'current' | 'future',
+                done: items.filter(i => isItemDone(i)).length,
+                total: items.length,
+                deadline: deadlineLabel,
+              }
+            })}
+            selectedId={showStageDetails}
+            onSelect={(stageId, index) => {
+              const stage = timelineStages.find(s => s.id === stageId)
+              if (stage) handleStageClick(stage, index)
+            }}
+          />
         </div>
-        )}
+
         </div>
 
         {/* Mobile Timeline */}
@@ -2019,16 +1828,13 @@ export function InvestmentTimeline({
             no requirement is open, so a stage with nothing to say renders
             nothing at all rather than punctuation or an empty row.
           */}
-          {(() => {
-            const description = timelineStages.find(s => s.id === showStageDetails)?.description
-            if (!description || selectedRequirement) return null
-            return (
-              <p className="mb-2 min-w-0 truncate text-[12px] text-gray-600 dark:text-gray-400">
-                {assetSymbol && <span className="text-gray-400">{assetSymbol} · </span>}
-                {description}
-              </p>
-            )
-          })()}
+          {/*
+            The stage's question is gone from here entirely. Both surfaces
+            below now quote it where it belongs — the overview as the
+            stage's objective in 17px, the requirement workspace under the
+            requirement it serves — so this line was a third copy, set in
+            12px grey above both of them.
+          */}
 
           <div className="grid grid-cols-1 gap-6">
 
@@ -2177,8 +1983,26 @@ export function InvestmentTimeline({
                         the selection survives the checklist reloading and
                         the rows reordering.
                       */}
-                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-                        <RequirementsNavigator
+                      {/*
+                        ── One list of requirements, never two ─────────────
+
+                        The rail is NAVIGATION between requirements, so it
+                        appears once there is one open. On the stage
+                        overview it was a second copy of the list the
+                        overview itself renders — the same five titles in
+                        two columns, at two weights, three inches apart —
+                        and the reader could not tell which was the subject
+                        and which the index.
+
+                        So the overview takes the full width and owns the
+                        list; opening a requirement brings the rail in
+                        beside the workspace, where it is an index to
+                        something else.
+                      */}
+                      <div className={selectedRequirement
+                        ? 'grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]'
+                        : 'grid grid-cols-1'}>
+                        {selectedRequirement && <RequirementsNavigator
                           items={items}
                           selectedId={selectedRequirement}
                           onSelect={setSelectedRequirement}
@@ -2188,7 +2012,7 @@ export function InvestmentTimeline({
                              from the commentary query this surface already
                              runs. The rail performs no read of its own. */
                           documentedIds={new Set(allCommentaries.map(c => c.checklist_item_id))}
-                        />
+                        />}
 
                         <div className="min-w-0" data-testid="requirement-detail">
                           {(() => {
@@ -2287,6 +2111,9 @@ export function InvestmentTimeline({
                                 : undefined,
                               currentUser: user,
                               layout: 'detail' as const,
+                              /* The workspace heading names the requirement
+                                 17px above; the card no longer repeats it. */
+                              hideTitle: true,
                             }
                             const card = (selected.item_type || 'operational') === 'thinking'
                               ? <DecisionItemCard key={selected.id} {...props} />

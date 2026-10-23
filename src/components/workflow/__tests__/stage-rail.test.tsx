@@ -97,12 +97,19 @@ describe('full while choosing, strip while working', () => {
     readFileSync(path.join(process.cwd(), 'src/components/ui/InvestmentTimeline.tsx'), 'utf8'),
   )
 
-  it('shows the strip only once a requirement is open', () => {
-    expect(TIMELINE).toMatch(/\{selectedRequirement && \([\s\S]{0,400}<StageRail/)
+  /*
+   * The rule changed from "two sizes" to ONE rail. The chevrons are
+   * deleted — not hidden — so there is no longer a second presentation to
+   * keep in agreement, and the rail renders in every state at every width.
+   */
+  it('is the only stage navigation, in every state', () => {
+    expect(TIMELINE).toMatch(/<StageRail/)
+    expect(TIMELINE).not.toMatch(/\{selectedRequirement && \([\s\S]{0,400}<StageRail/)
   })
 
-  it('shows the chevrons only while none is', () => {
-    expect(TIMELINE).toMatch(/\{!selectedRequirement && \(\s*<div className="hidden md:block flex-1 min-w-0">/)
+  it('leaves no chevron behind', () => {
+    expect(TIMELINE).not.toMatch(/clipPath/)
+    expect(TIMELINE).not.toMatch(/Desktop Chevron Timeline/)
   })
 
   it('feeds the strip the rail\'s own status and counts, not a second derivation', () => {
@@ -114,7 +121,13 @@ describe('full while choosing, strip while working', () => {
     expect(TIMELINE).toMatch(/if \(stage\) handleStageClick\(stage, index\)/)
   })
 
-  it('stops repeating the stage description once the workspace quotes it', () => {
-    expect(TIMELINE).toMatch(/if \(!description \|\| selectedRequirement\) return/)
+  it('stops repeating the stage description entirely', () => {
+    /*
+     * It was a 12px grey line above both surfaces that quote it: the stage
+     * overview sets it as the objective in 17px, and the requirement
+     * workspace sets it under the requirement it serves. A third copy.
+     */
+    expect(TIMELINE).not.toMatch(/if \(!description \|\| selectedRequirement\) return/)
+    expect(TIMELINE).not.toMatch(/\{assetSymbol && <span className="text-gray-400">\{assetSymbol\} · <\/span>\}/)
   })
 })

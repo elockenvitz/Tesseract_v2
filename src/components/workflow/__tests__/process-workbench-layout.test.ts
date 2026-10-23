@@ -47,9 +47,15 @@ describe('the stage is named once', () => {
     expect(TIMELINE).not.toMatch(/label\} Stage/)
   })
 
-  it('keeps the stage question, which the rail does not carry', () => {
-    // The description is the one thing the rail cannot say.
-    expect(TIMELINE).toMatch(/timelineStages\.find\(s => s\.id === showStageDetails\)\?\.description/)
+  it('hands the stage question to the surfaces that quote it', () => {
+    /*
+     * It no longer renders here at all. Both surfaces below now set it in
+     * their own hierarchy — the overview as the stage's objective in 17px,
+     * the requirement workspace under the requirement it serves — so the
+     * 12px line above them was a third copy of one sentence.
+     */
+    expect(TIMELINE).toMatch(/description: stage\?\.description/)
+    expect(TIMELINE).toMatch(/stageDescription=\{stage\?\.description \?\? null\}/)
   })
 
   it('drops the 40px status disc, whose job the rail already does', () => {
@@ -123,11 +129,15 @@ describe('ownership and deadline stay visible', () => {
 })
 
 describe('no control owns a row by itself', () => {
-  it('the priority chip shares the rail row', () => {
-    /* It is a PROCESS-level control, so it stays on the rail card rather
-       than moving into the stage block — but beside the rail, not above it. */
+  it('the priority chip shares the rail row, and only when set', () => {
+    /*
+     * Still on the rail row rather than a row of its own. What changed is
+     * that it renders only when there IS a priority: "Priority: None" was a
+     * permanent control announcing the absence of one, competing with the
+     * process identity beside it.
+     */
     expect(TIMELINE).toMatch(/data-testid="process-rail-row"/)
-    expect(TIMELINE).toMatch(/hidden md:block flex-1 min-w-0/)
+    expect(TIMELINE).toMatch(/assetId && workflowId && effectivePriority !== 'none'/)
   })
 
   it('the sidebar toggle rides the navigator header', () => {
