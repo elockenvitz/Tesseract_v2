@@ -65,6 +65,16 @@ export interface AssetWorkSidebarProps {
   /** `null` is "not loaded" and renders no rows; `[]` is "in none". */
   lists?: SidebarList[] | null
   onOpenList?: (listId: string) => void
+  /**
+   * The selection key the work surface is showing, so a list or portfolio
+   * opened contextually is marked here too.
+   *
+   * These rows used to leave the asset entirely, so there was nothing to
+   * mark; now that they select in place, a sidebar that shows no selection
+   * while its surface shows a book is the inconsistency the reader notices
+   * first.
+   */
+  selectedKey?: string | null
   onRemoveFromList?: (itemId: string) => void
   removingListItemId?: string | null
   addToListSlot?: React.ReactNode
@@ -167,6 +177,7 @@ function usePreview<T>(rows: readonly T[] | null | undefined) {
 
 export function AssetWorkSidebar({
   workSlot,
+  selectedKey = null,
   lists = null, onOpenList, onRemoveFromList, removingListItemId = null,
   addToListSlot, onOpenAllLists,
   themes = null, onOpenTheme, onOpenAllThemes, addToThemeSlot,
@@ -257,7 +268,13 @@ export function AssetWorkSidebar({
                           onClick={() => onOpenList?.(l.listId)}
                           disabled={!onOpenList}
                           data-testid={`sidebar-list-open-${l.listId}`}
-                          className="min-w-0 flex-1 truncate text-left text-[12px] text-gray-800 hover:text-primary-600 disabled:cursor-default dark:text-gray-200"
+                          aria-current={selectedKey === `list:${l.listId}` ? 'true' : undefined}
+                          className={clsx(
+                            'min-w-0 flex-1 truncate text-left text-[12px] hover:text-primary-600 disabled:cursor-default',
+                            selectedKey === `list:${l.listId}`
+                              ? 'font-medium text-primary-700 dark:text-primary-300'
+                              : 'text-gray-800 dark:text-gray-200',
+                          )}
                         >
                           {l.name}
                         </button>
@@ -373,9 +390,20 @@ export function AssetWorkSidebar({
                       onClick={() => onOpenPortfolio?.(p.id)}
                       title={p.weight ? `Open portfolio · Port Wgt: ${p.weight}%` : 'Open portfolio'}
                       data-testid={`sidebar-portfolio-${p.id}`}
-                      className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left hover:bg-gray-100 dark:hover:bg-gray-800"
+                      aria-current={selectedKey === `portfolio:${p.id}` ? 'true' : undefined}
+                      className={clsx(
+                        'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left',
+                        selectedKey === `portfolio:${p.id}`
+                          ? 'bg-primary-50 dark:bg-primary-500/10'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-800',
+                      )}
                     >
-                      <span className="min-w-0 flex-1 truncate text-[12px] text-gray-800 dark:text-gray-200">
+                      <span className={clsx(
+                        'min-w-0 flex-1 truncate text-[12px]',
+                        selectedKey === `portfolio:${p.id}`
+                          ? 'font-medium text-primary-700 dark:text-primary-300'
+                          : 'text-gray-800 dark:text-gray-200',
+                      )}>
                         {p.name}
                       </span>
                       {/* Weight is holdings arithmetic the page already did.

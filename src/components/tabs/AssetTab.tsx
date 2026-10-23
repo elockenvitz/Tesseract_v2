@@ -90,8 +90,13 @@ import {
      state, and the two must not shadow each other. */
   workItemKey as workItemKeyFor,
 } from '../../lib/asset-work/work-items'
+import {
+  contextualKey, contextualSelection, backTarget,
+} from '../../lib/asset-work/contextual-destination'
 import { WorkNavigator } from '../asset/work/WorkNavigator'
 import { IdeaWorkSurface } from '../asset/work/IdeaWorkSurface'
+import { ListWorkSurface } from '../asset/work/ListWorkSurface'
+import { PortfolioWorkSurface } from '../asset/work/PortfolioWorkSurface'
 import { AssetWorkSidebar } from '../asset/work/AssetWorkSidebar'
 import { WorkSidebarToggle } from '../asset/work/WorkSidebarToggle'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
@@ -2453,6 +2458,40 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     [workItems, workItemKey],
   )
   const selectedWorkItem = workSelection.selected
+
+  /*
+   * ── Lists and portfolios select, they do not depart ──────────────────
+   *
+   * Both used to call `onNavigate`, which opens a top-level tab: clicking
+   * a book in the asset's own sidebar closed the asset workspace and
+   * opened the Portfolio application, losing the process you were working
+   * and offering no way back. They are now two more kinds on the SAME
+   * selection key the sidebar already persists, so they restore on reload
+   * like any other work item, and leaving the asset is a labelled control
+   * on the surface instead.
+   */
+  const contextual = React.useMemo(() => contextualSelection(workItemKey), [workItemKey])
+  /** What Back returns to. Null means the Work overview. */
+  const [previousWorkKey, setPreviousWorkKey] = useState<string | null>(null)
+  const openContextual = React.useCallback((key: string) => {
+    /*
+     * The RESOLVED selection, not the raw key. On first entry the key is
+     * null — the surface auto-resolved to the first process without writing
+     * one — so capturing the raw key sent the reader back to "work" when
+     * they had been on Earnings Season a moment earlier.
+     */
+    setPreviousWorkKey(prev =>
+      contextualSelection(workItemKey) ? prev : (workItemKey ?? selectedWorkItem?.key ?? null))
+    setWorkItemKey(key)
+  }, [workItemKey, selectedWorkItem])
+  const contextualBack = React.useMemo(
+    () => backTarget(previousWorkKey, (key) => workItems.find(i => i.key === key)?.label ?? null),
+    [previousWorkKey, workItems],
+  )
+  const leaveContextual = React.useCallback(() => {
+    setWorkItemKey(contextualBack.key)
+    setPreviousWorkKey(null)
+  }, [contextualBack.key])
   /*
    * ── Loading is not absence ──────────────────────────────────────────
    *
@@ -4316,6 +4355,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 collapsed={collapsedSections}
                 onToggleSection={toggleSection}
                 className="xl:sticky xl:top-2"
+                selectedKey={workItemKey}
                 /* Lists — the Step B implementation, moved not rebuilt. */
                 lists={listsLoading ? null : assetListMemberships.map(l => ({
                   itemId: l.itemId,
@@ -4324,27 +4364,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   listType: l.listType,
                   canRemove: l.canRemove,
                 }))}
-                onOpenList={(listId) => {
-                  const m = assetListMemberships.find(l => l.listId === listId)
-                  if (m && onNavigate) {
-                    /* The List tab derives its own permissions from the row
-                       it is handed, so `list_type` and `created_by` travel
-                       with it. Dropping them opens a list its owner cannot
-                       edit. */
-                    onNavigate({
-                      id: m.listId,
-                      title: m.name,
-                      type: 'list',
-                      data: {
-                        id: m.listId,
-                        name: m.name,
-                        description: m.description,
-                        list_type: m.listType,
-                        created_by: m.createdBy,
-                      },
-                    })
-                  }
-                }}
+                /* Selects, inside this asset's workspace. Opening the full
+                   list is a labelled control on that surface. */
+                onOpenList={(listId) => openContextual(contextualKey.list(listId))}
                 onRemoveFromList={(itemId) => removeFromList.mutate(itemId)}
                 removingListItemId={removeFromList.isPending ? (removeFromList.variables ?? null) : null}
                 addToListSlot={<AddToListButton assetId={asset.id} size="sm" variant="ghost" />}
@@ -4374,7 +4396,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       : null,
                   }
                 })}
-                onOpenPortfolio={(id) => onNavigate?.({ id, title: 'Portfolio', type: 'portfolio', data: { id } })}
+                onOpenPortfolio={(id) => openContextual(contextualKey.portfolio(id))}
                 onOpenAllPortfolios={() => onNavigate?.({ id: 'portfolios-list', title: 'All Portfolios', type: 'portfolios-list', data: null })}
                 /* Projects — the real component, which owns its own data. */
                 addToProjectSlot={<AddToProjectButton assetId={asset.id} variant="ghost" size="sm" />}
@@ -4418,7 +4440,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     ? (effectiveWorkflowId ? workItemKeyFor.process(effectiveWorkflowId) : null)
                     : (selectedWorkItem?.key ?? null)
                 }
-                recoveredFrom={workSelection.recovered}
+                /* `resolveSelection` only knows navigator items, so a
+                   contextual key looks to it like a selection that vanished.
+                   It did not: it is on screen. Saying otherwise put "the
+                   item you were on is no longer available" above a list the
+                   reader had just opened. */
+                recoveredFrom={!contextual && workSelection.recovered}
                 isLoading={workIsResolving}
                 onSelect={(item: WorkItem) => {
                   /* A conversation opens the existing CoAnalyst pane and
@@ -4485,7 +4512,96 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   header, or the empty state's text block. Nothing reserves a
                   row for it in any of the three.
                 */}
-                {!selectedWorkItem && workIsResolving && (
+                {/*
+                  ── A contextual destination owns the whole surface ──────
+
+                  A list or a portfolio replaces the work item rather than
+                  sitting beside it, so each of the four branches below is
+                  guarded on its absence. Without that, selecting a book
+                  while a process was open would render both.
+                */}
+                {contextual?.kind === 'list' && (() => {
+                  const m = assetListMemberships.find(l => l.listId === contextual.id)
+                  if (!m) {
+                    return (
+                      <div
+                        data-testid="contextual-list-missing"
+                        className="rounded-lg border border-dashed border-gray-300 px-4 py-10 text-center dark:border-gray-700"
+                      >
+                        <p className="text-[13px] text-gray-500 dark:text-gray-400">
+                          {asset.symbol} is no longer on that list.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={leaveContextual}
+                          className="mt-2 text-[12px] font-medium text-primary-600 hover:underline"
+                        >
+                          {contextualBack.label}
+                        </button>
+                      </div>
+                    )
+                  }
+                  return (
+                    <ListWorkSurface
+                      list={{
+                        listId: m.listId,
+                        itemId: m.itemId,
+                        name: m.name,
+                        description: m.description,
+                        listType: m.listType,
+                        addedAt: m.addedAt,
+                        canRemove: m.canRemove,
+                      }}
+                      assetSymbol={asset.symbol}
+                      back={{ label: contextualBack.label, onBack: leaveContextual }}
+                      onRemove={(itemId) => removeFromList.mutate(itemId)}
+                      removing={removeFromList.isPending}
+                      /* The deliberate departure. The List tab derives its
+                         own permissions from the row it is handed, so
+                         `list_type` and `created_by` travel with it —
+                         dropping them opens a list its owner cannot edit. */
+                      onOpenFull={() => onNavigate?.({
+                        id: m.listId,
+                        title: m.name,
+                        type: 'list',
+                        data: {
+                          id: m.listId,
+                          name: m.name,
+                          description: m.description,
+                          list_type: m.listType,
+                          created_by: m.createdBy,
+                        },
+                      })}
+                    />
+                  )
+                })()}
+
+                {contextual?.kind === 'portfolio' && (() => {
+                  const holding = (portfolioHoldings as any[] | undefined)
+                    ?.find(h => h.portfolio_id === contextual.id)
+                  const name = holding?.portfolios?.name || 'Portfolio'
+                  const exposure = exposureIn(contextual.id)
+                  return (
+                    <PortfolioWorkSurface
+                      portfolio={{ id: contextual.id, name }}
+                      assetSymbol={asset.symbol}
+                      exposure={exposure}
+                      exposureLoading={portfolioBooks === undefined}
+                      /* Matched on portfolio ID. Two books can share a name
+                         across organizations. */
+                      ideas={openItems
+                        .filter(i => i.portfolio?.id === contextual.id)
+                        .map(i => ({ id: i.id, action: i.action, stage: i.stage, rationale: i.rationale }))}
+                      back={{ label: contextualBack.label, onBack: leaveContextual }}
+                      onOpenIdea={(ideaId) => openIdeaDetail(ideaId)}
+                      onOpenFull={() => onNavigate?.({
+                        id: contextual.id, title: name, type: 'portfolio', data: { id: contextual.id },
+                      })}
+                    />
+                  )
+                })()}
+
+                {!contextual && !selectedWorkItem && workIsResolving && (
                   /* The shape of what is coming, and no claim about it. */
                   <div data-testid="work-surface-loading" className="space-y-3">
                     {workSidebarCollapsed && (
@@ -4500,7 +4616,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   </div>
                 )}
 
-                {!selectedWorkItem && !workIsResolving && (
+                {!contextual && !selectedWorkItem && !workIsResolving && (
                   <div
                     data-testid="work-surface-empty"
                     className="rounded-lg border border-dashed border-gray-300 px-4 py-10 text-center dark:border-gray-700"
@@ -4519,7 +4635,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   </div>
                 )}
 
-                {selectedWorkItem?.kind === 'idea' && (
+                {!contextual && selectedWorkItem?.kind === 'idea' && (
                   selectedWorkIdea ? (
                     <IdeaWorkSurface
                       idea={selectedWorkIdea}
@@ -4552,7 +4668,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     `InvestmentTimeline` itself, mounted rather than linked
                     to: the authoritative engine, stages, checklist,
                     assignments, deadlines and permissions, unchanged. */}
-                {selectedWorkItem?.kind === 'process' && (
+                {!contextual && selectedWorkItem?.kind === 'process' && (
           <div id={WORK_SECTION_ID.workflow} className="scroll-mt-4">
             {(() => {
             /*
@@ -4665,7 +4781,46 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <div className="space-y-3">
                 {/* Standalone only for the views that REPLACE the rail. */}
                 {(showTemplatesView || showTimelineView) && (
-                  <div className="flex items-center justify-between">{processHeader}</div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">{processHeader}</div>
+                    {/*
+                      ── A subview says it is one, and names its way out ────
+
+                      Timeline and Files replace the stage rail entirely, and
+                      the only way back was the same icon that opened them —
+                      an unlabelled toggle whose current meaning depended on
+                      a state the reader could not see. They are subviews of
+                      a Process, so they say so and offer a named return.
+
+                      The stage and requirement selection are untouched by
+                      either: both are React state on the surface below,
+                      which is unmounted and remounted with its own
+                      `viewingStageId` / `viewingRequirementId` restored from
+                      tab state. Returning lands where you left.
+                    */}
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-2 dark:border-gray-700"
+                      data-testid="process-subview-bar"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                          Process subview
+                        </span>
+                        <p className="text-[14px] font-semibold leading-tight text-gray-900 dark:text-gray-100">
+                          {showTimelineView ? 'Activity timeline' : 'Files'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid="process-subview-back"
+                        onClick={() => { setShowTimelineView(false); setShowTemplatesView(false) }}
+                        className="inline-flex items-center gap-1.5 rounded border border-gray-300 px-2.5 py-1 text-[12px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                      >
+                        <ArrowLeft className="h-3.5 w-3.5" />
+                        Back to {selectedWorkItem?.label ?? 'the process'}
+                      </button>
+                    </div>
+                  </div>
                 )}
 
               {showTemplatesView ? (

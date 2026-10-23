@@ -307,7 +307,15 @@ describe('selection persists and recovers honestly', () => {
   it('says so when the saved item is gone', () => {
     // Swapping in different work while implying it is the piece the reader
     // left is worse than showing nothing.
-    expect(TAB).toMatch(/recoveredFrom=\{workSelection\.recovered\}/)
+    /*
+     * Narrowed by one case, not relaxed. `resolveSelection` only knows
+     * navigator items, so a contextual key — a list or a portfolio, which
+     * now select in place — looks to it like a selection that vanished.
+     * It has not: it is on screen. Reporting recovery there printed "the
+     * item you were on is no longer available" directly above a list the
+     * reader had just opened.
+     */
+    expect(TAB).toMatch(/recoveredFrom=\{!contextual && workSelection\.recovered\}/)
     expect(NAV).toMatch(/data-testid="work-nav-recovered"/)
     expect(NAV).toMatch(/The item you were on is no longer available\./)
   })
