@@ -122,7 +122,15 @@ describe('selection is reading, not writing', () => {
   it('never auto-selects a requirement for the reader', () => {
     // Defaulting to the first one tells them they had been working on it.
     expect(TL).toMatch(/useState<string \| null>\(\s*\(\) => viewingRequirementId \?\? null,\s*\)/)
-    expect(TL).toMatch(/data-testid="requirement-none-selected"/)
+    /*
+     * The unselected surface is now `StageOverview` rather than a dashed
+     * "pick one" box. It still selects nothing on render: it RECOMMENDS a
+     * requirement and states why, and the reader presses it. Pinned as the
+     * absence of an effect, which is the property that matters, rather than
+     * as the presence of a particular empty panel.
+     */
+    expect(TL).toMatch(/<StageOverview/)
+    expect(TL).not.toMatch(/useEffect\([^)]*setSelectedRequirement\(items\[0\]/)
   })
 
   it('does not treat an unloaded stage as a deleted requirement', () => {

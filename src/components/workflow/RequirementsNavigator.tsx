@@ -41,13 +41,22 @@ export interface RequirementsNavigatorProps {
    */
   onAction: (id: string, action: RequirementAction) => void
   isEditable: boolean
+  /**
+   * Requirements that carry a written finding in `checklist_item_comments`.
+   *
+   * The rail looked at `notes` alone, which only operational items use, so a
+   * thinking requirement with three paragraphs of analysis against it
+   * rendered exactly like one nobody had opened. The caller already holds
+   * this query; passing the ids keeps the rail free of data access.
+   */
+  documentedIds?: ReadonlySet<string>
   /** The existing "Add item" control, passed in rather than rebuilt. */
   addSlot?: React.ReactNode
   className?: string
 }
 
 export function RequirementsNavigator({
-  items, selectedId, onSelect, onAction, isEditable, addSlot, className,
+  items, selectedId, onSelect, onAction, isEditable, documentedIds, addSlot, className,
 }: RequirementsNavigatorProps) {
   return (
     <div className={clsx('flex min-h-0 flex-col', className)} data-testid="requirements-navigator">
@@ -111,16 +120,38 @@ export function RequirementsNavigator({
                     No counts are fetched for the rail — an attachment count
                     per requirement would be one query per row to decorate a
                     list, and the detail surface shows the real thing.
+
+                    `documented` is the one addition: a requirement with a
+                    written finding is not untouched, and saying so costs one
+                    word. It is deliberately NOT "in progress" — nothing in
+                    the schema separates a half-written note from a finished
+                    thought nobody ticked.
                   */}
-                  {(item.assignee || item.notes) && (
-                    <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-400">
-                      {item.assignee && <span className="truncate">{userName(item.assignee)}</span>}
-                      {item.notes && <MessageSquare className="h-2.5 w-2.5 shrink-0" aria-label="Has notes" />}
-                      {item.attachments && item.attachments.length > 0 && (
-                        <Paperclip className="h-2.5 w-2.5 shrink-0" aria-label="Has attachments" />
-                      )}
-                    </span>
-                  )}
+                  {(() => {
+                    const documented = !done && (
+                      !!item.notes?.trim()
+                      || !!item.attachments?.length
+                      || !!(item.dbId && documentedIds?.has(item.dbId))
+                    )
+                    if (!item.assignee && !documented) return null
+                    return (
+                      <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-400">
+                        {documented && (
+                          <span
+                            className="font-medium text-amber-600 dark:text-amber-500"
+                            data-testid={`requirement-documented-${item.id}`}
+                          >
+                            Documented
+                          </span>
+                        )}
+                        {item.assignee && <span className="truncate">{userName(item.assignee)}</span>}
+                        {item.notes && <MessageSquare className="h-2.5 w-2.5 shrink-0" aria-label="Has notes" />}
+                        {item.attachments && item.attachments.length > 0 && (
+                          <Paperclip className="h-2.5 w-2.5 shrink-0" aria-label="Has attachments" />
+                        )}
+                      </span>
+                    )
+                  })()}
                 </button>
               </div>
             </li>

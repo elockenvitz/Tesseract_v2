@@ -74,14 +74,29 @@ describe('readiness is stated once in the stage block', () => {
   })
 })
 
-describe('the empty detail panel helps instead of counting', () => {
-  it('names the next unfinished requirement', () => {
-    expect(TIMELINE).toMatch(/const next = items\.find\(i => !isItemDone\(i\)\)/)
-    expect(TIMELINE).toMatch(/data-testid="requirement-start-next"/)
+describe('the unselected panel helps instead of counting', () => {
+  /*
+   * This used to pin the dashed "Pick a requirement" box and its
+   * "Start with …" button. Both are gone, replaced by `StageOverview`,
+   * which answers the same question better: it states the stage's
+   * objective, derives which requirement to resume AND why, and shows what
+   * has already been written. The assertions move to that surface; the
+   * recommendation's own ordering is covered exhaustively in
+   * `lib/asset-work/__tests__/stage-overview.test.ts`.
+   */
+  it('renders the stage overview rather than an empty prompt', () => {
+    expect(TIMELINE).toMatch(/<StageOverview/)
+    expect(TIMELINE).not.toMatch(/Pick a requirement to record what you found/)
   })
 
-  it('says so when a stage is finished rather than offering nothing', () => {
-    expect(TIMELINE).toMatch(/Every requirement in this stage is done/)
+  it('feeds it the stage, the requirements and the findings already written', () => {
+    expect(TIMELINE).toMatch(/stage=\{\{ label: stage\?\.label, description: stage\?\.description \}\}/)
+    expect(TIMELINE).toMatch(/facts=\{facts\}/)
+    expect(TIMELINE).toMatch(/findings=\{findings\}/)
+  })
+
+  it('opens a requirement through the existing selection handler', () => {
+    expect(TIMELINE).toMatch(/onOpenRequirement=\{\(id\) => setSelectedRequirement\(id\)\}/)
   })
 
   it('still does not auto-select — opening one is the reader\'s move', () => {

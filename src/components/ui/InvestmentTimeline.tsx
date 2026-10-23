@@ -15,6 +15,7 @@ import { StageActionBar } from '../workflow/StageActionBar'
 import { RequirementsNavigator } from '../workflow/RequirementsNavigator'
 import { StageRail } from '../workflow/StageRail'
 import { RequirementWorkspace } from '../asset/work/RequirementWorkspace'
+import { StageOverview } from '../asset/work/StageOverview'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useToastOptional } from '../common/toast-context'
@@ -620,27 +621,65 @@ export function InvestmentTimeline({
     return stages
   }, [workflowId, workflowStages, workflowChecklistTemplates])
 
-  // Query all commentary entries for the completed summary
-  const allThinkingDbIds = showStageDetails === 'completed'
+  /*
+   * Which requirements to read commentary for.
+   *
+   * ── Why this is no longer thinking-only ────────────────────────────────
+   *
+   * It was built for the completed-process summary, which shows findings
+   * from thinking requirements. But `checklist_item_comments` is not a
+   * thinking-only table: the operational card writes to it too, through its
+   * own "Add comment". Measured on AMT's 27 Mar review, the one written
+   * finding in the stage — "the ytd performance is great" — sat on an
+   * OPERATIONAL requirement, so the stage overview reported that nothing
+   * had been written against the stage while the text was one click away.
+   *
+   * Widening the id list cannot change the completed summary, which filters
+   * to `item_type === 'thinking'` itself when it groups.
+   */
+  const allCommentableDbIds = (showStageDetails === 'completed' || !selectedRequirement)
     ? timelineStages.filter(s => s.id !== 'completed').flatMap(s =>
-        (stageChecklists[s.id] || []).filter(i => i.item_type === 'thinking' && i.dbId).map(i => i.dbId!)
+        (stageChecklists[s.id] || []).filter(i => i.dbId).map(i => i.dbId!)
       )
     : []
 
-  const { data: allCommentaries = [] } = useQuery({
-    queryKey: ['all-commentaries', assetId, workflowId, allThinkingDbIds.join(',')],
+  /*
+   * The row shape, stated once.
+   *
+   * Without it the query's result infers as `never[]` — the select string is
+   * opaque to the generated types — and every field read off a commentary
+   * row is a type error. The completed-process summary has carried those
+   * errors since it was written; the stage overview reads the same rows, so
+   * naming the shape here fixes both rather than adding a second set.
+   */
+  interface CommentaryRow {
+    checklist_item_id: string
+    comment_text: string | null
+    user_id: string | null
+    created_at: string | null
+    user?: { id?: string; first_name?: string | null; last_name?: string | null; email?: string } | null
+  }
+
+  const { data: allCommentaries = [] } = useQuery<CommentaryRow[]>({
+    queryKey: ['all-commentaries', assetId, workflowId, allCommentableDbIds.join(',')],
     queryFn: async () => {
-      if (allThinkingDbIds.length === 0) return []
+      if (allCommentableDbIds.length === 0) return []
       const { data, error } = await supabase
         .from('checklist_item_comments')
         .select('checklist_item_id, comment_text, user_id, created_at, user:users!checklist_item_comments_user_id_fkey(id, first_name, last_name, email)')
-        .in('checklist_item_id', allThinkingDbIds)
+        .in('checklist_item_id', allCommentableDbIds)
         .eq('signal_type', 'commentary')
         .order('created_at', { ascending: true })
       if (error) throw error
-      return data || []
+      return (data ?? []) as unknown as CommentaryRow[]
     },
-    enabled: showStageDetails === 'completed' && allThinkingDbIds.length > 0,
+    /*
+     * Also while no requirement is open: the stage overview quotes these
+     * findings, and without them a stage where three requirements carry
+     * written analysis looks identical to one where none does. Same query,
+     * same key, one more case — not a second read path.
+     */
+    enabled: (showStageDetails === 'completed' || !selectedRequirement) && allCommentableDbIds.length > 0,
     staleTime: 30_000,
   })
 
@@ -2145,6 +2184,10 @@ export function InvestmentTimeline({
                           onSelect={setSelectedRequirement}
                           onAction={(id, action) => applyRequirementAction(showStageDetails, id, action)}
                           isEditable={isEditable}
+                          /* Ids of requirements carrying a written finding,
+                             from the commentary query this surface already
+                             runs. The rail performs no read of its own. */
+                          documentedIds={new Set(allCommentaries.map(c => c.checklist_item_id))}
                         />
 
                         <div className="min-w-0" data-testid="requirement-detail">
@@ -2152,61 +2195,72 @@ export function InvestmentTimeline({
                             const selected = items.find(i => i.id === selectedRequirement)
                             if (!selected) {
                               /*
-                                No requirement selected — and deliberately
-                                none chosen for the reader. Auto-selecting
-                                the first would imply they had been working
-                                on it.
+                                ── The stage, before a requirement is open ──
+
+                                This was a dashed box reading "Pick a
+                                requirement to record what you found" — two
+                                thirds of the working surface asking the
+                                reader to choose before telling them anything
+                                to choose on. The overview answers what the
+                                stage asks, where to pick up and why, what
+                                state each requirement is in and what anyone
+                                has actually written.
+
+                                Nothing new is fetched: statuses and notes
+                                come off the rows the rail already holds, and
+                                the findings are the commentary query above.
+                                It still does not auto-select — naming the
+                                next requirement is a prompt, opening it
+                                would be a claim that work had started.
                               */
+                              const stage = timelineStages.find(s => s.id === showStageDetails)
+                              const commentaryFor = new Map<string, typeof allCommentaries>()
+                              for (const c of allCommentaries) {
+                                const list = commentaryFor.get(c.checklist_item_id) ?? []
+                                list.push(c)
+                                commentaryFor.set(c.checklist_item_id, list)
+                              }
+                              const facts = items.map(i => ({
+                                id: i.id,
+                                text: i.text,
+                                status: i.status,
+                                completed: i.completed,
+                                hasCommentary: !!(i.dbId && commentaryFor.get(i.dbId)?.length),
+                                hasNotes: !!i.notes?.trim(),
+                                hasAttachments: !!i.attachments?.length,
+                                assigneeName: i.assignee ? chUserName(i.assignee) : null,
+                                assigneeId: i.assignee_id ?? null,
+                                dueDate: i.due_date ?? null,
+                                completedAt: i.completedAt ?? null,
+                                completedByName: i.completedByUser ? chUserName(i.completedByUser) : null,
+                              }))
+                              /* Newest first, one per requirement: the
+                                 overview quotes the latest, and the rest are
+                                 on the requirement where they were written. */
+                              const findings = items.flatMap(i => {
+                                const rows = i.dbId ? commentaryFor.get(i.dbId) ?? [] : []
+                                const latest = rows[rows.length - 1]
+                                if (!latest?.comment_text) return []
+                                const u: any = Array.isArray(latest.user) ? latest.user[0] : latest.user
+                                return [{
+                                  requirementId: i.id,
+                                  requirementText: i.text,
+                                  text: latest.comment_text,
+                                  authorName: u ? chUserName(u) : null,
+                                  when: latest.created_at
+                                    ? new Date(latest.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                                    : null,
+                                }]
+                              })
                               return (
-                                <div
-                                  data-testid="requirement-none-selected"
-                                  className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-700"
-                                >
-                                  {/*
-                                    The count moved out of here.
-
-                                    "{done} of {total} requirements complete."
-                                    was the THIRD statement of the same fact
-                                    on this screen — the rail's bar, the
-                                    action bar's sentence, and then this — and
-                                    it is the least useful of the three,
-                                    because it answers a question the reader
-                                    did not ask of an empty panel. What they
-                                    want to know here is what to do, and which
-                                    one to do first.
-
-                                    Still not auto-selected: opening a
-                                    requirement implies the reader has started
-                                    it, and the panel below is where notes and
-                                    drafts live. Naming the next one is a
-                                    prompt; opening it would be a claim.
-                                  */}
-                                  {(() => {
-                                    const next = items.find(i => !isItemDone(i))
-                                    if (!next) {
-                                      return (
-                                        <p className="text-[13px] text-gray-500 dark:text-gray-400">
-                                          Every requirement in this stage is done.
-                                        </p>
-                                      )
-                                    }
-                                    return (
-                                      <>
-                                        <p className="text-[13px] text-gray-500 dark:text-gray-400">
-                                          Pick a requirement to record what you found.
-                                        </p>
-                                        <button
-                                          type="button"
-                                          data-testid="requirement-start-next"
-                                          onClick={() => setSelectedRequirement(next.id)}
-                                          className="mt-2 rounded border border-gray-300 px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-                                        >
-                                          Start with "{next.text}"
-                                        </button>
-                                      </>
-                                    )
-                                  })()}
-                                </div>
+                                <StageOverview
+                                  stage={{ label: stage?.label, description: stage?.description }}
+                                  assetSymbol={assetSymbol ?? null}
+                                  facts={facts}
+                                  findings={findings}
+                                  viewerId={user?.id ?? null}
+                                  onOpenRequirement={(id) => setSelectedRequirement(id)}
+                                />
                               )
                             }
                             /*
