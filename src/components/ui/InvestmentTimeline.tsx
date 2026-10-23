@@ -13,6 +13,7 @@ import { OperationalItemCard } from './checklist/OperationalItemCard'
 import { type ProcessItemType, userName as chUserName } from './checklist/types'
 import { StageActionBar } from '../workflow/StageActionBar'
 import { RequirementsNavigator } from '../workflow/RequirementsNavigator'
+import { RequirementWorkspace } from '../asset/work/RequirementWorkspace'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useToastOptional } from '../common/toast-context'
@@ -2169,9 +2170,43 @@ export function InvestmentTimeline({
                               currentUser: user,
                               layout: 'detail' as const,
                             }
-                            return (selected.item_type || 'operational') === 'thinking'
+                            const card = (selected.item_type || 'operational') === 'thinking'
                               ? <DecisionItemCard key={selected.id} {...props} />
                               : <OperationalItemCard key={selected.id} {...props} />
+                            /*
+                              ── The card is framed, not replaced ──────────
+                              It keeps every write it already owned: the
+                              takeaway, the notes, the status transition and
+                              its attribution. What surrounds it is the part
+                              that was missing — the objective this
+                              requirement serves, the facts that bear on it,
+                              and where to go when it is answered.
+                            */
+                            const stage = timelineStages.find(s => s.id === showStageDetails)
+                            const position = items.findIndex(i => i.id === selected.id)
+                            /* The next one to WORK on, so a finished
+                               requirement is not offered again. Falls back to
+                               the next in order when everything after it is
+                               done, and to nothing at the end of the stage. */
+                            const after = items.slice(position + 1)
+                            const nextItem = after.find(i => !isItemDone(i)) ?? after[0] ?? null
+                            return (
+                              <RequirementWorkspace
+                                assetId={assetId}
+                                symbol={assetSymbol ?? null}
+                                requirementText={selected.text}
+                                stageLabel={stage?.label ?? 'this stage'}
+                                stageDescription={stage?.description ?? null}
+                                index={position + 1}
+                                total={items.length}
+                                doneCount={doneCount}
+                                onBack={() => setSelectedRequirement(null)}
+                                next={nextItem ? { id: nextItem.id, text: nextItem.text } : null}
+                                onOpenNext={(id) => setSelectedRequirement(id)}
+                              >
+                                {card}
+                              </RequirementWorkspace>
+                            )
                           })()}
                         </div>
                       </div>

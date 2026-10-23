@@ -2453,6 +2453,22 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     [workItems, workItemKey],
   )
   const selectedWorkItem = workSelection.selected
+  /*
+   * ── Loading is not absence ──────────────────────────────────────────
+   *
+   * The work surface said "No active work on this asset" whenever nothing
+   * was selected, and nothing can be selected until the four queries that
+   * BUILD the list have answered. On a cold load that is a false statement
+   * held on screen for several seconds — measured at ~8s against the dev
+   * server, on an asset with four running processes — and it is the worst
+   * kind of wrong, because it is a confident claim about the reader's own
+   * work rather than a blank.
+   *
+   * One flag, read by the navigator and the surface together, so the two
+   * can never disagree about whether the answer is in yet.
+   */
+  const workIsResolving =
+    workAttentionLoading || openItemsLoading || conversationsLoading || allWorkflowsLoading
   const selectedWorkIdea = React.useMemo(
     () => (selectedWorkItem?.kind === 'idea'
       ? workIdeas.find(i => i.id === selectedWorkItem.id) ?? null
@@ -4403,7 +4419,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     : (selectedWorkItem?.key ?? null)
                 }
                 recoveredFrom={workSelection.recovered}
-                isLoading={workAttentionLoading || openItemsLoading || conversationsLoading}
+                isLoading={workIsResolving}
                 onSelect={(item: WorkItem) => {
                   /* A conversation opens the existing CoAnalyst pane and
                      leaves the surface alone. The pane is where threads live;
@@ -4469,7 +4485,22 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   header, or the empty state's text block. Nothing reserves a
                   row for it in any of the three.
                 */}
-                {!selectedWorkItem && (
+                {!selectedWorkItem && workIsResolving && (
+                  /* The shape of what is coming, and no claim about it. */
+                  <div data-testid="work-surface-loading" className="space-y-3">
+                    {workSidebarCollapsed && (
+                      <div className="flex justify-end">
+                        <WorkSidebarToggle direction="expand" onToggle={toggleWorkSidebar} />
+                      </div>
+                    )}
+                    <div className="h-9 animate-pulse rounded-md bg-gray-100 dark:bg-gray-800" />
+                    <div className="h-24 animate-pulse rounded-md bg-gray-100 dark:bg-gray-800" />
+                    <div className="h-40 animate-pulse rounded-md bg-gray-100 dark:bg-gray-800" />
+                    <p className="text-[11px] text-gray-400">Loading this asset's work…</p>
+                  </div>
+                )}
+
+                {!selectedWorkItem && !workIsResolving && (
                   <div
                     data-testid="work-surface-empty"
                     className="rounded-lg border border-dashed border-gray-300 px-4 py-10 text-center dark:border-gray-700"
