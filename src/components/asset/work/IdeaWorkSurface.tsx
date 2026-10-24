@@ -23,6 +23,13 @@
  *
  * ── The three roles stay apart ──────────────────────────────────────────
  *
+ * The stage track is the exception that proves the rule: moving an idea
+ * forward is its own explicitly-labelled control, never a side effect of
+ * saving a field. A field save writes content; a stage chip writes stage. The
+ * one place they meet is a move the gate refused — it parks, opens the field
+ * it is waiting on, and the save button says "Save & move to …" so the reader
+ * is told the save will also move the idea before they press it.
+ *
  * The analyst's half writes `trade_queue_items` content. `DecisionModule`
  * keeps the PM's half — accept, defer, reject, per portfolio track — and
  * owns its own authorization. Nothing in the editor touches `stage`,
@@ -40,7 +47,10 @@ import { clsx } from 'clsx'
 import { Check, ExternalLink, PencilLine, X } from 'lucide-react'
 import { DecisionModule } from '../../ideas-v2/DecisionModule'
 import { openIdeaDetail } from '../../../lib/navigation/open-idea'
-import { stageLabel, stageColor } from '../../../lib/ideas/stage-model'
+import {
+  IDEA_STAGES, IDEA_STAGE_CONFIG, missingForStage, stageIndex, toIdeaStage,
+  type IdeaStage,
+} from '../../../lib/ideas/stage-model'
 import { useTradeIdeaService } from '../../../hooks/useTradeIdeaService'
 import { useAuth } from '../../../hooks/useAuth'
 import { supabase } from '../../../lib/supabase'
@@ -78,6 +88,7 @@ interface IdeaRow extends IdeaEditSubject {
   conviction: 'low' | 'medium' | 'high' | null
   time_horizon: 'short' | 'medium' | 'long' | null
   urgency: string | null
+  sharing_visibility: string | null
   proposed_weight: number | null
   proposed_shares: number | null
   target_price: number | null
@@ -103,6 +114,7 @@ function useIdeaRow(ideaId: string) {
         .from('trade_queue_items')
         .select(
           'id, action, stage, rationale, thesis_text, conviction, time_horizon, urgency, ' +
+          'sharing_visibility, ' +
           'proposed_weight, proposed_shares, target_price, stop_loss, take_profit, ' +
           'created_by, collaborators, assigned_to, pair_id'
         )
@@ -123,6 +135,7 @@ function useIdeaRow(ideaId: string) {
  */
 function Section({
   title, canEdit, editing, onEdit, onCancel, onSave, saving, dirty, children, view, testId,
+  saveLabel = 'Save',
 }: {
   title: string
   canEdit: boolean
@@ -135,6 +148,8 @@ function Section({
   children: React.ReactNode
   view: React.ReactNode
   testId: string
+  /** Says what the save will do when it also completes a parked stage move. */
+  saveLabel?: string
 }) {
   return (
     <section data-testid={testId}>
@@ -163,7 +178,7 @@ function Section({
               className="inline-flex items-center gap-1 rounded bg-primary-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
             >
               <Check className="h-3 w-3" aria-hidden="true" />
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? 'Saving…' : saveLabel}
             </button>
             <button
               type="button"
@@ -219,9 +234,11 @@ const Chips = <T extends string>({
 export function IdeaWorkSurface({ idea, assetId, className, headerAction }: IdeaWorkSurfaceProps) {
   const { user } = useAuth()
   const { data: row, isLoading, error } = useIdeaRow(idea.id)
-  const { updateTrade, isUpdating } = useTradeIdeaService()
+  const { updateTrade, updateTradeAsync, isUpdating, moveTrade, isMoving } = useTradeIdeaService()
 
   const [open, setOpen] = useState<null | 'rationale' | 'thesis' | 'conviction' | 'sizing'>(null)
+  /** A move the gate refused, parked until the field it needs is written. */
+  const [blocked, setBlocked] = useState<{ stage: IdeaStage; missing: string[] } | null>(null)
   const [rationale, setRationale] = useState('')
   const [thesis, setThesis] = useState('')
   const [conviction, setConviction] = useState<IdeaRow['conviction']>(null)
@@ -235,7 +252,7 @@ export function IdeaWorkSurface({ idea, assetId, className, headerAction }: Idea
    * Without this, switching ideas in the sidebar with a draft open carried
    * that draft onto the next idea and offered to save it there.
    */
-  useEffect(() => { setOpen(null) }, [idea.id])
+  useEffect(() => { setOpen(null); setBlocked(null) }, [idea.id])
 
   const canEdit = canEditIdea(row, user?.id ?? null)
   const isPair = !!row?.pair_id
@@ -257,6 +274,81 @@ export function IdeaWorkSurface({ idea, assetId, className, headerAction }: Idea
     updateTrade({ tradeId: idea.id, updates, uiSource: 'asset_work' })
     setOpen(null)
   }
+
+  /*
+   * ── Moving the idea forward ───────────────────────────────────────────
+   *
+   * The stage was a coloured label here and nothing more: advancing an idea
+   * meant leaving for the modal. These chips move it, through the same
+   * `moveTrade` mutation, and they answer the gate before sending a write
+   * that `trade-idea-service.ts` would refuse.
+   *
+   * That service-side gate is still the rule. This is the reason the analyst
+   * is not told "no" and left there: a refused move parks, opens the field it
+   * is waiting on, and completes itself when that field is written. The
+   * pattern is the modal's `requestStageMove` / `saveGatedField`, reused
+   * rather than reinvented, so both surfaces behave the same way.
+   */
+  const currentStage: IdeaStage | null =
+    row?.stage || idea.stage ? toIdeaStage(row?.stage ?? idea.stage) : null
+
+  const gateSubject = { rationale: row?.rationale, thesis_text: row?.thesis_text }
+
+  const requestStageMove = (stage: IdeaStage) => {
+    const missing = missingForStage(gateSubject, stage)
+    if (missing.length === 0) {
+      setBlocked(null)
+      moveTrade({ tradeId: idea.id, stage, uiSource: 'asset_work' })
+      return
+    }
+    setBlocked({ stage, missing })
+    /* Send them to the field, in document order — "Why now" sits above the
+       thesis, and opening the lower one first makes the upper look optional. */
+    if (missing.includes('Why now (rationale)')) startRationale()
+    else startThesis()
+  }
+
+  /**
+   * Save a field a parked move is waiting on, then finish the move if it was
+   * the last thing outstanding.
+   *
+   * The gate is re-asked against the saved text rather than assumed
+   * satisfied: a field saved blank still blocks, and the banner should say so
+   * instead of the move failing a second time.
+   */
+  const saveGated = async (field: 'rationale' | 'thesis', value: string) => {
+    const text = value.trim()
+    await updateTradeAsync({
+      tradeId: idea.id,
+      updates: field === 'rationale' ? { rationale: text || null } : { thesisText: text || null },
+      uiSource: 'asset_work',
+    })
+    setOpen(null)
+    if (!blocked) return
+
+    const stillMissing = missingForStage(
+      {
+        rationale: field === 'rationale' ? text : row?.rationale,
+        thesis_text: field === 'thesis' ? text : row?.thesis_text,
+      },
+      blocked.stage,
+    )
+    if (stillMissing.length > 0) {
+      setBlocked({ stage: blocked.stage, missing: stillMissing })
+      if (stillMissing.includes('Why now (rationale)')) startRationale()
+      else startThesis()
+      return
+    }
+    const stage = blocked.stage
+    setBlocked(null)
+    moveTrade({ tradeId: idea.id, stage, uiSource: 'asset_work' })
+  }
+
+  /** The move completes on this save only when nothing else is outstanding. */
+  const isLastBlocker = (field: 'rationale' | 'thesis') =>
+    !!blocked &&
+    blocked.missing.length === 1 &&
+    blocked.missing[0] === (field === 'rationale' ? 'Why now (rationale)' : 'Trade thesis')
 
   if (isLoading) {
     return (
@@ -286,6 +378,9 @@ export function IdeaWorkSurface({ idea, assetId, className, headerAction }: Idea
     )
   }
 
+  /* A row with no visibility set is private — the column's own default. */
+  const visibility = row.sharing_visibility ?? 'private'
+
   const sizingDirty =
     num(sizing.proposedWeight) !== row.proposed_weight ||
     num(sizing.proposedShares) !== row.proposed_shares ||
@@ -303,14 +398,7 @@ export function IdeaWorkSurface({ idea, assetId, className, headerAction }: Idea
             {row.action ?? idea.action}
           </span>
         )}
-        {(row.stage ?? idea.stage) && (
-          <span className={clsx(
-            'rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset',
-            stageColor(row.stage ?? idea.stage!),
-          )}>
-            {stageLabel(row.stage ?? idea.stage!)}
-          </span>
-        )}
+        {/* The stage is not repeated here — the track below states it. */}
         <span className="text-[11px] text-gray-500 dark:text-gray-400">
           {[idea.portfolioName, idea.creatorName, idea.updatedAgo].filter(Boolean).join(' · ')}
         </span>
@@ -320,6 +408,69 @@ export function IdeaWorkSurface({ idea, assetId, className, headerAction }: Idea
           </span>
         )}
       </div>
+
+      {/* The stage, as a track you move the idea along rather than a label. */}
+      {currentStage && (
+        <section data-testid="idea-pipeline">
+          <div className="flex flex-wrap items-center gap-1">
+            {IDEA_STAGES.map((s, i) => {
+              const here = s === currentStage
+              const passed = i < stageIndex(currentStage)
+              const needs = missingForStage(gateSubject, s)
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  data-testid={`idea-stage-${s}`}
+                  aria-current={here ? 'step' : undefined}
+                  disabled={!canEdit || here || isPair || isMoving}
+                  onClick={() => requestStageMove(s)}
+                  title={
+                    here ? 'Current stage'
+                      : isPair ? 'Pair trades move together, in the idea pipeline'
+                        : needs.length ? `Needs ${needs.join(' and ').toLowerCase()}`
+                          : `Move to ${IDEA_STAGE_CONFIG[s].label}`
+                  }
+                  className={clsx(
+                    'rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors',
+                    here
+                      ? 'bg-gray-900 text-white ring-gray-900 dark:bg-gray-100 dark:text-gray-900'
+                      : passed
+                        ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:ring-emerald-900'
+                        : needs.length
+                          ? 'text-gray-400 ring-dashed ring-gray-300 dark:text-gray-500 dark:ring-gray-700'
+                          : 'text-gray-600 ring-gray-200 dark:text-gray-300 dark:ring-gray-700',
+                    canEdit && !here && !isPair && !isMoving && 'hover:bg-gray-50 dark:hover:bg-gray-800',
+                    (!canEdit || here || isPair) && 'cursor-default',
+                  )}
+                >
+                  {IDEA_STAGE_CONFIG[s].label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* A parked move, with the thing it is waiting on named. */}
+          {blocked && (
+            <p
+              data-testid="idea-stage-blocked"
+              className="mt-2 rounded border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
+            >
+              {IDEA_STAGE_CONFIG[blocked.stage].label} needs{' '}
+              {blocked.missing.join(' and ').toLowerCase()}. Write it below and the
+              move completes on save.{' '}
+              <button
+                type="button"
+                data-testid="idea-stage-blocked-cancel"
+                onClick={() => { setBlocked(null); setOpen(null) }}
+                className="font-medium underline"
+              >
+                Cancel the move
+              </button>
+            </p>
+          )}
+        </section>
+      )}
 
       {isPair && (
         /* A pair's fields are shared across its legs; editing one here
@@ -339,8 +490,11 @@ export function IdeaWorkSurface({ idea, assetId, className, headerAction }: Idea
           editing={open === 'rationale'}
           onEdit={startRationale}
           onCancel={() => setOpen(null)}
-          onSave={() => save({ rationale: rationale.trim() || null })}
-          saving={isUpdating}
+          onSave={() => { void saveGated('rationale', rationale) }}
+          saveLabel={isLastBlocker('rationale')
+            ? `Save & move to ${IDEA_STAGE_CONFIG[blocked!.stage].label}`
+            : 'Save'}
+          saving={isUpdating || isMoving}
           dirty={(rationale.trim() || null) !== (row.rationale ?? null)}
           view={<Prose text={row.rationale} />}
         >
@@ -362,8 +516,11 @@ export function IdeaWorkSurface({ idea, assetId, className, headerAction }: Idea
           editing={open === 'thesis'}
           onEdit={startThesis}
           onCancel={() => setOpen(null)}
-          onSave={() => save({ thesisText: thesis.trim() || null })}
-          saving={isUpdating}
+          onSave={() => { void saveGated('thesis', thesis) }}
+          saveLabel={isLastBlocker('thesis')
+            ? `Save & move to ${IDEA_STAGE_CONFIG[blocked!.stage].label}`
+            : 'Save'}
+          saving={isUpdating || isMoving}
           dirty={(thesis.trim() || null) !== (row.thesis_text ?? null)}
           view={<Prose text={row.thesis_text} />}
         >
@@ -413,6 +570,84 @@ export function IdeaWorkSurface({ idea, assetId, className, headerAction }: Idea
             </div>
           </div>
         </Section>
+
+        {/*
+          ── Priority and visibility ────────────────────────────────────
+          Two fields the modal had and this surface did not, so an analyst
+          had to leave to mark an idea urgent or share it with the desk.
+
+          No edit/save ceremony: each is one enum and a click is the whole
+          decision, so these write straight through `updateTrade`. Priority
+          is `urgency` — one column, called "priority" in the modal's
+          dropdown, not a second field.
+        */}
+        <section data-testid="idea-handling">
+          <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
+            <div>
+              <span className={clsx(EYEBROW, 'mb-1 block')}>Priority</span>
+              <div className="flex gap-1.5">
+                {(['low', 'medium', 'high'] as const).map(level => (
+                  <button
+                    key={level}
+                    type="button"
+                    data-testid={`idea-urgency-${level}`}
+                    disabled={!canEdit || isUpdating}
+                    onClick={() => save({ urgency: level })}
+                    className={clsx(
+                      'rounded-full px-2.5 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset',
+                      row.urgency === level
+                        ? 'bg-gray-900 text-white ring-gray-900 dark:bg-gray-100 dark:text-gray-900'
+                        : 'text-gray-600 ring-gray-200 hover:bg-gray-50 dark:text-gray-300 dark:ring-gray-700',
+                      !canEdit && 'cursor-default',
+                    )}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <span className={clsx(EYEBROW, 'mb-1 block')}>Visible to</span>
+              <div className="flex items-center gap-1.5">
+                {/*
+                  `sharing_visibility` holds four values in production
+                  (`public` and `portfolio` as well), but only two are
+                  offered — the same two the modal offers. An idea already
+                  set to one of the others would otherwise render with
+                  nothing selected, which reads as "private" and is wrong,
+                  so the stored value is stated instead of implied.
+                */}
+                {visibility !== 'private' && visibility !== 'team' && (
+                  <span
+                    data-testid="idea-visibility-other"
+                    title="Set outside this surface; change it in the idea pipeline"
+                    className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-medium capitalize text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                  >
+                    {visibility}
+                  </span>
+                )}
+                {([['private', 'Just me'], ['team', 'The team']] as const).map(([v, label]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    data-testid={`idea-visibility-${v}`}
+                    disabled={!canEdit || isUpdating}
+                    onClick={() => save({ sharingVisibility: v })}
+                    className={clsx(
+                      'rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset',
+                      visibility === v
+                        ? 'bg-gray-900 text-white ring-gray-900 dark:bg-gray-100 dark:text-gray-900'
+                        : 'text-gray-600 ring-gray-200 hover:bg-gray-50 dark:text-gray-300 dark:ring-gray-700',
+                      !canEdit && 'cursor-default',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
 
         <Section
           testId="idea-field-sizing"

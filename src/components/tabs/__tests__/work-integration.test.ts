@@ -218,13 +218,29 @@ describe('authorization is the existing one', () => {
 
   it('never writes the fields that would decide, size or execute a trade', () => {
     /*
-     * The line the editor must not cross. Writing `stage` or `outcome`
-     * from the analyst's half would let editing a thesis accept a trade;
-     * `moveTrade` and the decision mutations are the PM's, and are not
-     * called here.
+     * The line the editor must not cross. Writing `outcome` from the
+     * analyst's half would let editing a thesis accept a trade.
+     *
+     * ── Why `moveTrade` is no longer banned outright ────────────────────
+     *
+     * This pin used to forbid `moveTrade` entirely, because the surface was
+     * content-only: an analyst had to leave for the modal to advance an
+     * idea, which is what made Work a viewer for ideas. The surface now has
+     * a stage track, so the ban narrowed to what it was actually
+     * protecting.
+     *
+     * Stage is maturity — "this deserves more of my time" — and it is the
+     * analyst's to set. Outcome is the decision, and it stays the PM's.
+     * `moveTrade` is called with `stage` and never with `outcome`, so it
+     * cannot accept, defer or execute anything; the clause below proves
+     * that, and `idea-pipeline.test.ts` proves the move is its own
+     * explicitly-labelled control rather than a side effect of a save.
      */
-    expect(IDEA).not.toMatch(/moveTrade|portfolioDecisionMutation|deferTrade/)
+    expect(IDEA).not.toMatch(/portfolioDecisionMutation|deferTrade|setOutcome/)
     expect(IDEA).not.toMatch(/from\('accepted_trades'\)|from\('trade_proposals'\)/)
+    for (const call of IDEA.match(/moveTrade\(\{[\s\S]*?\}\)/g) ?? []) {
+      expect(call).not.toMatch(/\boutcome\b|\btargetStatus\b/)
+    }
     /*
      * Scoped to what is SAVED, not to the words appearing anywhere: the
      * row type legitimately declares `stage`, and the surface legitimately
@@ -283,9 +299,21 @@ describe('the idea surface is not an approval form', () => {
   })
 
   it('renders the stage through the canonical model, never raw', () => {
-    /* Prefers the freshly read row, falls back to the sidebar's copy, and
-       in both cases goes through `stageLabel`. */
-    expect(IDEA).toMatch(/stageLabel\(row\.stage \?\? idea\.stage!\)/)
+    /*
+     * Prefers the freshly read row and falls back to the sidebar's copy, as
+     * before. What changed is the renderer: a single `stageLabel` chip
+     * became a track of every stage, so the label now comes from
+     * `IDEA_STAGE_CONFIG` and the value is normalised by `toIdeaStage`
+     * first.
+     *
+     * That normalisation is not cosmetic. Production still holds
+     * pre-migration stage values — `deep_research`, `thesis_forming`,
+     * `aware`, `investigate`, `ready_for_decision` — and comparing one of
+     * those against the four canonical stages raw highlights no chip at
+     * all, so the reader is shown an idea that appears to be at no stage.
+     */
+    expect(IDEA).toMatch(/toIdeaStage\(row\?\.stage \?\? idea\.stage\)/)
+    expect(IDEA).toMatch(/IDEA_STAGE_CONFIG\[s\]\.label/)
     expect(IDEA).not.toMatch(/>\{idea\.stage\}</)
   })
 })
