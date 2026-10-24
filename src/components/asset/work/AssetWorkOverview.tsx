@@ -12,10 +12,11 @@
  * portfolios, projects — which are connections rather than work and are
  * sized accordingly. Nothing gets a card for its own sake.
  */
+import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import {
   ArrowRight, Briefcase, FileText, FolderKanban, GitBranch, Lightbulb, List,
-  MessageSquare, Play, StickyNote, Tag,
+  MessageSquare, Play, Plus, StickyNote, Tag,
 } from 'lucide-react'
 import type { AssetWorkOverview as Overview, OverviewRun } from '../../../lib/asset-work/work-overview'
 import { progressOf } from '../../../lib/asset-work/work-overview'
@@ -40,8 +41,12 @@ export interface OverviewConnection {
 
 /** What Work shows about research. Read-only; Research still owns writing. */
 export interface OverviewResearch {
-  /** Newest `updated_at` across the core case sections. */
-  caseWrittenAt: string | null
+  /** The case's own sections, so the page can show what it SAYS. */
+  sections: ReadonlyArray<{
+    section: string
+    content: string
+    at: string | null
+  }>
   notes: ReadonlyArray<{
     id: string
     title: string
@@ -69,6 +74,9 @@ export interface AssetWorkOverviewProps {
   onOpenConnection: (c: OverviewConnection) => void
   /** The cross-asset Lists / Themes / Portfolios apps. */
   onOpenAll?: (kind: 'list' | 'theme' | 'portfolio') => void
+  /** Processes this asset could be added to, and the join. */
+  joinable?: ReadonlyArray<{ id: string; name: string }>
+  onJoin?: (workflowId: string) => void
   onOpenResearch?: () => void
   onOpenNote?: (noteId: string) => void
   /**
@@ -154,10 +162,128 @@ function RunRow({ run, onOpen }: { run: OverviewRun; onOpen: () => void }) {
   )
 }
 
+/** One kind of relationship, with its own heading and its own empty state. */
+function ConnectionGroup({
+  kind, title, empty, rows, loading, onOpen, onOpenAll, trailing,
+}: {
+  kind: OverviewConnection['kind']
+  title: string
+  empty: string
+  rows: readonly OverviewConnection[]
+  loading?: boolean
+  onOpen: (c: OverviewConnection) => void
+  onOpenAll?: (kind: 'list' | 'theme' | 'portfolio') => void
+  trailing?: React.ReactNode
+}) {
+  return (
+    <section data-testid={`work-overview-${kind}s`}>
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <span className={EYEBROW}>{title}</span>
+        {onOpenAll && kind !== 'project' && (
+          <button
+            type="button"
+            data-testid={`work-overview-all-${kind}`}
+            onClick={() => onOpenAll(kind)}
+            className="text-[11px] font-medium text-primary-600 hover:underline"
+          >
+            All {title.toLowerCase()}
+          </button>
+        )}
+      </div>
+      {loading ? (
+        <div className="h-5 w-40 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+      ) : rows.length === 0 ? (
+        <p className="text-[12px] text-gray-500 dark:text-gray-400">{empty}</p>
+      ) : (
+        <div className="space-y-0.5">
+          {rows.map(c => (
+            <button
+              key={`${c.kind}:${c.id}`}
+              type="button"
+              data-testid={`overview-connection-${c.kind}-${c.id}`}
+              onClick={() => onOpen(c)}
+              className="flex w-full items-baseline gap-2 rounded px-2 py-1 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+            >
+              {CONNECTION_ICON[c.kind]}
+              <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-900 dark:text-gray-100">
+                {c.label}
+              </span>
+              {c.detail && (
+                <span className="flex-none text-[11px] tabular-nums text-gray-500">{c.detail}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {trailing && <div className="mt-2 flex flex-wrap gap-1.5">{trailing}</div>}
+    </section>
+  )
+}
+
+/** Add this asset to a process, from the page that lists its processes. */
+function AddProcess({
+  joinable, onJoin,
+}: {
+  joinable: ReadonlyArray<{ id: string; name: string }>
+  onJoin: (workflowId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const down = (e: MouseEvent) => {
+      if (root.current && !root.current.contains(e.target as Node)) setOpen(false)
+    }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', down)
+    document.addEventListener('keydown', key)
+    return () => {
+      document.removeEventListener('mousedown', down)
+      document.removeEventListener('keydown', key)
+    }
+  }, [open])
+
+  return (
+    <div ref={root} className="relative">
+      <button
+        type="button"
+        data-testid="work-overview-add-process"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-primary-600 hover:underline"
+      >
+        <Plus className="h-3 w-3" aria-hidden="true" /> Add to a process
+      </button>
+      {open && (
+        <div
+          role="menu"
+          data-testid="work-overview-add-process-menu"
+          className="absolute right-0 top-full z-50 mt-1 max-h-72 w-[280px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        >
+          {joinable.map(j => (
+            <button
+              key={j.id}
+              type="button"
+              role="menuitem"
+              data-testid={`work-overview-join-${j.id}`}
+              onClick={() => { setOpen(false); onJoin(j.id) }}
+              className="block w-full truncate px-3 py-1.5 text-left text-[12px] text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              {j.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function AssetWorkOverview({
   symbol, overview, items, connections, connectionsLoading, research, loading, recoveredFrom,
   onOpenProcess, onResume, onOpenItem, onOpenConnection, onOpenAll, onOpenResearch, onOpenNote,
-  addActions, ideaFilter, projectsSlot, className,
+  joinable = [], onJoin, addActions, ideaFilter, projectsSlot, className,
 }: AssetWorkOverviewProps) {
   if (loading) {
     return (
@@ -173,20 +299,46 @@ export function AssetWorkOverview({
   const { resume, runs } = overview
 
   return (
-    <div className={clsx('min-w-0 space-y-6', className)} data-testid="work-overview">
+    /*
+      ── Two columns, because one stretched every row to 1,500px ──────
+
+      Every section was a full-width list whose label sat at the far left
+      and whose one fact sat at the far right, with a thousand pixels of
+      nothing between them. Doing the work in two columns of ~620px puts
+      the label and its fact next to each other and fits the whole of an
+      asset's work on one screen without scrolling.
+    */
+    <div className={clsx('min-w-0 max-w-[1320px]', className)} data-testid="work-overview">
       {recoveredFrom && (
         /* Said plainly rather than silently showing something else. */
         <p
           data-testid="work-overview-recovered"
-          className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
+          className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
         >
-          The work you had open is no longer available, so this is {symbol ?? 'the asset'}'s work overview.
+          The work you had open is no longer available, so this is all of {symbol ?? 'the asset'}'s work.
         </p>
       )}
 
+      {/*
+        ── What this page is ────────────────────────────────────────
+
+        It had no title, and the only thing that named it called it the
+        "Work overview" — beside an Overview mode that is a different
+        page. A reader had two things called overview and no statement
+        of which was home.
+      */}
+      <header className="mb-4 flex flex-wrap items-baseline gap-x-2 border-b border-gray-200 pb-2 dark:border-gray-700">
+        <h2 className="text-[15px] font-semibold text-gray-900 dark:text-gray-100">
+          All work on {symbol ?? 'this asset'}
+        </h2>
+        <span className="text-[11px] text-gray-500 dark:text-gray-400">
+          processes, research, lists and books, ideas — open one to work on it
+        </span>
+      </header>
+
       {/* ── Continue working ──────────────────────────────────────────── */}
       {resume && (
-        <section data-testid="work-overview-resume">
+        <section className="mb-5" data-testid="work-overview-resume">
           <span className={clsx(EYEBROW, 'mb-1.5 block')}>Continue working</span>
           <div className="rounded-md border border-primary-200 bg-primary-50/40 px-3 py-2.5 dark:border-primary-900 dark:bg-primary-950/20">
             <div className="flex flex-wrap items-baseline gap-x-2">
@@ -210,15 +362,39 @@ export function AssetWorkOverview({
         </section>
       )}
 
-      {/* ── Active processes ──────────────────────────────────────────── */}
+      {/*
+        ── Packed, not aligned ───────────────────────────────────────
+
+        A two-column GRID aligns row by row, so a short section beside a
+        tall one leaves a hole the height of the difference — Processes
+        beside Research left about 200px of nothing. Column flow packs
+        each section under the previous one in its column, so the only
+        empty space left on the page is at the bottom of one column.
+      */}
+      <div className="gap-x-8 lg:columns-2 [&>section]:mb-5 [&>section]:break-inside-avoid">
+
+      {/* ── Processes ─────────────────────────────────────────────────── */}
       <section data-testid="work-overview-processes">
-        <span className={clsx(EYEBROW, 'mb-1.5 block')}>Active processes</span>
+        <div className="mb-1.5 flex items-baseline justify-between gap-2">
+          <span className={EYEBROW}>Processes</span>
+          {/*
+            Adding this asset to a process was only possible from INSIDE
+            a process — the switcher's "Add a process" group — so an
+            asset running none had no way in at all, and the empty state
+            cheerfully pointed at a control the reader could not reach.
+          */}
+          {joinable.length > 0 && onJoin && (
+            <AddProcess joinable={joinable} onJoin={onJoin} />
+          )}
+        </div>
         {runs.length === 0 ? (
           <p className="text-[12px] text-gray-500 dark:text-gray-400">
-            No process is running on {symbol ?? 'this asset'}. Add one from the process switcher.
+            {joinable.length > 0
+              ? `No process is running on ${symbol ?? 'this asset'} yet.`
+              : `No process is running on ${symbol ?? 'this asset'}, and none is available to add.`}
           </p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {runs.map(r => (
               <RunRow key={r.workflowId} run={r} onOpen={() => onOpenProcess(r.workflowId)} />
             ))}
@@ -249,24 +425,38 @@ export function AssetWorkOverview({
             </button>
           )}
         </div>
-        {research.caseWrittenAt || research.notes.length > 0 ? (
+        {research.sections.length > 0 || research.notes.length > 0 ? (
           <div className="space-y-1">
-            <button
-              type="button"
-              data-testid="work-overview-case"
-              onClick={() => onOpenResearch?.()}
-              className="flex w-full items-baseline gap-2 rounded px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
-            >
-              <FileText className="h-3.5 w-3.5 flex-none translate-y-0.5 text-gray-400" aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-900 dark:text-gray-100">
-                Investment case
-              </span>
-              <span className="flex-none text-[11px] text-gray-500">
-                {research.caseWrittenAt
-                  ? `last written ${shortDate(research.caseWrittenAt)}`
-                  : 'not written yet'}
-              </span>
-            </button>
+            {/*
+              The case itself, not a row saying the words "Investment
+              case". That row carried one fact — a date — and a link to
+              the Research tab, which is already a click away at the top
+              of the page: a label pointing at a label.
+
+              These are the case's own sections with the first line of
+              what each one says, so the page tells you what the firm
+              thinks rather than that a thesis exists somewhere.
+            */}
+            {research.sections.slice(0, 3).map(s => (
+              <button
+                key={s.section}
+                type="button"
+                data-testid={`overview-case-${s.section}`}
+                onClick={() => onOpenResearch?.()}
+                className="block w-full rounded px-2 py-1 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                <span className="flex items-baseline gap-2">
+                  <FileText className="h-3.5 w-3.5 flex-none translate-y-0.5 text-gray-400" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-medium capitalize text-gray-900 dark:text-gray-100">
+                    {s.section.replace(/_/g, ' ')}
+                  </span>
+                  <span className="flex-none text-[10px] text-gray-400">{shortDate(s.at)}</span>
+                </span>
+                <span className="mt-0.5 line-clamp-1 pl-5 text-[11px] text-gray-500 dark:text-gray-400">
+                  {s.content}
+                </span>
+              </button>
+            ))}
             {research.notes.slice(0, 4).map(n => (
               <button
                 key={n.id}
@@ -297,63 +487,46 @@ export function AssetWorkOverview({
         )}
       </section>
 
-      {/* ── Lists and portfolios ──────────────────────────────────────── */}
-      <section data-testid="work-overview-connections">
-        <div className="mb-1.5 flex items-baseline justify-between gap-2">
-          <span className={EYEBROW}>Lists and portfolios</span>
-          {/* The cross-asset apps, which the sidebar reached with three
-              small ExternalLink icons. Still one click, now labelled. */}
-          {onOpenAll && (
-            <span className="flex gap-3">
-              {(['list', 'theme', 'portfolio'] as const).map(k => (
-                <button
-                  key={k}
-                  type="button"
-                  data-testid={`work-overview-all-${k}`}
-                  onClick={() => onOpenAll(k)}
-                  className="text-[11px] font-medium text-primary-600 hover:underline"
-                >
-                  All {k === 'list' ? 'lists' : k === 'theme' ? 'themes' : 'portfolios'}
-                </button>
-              ))}
-            </span>
-          )}
-        </div>
-        {connectionsLoading ? (
-          <div className="h-5 w-48 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
-        ) : connections.length === 0 ? (
-          <p className="text-[12px] text-gray-500 dark:text-gray-400">
-            Not on a list and not held in any book.
-          </p>
-        ) : (
-          /*
-            Rows, not chips. These were a line of small pills under "Also
-            connected to", which ranked them below everything — and being
-            in a book is one of the four things this surface is for.
-          */
-          <div className="space-y-1">
-            {connections.map(c => (
-              <button
-                key={`${c.kind}:${c.id}`}
-                type="button"
-                data-testid={`overview-connection-${c.kind}-${c.id}`}
-                onClick={() => onOpenConnection(c)}
-                className="flex w-full items-baseline gap-2 rounded px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                {CONNECTION_ICON[c.kind]}
-                <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-900 dark:text-gray-100">
-                  {c.label}
-                </span>
-                <span className="flex-none text-[11px] text-gray-500">{c.detail}</span>
-                <span className="flex-none text-[10px] uppercase tracking-wide text-gray-400">
-                  {c.kind}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-        {addActions && <div className="mt-2 flex flex-wrap gap-1.5">{addActions}</div>}
-      </section>
+      {/*
+        ── Portfolios and lists are different things ─────────────────
+
+        They were one section with a grey "LIST" / "PORTFOLIO" word at
+        the end of each row to tell them apart. A book you hold the name
+        in and a list you put it on are not the same kind of fact, and
+        sorting them by eye down a mixed column is work the page should
+        have done. Two sections, each with its own empty state and its
+        own escape to the cross-asset app.
+      */}
+      <ConnectionGroup
+        kind="portfolio"
+        title="Portfolios"
+        empty={`${symbol ?? 'This asset'} is not held in any book.`}
+        rows={connections.filter(c => c.kind === 'portfolio')}
+        loading={connectionsLoading}
+        onOpen={onOpenConnection}
+        onOpenAll={onOpenAll}
+      />
+
+      <ConnectionGroup
+        kind="list"
+        title="Lists"
+        empty="Not on any list."
+        rows={connections.filter(c => c.kind === 'list')}
+        loading={connectionsLoading}
+        onOpen={onOpenConnection}
+        onOpenAll={onOpenAll}
+      />
+
+      <ConnectionGroup
+        kind="theme"
+        title="Themes"
+        empty="Not in any theme."
+        rows={connections.filter(c => c.kind === 'theme')}
+        loading={connectionsLoading}
+        onOpen={onOpenConnection}
+        onOpenAll={onOpenAll}
+        trailing={addActions}
+      />
 
       {/* ── Ideas and investigations ──────────────────────────────────── */}
       {(ideas.length > 0 || investigations.length > 0) && (
@@ -391,6 +564,7 @@ export function AssetWorkOverview({
           {projectsSlot}
         </section>
       )}
+      </div>
     </div>
   )
 }
@@ -410,7 +584,10 @@ export function WorkOverviewReturn({
       )}
     >
       <GitBranch className="h-3 w-3" aria-hidden="true" />
-      Back to Work overview
+      {/* Not "Work overview": the asset already has an Overview mode in
+          the nav directly above, so two different pages were called the
+          overview and nothing said which was home. */}
+      All work
     </button>
   )
 }

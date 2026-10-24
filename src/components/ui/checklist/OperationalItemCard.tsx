@@ -609,7 +609,7 @@ export function OperationalItemCard({
                     ? 'What did you find? What did you conclude, and what would change it?'
                     : 'Add task notes, instructions, or context...'}
                   className={detail
-                    ? 'w-full max-w-[78ch] rounded border border-gray-200 px-3 py-2 text-[13px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-900'
+                    ? 'w-full rounded border border-gray-200 px-3 py-2 text-[13.5px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-900'
                     : 'w-full text-[12px] px-2 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none leading-snug dark:border-gray-700'}
                   rows={detail ? 10 : 2} autoFocus
                   onKeyDown={e => {
@@ -640,7 +640,11 @@ export function OperationalItemCard({
                    paragraph is discoverable only if you look for it. */
                 <div
                   onClick={() => { if (isEditable) openNotesEditor() }}
-                  className={`group/notes max-w-[78ch] whitespace-pre-wrap rounded text-[13px] leading-relaxed text-gray-800 dark:text-gray-200 ${isEditable ? 'cursor-text hover:bg-gray-50 dark:hover:bg-gray-800/60' : ''}`}
+                  /* No `max-w` here any more. The column is the measure —
+                     see the grid in `RequirementWorkspace` — and a second
+                     cap inside it was what left the saved assessment
+                     filling half its own column. */
+                  className={`group/notes whitespace-pre-wrap rounded text-[13.5px] leading-relaxed text-gray-800 dark:text-gray-200 ${isEditable ? 'cursor-text hover:bg-gray-50 dark:hover:bg-gray-800/60' : ''}`}
                   data-testid="requirement-notes-body"
                 >
                   {item.notes}
@@ -669,8 +673,8 @@ export function OperationalItemCard({
                      below it — the smallest thing on a screen devoted to
                      writing. `min-h` rather than padding so the invitation
                      is the size of the work. */
-                  ? 'block w-full max-w-[78ch] min-h-[180px] rounded-md border border-dashed border-gray-300 px-3.5 py-4 text-left text-[13px] leading-relaxed text-gray-400 transition-colors hover:border-gray-400 hover:bg-gray-50 hover:text-gray-500 dark:border-gray-700 dark:hover:bg-gray-900'
-                  : 'w-full max-w-[78ch] rounded border border-dashed border-gray-200 px-3 py-2.5 text-left text-[12px] text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-500 dark:border-gray-700'}
+                  ? 'block w-full min-h-[180px] rounded-md border border-dashed border-gray-300 px-3.5 py-4 text-left text-[13.5px] leading-relaxed text-gray-400 transition-colors hover:border-gray-400 hover:bg-gray-50 hover:text-gray-500 dark:border-gray-700 dark:hover:bg-gray-900'
+                  : 'w-full rounded border border-dashed border-gray-200 px-3 py-2.5 text-left text-[12px] text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-500 dark:border-gray-700'}
               >
                 Nothing documented yet — write what you found here.
               </button>

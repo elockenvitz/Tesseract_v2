@@ -108,9 +108,22 @@ interface InvestmentTimelineProps {
    * a second navigation.
    */
   onOpenRun?: (workflowId: string) => void
+  /**
+   * The process's own actions menu, pushed to the far end of the rail
+   * row. It rode beside the title, where it read as part of the process
+   * NAME rather than as the row's actions.
+   */
+  headerActions?: React.ReactNode
   /** Opens one research note, and the asset's Research mode. */
   onOpenNote?: (noteId: string) => void
   onOpenResearch?: () => void
+  /** Opens CoAnalyst on one requirement, with the context to seed it. */
+  onAnalyzeRequirement?: (ctx: {
+    requirementId: string
+    requirementText: string
+    stageLabel: string | null
+    stageObjective: string | null
+  }) => void
   /**
    * The Process's own identity and actions — selector, Mark Complete, the
    * overflow menu — placed on the rail's row instead of a band above it.
@@ -226,9 +239,11 @@ export function InvestmentTimeline({
   currentPriority = 'none',
   onPriorityChange,
   headerSlot,
+  headerActions,
   onOpenRun,
   onOpenNote,
   onOpenResearch,
+  onAnalyzeRequirement,
 }: InvestmentTimelineProps) {
   const { user } = useAuth()
   const toast = useToastOptional()
@@ -1698,6 +1713,10 @@ export function InvestmentTimeline({
             }}
           />
         </div>
+        {/* The row's actions, at the row's end — a sibling of the rail,
+            not a child of it, or `flex-1` on the rail pushes them onto a
+            line of their own. */}
+        {headerActions && <div className="ml-auto flex-none">{headerActions}</div>}
 
         </div>
 
@@ -2223,6 +2242,14 @@ export function InvestmentTimeline({
                                 onOpenNote={onOpenNote}
                                 onOpenResearch={onOpenResearch}
                                 stageControls={stageOwnershipControls}
+                                onAnalyze={onAnalyzeRequirement
+                                  ? () => onAnalyzeRequirement({
+                                    requirementId: selected.id,
+                                    requirementText: selected.text,
+                                    stageLabel: stage?.label ?? null,
+                                    stageObjective: stage?.description ?? null,
+                                  })
+                                  : undefined}
                               >
                                 {card}
                               </RequirementWorkspace>

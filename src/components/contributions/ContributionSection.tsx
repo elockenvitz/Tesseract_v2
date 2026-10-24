@@ -20,14 +20,11 @@ import {
   Italic,
   ListOrdered,
   Link,
-  Link2,
   Heading2,
   Undo2,
   Redo2,
   Star,
-  FileText,
   Plus,
-  File,
   FileEdit,
   Upload,
   RotateCcw
@@ -40,8 +37,7 @@ import {
   useContributionHistory,
   useAggregateHistory,
   useThesisAnalysis,
-  type ContributionVisibility,
-  type ContributionAttachment
+  type ContributionVisibility
 } from '../../hooks/useContributions'
 import { ThesisSummaryView } from './ThesisSummaryView'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -53,6 +49,7 @@ import { DiffView } from './DiffView'
 import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
 import type { UniversalSmartInputRef } from '../smart-input'
 import { RichTextEditor, type RichTextEditorRef } from '../rich-text-editor/RichTextEditor'
+import { SectionEvidenceStrip } from './SectionEvidenceStrip'
 
 // ---------------------------------------------------------------------------
 // Markdown ↔ HTML conversion for rich editor
@@ -201,6 +198,14 @@ interface ContributionSectionProps {
    * keeps the bare full-screen editor for callers that manage their own guard.
    */
   fullPageEditor?: boolean
+  /**
+   * Open a research note, through the caller's existing note navigation.
+   *
+   * Phase 4: lets the section's evidence strip return the reader to the
+   * original research. Without it the chips still render, they just do not
+   * navigate — no new route is invented here.
+   */
+  onOpenNote?: (noteId: string) => void
 }
 
 // Section color themes - unified blue accent with amber hover
@@ -251,49 +256,12 @@ const VISIBILITY_CONFIG: Record<ContributionVisibility, { icon: React.ElementTyp
   firm: { icon: Globe, label: 'Firm', color: 'text-green-600', bgColor: 'bg-green-50' }
 }
 
-// Component to view references in read mode
-function ViewReferences({
-  attachments
-}: {
-  attachments: ContributionAttachment[]
-}) {
-  if (attachments.length === 0) return null
-
-  return (
-    <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
-      <div className="text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">References</div>
-      <div className="flex flex-wrap gap-2">
-        {attachments.map((attachment, index) => (
-          <div
-            key={index}
-            className={clsx(
-              'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs',
-              attachment.type === 'link' && 'bg-blue-50 text-blue-700',
-              attachment.type === 'note' && 'bg-amber-50 text-amber-700',
-              attachment.type === 'file' && 'bg-purple-50 text-purple-700'
-            )}
-          >
-            {attachment.type === 'link' && <Link2 className="w-3 h-3 shrink-0" />}
-            {attachment.type === 'note' && <FileText className="w-3 h-3 shrink-0" />}
-            {attachment.type === 'file' && <File className="w-3 h-3 shrink-0" />}
-            {attachment.type === 'link' && attachment.url ? (
-              <a
-                href={attachment.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:underline truncate max-w-[150px]"
-              >
-                {attachment.title}
-              </a>
-            ) : (
-              <span className="truncate max-w-[150px]">{attachment.title}</span>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
+/*
+ * `ViewReferences` lived here and rendered `selectedContribution.attachments`
+ * as static chips. `SectionEvidenceStrip` now renders that same array — with a
+ * way back to the original note, and with add/remove when the section is the
+ * reader's own — so keeping both printed one list twice.
+ */
 
 // ---------------------------------------------------------------------------
 // CollapsibleContent — show/hide long content with fade
@@ -318,9 +286,9 @@ function CollapsibleContent({ content }: { content: string }) {
       <div
         ref={contentRef}
         className={clsx(
-          // Comfortable reading measure for long-form research — the card stays
-          // full-width, but the prose line length is capped so it stays legible.
-          'prose prose-sm max-w-[72ch] text-gray-700 leading-relaxed overflow-hidden transition-all duration-200 dark:text-gray-300',
+          // Fills the card, which now carries the measure itself. Capping
+          // both left the text at 621px inside a 1,763px bordered box.
+          'prose prose-sm max-w-none text-gray-700 leading-relaxed overflow-hidden transition-all duration-200 dark:text-gray-300',
           !expanded && needsCollapse && 'max-h-[240px]',
         )}
       >
@@ -348,8 +316,11 @@ function CollapsibleContent({ content }: { content: string }) {
 function EditingPane({
   smartInputRef, editContent, onContentChange, onKeyDown, placeholder, assetContext,
   onCancel, onSaveDraft, onPublish, onDiscardDraft, isSaving, isDraftSaving, isDiscarding, canSave,
-  inline = false,
+  inline = false, evidenceSlot,
 }: {
+  /** Rendered between the editor and the action bar. A node, so the pane does
+   *  not need to know what evidence is. */
+  evidenceSlot?: React.ReactNode
   smartInputRef: React.RefObject<UniversalSmartInputRef>
   editContent: string
   onContentChange: (value: string, metadata: SmartInputMetadata) => void
@@ -605,6 +576,21 @@ function EditingPane({
         />
       </div>
 
+      {/*
+        Evidence, between the writing and the actions.
+
+        `shrink-0`, exactly like the action bar: the takeover animates this
+        pane to the scroll container's height and forces `flex:1` on every
+        element between the editor and the section root, so anything here that
+        could grow would fight the editor for height. It costs the writing
+        surface only its own line.
+      */}
+      {evidenceSlot && (
+        <div className="shrink-0 border-t border-gray-200 px-4 py-2 dark:border-gray-700">
+          {evidenceSlot}
+        </div>
+      )}
+
       {/* Action bar */}
       <div className="shrink-0 flex items-center justify-end gap-2 px-4 py-2.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/20">
         {onDiscardDraft && (
@@ -652,6 +638,7 @@ export function ContributionSection({
   documentChrome = false,
   alwaysShowToolbar = false,
   fullPageEditor = false,
+  onOpenNote,
 }: ContributionSectionProps) {
   // Get theme based on section type
   const theme = SECTION_THEMES[sectionType]
@@ -1572,6 +1559,20 @@ export function ContributionSection({
         // to THIS root to grow the section to viewport height. Present in every
         // chrome mode so the lookup never depends on a card's `.rounded-lg`.
         'contribution-pane',
+        /*
+          ── No cap here; the document column carries it ───────────────
+
+          The prose was capped at `max-w-[72ch]` — 621px at this font
+          size — while the card stretched to the full width of the page,
+          so a written thesis sat in a third of a bordered box with the
+          rest blank inside the border. That reads as text cut off, not
+          as a reading measure.
+
+          The measure belongs to the column the sections sit in (see the
+          research container in `AssetTab`). The card fills that column
+          and the prose fills the card, so there is no empty space inside
+          any border.
+        */
         documentChrome
           // UX2 P2 — flat document section: no card border/fill/radius. A top
           // hairline + a lightly tinted header band give each editable field a
@@ -1847,6 +1848,16 @@ export function ContributionSection({
                     isDiscarding={discardDraft.isPending}
                     canSave={!!editContent.trim()}
                     inline={inlineEditor && !fullPageEditor}
+                    evidenceSlot={(
+                      <SectionEvidenceStrip
+                        assetId={assetId}
+                        section={section}
+                        isOwn
+                        editing
+                        onOpenNote={onOpenNote}
+                        sectionUpdatedAt={myContribution?.updated_at ?? null}
+                      />
+                    )}
                   />
                 ) : showHistory ? (
                   <div className="space-y-2">
@@ -1879,7 +1890,7 @@ export function ContributionSection({
                               : 'recently'
                             }
                           </div>
-                          <div className="prose prose-sm max-w-[72ch] text-gray-700 leading-relaxed dark:text-gray-300">
+                          <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed dark:text-gray-300">
                             <SmartInputRenderer content={myContribution?.draft_content || ''} />
                           </div>
                         </div>
@@ -1910,12 +1921,25 @@ export function ContributionSection({
                       <div className="space-y-3">
                         <CollapsibleContent content={selectedContribution.content} />
 
-                        {/* References (only shown if exists) */}
-                        {selectedContribution.attachments && selectedContribution.attachments.length > 0 && (
-                          <ViewReferences
-                            attachments={selectedContribution.attachments}
-                          />
-                        )}
+                        {/*
+                          The research behind THIS author's section — quiet,
+                          and only when there is some. Their prose above is the
+                          conclusion; this is what they read to reach it.
+
+                          Fed from the displayed contribution's own
+                          `attachments`, which is the same list the strip edits
+                          when the section is the reader's. It replaces
+                          `ViewReferences`, which rendered that identical array
+                          as static chips with no way back to the note.
+                        */}
+                        <SectionEvidenceStrip
+                          assetId={assetId}
+                          section={section}
+                          isOwn={selectedContribution.created_by === user?.id}
+                          items={(selectedContribution.attachments ?? []) as never}
+                          onOpenNote={onOpenNote}
+                          sectionUpdatedAt={selectedContribution.updated_at ?? null}
+                        />
                       </div>
                     ) : (
                       <div className="py-0.5">

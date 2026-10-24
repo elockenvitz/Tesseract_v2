@@ -97,8 +97,10 @@ export function AssetWorkspaceHeader({
               aria-expanded={showTickerDropdown}
               className="ux2-band-ink text-2xl font-bold tracking-tight flex items-baseline gap-1.5 group hover:opacity-90"
             >
+              {/* No chevron. The ticker is the control — it underlines on
+                  hover, which says "this does something" without spending
+                  a glyph beside the asset's name to say it. */}
               <span className="group-hover:underline underline-offset-4 decoration-white/30">{asset.symbol}</span>
-              <ChevronDown className={clsx('w-4 h-4 ux2-band-muted transition-transform', showTickerDropdown && 'rotate-180')} />
             </button>
             <span className="ux2-band-muted text-base font-normal truncate max-w-[34ch]">{asset.company_name}</span>
             {price != null && (

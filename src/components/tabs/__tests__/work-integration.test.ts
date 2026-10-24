@@ -327,7 +327,9 @@ describe('lists survive as context, with their Step B behaviour', () => {
     /* The overview stays quiet while memberships are arriving rather
        than asserting "Not on a list" and then contradicting itself. */
     expect(TAB).toMatch(/connectionsLoading=\{listsLoading\}/)
-    expect(OVERVIEW).toMatch(/connectionsLoading \?/)
+    /* Each of the three relationship sections renders the skeleton,
+       through the one component they share. */
+    expect(OVERVIEW).toMatch(/loading \? \(\s*\n?\s*<div className="h-5 w-40 animate-pulse/)
   })
 
   it('reuses the existing Add controls rather than a second dialog', () => {
@@ -359,7 +361,10 @@ describe('lists survive as context, with their Step B behaviour', () => {
     expect(TAB).toMatch(/<AddToProjectButton/)
     expect(TAB).toMatch(/projectsSlot=\{[\s\S]{0,120}<RelatedProjects/)
     expect(OVERVIEW).toMatch(/data-testid="work-overview-projects"/)
-    expect(OVERVIEW).toMatch(/data-testid="work-overview-connections"/)
+    /* Three sections, one component. They were one mixed column labelled
+       "Lists and portfolios", which made the reader sort a book from a
+       list by reading a grey word at the end of each row. */
+    expect(OVERVIEW).toContain('data-testid={`work-overview-${kind}s`}')
     expect(TAB).not.toMatch(/AddToQueueButton/)
     expect(TAB).not.toMatch(/id="work-memberships"/)
   })

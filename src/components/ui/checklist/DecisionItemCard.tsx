@@ -706,7 +706,9 @@ export function DecisionItemCard({
                 Already the primary surface of this card; in the detail
                 layout it only needs a reading width, because 1,194px of
                 prose is a line the eye loses. */}
-            <div className={detail ? 'max-w-[78ch] px-4 pt-3 pb-2 space-y-2.5' : 'px-4 pt-3 pb-2 space-y-2.5'}>
+            {/* The column is the measure now; a cap here left the
+                commentary filling half its own column. */}
+            <div className="px-4 pt-3 pb-2 space-y-2.5">
               {/* Other people's commentary */}
               {commentaries.filter(c => c.user_id !== currentUser?.id).map(c => (
                 <div key={c.id}>

@@ -2721,7 +2721,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    */
   const workspaceForResearch = useAssetWorkspace(asset.id, asset.symbol ?? null, 'overview')
   const overviewResearch = React.useMemo(() => ({
-    caseWrittenAt: workspaceForResearch.data?.caseWrittenAt ?? null,
+    /* The case's own sections, so the page can show what the firm
+       thinks rather than a row reading "Investment case". */
+    sections: (workspaceForResearch.data?.sections ?? [])
+      .filter(s => s.content?.trim())
+      .map(s => ({ section: s.section, content: s.content!.trim(), at: s.updatedAt ?? null })),
     notes: (workspaceForResearch.data?.evidence ?? []).map(e => ({
       id: e.id,
       title: e.title?.trim() || 'Untitled note',
@@ -2729,6 +2733,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       at: e.createdAt ?? null,
     })),
   }), [workspaceForResearch.data])
+
+  /*
+   * Processes this asset is not yet in.
+   *
+   * Computed at component level because BOTH the overview and the
+   * process switcher offer the join, and the switcher's copy lives
+   * inside the process branch — which does not render at all when no
+   * process is running, which is exactly when a reader most needs to add
+   * one.
+   */
+  const joinableProcesses = React.useMemo(
+    () => groupProcesses(
+      (allAssetWorkflows ?? []) as unknown as SwitcherRunRow[],
+      effectiveWorkflowId || null,
+      ((availableWorkflows ?? []) as unknown as Array<{
+        id: string; name: string; branch_suffix: string | null
+      }>).map(w => ({ id: w.id, name: w.name, branch_suffix: w.branch_suffix })),
+    ).joinable,
+    [allAssetWorkflows, effectiveWorkflowId, availableWorkflows],
+  )
 
   const openWorkConnection = React.useCallback((c: OverviewConnection) => {
     if (c.kind === 'list') { openContextual(contextualKey.list(c.id)); return }
@@ -4052,7 +4076,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           />
         )}
 
-        {/* ========== RESEARCH ========== */}
+        {/* ========== RESEARCH ==========
+            ── The document column has a width ──────────────────────
+
+            Research stretched its container to the full 1,841px while
+            every section's prose was capped at 72ch (621px), so a
+            written thesis sat in the left third of a bordered box with
+            two-thirds of it blank. Capping the COLUMN instead means the
+            text fills what it is given and the space beside it is page
+            margin, not an empty card. */}
         {activeMode === 'research' && (
           <div className="space-y-3 min-h-full">
 
@@ -4333,6 +4365,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     )}
                   </button>
                   {!collapsedSections[section.section_slug as keyof typeof collapsedSections] && (
+                    /* One field per row, full width. Each field is a
+                       distinct part of the case and reads as a section of
+                       a document; pairing two side by side made Business
+                       Model and Where Our Thesis Differs look like
+                       columns of one table. The line length is held by
+                       the document column's own width, not by splitting
+                       the page. */
                     <div className="border-t border-gray-100 px-5 py-2 space-y-3 dark:border-gray-800">
                       {section.fields
                         .filter(f => f.is_visible)
@@ -4788,6 +4827,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     /* Research is its own mode and still owns writing; Work
                        shows what exists and hands off. */
                     research={overviewResearch}
+                    /* Adding the asset to a process, from the page that
+                       lists its processes — previously only reachable
+                       from inside one. */
+                    joinable={joinableProcesses}
+                    onJoin={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
                     onOpenResearch={() => goToSubPage('research')}
                     onOpenNote={(noteId) => handleNoteClick(noteId)}
                     /* The three dialogs and the stage filter the sidebar
@@ -4984,6 +5028,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       finishing a process is a once-a-cycle act and was
                       outranking the analysis on every render.
                     */}
+                  </>
+                )}
+              </div>
+            )
+            /*
+              ── The row's actions belong at the row's end ──────────────
+
+              This menu sat immediately after the process title, where it
+              read as part of the process's NAME rather than as the
+              actions for the bar. It renders at the far right of the
+              rail row now; the handlers and permissions are unchanged.
+            */
+            const processActions = (allWorkflowsLoading && !allAssetWorkflows) ? null : (
                     <WorkActionsMenu
                       label="Process actions"
                       actions={[
@@ -5025,9 +5082,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         },
                       ]}
                     />
-                  </>
-                )}
-              </div>
             )
             return (
               <div className="space-y-3">
@@ -5160,11 +5214,35 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   currentPriority={workflowPriorityState}
                   onPriorityChange={handleWorkflowPriorityChange}
                   headerSlot={processHeader}
+                  headerActions={processActions}
                   /* Opening a previous cycle from the prior-work panel is
                      the same process switch the sidebar performs. */
                   onOpenRun={handleWorkflowChange}
                   onOpenNote={handleNoteClick}
                   onOpenResearch={() => goToSubPage('research')}
+                  /*
+                    ── Analysis help, tagged so it comes back ────────────
+
+                    Opens CoAnalyst on this requirement through the
+                    existing engagement seam, which tags the thread to the
+                    asset — so it reappears under this asset's
+                    investigations rather than in a global chat list, and
+                    `origin` records which requirement raised it.
+
+                    The seed prompt is placed in the composer and never
+                    auto-sent: the seam's own rule, and the right one.
+                  */
+                  onAnalyzeRequirement={(ctx) => askAI({
+                    ...assetEngagementTarget,
+                    origin: { itemId: ctx.requirementId, surface: 'asset-work-requirement' },
+                    seedPrompt: [
+                      `I'm working the requirement "${ctx.requirementText}"`,
+                      ctx.stageLabel ? ` in the ${ctx.stageLabel} stage` : '',
+                      ` of a process on ${asset.symbol ?? 'this asset'}.`,
+                      ctx.stageObjective ? ` The stage asks: ${ctx.stageObjective}` : '',
+                      ' What should I look at, and what would change the answer?',
+                    ].join(''),
+                  })}
                 />
               )}
             </div>

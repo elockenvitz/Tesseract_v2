@@ -183,17 +183,29 @@ describe('the requirement reads as a workbench, not four thin rows', () => {
     expect(OP).toMatch(/data-testid=\{`requirement-detail-action-\$\{a\}`\}/)
   })
 
-  it('makes the notes the primary surface at a reading width', () => {
+  it('makes the notes the primary surface, filling their column', () => {
+    /*
+     * This required `max-w-[78ch]` on the notes. `ch` is relative to the
+     * element's OWN font size, so at 13px that cap resolved to 547px
+     * inside a 1,187px column: a saved assessment filled under half its
+     * own column and the rest was blank, which reads as text cut off.
+     *
+     * The measure belongs to the column — see the grid in
+     * `RequirementWorkspace` — and the prose fills it. So the rule is
+     * now the opposite: no width cap inside the card.
+     */
     expect(OP).toMatch(/Working notes/)
-    expect((OP.match(/max-w-\[78ch\]/g) ?? []).length).toBeGreaterThanOrEqual(3)
-    expect(DEC).toMatch(/max-w-\[78ch\]/)
+    expect(OP).not.toMatch(/max-w-\[78ch\]/)
+    expect(DEC).not.toMatch(/max-w-\[78ch\]/)
+    const WS = strip(read('src/components/asset/work/RequirementWorkspace.tsx'))
+    expect(WS).toMatch(/xl:grid-cols-\[minmax\(0,760px\)_minmax\(320px,1fr\)\]/)
   })
 
   it('makes the saved notes their own edit affordance', () => {
     // An "Edit" link above a paragraph is discoverable only if you look.
     const at = OP.indexOf('data-testid="requirement-notes-body"')
     expect(at).toBeGreaterThan(-1)
-    expect(OP.slice(Math.max(0, at - 300), at)).toMatch(/onClick=\{\(\) => \{ if \(isEditable\) openNotesEditor\(\) \}\}/)
+    expect(OP.slice(Math.max(0, at - 600), at)).toMatch(/onClick=\{\(\) => \{ if \(isEditable\) openNotesEditor\(\) \}\}/)
   })
 
   it('lets Enter be a new paragraph in the detail notes editor', () => {

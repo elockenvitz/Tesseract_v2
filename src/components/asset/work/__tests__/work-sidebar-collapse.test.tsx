@@ -58,11 +58,17 @@ describe('Work has one navigator', () => {
     for (const id of [
       'work-overview-processes',
       'work-overview-research',
-      'work-overview-connections',
       'work-overview-ideas',
       'work-overview-projects',
     ]) {
       expect(OVERVIEW).toContain(`data-testid="${id}"`)
+    }
+    /* Portfolios, lists and themes are three sections now, rendered from
+       one component — they were a single mixed column with a grey LIST /
+       PORTFOLIO word at the end of each row to tell them apart. */
+    expect(OVERVIEW).toContain('data-testid={`work-overview-${kind}s`}')
+    for (const kind of ['portfolio', 'list', 'theme']) {
+      expect(OVERVIEW).toContain(`kind="${kind}"`)
     }
   })
 
@@ -74,7 +80,7 @@ describe('Work has one navigator', () => {
   })
 
   it('keeps the cross-asset Lists, Themes and Portfolios apps one click away', () => {
-    expect(OVERVIEW).toMatch(/data-testid=\{`work-overview-all-\$\{k\}`\}/)
+    expect(OVERVIEW).toContain('data-testid={`work-overview-all-${kind}`}')
     expect(TAB).toMatch(/type: 'lists'/)
     expect(TAB).toMatch(/type: 'themes-list'/)
     expect(TAB).toMatch(/type: 'portfolios-list'/)

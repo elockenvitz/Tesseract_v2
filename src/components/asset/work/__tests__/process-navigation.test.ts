@@ -136,13 +136,25 @@ describe('stage advancement sits at the stage boundary', () => {
 describe('the context margin can be put away', () => {
   const WS = strip(read('src/components/asset/work/RequirementWorkspace.tsx'))
 
-  it('collapses and can be brought back', () => {
-    expect(WS).toMatch(/data-testid="requirement-context-hide"/)
-    expect(WS).toMatch(/data-testid="requirement-context-show"/)
+  it('collapses and can be brought back, from one control', () => {
+    /*
+     * There were two: an icon inside the margin's own heading, which
+     * disappeared along with the margin it hid, and a separate "Show
+     * context" button that took its place in the grid. One labelled
+     * toggle on the requirement's header row does both, and sits with
+     * the other controls that act on this requirement.
+     */
+    expect(WS).toMatch(/data-testid=\{contextOpen \? 'requirement-context-hide' : 'requirement-context-show'\}/)
+    expect(WS).toMatch(/onClick=\{\(\) => setContextOpen\(o => !o\)\}/)
+    expect(WS).toMatch(/\{contextOpen \? 'Hide context' : 'Show context'\}/)
   })
 
   it('gives the work the full measure once the margin is away', () => {
-    expect(WS).toMatch(/contextOpen \? 'xl:grid-cols-\[minmax\(0,1fr\)_320px\]' : 'xl:grid-cols-1'/)
+    /* The writing column is a fixed reading measure and the margin takes
+       what is left, rather than the writing column stretching with a
+       capped line of text stranded inside it. */
+    expect(WS).toMatch(/'xl:grid-cols-\[minmax\(0,760px\)_minmax\(320px,1fr\)\]'/)
+    expect(WS).toMatch(/'xl:grid-cols-\[minmax\(0,760px\)\]'/)
   })
 
   it('treats the preference as this viewer\'s, and survives it being unreadable', () => {

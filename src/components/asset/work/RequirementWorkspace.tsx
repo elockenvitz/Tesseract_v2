@@ -1,6 +1,6 @@
 import React from 'react'
 import { clsx } from 'clsx'
-import { ArrowLeft, ArrowRight, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { ArrowLeft, ArrowRight, PanelRightClose, PanelRightOpen, Sparkles } from 'lucide-react'
 import { useAssetWorkspace, primaryPosition } from '../../../hooks/useAssetWorkspace'
 import {
   guidanceFor,
@@ -80,6 +80,14 @@ interface Props {
   onOpenNote?: (noteId: string) => void
   /** Switches the asset to its Research mode. */
   onOpenResearch?: () => void
+  /**
+   * Opens CoAnalyst on this requirement.
+   *
+   * The thread is tagged to the asset by the existing engagement seam,
+   * so it comes back in the asset's own investigations list rather than
+   * being lost in a global chat history.
+   */
+  onAnalyze?: () => void
   className?: string
 }
 
@@ -533,7 +541,7 @@ function Evidence({
 export function RequirementWorkspace({
   assetId, symbol, requirementText, stageLabel, stageDescription,
   onBack, next, onOpenNext, children, priorWorkSlot, stageControls,
-  onOpenNote, onOpenResearch, className,
+  onOpenNote, onOpenResearch, onAnalyze, className,
 }: Props) {
   const guidance = guidanceFor({ text: requirementText, stageDescription })
   /*
@@ -612,7 +620,40 @@ export function RequirementWorkspace({
           )}
           {/* The stage's assignment and deadline, which had a 33px band of
               their own directly above this one. */}
-          {stageControls && <span className="ml-auto flex-none">{stageControls}</span>}
+          {/*
+            ── The requirement's controls, on the requirement's row ─────
+
+            Analyse, ownership, deadline and the context toggle all act on
+            this requirement or its stage, so they sit together at the end
+            of its header instead of being scattered — one above the
+            writing box, two inside the margin's own heading.
+          */}
+          <span className="ml-auto flex flex-none items-center gap-2">
+            {onAnalyze && (
+              <button
+                type="button"
+                data-testid="requirement-analyze"
+                onClick={onAnalyze}
+                className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <Sparkles className="h-3 w-3" aria-hidden="true" />
+                Analyze with CoAnalyst
+              </button>
+            )}
+            {stageControls}
+            <button
+              type="button"
+              data-testid={contextOpen ? 'requirement-context-hide' : 'requirement-context-show'}
+              onClick={() => setContextOpen(o => !o)}
+              title={contextOpen ? 'Hide context' : 'Show context'}
+              className="hidden items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-900 xl:inline-flex dark:text-gray-400 dark:hover:text-gray-100"
+            >
+              {contextOpen
+                ? <PanelRightClose className="h-3.5 w-3.5" aria-hidden="true" />
+                : <PanelRightOpen className="h-3.5 w-3.5" aria-hidden="true" />}
+              {contextOpen ? 'Hide context' : 'Show context'}
+            </button>
+          </span>
         </div>
       </header>
 
@@ -637,7 +678,24 @@ export function RequirementWorkspace({
       <div
         className={clsx(
           'grid grid-cols-1 gap-x-6 gap-y-4 py-3',
-          contextOpen ? 'xl:grid-cols-[minmax(0,1fr)_320px]' : 'xl:grid-cols-1',
+          /*
+            ── The column IS the measure ─────────────────────────────
+
+            This was `1fr_320px`, so the writing column stretched to
+            ~1,190px while the prose inside it was capped at
+            `max-w-[78ch]`. At 13px that cap resolves to 547px — `ch` is
+            relative to the element's own font size, not to anything on
+            screen — so an analyst's saved assessment occupied under half
+            its column and the rest was blank. That is what "the text is
+            cut off on half the page" was.
+
+            The measure now belongs to the COLUMN: ~760px holds a
+            comfortable line at this size, the prose fills it, and the
+            margin takes everything left over instead of leaving a hole.
+          */
+          contextOpen
+            ? 'xl:grid-cols-[minmax(0,760px)_minmax(320px,1fr)]'
+            : 'xl:grid-cols-[minmax(0,760px)]',
         )}
       >
         <div className="min-w-0" data-testid="requirement-work">
@@ -655,25 +713,10 @@ export function RequirementWorkspace({
           {children}
         </div>
 
-        {/*
-          Collapsed, the margin leaves one line behind rather than
-          vanishing — a reader who hid it has to be able to find it again,
-          and a surface whose context disappears without trace reads as a
-          bug. Below `xl` the margin stacks under the work and the toggle
-          is pointless, so it is hidden there.
-        */}
-        {!contextOpen && (
-          <button
-            type="button"
-            data-testid="requirement-context-show"
-            onClick={() => setContextOpen(true)}
-            className="hidden items-center gap-1.5 self-start border-t border-gray-100 pt-2 text-[11px] font-medium text-gray-500 hover:text-gray-700 xl:flex dark:border-gray-800 dark:text-gray-400"
-          >
-            <PanelRightOpen className="h-3.5 w-3.5" aria-hidden="true" />
-            Show context
-          </button>
-        )}
-
+        {/* The toggle used to live here and inside the margin's own
+            heading — two controls for one state, one of which vanished
+            with the thing it controlled. It is one labelled control on
+            the requirement's header row now. */}
         <aside
           className={clsx(
             'min-w-0 space-y-4 xl:border-l xl:border-gray-200 xl:pl-6 xl:dark:border-gray-700',
@@ -682,18 +725,7 @@ export function RequirementWorkspace({
           data-testid="requirement-context"
         >
           <div>
-            <div className="mb-2 flex items-baseline justify-between gap-2">
-              <span className={EYEBROW}>What you already know</span>
-              <button
-                type="button"
-                data-testid="requirement-context-hide"
-                onClick={() => setContextOpen(false)}
-                title="Hide context"
-                className="hidden text-gray-400 hover:text-gray-600 xl:block dark:hover:text-gray-200"
-              >
-                <PanelRightClose className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            </div>
+            <span className={clsx(EYEBROW, 'mb-2 block')}>What you already know</span>
             <Evidence
               facets={guidance.facets}
               assetId={assetId}
