@@ -17,7 +17,8 @@ import {
   fieldConfigMatchesField,
   SYSTEM_DEFAULT_FIELD_SLUGS,
   type ResolveLayoutInput,
-  type LayoutResolutionResult
+  type LayoutResolutionResult,
+  type FieldWidth
 } from '../lib/research/layout-resolver'
 
 // Types
@@ -38,6 +39,8 @@ export interface FieldConfigItem {
   is_visible: boolean
   display_order: number | null
   is_collapsed: boolean
+  /** How wide the field is drawn. Absent on layouts saved before this. */
+  width?: FieldWidth
 }
 
 export interface FieldOverride {
@@ -45,6 +48,7 @@ export interface FieldOverride {
   is_visible: boolean
   section_id?: string // Override the field's default section
   display_order?: number // Override the field's display order within its section
+  width?: FieldWidth // Override how wide the field is drawn
 }
 
 export interface SectionOverride {
@@ -69,6 +73,12 @@ export interface FieldWithPreference {
   display_order: number | null  // User's custom display order (from layout)
   default_display_order: number // Default display order (from research_fields table)
   is_collapsed: boolean
+  /**
+   * How wide the field is drawn: 'full' (its own row) or 'half' (packed
+   * two across). Comes straight from the resolver, which reads it out of
+   * the saved layout's `field_config` jsonb and defaults to 'full'.
+   */
+  width: FieldWidth
   is_universal: boolean
   is_system: boolean  // true if this is a system field (included in default template)
   is_custom: boolean  // true if created by a user, false if standard field

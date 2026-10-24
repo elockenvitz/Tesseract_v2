@@ -53,12 +53,27 @@ export const SYSTEM_DEFAULT_FIELD_SLUGS = new Set([
 // TYPES
 // ============================================================================
 
+/**
+ * How wide a field is drawn in its section.
+ *
+ * Layout control, not just field selection: a rating or a price target is
+ * a short fact that wasted a full row of a 1,900px page, while a thesis
+ * needs the whole width. Two half-width fields pack side by side.
+ *
+ * Stored in `user_asset_page_layouts.field_config`, which is already
+ * `jsonb` — so this is a per-user layout preference with no schema
+ * change. Absent means `full`, which is what every existing saved layout
+ * resolves to.
+ */
+export type FieldWidth = 'full' | 'half'
+
 export interface FieldConfigItem {
   field_id: string
   section_id: string
   is_visible: boolean
   display_order: number | null
   is_collapsed: boolean
+  width?: FieldWidth
 }
 
 export interface FieldOverride {
@@ -66,6 +81,8 @@ export interface FieldOverride {
   is_visible: boolean
   section_id?: string
   display_order?: number
+  /** Per-asset width override, when the reader set one here. */
+  width?: FieldWidth
 }
 
 export interface SectionOverride {
@@ -135,6 +152,8 @@ export interface ResolvedField {
   display_order: number | null
   default_display_order: number
   is_collapsed: boolean
+  /** How wide this field is drawn. `full` unless the layout says half. */
+  width: FieldWidth
   is_universal: boolean
   is_system: boolean
   is_custom: boolean
@@ -420,6 +439,9 @@ export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult
       display_order: displayOrder,
       default_display_order: field.display_order ?? 0,
       is_collapsed: isCollapsed,
+      /* Absent in every layout saved before widths existed, which is
+         why the fallback is `full` and not a guess from field type. */
+      width: assetOverride?.width ?? layoutConfig?.width ?? 'full',
       is_universal: field.is_universal,
       is_system: field.is_system ?? false,
       is_custom: isCustomField,

@@ -101,16 +101,28 @@ export function StageRail({ stages, selectedId, onSelect, className }: Props) {
                   </span>
                 )}
               </span>
-              {/* Progress as a rule under the name: the same fact the count
-                  states, at a glance, in 2px instead of a 70px shape. */}
-              {stage.total > 0 && (
-                <span
-                  aria-hidden
-                  className={clsx(
-                    'mt-1 h-[2px] w-full overflow-hidden rounded-full',
-                    viewing ? 'bg-white/25 dark:bg-gray-900/20' : 'bg-gray-200 dark:bg-gray-700',
-                  )}
-                >
+              {/*
+                Progress as a rule under the name: the same fact the count
+                states, at a glance, in 2px instead of a 70px shape.
+
+                Always rendered, even where there is no progress to show.
+                "Completed" is a pseudo-stage with no requirements, so
+                `total === 0` dropped both its count and this rule and it
+                sat a line shorter than the three real stages beside it —
+                a chip of a different size for no reason a reader could
+                see. Invisible when there is nothing to measure, so it
+                reserves the height without claiming 0%.
+              */}
+              <span
+                aria-hidden
+                className={clsx(
+                  'mt-1 h-[2px] w-full overflow-hidden rounded-full',
+                  stage.total === 0
+                    ? 'bg-transparent'
+                    : viewing ? 'bg-white/25 dark:bg-gray-900/20' : 'bg-gray-200 dark:bg-gray-700',
+                )}
+              >
+                {stage.total > 0 && (
                   <span
                     className={clsx(
                       'block h-full rounded-full transition-all duration-500',
@@ -118,8 +130,8 @@ export function StageRail({ stages, selectedId, onSelect, className }: Props) {
                     )}
                     style={{ width: `${Math.round((stage.done / stage.total) * 100)}%` }}
                   />
-                </span>
-              )}
+                )}
+              </span>
               {stage.deadline && (
                 <span
                   className={clsx(

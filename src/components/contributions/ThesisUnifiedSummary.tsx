@@ -761,7 +761,21 @@ export function ThesisUnifiedSummary({
     return all
   }, [contributionsBySection])
 
-  // Use the unified analysis hook (pass empty arrays if using new approach - AI analysis needs refactoring too)
+  /*
+   * ── The hook has to be given the same contributions the view counts ──
+   *
+   * This passed `[]` for all three sections whenever the newer
+   * `contributions` prop was in use, with the note "AI analysis needs
+   * refactoring too". The consequence was not a missing refactor: the
+   * hook counts contributors from exactly these arrays, so it saw zero
+   * and threw "No contributions to analyze", while the view beside it
+   * counted the real ones and said "Synthesizing views from 1
+   * analyst...". Generation could never succeed on this path.
+   *
+   * The sections are already grouped above; this hands the same three
+   * groups over, falling back to the legacy props when the new prop is
+   * not supplied.
+   */
   const {
     analysis,
     isLoading,
@@ -772,9 +786,9 @@ export function ThesisUnifiedSummary({
     generateAnalysis
   } = useUnifiedThesisAnalysis({
     assetId,
-    thesisContributions: contributions ? [] : thesisContributions,
-    whereDiffContributions: contributions ? [] : whereDiffContributions,
-    risksContributions: contributions ? [] : risksContributions,
+    thesisContributions: contributionsBySection.get('thesis') ?? thesisContributions,
+    whereDiffContributions: contributionsBySection.get('where_different') ?? whereDiffContributions,
+    risksContributions: contributionsBySection.get('risks_to_thesis') ?? risksContributions,
     coveringAnalystIds
   })
 
@@ -873,6 +887,50 @@ export function ThesisUnifiedSummary({
         <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
         <p className="text-sm text-gray-500 dark:text-gray-400">No contributions yet</p>
         <p className="text-xs text-gray-400 mt-1">Add your view to start building the analysis</p>
+      </div>
+    )
+  }
+
+  /*
+   * A failed generation says what happened.
+   *
+   * Without this the view fell through to "Generate analysis", so a
+   * reader who had just watched it spin was offered the button again
+   * with no statement that the last attempt failed or why — and pressing
+   * it produced the same spin.
+   */
+  if (!analysis && !isGenerating && error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const needsSetup = /not configured|api key|unauthor/i.test(message)
+    return (
+      <div className={clsx('bg-white border border-amber-200 rounded-lg p-6 text-center dark:border-amber-900 dark:bg-gray-800', className)}>
+        <Sparkles className="w-8 h-8 text-amber-500 mx-auto mb-2" />
+        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          The summary could not be generated.
+        </p>
+        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{message}</p>
+        <div className="mt-3 flex items-center justify-center gap-2">
+          {needsSetup ? (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('openSettings'))}
+              className="rounded bg-primary-600 px-3 py-1 text-xs font-semibold text-white hover:bg-primary-700"
+            >
+              Set up AI in Settings
+            </button>
+          ) : (
+            <button
+              onClick={() => generateAnalysis(aggregationMethod)}
+              className="rounded bg-primary-600 px-3 py-1 text-xs font-semibold text-white hover:bg-primary-700"
+            >
+              Try again
+            </button>
+          )}
+        </div>
+        {/* The contributions themselves are not AI output and are still
+            readable in the Investment Case view. */}
+        <p className="mt-2 text-[11px] text-gray-400">
+          The analysts' own sections are unaffected — read them in Investment Case.
+        </p>
       </div>
     )
   }

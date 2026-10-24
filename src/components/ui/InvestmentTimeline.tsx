@@ -136,6 +136,31 @@ interface InvestmentTimelineProps {
   headerSlot?: React.ReactNode
 }
 
+/**
+ * How the Process queries treat freshness.
+ *
+ * ── Why this is not `gcTime: 0` any more ────────────────────────────────
+ *
+ * Nine of these queries carried `gcTime: 0` with the note "don't cache —
+ * always fetch fresh to prevent showing stale/deleted workflow data".
+ * That does prevent stale data, by throwing the cache away the moment the
+ * component unmounts: leaving Work for Research and coming straight back
+ * refetched all nine from nothing behind a spinner, every time.
+ *
+ * `staleTime: 0` gets the same freshness guarantee — every mount
+ * revalidates — without the blank screen, because React Query serves the
+ * cached rows immediately and replaces them when the refetch lands. A
+ * deleted run can therefore be on screen for the length of one request,
+ * which is the honest trade and the one the reader asked for: these
+ * queries are keyed by workflow id, so the stale data is always the same
+ * run's, never another's.
+ */
+const WORK_QUERY_FRESHNESS = {
+  staleTime: 0,
+  gcTime: 5 * 60_000,
+  refetchOnMount: 'always',
+} as const
+
 const TIMELINE_STAGES: TimelineStage[] = [
   {
     id: 'outdated',
@@ -400,7 +425,7 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to load workflow checklist templates
@@ -484,7 +509,7 @@ export function InvestmentTimeline({
       return []
     },
     enabled: !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to load existing checklist items from DB (to get dbIds for assignment display)
@@ -503,7 +528,7 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Stage-level work request query for summary (open gaps + in-flight)
@@ -549,7 +574,7 @@ export function InvestmentTimeline({
       return data?.priority || 'none' // default to none if no priority set
     },
     enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to load workflow-specific progress for this asset
@@ -572,7 +597,7 @@ export function InvestmentTimeline({
       return data
     },
     enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Use workflow-specific priority if available, otherwise fall back to asset priority
@@ -799,7 +824,7 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to load workflow-specific stage deadlines
@@ -817,7 +842,7 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!assetId && !!workflowId && !!currentOrgId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to load workflow-specific checklist attachments
@@ -835,7 +860,7 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to get content tiles for the current workflow and stage
@@ -856,7 +881,7 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!workflowId && !!showStageDetails,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Mutation to save checklist item changes

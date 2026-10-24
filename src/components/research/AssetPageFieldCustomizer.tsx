@@ -81,7 +81,7 @@ import {
   type FieldOverride
 } from '../../hooks/useUserAssetPagePreferences'
 import { useResearchFields } from '../../hooks/useResearchFields'
-import { fieldConfigMatchesField, SYSTEM_DEFAULT_FIELD_SLUGS } from '../../lib/research/layout-resolver'
+import { fieldConfigMatchesField, SYSTEM_DEFAULT_FIELD_SLUGS, type FieldWidth } from '../../lib/research/layout-resolver'
 import { useAuth } from '../../hooks/useAuth'
 
 // Draft state types for local changes before saving
@@ -90,6 +90,8 @@ interface DraftFieldOverride {
   is_visible: boolean
   section_id?: string
   display_order?: number
+  /** Unsaved width change, shown before it is written. */
+  width?: FieldWidth
 }
 
 interface DraftSectionOverride {
@@ -771,6 +773,9 @@ export function AssetPageFieldCustomizer({
           section_id: targetSectionId,
           is_visible: isVisible,
           display_order: displayOrder,
+          /* Draft first, then the saved layout, then full — so a width
+             the reader just changed shows before it is saved. */
+          width: draftOverride?.width ?? config.width ?? 'full',
           isFromTemplate: true,
           isAddedViaOverride: false
         })
@@ -1052,6 +1057,33 @@ export function AssetPageFieldCustomizer({
         is_visible: !currentVisible,
         section_id: existing?.section_id,
         display_order: existing?.display_order
+      })
+      return newMap
+    })
+    setHasUnsavedChanges(true)
+  }
+
+  /**
+   * Set how wide a field is drawn.
+   *
+   * Goes through the same draft-override map as visibility and section
+   * moves, so it shows immediately, counts as an unsaved change, and is
+   * written into `field_config` by the existing save — one layout model,
+   * not a second one for widths.
+   */
+  const handleSetFieldWidth = (fieldId: string, width: FieldWidth) => {
+    setDraftFieldOverrides(prev => {
+      const newMap = new Map(prev)
+      const existing = newMap.get(fieldId)
+      const field = fieldsWithPreferences.find(f => f.field_id === fieldId)
+      newMap.set(fieldId, {
+        field_id: fieldId,
+        /* Width alone must not flip visibility, so the current value is
+           carried rather than defaulted. */
+        is_visible: existing?.is_visible ?? field?.is_visible ?? true,
+        section_id: existing?.section_id,
+        display_order: existing?.display_order,
+        width,
       })
       return newMap
     })
@@ -1657,7 +1689,10 @@ export function AssetPageFieldCustomizer({
         section_id: f.section_id || section.section_id,
         is_visible: f.is_visible,
         display_order: sIdx * 1000 + fIdx,
-        is_collapsed: f.is_collapsed ?? false
+        is_collapsed: f.is_collapsed ?? false,
+        /* Carried through on save, or switching layouts would silently
+           reset every field to full width. */
+        width: f.width ?? 'full'
       }))
     )
 
@@ -2147,6 +2182,7 @@ export function AssetPageFieldCustomizer({
                                   handleRemoveFieldFromSection={handleRemoveFieldFromSection}
                                   handleToggleVisibility={handleToggleVisibility}
                                   handleRevertField={handleRevertField}
+                                  handleSetFieldWidth={handleSetFieldWidth}
                                   isSaving={isSaving}
                                   isDraggingLibraryField={activeDragType === 'library-field'}
                                   dragOverPositionId={dragOverPositionId}
@@ -3019,6 +3055,8 @@ interface SectionItemProps {
   handleRemoveFieldFromSection: (fieldId: string) => void
   handleToggleVisibility: (fieldId: string) => void
   handleRevertField?: (fieldId: string) => void
+  /** Sets how wide a field is drawn. Same draft path as visibility. */
+  handleSetFieldWidth?: (fieldId: string, width: FieldWidth) => void
   isSaving: boolean
   isDraggingLibraryField?: boolean
   dragOverPositionId?: string | null
@@ -3052,6 +3090,7 @@ function SortableSection({
   handleRemoveFieldFromSection,
   handleToggleVisibility,
   handleRevertField,
+  handleSetFieldWidth,
   isSaving,
   isDraggingLibraryField = false,
   dragOverPositionId = null,
@@ -3331,6 +3370,7 @@ function SortableSection({
                       onToggleVisibility={handleToggleVisibility}
                       onRemove={handleRemoveFieldFromSection}
                       onRevertField={handleRevertField}
+                      onSetFieldWidth={handleSetFieldWidth}
                       isSaving={isSaving}
                       isFromTemplate={(field as any).isFromTemplate}
                       isAddedViaOverride={(field as any).isAddedViaOverride}
@@ -3399,6 +3439,7 @@ function SortableFieldRow({
   onToggleVisibility,
   onRemove,
   onRevertField,
+  onSetFieldWidth,
   isSaving,
   isFromTemplate = true,
   isAddedViaOverride = false,
@@ -3410,6 +3451,8 @@ function SortableFieldRow({
   onToggleVisibility: (fieldId: string) => void
   onRemove?: (fieldId: string) => void
   onRevertField?: (fieldId: string) => void
+  /** Sets how wide this field is drawn in its section. */
+  onSetFieldWidth?: (fieldId: string, width: FieldWidth) => void
   isSaving: boolean
   isFromTemplate?: boolean
   isAddedViaOverride?: boolean
@@ -3534,6 +3577,29 @@ function SortableFieldRow({
           )}
         </div>
       </div>
+
+      {/*
+        ── Width, beside visibility ────────────────────────────────────
+
+        The customizer could say WHICH fields appear and in what order,
+        but not how the page is laid out — so a one-line rating and a
+        multi-paragraph thesis each took a full row of a 1,900px page.
+        Half-width fields pack two across.
+
+        Stored in the layout's existing `field_config` jsonb, so this is
+        a saved per-layout preference and needs no schema change.
+      */}
+      {onSetFieldWidth && field.is_visible && (
+        <button
+          onClick={() => onSetFieldWidth(field.field_id, field.width === 'half' ? 'full' : 'half')}
+          disabled={isSaving}
+          data-testid={`field-width-${field.field_id}`}
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-700"
+          title={field.width === 'half' ? 'Half width — click for full width' : 'Full width — click for half width'}
+        >
+          {field.width === 'half' ? 'Half' : 'Full'}
+        </button>
+      )}
 
       {/* Revert button - for overridden fields (shown on hover) */}
       {isOverridden && onRevertField && (

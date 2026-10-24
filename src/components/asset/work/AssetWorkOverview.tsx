@@ -220,12 +220,20 @@ function ConnectionGroup({
   )
 }
 
-/** Add this asset to a process, from the page that lists its processes. */
-function AddProcess({
-  joinable, onJoin,
+/**
+ * Everywhere this asset can be put, under one control.
+ *
+ * Processes, lists, themes and projects were four controls in two
+ * places. The three dialog buttons come in as a slot because each owns
+ * its own dialog; the processes are rows because joining one is a
+ * mutation this page already has.
+ */
+function AddMenu({
+  joinable, onJoin, addActions,
 }: {
   joinable: ReadonlyArray<{ id: string; name: string }>
-  onJoin: (workflowId: string) => void
+  onJoin?: (workflowId: string) => void
+  addActions?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -248,37 +256,55 @@ function AddProcess({
     <div ref={root} className="relative">
       <button
         type="button"
-        data-testid="work-overview-add-process"
+        data-testid="work-overview-add"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(o => !o)}
-        className="inline-flex items-center gap-1 text-[11px] font-medium text-primary-600 hover:underline"
+        title="Add this asset to a process, list, theme or project"
+        className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
       >
-        <Plus className="h-3 w-3" aria-hidden="true" /> Add to a process
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add
       </button>
       {open && (
         <div
           role="menu"
-          data-testid="work-overview-add-process-menu"
-          className="absolute right-0 top-full z-50 mt-1 max-h-72 w-[280px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+          data-testid="work-overview-add-menu"
+          className="absolute right-0 top-full z-50 mt-1 max-h-[70vh] w-[280px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
         >
-          {joinable.map(j => (
-            <button
-              key={j.id}
-              type="button"
-              role="menuitem"
-              data-testid={`work-overview-join-${j.id}`}
-              onClick={() => { setOpen(false); onJoin(j.id) }}
-              className="block w-full truncate px-3 py-1.5 text-left text-[12px] text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
+          {addActions && (
+            <div
+              className="flex flex-col items-start gap-0.5 px-1 pb-1"
+              /* Each of these opens its own dialog and closes this. */
+              onClick={() => setOpen(false)}
             >
-              {j.name}
-            </button>
-          ))}
+              {addActions}
+            </div>
+          )}
+          {joinable.length > 0 && onJoin && (
+            <>
+              <span className="block px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                Add to a process
+              </span>
+              {joinable.map(j => (
+                <button
+                  key={j.id}
+                  type="button"
+                  role="menuitem"
+                  data-testid={`work-overview-join-${j.id}`}
+                  onClick={() => { setOpen(false); onJoin(j.id) }}
+                  className="block w-full truncate px-3 py-1.5 text-left text-[12px] text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                >
+                  {j.name}
+                </button>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
   )
 }
+
 
 export function AssetWorkOverview({
   symbol, overview, items, connections, connectionsLoading, research, loading, recoveredFrom,
@@ -308,7 +334,7 @@ export function AssetWorkOverview({
       the label and its fact next to each other and fits the whole of an
       asset's work on one screen without scrolling.
     */
-    <div className={clsx('min-w-0 max-w-[1320px]', className)} data-testid="work-overview">
+    <div className={clsx('min-w-0', className)} data-testid="work-overview">
       {recoveredFrom && (
         /* Said plainly rather than silently showing something else. */
         <p
@@ -327,6 +353,15 @@ export function AssetWorkOverview({
         page. A reader had two things called overview and no statement
         of which was home.
       */}
+      {/*
+        ── One "add", on the title row ───────────────────────────────
+
+        "Add to a process" sat in the Processes heading and the three
+        "Add to" dialogs sat at the foot of the Themes section — four
+        ways to put this asset somewhere, in two places, neither of them
+        where a reader looks for "add". They are one `+` beside the
+        page's title.
+      */}
       <header className="mb-4 flex flex-wrap items-baseline gap-x-2 border-b border-gray-200 pb-2 dark:border-gray-700">
         <h2 className="text-[15px] font-semibold text-gray-900 dark:text-gray-100">
           All work on {symbol ?? 'this asset'}
@@ -334,6 +369,15 @@ export function AssetWorkOverview({
         <span className="text-[11px] text-gray-500 dark:text-gray-400">
           processes, research, lists and books, ideas — open one to work on it
         </span>
+        {(addActions || (joinable.length > 0 && onJoin)) && (
+          <span className="ml-auto flex-none self-center">
+            <AddMenu
+              joinable={joinable}
+              onJoin={onJoin}
+              addActions={addActions}
+            />
+          </span>
+        )}
       </header>
 
       {/* ── Continue working ──────────────────────────────────────────── */}
@@ -371,21 +415,16 @@ export function AssetWorkOverview({
         each section under the previous one in its column, so the only
         empty space left on the page is at the bottom of one column.
       */}
-      <div className="gap-x-8 lg:columns-2 [&>section]:mb-5 [&>section]:break-inside-avoid">
+      {/* Three columns once there is room for them. Two left most of a
+          1,920px screen empty; the sections are short lists and pack
+          cleanly. */}
+      <div className="gap-x-8 lg:columns-2 2xl:columns-3 [&>section]:mb-5 [&>section]:break-inside-avoid">
 
       {/* ── Processes ─────────────────────────────────────────────────── */}
       <section data-testid="work-overview-processes">
         <div className="mb-1.5 flex items-baseline justify-between gap-2">
           <span className={EYEBROW}>Processes</span>
-          {/*
-            Adding this asset to a process was only possible from INSIDE
-            a process — the switcher's "Add a process" group — so an
-            asset running none had no way in at all, and the empty state
-            cheerfully pointed at a control the reader could not reach.
-          */}
-          {joinable.length > 0 && onJoin && (
-            <AddProcess joinable={joinable} onJoin={onJoin} />
-          )}
+          {/* Adding lives in the one "+" on the title row. */}
         </div>
         {runs.length === 0 ? (
           <p className="text-[12px] text-gray-500 dark:text-gray-400">
@@ -525,7 +564,6 @@ export function AssetWorkOverview({
         loading={connectionsLoading}
         onOpen={onOpenConnection}
         onOpenAll={onOpenAll}
-        trailing={addActions}
       />
 
       {/* ── Ideas and investigations ──────────────────────────────────── */}

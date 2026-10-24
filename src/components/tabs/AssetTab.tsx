@@ -4365,19 +4365,30 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     )}
                   </button>
                   {!collapsedSections[section.section_slug as keyof typeof collapsedSections] && (
-                    /* One field per row, full width. Each field is a
-                       distinct part of the case and reads as a section of
-                       a document; pairing two side by side made Business
-                       Model and Where Our Thesis Differs look like
-                       columns of one table. The line length is held by
-                       the document column's own width, not by splitting
-                       the page. */
-                    <div className="border-t border-gray-100 px-5 py-2 space-y-3 dark:border-gray-800">
+                    /*
+                      ── The reader decides the width ──────────────────
+
+                      Full width per field by default — a thesis is a
+                      document section, and pairing two prose fields made
+                      Business Model and Where Our Thesis Differs look
+                      like columns of one table.
+
+                      But a rating or a price target is a short fact that
+                      spent a whole row of a 1,900px page on it, so each
+                      field now carries a width in the saved layout and
+                      two half-width fields pack side by side. The
+                      preference lives in `user_asset_page_layouts.
+                      field_config`, which is already jsonb.
+                    */
+                    <div className="grid grid-cols-1 gap-3 border-t border-gray-100 px-5 py-2 xl:grid-cols-2 dark:border-gray-800">
                       {section.fields
                         .filter(f => f.is_visible)
                         .map(field => {
                           // Render field based on its type
                           const fieldType = field.field_type
+                          /* One wrapper per field, so the width applies
+                             without every render branch repeating it. */
+                          const node = (() => {
 
                           // Checklist field
                           if (fieldType === 'checklist') {
@@ -4541,6 +4552,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 fullPageEditor
                                 onOpenNote={handleNoteClick}
                               />
+                            </div>
+                          )
+                          })()
+                          return (
+                            <div
+                              key={field.field_id}
+                              data-field-width={field.width}
+                              className={field.width === 'half' ? 'min-w-0' : 'min-w-0 xl:col-span-2'}
+                            >
+                              {node}
                             </div>
                           )
                         })}
