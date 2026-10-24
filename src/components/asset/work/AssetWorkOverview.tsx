@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import {
-  ArrowRight, Briefcase, FileText, FolderKanban, GitBranch, Lightbulb, List,
+  ArrowRight, Briefcase, FolderKanban, GitBranch, Lightbulb, List,
   MessageSquare, Play, Plus, StickyNote, Tag,
 } from 'lucide-react'
 import type { AssetWorkOverview as Overview, OverviewRun } from '../../../lib/asset-work/work-overview'
@@ -39,14 +39,18 @@ export interface OverviewConnection {
   detail?: string | null
 }
 
-/** What Work shows about research. Read-only; Research still owns writing. */
+/**
+ * What Work shows about research. Read-only; Research still owns writing.
+ *
+ * Notes only. This briefly also listed the investment case's own fields —
+ * Business Model, Where Our Thesis Differs, and so on — each with the first
+ * line of what it said. That was the wrong page for them: the case is a
+ * document to read in Research, not a list of field names to skim in Work,
+ * and rendering it twice made the two surfaces compete over which one was
+ * the case. "Open research" is the handoff; these notes are the artifacts
+ * Work genuinely needs to show, because they are produced while working.
+ */
 export interface OverviewResearch {
-  /** The case's own sections, so the page can show what it SAYS. */
-  sections: ReadonlyArray<{
-    section: string
-    content: string
-    at: string | null
-  }>
   notes: ReadonlyArray<{
     id: string
     title: string
@@ -444,15 +448,19 @@ export function AssetWorkOverview({
       {/*
         ── Research ──────────────────────────────────────────────────
 
-        One of the four things Work is for, and until now the only one
-        with no presence here at all. The case and the notes are read
-        from the same `useAssetWorkspace` the requirement context uses —
-        no new query — and both click through to Research, which still
-        owns writing them.
+        One of the four things Work is for. The notes are read from the
+        same `useAssetWorkspace` the requirement context uses — no new
+        query — and click through to the Notes tab, which owns them.
+
+        The investment case is NOT listed here. It lived here for one
+        pass as a row per case field with the first line of each, which
+        turned a document into a directory and put a second, worse copy
+        of the case in front of the reader. "Open research" is the way
+        to it; a case is read in Research.
       */}
       <section data-testid="work-overview-research">
         <div className="mb-1.5 flex items-baseline justify-between gap-2">
-          <span className={EYEBROW}>Research</span>
+          <span className={EYEBROW}>Research notes</span>
           {onOpenResearch && (
             <button
               type="button"
@@ -464,38 +472,8 @@ export function AssetWorkOverview({
             </button>
           )}
         </div>
-        {research.sections.length > 0 || research.notes.length > 0 ? (
+        {research.notes.length > 0 ? (
           <div className="space-y-1">
-            {/*
-              The case itself, not a row saying the words "Investment
-              case". That row carried one fact — a date — and a link to
-              the Research tab, which is already a click away at the top
-              of the page: a label pointing at a label.
-
-              These are the case's own sections with the first line of
-              what each one says, so the page tells you what the firm
-              thinks rather than that a thesis exists somewhere.
-            */}
-            {research.sections.slice(0, 3).map(s => (
-              <button
-                key={s.section}
-                type="button"
-                data-testid={`overview-case-${s.section}`}
-                onClick={() => onOpenResearch?.()}
-                className="block w-full rounded px-2 py-1 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                <span className="flex items-baseline gap-2">
-                  <FileText className="h-3.5 w-3.5 flex-none translate-y-0.5 text-gray-400" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-[12px] font-medium capitalize text-gray-900 dark:text-gray-100">
-                    {s.section.replace(/_/g, ' ')}
-                  </span>
-                  <span className="flex-none text-[10px] text-gray-400">{shortDate(s.at)}</span>
-                </span>
-                <span className="mt-0.5 line-clamp-1 pl-5 text-[11px] text-gray-500 dark:text-gray-400">
-                  {s.content}
-                </span>
-              </button>
-            ))}
             {research.notes.slice(0, 4).map(n => (
               <button
                 key={n.id}
@@ -521,7 +499,7 @@ export function AssetWorkOverview({
           </div>
         ) : (
           <p className="text-[12px] text-gray-500 dark:text-gray-400">
-            No case section or research note written on {symbol ?? 'this asset'} yet.
+            No research note written on {symbol ?? 'this asset'} yet.
           </p>
         )}
       </section>

@@ -1,6 +1,9 @@
 import { clsx } from 'clsx'
+import { Lightbulb } from 'lucide-react'
 import { ContextualWorkHeader } from './ContextualWorkHeader'
-import { stageLabel } from '../../../lib/ideas/stage-model'
+import {
+  IDEA_STAGES, IDEA_STAGE_CONFIG, stageIndex, toIdeaStage,
+} from '../../../lib/ideas/stage-model'
 
 /**
  * A book, seen from one name in it.
@@ -47,6 +50,8 @@ interface Props {
   back: { label: string; onBack: () => void }
   onOpenFull: () => void
   onOpenIdea?: (ideaId: string) => void
+  /** Opens the existing Add Idea modal with this asset AND this book set. */
+  onStartIdea?: () => void
   className?: string
 }
 
@@ -63,7 +68,8 @@ const stamp = (iso: string | null | undefined): string | null => {
 const EYEBROW = 'text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500'
 
 export function PortfolioWorkSurface({
-  portfolio, assetSymbol, exposure, exposureLoading, ideas, back, onOpenFull, onOpenIdea, className,
+  portfolio, assetSymbol, exposure, exposureLoading, ideas, back, onOpenFull, onOpenIdea,
+  onStartIdea, className,
 }: Props) {
   const asOf = stamp(exposure?.asOf)
 
@@ -132,42 +138,87 @@ export function PortfolioWorkSurface({
       </div>
 
       <div className="py-3">
-        <span className={clsx(EYEBROW, 'mb-2 block')}>
-          Open ideas in this book
-        </span>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <span className={EYEBROW}>Open ideas in this book</span>
+          {/*
+            Creating the idea from the book that will hold it is the whole
+            point of the shortcut: the modal needs a portfolio, and this is
+            the one place in the app that already knows which.
+          */}
+          {onStartIdea && (
+            <button
+              type="button"
+              data-testid="portfolio-start-idea"
+              onClick={onStartIdea}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-primary-700"
+            >
+              <Lightbulb className="h-3.5 w-3.5" aria-hidden="true" />
+              Start an idea here
+            </button>
+          )}
+        </div>
         {ideas.length === 0 ? (
           <p className="text-[12px] text-gray-500 dark:text-gray-400" data-testid="portfolio-no-ideas">
             No open ideas on {assetSymbol ?? 'this asset'} in this book.
           </p>
         ) : (
-          <ul className="space-y-1.5" data-testid="portfolio-ideas">
-            {ideas.map(i => (
-              <li key={i.id}>
-                <button
-                  type="button"
-                  onClick={() => onOpenIdea?.(i.id)}
-                  disabled={!onOpenIdea}
-                  data-testid={`portfolio-idea-${i.id}`}
-                  className="w-full rounded px-1 py-1 text-left hover:bg-gray-50 disabled:cursor-default dark:hover:bg-gray-800"
-                >
-                  <span className="flex flex-wrap items-center gap-x-2">
-                    <span className="text-[13px] font-medium text-gray-900 dark:text-gray-100">
-                      {(i.action ?? 'Idea').toUpperCase()}
+          <ul className="space-y-1" data-testid="portfolio-ideas">
+            {ideas.map(i => {
+              /*
+                How far along, not just what it is called. The stage is
+                normalised first because production still holds
+                pre-migration values, and a raw one would light no pip at
+                all — the reader would see an idea apparently at no stage.
+              */
+              const at = i.stage ? toIdeaStage(i.stage) : null
+              const reached = at ? stageIndex(at) : -1
+              return (
+                <li key={i.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenIdea?.(i.id)}
+                    disabled={!onOpenIdea}
+                    data-testid={`portfolio-idea-${i.id}`}
+                    className="w-full rounded-md border border-transparent px-2 py-2 text-left hover:border-gray-200 hover:bg-gray-50 disabled:cursor-default dark:hover:border-gray-700 dark:hover:bg-gray-800"
+                  >
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-[13px] font-medium text-gray-900 dark:text-gray-100">
+                        {(i.action ?? 'Idea').toUpperCase()}
+                      </span>
+                      {at && (
+                        <>
+                          <span
+                            className="flex items-center gap-0.5"
+                            data-testid={`portfolio-idea-track-${i.id}`}
+                            aria-hidden="true"
+                          >
+                            {IDEA_STAGES.map((s, n) => (
+                              <span
+                                key={s}
+                                className={clsx(
+                                  'h-1 w-4 rounded-full',
+                                  n <= reached
+                                    ? 'bg-primary-600'
+                                    : 'bg-gray-200 dark:bg-gray-700',
+                                )}
+                              />
+                            ))}
+                          </span>
+                          <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                            {IDEA_STAGE_CONFIG[at].label}
+                          </span>
+                        </>
+                      )}
                     </span>
-                    {i.stage && (
-                      <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                        {stageLabel(i.stage)}
+                    {i.rationale && (
+                      <span className="mt-0.5 line-clamp-1 block text-[12px] text-gray-600 dark:text-gray-300">
+                        {i.rationale}
                       </span>
                     )}
-                  </span>
-                  {i.rationale && (
-                    <span className="mt-0.5 line-clamp-1 block text-[12px] text-gray-600 dark:text-gray-300">
-                      {i.rationale}
-                    </span>
-                  )}
-                </button>
-              </li>
-            ))}
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>

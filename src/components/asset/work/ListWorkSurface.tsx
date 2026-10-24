@@ -1,4 +1,5 @@
 import { clsx } from 'clsx'
+import { Lightbulb } from 'lucide-react'
 import { ContextualWorkHeader } from './ContextualWorkHeader'
 
 /**
@@ -17,6 +18,20 @@ import { ContextualWorkHeader } from './ContextualWorkHeader'
  * actions that already exist (remove it, open the full list). No status, no
  * notes and no commentary are invented — `asset_list_items` stores none,
  * and an empty "Notes" heading would imply a field that is not there.
+ *
+ * ── Why there is now something to DO here ───────────────────────────────
+ *
+ * Stating "membership only" accurately is not the same as being useful. A
+ * watchlist exists so that names on it become ideas, and this surface was a
+ * dead end: everything it offered led away from the asset (open the full
+ * list) or undid the membership (remove it). Starting an idea is the one
+ * action that moves the name forward, and it is the reason most lists are
+ * kept, so it is the primary action here.
+ *
+ * It is still not invented state. The idea is a `trade_queue_items` row
+ * created through the existing modal and the audited create mutation; the
+ * list is its origin, not its owner, and nothing about the idea is stored
+ * on the membership.
  */
 
 export interface ListWorkSurfaceList {
@@ -37,6 +52,8 @@ interface Props {
   onOpenFull: () => void
   onRemove?: (itemId: string) => void
   removing?: boolean
+  /** Opens the existing Add Idea modal with this asset preselected. */
+  onStartIdea?: () => void
   className?: string
 }
 
@@ -53,7 +70,7 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 export function ListWorkSurface({
-  list, assetSymbol, back, onOpenFull, onRemove, removing, className,
+  list, assetSymbol, back, onOpenFull, onRemove, removing, onStartIdea, className,
 }: Props) {
   const added = stamp(list.addedAt)
   const kind = TYPE_LABEL[String(list.listType)] ?? 'List'
@@ -80,6 +97,38 @@ export function ListWorkSurface({
         <p className="mt-3 text-[12px] text-gray-400 dark:text-gray-500" data-testid="list-no-description">
           This list has no description.
         </p>
+      )}
+
+      {/*
+        ── The thing a list is for ───────────────────────────────────────
+
+        The reason a name sits on a watchlist is that somebody might act on
+        it. This is the action, stated as the point of the page rather than
+        buried with the destructive one below.
+      */}
+      {onStartIdea && (
+        <div className="mt-4 rounded-lg border border-gray-200 px-3.5 py-3 dark:border-gray-700">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-gray-900 dark:text-gray-100">
+                Act on {assetSymbol ?? 'this name'}
+              </p>
+              <p className="mt-0.5 text-[12px] text-gray-500 dark:text-gray-400">
+                A name is on a list so it can become an idea. The idea is its
+                own record — the list is where it started, not where it lives.
+              </p>
+            </div>
+            <button
+              type="button"
+              data-testid="list-start-idea"
+              onClick={onStartIdea}
+              className="inline-flex flex-none items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-primary-700"
+            >
+              <Lightbulb className="h-3.5 w-3.5" aria-hidden="true" />
+              Start an idea
+            </button>
+          </div>
+        </div>
       )}
 
       <div className="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700">

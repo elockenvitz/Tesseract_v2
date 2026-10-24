@@ -110,6 +110,7 @@ import {
 import { IdeaWorkSurface } from '../asset/work/IdeaWorkSurface'
 import { ListWorkSurface } from '../asset/work/ListWorkSurface'
 import { PortfolioWorkSurface } from '../asset/work/PortfolioWorkSurface'
+import { AddTradeIdeaModal } from '../trading/AddTradeIdeaModal'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 
 /* The nav's icons, beside the labels the model owns. Kept here rather than in
@@ -2720,12 +2721,21 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * Work shows what exists and hands off. Research still owns writing it.
    */
   const workspaceForResearch = useAssetWorkspace(asset.id, asset.symbol ?? null, 'overview')
+  /*
+   * Starting an idea from a list or a book.
+   *
+   * One modal instance, not one per surface: it is the existing
+   * `AddTradeIdeaModal` with the audited create mutation inside it, and two
+   * copies would be two places to keep in step. `null` means closed; a
+   * string or `''` means open, carrying the book to preselect — the
+   * portfolio surface knows which, a list does not, so the modal asks.
+   */
+  const [startIdeaIn, setStartIdeaIn] = React.useState<string | null>(null)
+
   const overviewResearch = React.useMemo(() => ({
-    /* The case's own sections, so the page can show what the firm
-       thinks rather than a row reading "Investment case". */
-    sections: (workspaceForResearch.data?.sections ?? [])
-      .filter(s => s.content?.trim())
-      .map(s => ({ section: s.section, content: s.content!.trim(), at: s.updatedAt ?? null })),
+    /* Notes only. The case's own sections were listed here for one pass
+       and are not any more — a case is read in Research, not skimmed as a
+       list of field names in Work. */
     notes: (workspaceForResearch.data?.evidence ?? []).map(e => ({
       id: e.id,
       title: e.title?.trim() || 'Untitled note',
@@ -4745,6 +4755,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       back={{ label: contextualBack.label, onBack: leaveContextual }}
                       onRemove={(itemId) => removeFromList.mutate(itemId)}
                       removing={removeFromList.isPending}
+                      /* No book to preselect — a list is not one. The modal
+                         asks for the portfolio, which it requires anyway. */
+                      onStartIdea={() => setStartIdeaIn('')}
                       /* The deliberate departure. The List tab derives its
                          own permissions from the row it is handed, so
                          `list_type` and `created_by` travel with it —
@@ -4783,6 +4796,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         .map(i => ({ id: i.id, action: i.action, stage: i.stage, rationale: i.rationale }))}
                       back={{ label: contextualBack.label, onBack: leaveContextual }}
                       onOpenIdea={(ideaId) => openIdeaDetail(ideaId)}
+                      onStartIdea={() => setStartIdeaIn(contextual.id)}
                       onOpenFull={() => onNavigate?.({
                         id: contextual.id, title: name, type: 'portfolio', data: { id: contextual.id },
                       })}
@@ -5669,7 +5683,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             The one thing deliberately NOT carried over is the Portfolios
             card's `AddToQueueButton`, labelled "New Trade Idea": creating an
             idea is not a portfolio relationship, and the control already
-            exists on In Progress. One action, one place.
+            exists on In Progress.
+
+            That still holds for a row in a relationship list, which is all
+            this section is. It is no longer the whole story for the app:
+            the list and portfolio WORK surfaces each offer "Start an idea",
+            because those pages are where a reader is looking at one book or
+            one watchlist and deciding whether to act. Both open the single
+            `AddTradeIdeaModal` mounted at the foot of this file — one
+            create path, several doors to it.
 
             The `lists-section-*Content` ids moved with the sections, so the
             header's context chips still deep-link to them. */}
@@ -5681,6 +5703,34 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       <WorkflowManager
         isOpen={showWorkflowManager}
         onClose={() => setShowWorkflowManager(false)}
+      />
+
+      {/*
+        ── Starting an idea from a list or a book ────────────────────────
+
+        The existing modal, with this asset preselected and — from a
+        portfolio — that book too. Mounted once here rather than inside
+        either surface, so there is one instance and one create path.
+
+        `startIdeaIn` carries the book: `''` from a list, which has none.
+        `|| undefined` keeps the empty string out of `preselectedPortfolioId`,
+        where it would read as "a portfolio whose id is empty" rather than
+        "no portfolio chosen yet".
+      */}
+      <AddTradeIdeaModal
+        isOpen={startIdeaIn !== null}
+        onClose={() => setStartIdeaIn(null)}
+        onSuccess={() => {
+          setStartIdeaIn(null)
+          /* The surfaces that will now be wrong: this asset's open ideas,
+             the Work overview's list, and the pipeline board. The modal's
+             own service invalidates the trade caches; these are the asset
+             page's own reads of them. */
+          queryClient.invalidateQueries({ queryKey: ['asset-trade-ideas', asset.id] })
+          queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+        }}
+        preselectedAssetId={asset.id}
+        preselectedPortfolioId={startIdeaIn || undefined}
       />
     </div>
   )
