@@ -129,7 +129,10 @@ import { useAssetHeaderContext } from '../../hooks/useAssetHeaderContext'
 import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection, FirmConsensusPanel, PriceTargetsSummary, ViewWarningIndicator } from '../outcomes'
 import type { ViewScope } from '../../hooks/useExpectedValue'
 import { useViewWarnings } from '../../hooks/useViewWarnings'
-import { UserWidgetRenderer, AssetPageFieldCustomizer, InvestmentCaseBuilder } from '../research'
+import {
+  UserWidgetRenderer, AssetPageFieldCustomizer, InvestmentCaseBuilder,
+  ResearchLayoutEditor,
+} from '../research'
 import {
   ChecklistField,
   MetricField,
@@ -598,6 +601,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Research layout mode: 'classic' uses hardcoded sections, 'dynamic' uses configurable fields
   // User asset widgets
   const [showFieldCustomizer, setShowFieldCustomizer] = useState(false)
+  /** The visual layout editor — how the page looks, not which fields exist. */
+  const [showLayoutEditor, setShowLayoutEditor] = useState(false)
   const [showCaseBuilder, setShowCaseBuilder] = useState(false)
   const [widgetCollapsedState, setWidgetCollapsedState] = useState<Record<string, boolean>>({})
   // Shared visibility state for all thesis sections
@@ -4014,18 +4019,33 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               </div>
 
               {/*
-                Overflow. Customize is offered only in the reader's own view,
-                because it edits THEIR layout — showing it while reading a
-                colleague's research would promise something it cannot do.
+                Overflow. Customize and Page layout are offered only in the
+                reader's own view, because they edit THEIR layout — showing
+                either while reading a colleague's research would promise
+                something it cannot do.
+
+                They are two entries because they are two questions. Which
+                fields exist, in what order, in which section, is a list.
+                How the page looks is a picture, and it was previously a
+                10px "Full"/"Half" button on each row of that list — a
+                control a reader looking for the layout could not find, and
+                could not see the effect of without closing the modal.
               */}
               <ResearchToolbarMenu
                 items={[
                   {
                     key: 'customize',
-                    label: 'Customize layout',
+                    label: 'Customize fields',
                     icon: Settings2,
                     available: researchViewFilter === user?.id,
                     onSelect: () => setShowFieldCustomizer(true),
+                  },
+                  {
+                    key: 'layout',
+                    label: 'Page layout',
+                    icon: LayoutDashboard,
+                    available: researchViewFilter === user?.id,
+                    onSelect: () => setShowLayoutEditor(true),
                   },
                   {
                     key: 'export',
@@ -4618,6 +4638,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               assetName={asset.name}
               viewFilter={researchViewFilter}
               currentUserId={user?.id}
+            />
+
+            {/* Page layout — the same `width` preference, drawn as the page */}
+            <ResearchLayoutEditor
+              isOpen={showLayoutEditor}
+              onClose={() => setShowLayoutEditor(false)}
+              assetId={asset.id}
+              assetName={asset.symbol || asset.name}
             />
 
             {/* Investment Case Builder Modal */}

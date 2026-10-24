@@ -1063,32 +1063,15 @@ export function AssetPageFieldCustomizer({
     setHasUnsavedChanges(true)
   }
 
-  /**
-   * Set how wide a field is drawn.
+  /*
+   * Setting a field's width moved to `ResearchLayoutEditor`, which draws
+   * the fields as the grid they form. The write it performs is the same
+   * one this function did — `width` on the field's override row, carrying
+   * the field's current visibility so a width change cannot flip it — and
+   * it merges onto the saved overrides for the same reason.
    *
-   * Goes through the same draft-override map as visibility and section
-   * moves, so it shows immediately, counts as an unsaved change, and is
-   * written into `field_config` by the existing save — one layout model,
-   * not a second one for widths.
+   * What stays here is reading the value: the row shows "Half" as a label.
    */
-  const handleSetFieldWidth = (fieldId: string, width: FieldWidth) => {
-    setDraftFieldOverrides(prev => {
-      const newMap = new Map(prev)
-      const existing = newMap.get(fieldId)
-      const field = fieldsWithPreferences.find(f => f.field_id === fieldId)
-      newMap.set(fieldId, {
-        field_id: fieldId,
-        /* Width alone must not flip visibility, so the current value is
-           carried rather than defaulted. */
-        is_visible: existing?.is_visible ?? field?.is_visible ?? true,
-        section_id: existing?.section_id,
-        display_order: existing?.display_order,
-        width,
-      })
-      return newMap
-    })
-    setHasUnsavedChanges(true)
-  }
 
   const handleClearOverrides = () => {
     setDraftFieldOverrides(new Map())
@@ -1621,7 +1604,19 @@ export function AssetPageFieldCustomizer({
           field_id: fieldId,
           is_visible: override.is_visible,
           section_id: override.section_id,
-          display_order: override.display_order
+          display_order: override.display_order,
+          /*
+            Width was set in the draft by `handleSetFieldWidth` and then
+            dropped here, so changing a field's width, pressing Save and
+            reopening the page showed it full width again — the control
+            looked live and persisted nothing.
+
+            `save_asset_layout_customization` stores `field_overrides` as
+            opaque jsonb and only remaps `section_id`, so the value round
+            trips as soon as it is sent; and `layout-resolver` already
+            reads `assetOverride?.width` first. Only this line was missing.
+          */
+          width: override.width
         })
       })
 
@@ -2182,7 +2177,6 @@ export function AssetPageFieldCustomizer({
                                   handleRemoveFieldFromSection={handleRemoveFieldFromSection}
                                   handleToggleVisibility={handleToggleVisibility}
                                   handleRevertField={handleRevertField}
-                                  handleSetFieldWidth={handleSetFieldWidth}
                                   isSaving={isSaving}
                                   isDraggingLibraryField={activeDragType === 'library-field'}
                                   dragOverPositionId={dragOverPositionId}
@@ -3055,8 +3049,6 @@ interface SectionItemProps {
   handleRemoveFieldFromSection: (fieldId: string) => void
   handleToggleVisibility: (fieldId: string) => void
   handleRevertField?: (fieldId: string) => void
-  /** Sets how wide a field is drawn. Same draft path as visibility. */
-  handleSetFieldWidth?: (fieldId: string, width: FieldWidth) => void
   isSaving: boolean
   isDraggingLibraryField?: boolean
   dragOverPositionId?: string | null
@@ -3090,7 +3082,6 @@ function SortableSection({
   handleRemoveFieldFromSection,
   handleToggleVisibility,
   handleRevertField,
-  handleSetFieldWidth,
   isSaving,
   isDraggingLibraryField = false,
   dragOverPositionId = null,
@@ -3370,7 +3361,6 @@ function SortableSection({
                       onToggleVisibility={handleToggleVisibility}
                       onRemove={handleRemoveFieldFromSection}
                       onRevertField={handleRevertField}
-                      onSetFieldWidth={handleSetFieldWidth}
                       isSaving={isSaving}
                       isFromTemplate={(field as any).isFromTemplate}
                       isAddedViaOverride={(field as any).isAddedViaOverride}
@@ -3439,7 +3429,6 @@ function SortableFieldRow({
   onToggleVisibility,
   onRemove,
   onRevertField,
-  onSetFieldWidth,
   isSaving,
   isFromTemplate = true,
   isAddedViaOverride = false,
@@ -3451,8 +3440,6 @@ function SortableFieldRow({
   onToggleVisibility: (fieldId: string) => void
   onRemove?: (fieldId: string) => void
   onRevertField?: (fieldId: string) => void
-  /** Sets how wide this field is drawn in its section. */
-  onSetFieldWidth?: (fieldId: string, width: FieldWidth) => void
   isSaving: boolean
   isFromTemplate?: boolean
   isAddedViaOverride?: boolean
@@ -3579,26 +3566,29 @@ function SortableFieldRow({
       </div>
 
       {/*
-        ── Width, beside visibility ────────────────────────────────────
+        ── Width is read here, and set in Page layout ──────────────────
 
-        The customizer could say WHICH fields appear and in what order,
-        but not how the page is laid out — so a one-line rating and a
-        multi-paragraph thesis each took a full row of a 1,900px page.
-        Half-width fields pack two across.
+        This used to be a button: "Full" / "Half", 10px, at the end of the
+        row. It was the only way to change how the page was arranged, and
+        asked to do that a reader could not tell it was the control — the
+        word named a state, the row named a field, and nothing showed the
+        page being produced. It is now a label, and arranging the page is
+        its own screen (`ResearchLayoutEditor`) where the fields are drawn
+        as the grid they will form.
 
-        Stored in the layout's existing `field_config` jsonb, so this is
-        a saved per-layout preference and needs no schema change.
+        The value is unchanged: the same `width` in the layout's existing
+        `field_config` / `field_overrides` jsonb. Showing it here keeps
+        the field list honest about what the layout says without being a
+        second place to change it.
       */}
-      {onSetFieldWidth && field.is_visible && (
-        <button
-          onClick={() => onSetFieldWidth(field.field_id, field.width === 'half' ? 'full' : 'half')}
-          disabled={isSaving}
+      {field.is_visible && field.width === 'half' && (
+        <span
           data-testid={`field-width-${field.field_id}`}
-          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-700"
-          title={field.width === 'half' ? 'Half width — click for full width' : 'Full width — click for half width'}
+          title="Half width — change this in Page layout"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-400 dark:text-gray-500"
         >
-          {field.width === 'half' ? 'Half' : 'Full'}
-        </button>
+          Half
+        </span>
       )}
 
       {/* Revert button - for overridden fields (shown on hover) */}
