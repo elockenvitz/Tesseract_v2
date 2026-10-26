@@ -5819,7 +5819,20 @@ export function ResearchFieldsManager() {
         name,
         description: description || undefined,
         fieldConfig,
-        isDefault: editingLayout.is_default
+        isDefault: editingLayout.is_default,
+        /*
+         * The version this edit was opened against.
+         *
+         * `fieldConfig` is a REPLACE, not a merge, so two people editing
+         * the same template in two tabs means the second press erases the
+         * first person's work with no error. Now the second press is
+         * refused and says why.
+         *
+         * This is the only write in this file that needs it: `handleSetDefault`
+         * flips one boolean, and guarding that would make "make this my
+         * default" fail because somebody renamed a field.
+         */
+        expectedUpdatedAt: editingLayout.updated_at
       })
     } else {
       await saveLayout.mutateAsync({

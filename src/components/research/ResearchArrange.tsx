@@ -323,19 +323,16 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
     displayedFieldsBySection,
     assetFieldOverrides,
     assetSectionOverrides,
-    resolvedSectionOverrides,
     activeLayout,
     saveCustomization,
     selectLayoutForAsset,
-    clearAssetOverrides,
   } = useUserAssetPagePreferences(draft?.assetId)
-  /* Templates are a different hook: this one is scoped to one asset, and
-     writing a template is not. */
-  const { layouts, updateLayout, saveLayout } = useUserAssetPageLayouts()
+  /* Templates are a different hook. Only the LIST is needed here, to fill
+     the picker — arrange mode chooses which template this stock follows,
+     and never writes one. */
+  const { layouts } = useUserAssetPageLayouts()
 
   const arrange = useArrange()
-  const [target, setTarget] = useState<SaveTarget>('asset')
-  const [newTemplateName, setNewTemplateName] = useState('')
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -392,9 +389,6 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
     ),
     [displayedFieldsBySection, arrange],
   )
-
-  /** A template must exist to write to; the system default is not one. */
-  const templateWritable = !!activeLayout?.id && activeLayout.id !== 'system-default'
 
   const reset = () => { draft?.clear(); setError(null) }
 
@@ -454,169 +448,39 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
     })
   }
 
-  /**
-   * All stocks: the active template's own field_config.
-   *
-   * Written from the page as it currently reads — every visible field,
-   * with the draft applied — rather than by patching the stored config.
-   * The stored config can be missing fields the page is showing from
-   * defaults, and patching it would silently drop them.
+  /*
+   * `templateConfigFromPage()` lived here: it read the arranged page back
+   * out in the shape a TEMPLATE stores. Removed with the template save
+   * itself — it had no other caller, and dead code that writes to a
+   * shared table is worse than no code. It is in git history at d937e4c0
+   * if the template editor ever wants to build a template from a page.
    */
-  /**
-   * The page as it currently reads, in the shape a template stores.
-   *
-   * Built from what is RENDERED rather than by patching the stored config:
-   * the stored config can be missing fields the page is showing from
-   * defaults, and patching would silently drop them. The trade is that
-   * saving to a template also bakes in anything that was previously
-   * arriving from a default — which is what "make the page look like this
-   * everywhere" has to mean.
-   */
-  const templateConfigFromPage = () => {
-    const byId = new Map(
-      (displayedFieldsBySection ?? []).flatMap(s => s.fields).map(f => [f.field_id, f]),
-    )
-    const placed = new Set<string>()
-
-    /* The VISIBLE page first, read straight off the draft's layout, so a
-       field dragged into another section is written there. */
-    const fieldConfig = (displayedFieldsBySection ?? []).flatMap((section, sIdx) => {
-      const ids = draft?.layout.get(section.section_id) ?? section.fields
-        .filter(f => f.is_visible).map(f => f.field_id)
-      return ids.flatMap((fieldId, fIdx) => {
-        const f = byId.get(fieldId)
-        if (!f) return []
-        placed.add(fieldId)
-        return [{
-          field_id: fieldId,
-          section_id: section.section_id,
-          is_visible: true,
-          display_order: sIdx * 1000 + fIdx,
-          is_collapsed: f.is_collapsed ?? false,
-          span: draft?.spans.get(fieldId) ?? f.span ?? FULL_SPAN,
-        }]
-      })
-    })
-
-    /*
-     * Then everything the page is NOT showing, recorded as hidden.
-     *
-     * The draft's layout holds only visible fields, so building the
-     * template from it alone would omit every hidden one — and a field
-     * missing from `field_config` is not hidden, it falls back to its
-     * default, which is how hiding a field would have un-hidden it for
-     * every stock on the template.
-     */
-    for (const section of displayedFieldsBySection ?? []) {
-      for (const f of section.fields) {
-        if (placed.has(f.field_id)) continue
-        fieldConfig.push({
-          field_id: f.field_id,
-          section_id: draft?.moved.get(f.field_id) ?? f.section_id ?? section.section_id,
-          is_visible: false,
-          display_order: f.display_order ?? f.default_display_order ?? 999,
-          is_collapsed: f.is_collapsed ?? false,
-          span: draft?.spans.get(f.field_id) ?? f.span ?? FULL_SPAN,
-        })
-      }
-    }
-    /*
-     * Sections travel too, now that a template can hold them. This is the
-     * RESOLVED view — the template's own sections with this asset's
-     * renames merged over — because the point of saving to a template is
-     * that what you are looking at becomes the template.
-     */
-    return { fieldConfig, sectionConfig: resolvedSectionOverrides }
-  }
 
   /**
-   * Having written the arrangement into a template, stop overriding it here.
+   * Arrange mode writes THIS STOCK and nothing else.
    *
-   * Per-asset overrides BEAT the template — which is the whole point of
-   * "this stock only". So saving to a template without clearing them left
-   * the one stock you were looking at as the one that did not follow it:
-   * the page refused to change, and its overrides were now a duplicate of
-   * the template, pinning it there permanently.
+   * It used to offer three targets — this stock, every stock on the
+   * template, and a brand-new template. That put two jobs on one bar: a
+   * tweak to the page in front of you, and a change to what every other
+   * page looks like. The second job already has a home in the template
+   * editor, which is also where templates are named, duplicated and
+   * deleted, so the arrange bar was a worse second entrance to it.
    *
-   * Clearing is safe because a template can now express everything the
-   * per-asset layer holds — field visibility, section, order and span,
-   * plus the sections themselves. Nothing is dropped; it moved up a level.
+   * Removing it also removes the failure mode it carried: a template save
+   * from here had to clear this asset's own overrides afterwards, because
+   * per-asset settings beat the template and would otherwise pin the one
+   * stock you were looking at to a stale copy of what you just saved.
+   *
+   * The template PICKER stays, because choosing which template a stock
+   * follows is itself a per-stock setting — it writes this asset's
+   * selection row, not the template.
    */
-  const stopOverridingLocally = async () => {
-    if (draft?.assetId) await clearAssetOverrides.mutateAsync(draft.assetId)
-  }
-
-  const saveToTemplate = async () => {
-    if (!activeLayout?.id) throw new Error('No template to save to.')
-    /*
-     * No token, no write.
-     *
-     * Treating a missing `updated_at` as "skip the check" is how this
-     * guard was vacuous the first time: the hook stubbed the field to '',
-     * the condition was never applied, and a save silently overwrote
-     * another tab's template. Refusing is the safe direction — the write
-     * is to a template every other stock reads.
-     */
-    if (!activeLayout.updated_at) {
-      throw new Error(
-        'Cannot safely save to this template — its version is unknown. Reload the page and try again.',
-      )
-    }
-    const { fieldConfig, sectionConfig } = templateConfigFromPage()
-    await updateLayout.mutateAsync({
-      layoutId: activeLayout.id,
-      fieldConfig,
-      sectionConfig,
-      /* The version this arrangement was built on. If another tab wrote
-         the template meanwhile, this write is refused rather than
-         silently erasing theirs. */
-      expectedUpdatedAt: activeLayout.updated_at,
-    })
-    await stopOverridingLocally()
-  }
-
-  /**
-   * A new template from this page, and this asset switched onto it.
-   *
-   * Without the switch the reader would name a template, press save, and
-   * see no change at all — the page would still be on whatever it was
-   * using, and the thing they just made would be invisible.
-   */
-  const saveAsNewTemplate = async () => {
-    const name = newTemplateName.trim()
-    if (!name) throw new Error('Give the template a name.')
-    const { fieldConfig, sectionConfig } = templateConfigFromPage()
-    /*
-     * The insert's row type infers as `never` here — the generated
-     * Supabase types do not reach this mutation — so the id is read
-     * defensively rather than asserted. If it is missing the template is
-     * still created; only the switch below is skipped, which is why that
-     * is guarded rather than assumed.
-     */
-    const created: unknown = await saveLayout.mutateAsync({ name, fieldConfig, sectionConfig })
-    const createdId =
-      created && typeof created === 'object' && 'id' in created
-        ? String((created as { id: unknown }).id)
-        : null
-    if (createdId && draft?.assetId) {
-      /* Switch first, THEN clear: `clearAssetOverrides` deletes the whole
-         selection row when it carries no layout_id, so clearing first
-         would take the new template choice with it. */
-      await selectLayoutForAsset.mutateAsync({ assetId: draft.assetId, layoutId: createdId })
-      await stopOverridingLocally()
-    }
-  }
-
   const save = async () => {
-    /* "Save as new template" is worth doing with no changes at all —
-        it captures the page as it stands. The other two are not. */
-    if (!dirty && target !== 'new') { onClose(); return }
+    if (!dirty) { onClose(); return }
     setSaving(true)
     setError(null)
     try {
-      if (target === 'new') await saveAsNewTemplate()
-      else if (target === 'template') await saveToTemplate()
-      else await saveToAsset()
+      await saveToAsset()
       draft?.clear()
       onClose()
     } catch (e) {
@@ -643,6 +507,19 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
           <p className="mt-0.5 text-[11px] text-primary-700/90 dark:text-primary-300/90">
             Drag a field to move it. Drag its right edge, or use ← and →, to
             change how wide it is. Fields are not editable while arranging.
+          </p>
+          {/*
+            Scope, stated once and always. With the target picker gone
+            there is no control left that says where a save lands, so the
+            bar has to — otherwise the safest possible behaviour would
+            also be the least obvious one.
+          */}
+          <p
+            data-testid="arrange-scope-note"
+            className="mt-0.5 text-[11px] font-medium text-primary-800 dark:text-primary-200"
+          >
+            Saves to {assetName ?? 'this stock'} only. To change every stock,
+            edit the layout template.
           </p>
         </div>
 
@@ -685,67 +562,11 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
           )}
 
           {/*
-            Where it lands, chosen before pressing Save and visible while
-            dragging. "All stocks" writes the active template, so it is
-            offered only when there is one — on the system default there is
-            nothing to write to, and a disabled control that explains
-            itself beats one that fails on press.
+            No "where does this land" control any more — it always lands on
+            this stock. The sentence in the bar's header says so, which is
+            cheaper to read than a radio group that was correct three
+            quarters of the time and dangerous the rest.
           */}
-          <span
-            role="radiogroup"
-            aria-label="Save this arrangement to"
-            data-testid="arrange-target"
-            className="inline-flex overflow-hidden rounded-md border border-primary-300 dark:border-primary-700"
-          >
-            {([
-              { key: 'asset' as const, label: 'This stock', disabled: false, hint: `Applies to ${assetName ?? 'this stock'} only.` },
-              {
-                key: 'template' as const,
-                label: 'All stocks',
-                disabled: !templateWritable,
-                hint: templateWritable
-                  ? `Changes the "${activeLayout?.name}" template, so every stock using it moves too.`
-                  : 'There is no template to change yet — use New template.',
-              },
-              {
-                key: 'new' as const,
-                label: 'New template',
-                disabled: false,
-                hint: 'Saves this page as a new template and puts this stock on it.',
-              },
-            ]).map(o => (
-              <button
-                key={o.key}
-                type="button"
-                role="radio"
-                aria-checked={target === o.key}
-                disabled={o.disabled}
-                title={o.hint}
-                data-testid={`arrange-target-${o.key}`}
-                onClick={() => setTarget(o.key)}
-                className={clsx(
-                  'px-2.5 py-1.5 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-                  target === o.key
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-white text-primary-800 hover:bg-primary-100 dark:bg-gray-900 dark:text-primary-200',
-                )}
-              >
-                {o.label}
-              </button>
-            ))}
-          </span>
-
-          {target === 'new' && (
-            <input
-              type="text"
-              value={newTemplateName}
-              onChange={e => setNewTemplateName(e.target.value)}
-              placeholder="Template name"
-              aria-label="Name for the new template"
-              data-testid="arrange-new-template-name"
-              className="w-40 rounded-md border border-primary-300 bg-white px-2 py-1.5 text-[12px] text-gray-900 placeholder:text-gray-400 focus:border-primary-500 focus:outline-none dark:border-primary-700 dark:bg-gray-900 dark:text-gray-100"
-            />
-          )}
 
           {/*
             Add a field, from the page you are adding it to.
@@ -837,16 +658,6 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
         looking at exactly one of them. Said before the press, because
         afterwards there is no undo — the previous arrangement is gone.
       */}
-      {target !== 'asset' && (
-        <p
-          data-testid="arrange-scope-warning"
-          className="mt-2 text-[11px] text-primary-800/90 dark:text-primary-200/90"
-        >
-          {target === 'template'
-            ? `Every stock using "${activeLayout?.name}" will be arranged this way. ${assetName ?? 'This stock'}'s own adjustments will be cleared, so it follows the template from now on.`
-            : `Saves this page as a new template and puts ${assetName ?? 'this stock'} on it. Its own adjustments will be cleared, so it follows the new template.`}
-        </p>
-      )}
 
       {error && (
         <p
@@ -1098,8 +909,17 @@ function ArrangeableFieldActive({
         The real field, rendered by the page, made inert. `select-none`
         matters as much as the pointer events: without it a drag that
         starts over prose highlights the prose instead of moving anything.
+
+        `pt-7` reserves the strip the chrome below sits in. The badge used
+        to be drawn at `top-2` directly over the field's own header, so
+        "Business Model" covered "Business Model" and the badge's span
+        label ate the "Updated 7 months ago" beside it — the page you were
+        arranging was partly illegible while you arranged it. Pushing the
+        field down by the height of the badge is the only arrangement
+        where the chrome and the header can both be read; it costs 28px
+        per field, in arrange mode only.
       */}
-      <div className="pointer-events-none select-none" aria-hidden="true">
+      <div className="pointer-events-none select-none pt-7" aria-hidden="true">
         {children}
       </div>
 
@@ -1119,7 +939,7 @@ function ArrangeableFieldActive({
         aria-label={`${fieldName} — ${spanLabel(span)}. Space to pick up and move, left and right arrows to resize.`}
         className="absolute inset-0 cursor-grab rounded-xl bg-primary-500/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 active:cursor-grabbing dark:bg-primary-400/5"
       >
-        <span className="pointer-events-none absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-white/95 px-1.5 py-0.5 shadow-sm dark:bg-gray-900/95">
+        <span className="pointer-events-none absolute left-2 top-0.5 inline-flex max-w-[calc(100%-5rem)] items-center gap-1 rounded-md px-1.5 py-0.5">
           <GripVertical className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
           <span className="max-w-[14rem] truncate text-[11px] font-medium text-gray-700 dark:text-gray-200">
             {fieldName}
@@ -1149,7 +969,7 @@ function ArrangeableFieldActive({
         aria-label={`Remove ${fieldName} from this page`}
         onPointerDown={e => e.stopPropagation()}
         onClick={e => { e.stopPropagation(); arrange.setVisible(fieldId, false) }}
-        className="absolute right-4 top-2 z-10 rounded-md bg-white/95 p-1 text-gray-400 opacity-0 shadow-sm transition-opacity hover:text-error-600 focus-visible:opacity-100 group-hover:opacity-100 dark:bg-gray-900/95"
+        className="absolute right-2 top-0.5 z-10 rounded-md bg-white/95 p-1 text-gray-400 opacity-0 shadow-sm transition-opacity hover:text-error-600 focus-visible:opacity-100 group-hover:opacity-100 dark:bg-gray-900/95"
       >
         <X className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
@@ -1164,7 +984,9 @@ function ArrangeableFieldActive({
         data-testid={`arrange-resize-${fieldId}`}
         onPointerDown={startResize}
         className={clsx(
-          'absolute inset-y-2 right-0 z-10 w-3 cursor-col-resize touch-none rounded-r-xl',
+          /* Starts below the chrome strip so the grip tracks the card it
+             actually resizes, not the badge above it. */
+          'absolute bottom-2 top-8 right-0 z-10 w-3 cursor-col-resize touch-none rounded-r-xl',
           resizing ? 'bg-primary-500/70' : 'bg-primary-400/20 group-hover:bg-primary-400/60',
         )}
       />

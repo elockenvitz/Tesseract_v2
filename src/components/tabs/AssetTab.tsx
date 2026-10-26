@@ -4452,7 +4452,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       sectionId={section.section_id}
                       sectionSlug={section.section_slug}
                       fieldIds={section.fields.filter(f => f.is_visible).map(f => f.field_id)}
-                      className="grid grid-cols-1 gap-3 border-t border-gray-100 px-5 py-2 xl:grid-cols-12 dark:border-gray-800"
+                      /* `items-start` stops a card being stretched to the
+                         height of the tallest card beside it. Grid's
+                         default `stretch` meant a short field sitting next
+                         to a long one was padded with dead whitespace —
+                         measured at 140px under Business Model next to a
+                         quarter-width Investment Thesis — while the long
+                         one truncated with "Show more". Each card is now
+                         its own content's height. */
+                      className="grid grid-cols-1 items-start gap-3 border-t border-gray-100 px-5 py-2 xl:grid-cols-12 dark:border-gray-800"
                     >
                       {/*
                         While arranging, every section is handed EVERY

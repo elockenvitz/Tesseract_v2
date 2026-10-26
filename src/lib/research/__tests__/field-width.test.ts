@@ -31,6 +31,7 @@ const CUSTOMIZER = strip(read('src/components/research/AssetPageFieldCustomizer.
 const CANVAS = strip(read('src/components/research/ResearchArrange.tsx'))
 const SPANLIB = strip(read('src/lib/research/field-span.ts'))
 const HOOK = strip(read('src/hooks/useUserAssetPagePreferences.ts'))
+const MANAGER = strip(read('src/components/templates/ResearchFieldsManager.tsx'))
 
 describe('a field carries its own width', () => {
   it('defaults to a full row, so layouts saved before spans are unchanged', () => {
@@ -75,7 +76,21 @@ describe('the page draws what the layout says', () => {
   it('lays sections out on twelve columns', () => {
     /* Two columns could only say "a row" or "half a row". Twelve is what
        makes a quarter, a third and two thirds expressible at all. */
-    expect(TAB).toMatch(/grid grid-cols-1 gap-3 border-t border-gray-100 px-5 py-2 xl:grid-cols-12/)
+    expect(TAB).toMatch(/grid grid-cols-1 items-start gap-3 .*xl:grid-cols-12/)
+  })
+
+  it('does not stretch a card to the height of the one beside it', () => {
+    /* Grid's default `align-items: stretch` padded a short field with the
+       height of the tallest field in its row — 140px of white under
+       Business Model, measured, while the quarter-width Investment Thesis
+       next to it truncated behind "Show more". A card is its own
+       content's height.
+
+       Anchored to the TWELVE-COLUMN grid, not to `items-start` alone: an
+       unrelated single-column grid further down the file already carries
+       that class, so the loose version of this assertion passed with the
+       fix reverted. Found by injecting exactly that. */
+    expect(TAB).toMatch(/grid grid-cols-1 items-start[^"]*xl:grid-cols-12/)
   })
 
   it('gives each field the span it was arranged at', () => {
@@ -330,63 +345,49 @@ describe('the layout is arranged on the page, not above it', () => {
     expect(CANVAS).toMatch(/if \(!arrangeable\) \{/)
   })
 
-  it('stops overriding this asset once the arrangement is in a template', () => {
-    /*
-     * THE BUG, found by saving a template in the running app and watching
-     * the page refuse to change.
-     *
-     * Per-asset overrides BEAT the template — that is what "this stock
-     * only" means. So writing an arrangement to a template without
-     * clearing them left the one stock you were looking at as the one that
-     * did not follow it, and its overrides were now a byte-for-byte
-     * duplicate of the template, pinning it there permanently.
-     *
-     * Safe to clear only because a template can now hold everything the
-     * per-asset layer holds — visibility, section, order, span, and the
-     * sections themselves. Nothing is dropped; it moved up a level.
-     */
-    expect(CANVAS).toMatch(/const stopOverridingLocally = async \(\) => \{/)
-    expect(CANVAS).toMatch(/clearAssetOverrides\.mutateAsync\(draft\.assetId\)/)
-    /* Bounded to the function, not to a character count: a fixed window
-       already broke once when the concurrency guard was added ahead of
-       this line and pushed it out of range. */
-    const toTemplate = CANVAS.indexOf('const saveToTemplate')
-    const afterToTemplate = CANVAS.indexOf('const saveAsNewTemplate', toTemplate)
-    expect(afterToTemplate).toBeGreaterThan(toTemplate)
-    expect(CANVAS.slice(toTemplate, afterToTemplate)).toMatch(/await stopOverridingLocally\(\)/)
-    const toNew = CANVAS.indexOf('const saveAsNewTemplate')
-    expect(CANVAS.slice(toNew, toNew + 900)).toMatch(/await stopOverridingLocally\(\)/)
+  /*
+   * ── Five tests used to live here ───────────────────────────────────────
+   *
+   * They pinned arrange mode's three save targets: "this stock", "all
+   * stocks" (rewriting the active template) and "new template". They are
+   * rewritten into the single assertion below rather than deleted,
+   * because what they protected is now protected by the behaviour not
+   * existing.
+   *
+   * Arrange mode is a per-stock tool. Writing a template from here put
+   * two jobs on one bar — tweak the page in front of you, and change what
+   * every other page looks like — and the second job already has a home
+   * in the template editor. It also carried its own hazard: because
+   * per-asset settings beat the template, a template save from here had
+   * to delete this asset's overrides afterwards or the one stock you were
+   * looking at would be the one that did not follow what you just saved.
+   *
+   * What went with it: `saveToTemplate`, `saveAsNewTemplate`,
+   * `stopOverridingLocally`, `templateConfigFromPage`, the target radio
+   * group, the new-template name box and the scope warning. All of it is
+   * at d937e4c0 if the template editor wants it.
+   */
+  it('writes this stock and never a template', () => {
+    /* The invariant that replaces all of the above. Arrange mode holds no
+       route to a shared table: no template write, and not even the
+       mutations that could perform one. A regression here would quietly
+       re-expose every other stock to a one-stock edit. */
+    expect(CANVAS).toMatch(/await saveToAsset\(\)/)
+    expect(CANVAS).not.toMatch(/updateLayout\.mutateAsync/)
+    expect(CANVAS).not.toMatch(/saveLayout\.mutateAsync/)
+    expect(CANVAS).not.toMatch(/data-testid="arrange-target/)
+    expect(CANVAS).not.toMatch(/data-testid="arrange-scope-warning"/)
+    /* The template PICKER stays: choosing which template a stock follows
+       writes that stock's selection row, not the template. */
+    expect(CANVAS).toMatch(/data-testid="arrange-template-picker"/)
+    expect(CANVAS).toMatch(/selectLayoutForAsset\.mutateAsync/)
   })
 
-  it('switches the asset onto a new template before clearing its overrides', () => {
-    /* `clearAssetOverrides` DELETES the whole selection row when it
-       carries no layout_id, so clearing first would take the new template
-       choice with it and leave the asset on the default. */
-    const at = CANVAS.indexOf('const saveAsNewTemplate')
-    const body = CANVAS.slice(at, at + 1200)
-    expect(body.indexOf('selectLayoutForAsset.mutateAsync'))
-      .toBeLessThan(body.indexOf('stopOverridingLocally()'))
-  })
-
-  it('tells the reader a template save reaches every other stock', () => {
-    /* There is no undo — the previous arrangement is gone — so this is
-       said before the press, not after. */
-    expect(CANVAS).toMatch(/data-testid="arrange-scope-warning"/)
-    expect(CANVAS).toMatch(/Every stock using/)
-  })
-
-  it('writes a template from the page, not by patching the stored config', () => {
-    /* The stored config can be missing fields the page is showing from
-       defaults; patching it would silently drop them. */
-    expect(CANVAS).toMatch(/const templateConfigFromPage = \(\) => \{/)
-    expect(CANVAS).toMatch(/displayedFieldsBySection \?\? \[\]\)\.flatMap/)
-  })
-
-  it('carries sections into a template, not just fields', () => {
-    /* The whole point of the section_config column: renaming a section on
-       one stock could never become part of a template before, because a
-       template had nowhere to put it. */
-    expect(CANVAS).toMatch(/sectionConfig: resolvedSectionOverrides/)
+  it('still stores sections per asset, now that templates are not written here', () => {
+    /* The section_config column and the resolver's merge are unaffected —
+       a template can still hold sections, it is just no longer written
+       from this screen. */
+    expect(CANVAS).toMatch(/sectionOverrides: assetSectionOverrides/)
     expect(RESOLVER).toMatch(/section_config\?: SectionOverride\[\] \| null/)
   })
 
@@ -451,7 +452,9 @@ describe('the layout is arranged on the page, not above it', () => {
        button further down calls `onClose()` legitimately, and an
        unbounded slice failed on it rather than on the thing being
        pinned. */
-    const tryAt = CANVAS.indexOf('if (target === \'template\')')
+    /* Re-anchored from `if (target === 'template')` when the save targets
+       were removed; `await saveToAsset()` is now the whole try body. */
+    const tryAt = CANVAS.indexOf('await saveToAsset()')
     const catchAt = CANVAS.indexOf('} catch (e)', tryAt)
     const finallyAt = CANVAS.indexOf('} finally {', catchAt)
     expect(tryAt).toBeGreaterThan(-1)
@@ -517,15 +520,23 @@ describe('a template write cannot silently overwrite another one', () => {
     expect(sites.length).toBeGreaterThanOrEqual(3)
   })
 
-  it('refuses a template write whose version it does not know', () => {
-    /* The safe direction. Treating a missing token as "skip the check" is
-       what made this vacuous; refusing costs a reload, and the write is
-       to a template every other stock reads. */
-    const at = CANVAS.indexOf('const saveToTemplate')
-    const window = CANVAS.slice(at, at + 1200)
+  it('is actually reached by the screen that writes templates', () => {
+    /*
+     * A guard with no caller is the same as no guard, and this one lost
+     * its caller: it was built for arrange mode's "All stocks" save,
+     * which has since been removed. The template editor is now the only
+     * place a template's field_config is rewritten, so the token has to
+     * travel from there or every assertion above this one is theatre.
+     *
+     * Scoped to the full-config write. `handleSetDefault` flips one
+     * boolean and is deliberately NOT guarded — failing "make this my
+     * default" because someone else renamed a field would be a worse bug
+     * than the one being prevented.
+     */
+    const at = MANAGER.indexOf('const handleSaveLayout')
+    const window = MANAGER.slice(at, at + 1400)
     expect(at).toBeGreaterThan(-1)
-    expect(window).toMatch(/if \(!activeLayout\.updated_at\) \{\s*throw new Error\(/)
-    expect(window).toMatch(/expectedUpdatedAt: activeLayout\.updated_at/)
+    expect(window).toMatch(/expectedUpdatedAt: editingLayout\.updated_at/)
   })
 })
 
