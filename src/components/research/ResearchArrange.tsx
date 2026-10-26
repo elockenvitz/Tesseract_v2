@@ -84,6 +84,7 @@ import {
   type FieldSpan,
 } from '../../lib/research/layout-resolver'
 import { LayoutStatusChip } from './LayoutStatusChip'
+import { useIsOrgAdmin } from '../../hooks/useIsOrgAdmin'
 
 interface ArrangeState {
   active: boolean
@@ -334,16 +335,43 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
     clearAssetOverrides,
     templateBaselineFields,
     overridesTemplate,
+    createSection,
   } = useUserAssetPagePreferences(draft?.assetId)
   /* Templates are a different hook. Only the LIST is needed here, to fill
      the picker — arrange mode chooses which template this stock follows,
      and never writes one. */
   const { layouts } = useUserAssetPageLayouts()
+  const { canAuthorCatalog } = useIsOrgAdmin()
 
   const arrange = useArrange()
   const [adding, setAdding] = useState(false)
+  const [addingSection, setAddingSection] = useState(false)
+  const [newSectionName, setNewSectionName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  /**
+   * Create a section and put it on this stock.
+   *
+   * `createSection` writes two things: a row in the organisation's
+   * `research_sections`, and an `is_added` section override on this
+   * stock. The first is unavoidable — a section is a schema object other
+   * stocks can reuse — and the second is what keeps the promise this bar
+   * makes, that arranging changes this stock and nothing else. The
+   * wording in the menu says so rather than leaving it to be found.
+   */
+  const addSection = async () => {
+    const name = newSectionName.trim()
+    if (!name) return
+    setError(null)
+    try {
+      await createSection.mutateAsync({ name, addAsOverride: true })
+      setNewSectionName('')
+      setAddingSection(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not add the section.')
+    }
+  }
 
   /**
    * How many things actually differ from what is saved — not how many
@@ -543,7 +571,8 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
           </p>
           <p className="mt-0.5 text-[11px] text-primary-700/90 dark:text-primary-300/90">
             Drag a field to move it. Drag its right edge, or use ← and →, to
-            change how wide it is. Fields are not editable while arranging.
+            change how wide it is. Each section header has its own controls —
+            rename, reorder, hide. Fields are not editable while arranging.
           </p>
           {/*
             Scope, stated once and always. With the target picker gone
@@ -670,6 +699,97 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
               </span>
             )}
           </span>
+
+          {/*
+            Add a section.
+
+            The only section action that cannot live on a section header,
+            because there is no header to put it on yet. Renaming,
+            reordering, hiding and removing are all on the sections
+            themselves — see `ResearchArrangeSection.tsx` for why.
+
+            It writes immediately, like the template picker: the new
+            section appears below, empty, ready to have fields dragged
+            into it, and that appearance is the confirmation.
+          */}
+          {/*
+            Offered only to someone the database will actually let do it.
+
+            `research_sections` carries one `FOR ALL` policy with a null
+            `WITH CHECK`, so Postgres applies its `USING` clause to the
+            INSERT as well: a non-admin member has SELECT and nothing
+            else, and the insert fails 42501. The desktop field manager
+            shows the button to everyone and swallows the rejection in a
+            console.error — tap it, the menu closes, nothing happens.
+            `useIsOrgAdmin` is the seam that exists so a surface does not
+            do that, and it fails closed, so an unresolved answer hides
+            the control rather than offering one that will be refused.
+
+            This is an affordance check, not authorization. RLS is still
+            the only thing enforcing it.
+          */}
+          {canAuthorCatalog && (
+          <span className="relative">
+            <button
+              type="button"
+              onClick={() => setAddingSection(s => !s)}
+              aria-expanded={addingSection}
+              disabled={saving || !draft?.assetId}
+              title="Add a new section to this page"
+              data-testid="arrange-add-section"
+              className="inline-flex items-center gap-1 rounded-md border border-primary-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-primary-800 hover:bg-primary-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-primary-700 dark:bg-gray-900 dark:text-primary-200"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              Add section
+            </button>
+            {addingSection && (
+              <span className="absolute right-0 top-full z-40 mt-1 block w-72 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                <input
+                  value={newSectionName}
+                  autoFocus
+                  placeholder="Section name"
+                  aria-label="Name for the new section"
+                  data-testid="arrange-new-section-name"
+                  onChange={e => setNewSectionName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); void addSection() }
+                    if (e.key === 'Escape') { e.preventDefault(); setAddingSection(false) }
+                  }}
+                  className="w-full rounded border border-gray-300 px-2 py-1.5 text-[12px] focus:border-primary-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                />
+                {/*
+                  A section belongs to the organization's research schema,
+                  so it will exist for every stock — it is only ADDED to
+                  this one. Said here rather than discovered later, because
+                  the rest of this bar promises that nothing leaves this
+                  stock.
+                */}
+                <span className="mt-1.5 block text-[10px] text-gray-500 dark:text-gray-400">
+                  Added to {assetName ?? 'this stock'}. The section itself joins your
+                  organisation's list, so you can add it to other stocks too.
+                </span>
+                <span className="mt-2 flex items-center justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { setAddingSection(false); setNewSectionName('') }}
+                    className="rounded px-2 py-1 text-[11px] font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void addSection()}
+                    disabled={!newSectionName.trim() || createSection.isPending}
+                    data-testid="arrange-create-section"
+                    className="rounded bg-primary-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-primary-700 disabled:opacity-40"
+                  >
+                    {createSection.isPending ? 'Adding…' : 'Add'}
+                  </button>
+                </span>
+              </span>
+            )}
+          </span>
+          )}
 
           <span
             data-testid="arrange-dirty"

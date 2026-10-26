@@ -1027,31 +1027,63 @@ export function useUserAssetPagePreferences(assetId?: string) {
         .eq('asset_id', targetAssetId)
         .maybeSingle()
 
-      const newOverride: SectionOverride = { section_id: sectionId }
-      if (nameOverride !== undefined) newOverride.name_override = nameOverride || undefined
-      if (isHidden !== undefined) newOverride.is_hidden = isHidden
-      if (displayOrder !== undefined) newOverride.display_order = displayOrder
+      const currentOverrides: SectionOverride[] = existing?.section_overrides || []
+      const existingIndex = currentOverrides.findIndex(o => o.section_id === sectionId)
+      const existingOverride = existingIndex >= 0 ? currentOverrides[existingIndex] : undefined
 
-      // Check if this override has any actual values (not just section_id)
-      const hasValues = newOverride.name_override || newOverride.is_hidden || newOverride.display_order !== undefined
+      /*
+       * Only the keys the caller actually named.
+       *
+       * This used to build a whole override from those keys and REPLACE
+       * whatever the section already said, so hiding a section that had
+       * been renamed and reordered threw the rename and the order away.
+       * Nothing reported it: the name reverted to the template's on the
+       * next load and looked like it had never been changed.
+       *
+       * `is_hidden: false` is kept as a real statement rather than
+       * dropped, because a template can hide a section and the asset
+       * needs a way to say otherwise. Whether it is a no-op is decided
+       * below, where the template is in view.
+       */
+      const patch: Partial<SectionOverride> = {}
+      if (nameOverride !== undefined) patch.name_override = nameOverride || undefined
+      if (isHidden !== undefined) patch.is_hidden = isHidden
+      if (displayOrder !== undefined) patch.display_order = displayOrder
+
+      const merged: SectionOverride = { ...existingOverride, ...patch, section_id: sectionId }
+
+      /*
+       * Does the merged override still say anything?
+       *
+       * `is_hidden: false` counts only when the TEMPLATE hides this
+       * section — otherwise it repeats what the template already does
+       * and would pin the stock to an override with nothing in it, the
+       * same trap no-op field overrides used to set.
+       */
+      const templateHidesIt = !!(activeLayout?.section_config ?? [])
+        .find(o => o.section_id === sectionId)?.is_hidden
+      const hasValues = !!(
+        merged.name_override ||
+        merged.is_hidden === true ||
+        (merged.is_hidden === false && templateHidesIt) ||
+        merged.display_order !== undefined ||
+        merged.is_added
+      )
 
       if (existing) {
-        const currentOverrides: SectionOverride[] = existing.section_overrides || []
-        const existingIndex = currentOverrides.findIndex(o => o.section_id === sectionId)
-
         let newOverrides: SectionOverride[]
         if (existingIndex >= 0) {
           if (hasValues) {
             // Update existing override
             newOverrides = [...currentOverrides]
-            newOverrides[existingIndex] = newOverride
+            newOverrides[existingIndex] = merged
           } else {
             // Remove override if no values
             newOverrides = currentOverrides.filter(o => o.section_id !== sectionId)
           }
         } else if (hasValues) {
           // Add new override
-          newOverrides = [...currentOverrides, newOverride]
+          newOverrides = [...currentOverrides, merged]
         } else {
           return // Nothing to do
         }
@@ -1071,7 +1103,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
             asset_id: targetAssetId,
             layout_id: null,
             field_overrides: [],
-            section_overrides: [newOverride]
+            section_overrides: [merged]
           })
 
         if (error) throw error

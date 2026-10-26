@@ -222,6 +222,18 @@ export const GATED_DIRS = [
    * as the firm's position.
    */
   'src/components/asset/__tests__',
+  /*
+   * The Research layout surfaces: Supporting Research, the layout status
+   * chip and the section controls inside arrange mode.
+   *
+   * Left unlisted since Supporting Research arrived, which is the silent
+   * disappearance this accounting exists to catch — the guard caught it
+   * rather than a person. Gated rather than deferred because every
+   * failure here is a wrong claim about the reader's own page: that it
+   * is following a template it is actually overriding, or that a rename
+   * survived a change it did not.
+   */
+  'src/components/research/__tests__',
   'src/components/layout',  'src/hooks/__tests__',
   'src/components/communication',
 

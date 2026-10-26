@@ -309,10 +309,22 @@ describe('the layout is arranged on the page, not above it', () => {
     expect(CANVAS).toMatch(/ids\.forEach\(\(fieldId, index\) => \{ touch\(fieldId\)\.display_order = index \}\)/)
   })
 
-  it('cannot add, remove, hide or re-section a field', () => {
-    /* Those belong to the customizer, and a second implementation would
-       be a second answer to what the layout is. */
-    expect(CANVAS).not.toMatch(/addFieldToSection|removeFieldFromSection|toggleAssetFieldVisibility|createSection/)
+  it('changes a field through the draft, never by a direct write', () => {
+    /*
+     * Adding, removing, hiding and re-sectioning a FIELD all go into the
+     * draft and land in one `saveCustomization`. Calling the per-field
+     * mutations from here would be a second answer to what the layout is,
+     * and would write on every drag.
+     *
+     * `createSection` was in this list and has been taken out, with the
+     * reason recorded rather than the test deleted: sections are not
+     * fields. There is no header to put "add section" on until the
+     * section exists, so it is the one section action that has to live in
+     * the bar — and it cannot be a draft, because a section is a row in
+     * the organisation's schema that other stocks can reuse. The
+     * remaining three are still forbidden.
+     */
+    expect(CANVAS).not.toMatch(/addFieldToSection|removeFieldFromSection|toggleAssetFieldVisibility/)
   })
 
   it('does not offer a width the page will ignore', () => {
@@ -771,5 +783,111 @@ describe('the page says which layout it is drawing', () => {
     const at = HOOK.indexOf('const overridesTemplate')
     expect(at).toBeGreaterThan(-1)
     expect(HOOK.slice(at, at + 400)).not.toMatch(/layout_id/)
+  })
+})
+
+describe('arranging manages sections, not only fields', () => {
+  /*
+   * What the header RENDERS and when it writes is asserted by rendering
+   * it, in `src/components/research/__tests__/arrange-section-header.test.tsx`.
+   * Pinned here: that the page actually uses it, and the rules that live
+   * in the page and the hook rather than in the component.
+   */
+  it('puts the controls on the section while arranging', () => {
+    expect(TAB).toMatch(/<ArrangeableSectionHeader/)
+    expect(TAB).toMatch(/arrangingLayout \? arrangeSectionHeader\(section, sectionIdx\)/)
+  })
+
+  it('replaces the collapse toggle rather than sitting beside it', () => {
+    /* Collapsing a section hides the fields being arranged. Both section
+       renderers — Forecasts and the generic one — must swap. */
+    const swaps = TAB.match(/arrangingLayout \? arrangeSectionHeader\(/g) ?? []
+    expect(swaps.length).toBe(2)
+  })
+
+  it('draws hidden sections while arranging, so hiding is not a one-way door', () => {
+    expect(TAB).toMatch(/if \(section\.section_is_hidden && !arrangingLayout\) return null/)
+  })
+
+  it('writes the whole section order, not just the one that moved', () => {
+    /* `display_order` is an absolute position. Renumbering only the
+       moved section puts two sections on the same number, and the tie
+       then breaks however the sort happens to feel that render. */
+    const at = TAB.indexOf('const moveSectionWhileArranging')
+    expect(at).toBeGreaterThan(-1)
+    const fn = TAB.slice(at, at + 700)
+    expect(fn).toMatch(/sectionsForArranging\.map\(s => s\.section_id\)/)
+    expect(fn).toMatch(/reorderSections\.mutate\(\{ orderedSectionIds: next \}\)/)
+  })
+
+  it('orders against the arranging list, not the reading list', () => {
+    /* The reading list drops a section once it has nothing visible in
+       it. Moving past one you cannot see would skip it silently. */
+    const at = TAB.indexOf('const moveSectionWhileArranging')
+    expect(TAB.slice(at, at + 700)).not.toMatch(/displayedFieldsBySection/)
+  })
+
+  it('offers removal only for a section the reader added', () => {
+    const at = TAB.indexOf('onRemove={section.section_is_added')
+    expect(at).toBeGreaterThan(-1)
+    expect(TAB.slice(at, at + 200)).toMatch(/deleteAddedSection\.mutate/)
+  })
+
+  it('adds a section from the bar, since there is no header to add it on', () => {
+    expect(CANVAS).toMatch(/data-testid="arrange-add-section"/)
+    expect(CANVAS).toMatch(/createSection\.mutateAsync\(\{ name, addAsOverride: true \}\)/)
+  })
+
+  it('does not offer "Add section" to someone the database will refuse', () => {
+    /*
+     * `research_sections` has one FOR ALL policy with a null WITH CHECK,
+     * so its USING clause applies to the INSERT: a non-admin member has
+     * SELECT and nothing else, and the insert fails 42501. The desktop
+     * field manager shows the button to everyone and swallows the
+     * rejection in a console.error — tap, menu closes, nothing happens.
+     *
+     * `canAuthorCatalog` (not `isOrgAdmin`) because it is false while the
+     * answer is still loading: a create button that appears and vanishes
+     * reads as a bug, and can be tapped in the gap.
+     */
+    expect(CANVAS).toMatch(/canAuthorCatalog/)
+    const at = CANVAS.indexOf('data-testid="arrange-add-section"')
+    expect(CANVAS.slice(Math.max(0, at - 600), at)).toMatch(/\{canAuthorCatalog && \(/)
+  })
+
+  it('does not hide that a new section joins the org schema', () => {
+    /* The rest of the bar promises that arranging leaves this stock
+       alone. `createSection` writes a row in the organisation's
+       `research_sections` as well, and that has to be said where the
+       name is typed rather than discovered on another stock later. */
+    const at = CANVAS.indexOf('data-testid="arrange-new-section-name"')
+    expect(at).toBeGreaterThan(-1)
+    expect(CANVAS.slice(at, at + 1400)).toMatch(/organisation's list/)
+  })
+
+  it('merges a section override instead of replacing it', () => {
+    /* It used to build a whole override from the keys the caller named
+       and overwrite whatever the section already said, so hiding a
+       section that had been renamed and reordered threw the rename and
+       the order away — and the name reverted on the next load, looking
+       like it had never been changed. */
+    const at = HOOK.indexOf('const updateSectionOverride')
+    expect(at).toBeGreaterThan(-1)
+    const fn = HOOK.slice(at, at + 4000)
+    expect(fn).toMatch(/const merged: SectionOverride = \{ \.\.\.existingOverride, \.\.\.patch/)
+    expect(fn).toMatch(/newOverrides\[existingIndex\] = merged/)
+    /* And the insert path must write the same merged value — writing a
+       bare patch there was the same bug one branch over. */
+    expect(fn).toMatch(/section_overrides: \[merged\]/)
+  })
+
+  it('does not keep a section override that says nothing', () => {
+    /* `is_hidden: false` against a template that does not hide the
+       section repeats what the template already says, and would pin the
+       stock to an empty override — the trap no-op field overrides set. */
+    const at = HOOK.indexOf('const updateSectionOverride')
+    const fn = HOOK.slice(at, at + 2600)
+    expect(fn).toMatch(/const templateHidesIt/)
+    expect(fn).toMatch(/merged\.is_hidden === false && templateHidesIt/)
   })
 })

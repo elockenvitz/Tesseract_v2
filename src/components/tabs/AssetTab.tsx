@@ -39,6 +39,7 @@ import { DecisionTimeline } from '../asset/DecisionTimeline'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
 import { ResearchToolbarMenu } from '../asset/ResearchToolbarMenu'
 import { LayoutStatusChip } from '../research/LayoutStatusChip'
+import { ArrangeableSectionHeader } from '../research/ResearchArrangeSection'
 /*
  * `AssetWorkPane` — the orientation band — is gone, along with its tests.
  * The navigator carries the attention split, the ideas and the process
@@ -1321,8 +1322,80 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     activeLayout,
     overridesTemplate,
     clearAssetOverrides,
+    updateSectionOverride,
+    reorderSections,
+    deleteAddedSection,
     isLoading: layoutLoading
   } = useUserAssetPagePreferences(asset.id)
+
+  /*
+   * Section handles, for arrange mode.
+   *
+   * `reorderSections` takes the whole order rather than a delta, because
+   * `display_order` is an absolute position: renumbering only the section
+   * that moved puts two sections on the same number and the tie breaks
+   * however the sort happens to feel that render. So a move is expressed
+   * as a swap inside the full list and the full list is written back.
+   *
+   * The list is `sectionsForArranging`, not the reading list — arranging
+   * draws the sections nothing is in, and moving past one you cannot see
+   * would skip it silently.
+   */
+  const moveSectionWhileArranging = (sectionId: string, direction: -1 | 1) => {
+    const ids = sectionsForArranging.map(s => s.section_id)
+    const from = ids.indexOf(sectionId)
+    const to = from + direction
+    if (from < 0 || to < 0 || to >= ids.length) return
+    const next = [...ids]
+    ;[next[from], next[to]] = [next[to], next[from]]
+    reorderSections.mutate({ orderedSectionIds: next })
+  }
+
+  const sectionWriteBusy =
+    updateSectionOverride.isPending || reorderSections.isPending || deleteAddedSection.isPending
+
+  /**
+   * The section header, while arranging.
+   *
+   * Replaces the collapse toggle rather than sitting beside it: collapsing
+   * a section hides the fields you are trying to arrange, so inside
+   * arrange mode the header's job is the section itself.
+   */
+  const arrangeSectionHeader = (
+    section: {
+      section_id: string
+      section_name: string
+      section_original_name: string
+      section_is_hidden: boolean
+      section_is_added: boolean
+    },
+    index: number,
+  ) => (
+    <ArrangeableSectionHeader
+      sectionId={section.section_id}
+      name={section.section_name}
+      originalName={section.section_original_name}
+      isHidden={section.section_is_hidden}
+      isAdded={section.section_is_added}
+      canMoveUp={index > 0}
+      canMoveDown={index < sectionsForArranging.length - 1}
+      busy={sectionWriteBusy}
+      onRename={name => updateSectionOverride.mutate({
+        assetId: asset.id,
+        sectionId: section.section_id,
+        nameOverride: name,
+      })}
+      onToggleHidden={hidden => updateSectionOverride.mutate({
+        assetId: asset.id,
+        sectionId: section.section_id,
+        isHidden: hidden,
+      })}
+      onMove={direction => moveSectionWhileArranging(section.section_id, direction)}
+      onRemove={section.section_is_added
+        ? () => deleteAddedSection.mutate({ sectionId: section.section_id })
+        : undefined}
+    />
+  )
 
   // Check if user is viewing their own tab - used to conditionally apply layout customizations
   // Layout/template customizations should ONLY apply when viewing "My View"
@@ -4296,8 +4369,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     of. Reading draws only the sections with something in
                     them, as it always has. */}
                 {(arrangingLayout ? sectionsForArranging : displayedFieldsBySection).map((section, sectionIdx) => {
-                // Skip hidden sections
-                if (section.section_is_hidden) return null
+                /* Hidden sections are skipped for READING and drawn for
+                   ARRANGING. A section you cannot see is a section you
+                   cannot un-hide, which made hiding one a one-way door
+                   out of arrange mode and back into the old customizer. */
+                if (section.section_is_hidden && !arrangingLayout) return null
 
                 // Alternating shade for visual separation
                 const sectionShade = sectionIdx % 2 === 1 ? '!bg-gray-50/60' : ''
@@ -4306,17 +4382,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               if (section.section_slug === 'forecasts') {
                 return (
                   <Card key={section.section_id} padding="none" className={sectionShade}>
-                    <button
-                      onClick={() => toggleSection('outcomes')}
-                      className="w-full px-5 py-3 flex items-center gap-2 bg-gray-50 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
-                    >
-                      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{section.section_name}</span>
-                      {collapsedSections.outcomes ? (
-                        <ChevronDown className="h-5 w-5 text-gray-400" />
-                      ) : (
-                        <ChevronUp className="h-5 w-5 text-gray-400" />
-                      )}
-                    </button>
+                    {arrangingLayout ? arrangeSectionHeader(section, sectionIdx) : (
+                      <button
+                        onClick={() => toggleSection('outcomes')}
+                        className="w-full px-5 py-3 flex items-center gap-2 bg-gray-50 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
+                      >
+                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{section.section_name}</span>
+                        {collapsedSections.outcomes ? (
+                          <ChevronDown className="h-5 w-5 text-gray-400" />
+                        ) : (
+                          <ChevronUp className="h-5 w-5 text-gray-400" />
+                        )}
+                      </button>
+                    )}
                     {!collapsedSections.outcomes && (
                       <div className="border-t border-gray-100 px-5 py-2 space-y-3 dark:border-gray-800">
                         {/* UX2 P2 — keep the reader's personal valuation visibly
@@ -4428,17 +4506,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               // Generic Section - for all other section types
               return (
                 <Card key={section.section_id} padding="none" className={sectionShade}>
-                  <button
-                    onClick={() => toggleSection(section.section_slug as any)}
-                    className="w-full px-5 py-3 flex items-center gap-2 bg-gray-50 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
-                  >
-                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{section.section_name}</span>
-                    {collapsedSections[section.section_slug as keyof typeof collapsedSections] ? (
-                      <ChevronDown className="h-5 w-5 text-gray-400" />
-                    ) : (
-                      <ChevronUp className="h-5 w-5 text-gray-400" />
-                    )}
-                  </button>
+                  {arrangingLayout ? arrangeSectionHeader(section, sectionIdx) : (
+                    <button
+                      onClick={() => toggleSection(section.section_slug as any)}
+                      className="w-full px-5 py-3 flex items-center gap-2 bg-gray-50 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
+                    >
+                      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{section.section_name}</span>
+                      {collapsedSections[section.section_slug as keyof typeof collapsedSections] ? (
+                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                      ) : (
+                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                      )}
+                    </button>
+                  )}
                   {!collapsedSections[section.section_slug as keyof typeof collapsedSections] && (
                     /*
                       ── The reader decides the width ──────────────────
