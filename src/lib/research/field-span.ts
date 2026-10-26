@@ -69,6 +69,21 @@ export const SPAN_CLASS_FLAT: Record<FieldSpan, string> = {
  */
 export const SNAP_SPANS: readonly FieldSpan[] = [3, 4, 6, 8, 9, 12]
 
+/**
+ * Sections the Research page lays out itself, ignoring per-field span.
+ *
+ * `forecasts` draws its fields as fixed tiles and `supporting_docs` is
+ * lifted out to the Key References tab, so neither reads a span. Fields in
+ * them are left alone rather than hidden: a reader looking for Price
+ * Targets should find it where it lives and see that it does not move,
+ * instead of concluding arrange mode lost it.
+ *
+ * It lives here, beside the spans it governs, rather than in the component
+ * that reads it — a second surface that needs to know which sections
+ * ignore a span should not have to import a React module to find out.
+ */
+export const SELF_ARRANGED_SECTIONS = new Set(['forecasts', 'supporting_docs'])
+
 /** Human wording for a span, for titles and the live readout. */
 export function spanLabel(span: FieldSpan): string {
   switch (span) {

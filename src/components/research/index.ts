@@ -10,5 +10,10 @@ export { InvestmentCaseBuilder } from './InvestmentCaseBuilder'
 export { AddWidgetModal } from './AddWidgetModal'
 export { UserWidgetRenderer } from './UserWidgetRenderer'
 export { AssetPageFieldCustomizer } from './AssetPageFieldCustomizer'
-export { ResearchArrangeCanvas } from './ResearchArrangeCanvas'
+export {
+  ResearchArrangeProvider,
+  ResearchArrangeBar,
+  ArrangeableFieldGrid,
+  ArrangeableField,
+} from './ResearchArrange'
 export { ResearchSectionRenderer } from './ResearchSectionRenderer'

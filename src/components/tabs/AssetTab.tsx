@@ -131,9 +131,8 @@ import type { ViewScope } from '../../hooks/useExpectedValue'
 import { useViewWarnings } from '../../hooks/useViewWarnings'
 import {
   UserWidgetRenderer, AssetPageFieldCustomizer, InvestmentCaseBuilder,
-  ResearchArrangeCanvas,
+  ResearchArrangeProvider, ResearchArrangeBar, ArrangeableFieldGrid, ArrangeableField,
 } from '../research'
-import { SPAN_CLASS } from '../../lib/research/field-span'
 import {
   ChecklistField,
   MetricField,
@@ -4249,26 +4248,29 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   />
                 </div>
               )
-            ) : arrangingLayout ? (
-              /*
-                Arrange mode, in place of the sections — not on top of them.
-                The reader asked for the layout, so the body becomes the
-                layout: the same twelve-column grid, the same spans, as
-                tiles they can drag and resize. It replaces the sections
-                rather than overlaying them because a dialog floating above
-                the page is exactly what made the previous version useless —
-                you had to close it to see what you had done.
-              */
-              <ResearchArrangeCanvas
-                assetId={asset.id}
-                assetName={asset.symbol || asset.name}
-                onClose={() => setArrangingLayout(false)}
-              />
             ) : (
               /* Individual User "All" View — the original per-section design:
                  each section is its own card (blue/amber accent, hover
-                 highlight, hover-reveal edit), with alternating shade. */
-              displayedFieldsBySection.map((section, sectionIdx) => {
+                 highlight, hover-reveal edit), with alternating shade.
+
+                 ── Arrange mode wraps this; it does not replace it ──────
+
+                 Arranging renders these same sections and these same
+                 fields. The provider supplies the draft widths and order,
+                 and each field is wrapped rather than redrawn, so what the
+                 reader drags is the real page — a thesis is four
+                 paragraphs tall while they size it, because it IS the
+                 thesis. A separate canvas drawing named blocks could not
+                 show that, and was a second renderer free to disagree with
+                 this one about what the layout looks like. */
+              <ResearchArrangeProvider assetId={asset.id} active={arrangingLayout}>
+                {arrangingLayout && (
+                  <ResearchArrangeBar
+                    assetName={asset.symbol || asset.name}
+                    onClose={() => setArrangingLayout(false)}
+                  />
+                )}
+                {displayedFieldsBySection.map((section, sectionIdx) => {
                 // Skip hidden sections
                 if (section.section_is_hidden) return null
 
@@ -4441,7 +4443,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       full width whatever was saved: a half-width thesis
                       on a laptop is a newspaper column.
                     */
-                    <div className="grid grid-cols-1 gap-3 border-t border-gray-100 px-5 py-2 xl:grid-cols-12 dark:border-gray-800">
+                    <ArrangeableFieldGrid
+                      sectionId={section.section_id}
+                      sectionSlug={section.section_slug}
+                      fieldIds={section.fields.filter(f => f.is_visible).map(f => f.field_id)}
+                      className="grid grid-cols-1 gap-3 border-t border-gray-100 px-5 py-2 xl:grid-cols-12 dark:border-gray-800"
+                    >
                       {section.fields
                         .filter(f => f.is_visible)
                         .map(field => {
@@ -4617,20 +4624,24 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           )
                           })()
                           return (
-                            <div
+                            <ArrangeableField
                               key={field.field_id}
-                              data-field-span={field.span}
-                              className={`min-w-0 ${SPAN_CLASS[field.span]}`}
+                              fieldId={field.field_id}
+                              fieldName={field.field_name}
+                              sectionId={section.section_id}
+                              sectionSlug={section.section_slug}
+                              savedSpan={field.span}
                             >
                               {node}
-                            </div>
+                            </ArrangeableField>
                           )
                         })}
-                    </div>
+                    </ArrangeableFieldGrid>
                   )}
                 </Card>
               )
-            })
+            })}
+              </ResearchArrangeProvider>
             )}
 
             {/* User-Added Widgets Section */}

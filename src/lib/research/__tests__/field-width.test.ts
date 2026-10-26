@@ -28,7 +28,8 @@ const strip = (s: string) =>
 const RESOLVER = strip(read('src/lib/research/layout-resolver.ts'))
 const TAB = strip(read('src/components/tabs/AssetTab.tsx'))
 const CUSTOMIZER = strip(read('src/components/research/AssetPageFieldCustomizer.tsx'))
-const CANVAS = strip(read('src/components/research/ResearchArrangeCanvas.tsx'))
+const CANVAS = strip(read('src/components/research/ResearchArrange.tsx'))
+const SPANLIB = strip(read('src/lib/research/field-span.ts'))
 
 describe('a field carries its own width', () => {
   it('defaults to a full row, so layouts saved before spans are unchanged', () => {
@@ -77,19 +78,24 @@ describe('the page draws what the layout says', () => {
   })
 
   it('gives each field the span it was arranged at', () => {
-    expect(TAB).toMatch(/className=\{`min-w-0 \$\{SPAN_CLASS\[field\.span\]\}`\}/)
+    /* The span class lives on the one wrapper both branches render, so
+       arrange mode and the page cannot disagree about a field's width. */
+    expect(CANVAS).toMatch(/className=\{`min-w-0 \$\{SPAN_CLASS\[span\]\}`\}/)
+    expect(CANVAS).toMatch(/SPAN_CLASS\[span\]/)
   })
 
   it('takes the class from the lookup rather than building it', () => {
     /* `` `xl:col-span-${span}` `` is never seen by Tailwind's scanner, so
        the rule is never emitted and the field collapses to one column —
        in a production build only, because the dev server's JIT usually
-       has the class from elsewhere. SPAN_CLASS writes all twelve out. */
-    /* Not anchored on a backtick: `` `min-w-0 xl:col-span-${n}` `` is the
+       has the class from elsewhere. SPAN_CLASS writes all twelve out.
+
+       Not anchored on a backtick: `` `min-w-0 xl:col-span-${n}` `` is the
        same bug with a prefix, and an assertion that only caught the
        backtick form passed on it. */
+    expect(CANVAS).not.toMatch(/col-span-\$\{/)
     expect(TAB).not.toMatch(/col-span-\$\{/)
-    expect(TAB).toMatch(/import \{ SPAN_CLASS \} from '\.\.\/\.\.\/lib\/research\/field-span'/)
+    expect(CANVAS).toMatch(/SPAN_CLASS,/)
   })
 })
 
@@ -98,11 +104,17 @@ describe('the page draws what the layout says', () => {
  *
  * Width was a "Full" / "Half" button at the end of each customizer row,
  * and these tests pinned that button's draft path. It became
- * `ResearchLayoutEditor`, a modal that drew the fields as the grid they
- * form. It is now `ResearchArrangeCanvas`, which is not a modal at all —
- * the Research body becomes its own tiles, in place, and the reader drags
- * them. The modal is deleted: it floated above the page, so you had to
- * close it to see what you had done.
+ * `ResearchLayoutEditor`, a modal that drew the fields as blocks. Then
+ * `ResearchArrangeCanvas`, which drew the same blocks in the page instead
+ * of above it. Both are deleted, and for the same reason twice over: what
+ * you dragged was not what you were arranging. A block reading
+ * "Investment Thesis" cannot show you that the thesis is four paragraphs
+ * and the rating beside it is one line, which is the whole question.
+ *
+ * `ResearchArrange` draws no fields at all. `AssetTab` renders the real
+ * page, and these components WRAP what it rendered — inert content, drag
+ * chrome on top, widths from the draft. So the assertions below check
+ * that there is no second renderer, rather than that two renderers agree.
  *
  * The rules did not change and are re-pinned below against their new home:
  * a width change must not flip visibility, the value must survive a save,
@@ -189,17 +201,45 @@ describe('the layout is arranged on the page, not above it', () => {
     expect(CANVAS).not.toMatch(/isOpen/)
   })
 
-  it('replaces the sections rather than overlaying them', () => {
-    expect(TAB).toMatch(/\) : arrangingLayout \? \(/)
-    expect(TAB).toMatch(/<ResearchArrangeCanvas/)
-    expect(TAB).not.toMatch(/ResearchLayoutEditor/)
+  it('wraps the real sections rather than replacing them', () => {
+    /* The provider sits around the SAME `displayedFieldsBySection` map the
+       page always rendered. An `arrangingLayout ? <Canvas/> : <sections/>`
+       branch would be the second renderer again. */
+    expect(TAB).toMatch(/<ResearchArrangeProvider assetId=\{asset\.id\} active=\{arrangingLayout\}>/)
+    expect(TAB).toMatch(/<ArrangeableField\b/)
+    expect(TAB).toMatch(/<ArrangeableFieldGrid\b/)
+    expect(TAB).not.toMatch(/ResearchLayoutEditor|ResearchArrangeCanvas/)
+    expect(TAB).not.toMatch(/arrangingLayout \? \(/)
   })
 
-  it('draws the page the page draws', () => {
-    /* A diagram that is not the grid would be a second renderer, free to
-       disagree with the real one about what the layout looks like. */
-    expect(CANVAS).toMatch(/grid grid-cols-12 gap-2/)
-    expect(CANVAS).toMatch(/SPAN_CLASS_FLAT\[tile\.span\]/)
+  it('renders no field of its own', () => {
+    /* The whole point. If this module ever draws a field, it is a second
+       renderer and free to disagree with the page about the layout the
+       reader is arranging. */
+    expect(CANVAS).not.toMatch(/ContributionSection|FieldRenderer|field_type/)
+  })
+
+  it('keeps the grid identical in and out of arrange mode', () => {
+    /* The container is handed in as `className` and rendered unchanged in
+       both branches. A different grid while arranging would change the
+       very measurements being arranged against. */
+    expect(CANVAS).toMatch(/if \(!arrangeable\) return <div className=\{className\}>\{children\}<\/div>/)
+  })
+
+  it('makes the real field inert while it is being arranged', () => {
+    /* These are live editors. A press meant to move the field would
+       otherwise land a caret in the thesis, and a drag from there would
+       select prose instead of moving anything. `select-none` is as load
+       bearing as the pointer events. */
+    expect(CANVAS).toMatch(/pointer-events-none select-none/)
+  })
+
+  it('leaves the arrow keys to dnd-kit once a field is picked up', () => {
+    /* Left and right resize a field at rest, and are how dnd-kit's
+       keyboard sensor MOVES one that is in the air — in a grid, the
+       direction that matters. Stealing them unconditionally made a
+       picked-up field movable only vertically while it silently resized. */
+    expect(CANVAS).toMatch(/if \(isDragging\) return/)
   })
 
   it('can be resized without a mouse', () => {
@@ -207,23 +247,22 @@ describe('the layout is arranged on the page, not above it', () => {
        on a keyboard, and there would be no other way to set a span. */
     expect(CANVAS).toMatch(/ArrowLeft/)
     expect(CANVAS).toMatch(/ArrowRight/)
-    expect(CANVAS).toMatch(/stepSpan\(tile\.span/)
+    expect(CANVAS).toMatch(/stepSpan\(span, e\.key === 'ArrowRight' \? 1 : -1\)/)
     expect(CANVAS).toMatch(/KeyboardSensor/)
   })
 
-  it('measures a resize against the row, not the tile', () => {
-    /* A span is a fraction of the ROW. Dividing by the tile's own width
-       makes every drag relative to the width the tile already had, so it
-       creeps toward whatever it was instead of landing where the pointer
-       is. */
-    expect(CANVAS).toMatch(/\(clientX - tileBox\.left\) \/ rowBox\.width/)
-    expect(CANVAS).not.toMatch(/\/ tileBox\.width/)
+  it('measures a resize against the row, not the field', () => {
+    /* A span is a fraction of the ROW. Dividing by the field's own width
+       makes every drag relative to the width it already had, so it creeps
+       toward whatever it was instead of landing under the pointer. */
+    expect(CANVAS).toMatch(/\(clientX - left\) \/ rowBox\.width/)
+    expect(CANVAS).not.toMatch(/\/ host\.getBoundingClientRect\(\)\.width/)
   })
 
   it('does not change visibility as a side effect of changing width', () => {
-    /* The override row carries both, so writing one with a defaulted
+    /* The override row carries both, so creating one with a defaulted
        `is_visible` would hide or reveal the field. */
-    expect(CANVAS).toMatch(/is_visible: visibilityOf\(fieldId\)/)
+    expect(CANVAS).toMatch(/is_visible: allFields\.find\(f => f\.field_id === fieldId\)\?\.is_visible \?\? true/)
   })
 
   it('merges onto the saved overrides instead of replacing them', () => {
@@ -268,16 +307,26 @@ describe('the layout is arranged on the page, not above it', () => {
      * reads, and the reader would be left wondering why the page ignored
      * them.
      */
-    expect(CANVAS).toMatch(/SELF_ARRANGED_SECTIONS = new Set\(\['forecasts', 'supporting_docs'\]\)/)
-    expect(CANVAS).toMatch(/arrangeable: !SELF_ARRANGED_SECTIONS\.has\(s\.section_slug\)/)
-    expect(CANVAS).toMatch(/s\.arrangeable \? \(/)
+    /* Declared in the lib, beside the spans it governs, so a surface that
+       needs to know which sections ignore a span does not have to import
+       a React module to find out. */
+    expect(SPANLIB).toMatch(/SELF_ARRANGED_SECTIONS = new Set\(\['forecasts', 'supporting_docs'\]\)/)
+    /* Checked in BOTH places: the grid must not become a drop target, and
+       the field must not gain a resize grip. Either one alone leaves half
+       a control that saves a value nothing reads. */
+    expect(CANVAS).toMatch(/arrange\?\.active && !SELF_ARRANGED_SECTIONS\.has\(sectionSlug\)/)
+    expect(CANVAS.match(/!SELF_ARRANGED_SECTIONS\.has\(sectionSlug\)/g)?.length ?? 0)
+      .toBeGreaterThanOrEqual(2)
   })
 
   it('shows those fields rather than hiding them', () => {
-    /* A reader looking for Price Targets should find it and be told why
-       it cannot move, not conclude this screen lost it. */
-    expect(CANVAS).toMatch(/the page arranges this section itself/)
-    expect(CANVAS).not.toMatch(/\.filter\(s => s\.arrangeable\)/)
+    /* A reader looking for Price Targets should find it where it lives
+       and see that it does not move, not conclude arrange mode lost it.
+       Because this wraps the real page, that is now the DEFAULT: an
+       unarrangeable field renders through the plain branch untouched,
+       and there is no filter anywhere that could drop one. */
+    expect(CANVAS).not.toMatch(/\.filter\([^)]*arrangeable/)
+    expect(CANVAS).toMatch(/if \(!arrangeable\) \{/)
   })
 
   it('says a failed save failed', () => {
@@ -291,10 +340,18 @@ describe('the layout is arranged on the page, not above it', () => {
     /* `onClose` inside the try, after the await, is what makes this true:
        a throw skips it and the reader keeps their unsaved arrangement
        with the error in front of them. */
-    const at = CANVAS.indexOf('await saveCustomization.mutateAsync')
-    const catchAt = CANVAS.indexOf('} catch (e)', at)
-    expect(at).toBeGreaterThan(-1)
-    expect(catchAt).toBeGreaterThan(at)
-    expect(CANVAS.slice(catchAt)).not.toMatch(/onClose\(\)/)
+    /* Bounded to the catch BLOCK, not to the end of the file: the Cancel
+       button further down calls `onClose()` legitimately, and an
+       unbounded slice failed on it rather than on the thing being
+       pinned. */
+    const tryAt = CANVAS.indexOf('if (target === \'template\')')
+    const catchAt = CANVAS.indexOf('} catch (e)', tryAt)
+    const finallyAt = CANVAS.indexOf('} finally {', catchAt)
+    expect(tryAt).toBeGreaterThan(-1)
+    expect(finallyAt).toBeGreaterThan(catchAt)
+    /* onClose is the LAST thing in the try, after both awaits, so a throw
+       from either save path skips it. */
+    expect(CANVAS.slice(tryAt, catchAt)).toMatch(/onClose\(\)/)
+    expect(CANVAS.slice(catchAt, finallyAt)).not.toMatch(/onClose\(\)/)
   })
 })
