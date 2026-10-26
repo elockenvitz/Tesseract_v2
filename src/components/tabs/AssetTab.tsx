@@ -131,8 +131,9 @@ import type { ViewScope } from '../../hooks/useExpectedValue'
 import { useViewWarnings } from '../../hooks/useViewWarnings'
 import {
   UserWidgetRenderer, AssetPageFieldCustomizer, InvestmentCaseBuilder,
-  ResearchLayoutEditor,
+  ResearchArrangeCanvas,
 } from '../research'
+import { SPAN_CLASS } from '../../lib/research/field-span'
 import {
   ChecklistField,
   MetricField,
@@ -601,8 +602,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Research layout mode: 'classic' uses hardcoded sections, 'dynamic' uses configurable fields
   // User asset widgets
   const [showFieldCustomizer, setShowFieldCustomizer] = useState(false)
-  /** The visual layout editor — how the page looks, not which fields exist. */
-  const [showLayoutEditor, setShowLayoutEditor] = useState(false)
+  /**
+   * Arrange mode: the Research body becomes its own tiles, in place, and
+   * the reader drags them. Not a dialog — see ResearchArrangeCanvas.
+   */
+  const [arrangingLayout, setArrangingLayout] = useState(false)
   const [showCaseBuilder, setShowCaseBuilder] = useState(false)
   const [widgetCollapsedState, setWidgetCollapsedState] = useState<Record<string, boolean>>({})
   // Shared visibility state for all thesis sections
@@ -4026,10 +4030,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
                 They are two entries because they are two questions. Which
                 fields exist, in what order, in which section, is a list.
-                How the page looks is a picture, and it was previously a
-                10px "Full"/"Half" button on each row of that list — a
-                control a reader looking for the layout could not find, and
-                could not see the effect of without closing the modal.
+                How the page looks is the page, so "Arrange layout" does not
+                open anything — it turns the body below into its own tiles
+                and lets the reader move them.
               */}
               <ResearchToolbarMenu
                 items={[
@@ -4042,10 +4045,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   },
                   {
                     key: 'layout',
-                    label: 'Page layout',
+                    label: 'Arrange layout',
                     icon: LayoutDashboard,
                     available: researchViewFilter === user?.id,
-                    onSelect: () => setShowLayoutEditor(true),
+                    onSelect: () => setArrangingLayout(true),
                   },
                   {
                     key: 'export',
@@ -4246,6 +4249,21 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   />
                 </div>
               )
+            ) : arrangingLayout ? (
+              /*
+                Arrange mode, in place of the sections — not on top of them.
+                The reader asked for the layout, so the body becomes the
+                layout: the same twelve-column grid, the same spans, as
+                tiles they can drag and resize. It replaces the sections
+                rather than overlaying them because a dialog floating above
+                the page is exactly what made the previous version useless —
+                you had to close it to see what you had done.
+              */
+              <ResearchArrangeCanvas
+                assetId={asset.id}
+                assetName={asset.symbol || asset.name}
+                onClose={() => setArrangingLayout(false)}
+              />
             ) : (
               /* Individual User "All" View — the original per-section design:
                  each section is its own card (blue/amber accent, hover
@@ -4409,8 +4427,21 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       two half-width fields pack side by side. The
                       preference lives in `user_asset_page_layouts.
                       field_config`, which is already jsonb.
+
+                      ── Twelve columns, not two ───────────────────────
+
+                      Full-or-half could only say "a whole row" or "two
+                      across". A field now carries a SPAN in twelfths, so
+                      a rating can take a quarter of a row and a thesis
+                      three quarters. SPAN_CLASS spells all twelve class
+                      names out, because Tailwind never sees a name built
+                      at runtime and the field would silently collapse.
+
+                      Below `xl` the grid is one column and every field is
+                      full width whatever was saved: a half-width thesis
+                      on a laptop is a newspaper column.
                     */
-                    <div className="grid grid-cols-1 gap-3 border-t border-gray-100 px-5 py-2 xl:grid-cols-2 dark:border-gray-800">
+                    <div className="grid grid-cols-1 gap-3 border-t border-gray-100 px-5 py-2 xl:grid-cols-12 dark:border-gray-800">
                       {section.fields
                         .filter(f => f.is_visible)
                         .map(field => {
@@ -4588,8 +4619,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           return (
                             <div
                               key={field.field_id}
-                              data-field-width={field.width}
-                              className={field.width === 'half' ? 'min-w-0' : 'min-w-0 xl:col-span-2'}
+                              data-field-span={field.span}
+                              className={`min-w-0 ${SPAN_CLASS[field.span]}`}
                             >
                               {node}
                             </div>
@@ -4638,14 +4669,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               assetName={asset.name}
               viewFilter={researchViewFilter}
               currentUserId={user?.id}
-            />
-
-            {/* Page layout — the same `width` preference, drawn as the page */}
-            <ResearchLayoutEditor
-              isOpen={showLayoutEditor}
-              onClose={() => setShowLayoutEditor(false)}
-              assetId={asset.id}
-              assetName={asset.symbol || asset.name}
             />
 
             {/* Investment Case Builder Modal */}

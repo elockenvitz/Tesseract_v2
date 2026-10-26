@@ -81,7 +81,8 @@ import {
   type FieldOverride
 } from '../../hooks/useUserAssetPagePreferences'
 import { useResearchFields } from '../../hooks/useResearchFields'
-import { fieldConfigMatchesField, SYSTEM_DEFAULT_FIELD_SLUGS, type FieldWidth } from '../../lib/research/layout-resolver'
+import { fieldConfigMatchesField, SYSTEM_DEFAULT_FIELD_SLUGS, FULL_SPAN, asSpan, spanFromWidth, type FieldWidth } from '../../lib/research/layout-resolver'
+import { spanLabel } from '../../lib/research/field-span'
 import { useAuth } from '../../hooks/useAuth'
 
 // Draft state types for local changes before saving
@@ -90,7 +91,17 @@ interface DraftFieldOverride {
   is_visible: boolean
   section_id?: string
   display_order?: number
-  /** Unsaved width change, shown before it is written. */
+  /**
+   * The field's width, in twelfths. Carried through unchanged — this
+   * screen does not set it, but the save RPC replaces the whole overrides
+   * array, so a span it does not carry is a span it deletes.
+   *
+   * `number`, not `FieldSpan`: it comes from and goes back to jsonb
+   * without being inspected, and narrowing a value this screen never
+   * reads would only invite a cast. `asSpan` narrows it where it is drawn.
+   */
+  span?: number
+  /** The same, as older layouts stored it. Carried for the same reason. */
   width?: FieldWidth
 }
 
@@ -773,9 +784,16 @@ export function AssetPageFieldCustomizer({
           section_id: targetSectionId,
           is_visible: isVisible,
           display_order: displayOrder,
-          /* Draft first, then the saved layout, then full — so a width
-             the reader just changed shows before it is saved. */
-          width: draftOverride?.width ?? config.width ?? 'full',
+          /* Draft first, then the saved layout, then a full row — so a
+             span the reader just arranged shows before it is saved. The
+             legacy `width` steps keep layouts stored before spans drawing
+             as they did; see `layout-resolver`, which resolves in the same
+             order and is the authority for what the page actually renders. */
+          span: asSpan(draftOverride?.span)
+            ?? asSpan(config.span)
+            ?? (draftOverride?.width ? spanFromWidth(draftOverride.width) : null)
+            ?? (config.width ? spanFromWidth(config.width) : null)
+            ?? FULL_SPAN,
           isFromTemplate: true,
           isAddedViaOverride: false
         })
@@ -1373,21 +1391,26 @@ export function AssetPageFieldCustomizer({
       // Check if this field is from the template
       const isFromTemplate = templateFieldIds.has(fieldId)
 
+      /*
+        Spread what is already there rather than listing the keys to keep.
+        Rebuilding the override from `section_id` and `display_order`
+        dropped `span`, so hiding an arranged field and showing it again
+        silently returned it to full width — and the save RPC replaces the
+        whole array, so the loss persisted.
+      */
       if (isFromTemplate) {
         // Field is from template - set is_visible: false to hide it (this is an override)
         newMap.set(fieldId, {
+          ...existing,
           field_id: fieldId,
-          is_visible: false,
-          section_id: existing?.section_id,
-          display_order: existing?.display_order
+          is_visible: false
         })
       } else {
         // Field was added as an override - mark for removal (will be cleaned up on save)
         newMap.set(fieldId, {
+          ...existing,
           field_id: fieldId,
           is_visible: false,
-          section_id: existing?.section_id,
-          display_order: existing?.display_order,
           _removeFromDatabase: true // Flag to indicate this should be removed entirely
         } as DraftFieldOverride & { _removeFromDatabase?: boolean })
       }
@@ -1606,16 +1629,18 @@ export function AssetPageFieldCustomizer({
           section_id: override.section_id,
           display_order: override.display_order,
           /*
-            Width was set in the draft by `handleSetFieldWidth` and then
-            dropped here, so changing a field's width, pressing Save and
-            reopening the page showed it full width again — the control
-            looked live and persisted nothing.
+            Span is not this screen's to set — it is arranged on the page —
+            but the RPC REPLACES the `field_overrides` array it is handed.
+            Omitting span here would reset every field this customizer
+            touches to full width, silently undoing the arrangement. It is
+            read out of the draft and handed straight back.
 
-            `save_asset_layout_customization` stores `field_overrides` as
-            opaque jsonb and only remaps `section_id`, so the value round
-            trips as soon as it is sent; and `layout-resolver` already
-            reads `assetOverride?.width` first. Only this line was missing.
+            Both keys travel. `span` is what is written now; `width` is
+            what older layouts stored, and dropping it would widen a field
+            saved before spans existed the first time its visibility
+            changed. `layout-resolver` prefers span and falls back to width.
           */
+          span: override.span,
           width: override.width
         })
       })
@@ -1685,9 +1710,9 @@ export function AssetPageFieldCustomizer({
         is_visible: f.is_visible,
         display_order: sIdx * 1000 + fIdx,
         is_collapsed: f.is_collapsed ?? false,
-        /* Carried through on save, or switching layouts would silently
-           reset every field to full width. */
-        width: f.width ?? 'full'
+        /* Carried through on save, or saving the current page as a new
+           template would silently reset every field to full width. */
+        span: f.span ?? FULL_SPAN
       }))
     )
 
@@ -3566,28 +3591,28 @@ function SortableFieldRow({
       </div>
 
       {/*
-        ── Width is read here, and set in Page layout ──────────────────
+        ── Width is read here, and set by arranging the page ───────────
 
         This used to be a button: "Full" / "Half", 10px, at the end of the
         row. It was the only way to change how the page was arranged, and
         asked to do that a reader could not tell it was the control — the
         word named a state, the row named a field, and nothing showed the
-        page being produced. It is now a label, and arranging the page is
-        its own screen (`ResearchLayoutEditor`) where the fields are drawn
-        as the grid they will form.
+        page being produced. It is now a label; the page is arranged by
+        dragging the fields on the page itself (Arrange layout).
 
-        The value is unchanged: the same `width` in the layout's existing
+        The value is unchanged: the same `span` in the layout's existing
         `field_config` / `field_overrides` jsonb. Showing it here keeps
         the field list honest about what the layout says without being a
-        second place to change it.
+        second place to change it. A full-width field says nothing, because
+        full width is the default and every row would carry the same word.
       */}
-      {field.is_visible && field.width === 'half' && (
+      {field.is_visible && field.span !== FULL_SPAN && (
         <span
-          data-testid={`field-width-${field.field_id}`}
-          title="Half width — change this in Page layout"
+          data-testid={`field-span-${field.field_id}`}
+          title={`${spanLabel(field.span)} — change this with Arrange layout`}
           className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-400 dark:text-gray-500"
         >
-          Half
+          {spanLabel(field.span)}
         </span>
       )}
 

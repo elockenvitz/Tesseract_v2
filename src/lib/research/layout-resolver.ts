@@ -54,18 +54,55 @@ export const SYSTEM_DEFAULT_FIELD_SLUGS = new Set([
 // ============================================================================
 
 /**
- * How wide a field is drawn in its section.
+ * How wide a field is drawn, as a span of a twelve-column row.
  *
- * Layout control, not just field selection: a rating or a price target is
- * a short fact that wasted a full row of a 1,900px page, while a thesis
- * needs the whole width. Two half-width fields pack side by side.
+ * ── Why twelve, and why this replaced `full | half` ─────────────────────
  *
- * Stored in `user_asset_page_layouts.field_config`, which is already
- * `jsonb` — so this is a per-user layout preference with no schema
- * change. Absent means `full`, which is what every existing saved layout
- * resolves to.
+ * Width began as two values because the problem was one-line facts eating
+ * a whole row of a 1,900px page. Two values cannot express a third, which
+ * is the most common research arrangement after halves — a thesis beside
+ * two short panels, three ratings across. Twelve divides by 2, 3, 4 and 6,
+ * so halves, thirds, quarters and sixths are all exact; a four-column
+ * model would make thirds unrepresentable, which is the same wall again
+ * one step further out.
+ *
+ * Still `user_asset_page_layouts.field_config` / the selection's
+ * `field_overrides`, both already `jsonb`. No schema change.
+ */
+export type FieldSpan = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12
+
+/** The full row. What a field gets when the layout says nothing. */
+export const FULL_SPAN: FieldSpan = 12
+
+/**
+ * The two-value vocabulary every layout saved before this used.
+ *
+ * Kept as a type and read forever, never written again. Layouts holding
+ * `width: 'half'` predate spans and must keep drawing as they did, so the
+ * resolver maps them rather than treating an unrecognised value as full —
+ * which would silently re-lay-out every page that had been customised.
  */
 export type FieldWidth = 'full' | 'half'
+
+/** Legacy `width` as a span. `half` is six of twelve; anything else is full. */
+export function spanFromWidth(width: FieldWidth | null | undefined): FieldSpan {
+  return width === 'half' ? 6 : FULL_SPAN
+}
+
+/**
+ * A stored span, or null when it is absent or not a span this grid can draw.
+ *
+ * `field_config` is jsonb written by several versions of this app, so the
+ * value arriving here is `unknown` in practice however it is typed. A
+ * fractional, zero, negative or out-of-range number would produce a
+ * `col-span-` class that does not exist and silently collapse the field to
+ * the grid's default width, so it is rejected in favour of the next source.
+ */
+export function asSpan(value: unknown): FieldSpan | null {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null
+  if (value < 1 || value > 12) return null
+  return value as FieldSpan
+}
 
 export interface FieldConfigItem {
   field_id: string
@@ -73,6 +110,9 @@ export interface FieldConfigItem {
   is_visible: boolean
   display_order: number | null
   is_collapsed: boolean
+  /** Twelfths of a row. Absent on layouts saved before spans existed. */
+  span?: number
+  /** Superseded by `span`; still read so old layouts draw unchanged. */
   width?: FieldWidth
 }
 
@@ -81,7 +121,9 @@ export interface FieldOverride {
   is_visible: boolean
   section_id?: string
   display_order?: number
-  /** Per-asset width override, when the reader set one here. */
+  /** Per-asset span override, when the reader arranged this page. */
+  span?: number
+  /** Superseded by `span`; still read so old overrides draw unchanged. */
   width?: FieldWidth
 }
 
@@ -152,8 +194,8 @@ export interface ResolvedField {
   display_order: number | null
   default_display_order: number
   is_collapsed: boolean
-  /** How wide this field is drawn. `full` unless the layout says half. */
-  width: FieldWidth
+  /** How wide this field is drawn, in twelfths of a row. */
+  span: FieldSpan
   is_universal: boolean
   is_system: boolean
   is_custom: boolean
@@ -439,9 +481,21 @@ export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult
       display_order: displayOrder,
       default_display_order: field.display_order ?? 0,
       is_collapsed: isCollapsed,
-      /* Absent in every layout saved before widths existed, which is
-         why the fallback is `full` and not a guess from field type. */
-      width: assetOverride?.width ?? layoutConfig?.width ?? 'full',
+      /*
+         Four sources, most specific first, and the fallback is the full
+         row rather than a guess from the field's type — guessing would
+         silently re-lay-out every page that already reads correctly.
+
+         The two legacy `width` steps are what keep layouts saved before
+         spans drawing exactly as they did. They are read, never written:
+         a page arranged once in the new editor stops consulting them.
+      */
+      span:
+        asSpan(assetOverride?.span)
+        ?? asSpan(layoutConfig?.span)
+        ?? (assetOverride?.width ? spanFromWidth(assetOverride.width) : null)
+        ?? (layoutConfig?.width ? spanFromWidth(layoutConfig.width) : null)
+        ?? FULL_SPAN,
       is_universal: field.is_universal,
       is_system: field.is_system ?? false,
       is_custom: isCustomField,
