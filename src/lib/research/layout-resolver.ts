@@ -199,6 +199,46 @@ export function sectionOverrideSaysSomething(
  *   override — the template's position for it, else the section's own
  *   `display_order`. `null` when that cannot be established.
  */
+/** The minimum the catalogue comparator needs to place a field. */
+export interface CatalogFieldPosition {
+  /** Where the field's SECTION sits. */
+  section_display_order?: number | null
+  /** Where the field sits inside that section. */
+  display_order?: number | null
+  /** Final tiebreak, so equal rows still come back in a fixed order. */
+  name?: string | null
+}
+
+/**
+ * Where a field belongs in the catalogue: by section, then within it, then
+ * by name.
+ *
+ * This exists because `research_fields.display_order` is only meaningful
+ * WITHIN a section, and the query that reads the catalogue sorted on it
+ * alone. Across sections that interleaves them, and in the live database it
+ * ties outright — the first field of Thesis & Risks, Catalysts & Events and
+ * Forecasts & Estimates all carry 0, so Postgres chose, and could choose
+ * differently between runs.
+ *
+ * Arrival order is not cosmetic: `buildSystemDefaultLayout` stamps
+ * `display_order` from the array index, and the template editor groups
+ * sections by the first field it meets. A tie broken the unlucky way is how
+ * the Default template came to list Forecasts & Estimates above Thesis &
+ * Risks while the asset page, which sorts by the section's own
+ * `display_order`, listed them the other way round.
+ *
+ * `name` last so the result is total: two rows that tie on both numbers
+ * still have one answer rather than whichever the database felt like.
+ * Missing numbers sort as 0, matching the column's own default.
+ */
+export function catalogFieldOrder(a: CatalogFieldPosition, b: CatalogFieldPosition): number {
+  return (
+    ((a.section_display_order ?? 0) - (b.section_display_order ?? 0)) ||
+    ((a.display_order ?? 0) - (b.display_order ?? 0)) ||
+    (a.name ?? '').localeCompare(b.name ?? '')
+  )
+}
+
 export function reorderedSectionOverrides({
   orderedSectionIds,
   currentOverrides,

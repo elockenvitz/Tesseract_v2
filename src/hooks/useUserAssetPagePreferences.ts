@@ -18,6 +18,7 @@ import {
   overrideDiffersFromBaseline,
   sectionOverrideSaysSomething,
   reorderedSectionOverrides,
+  catalogFieldOrder,
   SYSTEM_DEFAULT_FIELD_SLUGS,
   type ResolveLayoutInput,
   type LayoutResolutionResult,
@@ -224,7 +225,18 @@ export function useUserAssetPagePreferences(assetId?: string) {
         .from('research_sections')
         .select('id, name, slug, display_order, is_system')
         .eq('organization_id', currentOrgId)
+        /*
+         * `created_at` is the tiebreak, not a second opinion on order.
+         *
+         * `display_order` is not unique here: this org has "Blue Ska Doo" and
+         * "Thesis & Risks" both at 0, so ordering by display_order alone left
+         * Postgres to pick, and section order could change between runs.
+         * Creation order is the right tiebreak — a section added later sorts
+         * after the seeded ones, which is what a reader expects. Sorting by
+         * name instead would float a newly named section above the standards.
+         */
         .order('display_order', { ascending: true })
+        .order('created_at', { ascending: true })
 
       if (error) throw error
       return sections || []
@@ -316,10 +328,47 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // The field list is `research_fields`, which is the only catalogue
       // that exists. See the note above where the preset query was removed.
-      return (fields || []).map(field => ({
-        ...field,
-        creator: field.created_by ? creatorsMap[field.created_by] || null : null
-      }))
+
+      /*
+       * Section-major order, made deterministic.
+       *
+       * The `.order('display_order')` above sorts on the FIELD's own
+       * display_order, which is only meaningful WITHIN a section. Across
+       * sections it interleaves them — and it TIES: in this database the
+       * first field of Thesis & Risks (business_model), Catalysts & Events
+       * (key_catalysts) and Forecasts & Estimates (rating) all carry
+       * display_order 0, and Postgres returns tied rows in whatever order it
+       * likes, which can differ between runs.
+       *
+       * Arrival order is not cosmetic downstream. `buildSystemDefaultLayout`
+       * stamps `display_order: idx` straight off this list, and the template
+       * editor then groups sections by first appearance. So a tie decided one
+       * way made the Default template list Forecasts & Estimates above
+       * Thesis & Risks, while the asset page — which sorts by the SECTION's
+       * display_order — listed them the other way round. Same data, two
+       * orders, neither chosen by anyone.
+       *
+       * `catalogFieldOrder` is that sort, kept in layout-resolver so it can be
+       * tested on its own rather than only through a Supabase read.
+       */
+      const sectionOrderOf = (f: unknown): number => {
+        const embed = (f as { research_sections?: unknown }).research_sections
+        const section = Array.isArray(embed) ? embed[0] : embed
+        const order = (section as { display_order?: unknown } | undefined)?.display_order
+        return typeof order === 'number' ? order : 0
+      }
+
+      return (fields || [])
+        .map(field => ({
+          ...field,
+          creator: field.created_by ? creatorsMap[field.created_by] || null : null
+        }))
+        .sort((a, b) =>
+          catalogFieldOrder(
+            { section_display_order: sectionOrderOf(a), display_order: a.display_order, name: a.name },
+            { section_display_order: sectionOrderOf(b), display_order: b.display_order, name: b.name },
+          )
+        )
     },
     enabled: !!user?.id,
     staleTime: 0,

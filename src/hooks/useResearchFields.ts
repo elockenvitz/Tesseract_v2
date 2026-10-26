@@ -30,6 +30,11 @@ export interface ResearchField {
   is_universal: boolean
   is_system: boolean
   is_archived: boolean
+  /* A real column (nullable, defaults to 0) that this type never declared, so
+     every reader of it was casting or going without. It is the field's order
+     WITHIN its section — see the note on the asset-page catalogue query about
+     what it does not mean. */
+  display_order: number | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -157,7 +162,11 @@ export function useResearchSections() {
       const { data, error } = await supabase
         .from('research_sections')
         .select('*')
+        /* Same tie as the asset-page catalogue: `display_order` is not unique
+           in this data, so creation order decides rather than Postgres. See
+           the note on the all-sections query in useUserAssetPagePreferences. */
         .order('display_order', { ascending: true })
+        .order('created_at', { ascending: true })
 
       if (error) throw error
       return data as ResearchSection[]
@@ -649,7 +658,10 @@ export function useUserResearchLayout() {
       const { data: sections, error: sectionsError } = await supabase
         .from('research_sections')
         .select('*')
+        /* `display_order` ties here, so creation order breaks it. Same
+           reasoning as useResearchSections above. */
         .order('display_order', { ascending: true })
+        .order('created_at', { ascending: true })
 
       if (sectionsError) throw sectionsError
 

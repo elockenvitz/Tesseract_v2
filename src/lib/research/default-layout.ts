@@ -48,6 +48,22 @@ export interface DefaultLayoutSourceField {
   field_id: string
   field_slug: string
   section_id: string
+  /**
+   * Where this field's SECTION sits, and where the field sits inside it.
+   *
+   * Optional because order used to be the caller's business: this function
+   * stamped `display_order` from the array index, so whatever sort a hook
+   * happened to apply became the default template's order. The two callers
+   * applied different ones — desktop sorted by the field's own
+   * `display_order`, mobile by name — so the "same default on both surfaces"
+   * this module exists to guarantee held for membership but not for order.
+   *
+   * Supply both and the default is sorted here, by section and then by field,
+   * which is the order a reader sees on the asset page. Supply neither and
+   * input order is preserved exactly as before.
+   */
+  section_display_order?: number
+  field_display_order?: number
 }
 
 /** Matches `SavedLayout` in useUserAssetPagePreferences, structurally. */
@@ -75,14 +91,36 @@ export function isSystemDefaultLayout(layout: { id: string } | null | undefined)
  * `is_visible: true`, same `display_order` by index, same
  * `is_collapsed: false`, same name and description.
  *
- * Input order is preserved, because `display_order` is the index — callers
- * pass fields in the order their catalog already sorts them, and changing
- * that here would reorder the default for everyone.
+ * Order comes from `section_display_order` / `field_display_order` when every
+ * surviving field carries a section position, and otherwise from input order
+ * exactly as before — `display_order` is still the index either way.
+ *
+ * It had to stop being purely the caller's order. `display_order: idx` off an
+ * unsorted list meant the editor, which groups sections by first appearance,
+ * reported whichever section owned the first row. The asset-page catalogue
+ * ties three fields at `display_order` 0 (one per section), so that row was
+ * Postgres's choice, and the Default template listed Forecasts & Estimates
+ * first while the page it describes listed Thesis & Risks first.
  */
 export function buildSystemDefaultLayout(
   fields: readonly DefaultLayoutSourceField[],
 ): SystemDefaultLayout {
-  const defaultFields = fields.filter((f) => SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug))
+  const selected = fields.filter((f) => SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug))
+
+  /*
+   * All or nothing: one field without a section position would sort to the
+   * front of a list it knows nothing about. A caller that cannot say where
+   * its sections sit keeps the old contract instead.
+   */
+  const positioned = selected.every((f) => typeof f.section_display_order === 'number')
+
+  const defaultFields = positioned
+    ? [...selected].sort(
+        (a, b) =>
+          (a.section_display_order as number) - (b.section_display_order as number) ||
+          (a.field_display_order ?? 0) - (b.field_display_order ?? 0),
+      )
+    : selected
 
   return {
     id: SYSTEM_DEFAULT_LAYOUT_ID,

@@ -93,6 +93,7 @@ import {
   type AffectedAsset,
   type FieldWithPreference,
   type FieldConfigItem,
+  type SectionOverride,
   type SavedLayout,
   type LayoutWithSharing
 } from '../../hooks/useUserAssetPagePreferences'
@@ -4884,6 +4885,26 @@ function LayoutEditor({
         fieldsBySection.map(s => [s.section_id, { name: s.section_name, slug: s.section_slug }])
       )
 
+      /*
+       * The template's own statement about its sections, when it has one.
+       *
+       * Everything below this reconstructs section order by walking
+       * `field_config` and taking each section's first appearance. That works
+       * only because `handleSave` encodes section order into field
+       * `display_order` as `sectionIndex * 1000 + fieldIndex` — an inference,
+       * and one that goes blind in two places: a section with no fields leaves
+       * no rows to be first in, and the derived Default template numbers its
+       * fields 0..n with no section stride at all.
+       *
+       * `section_config` says it outright. Prefer it where present, keep the
+       * inference as the fallback for templates saved before it was written.
+       */
+      const storedSectionOrder = new Map<string, number>(
+        ((layout.section_config ?? []) as SectionOverride[])
+          .filter(s => typeof s.display_order === 'number')
+          .map(s => [s.section_id, s.display_order as number]),
+      )
+
       // Group saved fields by section_id
       const fieldsBySection_saved = new Map<string, typeof layout.field_config>()
 
@@ -4934,6 +4955,44 @@ function LayoutEditor({
             }
           })
         })
+      }
+
+      /*
+       * Sections the template keeps but no field mentions.
+       *
+       * `field_config` is the only thing walked above, so a section the author
+       * left empty vanished on reload and reappeared wherever the catalogue
+       * put it. `section_config` remembers it; restore it with no fields.
+       */
+      for (const [sectionId] of [...storedSectionOrder].sort((a, b) => a[1] - b[1])) {
+        if (seenSections.has(sectionId)) continue
+        const sectionDetails = sectionDetailsMap.get(sectionId)
+        if (!sectionDetails) continue
+        seenSections.add(sectionId)
+        sectionsArray.push({
+          section_id: sectionId,
+          section_name: sectionDetails.name,
+          section_slug: sectionDetails.slug,
+          display_order: sectionsArray.length,
+          is_system: true,
+          fields: []
+        })
+      }
+
+      /*
+       * Stored order wins over the inferred one. Sections the template says
+       * nothing about keep their inferred position, after the stated ones,
+       * rather than being hoisted to the front by a missing number.
+       */
+      if (storedSectionOrder.size > 0) {
+        const fallbackBase = storedSectionOrder.size
+        return sectionsArray
+          .map((s, inferredIndex) => ({
+            s,
+            key: storedSectionOrder.get(s.section_id) ?? fallbackBase + inferredIndex,
+          }))
+          .sort((a, b) => a.key - b.key)
+          .map(({ s }, index) => ({ ...s, display_order: index }))
       }
 
       return sectionsArray
@@ -5696,12 +5755,23 @@ function LayoutEditor({
   Desktop behaviour is unchanged: same slug filter, same visibility, same
   display_order by index, same name and description.
 */
-function createVirtualDefaultLayout(fields: FieldWithPreference[]): SavedLayout {
+function createVirtualDefaultLayout(
+  fields: FieldWithPreference[],
+  /*
+   * Where each section sits. Without it the default's order was the order
+   * `fields` arrived in, and this screen groups sections by the first field it
+   * meets — so a tie in the catalogue decided which section headed the Default
+   * template, and it disagreed with the asset page.
+   */
+  sectionOrderById: ReadonlyMap<string, number>,
+): SavedLayout {
   return buildSystemDefaultLayout(
     fields.map(f => ({
       field_id: f.field_id,
       field_slug: f.field_slug,
       section_id: f.section_id,
+      section_display_order: sectionOrderById.get(f.section_id),
+      field_display_order: f.display_order ?? f.default_display_order,
     }))
   )
 }
@@ -5747,7 +5817,11 @@ export function ResearchFieldsManager() {
   const { user } = useAuth()
 
   // Create a virtual system default
-  const systemDefaultLayout = createVirtualDefaultLayout(fieldsWithPreferences)
+  const sectionOrderById = useMemo(
+    () => new Map(fieldsBySection.map(s => [s.section_id, s.section_display_order])),
+    [fieldsBySection],
+  )
+  const systemDefaultLayout = createVirtualDefaultLayout(fieldsWithPreferences, sectionOrderById)
 
   // Build card models
   const allLayoutInputs = useMemo(() => {
@@ -5813,12 +5887,39 @@ export function ResearchFieldsManager() {
     fieldConfig: FieldConfigItem[],
     sectionOrder: string[]
   ) => {
+    /*
+     * Section order, written down instead of inferred.
+     *
+     * `sectionOrder` arrived here from the first version of this function and
+     * was dropped on the floor. Nothing else recorded it: the only trace of
+     * section order in a saved template was `field_config.display_order`,
+     * which `handleSave` encodes as `sectionIndex * 1000 + fieldIndex`, so the
+     * editor could reconstruct it by walking fields and taking each section's
+     * first appearance.
+     *
+     * That inference cannot express two things the editor lets you do. A
+     * section with no fields contributes no rows, so its position is
+     * unrecoverable — which is how an empty section ends up wherever the
+     * catalogue happens to put it. And `section_config` is what the asset page
+     * reads for a template's section order (`sectionBaselineOrder` in
+     * useUserAssetPagePreferences), so until it is written, moving a section
+     * here changed nothing a reader would see.
+     *
+     * `undefined` rather than `[]` when there are no sections: an empty array
+     * is a template asserting it HAS no sections, which hides all of them
+     * instead of deferring to the catalogue. The insert path says the same.
+     */
+    const sectionConfig: SectionOverride[] | undefined = sectionOrder.length
+      ? sectionOrder.map((section_id, index) => ({ section_id, display_order: index }))
+      : undefined
+
     if (editingLayout && editingLayout.id !== 'system-default') {
       await updateLayout.mutateAsync({
         layoutId: editingLayout.id,
         name,
         description: description || undefined,
         fieldConfig,
+        sectionConfig,
         isDefault: editingLayout.is_default,
         /*
          * The version this edit was opened against.
@@ -5839,6 +5940,7 @@ export function ResearchFieldsManager() {
         name,
         description: description || undefined,
         fieldConfig,
+        sectionConfig,
         isDefault: isEditingSystemDefault
       })
     }

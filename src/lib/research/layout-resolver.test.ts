@@ -6,6 +6,7 @@ import {
   fieldConfigMatchesField,
   overrideDiffersFromBaseline,
   reorderedSectionOverrides,
+  catalogFieldOrder,
   toCanonicalPresetId,
   type ResolveLayoutInput,
   type AvailableField,
@@ -461,6 +462,88 @@ describe('overrideDiffersFromBaseline', () => {
     expect(
       overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, span: 99 }, base),
     ).toBe(false)
+  })
+})
+
+describe('catalogFieldOrder', () => {
+  /*
+   * The defect: the catalogue query sorted on `research_fields.display_order`
+   * alone, which is only meaningful within a section. In the live database the
+   * first field of all three default sections carries 0, so three rows tied
+   * and Postgres picked. Arrival order then decided the Default template's
+   * section order, which is how it disagreed with the asset page.
+   *
+   * These rows are the real eight, with the real numbers.
+   */
+  const SECTION = { thesis: 0, catalysts: 1, forecasts: 2 }
+  const CATALOG = [
+    { name: 'Business Model', section_display_order: SECTION.thesis, display_order: 0 },
+    { name: 'Thesis', section_display_order: SECTION.thesis, display_order: 1 },
+    { name: 'Where Different', section_display_order: SECTION.thesis, display_order: 2 },
+    { name: 'Risks to Thesis', section_display_order: SECTION.thesis, display_order: 3 },
+    { name: 'Key Catalysts', section_display_order: SECTION.catalysts, display_order: 0 },
+    { name: 'Rating', section_display_order: SECTION.forecasts, display_order: 0 },
+    { name: 'Price Targets', section_display_order: SECTION.forecasts, display_order: 1 },
+    { name: 'Estimates', section_display_order: SECTION.forecasts, display_order: 2 },
+  ]
+
+  const sorted = (rows: typeof CATALOG) => [...rows].sort(catalogFieldOrder).map(r => r.name)
+
+  it('groups by section before ordering within it', () => {
+    expect(sorted(CATALOG)).toEqual([
+      'Business Model', 'Thesis', 'Where Different', 'Risks to Thesis',
+      'Key Catalysts',
+      'Rating', 'Price Targets', 'Estimates',
+    ])
+  })
+
+  it('gives the same answer whatever order the rows arrive in', () => {
+    // The three display_order-0 rows are the tie that Postgres used to break.
+    const want = sorted(CATALOG)
+    expect(sorted([...CATALOG].reverse())).toEqual(want)
+    expect(sorted([...CATALOG].sort((a, b) => a.name.localeCompare(b.name)))).toEqual(want)
+    expect(sorted([...CATALOG].sort((a, b) => b.name.localeCompare(a.name)))).toEqual(want)
+  })
+
+  it('does not let a low field number jump a section boundary', () => {
+    // Rating is 0 in Forecasts; Risks to Thesis is 3 in Thesis. Section wins.
+    expect(catalogFieldOrder(
+      { section_display_order: 2, display_order: 0, name: 'Rating' },
+      { section_display_order: 0, display_order: 3, name: 'Risks to Thesis' },
+    )).toBeGreaterThan(0)
+  })
+
+  it('breaks a total tie by name instead of leaving it to the database', () => {
+    expect(catalogFieldOrder(
+      { section_display_order: 0, display_order: 0, name: 'Alpha' },
+      { section_display_order: 0, display_order: 0, name: 'Beta' },
+    )).toBeLessThan(0)
+    // And is a real total order: never 0 for two differently-named rows.
+    expect(catalogFieldOrder(
+      { section_display_order: 0, display_order: 0, name: 'Beta' },
+      { section_display_order: 0, display_order: 0, name: 'Alpha' },
+    )).toBeGreaterThan(0)
+  })
+
+  it('treats a missing number as 0, the column’s own default', () => {
+    expect(catalogFieldOrder(
+      { display_order: null, name: 'A' },
+      { section_display_order: 0, display_order: 0, name: 'A' },
+    )).toBe(0)
+    expect(catalogFieldOrder(
+      { section_display_order: null, display_order: 5, name: 'A' },
+      { section_display_order: 1, display_order: 0, name: 'A' },
+    )).toBeLessThan(0)
+  })
+
+  it('is symmetric, so the sort is stable in either direction', () => {
+    for (const a of CATALOG) {
+      for (const b of CATALOG) {
+        // Summed rather than negated: -Math.sign(0) is -0, and Object.is
+        // equality treats that as different from 0.
+        expect(Math.sign(catalogFieldOrder(a, b)) + Math.sign(catalogFieldOrder(b, a))).toBe(0)
+      }
+    }
   })
 })
 
