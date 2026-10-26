@@ -36,8 +36,18 @@ const ASSET_TAB = codeOf(readFileSync(resolve(SRC, 'components/tabs/AssetTab.tsx
 // this way is deliberate — a body-dependent end anchor (e.g. "...up to
 // <OurViewSummary>") would collapse to an empty match the moment the body it
 // guards is removed, and then every `.not.toMatch` over it would pass on "".
+//
+// The end anchor was `displayedFieldsBySection.map` until arrange mode made
+// the same call site read
+//   `(arrangingLayout ? sectionsForArranging : displayedFieldsBySection).map`
+// — the individual view still begins in exactly the same place, but the token
+// changed and the regex stopped matching. The `not.toBe('')` guard below is
+// what reported it instead of three assertions quietly passing on an empty
+// string, which is the whole reason that guard is there. The anchor now
+// tolerates an optional `)` before `.map` so a future wrapper around the same
+// expression does not re-break it.
 const FIRM_BLOCK =
-  /<PriceTargetsSummary[\s\S]*?displayedFieldsBySection\.map/.exec(ASSET_TAB)?.[0] ?? ''
+  /<PriceTargetsSummary[\s\S]*?displayedFieldsBySection\)?\.map/.exec(ASSET_TAB)?.[0] ?? ''
 
 describe('A2: Firm Research shows contributor attribution in place', () => {
   it('renders the firm valuation panels AND the contributor summary together', () => {

@@ -364,13 +364,13 @@ export function useUserAssetPagePreferences(assetId?: string) {
              at any one of these mapping sites would make a template's
              section names appear on some code paths and not others. */
           userDefaultLayout: defaultLayout
-            ? { id: defaultLayout.id, name: defaultLayout.name, field_config: defaultLayout.field_config, section_config: defaultLayout.section_config ?? null, is_default: defaultLayout.is_default }
+            ? { id: defaultLayout.id, name: defaultLayout.name, field_config: defaultLayout.field_config, section_config: defaultLayout.section_config ?? null, updated_at: defaultLayout.updated_at, is_default: defaultLayout.is_default }
             : null,
           assetSelection: assetLayoutSelection
             ? {
                 layout_id: assetLayoutSelection.layout_id,
                 layout: assetLayoutSelection.layout
-                  ? { id: assetLayoutSelection.layout.id, name: assetLayoutSelection.layout.name, field_config: assetLayoutSelection.layout.field_config, section_config: assetLayoutSelection.layout.section_config ?? null, is_default: assetLayoutSelection.layout.is_default }
+                  ? { id: assetLayoutSelection.layout.id, name: assetLayoutSelection.layout.name, field_config: assetLayoutSelection.layout.field_config, section_config: assetLayoutSelection.layout.section_config ?? null, updated_at: assetLayoutSelection.layout.updated_at, is_default: assetLayoutSelection.layout.is_default }
                   : null,
                 field_overrides: assetLayoutSelection.field_overrides || null,
                 section_overrides: assetLayoutSelection.section_overrides || null
@@ -404,7 +404,12 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
   // Extract results from resolution
   const activeLayout = resolution?.activeTemplate
-    ? { ...resolution.activeTemplate, user_id: '', description: null, created_at: '', updated_at: '' } as SavedLayout
+    /* `updated_at` is NOT stubbed out. It used to be `''`, which made the
+       optimistic-concurrency check on template writes skip itself: the
+       guard read a falsy token and quietly did not apply. The save then
+       overwrote a template another tab had changed, with no error — the
+       exact failure the guard exists to prevent. */
+    ? { ...resolution.activeTemplate, user_id: '', description: null, created_at: '', updated_at: resolution.activeTemplate.updated_at ?? '' } as SavedLayout
     : defaultLayout
 
   const assetFieldOverrides = resolution?.assetFieldOverrides || []
@@ -557,6 +562,54 @@ export function useUserAssetPagePreferences(assetId?: string) {
       const hasOverrideFields = section.fields.some(f => f.isAddedViaOverride && f.is_visible)
       return hasTemplateFields || hasOverrideFields || section.section_is_added
     })
+
+  /**
+   * The same sections, plus the ones nothing is currently in.
+   *
+   * The list above drops a section once it has no visible fields, which is
+   * right for reading: an empty heading is noise. It is wrong for
+   * ARRANGING, because a section you cannot see is a section you cannot
+   * drag a field into — so moving the last field out of one made the move
+   * permanent, with nowhere to put it back.
+   *
+   * Kept as a second list rather than by loosening the filter above, so
+   * the page a reader reads is unchanged.
+   */
+  const sectionsForArranging = (() => {
+    const present = new Set(displayedFieldsBySection.map(s => s.section_id))
+    /*
+     * `allSections` infers as `never[]` here — the generated Supabase
+     * types do not reach this query, a pre-existing condition shared by
+     * most of this file. Naming the shape locally keeps that problem from
+     * spreading into new code rather than adding to the repo's error
+     * count; the fields read below are the ones the select asks for.
+     */
+    const catalog = (allSections ?? []) as unknown as Array<{
+      id: string
+      name: string
+      slug: string
+      display_order: number
+      is_system: boolean
+    }>
+    const empties = catalog
+      .filter(s => !present.has(s.id))
+      .map(s => {
+        const o = resolvedSectionOverrides.find(ov => ov.section_id === s.id)
+        return {
+          section_id: s.id,
+          section_name: o?.name_override || s.name,
+          section_slug: s.slug,
+          section_display_order: o?.display_order ?? s.display_order,
+          section_is_hidden: o?.is_hidden ?? false,
+          section_is_added: o?.is_added ?? false,
+          section_original_name: s.name,
+          section_has_override: !!o,
+          fields: [] as typeof displayedFieldsBySection[number]['fields'],
+        }
+      })
+    return [...displayedFieldsBySection, ...empties]
+      .sort((a, b) => a.section_display_order - b.section_display_order)
+  })()
 
   // Toggle field visibility for a specific asset (creates asset-specific override)
   const toggleAssetFieldVisibility = useMutation({
@@ -1487,6 +1540,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
     assetFieldOverrides,
     assetSectionOverrides,
     resolvedSectionOverrides,
+    sectionsForArranging,
     hasAssetCustomization,
 
     // Loading states
@@ -1840,7 +1894,8 @@ export function useUserAssetPageLayouts() {
       description,
       fieldConfig,
       sectionConfig,
-      isDefault
+      isDefault,
+      expectedUpdatedAt
     }: {
       layoutId: string
       name?: string
@@ -1849,6 +1904,20 @@ export function useUserAssetPageLayouts() {
       /** Undefined leaves the stored sections alone; it does not clear them. */
       sectionConfig?: SectionOverride[]
       isDefault?: boolean
+      /**
+       * The `updated_at` the caller believes it is overwriting.
+       *
+       * A template is shared by every asset using it, so two tabs editing
+       * one is not exotic. Without this the second write silently erased
+       * the first — no error, no sign, just an arrangement that reverted.
+       * Passing it turns that into a refusal the caller can report.
+       *
+       * It is a real token, not a hopeful one: the table carries
+       * `update_user_asset_page_layouts_updated_at`, a BEFORE UPDATE
+       * trigger, so the value moves on every write. A guard on a column
+       * that never changed would never fire.
+       */
+      expectedUpdatedAt?: string
     }) => {
       if (!user?.id) throw new Error('Not authenticated')
 
@@ -1867,12 +1936,27 @@ export function useUserAssetPageLayouts() {
       if (sectionConfig !== undefined) updates.section_config = sectionConfig
       if (isDefault !== undefined) updates.is_default = isDefault
 
-      const { error } = await supabase
+      /*
+       * `.select()` is what makes the guard observable. Narrowing by
+       * `updated_at` alone would just match no rows and report success,
+       * which is the silent overwrite wearing a different hat; asking
+       * which rows changed is how a miss becomes a conflict.
+       */
+      let query = supabase
         .from('user_asset_page_layouts')
         .update(updates)
         .eq('id', layoutId)
+      if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt)
+
+      const { data: changed, error } = await query.select('id')
 
       if (error) throw error
+      if (expectedUpdatedAt && (!changed || changed.length === 0)) {
+        throw new Error(
+          'CONFLICT: this template changed somewhere else while you were arranging. ' +
+          'Reload the page to see the current layout, then make your changes again.',
+        )
+      }
     },
     onMutate: async ({ layoutId, name, description, fieldConfig, sectionConfig, isDefault }) => {
       await queryClient.cancelQueries({ queryKey: ['user-asset-page-layouts', user?.id] })

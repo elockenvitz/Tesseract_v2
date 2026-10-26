@@ -53,6 +53,7 @@ import {
   KeyboardSensor,
   PointerSensor,
   closestCenter,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -83,12 +84,17 @@ interface ArrangeState {
   active: boolean
   /** The span to draw a field at: the draft's, else the saved one. */
   spanOf: (fieldId: string, saved: FieldSpan) => FieldSpan
-  /** Field ids in draft order for a section, or null if never dragged. */
-  orderOf: (sectionId: string) => string[] | null
+  /**
+   * Which fields are in a section right now, in order — the draft's answer.
+   *
+   * One derived map rather than separate "order" and "which section"
+   * questions, because a drag can change both at once and two lookups that
+   * disagreed for a frame would render a field twice or not at all.
+   */
+  fieldsIn: (sectionId: string) => string[]
   /** Whether a field is on the page: the draft's answer, else the saved one. */
   visibleOf: (fieldId: string, saved: boolean) => boolean
   setSpan: (fieldId: string, span: FieldSpan) => void
-  reorder: (sectionId: string, ids: string[]) => void
   setVisible: (fieldId: string, visible: boolean) => void
 }
 
@@ -112,13 +118,17 @@ export function ResearchArrangeProvider({
   const [spans, setSpans] = useState<Map<string, FieldSpan>>(new Map())
   const [order, setOrder] = useState<Map<string, string[]>>(new Map())
   const [visible, setVisibleMap] = useState<Map<string, boolean>>(new Map())
+  /** Fields the reader dragged into a section other than their own. */
+  const [moved, setMoved] = useState<Map<string, string>>(new Map())
+
+  /* The same query AssetTab already runs, so React Query serves it from
+     cache rather than fetching twice. The provider needs it because a
+     cross-section drag has to know what is where, and only it sees every
+     section at once. */
+  const { sectionsForArranging: displayedFieldsBySection } = useUserAssetPagePreferences(assetId)
 
   const setSpan = useCallback((fieldId: string, span: FieldSpan) => {
     setSpans(prev => new Map(prev).set(fieldId, span))
-  }, [])
-
-  const reorder = useCallback((sectionId: string, ids: string[]) => {
-    setOrder(prev => new Map(prev).set(sectionId, ids))
   }, [])
 
   const setVisible = useCallback((fieldId: string, v: boolean) => {
@@ -126,32 +136,143 @@ export function ResearchArrangeProvider({
   }, [])
 
   const clear = useCallback(() => {
-    setSpans(new Map()); setOrder(new Map()); setVisibleMap(new Map())
+    setSpans(new Map()); setOrder(new Map()); setVisibleMap(new Map()); setMoved(new Map())
   }, [])
+
+  /**
+   * Where every visible field sits right now: section → ordered field ids.
+   *
+   * Derived in one place from saved state plus the draft, rather than kept
+   * as its own state. A second copy would have to be reconciled on every
+   * change, and the failure mode of getting that wrong is a field drawn in
+   * two sections at once or in none.
+   */
+  const layout = useMemo(() => {
+    const map = new Map<string, string[]>()
+    const sections = displayedFieldsBySection ?? []
+    for (const s of sections) map.set(s.section_id, [])
+
+    for (const s of sections) {
+      for (const f of s.fields) {
+        if (!(visible.get(f.field_id) ?? f.is_visible)) continue
+        const target = moved.get(f.field_id) ?? s.section_id
+        if (!map.has(target)) map.set(target, [])
+        map.get(target)!.push(f.field_id)
+      }
+    }
+
+    /* Then the reader's order within each section. Fields the drag never
+       saw keep their place at the end rather than disappearing. */
+    for (const [sectionId, ids] of map) {
+      const wanted = order.get(sectionId)
+      if (!wanted) continue
+      map.set(sectionId, [
+        ...wanted.filter(id => ids.includes(id)),
+        ...ids.filter(id => !wanted.includes(id)),
+      ])
+    }
+    return map
+  }, [displayedFieldsBySection, visible, moved, order])
+
+  const sectionHolding = useCallback((fieldId: string): string | null => {
+    for (const [sectionId, ids] of layout) if (ids.includes(fieldId)) return sectionId
+    return null
+  }, [layout])
+
+  const sensors = useSensors(
+    /* A field is large and holds a resize grip, so a press has to travel
+       before it counts as a drag — otherwise grabbing the grip, or a click
+       meant for the chrome, starts moving the field. */
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  /**
+   * Everything happens on DROP, not during the drag.
+   *
+   * The usual dnd-kit recipe moves an item between containers on
+   * `onDragOver` so it animates across. It cannot be used here: these are
+   * real, live field editors, and moving one to another section unmounts
+   * and remounts it — including the node being dragged, which ends the
+   * drag mid-gesture and loses the field somewhere between the two.
+   * Settling once on drop is the correct trade, not merely the simpler one.
+   */
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active: dragged, over } = event
+    if (!over) return
+    const fieldId = String(dragged.id)
+    const overId = String(over.id)
+    if (fieldId === overId) return
+
+    const from = sectionHolding(fieldId)
+    /* `over` is either another field or a section's empty space, which is
+       registered as a droppable under `section:<id>`. */
+    const to = overId.startsWith(SECTION_DROP_PREFIX)
+      ? overId.slice(SECTION_DROP_PREFIX.length)
+      : sectionHolding(overId)
+    if (!from || !to) return
+
+    if (from === to) {
+      const ids = layout.get(from) ?? []
+      const a = ids.indexOf(fieldId)
+      const b = ids.indexOf(overId)
+      if (a < 0 || b < 0) return
+      setOrder(prev => new Map(prev).set(from, arrayMove(ids, a, b)))
+      return
+    }
+
+    /* Across sections: out of one list, into the other at the drop point,
+       and BOTH orders are recorded. Writing only the destination would
+       leave the source's order unstated, so the gap the field left would
+       be filled by whatever the saved order said. */
+    const fromIds = (layout.get(from) ?? []).filter(id => id !== fieldId)
+    const toIds = [...(layout.get(to) ?? [])]
+    const at = toIds.indexOf(overId)
+    toIds.splice(at < 0 ? toIds.length : at, 0, fieldId)
+
+    setMoved(prev => new Map(prev).set(fieldId, to))
+    setOrder(prev => new Map(prev).set(from, fromIds).set(to, toIds))
+  }
 
   const value = useMemo<ArrangeState>(() => ({
     active,
     spanOf: (fieldId, saved) => spans.get(fieldId) ?? saved,
-    orderOf: sectionId => order.get(sectionId) ?? null,
+    fieldsIn: sectionId => layout.get(sectionId) ?? [],
     visibleOf: (fieldId, saved) => visible.get(fieldId) ?? saved,
     setSpan,
-    reorder,
     setVisible,
-  }), [active, spans, order, visible, setSpan, reorder, setVisible])
+  }), [active, spans, layout, visible, setSpan, setVisible])
 
   const draft = useMemo<ArrangeDraft>(
-    () => ({ assetId, spans, order, visible, clear }),
-    [assetId, spans, order, visible, clear],
+    () => ({ assetId, spans, order, visible, moved, layout, clear }),
+    [assetId, spans, order, visible, moved, layout, clear],
   )
 
-  return (
+  const body = (
     <ArrangeContext.Provider value={active ? value : null}>
       <ArrangeDraftContext.Provider value={draft}>
         {children}
       </ArrangeDraftContext.Provider>
     </ArrangeContext.Provider>
   )
+
+  /*
+   * ONE drag context around every section, not one per section.
+   *
+   * A context per section is what made a field undraggable past its own
+   * heading: dnd-kit only considers droppables inside the context the drag
+   * began in, so the rest of the page was not a place a field could go.
+   */
+  if (!active) return body
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      {body}
+    </DndContext>
+  )
 }
+
+/** Namespaces a section's own droppable id so it cannot collide with a field's. */
+const SECTION_DROP_PREFIX = 'section:'
 
 /**
  * The draft itself, for the bar that saves it.
@@ -167,6 +288,10 @@ interface ArrangeDraft {
   order: Map<string, string[]>
   /** Fields added to or removed from the page, not yet saved. */
   visible: Map<string, boolean>
+  /** Fields dragged into a different section, by field id → section id. */
+  moved: Map<string, string>
+  /** Where everything sits now: section id → ordered field ids. */
+  layout: Map<string, string[]>
   clear: () => void
 }
 const ArrangeDraftContext = createContext<ArrangeDraft | null>(null)
@@ -215,8 +340,40 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const changed =
-    (draft?.spans.size ?? 0) + (draft?.order.size ?? 0) + (draft?.visible.size ?? 0)
+  /**
+   * How many things actually differ from what is saved — not how many
+   * entries the draft holds.
+   *
+   * Those are different numbers. Removing a field and adding it straight
+   * back leaves an entry behind whose value matches the saved state, and
+   * counting entries reported "1 change" over a page identical to the
+   * stored one. Same for resizing a field and resizing it back. The count
+   * is the reason to press Save, so it has to mean something.
+   */
+  const changed = useMemo(() => {
+    if (!draft) return 0
+    const saved = new Map(
+      (displayedFieldsBySection ?? []).flatMap(s => s.fields).map(f => [f.field_id, f]),
+    )
+    let n = 0
+    draft.spans.forEach((span, id) => {
+      if (span !== (saved.get(id)?.span ?? FULL_SPAN)) n++
+    })
+    draft.visible.forEach((v, id) => {
+      if (v !== (saved.get(id)?.is_visible ?? true)) n++
+    })
+    draft.order.forEach((ids, sectionId) => {
+      const current = (displayedFieldsBySection ?? [])
+        .find(s => s.section_id === sectionId)?.fields
+        .filter(f => draft.visible.get(f.field_id) ?? f.is_visible)
+        .map(f => f.field_id) ?? []
+      /* An order entry counts once for the section, not once per field:
+         it is one thing the reader did. */
+      if (ids.length !== current.length || ids.some((id, i) => id !== current[i])) n++
+    })
+    return n
+  }, [draft, displayedFieldsBySection])
+
   const dirty = changed > 0
 
   /**
@@ -276,6 +433,10 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
     /* Adding and removing write the same `is_visible` the field customizer
        writes, so the two screens cannot disagree about what is on a page. */
     draft?.visible.forEach((v, fieldId) => { touch(fieldId).is_visible = v })
+    /* A field dragged across sections carries its new section with it.
+       Writing only the order would renumber it inside a section it does
+       not belong to, and it would snap back on the next load. */
+    draft?.moved.forEach((sectionId, fieldId) => { touch(fieldId).section_id = sectionId })
     /* Every field in a reordered section is renumbered, not just the one
        that moved: `display_order` is an absolute position, so leaving the
        neighbours alone puts two fields on the same number. */
@@ -312,23 +473,53 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
    * everywhere" has to mean.
    */
   const templateConfigFromPage = () => {
+    const byId = new Map(
+      (displayedFieldsBySection ?? []).flatMap(s => s.fields).map(f => [f.field_id, f]),
+    )
+    const placed = new Set<string>()
+
+    /* The VISIBLE page first, read straight off the draft's layout, so a
+       field dragged into another section is written there. */
     const fieldConfig = (displayedFieldsBySection ?? []).flatMap((section, sIdx) => {
-      const ids = draft?.order.get(section.section_id) ?? null
-      const fields = ids
-        ? [
-            ...ids.map(id => section.fields.find(f => f.field_id === id)).filter(Boolean),
-            ...section.fields.filter(f => !ids.includes(f.field_id)),
-          ] as typeof section.fields
-        : section.fields
-      return fields.map((f, fIdx) => ({
-        field_id: f.field_id,
-        section_id: f.section_id || section.section_id,
-        is_visible: draft?.visible.get(f.field_id) ?? f.is_visible,
-        display_order: sIdx * 1000 + fIdx,
-        is_collapsed: f.is_collapsed ?? false,
-        span: draft?.spans.get(f.field_id) ?? f.span ?? FULL_SPAN,
-      }))
+      const ids = draft?.layout.get(section.section_id) ?? section.fields
+        .filter(f => f.is_visible).map(f => f.field_id)
+      return ids.flatMap((fieldId, fIdx) => {
+        const f = byId.get(fieldId)
+        if (!f) return []
+        placed.add(fieldId)
+        return [{
+          field_id: fieldId,
+          section_id: section.section_id,
+          is_visible: true,
+          display_order: sIdx * 1000 + fIdx,
+          is_collapsed: f.is_collapsed ?? false,
+          span: draft?.spans.get(fieldId) ?? f.span ?? FULL_SPAN,
+        }]
+      })
     })
+
+    /*
+     * Then everything the page is NOT showing, recorded as hidden.
+     *
+     * The draft's layout holds only visible fields, so building the
+     * template from it alone would omit every hidden one — and a field
+     * missing from `field_config` is not hidden, it falls back to its
+     * default, which is how hiding a field would have un-hidden it for
+     * every stock on the template.
+     */
+    for (const section of displayedFieldsBySection ?? []) {
+      for (const f of section.fields) {
+        if (placed.has(f.field_id)) continue
+        fieldConfig.push({
+          field_id: f.field_id,
+          section_id: draft?.moved.get(f.field_id) ?? f.section_id ?? section.section_id,
+          is_visible: false,
+          display_order: f.display_order ?? f.default_display_order ?? 999,
+          is_collapsed: f.is_collapsed ?? false,
+          span: draft?.spans.get(f.field_id) ?? f.span ?? FULL_SPAN,
+        })
+      }
+    }
     /*
      * Sections travel too, now that a template can hold them. This is the
      * RESOLVED view — the template's own sections with this asset's
@@ -357,8 +548,30 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
 
   const saveToTemplate = async () => {
     if (!activeLayout?.id) throw new Error('No template to save to.')
+    /*
+     * No token, no write.
+     *
+     * Treating a missing `updated_at` as "skip the check" is how this
+     * guard was vacuous the first time: the hook stubbed the field to '',
+     * the condition was never applied, and a save silently overwrote
+     * another tab's template. Refusing is the safe direction — the write
+     * is to a template every other stock reads.
+     */
+    if (!activeLayout.updated_at) {
+      throw new Error(
+        'Cannot safely save to this template — its version is unknown. Reload the page and try again.',
+      )
+    }
     const { fieldConfig, sectionConfig } = templateConfigFromPage()
-    await updateLayout.mutateAsync({ layoutId: activeLayout.id, fieldConfig, sectionConfig })
+    await updateLayout.mutateAsync({
+      layoutId: activeLayout.id,
+      fieldConfig,
+      sectionConfig,
+      /* The version this arrangement was built on. If another tab wrote
+         the template meanwhile, this write is refused rather than
+         silently erasing theirs. */
+      expectedUpdatedAt: activeLayout.updated_at,
+    })
     await stopOverridingLocally()
   }
 
@@ -668,35 +881,55 @@ export function ArrangeableFieldGrid({
   sectionId, sectionSlug, fieldIds, className, children,
 }: ArrangeableFieldGridProps) {
   const arrange = useArrange()
-  const sensors = useSensors(
-    /* A field is large and holds a resize grip, so a press has to travel
-       before it counts as a drag — otherwise grabbing the grip, or a click
-       meant for the chrome, starts moving the field. */
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
-
   const arrangeable = arrange?.active && !SELF_ARRANGED_SECTIONS.has(sectionSlug)
-  const ordered = arrange?.orderOf(sectionId) ?? fieldIds
 
   if (!arrangeable) return <div className={className}>{children}</div>
+  return (
+    <ArrangeableFieldGridActive
+      sectionId={sectionId}
+      ordered={arrange!.fieldsIn(sectionId)}
+      fallback={fieldIds}
+      className={className}
+    >
+      {children}
+    </ArrangeableFieldGridActive>
+  )
+}
 
-  const onDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const from = ordered.indexOf(String(active.id))
-    const to = ordered.indexOf(String(over.id))
-    if (from < 0 || to < 0) return
-    arrange!.reorder(sectionId, arrayMove(ordered, from, to))
-  }
+/**
+ * Split out for the same reason as the field: `useDroppable` registers
+ * with a `DndContext` that does not exist on the normal page, and calling
+ * it conditionally would change hook order the moment arranging began.
+ */
+function ArrangeableFieldGridActive({
+  sectionId, ordered, fallback, className, children,
+}: {
+  sectionId: string
+  ordered: string[]
+  fallback: string[]
+  className: string
+  children: ReactNode
+}) {
+  /*
+   * The section itself is a drop target, so a field can be dropped into
+   * one that is currently empty. Without this there would be nothing to
+   * aim at — an empty section has no field to drop onto, so a field moved
+   * out of a section could never be moved back.
+   */
+  const { setNodeRef, isOver } = useDroppable({ id: `${SECTION_DROP_PREFIX}${sectionId}` })
 
   return (
-    <div className={className} data-arrange-section={sectionId}>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <SortableContext items={ordered} strategy={rectSortingStrategy}>
-          {children}
-        </SortableContext>
-      </DndContext>
+    <div
+      ref={setNodeRef}
+      data-arrange-section={sectionId}
+      className={clsx(className, isOver && 'bg-primary-50/60 dark:bg-primary-950/30')}
+    >
+      <SortableContext
+        items={ordered.length > 0 ? ordered : fallback}
+        strategy={rectSortingStrategy}
+      >
+        {children}
+      </SortableContext>
     </div>
   )
 }
@@ -742,6 +975,14 @@ export function ArrangeableField({
    */
   if (arrange?.active ? !arrange.visibleOf(fieldId, savedVisible) : !savedVisible) return null
 
+  /*
+   * While arranging, every section is handed every field, so that one
+   * dragged across sections can render under its new heading. This is the
+   * line that puts it in exactly one of them: the draft's layout decides
+   * where a field lives, and each section draws only what it holds.
+   */
+  if (arrange?.active && !arrange.fieldsIn(sectionId).includes(fieldId)) return null
+
   if (!arrangeable) {
     return (
       <div data-field-span={span} className={`min-w-0 ${SPAN_CLASS[span]}`}>
@@ -786,7 +1027,8 @@ function ArrangeableFieldActive({
   const [host, setHost] = useState<HTMLDivElement | null>(null)
   const [resizing, setResizing] = useState(false)
 
-  const order = arrange.orderOf(sectionId)?.indexOf(fieldId) ?? undefined
+  const position = arrange.fieldsIn(sectionId).indexOf(fieldId)
+  const order = position < 0 ? undefined : position
 
   /*
    * Resizing is measured against the ROW, not the field. A span is a

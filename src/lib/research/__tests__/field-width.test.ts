@@ -30,6 +30,7 @@ const TAB = strip(read('src/components/tabs/AssetTab.tsx'))
 const CUSTOMIZER = strip(read('src/components/research/AssetPageFieldCustomizer.tsx'))
 const CANVAS = strip(read('src/components/research/ResearchArrange.tsx'))
 const SPANLIB = strip(read('src/lib/research/field-span.ts'))
+const HOOK = strip(read('src/hooks/useUserAssetPagePreferences.ts'))
 
 describe('a field carries its own width', () => {
   it('defaults to a full row, so layouts saved before spans are unchanged', () => {
@@ -346,8 +347,13 @@ describe('the layout is arranged on the page, not above it', () => {
      */
     expect(CANVAS).toMatch(/const stopOverridingLocally = async \(\) => \{/)
     expect(CANVAS).toMatch(/clearAssetOverrides\.mutateAsync\(draft\.assetId\)/)
+    /* Bounded to the function, not to a character count: a fixed window
+       already broke once when the concurrency guard was added ahead of
+       this line and pushed it out of range. */
     const toTemplate = CANVAS.indexOf('const saveToTemplate')
-    expect(CANVAS.slice(toTemplate, toTemplate + 420)).toMatch(/await stopOverridingLocally\(\)/)
+    const afterToTemplate = CANVAS.indexOf('const saveAsNewTemplate', toTemplate)
+    expect(afterToTemplate).toBeGreaterThan(toTemplate)
+    expect(CANVAS.slice(toTemplate, afterToTemplate)).toMatch(/await stopOverridingLocally\(\)/)
     const toNew = CANVAS.indexOf('const saveAsNewTemplate')
     expect(CANVAS.slice(toNew, toNew + 900)).toMatch(/await stopOverridingLocally\(\)/)
   })
@@ -419,8 +425,13 @@ describe('the layout is arranged on the page, not above it', () => {
     /* A field filtered out before the wrapper cannot be re-mounted by
        "Add field" at all. The filter stays for the normal page and opens
        up only while arranging; `ArrangeableField` — the one place that
-       knows both the saved state AND the draft — decides what renders. */
-    expect(TAB).toMatch(/\.filter\(f => f\.is_visible \|\| arrangingLayout\)/)
+       knows both the saved state AND the draft — decides what renders.
+       While arranging the list is drawn from EVERY section's fields, not
+       this section's, because a field dragged across sections has to be
+       mountable under its new one. */
+    expect(TAB).toMatch(
+      /arrangingLayout\s*\? sectionsForArranging\.flatMap\(s => s\.fields\)\s*: section\.fields\.filter\(f => f\.is_visible\)/,
+    )
     expect(TAB).toMatch(/savedVisible=\{field\.is_visible\}/)
     expect(CANVAS).toMatch(/!arrange\.visibleOf\(fieldId, savedVisible\)/)
   })
@@ -449,5 +460,153 @@ describe('the layout is arranged on the page, not above it', () => {
        from either save path skips it. */
     expect(CANVAS.slice(tryAt, catchAt)).toMatch(/onClose\(\)/)
     expect(CANVAS.slice(catchAt, finallyAt)).not.toMatch(/onClose\(\)/)
+  })
+})
+
+/*
+ * ── Why this block exists ──────────────────────────────────────────────
+ *
+ * The concurrency guard below shipped VACUOUS once. Every piece of it was
+ * present and correct — the trigger on the table, the `.eq()` on the
+ * update, the thrown CONFLICT — and it still never fired, because the
+ * hook handed it `updated_at: ''` and an empty string is falsy, so the
+ * condition was simply never applied. It was proven by experiment: the
+ * template's `updated_at` was bumped in SQL behind the app's back, the
+ * save was pressed, and the save succeeded, overwriting the other write.
+ *
+ * So these do not test "a guard exists". They test the three separate
+ * things that each, alone, turn the guard back into decoration.
+ */
+describe('a template write cannot silently overwrite another one', () => {
+  it('narrows the update by the version it read', () => {
+    /* Without the `.eq`, the write lands on whatever the row now holds. */
+    expect(HOOK).toMatch(/query\.eq\('updated_at', expectedUpdatedAt\)/)
+  })
+
+  it('asks which rows changed, so a miss is visible', () => {
+    /* `.eq()` on a stale value matches nothing and Supabase reports no
+       error for that — an update of zero rows is a successful update.
+       `.select('id')` is the only thing that makes the miss observable,
+       and the throw is what turns it into something the reader sees. */
+    const at = HOOK.indexOf("query.eq('updated_at', expectedUpdatedAt)")
+    const window = HOOK.slice(at, at + 700)
+    expect(window).toMatch(/await query\.select\('id'\)/)
+    expect(window).toMatch(/if \(expectedUpdatedAt && \(!changed \|\| changed\.length === 0\)\)/)
+    expect(window).toMatch(/CONFLICT:/)
+  })
+
+  it('does not stub the version out of the active template', () => {
+    /* This exact line is where the guard died. `activeLayout` is built by
+       spreading the resolved template and blanking the fields the caller
+       must not read; `updated_at` was blanked with them, and blanking it
+       disarms everything above. */
+    const at = HOOK.indexOf('const activeLayout = resolution?.activeTemplate')
+    const window = HOOK.slice(at, at + 600)
+    expect(at).toBeGreaterThan(-1)
+    expect(window).toMatch(/updated_at: resolution\.activeTemplate\.updated_at/)
+    expect(window).not.toMatch(/updated_at: ''/)
+  })
+
+  it('carries the version through every layer that builds a template', () => {
+    /* `LayoutTemplate` is the shape the resolver returns and the only
+       route the token travels. A mapping site that forgets it hands the
+       bar an undefined token, and the refusal below would then block a
+       legitimate save instead of a dangerous one. */
+    expect(RESOLVER).toMatch(/updated_at\?: string/)
+    const sites = HOOK.match(/updated_at: \w+(\.\w+)*\.updated_at/g) ?? []
+    expect(sites.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('refuses a template write whose version it does not know', () => {
+    /* The safe direction. Treating a missing token as "skip the check" is
+       what made this vacuous; refusing costs a reload, and the write is
+       to a template every other stock reads. */
+    const at = CANVAS.indexOf('const saveToTemplate')
+    const window = CANVAS.slice(at, at + 1200)
+    expect(at).toBeGreaterThan(-1)
+    expect(window).toMatch(/if \(!activeLayout\.updated_at\) \{\s*throw new Error\(/)
+    expect(window).toMatch(/expectedUpdatedAt: activeLayout\.updated_at/)
+  })
+})
+
+describe('the bar reports what the reader actually did', () => {
+  it('counts real differences, not that a control was touched', () => {
+    /* Dragging a field back where it was, or widening and narrowing it
+       again, leaves nothing to save. Counting entries in the draft maps
+       would report changes that do not exist and offer to write them. */
+    const at = CANVAS.indexOf('const changed = useMemo')
+    const window = CANVAS.slice(at, at + 900)
+    expect(at).toBeGreaterThan(-1)
+    expect(window).toMatch(/span !== \(saved\.get\(id\)\?\.span \?\? FULL_SPAN\)/)
+    expect(window).toMatch(/v !== \(saved\.get\(id\)\?\.is_visible \?\? true\)/)
+  })
+
+  it('counts a reordered section once, not once per field', () => {
+    /* Moving one field past another changes the index of both. Counting
+       per field would report "2 changes" for one drag. */
+    const at = CANVAS.indexOf('const changed = useMemo')
+    const window = CANVAS.slice(at, at + 900)
+    expect(window).toMatch(/ids\.length !== current\.length \|\| ids\.some\(\(id, i\) => id !== current\[i\]\)/)
+  })
+})
+
+describe('a field can cross between sections', () => {
+  it('records the section it landed in', () => {
+    const at = CANVAS.indexOf('const onDragEnd')
+    const window = CANVAS.slice(at, at + 1200)
+    expect(at).toBeGreaterThan(-1)
+    expect(window).toMatch(/setMoved\(prev => new Map\(prev\)\.set\(fieldId, to\)\)/)
+  })
+
+  it('writes the order of BOTH sections, not just the one it landed in', () => {
+    /* The source section's order changes too — a field left a gap in it.
+       Recording only the destination leaves the source unstated, so the
+       saved order refills the gap with whatever it used to say and the
+       remaining fields jump. */
+    const at = CANVAS.indexOf('const onDragEnd')
+    const window = CANVAS.slice(at, at + 1200)
+    expect(window).toMatch(/setOrder\(prev => new Map\(prev\)\.set\(from, fromIds\)\.set\(to, toIds\)\)/)
+  })
+
+  it('can drop into a section that has no fields left to drop onto', () => {
+    /* Without a droppable for the section's own space, moving the last
+       field out of a section makes that section unreachable — there is
+       nothing left to aim at. The prefix keeps a section's droppable id
+       from colliding with a field's. */
+    expect(CANVAS).toMatch(/const SECTION_DROP_PREFIX = 'section:'/)
+    expect(CANVAS).toMatch(/overId\.startsWith\(SECTION_DROP_PREFIX\)/)
+  })
+})
+
+describe('an emptied section stays on the page while arranging', () => {
+  it('shows sections the normal page has no reason to draw', () => {
+    /* `displayedFieldsBySection` only knows sections that HAVE fields, so
+       emptying one made it disappear mid-arrange and the move became
+       one-way. `sectionsForArranging` adds the rest back from the section
+       catalog — and only while arranging, so the page a reader reads is
+       unchanged. */
+    const at = HOOK.indexOf('const sectionsForArranging')
+    const window = HOOK.slice(at, at + 1400)
+    expect(at).toBeGreaterThan(-1)
+    expect(window).toMatch(/const present = new Set\(displayedFieldsBySection\.map\(s => s\.section_id\)\)/)
+    expect(window).toMatch(/\.filter\(s => !present\.has\(s\.id\)\)/)
+    expect(window).toMatch(/fields: \[\]/)
+    expect(window).toMatch(/\[\.\.\.displayedFieldsBySection, \.\.\.empties\]/)
+  })
+
+  it('applies the same section names and order the real page uses', () => {
+    /* An empty section drawn from the raw catalog would show its original
+       name and sort to its original place, so a renamed or reordered
+       section would move the moment it was emptied. */
+    const at = HOOK.indexOf('const sectionsForArranging')
+    const window = HOOK.slice(at, at + 1400)
+    expect(window).toMatch(/resolvedSectionOverrides\.find\(ov => ov\.section_id === s\.id\)/)
+    expect(window).toMatch(/o\?\.name_override \|\| s\.name/)
+    expect(window).toMatch(/o\?\.display_order \?\? s\.display_order/)
+    expect(window).toMatch(/\.sort\(\(a, b\) => a\.section_display_order - b\.section_display_order\)/)
+  })
+
+  it('is used only while arranging', () => {
+    expect(TAB).toMatch(/arrangingLayout \? sectionsForArranging : displayedFieldsBySection/)
   })
 })

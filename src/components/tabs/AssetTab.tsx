@@ -1316,6 +1316,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     fieldsWithPreferences,
     fieldsBySection,
     displayedFieldsBySection,
+    sectionsForArranging,
     activeLayout,
     isLoading: layoutLoading
   } = useUserAssetPagePreferences(asset.id)
@@ -4270,7 +4271,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     onClose={() => setArrangingLayout(false)}
                   />
                 )}
-                {displayedFieldsBySection.map((section, sectionIdx) => {
+                {/* Arranging also draws the sections nothing is in, so a
+                    field can be dragged back into one it was emptied out
+                    of. Reading draws only the sections with something in
+                    them, as it always has. */}
+                {(arrangingLayout ? sectionsForArranging : displayedFieldsBySection).map((section, sectionIdx) => {
                 // Skip hidden sections
                 if (section.section_is_hidden) return null
 
@@ -4450,17 +4455,27 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       className="grid grid-cols-1 gap-3 border-t border-gray-100 px-5 py-2 xl:grid-cols-12 dark:border-gray-800"
                     >
                       {/*
-                        While arranging, the HIDDEN fields are handed down
-                        too, so "Add field" can put one back without this
-                        map having to re-run against different data.
-                        `ArrangeableField` drops them: it is the one place
-                        that knows both what the layout saved and what the
-                        draft has changed, and a filter here could only see
-                        the first. Outside arrange mode this is exactly the
-                        `is_visible` filter it always was.
+                        While arranging, every section is handed EVERY
+                        field on the page — not just its own, and not just
+                        the visible ones.
+
+                        Both are needed for a reason the filter cannot
+                        see. "Add field" has to be able to mount something
+                        currently hidden, and a field dragged into another
+                        section has to be able to render under its new
+                        heading, which it can only do if that heading is
+                        already drawing it. `ArrangeableField` keeps
+                        exactly one of these: it is the one place that
+                        knows what the layout saved AND what the draft
+                        changed, so it is the only thing that can decide.
+
+                        Outside arrange mode this is exactly the
+                        `is_visible` filter on this section's own fields
+                        that it has always been.
                       */}
-                      {section.fields
-                        .filter(f => f.is_visible || arrangingLayout)
+                      {(arrangingLayout
+                        ? sectionsForArranging.flatMap(s => s.fields)
+                        : section.fields.filter(f => f.is_visible))
                         .map(field => {
                           // Render field based on its type
                           const fieldType = field.field_type

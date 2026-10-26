@@ -153,6 +153,15 @@ export interface LayoutTemplate {
    * identically to "this template says nothing about sections".
    */
   section_config?: SectionOverride[] | null
+  /**
+   * When this template was last written.
+   *
+   * Carried because it is the concurrency token for writing it back: a
+   * template is shared by every asset using it, so two tabs editing one is
+   * ordinary. The write is conditioned on this value, and the table's
+   * BEFORE UPDATE trigger moves it on every change.
+   */
+  updated_at?: string
   is_default: boolean
 }
 
