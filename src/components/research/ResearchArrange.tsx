@@ -326,6 +326,8 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
     activeLayout,
     saveCustomization,
     selectLayoutForAsset,
+    clearAssetOverrides,
+    templateBaselineFields,
   } = useUserAssetPagePreferences(draft?.assetId)
   /* Templates are a different hook. Only the LIST is needed here, to fill
      the picker — arrange mode chooses which template this stock follows,
@@ -438,9 +440,46 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
       ids.forEach((fieldId, index) => { touch(fieldId).display_order = index })
     })
 
+    /*
+     * An override that says what the template already says is not an
+     * override — drop it.
+     *
+     * Without this, setting a field back to how the template has it
+     * leaves a row behind that happens to agree. The page looks right, so
+     * nothing tells you anything is wrong, but the stock is now PINNED:
+     * change the template later and this one stock silently refuses to
+     * follow, because it carries an explicit instruction that matches
+     * today's template and not tomorrow's.
+     *
+     * Compared against `templateBaselineFields`, which is the real
+     * resolver run with the overrides stripped — not a second opinion
+     * about what the template means.
+     */
+    const kept = Array.from(byId.values()).filter(o => {
+      const base = templateBaselineFields.get(o.field_id)
+      if (!base) return true
+      const differs = (a: unknown, b: unknown) => a !== undefined && a !== b
+      return (
+        differs(o.span, base.span) ||
+        differs(o.is_visible, base.is_visible) ||
+        differs(o.section_id, base.section_id) ||
+        differs(o.display_order, base.display_order)
+      )
+    })
+
+    /*
+     * Nothing left to say, and no deliberately chosen template: remove the
+     * row entirely so the stock is genuinely back on the default, not
+     * sitting on an empty override that still counts as one.
+     */
+    if (kept.length === 0 && assetSectionOverrides.length === 0 && !activeLayout?.id) {
+      if (draft?.assetId) await clearAssetOverrides.mutateAsync(draft.assetId)
+      return
+    }
+
     await saveCustomization.mutateAsync({
       layoutId: activeLayout?.id ?? null,
-      fieldOverrides: Array.from(byId.values()),
+      fieldOverrides: kept,
       /* Not this bar's to change, and `[]` would DELETE every renamed,
          hidden or reordered section. */
       sectionOverrides: assetSectionOverrides,

@@ -38,6 +38,7 @@ import { AssetDecisionView } from '../asset/AssetDecisionView'
 import { DecisionTimeline } from '../asset/DecisionTimeline'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
 import { ResearchToolbarMenu } from '../asset/ResearchToolbarMenu'
+import { LayoutStatusChip } from '../research/LayoutStatusChip'
 /*
  * `AssetWorkPane` — the orientation band — is gone, along with its tests.
  * The navigator carries the attention split, the ideas and the process
@@ -1318,6 +1319,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     displayedFieldsBySection,
     sectionsForArranging,
     activeLayout,
+    hasAssetCustomization,
+    clearAssetOverrides,
     isLoading: layoutLoading
   } = useUserAssetPagePreferences(asset.id)
 
@@ -4034,6 +4037,22 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 open anything — it turns the body below into its own tiles
                 and lets the reader move them.
               */}
+              {/*
+                Which layout the page is actually drawing, named on the
+                page itself rather than only inside the tool that changes
+                it. Shown on the reader's own view only: the layout layer
+                does not apply to someone else's research, so claiming a
+                template there would be a lie.
+              */}
+              {researchViewFilter === user?.id && (
+                <LayoutStatusChip
+                  templateName={activeLayout?.name ?? null}
+                  overridden={hasAssetCustomization}
+                  resetting={clearAssetOverrides.isPending}
+                  onReset={() => clearAssetOverrides.mutate(asset.id)}
+                />
+              )}
+
               <ResearchToolbarMenu
                 items={[
                   {

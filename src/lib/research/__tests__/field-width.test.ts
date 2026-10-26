@@ -32,6 +32,7 @@ const CANVAS = strip(read('src/components/research/ResearchArrange.tsx'))
 const SPANLIB = strip(read('src/lib/research/field-span.ts'))
 const HOOK = strip(read('src/hooks/useUserAssetPagePreferences.ts'))
 const MANAGER = strip(read('src/components/templates/ResearchFieldsManager.tsx'))
+const CHIP = strip(read('src/components/research/LayoutStatusChip.tsx'))
 
 describe('a field carries its own width', () => {
   it('defaults to a full row, so layouts saved before spans are unchanged', () => {
@@ -630,5 +631,109 @@ describe('an emptied section stays on the page while arranging', () => {
 
   it('is used only while arranging', () => {
     expect(TAB).toMatch(/arrangingLayout \? sectionsForArranging : displayedFieldsBySection/)
+  })
+})
+
+/*
+ * ── The state the page was never in a position to tell you ─────────────
+ *
+ * A Research page is resolved from two layers: a template, and this
+ * stock's own overrides on top of it. The page named neither, so this was
+ * reachable and invisible: change one stock, set it back by hand, and
+ * believe you are back on the default. You are not — you are on an
+ * override that agrees with the default today and will stop agreeing the
+ * moment the template changes, at which point this one stock silently
+ * refuses to follow.
+ *
+ * Two halves fix it: stop MAKING no-op overrides, and say out loud which
+ * state you are in.
+ */
+describe('an override that says nothing is not an override', () => {
+  it('measures "no difference" against the real resolver, not a copy', () => {
+    /* The baseline is the resolver run a second time with the override
+       arrays emptied. Re-deriving "what the template says" by hand would
+       be a second implementation of the span fallback and the visibility
+       defaults, and the moment the two disagreed this would prune real
+       settings away as if they were no-ops — deleting a reader's layout
+       while calling it tidying. */
+    expect(HOOK).toMatch(/const baselineResolution/)
+    expect(HOOK).toMatch(/field_overrides: null, section_overrides: null/)
+    expect(HOOK).toMatch(/templateBaselineFields/)
+  })
+
+  it('keeps layout_id out of the baseline strip', () => {
+    /* Following a chosen template is a different thing from overriding
+       one. Stripping layout_id too would make every stock deliberately
+       put on a template read as permanently "customized". */
+    const at = HOOK.indexOf('const baselineResolution')
+    const window = HOOK.slice(at, at + 500)
+    expect(window).toMatch(/\.\.\.resolverInput\.assetSelection,/)
+    expect(window).not.toMatch(/layout_id: null/)
+  })
+
+  it('drops a field whose override matches the template', () => {
+    const at = CANVAS.indexOf('const kept =')
+    const window = CANVAS.slice(at, at + 600)
+    expect(at).toBeGreaterThan(-1)
+    expect(window).toMatch(/templateBaselineFields\.get\(o\.field_id\)/)
+    expect(window).toMatch(/differs\(o\.span, base\.span\)/)
+    expect(window).toMatch(/differs\(o\.is_visible, base\.is_visible\)/)
+  })
+
+  it('treats an unset key as "no opinion", not as a difference', () => {
+    /* `touch()` creates an override carrying only the keys that were
+       actually changed. Comparing an undefined key against a real
+       baseline value would mark every such override as different and
+       prune nothing. */
+    expect(CANVAS).toMatch(/a !== undefined && a !== b/)
+  })
+
+  it('removes the row when nothing is left to say', () => {
+    /* An empty override list still counts as a customization, so saving
+       a reverted page would leave the stock reading "Custom layout" with
+       nothing in it. */
+    const at = CANVAS.indexOf('if (kept.length === 0')
+    expect(at).toBeGreaterThan(-1)
+    expect(CANVAS.slice(at, at + 300)).toMatch(/clearAssetOverrides\.mutateAsync\(draft\.assetId\)/)
+    /* Only when no template was deliberately chosen — otherwise the
+       reset would also throw away which template the stock follows. */
+    expect(CANVAS.slice(at, at + 300)).toMatch(/&& !activeLayout\?\.id/)
+  })
+})
+
+describe('the page says which layout it is drawing', () => {
+  it('names the template AND whether this stock overrides it', () => {
+    /* Naming only the template is what caused the confusion — the picker
+       said "Default layout" over a page that was nothing like it. Naming
+       only the override would hide which template a reset returns to. */
+    expect(CHIP).toMatch(/data-testid="layout-status-following"/)
+    expect(CHIP).toMatch(/data-testid="layout-status-overridden"/)
+    expect(CHIP).toMatch(/Following \{template\}/)
+    expect(CHIP).toMatch(/not following \{template\}/)
+  })
+
+  it('offers the reset only when there is something to reset', () => {
+    expect(CHIP).toMatch(/\{overridden && onReset && \(/)
+    expect(CHIP).toMatch(/data-testid="layout-status-reset"/)
+  })
+
+  it('falls back to a name rather than showing a blank template', () => {
+    expect(CHIP).toMatch(/templateName \?\? 'Default layout'/)
+  })
+
+  it('is on the page, not only inside the tool that changes it', () => {
+    /* The override state and its reset already existed — buried in the
+       Customize Layout modal, which is the screen arrange mode replaced.
+       A control nobody opens is not a control. */
+    expect(TAB).toMatch(/<LayoutStatusChip/)
+    expect(TAB).toMatch(/overridden=\{hasAssetCustomization\}/)
+    expect(TAB).toMatch(/onReset=\{\(\) => clearAssetOverrides\.mutate\(asset\.id\)\}/)
+  })
+
+  it('does not claim a layout on somebody else research', () => {
+    /* The layout layer is the reader's own; asserting a template over a
+       colleague's view would be false. */
+    const at = TAB.indexOf('<LayoutStatusChip')
+    expect(TAB.slice(Math.max(0, at - 260), at)).toMatch(/researchViewFilter === user\?\.id/)
   })
 })

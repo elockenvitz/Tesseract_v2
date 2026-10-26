@@ -382,6 +382,38 @@ export function useUserAssetPagePreferences(assetId?: string) {
   // Run the pure resolver
   const resolution: LayoutResolutionResult | null = resolverInput ? resolveLayout(resolverInput) : null
 
+  /**
+   * The same page WITHOUT this asset's own overrides — what the template
+   * alone would draw.
+   *
+   * Produced by running the real resolver a second time with the override
+   * arrays emptied, rather than by re-deriving "what the template says"
+   * by hand. A hand-written copy would be a second implementation of the
+   * four-source span fallback and the visibility defaults, and the moment
+   * the two disagreed this would start pruning real settings away as if
+   * they were no-ops — deleting a reader's layout instead of tidying it.
+   *
+   * `layout_id` is deliberately KEPT. Following a non-default template is
+   * a separate choice from overriding one, and stripping it would make
+   * every stock on a chosen template look permanently "customized".
+   */
+  const baselineResolution: LayoutResolutionResult | null = resolverInput
+    ? resolveLayout({
+        ...resolverInput,
+        assetSelection: resolverInput.assetSelection
+          ? { ...resolverInput.assetSelection, field_overrides: null, section_overrides: null }
+          : null,
+      })
+    : null
+
+  /** field_id → what the template alone would give it. */
+  const templateBaselineFields = new Map(
+    (baselineResolution?.resolvedFields ?? []).map(f => [
+      f.field_id,
+      { span: f.span, is_visible: f.is_visible, section_id: f.section_id, display_order: f.display_order },
+    ]),
+  )
+
   // Dev diagnostics — expose on window for programmatic inspection + compact console.debug
   const prevResolutionRef = useRef<string | null>(null)
   useEffect(() => {
@@ -1542,6 +1574,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
     resolvedSectionOverrides,
     sectionsForArranging,
     hasAssetCustomization,
+    templateBaselineFields,
 
     // Loading states
     isLoading: fieldsLoading || sectionsLoading || layoutLoading || (assetId ? assetLayoutLoading : false),
