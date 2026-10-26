@@ -648,16 +648,20 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
             data-testid="arrange-save"
             className="rounded-md bg-primary-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
           >
-            {saving ? 'Saving…' : dirty ? 'Save layout' : 'Done'}
+            {/*
+              Named for what it writes, not for what it is.
+
+              "Save layout" reads as saving THE layout — the shared thing
+              every stock uses — which is the one thing this button does
+              not do. The stock's own name on the button is the cheapest
+              place to say so, because it is read at the moment of the
+              decision rather than three lines above it.
+            */}
+            {saving ? 'Saving…' : dirty ? `Save to ${assetName ?? 'this stock'}` : 'Done'}
           </button>
         </div>
       </div>
 
-      {/*
-        Saving to a template rewrites every stock on it, and the reader is
-        looking at exactly one of them. Said before the press, because
-        afterwards there is no undo — the previous arrangement is gone.
-      */}
 
       {error && (
         <p

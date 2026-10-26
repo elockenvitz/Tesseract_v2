@@ -383,6 +383,17 @@ describe('the layout is arranged on the page, not above it', () => {
     expect(CANVAS).toMatch(/selectLayoutForAsset\.mutateAsync/)
   })
 
+  it('says which stock it is about to write, on the button', () => {
+    /* "Save layout" reads as saving THE layout — the shared thing every
+       stock uses — which is the one thing it does not do. The scope note
+       in the bar says so too, but three lines above the button; the
+       label is what is read at the moment of the press. */
+    expect(CANVAS).toMatch(/`Save to \$\{assetName \?\? 'this stock'\}`/)
+    expect(CANVAS).not.toMatch(/'Save layout'/)
+    expect(CANVAS).toMatch(/data-testid="arrange-scope-note"/)
+    expect(CANVAS).toMatch(/Saves to \{assetName \?\? 'this stock'\} only/)
+  })
+
   it('still stores sections per asset, now that templates are not written here', () => {
     /* The section_config column and the resolver's merge are unaffected —
        a template can still hold sections, it is just no longer written
