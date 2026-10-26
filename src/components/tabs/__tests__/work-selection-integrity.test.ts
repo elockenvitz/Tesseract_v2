@@ -183,3 +183,71 @@ describe('arrival focus is consumed, not replayed', () => {
     expect(TAB).toMatch(/stateToSave = \{[\s\S]{0,600}consumedFocusIntent,/)
   })
 })
+
+describe('the task-notification arrival is consumed too', () => {
+  /*
+   * The third occurrence of one defect class in this file, and the one that
+   * shipped: `asset.focus` and the Process-dashboard deep link were both given
+   * consumed-once keys; this effect was not.
+   *
+   * It read `asset.data.workflowId` / `.taskId` on every run and forced the
+   * sub-page to Work. Tab data is durable and only the active tab renders, so
+   * leaving the asset and returning remounts the page and re-fired it —
+   * overwriting wherever the reader had navigated, and then PERSISTING the
+   * overwrite through the save effect. Measured on a tab opened once from a
+   * Process link: saved `activeSubPage` went `research` -> `workflow` across a
+   * single switch away and back. A reader who had followed one notification
+   * could never leave Work again.
+   */
+  const EFFECT = TAB.match(
+    /const effectiveWorkflowId = taskArrival\?\.workflowId[\s\S]{0,2000}?\}, \[asset\.id, taskArrival, navigationTaskId\]\)/,
+  )?.[0] ?? ''
+
+  it('the effect exists', () => {
+    expect(EFFECT).not.toBe('')
+  })
+
+  it('decides from the shared rule rather than firing unconditionally', () => {
+    expect(EFFECT).toMatch(/shouldApplyFocus\(taskArrival\?\.key \?\? null, saved\?\.consumedTaskArrival/)
+  })
+
+  it('reads the consumed record from durable per-asset storage, not a ref', () => {
+    expect(EFFECT).toMatch(/TabStateManager\.loadTabState\(asset\.id\)/)
+    expect(EFFECT).not.toMatch(/useRef/)
+  })
+
+  it('persists the consumption immediately, not only via the batched save', () => {
+    expect(EFFECT).toMatch(/TabStateManager\.saveTabState\(asset\.id/)
+    expect(EFFECT).toMatch(/consumedTaskArrival: taskArrival\?\.key/)
+  })
+
+  it('guards BEFORE it touches the sub-page, or the overwrite still happens', () => {
+    // Ordering is the whole fix: a guard after `setActiveSubPage` would still
+    // move the reader and only decline to record it.
+    const guardAt = EFFECT.indexOf('shouldApplyFocus(')
+    const writeAt = EFFECT.indexOf("setActiveSubPage('workflow')")
+    expect(guardAt).toBeGreaterThan(-1)
+    expect(writeAt).toBeGreaterThan(-1)
+    expect(guardAt).toBeLessThan(writeAt)
+  })
+
+  it('keys on focusRequestId, so the same notification can be followed twice', () => {
+    expect(TAB).toMatch(/const taskArrival = React\.useMemo\([\s\S]{0,900}asset\.focusRequestId \?\? ''/)
+  })
+
+  it('does not share a key with the Process-dashboard arrival', () => {
+    // One shared key would let whichever effect ran first consume it and
+    // silently skip the other.
+    expect(TAB).toMatch(/consumedTaskArrival/)
+    expect(TAB).toMatch(/consumedWorkArrival/)
+    expect(EFFECT).not.toMatch(/consumedWorkArrival/)
+  })
+
+  it('keeps carrying the consumed id on every later save', () => {
+    expect(TAB).toMatch(/stateToSave = \{[\s\S]{0,800}consumedTaskArrival,/)
+  })
+
+  it('initialises it from this asset\'s own saved record', () => {
+    expect(TAB).toMatch(/consumedTaskArrival[\s\S]{0,200}loadTabState\(asset\.id\)\?\.consumedTaskArrival/)
+  })
+})

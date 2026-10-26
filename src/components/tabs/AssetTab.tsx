@@ -652,6 +652,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    */
   const [consumedArrival, setConsumedArrival] = useState<string | null>(() =>
     TabStateManager.loadTabState(asset.id)?.consumedWorkArrival ?? null)
+  /*
+   * The same thing again, for the task/workflow NOTIFICATION arrival.
+   *
+   * Held separately from `consumedWorkArrival` on purpose. Both effects read
+   * the same tab data, so one shared key would let whichever ran first consume
+   * it and silently skip the other — a fix that swaps this defect for a
+   * quieter one.
+   *
+   * Declared here with the other consumed ids, above the effects, for the
+   * reason the comment above gives: an initialiser that runs during render
+   * cannot reach a `const` still in its temporal dead zone.
+   */
+  const [consumedTaskArrival, setConsumedTaskArrival] = useState<string | null>(() =>
+    TabStateManager.loadTabState(asset.id)?.consumedTaskArrival ?? null)
   const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   // showAssetPriorityDropdown removed — priority selector replaced by state chips
@@ -772,13 +786,74 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
   }, [asset.id, asset.noteId])
 
-  // Handle task assignment navigation from notifications
+  /*
+   * Task-assignment arrival, from a notification. Applied ONCE.
+   *
+   * ── The defect ──────────────────────────────────────────────────────────
+   *
+   * This read `asset.data.workflowId` / `.taskId` on every run and forced the
+   * sub-page to Work. Tab data is durable — the shell merges it into the open
+   * tab and keeps it there — and only the active tab renders, so leaving the
+   * asset and coming back is an unmount and a remount. The effect therefore
+   * re-fired on every return and overwrote wherever the reader had navigated
+   * since; the save effect then persisted the overwrite, so the position was
+   * not merely ignored, it was destroyed.
+   *
+   * Measured on a tab opened once from a Process link: saved `activeSubPage`
+   * went `research` -> `workflow` across a single switch away and back. A
+   * reader who had never used a notification was unaffected; one who had used
+   * one ONCE could never leave Work again.
+   *
+   * This is the third occurrence of one defect class in this file. `asset.focus`
+   * is guarded by `focusIntentKey`/`shouldApplyFocus` + `consumedFocusIntent`,
+   * the Process-dashboard deep link by `arrivalKey`/`shouldApplyArrival` +
+   * `consumedWorkArrival`, and both carry a comment describing exactly this.
+   * This effect simply never got one.
+   *
+   * ── Why the key is built here ───────────────────────────────────────────
+   *
+   * `arrivalKey` wants a `WorkDestination`, and this arrival is not one: it may
+   * carry a task id and no workflow at all, resolving the workflow through
+   * `taskDetails`. The shape is different, so the key is spelled out — same
+   * rule, same `shouldApplyFocus` comparison, different fields.
+   *
+   * `focusRequestId` is part of it, so following the SAME notification twice
+   * is two arrivals and works both times, exactly as `focusIntentKey` reasons
+   * about `req:` keys.
+   */
+  const taskArrival = React.useMemo(() => {
+    /* One cast, in one place. `taskDetails` resolves to `never` under the
+       generated Supabase types, so reading these fields in two places was two
+       type errors rather than one fact; the effect below now reads what this
+       resolved instead of resolving it again. */
+    const details = taskDetails as { workflow_id?: string; stage_id?: string } | null | undefined
+    const workflowId = navigationWorkflowId || details?.workflow_id
+    const stageId = navigationStageId || details?.stage_id
+    if (!workflowId && !navigationTaskId) return null
+    return {
+      workflowId,
+      stageId,
+      key: ['task', navigationTaskId ?? '', workflowId ?? '', stageId ?? '',
+        asset.focusRequestId ?? ''].join('|'),
+    }
+  }, [navigationTaskId, navigationWorkflowId, navigationStageId, taskDetails, asset.focusRequestId])
+
   useEffect(() => {
-    // Use fetched task details as fallback if navigation data is missing
-    const effectiveWorkflowId = navigationWorkflowId || taskDetails?.workflow_id
-    const effectiveStageId = navigationStageId || taskDetails?.stage_id
+    const effectiveWorkflowId = taskArrival?.workflowId
+    const effectiveStageId = taskArrival?.stageId
 
     if (effectiveWorkflowId || navigationTaskId) {
+      /* Read through to storage, not through state: this component is keyed by
+         asset, and the record that outlives the remount is the asset-scoped
+         one. */
+      const saved = TabStateManager.loadTabState(asset.id)
+      if (!shouldApplyFocus(taskArrival?.key ?? null, saved?.consumedTaskArrival ?? null)) return
+
+      setConsumedTaskArrival(taskArrival?.key ?? null)
+      TabStateManager.saveTabState(asset.id, {
+        ...(saved ?? {}),
+        consumedTaskArrival: taskArrival?.key ?? null,
+      })
 
       /* A task notification lands in Work and scrolls to the Process
          section, which is where the task lives now. */
@@ -799,7 +874,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         }
       }
     }
-  }, [asset, navigationStageId, navigationWorkflowId, navigationTaskId, taskDetails])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asset.id, taskArrival, navigationTaskId])
 
   /**
    * Arrival focus, from the Research, Portfolio, Ideas and Decisions lenses.
@@ -1042,10 +1118,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
            here would make every save re-arm the arrival, and returning to
            the tab would yank the reader back to the linked requirement. */
         consumedWorkArrival: consumedArrival,
+        /* And again for the task/workflow notification arrival. Leaving it out
+           here is not a no-op: the record is REPLACED, so the next save would
+           drop it and the next return to the tab would be dragged back to
+           Work — the very defect the key exists to stop. */
+        consumedTaskArrival,
       }
       TabStateManager.saveTabState(asset.id, stateToSave)
     }
-  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, viewingRequirementId, decisionBookId, workItemKey, consumedFocusIntent, consumedArrival, isTabStateInitialized])
+  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, viewingRequirementId, decisionBookId, workItemKey, consumedFocusIntent, consumedArrival, consumedTaskArrival, isTabStateInitialized])
 
   /*
    * The newest execution on this asset that the reader is authorized to see,
