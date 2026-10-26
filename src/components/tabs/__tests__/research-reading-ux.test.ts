@@ -25,7 +25,9 @@ describe('UX1c-1: the four Research modes are clearly labelled', () => {
     // Pin the visible <span> label, not the title="" attribute — the old
     // icon-only buttons already had the titles, so asserting the bare text
     // would pass vacuously. The label lives in a `hidden xl:inline` span.
-    for (const label of ['All sections', 'AI summary', 'History', 'Key references']) {
+    // "All sections" became "Investment Case" in Lane A: it names the thing
+    // being read rather than describing the renderer.
+    for (const label of ['Investment Case', 'AI summary', 'History', 'Key references']) {
       expect(ASSET_TAB, `visible label "${label}" should be rendered`).toContain(`>${label}</span>`)
     }
   })
@@ -42,15 +44,41 @@ describe('UX1c-1: the four Research modes are clearly labelled', () => {
 describe('UX1c-1: the case reading cards use the quiet chrome variant', () => {
   it('ContributionSection accepts and applies a plainChrome variant', () => {
     expect(CONTRIB).toContain('plainChrome')
-    // It gates the coloured 4px accent / amber hover / shadow behind the flag,
-    // so the default (editing + other callers) keeps its existing chrome.
+    // It gates the coloured accent / amber hover / shadow behind the flag, so
+    // the default (editing + other callers) keeps its existing chrome.
     expect(CONTRIB).toMatch(/plainChrome\s*[?]/)
-    expect(CONTRIB).toContain("'border-l-4'")
+    // The accent was a 4px bar when this was written. UX2 Phase 2 made it a
+    // thin 3px rail — `ux2-phase2.test.ts` pins that deliberately, under
+    // "keeps the blue left-accent (elevated: thin rail)". Updated here rather
+    // than left red, because asserting the old width made this suite claim a
+    // regression every run while the real contract was being asserted,
+    // correctly, two files away.
+    expect(CONTRIB).toContain("'border-l-[3px]'")
   })
 
-  it('AssetTab passes plainChrome to both case ContributionSection renders', () => {
-    const count = (ASSET_TAB.match(/plainChrome/g) ?? []).length
-    expect(count).toBeGreaterThanOrEqual(2)
+  it('does NOT pass plainChrome to the case sections — Phase 2 reversed that', () => {
+    /*
+     * This assertion is inverted from the one it replaces, which required
+     * AssetTab to pass `plainChrome` at least twice.
+     *
+     * The two tests contradicted each other and one of them had to be
+     * wrong: `ux2-phase2.test.ts:41` requires AssetTab NOT to contain
+     * `plainChrome` at all, alongside `documentChrome` and
+     * `alwaysShowToolbar`, under "drops the invented document / quiet /
+     * always-on chrome".
+     *
+     * UX2 Phase 2 is the later lane and it won — deliberately. The case
+     * no longer reads as one quiet document; each section is a <Card>
+     * with alternating shade, which `ux2-phase2.test.ts` pins and which
+     * the page actually renders. The quiet variant was the UX1c-1 design
+     * that replaced.
+     *
+     * Kept as an assertion rather than deleted, so a future lane that
+     * reaches for `plainChrome` on the case meets the decision instead of
+     * silently re-opening the argument. The prop itself survives on
+     * ContributionSection for other callers.
+     */
+    expect(ASSET_TAB).not.toContain('plainChrome')
   })
 
   it('does not add a second references or notes surface to the reading view', () => {
