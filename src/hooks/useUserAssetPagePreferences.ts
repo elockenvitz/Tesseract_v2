@@ -15,6 +15,7 @@ import {
   logResolutionDiagnostics,
   warnDataIntegrityIssues,
   fieldConfigMatchesField,
+  overrideDiffersFromBaseline,
   SYSTEM_DEFAULT_FIELD_SLUGS,
   type ResolveLayoutInput,
   type LayoutResolutionResult,
@@ -459,6 +460,27 @@ export function useUserAssetPagePreferences(assetId?: string) {
    */
   const resolvedSectionOverrides: SectionOverride[] = resolution?.resolvedSectionOverrides || []
   const hasAssetCustomization = resolution?.hasAssetCustomization || false
+
+  /**
+   * Does this stock's page actually DIFFER from the template it follows?
+   *
+   * `hasAssetCustomization` answers a narrower question — "is there an
+   * override row with anything in it" — and that is the right question
+   * for a save, which has to write the row either way. It is the wrong
+   * question for a label. Stocks arranged before no-op overrides were
+   * pruned still carry rows that repeat what the template already says,
+   * and calling those "Custom layout" would put a warning and a Reset
+   * button on a page that is drawing its template exactly.
+   *
+   * Following a chosen template is NOT a difference, which is why
+   * `layout_id` is absent here while being present in the baseline: a
+   * stock on a named template is following it, not overriding it.
+   */
+  const overridesTemplate =
+    assetSectionOverrides.length > 0 ||
+    assetFieldOverrides.some(o =>
+      overrideDiffersFromBaseline(o, templateBaselineFields.get(o.field_id)),
+    )
 
   // Map resolved fields to FieldWithPreference (preserving existing interface)
   const fieldsWithPreferences: FieldWithPreference[] = resolution?.resolvedFields || []
@@ -1574,6 +1596,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
     resolvedSectionOverrides,
     sectionsForArranging,
     hasAssetCustomization,
+    overridesTemplate,
     templateBaselineFields,
 
     // Loading states

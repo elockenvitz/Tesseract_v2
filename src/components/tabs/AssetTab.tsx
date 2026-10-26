@@ -1319,7 +1319,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     displayedFieldsBySection,
     sectionsForArranging,
     activeLayout,
-    hasAssetCustomization,
+    overridesTemplate,
     clearAssetOverrides,
     isLoading: layoutLoading
   } = useUserAssetPagePreferences(asset.id)
@@ -4047,7 +4047,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               {researchViewFilter === user?.id && (
                 <LayoutStatusChip
                   templateName={activeLayout?.name ?? null}
-                  overridden={hasAssetCustomization}
+                  isDefaultTemplate={activeLayout?.is_default ?? false}
+                  overridden={overridesTemplate}
                   resetting={clearAssetOverrides.isPending}
                   onReset={() => clearAssetOverrides.mutate(asset.id)}
                 />

@@ -4,6 +4,7 @@ import {
   normalizePresetFieldId,
   extractPresetSlug,
   fieldConfigMatchesField,
+  overrideDiffersFromBaseline,
   toCanonicalPresetId,
   type ResolveLayoutInput,
   type AvailableField,
@@ -357,6 +358,110 @@ describe('resolveLayout', () => {
 // ============================================================================
 // toCanonicalPresetId
 // ============================================================================
+
+describe('overrideDiffersFromBaseline', () => {
+  /*
+   * Two callers depend on this and must not drift apart: the save, which
+   * drops no-op overrides so that setting a page back by hand genuinely
+   * returns it to the template, and the status chip, which decides
+   * whether to label the page "Custom layout".
+   *
+   * Both directions of an error are bad and neither is visible. Too
+   * eager and a real setting is pruned away as tidying — the reader's
+   * layout silently deleted. Too cautious and the stock stays PINNED to
+   * an override that merely agrees with today's template, so a later
+   * template change skips it with nothing to explain why.
+   */
+  const base = { span: 6, is_visible: true, section_id: 'sec-1', display_order: 2 }
+
+  it('keeps an override for a field the template says nothing about', () => {
+    expect(overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true }, undefined)).toBe(true)
+  })
+
+  it('drops an override that repeats the template exactly', () => {
+    expect(
+      overrideDiffersFromBaseline(
+        { field_id: 'f1', is_visible: true, span: 6, section_id: 'sec-1', display_order: 2 },
+        base,
+      ),
+    ).toBe(false)
+  })
+
+  it('drops an override that states nothing but visibility it already had', () => {
+    expect(overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true }, base)).toBe(false)
+  })
+
+  it.each([
+    ['a different span', { span: 4 }],
+    ['being hidden', { is_visible: false }],
+    ['a different section', { section_id: 'sec-2' }],
+    ['a different position', { display_order: 5 }],
+  ])('keeps an override that states %s', (_label, patch) => {
+    expect(
+      overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, ...patch }, base),
+    ).toBe(true)
+  })
+
+  it('reads a legacy width as the span it means', () => {
+    /* The dangerous case. An override written before spans existed says
+       `width: 'half'` and no span at all. Comparing only `span` reads it
+       as saying nothing, prunes it, and silently widens a field the
+       reader narrowed years ago — a data loss with no error. */
+    expect(overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, width: 'half' }, base))
+      .toBe(false)
+    expect(
+      overrideDiffersFromBaseline(
+        { field_id: 'f1', is_visible: true, width: 'half' },
+        { ...base, span: 12 },
+      ),
+    ).toBe(true)
+    expect(
+      overrideDiffersFromBaseline(
+        { field_id: 'f1', is_visible: true, width: 'full' },
+        { ...base, span: 12 },
+      ),
+    ).toBe(false)
+  })
+
+  it('lets a span win over a legacy width on the same override', () => {
+    /* The resolver prefers span over width when both are present, so
+       this must agree with it or the two would disagree about whether a
+       page is customized. */
+    expect(
+      overrideDiffersFromBaseline(
+        { field_id: 'f1', is_visible: true, span: 6, width: 'full' },
+        base,
+      ),
+    ).toBe(false)
+  })
+
+  it('treats a template that never stated a span as the full row', () => {
+    /* A field the template does not size draws full width, so an
+       override saying 12 is agreeing with it, not overriding it. */
+    expect(
+      overrideDiffersFromBaseline(
+        { field_id: 'f1', is_visible: true, span: 12 },
+        { is_visible: true },
+      ),
+    ).toBe(false)
+    expect(
+      overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, span: 6 }, { is_visible: true }),
+    ).toBe(true)
+  })
+
+  it('ignores an unusable span rather than treating it as a difference', () => {
+    /* `field_overrides` is jsonb written by several versions of this
+       app. A 0 or a 7.5 cannot be drawn and the resolver rejects it in
+       favour of the next source, so it is not a real instruction here
+       either. */
+    expect(
+      overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, span: 0 }, base),
+    ).toBe(false)
+    expect(
+      overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, span: 99 }, base),
+    ).toBe(false)
+  })
+})
 
 describe('toCanonicalPresetId', () => {
   it('is the same function as normalizePresetFieldId', () => {

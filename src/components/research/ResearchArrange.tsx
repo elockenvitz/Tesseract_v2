@@ -78,7 +78,12 @@ import {
   spanLabel,
   stepSpan,
 } from '../../lib/research/field-span'
-import { FULL_SPAN, type FieldSpan } from '../../lib/research/layout-resolver'
+import {
+  FULL_SPAN,
+  overrideDiffersFromBaseline,
+  type FieldSpan,
+} from '../../lib/research/layout-resolver'
+import { LayoutStatusChip } from './LayoutStatusChip'
 
 interface ArrangeState {
   active: boolean
@@ -328,6 +333,7 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
     selectLayoutForAsset,
     clearAssetOverrides,
     templateBaselineFields,
+    overridesTemplate,
   } = useUserAssetPagePreferences(draft?.assetId)
   /* Templates are a different hook. Only the LIST is needed here, to fill
      the picker — arrange mode chooses which template this stock follows,
@@ -455,17 +461,9 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
      * resolver run with the overrides stripped — not a second opinion
      * about what the template means.
      */
-    const kept = Array.from(byId.values()).filter(o => {
-      const base = templateBaselineFields.get(o.field_id)
-      if (!base) return true
-      const differs = (a: unknown, b: unknown) => a !== undefined && a !== b
-      return (
-        differs(o.span, base.span) ||
-        differs(o.is_visible, base.is_visible) ||
-        differs(o.section_id, base.section_id) ||
-        differs(o.display_order, base.display_order)
-      )
-    })
+    const kept = Array.from(byId.values()).filter(o =>
+      overrideDiffersFromBaseline(o, templateBaselineFields.get(o.field_id)),
+    )
 
     /*
      * Nothing left to say, and no deliberately chosen template: remove the
@@ -563,6 +561,24 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/*
+            The same chip the Research toolbar shows, in the same words.
+
+            Arrange mode used to state the layout layer in its own
+            vocabulary — a picker naming a template, and a sentence about
+            scope — while the toolbar outside used another. Two names for
+            one state is how the original confusion started, so the state
+            is reported by one component in both places. Read-only here:
+            Reset is a write, and the way out of an override while
+            arranging is the picker beside it plus Save, not a second
+            button that discards what you are in the middle of doing.
+          */}
+          <LayoutStatusChip
+            templateName={activeLayout?.name ?? null}
+            isDefaultTemplate={activeLayout?.is_default ?? false}
+            overridden={overridesTemplate}
+          />
+
           {/*
             Which template this stock is on.
 

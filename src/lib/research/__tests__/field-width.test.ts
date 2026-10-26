@@ -32,7 +32,9 @@ const CANVAS = strip(read('src/components/research/ResearchArrange.tsx'))
 const SPANLIB = strip(read('src/lib/research/field-span.ts'))
 const HOOK = strip(read('src/hooks/useUserAssetPagePreferences.ts'))
 const MANAGER = strip(read('src/components/templates/ResearchFieldsManager.tsx'))
-const CHIP = strip(read('src/components/research/LayoutStatusChip.tsx'))
+/* LayoutStatusChip.tsx is not read here any more: what it renders in
+   each state is asserted by rendering it, in
+   `src/components/research/__tests__/layout-status-chip.test.tsx`. */
 
 describe('a field carries its own width', () => {
   it('defaults to a full row, so layouts saved before spans are unchanged', () => {
@@ -672,20 +674,15 @@ describe('an override that says nothing is not an override', () => {
   })
 
   it('drops a field whose override matches the template', () => {
+    /* What counts as a difference — unset keys, legacy widths, a span
+       the template never stated — is asserted against the real function
+       in `layout-resolver.test.ts`. Pinned here: that the save asks it,
+       and asks it about the baseline rather than about anything else. */
     const at = CANVAS.indexOf('const kept =')
-    const window = CANVAS.slice(at, at + 600)
     expect(at).toBeGreaterThan(-1)
-    expect(window).toMatch(/templateBaselineFields\.get\(o\.field_id\)/)
-    expect(window).toMatch(/differs\(o\.span, base\.span\)/)
-    expect(window).toMatch(/differs\(o\.is_visible, base\.is_visible\)/)
-  })
-
-  it('treats an unset key as "no opinion", not as a difference', () => {
-    /* `touch()` creates an override carrying only the keys that were
-       actually changed. Comparing an undefined key against a real
-       baseline value would mark every such override as different and
-       prune nothing. */
-    expect(CANVAS).toMatch(/a !== undefined && a !== b/)
+    expect(CANVAS.slice(at, at + 300)).toMatch(
+      /overrideDiffersFromBaseline\(o, templateBaselineFields\.get\(o\.field_id\)\)/,
+    )
   })
 
   it('removes the row when nothing is left to say', () => {
@@ -701,33 +698,38 @@ describe('an override that says nothing is not an override', () => {
   })
 })
 
+/*
+ * What the chip RENDERS in each state is asserted by rendering it, in
+ * `src/components/research/__tests__/layout-status-chip.test.tsx`. Only
+ * the wiring is pinned here — which state each caller feeds it, which
+ * source text is the only place that shows.
+ */
 describe('the page says which layout it is drawing', () => {
-  it('names the template AND whether this stock overrides it', () => {
-    /* Naming only the template is what caused the confusion — the picker
-       said "Default layout" over a page that was nothing like it. Naming
-       only the override would hide which template a reset returns to. */
-    expect(CHIP).toMatch(/data-testid="layout-status-following"/)
-    expect(CHIP).toMatch(/data-testid="layout-status-overridden"/)
-    expect(CHIP).toMatch(/Following \{template\}/)
-    expect(CHIP).toMatch(/not following \{template\}/)
-  })
-
-  it('offers the reset only when there is something to reset', () => {
-    expect(CHIP).toMatch(/\{overridden && onReset && \(/)
-    expect(CHIP).toMatch(/data-testid="layout-status-reset"/)
-  })
-
-  it('falls back to a name rather than showing a blank template', () => {
-    expect(CHIP).toMatch(/templateName \?\? 'Default layout'/)
-  })
-
   it('is on the page, not only inside the tool that changes it', () => {
     /* The override state and its reset already existed — buried in the
        Customize Layout modal, which is the screen arrange mode replaced.
        A control nobody opens is not a control. */
     expect(TAB).toMatch(/<LayoutStatusChip/)
-    expect(TAB).toMatch(/overridden=\{hasAssetCustomization\}/)
     expect(TAB).toMatch(/onReset=\{\(\) => clearAssetOverrides\.mutate\(asset\.id\)\}/)
+  })
+
+  it('asks whether the page DIFFERS from its template, not whether a row exists', () => {
+    /* `hasAssetCustomization` is true for a row that merely repeats what
+       the template says — the state every stock arranged before no-op
+       pruning is in. Labelling those "Custom layout" puts a warning and
+       a Reset button on a page that is drawing its template exactly. */
+    const chipAt = TAB.indexOf('<LayoutStatusChip')
+    const chip = TAB.slice(chipAt, chipAt + 400)
+    expect(chip).toMatch(/overridden=\{overridesTemplate\}/)
+    expect(chip).not.toMatch(/overridden=\{hasAssetCustomization\}/)
+  })
+
+  it('tells the chip whether the template is the reader own default', () => {
+    /* Without this the chip cannot stay quiet: following your default is
+       the ordinary state and earns no label, while following some other
+       template is worth naming. */
+    const chipAt = TAB.indexOf('<LayoutStatusChip')
+    expect(TAB.slice(chipAt, chipAt + 400)).toMatch(/isDefaultTemplate=\{activeLayout\?\.is_default/)
   })
 
   it('does not claim a layout on somebody else research', () => {
@@ -735,5 +737,39 @@ describe('the page says which layout it is drawing', () => {
        colleague's view would be false. */
     const at = TAB.indexOf('<LayoutStatusChip')
     expect(TAB.slice(Math.max(0, at - 260), at)).toMatch(/researchViewFilter === user\?\.id/)
+  })
+
+  it('reports the same state inside arrange mode, in the same words', () => {
+    /* Arrange mode used to state the layout layer in its own vocabulary
+       while the toolbar outside used another. Two names for one state is
+       how the original confusion started. */
+    expect(CANVAS).toMatch(/<LayoutStatusChip/)
+    const at = CANVAS.indexOf('<LayoutStatusChip')
+    const chip = CANVAS.slice(at, at + 300)
+    expect(chip).toMatch(/overridden=\{overridesTemplate\}/)
+    /* Read-only: Reset is a write, and discarding the override
+       mid-arrangement would throw away the draft in progress. */
+    expect(chip).not.toMatch(/onReset/)
+  })
+
+  it('derives "differs" from the one shared rule, in both the chip and the save', () => {
+    /* The save prunes no-op overrides and the chip decides whether any
+       remain. Two implementations of "is this a difference" would
+       eventually disagree, and then a stock would either reset itself on
+       save while claiming to be custom, or claim to be custom with
+       nothing custom about it. */
+    expect(RESOLVER).toMatch(/export function overrideDiffersFromBaseline\(/)
+    expect(HOOK).toMatch(/overrideDiffersFromBaseline\(o, templateBaselineFields\.get\(o\.field_id\)\)/)
+    expect(CANVAS).toMatch(/overrideDiffersFromBaseline\(o, templateBaselineFields\.get\(o\.field_id\)\)/)
+  })
+
+  it('does not count a chosen template as an override', () => {
+    /* `layout_id` is kept in the BASELINE (so a stock on a template is
+       measured against that template) and absent from the difference
+       test (so following one is not itself a difference). Reversing
+       either makes every stock on a named template read "Custom". */
+    const at = HOOK.indexOf('const overridesTemplate')
+    expect(at).toBeGreaterThan(-1)
+    expect(HOOK.slice(at, at + 400)).not.toMatch(/layout_id/)
   })
 })

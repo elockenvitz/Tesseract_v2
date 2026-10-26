@@ -104,6 +104,55 @@ export function asSpan(value: unknown): FieldSpan | null {
   return value as FieldSpan
 }
 
+/**
+ * What a per-asset override must differ from to be worth keeping.
+ *
+ * One resolved field as the template alone would have drawn it. Produced
+ * by re-running the resolver with the asset layer stripped — never by
+ * re-deriving what a template means, because a second implementation of
+ * the span fallback would eventually disagree with the first and prune a
+ * real setting away as a no-op.
+ */
+export interface FieldBaseline {
+  span?: number
+  is_visible: boolean
+  section_id?: string
+  display_order?: number | null
+}
+
+/**
+ * Does this override actually say anything the template did not?
+ *
+ * Two callers need the same answer and must not drift apart: the save,
+ * which drops no-op overrides so setting a page back by hand returns it
+ * to the template, and the status chip, which says whether the page is
+ * following its template. If these disagreed, a stock would be labelled
+ * "Custom layout" with nothing custom about it, or reset itself on save
+ * while still claiming to be custom.
+ */
+export function overrideDiffersFromBaseline(
+  o: FieldOverride,
+  base: FieldBaseline | undefined,
+): boolean {
+  /* No baseline means the template says nothing about this field at all,
+     so anything the asset says about it is a real instruction. */
+  if (!base) return true
+
+  /*
+     A `span` and a legacy `width` are one instruction in two
+     vocabularies. Comparing only `span` reads an override that says
+     `width: 'half'` as saying nothing — so the save would prune it and
+     silently widen a field the reader had narrowed before spans existed.
+  */
+  const stated = asSpan(o.span) ?? (o.width !== undefined ? spanFromWidth(o.width) : undefined)
+  if (stated !== undefined && stated !== (asSpan(base.span) ?? FULL_SPAN)) return true
+
+  if (o.is_visible !== base.is_visible) return true
+  if (o.section_id !== undefined && o.section_id !== base.section_id) return true
+  if (o.display_order !== undefined && o.display_order !== base.display_order) return true
+  return false
+}
+
 export interface FieldConfigItem {
   field_id: string
   section_id: string
