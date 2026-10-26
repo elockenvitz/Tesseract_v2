@@ -30,6 +30,12 @@ export interface SavedLayout {
   description: string | null
   is_default: boolean
   field_config: FieldConfigItem[]
+  /**
+   * The template's sections: renames, order, hidden flags, added sections.
+   * Null on every layout saved before the column existed, which reads the
+   * same as "this template says nothing about sections".
+   */
+  section_config?: SectionOverride[] | null
   created_at: string
   updated_at: string
 }
@@ -354,14 +360,17 @@ export function useUserAssetPagePreferences(assetId?: string) {
             display_order: s.display_order,
             is_system: s.is_system
           })),
+          /* section_config travels with every template here. Omitting it
+             at any one of these mapping sites would make a template's
+             section names appear on some code paths and not others. */
           userDefaultLayout: defaultLayout
-            ? { id: defaultLayout.id, name: defaultLayout.name, field_config: defaultLayout.field_config, is_default: defaultLayout.is_default }
+            ? { id: defaultLayout.id, name: defaultLayout.name, field_config: defaultLayout.field_config, section_config: defaultLayout.section_config ?? null, is_default: defaultLayout.is_default }
             : null,
           assetSelection: assetLayoutSelection
             ? {
                 layout_id: assetLayoutSelection.layout_id,
                 layout: assetLayoutSelection.layout
-                  ? { id: assetLayoutSelection.layout.id, name: assetLayoutSelection.layout.name, field_config: assetLayoutSelection.layout.field_config, is_default: assetLayoutSelection.layout.is_default }
+                  ? { id: assetLayoutSelection.layout.id, name: assetLayoutSelection.layout.name, field_config: assetLayoutSelection.layout.field_config, section_config: assetLayoutSelection.layout.section_config ?? null, is_default: assetLayoutSelection.layout.is_default }
                   : null,
                 field_overrides: assetLayoutSelection.field_overrides || null,
                 section_overrides: assetLayoutSelection.section_overrides || null
@@ -399,7 +408,19 @@ export function useUserAssetPagePreferences(assetId?: string) {
     : defaultLayout
 
   const assetFieldOverrides = resolution?.assetFieldOverrides || []
+  /**
+   * What this ASSET stores, unmerged — the array a save must hand back,
+   * because the RPC replaces whatever it is given.
+   */
   const assetSectionOverrides: SectionOverride[] = resolution?.assetSectionOverrides || []
+  /**
+   * What each section RESOLVES to: the template's `section_config` with
+   * this asset's overrides merged over it, per key. Everything that
+   * renders a section name, order or hidden flag reads this one — reading
+   * the asset's own array showed a section's original name whenever the
+   * rename lived on the template rather than on the asset.
+   */
+  const resolvedSectionOverrides: SectionOverride[] = resolution?.resolvedSectionOverrides || []
   const hasAssetCustomization = resolution?.hasAssetCustomization || false
 
   // Map resolved fields to FieldWithPreference (preserving existing interface)
@@ -410,8 +431,8 @@ export function useUserAssetPagePreferences(assetId?: string) {
     const section = (availableFields || []).find(f => f.id === field.field_id)?.research_sections as any
     const sectionDisplayOrder = section?.display_order ?? 999
 
-    // Check for section override
-    const sectionOverride = assetSectionOverrides.find(o => o.section_id === field.section_id)
+    // What this section resolves to: template section_config, then this asset's
+    const sectionOverride = resolvedSectionOverrides.find(o => o.section_id === field.section_id)
 
     if (!acc[field.section_id]) {
       acc[field.section_id] = {
@@ -445,7 +466,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
   if (allSections) {
     for (const section of allSections) {
       if (!fieldsBySectionMap[section.id]) {
-        const sectionOverride = assetSectionOverrides.find(o => o.section_id === section.id)
+        const sectionOverride = resolvedSectionOverrides.find(o => o.section_id === section.id)
         const isCustomSection = section.is_system === false
         const isAddedForAsset = sectionOverride?.is_added === true
 
@@ -1465,6 +1486,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
     assetLayoutSelection,
     assetFieldOverrides,
     assetSectionOverrides,
+    resolvedSectionOverrides,
     hasAssetCustomization,
 
     // Loading states
@@ -1721,11 +1743,14 @@ export function useUserAssetPageLayouts() {
       name,
       description,
       fieldConfig,
+      sectionConfig,
       isDefault = false
     }: {
       name: string
       description?: string
       fieldConfig: FieldConfigItem[]
+      /** The template's sections. Omitted means "says nothing about them". */
+      sectionConfig?: SectionOverride[]
       isDefault?: boolean
     }) => {
       if (!user?.id) throw new Error('Not authenticated')
@@ -1745,7 +1770,11 @@ export function useUserAssetPageLayouts() {
           name,
           description: description || null,
           is_default: isDefault,
-          field_config: fieldConfig
+          field_config: fieldConfig,
+          /* null, not [], when the caller says nothing: an empty array is
+             a template asserting it has no sections, which would hide
+             every section rather than deferring to the defaults. */
+          section_config: sectionConfig ?? null
         })
         .select()
         .single()
@@ -1810,12 +1839,15 @@ export function useUserAssetPageLayouts() {
       name,
       description,
       fieldConfig,
+      sectionConfig,
       isDefault
     }: {
       layoutId: string
       name?: string
       description?: string
       fieldConfig?: FieldConfigItem[]
+      /** Undefined leaves the stored sections alone; it does not clear them. */
+      sectionConfig?: SectionOverride[]
       isDefault?: boolean
     }) => {
       if (!user?.id) throw new Error('Not authenticated')
@@ -1832,6 +1864,7 @@ export function useUserAssetPageLayouts() {
       if (name !== undefined) updates.name = name
       if (description !== undefined) updates.description = description
       if (fieldConfig !== undefined) updates.field_config = fieldConfig
+      if (sectionConfig !== undefined) updates.section_config = sectionConfig
       if (isDefault !== undefined) updates.is_default = isDefault
 
       const { error } = await supabase
@@ -1841,7 +1874,7 @@ export function useUserAssetPageLayouts() {
 
       if (error) throw error
     },
-    onMutate: async ({ layoutId, name, description, fieldConfig, isDefault }) => {
+    onMutate: async ({ layoutId, name, description, fieldConfig, sectionConfig, isDefault }) => {
       await queryClient.cancelQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
       const previousLayouts = queryClient.getQueryData(['user-asset-page-layouts', user?.id])
 
@@ -1857,6 +1890,7 @@ export function useUserAssetPageLayouts() {
             ...(name !== undefined && { name }),
             ...(description !== undefined && { description }),
             ...(fieldConfig !== undefined && { field_config: fieldConfig }),
+            ...(sectionConfig !== undefined && { section_config: sectionConfig }),
             ...(isDefault !== undefined && { is_default: isDefault }),
             updated_at: new Date().toISOString()
           }

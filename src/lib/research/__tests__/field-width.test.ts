@@ -329,6 +329,102 @@ describe('the layout is arranged on the page, not above it', () => {
     expect(CANVAS).toMatch(/if \(!arrangeable\) \{/)
   })
 
+  it('stops overriding this asset once the arrangement is in a template', () => {
+    /*
+     * THE BUG, found by saving a template in the running app and watching
+     * the page refuse to change.
+     *
+     * Per-asset overrides BEAT the template — that is what "this stock
+     * only" means. So writing an arrangement to a template without
+     * clearing them left the one stock you were looking at as the one that
+     * did not follow it, and its overrides were now a byte-for-byte
+     * duplicate of the template, pinning it there permanently.
+     *
+     * Safe to clear only because a template can now hold everything the
+     * per-asset layer holds — visibility, section, order, span, and the
+     * sections themselves. Nothing is dropped; it moved up a level.
+     */
+    expect(CANVAS).toMatch(/const stopOverridingLocally = async \(\) => \{/)
+    expect(CANVAS).toMatch(/clearAssetOverrides\.mutateAsync\(draft\.assetId\)/)
+    const toTemplate = CANVAS.indexOf('const saveToTemplate')
+    expect(CANVAS.slice(toTemplate, toTemplate + 420)).toMatch(/await stopOverridingLocally\(\)/)
+    const toNew = CANVAS.indexOf('const saveAsNewTemplate')
+    expect(CANVAS.slice(toNew, toNew + 900)).toMatch(/await stopOverridingLocally\(\)/)
+  })
+
+  it('switches the asset onto a new template before clearing its overrides', () => {
+    /* `clearAssetOverrides` DELETES the whole selection row when it
+       carries no layout_id, so clearing first would take the new template
+       choice with it and leave the asset on the default. */
+    const at = CANVAS.indexOf('const saveAsNewTemplate')
+    const body = CANVAS.slice(at, at + 1200)
+    expect(body.indexOf('selectLayoutForAsset.mutateAsync'))
+      .toBeLessThan(body.indexOf('stopOverridingLocally()'))
+  })
+
+  it('tells the reader a template save reaches every other stock', () => {
+    /* There is no undo — the previous arrangement is gone — so this is
+       said before the press, not after. */
+    expect(CANVAS).toMatch(/data-testid="arrange-scope-warning"/)
+    expect(CANVAS).toMatch(/Every stock using/)
+  })
+
+  it('writes a template from the page, not by patching the stored config', () => {
+    /* The stored config can be missing fields the page is showing from
+       defaults; patching it would silently drop them. */
+    expect(CANVAS).toMatch(/const templateConfigFromPage = \(\) => \{/)
+    expect(CANVAS).toMatch(/displayedFieldsBySection \?\? \[\]\)\.flatMap/)
+  })
+
+  it('carries sections into a template, not just fields', () => {
+    /* The whole point of the section_config column: renaming a section on
+       one stock could never become part of a template before, because a
+       template had nowhere to put it. */
+    expect(CANVAS).toMatch(/sectionConfig: resolvedSectionOverrides/)
+    expect(RESOLVER).toMatch(/section_config\?: SectionOverride\[\] \| null/)
+  })
+
+  it('merges template sections under the asset, per key', () => {
+    /*
+     * Per KEY, not per section: an asset that renames a section must not
+     * thereby discard the template's ORDER for it. And an override row
+     * carrying `name_override: undefined` would erase the template's name
+     * while claiming to say nothing, so undefined values are stripped
+     * before the merge.
+     */
+    expect(RESOLVER).toMatch(/Object\.entries\(so\)\.filter\(\(\[, v\]\) => v !== undefined\)/)
+    expect(RESOLVER).toMatch(/\.\.\.base,\s*\.\.\.defined,/)
+  })
+
+  it('keeps the asset layer unmerged for saving back', () => {
+    /* The RPC replaces the array it is handed, so handing back the MERGED
+       view would copy the template's sections down onto the asset and
+       freeze them there — the same shadowing bug as the spans, one level
+       up. */
+    expect(RESOLVER).toMatch(/assetSectionOverrides,/)
+    expect(RESOLVER).toMatch(/resolvedSectionOverrides: Array\.from\(sectionOverrideMap\.values\(\)\)/)
+    expect(CANVAS).toMatch(/sectionOverrides: assetSectionOverrides/)
+  })
+
+  it('adds and removes fields where you can see the page', () => {
+    /* Taking a field off the page is decided while looking at the page.
+       Both write the same `is_visible` the field customizer writes, so the
+       two screens cannot disagree about what is on a page. */
+    expect(CANVAS).toMatch(/data-testid=\{`arrange-remove-\$\{fieldId\}`\}/)
+    expect(CANVAS).toMatch(/data-testid="arrange-add-field"/)
+    expect(CANVAS).toMatch(/draft\?\.visible\.forEach\(\(v, fieldId\) => \{ touch\(fieldId\)\.is_visible = v \}\)/)
+  })
+
+  it('hands arrange mode the hidden fields so one can be put back', () => {
+    /* A field filtered out before the wrapper cannot be re-mounted by
+       "Add field" at all. The filter stays for the normal page and opens
+       up only while arranging; `ArrangeableField` — the one place that
+       knows both the saved state AND the draft — decides what renders. */
+    expect(TAB).toMatch(/\.filter\(f => f\.is_visible \|\| arrangingLayout\)/)
+    expect(TAB).toMatch(/savedVisible=\{field\.is_visible\}/)
+    expect(CANVAS).toMatch(/!arrange\.visibleOf\(fieldId, savedVisible\)/)
+  })
+
   it('says a failed save failed', () => {
     /* The RPC raises CONFLICT when the layout changed in another tab;
        closing on that would look like success. */

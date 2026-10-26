@@ -139,6 +139,20 @@ export interface LayoutTemplate {
   id: string
   name: string
   field_config: FieldConfigItem[]
+  /**
+   * The template's own view of its SECTIONS: renames, order, hidden flags,
+   * and sections the user added.
+   *
+   * `field_config` places each field into a section, so a template has
+   * always carried which fields exist and how they are laid out. What it
+   * could not carry was anything about the sections themselves — that
+   * lived only in the per-asset `section_overrides`, so renaming a section
+   * on one stock could never become part of a template.
+   *
+   * Absent on every layout saved before the column existed, which reads
+   * identically to "this template says nothing about sections".
+   */
+  section_config?: SectionOverride[] | null
   is_default: boolean
 }
 
@@ -231,8 +245,23 @@ export interface LayoutResolutionResult {
   hasAssetCustomization: boolean
   /** The field overrides applied for this asset */
   assetFieldOverrides: FieldOverride[]
-  /** The section overrides applied for this asset */
+  /**
+   * The section overrides stored against THIS ASSET, unmerged.
+   *
+   * This is what a save must hand back: the RPC replaces the array it is
+   * given, so writing the merged view would copy the template's sections
+   * down onto the asset and freeze them there.
+   */
   assetSectionOverrides: SectionOverride[]
+  /**
+   * What each section actually resolves to — the template's section_config
+   * with this asset's overrides merged over it, per key.
+   *
+   * This is the one to RENDER from. Reading `assetSectionOverrides`
+   * directly shows a section's template name as though no one had renamed
+   * it, because the asset layer alone does not mention it.
+   */
+  resolvedSectionOverrides: SectionOverride[]
   /** Per-field resolution decisions (for diagnostics) */
   decisions: ResolutionDecision[]
   /** The final resolved fields */
@@ -388,9 +417,33 @@ export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult
     fieldOverrideMap.set(fo.field_id, fo)
   }
 
+  /*
+   * Sections resolve in two layers, the same way fields do: what the
+   * TEMPLATE says, then what this ASSET says on top of it.
+   *
+   * Merged per key rather than per section, so an asset that renames a
+   * section does not thereby discard the template's order for it. Spreading
+   * the template first and the asset second is what gives the asset the
+   * last word on any key it actually sets — and `undefined` values are
+   * stripped from the asset layer, because an override row carrying
+   * `name_override: undefined` would otherwise erase the template's name
+   * while claiming to say nothing.
+   */
+  const templateSectionConfig = activeTemplate?.section_config ?? []
   const sectionOverrideMap = new Map<string, SectionOverride>()
+  for (const so of templateSectionConfig) {
+    sectionOverrideMap.set(so.section_id, { ...so })
+  }
   for (const so of assetSectionOverrides) {
-    sectionOverrideMap.set(so.section_id, so)
+    const defined = Object.fromEntries(
+      Object.entries(so).filter(([, v]) => v !== undefined),
+    ) as Partial<SectionOverride>
+    const base = sectionOverrideMap.get(so.section_id)
+    sectionOverrideMap.set(so.section_id, {
+      ...base,
+      ...defined,
+      section_id: so.section_id,
+    })
   }
 
   // Section lookup
@@ -513,6 +566,7 @@ export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult
     hasAssetCustomization,
     assetFieldOverrides,
     assetSectionOverrides,
+    resolvedSectionOverrides: Array.from(sectionOverrideMap.values()),
     decisions,
     resolvedFields
   }

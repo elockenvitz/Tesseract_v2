@@ -4449,8 +4449,18 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       fieldIds={section.fields.filter(f => f.is_visible).map(f => f.field_id)}
                       className="grid grid-cols-1 gap-3 border-t border-gray-100 px-5 py-2 xl:grid-cols-12 dark:border-gray-800"
                     >
+                      {/*
+                        While arranging, the HIDDEN fields are handed down
+                        too, so "Add field" can put one back without this
+                        map having to re-run against different data.
+                        `ArrangeableField` drops them: it is the one place
+                        that knows both what the layout saved and what the
+                        draft has changed, and a filter here could only see
+                        the first. Outside arrange mode this is exactly the
+                        `is_visible` filter it always was.
+                      */}
                       {section.fields
-                        .filter(f => f.is_visible)
+                        .filter(f => f.is_visible || arrangingLayout)
                         .map(field => {
                           // Render field based on its type
                           const fieldType = field.field_type
@@ -4631,6 +4641,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               sectionId={section.section_id}
                               sectionSlug={section.section_slug}
                               savedSpan={field.span}
+                              savedVisible={field.is_visible}
                             >
                               {node}
                             </ArrangeableField>
