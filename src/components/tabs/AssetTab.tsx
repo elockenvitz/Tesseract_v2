@@ -4498,9 +4498,30 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 )
               }
 
-              // Key References section — skip here, shown in references view tab
+              /*
+                Key References — its CONTENTS live in the Key references
+                view tab, so reading draws nothing here.
+
+                Arranging still draws the header. The section itself is
+                real: it can be renamed, reordered against its neighbours
+                and hidden like any other, and skipping it outright meant
+                the one section a reader could not manage was the one
+                they had to leave the page to see. The body says where
+                its contents are, so an empty card does not read as a
+                section that lost its fields.
+              */
               if (section.section_slug === 'supporting_docs') {
-                return null
+                if (!arrangingLayout) return null
+                return (
+                  <Card key={section.section_id} padding="none" className={sectionShade}>
+                    {arrangeSectionHeader(section, sectionIdx)}
+                    <p className="px-5 py-3 text-xs text-gray-500 dark:text-gray-400">
+                      Shown under <span className="font-medium">Key references</span>. Its
+                      position, name and visibility are arranged here; the references
+                      themselves are added there.
+                    </p>
+                  </Card>
+                )
               }
 
               // Generic Section - for all other section types

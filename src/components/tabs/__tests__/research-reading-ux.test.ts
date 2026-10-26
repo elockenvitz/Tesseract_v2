@@ -42,11 +42,22 @@ describe('UX1c-1: the four Research modes are clearly labelled', () => {
 })
 
 describe('UX1c-1: the case reading cards use the quiet chrome variant', () => {
-  it('ContributionSection accepts and applies a plainChrome variant', () => {
-    expect(CONTRIB).toContain('plainChrome')
-    // It gates the coloured accent / amber hover / shadow behind the flag, so
-    // the default (editing + other callers) keeps its existing chrome.
-    expect(CONTRIB).toMatch(/plainChrome\s*[?]/)
+  it('has no quiet-chrome variant left to take', () => {
+    /*
+     * This required ContributionSection to ACCEPT and apply
+     * `plainChrome`. The prop is gone: UX2 Phase 2 reversed the design
+     * it existed for, no caller was left, and a presentational branch
+     * nobody takes is a third rendering path to keep correct through
+     * every later change, for no screen.
+     *
+     * Inverted rather than deleted so the removal is deliberate and
+     * stays deliberate — `ux2-phase2.test.ts` already forbids AssetTab
+     * from passing it, and this forbids the component from offering it.
+     */
+    expect(CONTRIB).not.toContain('plainChrome')
+  })
+
+  it('keeps the accent rail on the reading card', () => {
     // The accent was a 4px bar when this was written. UX2 Phase 2 made it a
     // thin 3px rail — `ux2-phase2.test.ts` pins that deliberately, under
     // "keeps the blue left-accent (elevated: thin rail)". Updated here rather
@@ -75,10 +86,52 @@ describe('UX1c-1: the case reading cards use the quiet chrome variant', () => {
      *
      * Kept as an assertion rather than deleted, so a future lane that
      * reaches for `plainChrome` on the case meets the decision instead of
-     * silently re-opening the argument. The prop itself survives on
-     * ContributionSection for other callers.
+     * silently re-opening the argument. The prop has since been removed
+     * from ContributionSection too — see above.
      */
     expect(ASSET_TAB).not.toContain('plainChrome')
+  })
+})
+
+describe('the "Show more" fold answers the width the card actually has', () => {
+  it('re-measures when the element resizes, not only when the text changes', () => {
+    /*
+     * The effect ran on `[content]` alone, so the fold was decided once
+     * at mount and then kept. Prose gets TALLER as its column narrows —
+     * Investment Thesis measures 176px at a half and 309px at a quarter
+     * — so once the Research page let a reader change a field's width,
+     * every fold on the page was answering a question about a width
+     * that no longer existed: a field widened to full kept a fold it no
+     * longer needed, one narrowed lost the fold it had just earned.
+     */
+    expect(CONTRIB).toMatch(/new ResizeObserver\(measure\)/)
+    expect(CONTRIB).toMatch(/observer\.observe\(el\)/)
+    expect(CONTRIB).toMatch(/observer\.disconnect\(\)/)
+  })
+
+  it('degrades rather than throwing where ResizeObserver does not exist', () => {
+    /* jsdom and older browsers. The first measurement still runs; only
+       the re-measurement is skipped, which is the old behaviour. */
+    expect(CONTRIB).toMatch(/typeof ResizeObserver === 'undefined'/)
+  })
+
+  it('clamps at the height it measured, not at a second literal', () => {
+    /* It was a hardcoded `max-h-[240px]` beside a `COLLAPSED_MAX_HEIGHT
+       = 240` — two sources of truth for one number, where changing
+       either alone makes the page clamp at a height it never decided on
+       and puts the fade and the button over content that was not cut. */
+    expect(CONTRIB).toMatch(/style=\{!expanded && needsCollapse \? \{ maxHeight \} : undefined\}/)
+    expect(CONTRIB).not.toContain('max-h-[240px]')
+  })
+
+  it('means ten lines by "ten lines"', () => {
+    /* 240px was ten lines only at the font size it was written against.
+       The limit now comes off the element's own computed line-height, so
+       it follows the prose styles and the reader's browser font size;
+       the pixel value survives only as the fallback. */
+    expect(CONTRIB).toMatch(/COLLAPSED_LINES = 10/)
+    expect(CONTRIB).toMatch(/lineHeight \* COLLAPSED_LINES/)
+    expect(CONTRIB).toMatch(/Number\.isFinite\(lineHeight\) && lineHeight > 0/)
   })
 
   it('does not add a second references or notes surface to the reading view', () => {

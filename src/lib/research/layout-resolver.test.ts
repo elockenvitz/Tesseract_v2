@@ -5,6 +5,7 @@ import {
   extractPresetSlug,
   fieldConfigMatchesField,
   overrideDiffersFromBaseline,
+  reorderedSectionOverrides,
   toCanonicalPresetId,
   type ResolveLayoutInput,
   type AvailableField,
@@ -460,6 +461,139 @@ describe('overrideDiffersFromBaseline', () => {
     expect(
       overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, span: 99 }, base),
     ).toBe(false)
+  })
+})
+
+describe('reorderedSectionOverrides', () => {
+  /*
+   * `display_order` is absolute, so a reorder has to number every
+   * section. Right while the order differs from the template's; wrong
+   * once it does not, because then the stock carries explicit positions
+   * that merely repeat the template and will silently refuse to follow
+   * it when it changes.
+   */
+  const baseline: Record<string, number> = { a: 0, b: 1, c: 2 }
+  const baselineOrderOf = (id: string) => baseline[id] ?? null
+
+  it('numbers every section when the order really differs', () => {
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['b', 'a', 'c'],
+        currentOverrides: [],
+        baselineOrderOf,
+      }),
+    ).toEqual([
+      { section_id: 'b', display_order: 0 },
+      { section_id: 'a', display_order: 1 },
+      { section_id: 'c', display_order: 2 },
+    ])
+  })
+
+  it('writes nothing at all when the order is already the template order', () => {
+    /* The nudge-down-then-back-up case. This used to leave one explicit
+       position per section behind, pinning the stock forever. */
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['a', 'b', 'c'],
+        currentOverrides: [
+          { section_id: 'a', display_order: 0 },
+          { section_id: 'b', display_order: 1 },
+          { section_id: 'c', display_order: 2 },
+        ],
+        baselineOrderOf,
+      }),
+    ).toEqual([])
+  })
+
+  it('keeps what an override says apart from its position', () => {
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['a', 'b', 'c'],
+        currentOverrides: [
+          { section_id: 'a', display_order: 0, name_override: 'Bull case' },
+          { section_id: 'b', display_order: 1, is_hidden: true },
+          { section_id: 'c', display_order: 2 },
+        ],
+        baselineOrderOf,
+      }),
+    ).toEqual([
+      { section_id: 'a', name_override: 'Bull case' },
+      { section_id: 'b', is_hidden: true },
+    ])
+  })
+
+  it('drops an is_hidden:false the template does not need', () => {
+    /* Against a template that does not hide the section it says nothing;
+       against one that does, it is the only way to ask for it back. */
+    const args = {
+      orderedSectionIds: ['a', 'b', 'c'],
+      currentOverrides: [{ section_id: 'b', display_order: 1, is_hidden: false }],
+      baselineOrderOf,
+    }
+    expect(reorderedSectionOverrides(args)).toEqual([])
+    expect(
+      reorderedSectionOverrides({ ...args, templateHidesSection: id => id === 'b' }),
+    ).toEqual([{ section_id: 'b', is_hidden: false }])
+  })
+
+  it('keeps explicit positions when a baseline position is unknown', () => {
+    /* A section the template says nothing about and that carries no
+       display_order of its own. "This is the baseline" cannot be
+       established, so the reader's arrangement is written rather than
+       guessed at. */
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['a', 'b', 'unknown'],
+        currentOverrides: [],
+        baselineOrderOf,
+      }),
+    ).toEqual([
+      { section_id: 'a', display_order: 0 },
+      { section_id: 'b', display_order: 1 },
+      { section_id: 'unknown', display_order: 2 },
+    ])
+  })
+
+  it('keeps explicit positions when two sections share a baseline position', () => {
+    /* They have no defined order between them, so the order on screen
+       cannot be proven to be the baseline one. */
+    const tied = (id: string) => ({ a: 0, b: 0, c: 2 }[id] ?? null)
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['a', 'b', 'c'],
+        currentOverrides: [],
+        baselineOrderOf: tied,
+      })
+    ).toEqual([
+      { section_id: 'a', display_order: 0 },
+      { section_id: 'b', display_order: 1 },
+      { section_id: 'c', display_order: 2 },
+    ])
+  })
+
+  it('never drops an override for a section the reorder did not mention', () => {
+    /* The stored array is replaced wholesale, and the ordered list only
+       holds what the page is drawing — so rebuilding from it alone
+       deleted the rename and hidden flag of anything off screen. */
+    const offScreen = { section_id: 'z', name_override: 'Appendix', is_hidden: true }
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['b', 'a'],
+        currentOverrides: [offScreen],
+        baselineOrderOf,
+      }),
+    ).toContainEqual(offScreen)
+  })
+
+  it('carries an off-screen override through a no-op reorder too', () => {
+    const offScreen = { section_id: 'z', name_override: 'Appendix' }
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['a', 'b', 'c'],
+        currentOverrides: [{ section_id: 'a', display_order: 0 }, offScreen],
+        baselineOrderOf,
+      }),
+    ).toEqual([offScreen])
   })
 })
 

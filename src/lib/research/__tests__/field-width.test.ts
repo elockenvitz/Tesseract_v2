@@ -884,10 +884,56 @@ describe('arranging manages sections, not only fields', () => {
   it('does not keep a section override that says nothing', () => {
     /* `is_hidden: false` against a template that does not hide the
        section repeats what the template already says, and would pin the
-       stock to an empty override — the trap no-op field overrides set. */
+       stock to an empty override — the trap no-op field overrides set.
+       The rule itself is tested against the real function in
+       `layout-resolver.test.ts`; pinned here is that the write asks it,
+       and passes the template's view rather than assuming one. */
     const at = HOOK.indexOf('const updateSectionOverride')
     const fn = HOOK.slice(at, at + 2600)
-    expect(fn).toMatch(/const templateHidesIt/)
-    expect(fn).toMatch(/merged\.is_hidden === false && templateHidesIt/)
+    expect(fn).toMatch(/sectionOverrideSaysSomething\(merged, \{/)
+    expect(fn).toMatch(/templateHidesIt: templateHidesSection\(sectionId\)/)
+  })
+
+  it('decides a reorder through the one tested rule, not inline', () => {
+    /*
+     * What that rule DOES — clearing positions when the order is back at
+     * the baseline, keeping them when it is not or cannot be
+     * established, never dropping an off-screen override — is asserted
+     * against the real function in `layout-resolver.test.ts`.
+     *
+     * Pinned here: that the write calls it, and hands it the baseline
+     * and the template's hidden flags rather than assuming either. An
+     * earlier version of this test matched the inline implementation's
+     * variable names and passed happily with the branch short-circuited
+     * to `if (true)`, which is exactly the vacuous gate this codebase
+     * keeps producing.
+     */
+    const at = HOOK.indexOf('const reorderSections')
+    expect(at).toBeGreaterThan(-1)
+    const fn = HOOK.slice(at, at + 2600)
+    expect(fn).toMatch(/newOverrides = reorderedSectionOverrides\(\{/)
+    expect(fn).toMatch(/baselineOrderOf: sectionBaselineOrder/)
+    expect(fn).toMatch(/templateHidesSection,/)
+    /* And keeps no second copy of the decision beside the call — the
+       optimistic update had its own, which always wrote explicit
+       positions, so a reorder back to the template order flashed
+       "Custom layout" until the refetch disagreed with it. */
+    expect(fn).not.toMatch(/display_order: index/)
+    expect((fn.match(/reorderedSectionOverrides\(\{/g) ?? []).length).toBe(2)
+  })
+
+  it('lets Key References be arranged, though it is read elsewhere', () => {
+    /* Its contents live in the Key references view tab, so reading draws
+       nothing — but the section is real and can be renamed, reordered
+       and hidden. Skipping it outright made the one section a reader
+       could not manage the one they had to leave the page to see. */
+    /* `lastIndexOf`: an earlier `continue` on the same slug filters Our
+       View's prose fields, and anchoring on the first match read that
+       loop instead of the renderer. */
+    const at = TAB.lastIndexOf("section.section_slug === 'supporting_docs'")
+    expect(at).toBeGreaterThan(-1)
+    const block = TAB.slice(at, at + 500)
+    expect(block).toMatch(/if \(!arrangingLayout\) return null/)
+    expect(block).toMatch(/arrangeSectionHeader\(section, sectionIdx\)/)
   })
 })

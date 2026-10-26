@@ -57,17 +57,37 @@ export const SPAN_CLASS_FLAT: Record<FieldSpan, string> = {
 }
 
 /**
- * The spans a resize handle steps through.
+ * The spans a resize handle steps through: full, half, third.
  *
- * Not all twelve. The test is not that a span divides twelve — 8 and 9 do
- * not, and both are wanted — but that every span has a COMPLEMENT in this
- * set, so whatever you pick, some other choice completes the row: 3+9,
- * 4+8, 6+6, and 12 alone. 5 and 7 have none, so a row containing one
- * always ends ragged, and they also make finding the half you wanted a
- * game of pointer precision. A span outside this set is still valid and
- * still drawn — it just is not somewhere a drag will stop.
+ * ── Why three ──────────────────────────────────────────────────────────
+ *
+ * This was six — 3, 4, 6, 8, 9, 12 — chosen so that every span had a
+ * COMPLEMENT: 3+9, 4+8, 6+6, 12 alone. The reasoning was sound and the
+ * result was still wrong, because it answered a geometry question and
+ * the content is prose.
+ *
+ * Narrowing a research field does not make the page denser, it makes it
+ * TALLER. Measured on the running page: Investment Thesis is 176px at a
+ * half and 309px at a quarter — three quarters taller for half the
+ * width, and the row it leaves beside itself is usually empty because
+ * nothing else on a research page is quarter-width-shaped. A quarter and
+ * three quarters are the two steps that buy the least and cost the most,
+ * and two-thirds goes with them because its only use was completing a
+ * third, which three thirds now do.
+ *
+ * What is left reads as a sentence rather than a ratio: a field takes
+ * the whole row, half of it, or a third. Rows still close exactly —
+ * 6+6, 4+4+4, 12 — so nothing ends ragged.
+ *
+ * ── Layouts already saved are untouched ────────────────────────────────
+ *
+ * A span outside this set is still valid, still stored and still drawn:
+ * the resolver reads all twelve and `spanLabel` still names 3, 8 and 9.
+ * This governs only where a drag STOPS and what the arrow keys reach, so
+ * a field sitting at two-thirds keeps its width until someone resizes
+ * it, and then lands on one of the three.
  */
-export const SNAP_SPANS: readonly FieldSpan[] = [3, 4, 6, 8, 9, 12]
+export const SNAP_SPANS: readonly FieldSpan[] = [4, 6, 12]
 
 /**
  * Sections the Research page lays out itself, ignoring per-field span.
@@ -121,7 +141,11 @@ export function snapFraction(fraction: number): FieldSpan {
   let bestDistance = Infinity
   for (const s of SNAP_SPANS) {
     const d = Math.abs(s - raw)
-    if (d < bestDistance) { bestDistance = d; best = s }
+    /* `<=`, so an exact midpoint goes to the WIDER step. The steps are
+       far apart now (4 → 6 → 12), which puts the 6/12 midpoint at nine
+       twelfths: dragging three quarters of the way across clearly means
+       "fill the row", and `<` would have answered "half". */
+    if (d <= bestDistance) { bestDistance = d; best = s }
   }
   return best
 }

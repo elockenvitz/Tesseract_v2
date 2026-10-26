@@ -16,6 +16,8 @@ import {
   warnDataIntegrityIssues,
   fieldConfigMatchesField,
   overrideDiffersFromBaseline,
+  sectionOverrideSaysSomething,
+  reorderedSectionOverrides,
   SYSTEM_DEFAULT_FIELD_SLUGS,
   type ResolveLayoutInput,
   type LayoutResolutionResult,
@@ -481,6 +483,28 @@ export function useUserAssetPagePreferences(assetId?: string) {
     assetFieldOverrides.some(o =>
       overrideDiffersFromBaseline(o, templateBaselineFields.get(o.field_id)),
     )
+
+  /** Does the TEMPLATE hide this section? Needed to tell an override that
+   *  un-hides it (a real instruction) from one that repeats the template. */
+  const templateHidesSection = (sectionId: string): boolean =>
+    !!(activeLayout?.section_config ?? []).find(o => o.section_id === sectionId)?.is_hidden
+
+  /**
+   * Where a section would sit with no per-asset override: the template's
+   * position for it, else the section's own `display_order`.
+   *
+   * Used to recognise an order that is already the baseline, so putting a
+   * section back where it started clears the override instead of pinning
+   * every section's position for this stock forever.
+   */
+  const sectionBaselineOrder = (sectionId: string): number | null => {
+    const fromTemplate = (activeLayout?.section_config ?? [])
+      .find(o => o.section_id === sectionId)?.display_order
+    if (typeof fromTemplate === 'number') return fromTemplate
+    const catalog = (allSections ?? []) as unknown as Array<{ id: string; display_order: number }>
+    const s = catalog.find(x => x.id === sectionId)
+    return typeof s?.display_order === 'number' ? s.display_order : null
+  }
 
   // Map resolved fields to FieldWithPreference (preserving existing interface)
   const fieldsWithPreferences: FieldWithPreference[] = resolution?.resolvedFields || []
@@ -1060,15 +1084,9 @@ export function useUserAssetPagePreferences(assetId?: string) {
        * and would pin the stock to an override with nothing in it, the
        * same trap no-op field overrides used to set.
        */
-      const templateHidesIt = !!(activeLayout?.section_config ?? [])
-        .find(o => o.section_id === sectionId)?.is_hidden
-      const hasValues = !!(
-        merged.name_override ||
-        merged.is_hidden === true ||
-        (merged.is_hidden === false && templateHidesIt) ||
-        merged.display_order !== undefined ||
-        merged.is_added
-      )
+      const hasValues = sectionOverrideSaysSomething(merged, {
+        templateHidesIt: templateHidesSection(sectionId),
+      })
 
       if (existing) {
         let newOverrides: SectionOverride[]
@@ -1359,15 +1377,18 @@ export function useUserAssetPagePreferences(assetId?: string) {
         .eq('asset_id', assetId)
         .maybeSingle()
 
-      // Build section overrides with new display_order
       const currentOverrides: SectionOverride[] = existing?.section_overrides || []
-      const newOverrides: SectionOverride[] = orderedSectionIds.map((sectionId, index) => {
-        const existingOverride = currentOverrides.find(o => o.section_id === sectionId)
-        return {
-          ...existingOverride,
-          section_id: sectionId,
-          display_order: index
-        }
+
+      /* The decision itself is a pure function, tested on its own in
+         `layout-resolver.test.ts`: putting a section back where it
+         started must CLEAR the positions rather than write every
+         section's, which is what pinned a stock to "Custom layout"
+         after a nudge and a nudge back. */
+      const newOverrides = reorderedSectionOverrides({
+        orderedSectionIds,
+        currentOverrides,
+        baselineOrderOf: sectionBaselineOrder,
+        templateHidesSection,
       })
 
       if (existing) {
@@ -1397,18 +1418,18 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Optimistically update section order
       queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], (old: any) => {
-        const currentOverrides: SectionOverride[] = old?.section_overrides || []
-        const newOverrides: SectionOverride[] = orderedSectionIds.map((sectionId, index) => {
-          const existingOverride = currentOverrides.find(o => o.section_id === sectionId)
-          return {
-            ...existingOverride,
-            section_id: sectionId,
-            display_order: index
-          }
-        })
+        /* The same rule the write uses, not a second copy of it. The
+           optimistic path had its own inline version that always wrote
+           explicit positions, so a reorder back to the template's order
+           flashed "Custom layout" until the refetch disagreed with it. */
         return {
           ...old,
-          section_overrides: newOverrides
+          section_overrides: reorderedSectionOverrides({
+            orderedSectionIds,
+            currentOverrides: old?.section_overrides || [],
+            baselineOrderOf: sectionBaselineOrder,
+            templateHidesSection,
+          }),
         }
       })
 

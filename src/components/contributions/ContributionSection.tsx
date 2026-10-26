@@ -160,13 +160,19 @@ interface ContributionSectionProps {
   flatMode?: boolean
   /** Hide this section entirely when there are no contributions */
   hideWhenEmpty?: boolean
-  /**
-   * Quieter reading chrome: drop the 4px coloured left accent, the amber hover
-   * recolour and the shadow, leaving a clean thin-bordered card. Presentation
-   * only — used where the section already sits inside a group card, so the page
-   * isn't a card inside a card inside a coloured bar. Editing is unaffected.
+  /*
+   * `plainChrome` lived here: a quieter reading variant that dropped the
+   * coloured left accent, the amber hover and the shadow.
+   *
+   * Removed because it had no caller. It existed for UX1c-1, which read
+   * the Investment Case as one quiet document; UX2 Phase 2 reversed that
+   * and gave each section its own <Card> with alternating shade, and
+   * `ux2-phase2.test.ts` pins AssetTab against ever passing it again. A
+   * presentational branch nobody takes is a third rendering path to keep
+   * correct through every later change, for no screen.
+   *
+   * In git history at 612056a3 if a quiet variant is ever wanted back.
    */
-  plainChrome?: boolean
   /**
    * Edit a section IN PLACE within its card (bounded height, no viewport
    * takeover, no scroll-lock), keeping the surrounding case visible. Also turns
@@ -178,7 +184,7 @@ interface ContributionSectionProps {
    * UX2 Phase 2 — flat "document" chrome: no per-section card border / fill /
    * radius, just a hairline top separator, so a stack of sections reads as ONE
    * continuous Investment Case document inside a single outer container. Even
-   * flatter than plainChrome (which keeps a thin-bordered card). Presentation
+   * flatter than an ordinary card, which keeps its border. Presentation
    * only; editing/drafts/history unaffected. Default OFF.
    */
   documentChrome?: boolean
@@ -267,29 +273,87 @@ const VISIBILITY_CONFIG: Record<ContributionVisibility, { icon: React.ElementTyp
 // CollapsibleContent — show/hide long content with fade
 // ---------------------------------------------------------------------------
 
-const COLLAPSED_MAX_HEIGHT = 240 // ~10 lines
+/**
+ * How much of a long section is shown before "Show more".
+ *
+ * ── Why lines and not pixels ───────────────────────────────────────────
+ *
+ * This was a flat 240px with the comment "~10 lines", and 240px is ten
+ * lines only at the font size and leading it happened to be written
+ * against. Ten lines is the intent, so ten lines is what it now measures
+ * — read off the element's own computed `line-height`, which follows the
+ * prose styles, the dark/light theme and the reader's browser font size.
+ *
+ * The pixel value survives only as the fallback for an environment that
+ * reports no usable line-height (jsdom, and a first paint before fonts
+ * resolve), and for the editor's fold-line marker, which is drawn in a
+ * fixed-size full-screen editor.
+ */
+const COLLAPSED_LINES = 10
+const COLLAPSED_MAX_HEIGHT = 240
+
+/** Slack before clamping, so content a line or two over is left alone. */
+const COLLAPSE_BUFFER = 30
 
 function CollapsibleContent({ content }: { content: string }) {
   const [expanded, setExpanded] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const [needsCollapse, setNeedsCollapse] = useState(false)
+  const [maxHeight, setMaxHeight] = useState(COLLAPSED_MAX_HEIGHT)
 
+  /*
+   * Re-measured whenever the element's size changes, not only when the
+   * text does.
+   *
+   * The old effect ran on `[content]` alone, so the answer was decided
+   * once at mount and then kept. Prose gets TALLER as its column gets
+   * narrower — Investment Thesis measured 309px at a quarter width
+   * against 176px at a half — so the moment the Research page let a
+   * reader change a field's width, every "Show more" on the page was
+   * answering a question about a width that no longer existed. A field
+   * widened from a third to full kept a fold it no longer needed; one
+   * narrowed the other way lost the fold it had just earned.
+   *
+   * `scrollHeight` reports the content's full height regardless of the
+   * max-height clamp, so measuring while collapsed is safe, and React
+   * bails out on identical state, so the observer settles rather than
+   * looping when the clamp changes the element's own height.
+   */
   useEffect(() => {
-    if (contentRef.current) {
-      // Only collapse if content meaningfully exceeds the limit (30px buffer to avoid false triggers)
-      setNeedsCollapse(contentRef.current.scrollHeight > COLLAPSED_MAX_HEIGHT + 30)
+    const el = contentRef.current
+    if (!el) return
+
+    const measure = () => {
+      const lineHeight = parseFloat(window.getComputedStyle(el).lineHeight)
+      const limit = Number.isFinite(lineHeight) && lineHeight > 0
+        ? Math.round(lineHeight * COLLAPSED_LINES)
+        : COLLAPSED_MAX_HEIGHT
+      setMaxHeight(limit)
+      setNeedsCollapse(el.scrollHeight > limit + COLLAPSE_BUFFER)
     }
+
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [content])
 
   return (
     <div className="relative">
       <div
         ref={contentRef}
+        /* The clamp is the measured value, not a second literal. It used
+           to be a hardcoded `max-h-[240px]` beside a `COLLAPSED_MAX_HEIGHT
+           = 240`: two sources of truth for one number, where changing
+           either alone makes the page clamp at a height it never decided
+           to clamp at, and the fade and the button appear over content
+           that was not actually cut. */
+        style={!expanded && needsCollapse ? { maxHeight } : undefined}
         className={clsx(
           // Fills the card, which now carries the measure itself. Capping
           // both left the text at 621px inside a 1,763px bordered box.
           'prose prose-sm max-w-none text-gray-700 leading-relaxed overflow-hidden transition-all duration-200 dark:text-gray-300',
-          !expanded && needsCollapse && 'max-h-[240px]',
         )}
       >
         <SmartInputRenderer content={content} />
@@ -633,7 +697,6 @@ export function ContributionSection({
   sectionType = 'thesis',
   flatMode = false,
   hideWhenEmpty = false,
-  plainChrome = false,
   inlineEditor = false,
   documentChrome = false,
   alwaysShowToolbar = false,
@@ -1583,11 +1646,7 @@ export function ContributionSection({
               // Elevated card: softer radius, a thin refined accent rail (not a
               // heavy 4px bar), flat at rest with a quiet lift on hover.
               'bg-white border border-gray-200/80 rounded-xl transition-all duration-200 dark:border-gray-700 dark:bg-gray-800',
-              plainChrome
-                // Quiet reading chrome: a clean thin-bordered card, no coloured
-                // accent, no amber hover recolour, no shadow.
-                ? 'hover:border-gray-300 dark:hover:border-gray-600'
-                : ['border-l-[3px]', theme.accent, theme.hoverBorder, theme.hoverBg, 'hover:shadow-sm'],
+              'border-l-[3px]', theme.accent, theme.hoverBorder, theme.hoverBg, 'hover:shadow-sm',
             ],
         className
       )}

@@ -153,6 +153,113 @@ export function overrideDiffersFromBaseline(
   return false
 }
 
+/**
+ * Does this section override say anything the template did not?
+ *
+ * The section-level twin of `overrideDiffersFromBaseline`, and it exists
+ * for the same reason: an override that merely repeats the template is
+ * not an override, it is a PIN. The page looks right, so nothing reports
+ * a problem, but the stock now carries an explicit instruction and will
+ * silently refuse to follow the template when the template changes.
+ *
+ * `is_hidden: false` is the subtle one. Against a template that does not
+ * hide the section it says nothing; against a template that DOES hide it,
+ * it is the only way the stock can ask for it back. So the template's own
+ * view has to be passed in rather than assumed.
+ */
+export function sectionOverrideSaysSomething(
+  o: Partial<SectionOverride>,
+  opts: { templateHidesIt?: boolean } = {},
+): boolean {
+  return !!(
+    o.name_override ||
+    o.is_added ||
+    o.is_hidden === true ||
+    (o.is_hidden === false && opts.templateHidesIt) ||
+    o.display_order !== undefined
+  )
+}
+
+/**
+ * What a stock's `section_overrides` should become after a reorder.
+ *
+ * ── Why this is a function and not four lines inside the mutation ──────
+ *
+ * `display_order` is an ABSOLUTE position, so expressing a reorder means
+ * numbering every section — there is no way to say "this one moved"
+ * without saying where the others are. That is right while the order
+ * genuinely differs from the template's, and wrong the moment it does
+ * not: nudging a section down and back up left explicit positions behind
+ * for every section on the page, pinning the stock to today's template
+ * order and marking it "Custom layout" forever. Pulled out here so the
+ * decision can be tested on its own, rather than only through a Supabase
+ * write nobody can run in a unit test.
+ *
+ * @param baselineOrderOf  where a section sits with no per-asset
+ *   override — the template's position for it, else the section's own
+ *   `display_order`. `null` when that cannot be established.
+ */
+export function reorderedSectionOverrides({
+  orderedSectionIds,
+  currentOverrides,
+  baselineOrderOf,
+  templateHidesSection = () => false,
+}: {
+  orderedSectionIds: string[]
+  currentOverrides: SectionOverride[]
+  baselineOrderOf: (sectionId: string) => number | null
+  templateHidesSection?: (sectionId: string) => boolean
+}): SectionOverride[] {
+  const baselines = orderedSectionIds.map(baselineOrderOf)
+
+  /*
+   * Only when every baseline position is known and distinct. Two
+   * sections sharing a `display_order` have no defined order between
+   * them, so "this is the baseline" cannot be established — and the safe
+   * answer is to keep the explicit numbering, which preserves exactly
+   * what the reader just did.
+   */
+  const usable =
+    baselines.every((b): b is number => b !== null) &&
+    new Set(baselines as number[]).size === baselines.length
+
+  const matchesBaseline =
+    usable && baselines.every((b, i) => i === 0 || (baselines[i - 1] as number) < (b as number))
+
+  const forOrderedSections = orderedSectionIds
+    .map((sectionId, index): SectionOverride | null => {
+      const existing = currentOverrides.find(o => o.section_id === sectionId)
+      if (!matchesBaseline) {
+        return { ...existing, section_id: sectionId, display_order: index }
+      }
+      /* Back at the baseline: drop the position, and the whole override
+         with it if the position was all it said. */
+      if (!existing) return null
+      /* The position is what is back at the baseline; everything else
+         the override says is kept. */
+      const rest: SectionOverride = { ...existing }
+      delete rest.display_order
+      return sectionOverrideSaysSomething(rest, {
+        templateHidesIt: templateHidesSection(sectionId),
+      })
+        ? rest
+        : null
+    })
+    .filter((o): o is SectionOverride => o !== null)
+
+  /*
+   * Anything the list does not mention is carried through untouched. The
+   * stored array is REPLACED wholesale by the write, and the ordered list
+   * only ever holds the sections the page is drawing — so rebuilding from
+   * it alone quietly deleted the rename and the hidden flag of any
+   * section that happened not to be on screen.
+   */
+  return [
+    ...forOrderedSections,
+    ...currentOverrides.filter(o => !orderedSectionIds.includes(o.section_id)),
+  ]
+}
+
 export interface FieldConfigItem {
   field_id: string
   section_id: string
