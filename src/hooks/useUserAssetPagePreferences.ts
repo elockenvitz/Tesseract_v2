@@ -669,8 +669,39 @@ export function useUserAssetPagePreferences(assetId?: string) {
       display_order: number
       is_system: boolean
     }>
+    /*
+     * Which sections may come BACK, and which were never here.
+     *
+     * The rule used to be "every section in the catalog that is not
+     * already on the page", which re-admitted everything the layout had
+     * deliberately left out. On the system default — eight visible
+     * fields across three sections — arranging showed five: Key
+     * References, whose fields the default does not place, and an empty
+     * custom section nobody had added to this stock. The reader saw the
+     * layout editor disagree with both the page and the template.
+     *
+     * A section earns a place here only if:
+     *
+     *  - this stock explicitly ADDED it, or
+     *  - the active layout, or this stock's own overrides, say something
+     *    about one of its fields.
+     *
+     * The second clause is what keeps the bug this list was built for
+     * fixed. Hiding the last field in a section writes a `field_override`
+     * for that field, so the section still qualifies and can be dragged
+     * back into — while a section the layout has simply never mentioned
+     * stays out, which is what the page and the template already say.
+     */
+    const layoutAddressesField = (f: FieldWithPreference) =>
+      isFieldInTemplate(f.field_id, f.field_slug) ||
+      assetFieldOverrides.some(o => o.field_id === f.field_id)
+
     const empties = catalog
       .filter(s => !present.has(s.id))
+      .filter(s => {
+        if (resolvedSectionOverrides.find(ov => ov.section_id === s.id)?.is_added) return true
+        return fieldsWithPreferences.some(f => f.section_id === s.id && layoutAddressesField(f))
+      })
       .map(s => {
         const o = resolvedSectionOverrides.find(ov => ov.section_id === s.id)
         return {

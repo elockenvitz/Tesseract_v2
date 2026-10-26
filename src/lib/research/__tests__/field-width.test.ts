@@ -636,7 +636,7 @@ describe('an emptied section stays on the page while arranging', () => {
        name and sort to its original place, so a renamed or reordered
        section would move the moment it was emptied. */
     const at = HOOK.indexOf('const sectionsForArranging')
-    const window = HOOK.slice(at, at + 1400)
+    const window = HOOK.slice(at, at + 2000)
     expect(window).toMatch(/resolvedSectionOverrides\.find\(ov => ov\.section_id === s\.id\)/)
     expect(window).toMatch(/o\?\.name_override \|\| s\.name/)
     expect(window).toMatch(/o\?\.display_order \?\? s\.display_order/)
@@ -920,6 +920,50 @@ describe('arranging manages sections, not only fields', () => {
        "Custom layout" until the refetch disagreed with it. */
     expect(fn).not.toMatch(/display_order: index/)
     expect((fn.match(/reorderedSectionOverrides\(\{/g) ?? []).length).toBe(2)
+  })
+
+  it('arranges the sections the layout has, not the whole org catalog', () => {
+    /*
+     * The rule was "every section in the catalog that is not already on
+     * the page", which re-admitted everything the layout had left out.
+     * On the system default — eight visible fields across three sections
+     * — arranging drew five: Key References, whose fields the default
+     * does not place, and an empty custom section nobody had added to
+     * this stock. The layout editor disagreed with both the page and the
+     * template it claimed to be editing.
+     */
+    const at = HOOK.indexOf('const sectionsForArranging')
+    expect(at).toBeGreaterThan(-1)
+    const fn = HOOK.slice(at, at + 2200)
+
+    /*
+     * Read the FILTER, not the whole block. An earlier version of this
+     * test matched the helper's definition, and so passed happily with
+     * the filter rewritten to let everything through and the helper left
+     * dangling above it — the vacuous gate this codebase keeps
+     * producing, caught by injecting exactly that.
+     */
+    const filterAt = fn.indexOf('.filter(s => {')
+    expect(filterAt).toBeGreaterThan(-1)
+    const filter = fn.slice(filterAt, fn.indexOf('.map(s => {', filterAt))
+
+    /* A section this stock added. */
+    expect(filter).toMatch(/is_added\) return true/)
+    /*
+     * Or one whose fields the layout, or this stock, actually mentions.
+     * This clause is also what keeps the bug the list was built for
+     * fixed: moving the last field out of a section used to make the
+     * move permanent, and hiding that field writes a `field_override`
+     * for it, so the section still qualifies and can be refilled.
+     */
+    expect(filter)
+      .toMatch(/fieldsWithPreferences\.some\(f => f\.section_id === s\.id && layoutAddressesField\(f\)\)/)
+    /* And never "is it custom", which is what let an empty section
+       nobody had added appear on every asset in the org. */
+    expect(filter).not.toMatch(/is_system/)
+
+    expect(fn).toMatch(/isFieldInTemplate\(f\.field_id, f\.field_slug\)/)
+    expect(fn).toMatch(/assetFieldOverrides\.some\(o => o\.field_id === f\.field_id\)/)
   })
 
   it('lets Key References be arranged, though it is read elsewhere', () => {
