@@ -109,20 +109,35 @@ export function useAssetResearchNotes(assetId: string | null) {
   const [isCreating, setIsCreating] = useState(false)
 
   /**
-   * Create a research artifact deliberately (user clicked "New"). Mirrors the
-   * note editor's own insert shape — org_id and created_by are also stamped by
-   * the asset_notes triggers — then connects it to the asset and refreshes the
-   * list. Returns the new note id so the caller can open it in the drawer.
-   * Nothing here runs on mount, so no empty artifact is ever created implicitly.
+   * Create a research artifact deliberately (user clicked "New"). Connects it
+   * to the asset and refreshes the list, returning the new note id so the
+   * caller can open it in the drawer. Nothing here runs on mount, so no empty
+   * artifact is ever created implicitly.
+   *
+   * `organization_id` is stated, not left to the trigger.
+   *
+   * `set_note_org_id_from_caller` fills it from `users.current_organization_id`
+   * when the insert omits it, which is right in the ordinary case and wrong in
+   * the one that matters: this hook already knows which organisation the app is
+   * showing, and that is not guaranteed to be the column's value at the moment
+   * of the write. If they ever disagree the note lands in the other workspace,
+   * silently — there is no error, and the row simply does not come back. The
+   * trigger keeps `IF NEW.organization_id IS NOT NULL THEN RETURN NEW`, so
+   * saying it here wins and the fallback stays for callers that cannot.
+   *
+   * It is also the client-side filter the org-scope guard is asking for. RLS on
+   * `asset_notes` is not organisation-aware, so for this table the explicit
+   * value is the only thing that separates workspaces.
    */
   const createArtifact = useCallback(async (): Promise<string | null> => {
-    if (!assetId || !user?.id) return null
+    if (!assetId || !user?.id || !currentOrgId) return null
     setIsCreating(true)
     try {
       const { data, error } = await supabase
         .from('asset_notes')
         .insert([{
           asset_id: assetId,
+          organization_id: currentOrgId,
           title: 'Untitled',
           content: '',
           note_type: RESEARCH_NOTE_TYPE,
@@ -139,7 +154,7 @@ export function useAssetResearchNotes(assetId: string | null) {
     } finally {
       setIsCreating(false)
     }
-  }, [assetId, user?.id, ensureAssetLink, queryClient, listKey])
+  }, [assetId, user?.id, currentOrgId, ensureAssetLink, queryClient, listKey])
 
   return {
     notes,
