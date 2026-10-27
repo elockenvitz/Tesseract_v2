@@ -1524,7 +1524,20 @@ export function InvestmentTimeline({
     )
   }
 
-  if (!workflowId || workflowId === '' || workflowId === 'undefined' || workflowId === 'null' || (workflowStages && timelineStages.length === 0)) {
+  /*
+   * Two different absences, which this branch used to state as one.
+   *
+   * `AssetTab` renders this component only when `effectiveWorkflowId` is
+   * truthy — it shows its own "No Active Processes" card otherwise — so the
+   * reachable way in here is the LAST term: a process that exists but whose
+   * stages are gone (archived or ended). Saying "No Active Processes. Select
+   * a process from the dropdown above" in that case tells the reader the
+   * opposite of what is true, because a process IS selected; and it put the
+   * same headline on screen as AssetTab's guard for a different condition.
+   */
+  const hasNoProcess =
+    !workflowId || workflowId === '' || workflowId === 'undefined' || workflowId === 'null'
+  if (hasNoProcess || (workflowStages && timelineStages.length === 0)) {
     return (
       <div className={`space-y-6 ${className}`}>
         <div className="bg-white border border-gray-200 rounded-lg p-12 dark:border-gray-700 dark:bg-gray-800">
@@ -1534,9 +1547,13 @@ export function InvestmentTimeline({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">No Active Processes</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">
+              {hasNoProcess ? 'No Active Processes' : 'This process has no stages'}
+            </h3>
             <p className="text-sm text-gray-500 max-w-md dark:text-gray-400">
-              This asset is not currently assigned to any process. Select a process from the dropdown above to get started.
+              {hasNoProcess
+                ? 'This asset is not currently assigned to any process. Select a process above to get started.'
+                : 'The process selected for this asset has no stages to show — it may have been archived or ended. Pick another process above, or add stages to this one.'}
             </p>
           </div>
         </div>

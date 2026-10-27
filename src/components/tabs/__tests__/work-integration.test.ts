@@ -28,7 +28,10 @@ const strip = (s: string) =>
 
 const TAB  = strip(read('src/components/tabs/AssetTab.tsx'))
 const HOOK = strip(read('src/hooks/useAssetWorkAttention.ts'))
-const NAV  = strip(read('src/components/asset/work/WorkNavigator.tsx'))
+/* The rendered navigator. This read `WorkNavigator.tsx` until that component
+   stopped being rendered — the rule below is about whatever Work actually
+   draws its navigation with, which is the overview. */
+const NAV  = strip(read('src/components/asset/work/AssetWorkOverview.tsx'))
 const IDEA = strip(read('src/components/asset/work/IdeaWorkSurface.tsx'))
 const OVERVIEW = strip(read('src/components/asset/work/AssetWorkOverview.tsx'))
 
@@ -436,5 +439,28 @@ describe('selection persists and recovers honestly', () => {
     expect(TAB).toMatch(/!contextual && !selectedWorkItem/)
     expect(OVERVIEW).toMatch(/data-testid="work-overview-recovered"/)
     expect(OVERVIEW).toMatch(/no longer available/)
+  })
+})
+
+describe('the two process empty states say different things', () => {
+  /*
+   * `AssetTab` guards the no-process case itself and renders
+   * `InvestmentTimeline` only when `effectiveWorkflowId` is truthy, so the
+   * only way into the timeline's empty branch is a process whose stages are
+   * gone. Both printed the headline "No Active Processes" anyway, and the
+   * timeline told the reader to select a process while one was selected.
+   */
+  const TIMELINE = strip(read('src/components/ui/InvestmentTimeline.tsx'))
+
+  it('only the no-process branch claims there is no process', () => {
+    expect(TAB).toContain('No Active Processes')
+    expect(TIMELINE).toMatch(/hasNoProcess \? 'No Active Processes'/)
+    expect(TIMELINE).toMatch(/const hasNoProcess =/)
+  })
+
+  it('a process with no stages is told apart from an absent one', () => {
+    expect(TIMELINE).toMatch(/This process has no stages/)
+    // ...and that case does not instruct the reader to select a process.
+    expect(TIMELINE).toMatch(/The process selected for this asset has no stages to show/)
   })
 })

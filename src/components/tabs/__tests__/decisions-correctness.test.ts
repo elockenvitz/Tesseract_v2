@@ -87,12 +87,39 @@ describe('every stored stage answers exactly one filter', () => {
      * is no work when there is. The statement moved to the navigator with
      * the filter itself.
      */
-    const NAV = readFileSync(
-      join(process.cwd(), 'src/components/asset/work/WorkNavigator.tsx'), 'utf8',
+    /*
+     * Rewritten because it was guarding a file the product does not run, and
+     * the thing it guarded had in fact broken.
+     *
+     * This read `WorkNavigator.tsx` for `stageFilter && !items.some(...)`,
+     * "No ideas at this stage." and "No active work on this asset.". The
+     * navigator stopped being rendered when Work became one navigator, so
+     * those three strings proved only that a dead file still contained them.
+     *
+     * Meanwhile the live surface had the defect in a worse form: the Ideas
+     * section was gated on `ideas.length > 0 || investigations.length > 0`,
+     * so a stage filter matching nothing hid the section AND the filter
+     * chips — the reader could not tell an empty filter from an empty asset,
+     * and could not clear the filter, because the control was gone with the
+     * rows.
+     *
+     * The rule is the same rule; it is now asserted about what renders.
+     */
+    const OVERVIEW = readFileSync(
+      join(process.cwd(), 'src/components/asset/work/AssetWorkOverview.tsx'), 'utf8',
     )
-    expect(NAV).toMatch(/stageFilter && !items\.some\(i => i\.kind === 'idea'\)/)
-    expect(NAV).toMatch(/No ideas at this stage\./)
-    expect(NAV).toMatch(/No active work on this asset\./)
+    // The section survives an empty filtered result...
+    expect(OVERVIEW).toMatch(
+      /ideas\.length > 0 \|\| investigations\.length > 0 \|\| ideasFiltered/,
+    )
+    // ...and says which kind of empty it is.
+    expect(OVERVIEW).toMatch(/No ideas at this stage\./)
+    expect(OVERVIEW).toContain('work-overview-ideas-filtered-empty')
+    // And the filter's owner tells it when a filter is narrowing the list.
+    const TAB_SRC = readFileSync(
+      join(process.cwd(), 'src/components/tabs/AssetTab.tsx'), 'utf8',
+    )
+    expect(TAB_SRC).toMatch(/ideasFiltered=\{openItemsFilter !== 'all'\}/)
   })
 })
 

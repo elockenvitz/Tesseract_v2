@@ -5195,6 +5195,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         <AddToProjectButton assetId={asset.id} variant="ghost" size="sm" />
                       </>
                     }
+                    /* So the overview can say "no ideas at this stage"
+                       instead of hiding the section and the filter with it. */
+                    ideasFiltered={openItemsFilter !== 'all'}
                     ideaFilter={
                       <div className="flex flex-wrap gap-1">
                         {([{ key: 'all', label: 'All' },

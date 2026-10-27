@@ -90,6 +90,16 @@ export interface AssetWorkOverviewProps {
    */
   addActions?: React.ReactNode
   ideaFilter?: React.ReactNode
+  /**
+   * Whether `items` has been narrowed by the stage filter in `ideaFilter`.
+   *
+   * The owner of the filter is `AssetTab`, and this component deliberately
+   * does not learn what a stage is — but it cannot render an honest empty
+   * state without knowing whether the emptiness it is looking at was caused
+   * by a filter or is the truth about the asset. One boolean, rather than
+   * teaching it the vocabulary.
+   */
+  ideasFiltered?: boolean
   projectsSlot?: React.ReactNode
   className?: string
 }
@@ -313,7 +323,7 @@ function AddMenu({
 export function AssetWorkOverview({
   symbol, overview, items, connections, connectionsLoading, research, loading, recoveredFrom,
   onOpenProcess, onResume, onOpenItem, onOpenConnection, onOpenAll, onOpenResearch, onOpenNote,
-  joinable = [], onJoin, addActions, ideaFilter, projectsSlot, className,
+  joinable = [], onJoin, addActions, ideaFilter, ideasFiltered, projectsSlot, className,
 }: AssetWorkOverviewProps) {
   if (loading) {
     return (
@@ -545,12 +555,31 @@ export function AssetWorkOverview({
       />
 
       {/* ── Ideas and investigations ──────────────────────────────────── */}
-      {(ideas.length > 0 || investigations.length > 0) && (
+      {/*
+        Shown while a filter is active even when it matched nothing.
+
+        The condition was `ideas.length > 0 || investigations.length > 0`,
+        which hid the whole section — the filter chips with it — the moment a
+        stage matched no idea. That left the reader unable to tell "no ideas
+        at this stage" from "this asset has no ideas", and unable to undo the
+        filter, because the control that set it had disappeared along with the
+        rows it was filtering.
+      */}
+      {(ideas.length > 0 || investigations.length > 0 || ideasFiltered) && (
         <section data-testid="work-overview-ideas">
           <div className="mb-1.5 flex items-baseline justify-between gap-2">
             <span className={EYEBROW}>Ideas and investigations</span>
             {ideaFilter}
           </div>
+          {ideas.length === 0 && investigations.length === 0 && (
+            <p
+              data-testid="work-overview-ideas-filtered-empty"
+              className="px-2 py-1.5 text-[12px] text-gray-500 dark:text-gray-400"
+            >
+              No ideas at this stage. {symbol ?? 'This asset'} has others —
+              clear the filter to see them.
+            </p>
+          )}
           <div className="space-y-1">
             {[...ideas, ...investigations].map(i => (
               <button
