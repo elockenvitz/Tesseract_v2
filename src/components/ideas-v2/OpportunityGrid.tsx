@@ -30,7 +30,7 @@
  * authored idea. Both belong in the lens; only one of them is somebody's
  * stated intent.
  */
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
@@ -39,6 +39,7 @@ import {
 import { TilePriceChart } from '../desktop/TilePriceChart'
 import { useTileCloses } from '../../hooks/useTileCloses'
 import { ExploreVisualBlock } from '../mobile/ExploreVisual'
+import { CarouselControls } from '../mobile/CarouselControls'
 import {
   exploreVisualFor, visualRestatesContext, visualRestatesMetric,
 } from '../../lib/mobile/explore-visual'
@@ -319,7 +320,11 @@ export function OpportunityGrid({
   )
 }
 
-function OpportunityTile({
+/* Exported for `tile-carousel`, which renders it directly. The grid above it
+   needs `useDesktopExplore` and the whole candidate pipeline to produce one
+   tile, and the property under test -- that only one picture is mounted at a
+   time -- is the tile's, not the field's. */
+export function OpportunityTile({
   o, size, onOpen,
 }: {
   o: Opportunity
@@ -360,6 +365,12 @@ function OpportunityTile({
    */
   const { data: closes } = useTileCloses(item.symbol)
   const drawsPrice = big && (closes?.length ?? 0) >= 2 && visual?.kind !== 'price_trend'
+  const chartHeight = size === 'hero' ? 150 : 120
+  /* The carousel's box, sized to the taller panel. The chart is it: the
+     archetypes are a bar and two labels and none of them reaches 120px. The
+     ladder, the plot and the caption are what `height` covers, plus the
+     ~22px the horizon chips sit in above the plot. */
+  const panelBox = chartHeight + 22
 
   /*
    * ── Not saying the same thing twice ──────────────────────────────────────
@@ -382,7 +393,55 @@ function OpportunityTile({
    * sentence twice, which is where 26 of the 38 came from. A tile with
    * nothing further to add now adds nothing.
    */
-  const metric = item.metric?.value && !visualRestatesMetric(visual, item.metric.value)
+  /*
+   * ── Two pictures, one at a time ──────────────────────────────────────────
+   *
+   * A wide tile could draw its archetype AND a price chart, stacked. On
+   * AMZN that was a scenario bar, then a horizon ladder, then a 150px plot,
+   * then a caption -- 524px of tile, and the reader has to scroll a grid of
+   * ninety to get past one card. Measured: 4 of 90 tiles stacked two.
+   *
+   * Neither picture is droppable. The archetype is the finding ("the market
+   * escaped your range") and the price is the evidence under it, and the
+   * horizon ladder on the chart is the fast way to judge whether a move is
+   * news -- so the fix is to page between them rather than to pick one. Same
+   * resolution mobile reached for the pair-trade charts, and the same dots.
+   *
+   * The archetype leads because it is why the candidate was raised; the price
+   * is ambient context a reader asks for second.
+   */
+  const panels = useMemo(() => {
+    const out: { key: string; label: string; node: React.ReactNode }[] = []
+    if (visual && visual.kind !== 'none') {
+      out.push({
+        key: visual.kind,
+        label: 'the finding',
+        node: <ExploreVisualBlock visual={visual} now={Date.now()} />,
+      })
+    }
+    if (drawsPrice) {
+      out.push({
+        key: 'price',
+        label: 'the price',
+        node: <TilePriceChart points={closes!} fill height={chartHeight} />,
+      })
+    }
+    return out
+  }, [visual, drawsPrice, closes, chartHeight])
+
+  const [panel, setPanel] = useState(0)
+  /* Clamped rather than reset: `closes` arriving or failing changes the panel
+     COUNT after the tile has painted, and an index past the end would blank
+     the picture. Derived, so there is no effect to miss. */
+  const shown = Math.min(panel, panels.length - 1)
+
+  /* Suppressed only while the panel that states it is the one on screen. The
+     carousel makes the picture conditional, and a rule written when the
+     picture was always there would take AMZN's "+38%" off the eyebrow and
+     then page away the bar that was carrying it, leaving the number nowhere. */
+  const findingShown = panels[shown]?.key !== 'price'
+  const metric = item.metric?.value
+    && !(findingShown && visualRestatesMetric(visual, item.metric.value))
     ? item.metric
     : null
   const context = item.context && !visualRestatesContext(visual, item.context)
@@ -427,18 +486,50 @@ function OpportunityTile({
           why it raised the candidate and this lens does not. */}
       <TileReason>{item.title}</TileReason>
 
-      {visual && visual.kind !== 'none' && (
-        <div className={clsx('min-w-0', big ? 'mt-3' : 'mt-2')} data-testid="opportunity-visual">
-          <ExploreVisualBlock visual={visual} now={Date.now()} />
-        </div>
-      )}
+      {panels.length > 0 && (
+        <div className={clsx('min-w-0', big ? 'mt-3' : 'mt-2')}>
+          {/*
+            One panel's worth of room, whichever panel is showing.
 
-      {drawsPrice && (
-        <div className="mt-3 min-h-0 flex-1">
-          <TilePriceChart
-            points={closes!}
-            fill
-            height={size === 'hero' ? 150 : 120}
+            The box is sized to the TALLEST panel rather than the current one,
+            because a tile is as tall as its contents now -- so a panel change
+            that changed the height would move every tile below it in the
+            column. Paging a carousel is a read, and a read must not relayout
+            the page. The cost is some empty room under the shorter panel,
+            which is the right way round: the alternative is the grid jumping
+            under the reader's cursor.
+          */}
+          <div
+            /* `flow-root`, not a bare block: every archetype opens with its
+               own `mt-2`, and a top margin on the first child collapses
+               straight THROUGH a parent that has no padding or border -- so
+               the finding panel pushed the box 8px further down the tile than
+               the price panel did, and paging moved the grid by that much.
+               A block formatting context contains it. Not `overflow-hidden`,
+               which would also contain it but would clip the chart's scrub
+               readout at the top of its box. */
+            className="min-w-0 flow-root"
+            style={{ height: panels.length > 1 ? panelBox : undefined }}
+            data-testid="opportunity-visual"
+            data-panel={panels[shown].key}
+          >
+            {panels[shown].node}
+          </div>
+
+          {/*
+            The dots are mobile's, unchanged -- the same component the feed's
+            pair-trade charts page with, so a carousel behaves the same way in
+            both shells. There is no swipe here: a desktop pointer pages by
+            clicking a dot, and `portalClick` already lets a <button> through
+            without reading it as "open this tile".
+          */}
+          <CarouselControls
+            count={panels.length}
+            index={shown}
+            onChange={setPanel}
+            className="mt-1"
+            label={`${item.symbol ?? 'this'} — ${shown + 1} of ${panels.length}`}
+            dotLabel={i => `Show ${panels[i].label}`}
           />
         </div>
       )}

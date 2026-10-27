@@ -994,10 +994,17 @@ export function TileMeta({ children }: { children: React.ReactNode }) {
 /** Right-aligned figure in the eyebrow: a weight, an age, a value. */
 export function TileFigure({ children, strong }: { children: React.ReactNode; strong?: boolean }) {
   return (
-    <span className={clsx(
-      'ml-auto shrink-0 font-mono text-[10px] tabular-nums',
-      strong ? 'font-semibold text-gray-800 dark:text-gray-200' : 'text-gray-500',
-    )}>
+    <span
+      /* Addressable because a lens may suppress it when the picture below
+         already states the number, and "is the figure on the eyebrow" is
+         otherwise indistinguishable from "is that string anywhere on the
+         tile" -- which it is, on the picture, which is the whole point. */
+      data-testid="tile-figure"
+      className={clsx(
+        'ml-auto shrink-0 font-mono text-[10px] tabular-nums',
+        strong ? 'font-semibold text-gray-800 dark:text-gray-200' : 'text-gray-500',
+      )}
+    >
       {children}
     </span>
   )
