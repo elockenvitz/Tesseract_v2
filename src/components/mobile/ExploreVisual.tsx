@@ -69,7 +69,43 @@ const TRACK = 'bg-gray-200 dark:bg-gray-700'
  */
 export type VisualDensity = 'card' | 'tile'
 
-const SCALE = {
+/**
+ * Declared, not inferred. `as const` on the table below would make `Scale` the
+ * literal type of the `card` row -- `root: "mt-2"` -- which the `tile` row
+ * cannot satisfy, and every archetype would reject the scale it is handed.
+ */
+interface Scale {
+  /** The gap above the picture, where the picture owns it. */
+  root: string
+  /** A filled progress or proportion track. */
+  bar: string
+  /** The modelled band on a range, drawn solid because it was stated. */
+  band: string
+  /** A hairline axis a marker sits on. */
+  rule: string
+  /** One segment of a multi-stage rail. */
+  rail: string
+  /** The row a range's marker is positioned within. */
+  row: string
+  /** A case tick on that row. */
+  tick: string
+  /** An endpoint dot. */
+  dot: string
+  /** The current-price marker, which must out-weigh the ticks. */
+  marker: string
+  /** The figure a picture leads with. */
+  lead: string
+  /** A signed move, one step under the lead. */
+  move: string
+  /** A price or weight read beside the picture. */
+  value: string
+  /** A caption or trailing sentence. */
+  note: string
+  /** Somebody's words, or a question. */
+  body: string
+}
+
+const SCALE: Record<VisualDensity, Scale> = {
   card: {
     root: 'mt-2',
     bar: 'h-2', band: 'h-1.5', rule: 'h-px', rail: 'h-1',
@@ -84,9 +120,7 @@ const SCALE = {
     lead: 'text-[20px]', move: 'text-[17px]', value: 'text-[15px]',
     note: 'text-[11px]', body: 'text-[15px]',
   },
-} as const
-
-type Scale = (typeof SCALE)['card']
+}
 
 /**
  * The measure a bounded picture gets.
