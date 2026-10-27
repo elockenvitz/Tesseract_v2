@@ -8,8 +8,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   opportunitiesFrom, opportunityKind, isIdeaWorthy, opportunitySize,
-  withFeatureBudget, targetForOpportunity, OPPORTUNITY_LABEL,
+  withFeatureBudget, targetForOpportunity, OPPORTUNITY_LABEL, pictureBudget,
 } from '../opportunity'
+import { exploreVisualKind } from '../../mobile/explore-visual'
 import type { ComposedExploreItem, ExploreItem } from '../../mobile/explore-item'
 
 const item = (over: Partial<ExploreItem> = {}): ExploreItem => ({
@@ -86,6 +87,106 @@ describe('what kind of question it raises', () => {
     expect(opportunityKind(item({ subtype: 'research', signalType: null }))).toBe('new_evidence')
     expect(opportunityKind(item({ subtype: 'workflow', signalType: null }))).toBe('workflow')
     expect(opportunityKind(item({ subtype: 'idea', signalType: null }))).toBe('authored')
+  })
+})
+
+describe('no one picture takes over the field', () => {
+  /*
+   * Measured live at 1920x889: 43 of 90 tiles drew `question`, and 41 of
+   * those printed the identical sentence "What best describes this
+   * position?". `diversifyExplore` spaces near-duplicates but cannot reduce
+   * them -- its five axes never look at what a card DRAWS -- so at 48% of
+   * the pool the reader met it every other tile.
+   *
+   * A `question` is what `exploreVisualFor` returns for an item carrying a
+   * producer's prompt and nothing else to draw, which is exactly the shape
+   * of the real no-thesis candidates.
+   */
+  const asking = (n: number, from = 0) => Array.from({ length: n }, (_, i) => ({
+    item: item({
+      id: `q${from + i}`, symbol: `Q${from + i}`, subtype: 'research',
+      visual: { question: 'What best describes this position?' },
+    }),
+  } as ComposedExploreItem))
+
+  const held = (n: number) => Array.from({ length: n }, (_, i) => ({
+    item: item({
+      id: `w${i}`, symbol: `W${i}`, subtype: 'research',
+      portfolio: { weightPct: 1 + i * 0.1, name: 'Core' },
+    }),
+  } as ComposedExploreItem))
+
+  const drawn = (out: ReturnType<typeof opportunitiesFrom>) => {
+    const counts = new Map<string, number>()
+    for (const o of out) {
+      const k = exploreVisualKind(o.item)
+      counts.set(k, (counts.get(k) ?? 0) + 1)
+    }
+    return counts
+  }
+
+  it('trims the flood to its share of what is left', () => {
+    const out = opportunitiesFrom([...asking(43), ...held(15)])
+    const counts = drawn(out)
+
+    /*
+     * The PROPERTY, not the number. A case pinning "12 questions" would go
+     * quiet the day the candidate mix changes, which is exactly when it
+     * should speak -- the share is of the field after trimming, and trimming
+     * changes the field.
+     */
+    for (const [, n] of counts) {
+      expect(n).toBeLessThanOrEqual(Math.max(5, Math.ceil(out.length / 5)))
+    }
+    expect(counts.get('question')!).toBeLessThan(43)
+    expect(out.length).toBeLessThan(58)
+  })
+
+  it('keeps the ranker\'s own strongest, and never reorders', () => {
+    /* Membership is the only thing this module decides. What survives is a
+       PREFIX of each picture's run in the order it arrived, so nothing is
+       promoted past anything. */
+    const given = [...asking(40), ...held(10)]
+    const out = opportunitiesFrom(given)
+    const order = given.map(c => c.item.id)
+
+    expect(out.map(o => o.item.id))
+      .toEqual(out.map(o => o.item.id).slice().sort((a, b) => order.indexOf(a) - order.indexOf(b)))
+    /* The first question admitted is the first question offered. */
+    expect(out.find(o => o.item.id.startsWith('q'))!.item.id).toBe('q0')
+  })
+
+  it('never trims below the floor, however thin the field', () => {
+    /*
+     * The floor, not an exemption. On a page of twelve a fifth is two, and
+     * cutting a desk's seven unexamined positions down to two would hide
+     * real work -- five of the same problem is information at that size. So
+     * the floor wins and the share does not hold there, which is deliberate
+     * and is why the case above allows `Math.max(5, ...)` rather than the
+     * share alone.
+     */
+    const out = opportunitiesFrom([...asking(4), ...held(7)])
+    expect(drawn(out).get('question')).toBe(4)
+    expect(drawn(out).get('exposure')).toBe(5)
+  })
+
+  it('leaves a field alone when nothing floods it', () => {
+    const out = opportunitiesFrom([...asking(4), ...held(5)])
+    expect(out).toHaveLength(9)
+  })
+
+  it('never empties a field that is entirely one picture', () => {
+    expect(opportunitiesFrom(asking(60)).length).toBe(5)
+    expect(opportunitiesFrom([]).length).toBe(0)
+  })
+
+  it('settles rather than spiralling, whatever the mix', () => {
+    /* The cap is a fixed point: the share is of the field AFTER trimming, so
+       each pass can lower it again. Bounded below, so it terminates -- these
+       shapes are the ones that would spin if it were not. */
+    expect(pictureBudget([])).toBe(0)
+    expect(pictureBudget(Array(500).fill('question'))).toBe(5)
+    expect(pictureBudget(Array.from({ length: 500 }, (_, i) => `k${i}`))).toBe(100)
   })
 })
 

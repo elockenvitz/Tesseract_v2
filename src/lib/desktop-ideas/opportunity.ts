@@ -31,6 +31,9 @@ import type { ComposedExploreItem, ExploreItem } from '../mobile/explore-item'
 /* Size is decided by the candidate's own content, and the page budget is
    applied separately -- mobile's rule, reused rather than re-derived. */
 import { exploreCardSize, MAX_FEATURES } from '../mobile/explore-layout'
+/* What a candidate would draw. Pure, and the same resolver the tile uses, so
+   the budget below counts the pictures the reader will actually meet. */
+import { exploreVisualKind } from '../mobile/explore-visual'
 /* Type only -- this layer stays pure and never opens an engagement itself. */
 import type { EngagementTarget } from '../engagement/types'
 
@@ -173,14 +176,92 @@ export function opportunityKind(item: ExploreItem): OpportunityKind {
 }
 
 /**
+ * No one picture may be more than a fifth of the field.
+ *
+ * ── Why a cap here, when `diversifyExplore` deliberately refused one ──────
+ *
+ * The ranker's own note says it uses repulsion "rather than a cap", and that
+ * is right for ORDER: a hard boundary in a sequence produces a visible seam,
+ * and penalties that decay with distance let near-duplicates drift apart
+ * naturally. But repulsion only separates; it cannot reduce. Its five axes
+ * are symbol, category, subtype, source and portfolio -- it never looks at
+ * what the card DRAWS -- and when one picture is 48% of the pool, spacing it
+ * out means meeting it every other tile instead of forty times in a row.
+ *
+ * Measured live at 1920x889, 90 tiles: 43 of them drew `question`, and 41 of
+ * those printed the identical sentence "What best describes this position?".
+ * Reading down the field you meet it, on average, every other card.
+ *
+ * That is not a rendering fault and no amount of styling fixes it. 38 of
+ * those 43 names have no written case, no note, no position in the current
+ * snapshot and mostly no coverage row -- their records are identical, so
+ * their cards are identical, and drawing them differently would be inventing
+ * a difference. The honest fix is to stop printing the fortieth copy.
+ *
+ * This is membership, which is the one thing this module owns. Order is
+ * untouched: the cap keeps the FIRST `cap` of each picture in the ranker's
+ * own sequence, so what survives is what the ranker already called strongest
+ * and nothing is promoted past anything.
+ */
+const MAX_PICTURE_SHARE = 1 / 5
+
+/**
+ * ...but never fewer than this, whatever the share works out to.
+ *
+ * A thin field is not a repetitive one. Five cards of a kind on a page of
+ * twelve is a desk with five of the same problem, which is information; the
+ * rule exists for the page of ninety where it is noise.
+ */
+const MIN_PER_PICTURE = 5
+
+/**
+ * How many of any one picture the field will print.
+ *
+ * A fixed point, because the share is of the field AFTER trimming and
+ * trimming shrinks the field: capping at a fifth of ninety still leaves the
+ * flood at a quarter of what remains. Each pass recomputes the kept total
+ * and the cap it implies, and the cap strictly decreases until it stops
+ * moving -- integers bounded below by `MIN_PER_PICTURE`, so it terminates.
+ *
+ * Exported for the gate, which checks the PROPERTY ("no picture exceeds the
+ * share") rather than the number it currently produces. A case pinning 12
+ * would go quiet the day the candidate mix changes, which is exactly when it
+ * should speak.
+ */
+export function pictureBudget(kinds: readonly string[]): number {
+  const counts = new Map<string, number>()
+  for (const k of kinds) counts.set(k, (counts.get(k) ?? 0) + 1)
+  const tallies = [...counts.values()]
+
+  let cap = kinds.length
+  for (;;) {
+    const kept = tallies.reduce((sum, n) => sum + Math.min(n, cap), 0)
+    const next = Math.max(MIN_PER_PICTURE, Math.ceil(kept * MAX_PICTURE_SHARE))
+    if (next >= cap) return cap
+    cap = next
+  }
+}
+
+/**
  * The opportunity set, in the order the ranker already put it.
  */
 export function opportunitiesFrom(
   composed: readonly ComposedExploreItem[],
 ): Opportunity[] {
+  const admitted = composed.filter(c => isIdeaWorthy(c.item))
+  /* What each candidate would DRAW. Pure and deterministic on the item, the
+     same answer the tile will reach on its own -- this never renders. */
+  const kinds = admitted.map(c => exploreVisualKind(c.item))
+  const cap = pictureBudget(kinds)
+
+  const spent = new Map<string, number>()
   const out: Opportunity[] = []
-  for (const c of composed) {
-    if (!isIdeaWorthy(c.item)) continue
+  for (let i = 0; i < admitted.length; i++) {
+    const drawn = kinds[i]
+    const used = spent.get(drawn) ?? 0
+    if (used >= cap) continue
+    spent.set(drawn, used + 1)
+    const c = admitted[i]
     out.push({ composed: c, item: c.item, kind: opportunityKind(c.item) })
   }
   return out
