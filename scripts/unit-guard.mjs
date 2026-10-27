@@ -87,11 +87,23 @@ if (scopeIssues.length) {
 const reportDir = mkdtempSync(path.join(tmpdir(), 'tesseract-guard-unit-'))
 const reportPath = path.join(reportDir, 'unit-report.json')
 
+/*
+ * BOTH unit projects.
+ *
+ * The unit tests run in two projects now — `unit` for the files that need a
+ * DOM and `unit-node` for the ones that only read source (see the note in
+ * vitest.config.ts). Naming only `unit` here would still exit 0 while
+ * silently not running 351 files, which is precisely the failure this
+ * wrapper was written to make impossible. Assertion (3) below catches it
+ * either way, because it compares the report against the working tree.
+ */
 const args = [
   'vitest',
   'run',
   '--project',
   'unit',
+  '--project',
+  'unit-node',
   ...GATED_DIRS,
   '--reporter=default',
   '--reporter=json',
