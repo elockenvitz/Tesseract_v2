@@ -225,8 +225,32 @@ export function DesktopGallery({
         than a sliver, and `row-span-2` still works: a hero taller than two
         content rows grows them, which is what grid does.
       */}
+      {/*
+        ── And tiles size to their content too ──────────────────────────────
+
+        The note above cut the row FLOOR from 168px to 88px, which was half the
+        problem. The other half is that a grid item defaults to
+        `align-self: stretch`, so a row is as tall as its tallest member and
+        every other tile in it is inflated to match — the floor was never what
+        was making those cards tall, a rich neighbour was.
+
+        Measured on Ideas at 1920x889, the first row: AMZN carries a price
+        chart and is 524px. Beside it, AAPL held 342px of void (65% of the
+        tile) and LLY 338px (64%), because three lines of text were stretched
+        to a neighbour's height. CEG ran 228px empty, 50%.
+
+        `items-start` lets each tile be as tall as what it has to say. Row
+        bottoms go ragged and the page ground shows between them, which is the
+        honest shape of a field where objects carry different amounts — and it
+        is what the packed flow was already assuming.
+
+        Nothing inside the tile relied on the stretch: the shell is
+        `flex h-full flex-col`, so it fills whatever height it is given rather
+        than demanding one, and the only `flex-1` child is the price chart,
+        which is passed an explicit pixel height.
+      */}
       <div
-        className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+        className="mt-4 grid grid-cols-1 items-start gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
         style={{
           gridAutoRows: 'minmax(88px, auto)',
           /*
@@ -319,7 +343,11 @@ export function GallerySkeleton({
         <span className="h-4 w-8 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
       </div>
       <div
-        className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+        /* `items-start` to match the real gallery below. It changes nothing on
+           its own -- every placeholder carries an explicit `h-[Npx]`, which
+           overrides stretch already -- but the two grids are meant to be the
+           same geometry, and a difference here is how they drift. */
+        className="mt-4 grid grid-cols-1 items-start gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
         style={{ gridAutoRows: 'minmax(88px, auto)', gridAutoFlow: 'row' }}
       >
         {Array.from({ length: count }, (_, i) => {
@@ -508,8 +536,22 @@ export function DesktopTile({
       */
       className={clsx(
         SPAN[flow][size],
-        // `group` is what the shelf's cross-fade hangs off.
-        'group flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-[3px] border bg-white text-left',
+        /*
+          `group` is what the shelf's cross-fade hangs off.
+
+          No `h-full`. It was `height: 100%`, and an explicit height overrides
+          alignment — so it silently defeated the `items-start` on the grid: a
+          tile still resolved to the full height of a row whose tallest member
+          was somebody else. On Ideas that made AAPL 524px to hold three lines
+          of text, 342px of it void, because AMZN beside it had a price chart.
+
+          Without it the tile is as tall as its own contents, which is what
+          `items-start` was asking for. Nothing needed the fill: this element
+          is `flex flex-col`, so it ADAPTS to a height rather than requiring
+          one, and its single `flex-1` child is the body, which then takes its
+          content height instead of a neighbour's.
+        */
+        'group flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-[3px] border bg-white text-left',
         'transition-colors duration-100',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
         'dark:bg-[#141a25]',

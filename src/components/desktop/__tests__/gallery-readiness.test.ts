@@ -270,6 +270,33 @@ describe('the skeleton is the shape of the page it replaces', () => {
 })
 
 /*
+ * A row is as tall as its tallest tile, and by default every other tile in
+ * that row is inflated to match. Measured on Ideas at 1920x889: AMZN carries
+ * a price chart and is 524px, so AAPL beside it -- three lines of text -- was
+ * also 524px, 342px of it (65%) empty. LLY held 338px of void, CEG 228px.
+ *
+ * TWO things cause that, and removing either alone changes nothing, which is
+ * why both are pinned here. `align-items` must release the stretch, AND the
+ * tile must not carry an explicit height: `height: 100%` overrides alignment,
+ * so `h-full` on the tile silently resolved it back to the full row height.
+ */
+describe('a tile is as tall as its own contents', () => {
+  const shell = code('components/desktop/DesktopTile.tsx')
+
+  it('lets the gallery grid align its tiles to the top', () => {
+    const grid = shell.slice(shell.indexOf('export function DesktopGallery'))
+    const el = grid.slice(grid.indexOf('className="mt-4 grid'))
+    expect(el.slice(0, 160)).toContain('items-start')
+  })
+
+  it('gives the tile no height of its own, which would override that', () => {
+    const tile = shell.slice(shell.indexOf('export function DesktopTile'))
+    const shellClasses = tile.slice(tile.indexOf("'group flex"))
+    expect(shellClasses.slice(0, 120)).not.toContain('h-full')
+  })
+})
+
+/*
  * Ideas and Research each need a weight for the names on screen, and a weight
  * needs the whole book as its denominator -- so both read `portfolio_holdings`
  * twice. They had written that same pair of reads out by hand under two
