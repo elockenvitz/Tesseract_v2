@@ -170,11 +170,32 @@ describe('rehydration is not undone by the level-change reset', () => {
     )
   })
 
-  it('AssetTab releases the guard once the user changes level themselves', () => {
-    // Otherwise returning to the saved level would keep the other level's ids.
-    const at = TAB.indexOf('const handleVisibilitySelect')
+  it('AssetTab points the guard at the level it is committing', () => {
+    /*
+     * This used to assert the guard was set to null inside
+     * handleVisibilitySelect, which no longer exists — the level is now chosen
+     * inside AudiencePicker and committed in one call.
+     *
+     * The invariant survives the move and inverts: the guard must name the
+     * INCOMING level, so the level-change effect bails instead of clearing the
+     * ids being committed alongside it. Setting null here would re-arm the
+     * effect against this very call and wipe them.
+     */
+    const at = TAB.indexOf('const handleAudienceApply')
     expect(at).toBeGreaterThan(-1)
-    expect(TAB.slice(at, at + 900)).toMatch(/rehydratedVisibilityRef\.current = null/)
+    const body = TAB.slice(at, at + 900)
+    expect(body).toMatch(/rehydratedVisibilityRef\.current = next\.visibility/)
+    expect(body).not.toMatch(/rehydratedVisibilityRef\.current = null/)
+  })
+
+  it('AudiencePicker does not carry one scope\'s ids into another', () => {
+    // The other half of the same rule, now that the scope is chosen in the
+    // picker: switching scope restores the saved ids for that scope, or none.
+    const PICKER = readFileSync(
+      join(process.cwd(), 'src/components/contributions/AudiencePicker.tsx'), 'utf8')
+    const at = PICKER.indexOf('const chooseScope')
+    expect(at).toBeGreaterThan(-1)
+    expect(PICKER.slice(at, at + 400)).toMatch(/saved\?\.visibility === next \? saved\.targetIds : \[\]/)
   })
 
   it('AssetTab clears the guard when the asset changes', () => {
@@ -185,18 +206,23 @@ describe('rehydration is not undone by the level-change reset', () => {
 })
 
 describe('a restricted level with nothing to select is not applied', () => {
-  it('AssetTab refuses the level instead of storing an empty audience', () => {
-    const at = TAB.indexOf('const handleVisibilitySelect')
-    const body = TAB.slice(at, at + 1200)
-    // The original form set the level anyway when there was nothing to pick.
-    expect(body).not.toMatch(/newVisibility === 'firm' \|\| targets\.length === 0/)
+  it('the picker refuses to apply a restricted audience naming nobody', () => {
     /*
-     * The guard is now REACHABILITY, not option count — a level whose every
-     * node has no direct members would store a restricted contribution with an
-     * audience of one. See src/components/tabs/__tests__/audience-picker.test.ts.
+     * The rule has not changed: a restricted contribution with no groups is
+     * readable by its author alone while displaying as shared. What changed is
+     * where it lives — the old form silently left the level unchanged inside
+     * handleVisibilitySelect; the picker now disables Apply and says why, and
+     * the server refuses it with 23514 regardless.
+     *
+     * Behaviour is covered by rendering in
+     * src/components/contributions/__tests__/audience-picker.test.tsx
+     * ('refuses to apply a restricted audience naming nobody'). This pins that
+     * the guard exists at all, since a missing one is silent.
      */
-    expect(body).toMatch(/if \(!isLevelSelectable\(options\)\) return/)
-    expect(body).not.toMatch(/targets\.length === 0/)
+    const PICKER = readFileSync(
+      join(process.cwd(), 'src/components/contributions/AudiencePicker.tsx'), 'utf8')
+    expect(PICKER).toMatch(/const emptyRestricted = draft\.visibility !== 'firm' && draft\.targetIds\.length === 0/)
+    expect(PICKER).toMatch(/const canApply = dirty && !emptyRestricted/)
   })
 })
 

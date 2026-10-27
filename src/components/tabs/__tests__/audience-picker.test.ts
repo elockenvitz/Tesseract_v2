@@ -1,13 +1,17 @@
 /**
- * The visibility picker must not promise an audience the policy won't deliver.
+ * How AssetTab wires the audience picker.
  *
- * The logic itself is pure and tested directly in
- * `src/lib/contributions/__tests__/audience-reach.test.ts`. What these
- * assertions pin is the WIRING — that AssetTab actually consults reachability
- * instead of a bare option count, and that it never rebuilds the audience from
- * a list the author did not see. AssetTab cannot be mounted here (it needs a
- * live Supabase client, auth and organization context), so the invariants are
- * pinned against source, as this repo already does elsewhere for this file.
+ * The picker's own behaviour — drafts, Apply, Cancel, reach, failed saves —
+ * is tested by rendering it, in
+ * `src/components/contributions/__tests__/audience-picker.test.tsx`. These
+ * assertions pin only what cannot be reached from there: that AssetTab
+ * delegates rather than hand-rolling a second control, that it feeds the
+ * picker EFFECTIVE reach, and that committing a draft cannot trip the
+ * target-wiping effect this file has been bitten by before.
+ *
+ * AssetTab cannot be mounted here — it needs a live Supabase client, auth and
+ * organization context — so these are pinned against source, as this repo
+ * already does elsewhere for this file.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -19,94 +23,92 @@ const TAB = readFileSync(join(process.cwd(), 'src/components/tabs/AssetTab.tsx')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '')
 
-describe('reachability is read from effective membership', () => {
-  it('rolls membership up the hierarchy instead of counting rows per node', () => {
-    // user_id is selected because the rollup counts distinct PEOPLE: one
-    // person in two teams under one department is one reader, not two.
-    expect(TAB).toMatch(/from\('org_chart_node_members'\)[\s\S]{0,160}select\('node_id, user_id'\)/)
+describe('AssetTab delegates the audience control', () => {
+  it('renders AudiencePicker instead of its own dropdown', () => {
+    expect(TAB).toMatch(/<AudiencePicker/)
+    expect(TAB).toMatch(/from '\.\.\/contributions\/AudiencePicker'/)
+  })
+
+  it('leaves no second picker behind', () => {
+    // The old control was a two-step menu driven by these. Any of them
+    // surviving means two controls can disagree about the same audience.
+    expect(TAB).not.toMatch(/showVisibilityDropdown/)
+    expect(TAB).not.toMatch(/visibilityStep/)
+    expect(TAB).not.toMatch(/handleVisibilitySelect/)
+    expect(TAB).not.toMatch(/handleTargetsConfirm/)
+  })
+
+  it('shows it only in the author\'s own view', () => {
+    // Someone reading a colleague's research must not be offered a control
+    // over who can see it.
+    const at = TAB.indexOf('<AudiencePicker')
+    expect(TAB.slice(Math.max(0, at - 200), at)).toMatch(/researchViewFilter === user\?\.id/)
+  })
+})
+
+describe('the picker is fed effective reach', () => {
+  it('passes the rolled-up counts, not a per-node tally', () => {
     expect(TAB).toMatch(/effectiveMemberCounts\(/)
-    // The direct-only tally must be gone, or the picker understates an
-    // audience while the server delivers the larger one.
     expect(TAB).not.toMatch(/memberCounts\.set\(m\.node_id/)
+    const at = TAB.indexOf('<AudiencePicker')
+    const props = TAB.slice(at, at + 600)
+    expect(props).toMatch(/memberCounts=\{userOrgContext\?\.memberCounts/)
   })
 
-  it('feeds those counts into the shared reachability helper', () => {
-    expect(TAB).toMatch(/buildAudienceOptions\(\{/)
-    expect(TAB).toMatch(/memberCounts: userOrgContext\.memberCounts/)
-  })
-})
-
-describe('a level that reaches nobody is not offered', () => {
-  it('gates level selection on reachability, not on the number of options', () => {
-    const at = TAB.indexOf('const handleVisibilitySelect')
-    expect(at).toBeGreaterThan(-1)
-    const body = TAB.slice(at, at + 1200)
-    expect(body).toMatch(/if \(!isLevelSelectable\(options\)\) return/)
-    // The old count-only test must be gone — it let an unreachable level through.
-    expect(body).not.toMatch(/targets\.length === 0/)
+  it('passes nodeById so a stored target resolves to a name, not a bare id', () => {
+    const at = TAB.indexOf('<AudiencePicker')
+    expect(TAB.slice(at, at + 600)).toMatch(/nodeById=\{userOrgContext\?\.nodeById/)
   })
 
-  it('disables the menu row and states the reason there', () => {
-    expect(TAB).toMatch(/disabled=\{!selectable\}/)
-    expect(TAB).toMatch(/emptyLevelReason\(/)
-    expect(TAB).toMatch(/No one is a direct member\. Groups beneath it aren’t included\./)
+  it('passes the saved audience, falling back to the live selection before it loads', () => {
+    const at = TAB.indexOf('<AudiencePicker')
+    expect(TAB.slice(at, at + 600)).toMatch(/saved=\{savedAudience \?\? \{ visibility: sharedThesisVisibility/)
   })
 
-  it('never disables Firm, which always reaches the organization', () => {
-    expect(TAB).toMatch(/option\.value === 'firm' \|\| isLevelSelectable\(options\)/)
+  it('tells the picker when the org context has not arrived', () => {
+    const at = TAB.indexOf('<AudiencePicker')
+    expect(TAB.slice(at, at + 600)).toMatch(/isLoading=\{!userOrgContext\}/)
   })
 })
 
-describe('an existing audience is shown, never silently rewritten', () => {
-  it('keeps the saved audience separately from the live selection', () => {
-    expect(TAB).toMatch(/setSavedAudience\(\{ visibility: savedVisibility, targetIds: savedIds \}\)/)
-    expect(TAB).toMatch(/savedAudience\?\.visibility === visibility \? savedAudience\.targetIds : \[\]/)
-  })
-
-  it('lists the union of saved and live targets, so neither can be dropped', () => {
-    expect(TAB).toMatch(/storedTargetIds = \[\.\.\.new Set\(\[\.\.\.savedForLevel, \.\.\.liveForLevel\]\)\]/)
-  })
-
-  it('resolves a stored target to its name rather than showing a bare id', () => {
-    expect(TAB).toMatch(/storedNodes: storedTargetIds/)
-    expect(TAB).toMatch(/userOrgContext\.nodeById\.get\(id\)/)
-  })
-
-  it('labels a target that is only present because it is already shared', () => {
-    expect(TAB).toMatch(/target\.storedOnly &&/)
-    expect(TAB).toMatch(/already shared/)
-  })
-
-  it('clears the saved audience when the asset changes', () => {
-    const at = TAB.indexOf('setHasInitializedVisibility(false)')
-    expect(TAB.slice(at, at + 300)).toMatch(/setSavedAudience\(null\)/)
-  })
-})
-
-describe('an unreachable node that is already shared stays editable', () => {
+describe('committing a draft cannot wipe the targets it just set', () => {
   /*
-   * The asymmetry is the point. Selecting an unreachable node would share with
-   * nobody, so it is disabled. But one that is ALREADY in the audience must
-   * stay clickable, or the author could never remove it — and a restriction
-   * they cannot edit is one they cannot correct.
+   * The level-change effect clears targetIds whenever the level changes and
+   * the rehydration ref does not match. Setting the level and the ids in the
+   * same handler batches them, the effect then sees a level change, and the
+   * ids are gone — which once saved `targetIds: []` and destroyed a
+   * restriction while the badge still showed a lock.
    */
-  it('disables only the nodes that are neither reachable nor selected', () => {
-    expect(TAB).toMatch(/disabled=\{!target\.reachable && !isSelected\}/)
+  it('sets the rehydration ref to the incoming level BEFORE the state', () => {
+    const at = TAB.indexOf('const handleAudienceApply')
+    expect(at).toBeGreaterThan(-1)
+    const body = TAB.slice(at, at + 700)
+    const ref = body.indexOf('rehydratedVisibilityRef.current = next.visibility')
+    const setLevel = body.indexOf('setSharedThesisVisibility(next.visibility)')
+    expect(ref).toBeGreaterThan(-1)
+    expect(setLevel).toBeGreaterThan(-1)
+    expect(ref).toBeLessThan(setLevel)
+    // Clearing the ref here would re-arm the effect against this very call.
+    expect(body).not.toMatch(/rehydratedVisibilityRef\.current = null/)
   })
 
-  it('explains an unreachable node in place', () => {
-    expect(TAB).toMatch(/const reason = unreachableReason\(target\)/)
-  })
-
-  it('shows the member count for a reachable node, so reach is visible up front', () => {
-    expect(TAB).toMatch(/\{target\.memberCount\} direct/)
+  it('commits both halves of the selection', () => {
+    const at = TAB.indexOf('const handleAudienceApply')
+    const body = TAB.slice(at, at + 700)
+    expect(body).toMatch(/setSharedThesisVisibility\(next\.visibility\)/)
+    expect(body).toMatch(/setSharedThesisTargetIds\(next\.targetIds\)/)
   })
 })
 
-describe('the picker still cannot store an empty audience', () => {
-  it('keeps Done disabled until something is selected', () => {
-    const at = TAB.indexOf('handleTargetsConfirm()')
-    expect(at).toBeGreaterThan(-1)
-    expect(TAB.slice(at - 400, at + 400)).toMatch(/disabled=\{sharedThesisTargetIds\.length === 0\}/)
+describe('the save path is untouched', () => {
+  it('still hands the shared audience to both case renders', () => {
+    // set_contribution_audience remains the only write path; the picker
+    // stages, ContributionSection saves.
+    expect(TAB.match(/sharedVisibility=\{sharedThesisVisibility\}/g)?.length).toBe(2)
+    expect(TAB.match(/sharedTargetIds=\{sharedThesisTargetIds\}/g)?.length).toBe(2)
+  })
+
+  it('does not call the audience RPC from the page itself', () => {
+    expect(TAB).not.toMatch(/set_contribution_audience/)
   })
 })
