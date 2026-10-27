@@ -285,7 +285,7 @@ const SKELETON_HEIGHT: Record<TileSize, string> = {
 }
 
 export function GallerySkeleton({
-  title, count = 6, flow = 'ranked', sizeAt,
+  title, count = 6, flow = 'ranked', sizeAt, heights,
 }: {
   title: React.ReactNode
   /** How many placeholders. Default six: two rows of the usual mosaic. */
@@ -294,8 +294,24 @@ export function GallerySkeleton({
   /** Which size each index takes. Defaults to the ranked rule, so a lens that
    *  ranks gets its real shape without having to say so. */
   sizeAt?: (index: number, total: number) => TileSize
+  /**
+   * Per-size heights for THIS lens, over the shared defaults.
+   *
+   * The shared map cannot be right for every lens, because the lenses' tiles
+   * are genuinely different heights — measured at 1920x889, the widest tile
+   * renders 461px on Ideas, 452px on Research and 233px on Decisions. One
+   * number for all three is wrong twice, and `SKELETON_HEIGHT` was calibrated
+   * near the shortest of them, so it under-reserved room almost everywhere.
+   *
+   * That only becomes visible as layout shift where there are enough tiles to
+   * fill the viewport: Decisions has 26 and the mismatch sits below the fold,
+   * Ideas has 90 and it does not. So this is an override a lens opts into with
+   * measurements, not a new default anybody inherits.
+   */
+  heights?: Partial<Record<TileSize, string>>
 }) {
   const size = sizeAt ?? sizeByRank
+  const heightOf = (s: TileSize) => heights?.[s] ?? SKELETON_HEIGHT[s]
   return (
     <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
       <div className="flex items-baseline gap-2.5">
@@ -313,7 +329,7 @@ export function GallerySkeleton({
               key={i}
               className={clsx(
                 SPAN[flow][s],
-                SKELETON_HEIGHT[s],
+                heightOf(s),
                 'animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]',
               )}
             />

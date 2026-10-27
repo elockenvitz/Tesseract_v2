@@ -136,6 +136,26 @@ describe('the Ideas loading branch no longer fabricates an Opportunity', () => {
   })
 
   it('packs the skeleton like the grid that replaces it, so load is not a re-layout', () => {
-    expect(GRID_CODE).toMatch(/<GallerySkeleton title="Ideas" flow="packed" \/>/)
+    // The property, not the formatting — this pinned the whole element as one
+    // self-closing line, so adding the lens's measured heights broke it while
+    // the packing it protects was untouched.
+    expect(GRID_CODE).toMatch(/<GallerySkeleton[\s\S]{0,600}flow="packed"/)
+  })
+
+  it('reserves the room this lens\'s tiles actually take', () => {
+    /*
+     * `SKELETON_HEIGHT` is shared by five lenses whose tiles are genuinely
+     * different heights. Measured at 1920x889: the widest tile is 461px on
+     * Ideas, 452px on Research, 233px on Decisions, and the shared default
+     * claims 232. So the first skeleton row was ~230px short here and every
+     * row below it started in the wrong place — worth 0.03 of CLS on its own.
+     *
+     * Medians rather than maxima: the aim is least total movement, and
+     * reserving the 524px maximum for every wide tile would overshoot most of
+     * them by as much as 232 undershot.
+     */
+    expect(GRID_CODE).toMatch(/heights=\{\{/)
+    expect(GRID_CODE).toMatch(/hero: 'h-\[460px\]'/)
+    expect(GRID_CODE).toMatch(/compact: 'h-\[202px\]'/)
   })
 })

@@ -192,8 +192,64 @@ export function OpportunityGrid({
    * different span table than the grid replacing them — a re-layout on load,
    * which is the one thing this skeleton exists to avoid.
    */
-  if (isLoading && opportunities.length === 0) {
-    return <GallerySkeleton title="Ideas" flow="packed" />
+  /*
+   * ── Wait for the WHOLE field, not the first producer ──────────────────────
+   *
+   * This read `isLoading && opportunities.length === 0`, and the second clause
+   * cancelled the first.
+   *
+   * `useDesktopCandidates` already latches `isLoading` true until all four
+   * producers have finished their first attempt, for exactly this reason — its
+   * own note calls a shuffling feed "the hitch". But the post half resolves
+   * first, so `opportunities.length` was 54 while `isLoading` was still true,
+   * the skeleton left early, and the partial field painted as though it were
+   * the whole field.
+   *
+   * It then reshuffled three more times — measured on a cold load at 1920x889,
+   * tile count 54 -> 64 -> 69 -> 90 over 4.9s, CLS 0.4233 (the "poor"
+   * threshold is 0.25). The worst single shift was 0.282, and its sources show
+   * why it is so violent: `opportunity-tile y772->263 h117->524`. A tile moved
+   * 509px up the page and grew from 117px to 524px, because `opportunitySize`
+   * sizes by CONTENT and `withFeatureBudget` then allocates emphasis across
+   * the whole population. Grow that population and a compact becomes a hero.
+   * Nothing loaded inside the tile; the page simply re-decided what mattered,
+   * three times, under the reader's cursor.
+   *
+   * Honouring the latch alone costs the ~1.8s the slowest producer takes, and
+   * the skeleton is already the real grid's span table, so that wait is a
+   * steady page rather than a moving one. Research and Decisions have always
+   * done it this way (`if (isLoading)`, no escape hatch) and both measure
+   * CLS <= 0.0057.
+   *
+   * Safe against a producer that never returns: `isFetched` is true after
+   * success OR error, so a failing optional producer cannot hold this shut —
+   * it reports itself through `missing` instead.
+   */
+  if (isLoading) {
+    return (
+      <GallerySkeleton
+        title="Ideas"
+        flow="packed"
+        /*
+         * This lens's own measured heights, at 1920x889 over 90 tiles:
+         * the wide tiles (span 6 — hero and large) ran 436-524px with a
+         * median of 461, and the narrow ones (span 3 — medium and compact)
+         * were 202px almost exactly. The shared default claims 232/232/172/132,
+         * so the first skeleton row was ~230px short and every row under it
+         * started in the wrong place.
+         *
+         * Medians, not maxima: the aim is the least total movement, and
+         * reserving 524 for every wide tile would overshoot most of them by
+         * as much as the old numbers undershot.
+         */
+        heights={{
+          hero: 'h-[460px]',
+          large: 'h-[460px]',
+          medium: 'h-[202px]',
+          compact: 'h-[202px]',
+        }}
+      />
+    )
   }
 
   /*

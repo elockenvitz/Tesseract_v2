@@ -225,11 +225,40 @@ describe('the skeleton is the shape of the page it replaces', () => {
     const field = src('components/ideas-v2/OpportunityGrid.tsx')
     const fieldCode = code('components/ideas-v2/OpportunityGrid.tsx')
     expect(field).toContain('GallerySkeleton')
-    expect(fieldCode).toContain('<GallerySkeleton title="Ideas" flow="packed" />')
+    /*
+     * Asserted as properties, not as one line of JSX.
+     *
+     * This read `toContain('<GallerySkeleton title="Ideas" flow="packed" />')`,
+     * which pinned the element's FORMATTING. Giving the skeleton the lens's
+     * measured per-size heights made it multi-line and broke the assertion
+     * while every property it names still held — the test was describing the
+     * source's shape rather than the page's behaviour.
+     */
+    expect(fieldCode).toMatch(/<GallerySkeleton[\s\S]{0,600}title="Ideas"/)
     expect(fieldCode).toContain('flow="packed"')
     /* The crash, as a prohibition: a skeleton must never size by content. */
     expect(fieldCode).not.toMatch(/sizeAt=\{[^}]*opportunitySize/)
     expect(code('components/ideas-v2/IdeasWorkspace.tsx')).not.toContain('function Loading()')
+  })
+
+  it('Ideas waits for the whole field before it paints one', () => {
+    /*
+     * The guard was `isLoading && opportunities.length === 0`, and the second
+     * clause cancelled the first: `useDesktopCandidates` latches `isLoading`
+     * until all four producers have finished, but the post half resolves
+     * first, so the skeleton left with 54 of 90 items present and the field
+     * then re-sized itself three more times as the rest landed.
+     *
+     * Measured cold at 1920x889: tile count 54 -> 64 -> 69 -> 90 over 4.9s,
+     * CLS 0.4233 against a 0.25 "poor" threshold, worst single shift 0.282
+     * moving a tile 509px up the page and from 117px to 524px tall. After:
+     * one step 0 -> 90, CLS 0.0589.
+     *
+     * The length clause must not come back. A partial field is not a field.
+     */
+    const fieldCode = code('components/ideas-v2/OpportunityGrid.tsx')
+    expect(fieldCode).not.toMatch(/isLoading\s*&&\s*opportunities\.length\s*===\s*0/)
+    expect(fieldCode).toMatch(/if \(isLoading\) \{/)
   })
 
   it('keeps Decisions chronological in its skeleton too', () => {
