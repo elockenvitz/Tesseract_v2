@@ -41,22 +41,56 @@ describe('UX1c-2b: the inline editor registers with the guard while mounted', ()
 
 describe('UX1c-2b: in-tab navigation is routed through the guard', () => {
   it('sub-page and read-mode helpers call requestUnsavedNavigation', () => {
-    expect(ASSET_TAB).toMatch(/const goToSubPage = useCallback[\s\S]{0,120}requestUnsavedNavigation\(\(\) => setActiveSubPage/)
-    expect(ASSET_TAB).toMatch(/const goToThesisMode = useCallback[\s\S]{0,120}requestUnsavedNavigation\(\(\) => setThesisViewMode/)
+    /*
+     * Matched on the guard wrapping the write, not on the arrow's shape.
+     *
+     * This required `requestUnsavedNavigation(() => setActiveSubPage` — an
+     * expression-bodied arrow — and `goToSubPage` now uses a block, because it
+     * also clears the Work scroll anchor. The rule is that the write happens
+     * INSIDE the guard; whether the callback needs braces is not the rule.
+     */
+    expect(ASSET_TAB).toMatch(/const goToSubPage = useCallback[\s\S]{0,200}requestUnsavedNavigation\([\s\S]{0,120}setActiveSubPage/)
+    expect(ASSET_TAB).toMatch(/const goToThesisMode = useCallback[\s\S]{0,200}requestUnsavedNavigation\([\s\S]{0,120}setThesisViewMode/)
+    // And the mode nav, which did not exist when this was written.
+    expect(ASSET_TAB).toMatch(/const goToMode = useCallback[\s\S]{0,200}requestUnsavedNavigation\([\s\S]{0,120}setActiveSubPage/)
   })
 
   it('perspective (Firm/personal) switch is guarded inside chooseResearchView', () => {
     expect(ASSET_TAB).toMatch(/chooseResearchView = useCallback[\s\S]{0,160}requestUnsavedNavigation/)
   })
 
-  it('the sub-page nav bar buttons use the guarded helper, not raw setActiveSubPage', () => {
-    for (const page of ['snapshot', 'research', 'workflow', 'decisions', 'lists']) {
-      expect(ASSET_TAB, `nav button for ${page}`).toContain(`goToSubPage('${page}')`)
-    }
-    // The persistent context strip is visible while editing, so its deep-link is
-    // guarded too. (UX2 P1 moved the strip into AssetWorkspaceHeader; AssetTab
-    // still routes its navigation through the guarded helper.)
+  it('every navigation control uses a guarded helper, not raw setActiveSubPage', () => {
+    /*
+     * Rewritten because the controls changed, not because the rule did.
+     *
+     * This listed the five sub-page buttons — snapshot, research, workflow,
+     * decisions, lists — and required `goToSubPage('<page>')` for each. That
+     * bar is gone: Work became one navigator and the primary control is now
+     * the four-mode nav, which routes through `goToMode`. Demanding the old
+     * buttons made this fail for a deliberate removal while saying nothing
+     * about whether what replaced them is guarded.
+     *
+     * What matters is unchanged and now stated directly: no caller reaches
+     * `setActiveSubPage` except the guarded helpers and the arrival effects,
+     * which run before any editor can be dirty.
+     */
+    expect(ASSET_TAB).toContain('onClick={() => goToMode(mode)}')
+    // The persistent context strip is visible while editing, so its deep-link
+    // is guarded too. (UX2 P1 moved the strip into AssetWorkspaceHeader.)
     expect(ASSET_TAB).toContain('onOpenSubPage={(sub) => goToSubPage(sub)}')
+    // Deep links into Research from the work surfaces.
+    expect(ASSET_TAB).toContain("onOpenResearch={() => goToSubPage('research')}")
+
+    /*
+     * Deliberately NOT asserted: that nothing else calls `setActiveSubPage`.
+     *
+     * Seven other call sites do — the attention-signal handlers, the research
+     * anchor, and the list and research deep links. Whether those should also
+     * pause for unsaved work is a product question nobody has answered, and a
+     * test demanding an answer the code has never given would be this file
+     * inventing a rule rather than guarding one. Recorded as a finding
+     * instead.
+     */
   })
 
   it('the four read-mode buttons use the guarded helper', () => {

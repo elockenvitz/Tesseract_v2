@@ -326,10 +326,17 @@ describe('the component no longer carries the defective arithmetic', () => {
 
   it('reads every exposure figure through the one accessor', () => {
     const body = src('components/tabs/AssetTab.tsx')
-    // Three surfaces: the Work sidebar, the exposure tiles, the holdings
-    // table. All three, or the one that was missed drifts. The declaration
-    // is `const exposureIn = useCallback`, so it is not one of these matches.
-    expect(body.match(/exposureIn\(/g)?.length).toBe(3)
+    /*
+     * A lower bound, not an exact count.
+     *
+     * This demanded exactly 3 — the Work sidebar, the exposure tiles and the
+     * holdings table. A fourth surface was then added and correctly routed
+     * through the accessor, and the test failed for the rule being FOLLOWED.
+     * Counting call sites measures how many surfaces exist, which is not the
+     * invariant; the invariant is that none of them does the arithmetic
+     * itself, and the sibling test above is what enforces that.
+     */
+    expect(body.match(/exposureIn\(/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
     expect(body).toContain('const exposureIn = useCallback(')
   })
 })

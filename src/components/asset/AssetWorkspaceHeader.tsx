@@ -119,7 +119,7 @@ export function AssetWorkspaceHeader({
           {showTickerDropdown && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowTickerDropdown(false)} />
-              <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-20 p-4 min-w-[320px] max-h-[70vh] overflow-y-auto text-left">
+              <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-20 p-4 min-w-[320px] max-h-viewport-70 overflow-y-auto text-left">
                 <div className="space-y-4">
                   <div>
                     <div className="flex items-center justify-between mb-2">

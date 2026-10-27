@@ -606,7 +606,7 @@ function EditingPane({
       {/* Editor — toolbar fixed below header, content scrolls */}
       <div
         className={inline
-          ? 'flex flex-col [&_.rich-text-editor]:flex [&_.rich-text-editor]:flex-col [&_.editor-container]:max-h-[55vh] [&_.editor-container]:overflow-y-auto [&_.editor-container]:border-0 [&_.editor-container]:rounded-none [&_.sticky]:static'
+          ? 'flex flex-col [&_.rich-text-editor]:flex [&_.rich-text-editor]:flex-col [&_.editor-container]:max-h-viewport-55 [&_.editor-container]:overflow-y-auto [&_.editor-container]:border-0 [&_.editor-container]:rounded-none [&_.sticky]:static'
           : 'flex-1 min-h-0 flex flex-col overflow-hidden [&_.rich-text-editor]:flex [&_.rich-text-editor]:flex-col [&_.rich-text-editor]:flex-1 [&_.rich-text-editor]:min-h-0 [&_.rich-text-editor]:overflow-hidden [&_.editor-container]:flex-1 [&_.editor-container]:min-h-0 [&_.editor-container]:overflow-y-auto [&_.editor-container]:border-0 [&_.editor-container]:rounded-none [&_.editor-container]:relative [&_.sticky]:static'}
       >
         {/* Fold line (full-screen editor only — inline grows with its content). */}

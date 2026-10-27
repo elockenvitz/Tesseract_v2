@@ -28,7 +28,12 @@ describe('UX1c-2: inline editor expands in place, no viewport takeover', () => {
   })
 
   it('bounds the inline editor height instead of filling the viewport', () => {
-    expect(CONTRIB).toContain('max-h-[55vh]')
+    /* `max-h-viewport-55`, not `max-h-[55vh]`. Same 55%, measured against the
+       VISIBLE viewport: on a phone `vh` includes the strip behind the URL bar,
+       so the bare class made this box taller than the bound it is here to
+       impose. The utility pairs vh with dvh in one rule, which two Tailwind
+       arbitrary classes cannot express. */
+    expect(CONTRIB).toContain('max-h-viewport-55')
     // the full-screen path (flex-1 fill) is still present for non-inline callers
     expect(CONTRIB).toContain('flex-1 min-h-0 flex flex-col overflow-hidden')
   })
@@ -43,7 +48,7 @@ describe('UX1c-2: inline editor expands in place, no viewport takeover', () => {
     // UX2 P1/P2 refinement superseded the bounded inline box for Research with
     // the proven full-width expand editor. The inline code path is retained for
     // other/future callers, so the case renders no longer pass inlineEditor.
-    expect(CONTRIB).toContain('max-h-[55vh]') // inline branch still present
+    expect(CONTRIB).toContain('max-h-viewport-55') // inline branch still present
     expect(ASSET_TAB).not.toContain('inlineEditor')
     expect((ASSET_TAB.match(/fullPageEditor/g) ?? []).length).toBeGreaterThanOrEqual(2)
   })

@@ -273,7 +273,7 @@ function AddMenu({
         <div
           role="menu"
           data-testid="work-overview-add-menu"
-          className="absolute right-0 top-full z-50 mt-1 max-h-[70vh] w-[280px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+          className="absolute right-0 top-full z-50 mt-1 max-h-viewport-70 w-[280px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
         >
           {addActions && (
             <div

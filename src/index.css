@@ -169,6 +169,11 @@
     min-height: 50dvh;
   }
 
+  .max-h-viewport-55 {
+    max-height: 55vh;
+    max-height: 55dvh;
+  }
+
   .h-viewport-60 {
     height: 60vh;
     height: 60dvh;

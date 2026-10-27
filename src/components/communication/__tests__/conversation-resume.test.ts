@@ -26,18 +26,40 @@ describe('the request travels on the existing seam', () => {
     expect(TYPES).toMatch(/conversationId\?: string/)
     /* The call site moved from the orientation band to the Work navigator
        when the band was replaced; the seam it goes through is unchanged. */
-    expect(TAB).toMatch(/askAI\(\{ \.\.\.assetEngagementTarget, conversationId: item\.id \}\)/)
+    /* The id is destructured now: the call moved into a named
+       `openConversationPane(conversationId)` callback, so the value arrives as
+       a parameter rather than being reached for off `item`. Same seam, same
+       spread, one less thing the call site has to know. */
+    expect(TAB).toMatch(/const openConversationPane = React\.useCallback\(\(conversationId: string\)/)
+    expect(TAB).toMatch(/askAI\(\{ \.\.\.assetEngagementTarget, conversationId \}\)/)
   })
 
   it('launches the pane without taking the working surface', () => {
     /* A conversation is an investigation, not the thing being worked on, so
        picking one opens the existing pane and leaves the selected process or
        idea exactly where it was. */
-    const at = TAB.indexOf("if (item.kind === 'conversation')")
+    /*
+     * The condition moved from the kind to a flag, and the component it was
+     * read in is no longer mounted.
+     *
+     * This matched `if (item.kind === 'conversation')` in AssetTab and
+     * `item.launchesPane` in WorkNavigator. The branch is now keyed on
+     * `launchesPane`, which `work-items` sets on conversation items, and
+     * WorkNavigator is not rendered any more — another test in this repo
+     * asserts `AssetTab` does NOT contain `<WorkNavigator`, so reading it here
+     * was checking a file the product does not run.
+     *
+     * The rule is the early `return`: picking a conversation opens the pane
+     * and does not become the selected work.
+     */
+    const at = TAB.indexOf('if (item.launchesPane)')
     expect(at).toBeGreaterThan(-1)
-    expect(TAB.slice(at, at + 200)).toMatch(/return/)
-    const NAV = strip(read('src/components/asset/work/WorkNavigator.tsx'))
-    expect(NAV).toMatch(/item\.launchesPane/)
+    expect(TAB.slice(at, at + 200)).toMatch(/openConversationPane\(item\.id\); return/)
+    // And the flag is set where the item is built, not guessed at the call site.
+    const ITEMS = strip(read('src/lib/asset-work/work-items.ts'))
+    expect(ITEMS).toMatch(/kind: 'conversation'[\s\S]{0,200}launchesPane: true/)
+    // A pane-launching item is never a selectable piece of work.
+    expect(ITEMS).toMatch(/filter\(i => !i\.launchesPane\)/)
   })
 
   it('keeps the asset bound, so a resumed thread still has its context', () => {
