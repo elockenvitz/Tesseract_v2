@@ -111,18 +111,50 @@ describe('the three merged destinations are all still reachable', () => {
     expect(TAB).not.toMatch(/<AssetWorkSidebar|<WorkNavigator/)
   })
 
-  it('keeps every membership surface the Lists tab had', () => {
+  it('keeps every membership surface the Lists tab had, in what is RENDERED', () => {
     /*
-     * All four are sections of the sidebar now, and they carry the same
-     * `lists-section-*Content` ids, so the header's context chips still
-     * deep-link to them. Nothing was dropped on the way across.
+     * Rewritten because it was reading a file the product does not run.
+     *
+     * This asserted `id="lists-section-{lists,themes,portfolios,projects}
+     * Content"` inside AssetWorkSidebar.tsx, reasoning that the four sections
+     * "carry the same ids, so the header's context chips still deep-link to
+     * them". The sidebar stopped being rendered when Work became one
+     * navigator, and those ids exist in NO rendered file — so the chips had
+     * been scrolling nowhere while this test went on passing, because the
+     * dead file still contained the string it asked for.
+     *
+     * The surfaces themselves did survive, into AssetTab. That is what is
+     * checked now.
      */
-    const SIDEBAR = strip(read('src/components/asset/work/AssetWorkSidebar.tsx'))
-    for (const section of ['listsContent', 'themesContent', 'portfoliosContent', 'projectsContent']) {
-      expect(SIDEBAR).toMatch(new RegExp(`id="lists-section-${section}"`))
+    for (const control of [
+      '<AddToListButton', '<AddToThemeButton', '<AddToProjectButton', '<RelatedProjects',
+    ]) {
+      expect(TAB, `membership control ${control}`).toContain(control)
+    }
+    // The escape hatches out to the full collections.
+    for (const route of ['themes-list', 'portfolios-list']) {
+      expect(TAB, `escape link ${route}`).toContain(route)
     }
     // The grouping that collapsed every list onto an absent 'list' key is gone.
     expect(TAB).not.toMatch(/listsByType/)
+  })
+
+  it('the header context chips land on a target that exists', () => {
+    /*
+     * `scrollToSection` returns false when the id is absent, and the effect
+     * cleared `listsFocus` only on success — so a dead id both scrolled
+     * nowhere AND stayed set, to fire again on the next return to Work.
+     *
+     * Two rules: there is a fallback to the Lists section, and the focus is
+     * consumed whether or not the specific anchor resolved.
+     */
+    const at = TAB.indexOf('lists-section-${listsFocus.id}')
+    expect(at).toBeGreaterThan(-1)
+    const body = TAB.slice(at, at + 400)
+    expect(body).toMatch(/scrollToSection\(WORK_SECTION_ID\.lists\)/)
+    expect(body).toMatch(/setListsFocus\(null\)/)
+    // And not gated on the scroll having succeeded, which was the bug.
+    expect(body).not.toMatch(/if \(scrollToSection\([^)]*\)\)\s*setListsFocus\(null\)/)
   })
 })
 
@@ -209,9 +241,23 @@ describe('handoffs land where they used to', () => {
     const at = TAB.indexOf("if (!listsFocus || activeMode !== 'work') return")
     expect(at).toBeGreaterThan(-1)
     const body = TAB.slice(at, at + 700)
-    // Cleared inside the frame, and only when the target was found.
-    expect(body).toMatch(/if \(scrollToSection\(`lists-section-\$\{listsFocus\.id\}`\)\) setListsFocus\(null\)/)
+    /*
+     * Cleared inside the frame — but no longer ONLY when the target was
+     * found, which was defect 3.
+     *
+     * This required `if (scrollToSection(...)) setListsFocus(null)`. That
+     * reads as caution ("don't consume a focus we failed to honour") and was
+     * the opposite: when the anchor did not exist, the chip scrolled nowhere
+     * AND the focus stayed set, so it fired again on the next return to Work.
+     * It also meant the test passed while every one of these chips was inert,
+     * because it was checking the shape of the call rather than whether the
+     * id it names is in the DOM.
+     *
+     * The id-exists rule is asserted separately above; here the rule is that
+     * the focus is consumed unconditionally, still inside the frame.
+     */
     expect(body).toMatch(/setListsFocus\(null\)[\s\S]{0,60}\}\)[\s\S]{0,80}cancelAnimationFrame/)
+    expect(body).not.toMatch(/if \(scrollToSection\([^)]*\)\)\s*setListsFocus\(null\)/)
   })
 
   it('carries the attention target into the Work section it names', () => {

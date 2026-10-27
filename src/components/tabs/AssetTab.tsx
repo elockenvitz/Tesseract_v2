@@ -1204,7 +1204,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     setCollapsedSections(prev => ({ ...prev, [listsFocus.id]: false }))
     // Wait a tick for the expansion to land in the DOM, then scroll.
     const raf = requestAnimationFrame(() => {
-      if (scrollToSection(`lists-section-${listsFocus.id}`)) setListsFocus(null)
+      /*
+       * The chips pass a sub-anchor — 'listsContent', 'themesContent',
+       * 'portfoliosContent', 'projectsContent' — which were the four
+       * collapsible sections of the Work SIDEBAR. The sidebar is no longer
+       * rendered and the membership surfaces are one band, so no
+       * `lists-section-*` element exists anywhere: every lists, themes,
+       * portfolios and projects chip in the header scrolled nowhere.
+       *
+       * Fall back to the Lists section, which is where that band lives. The
+       * specific id is still tried first, so re-introducing a sub-anchor
+       * needs no change here.
+       *
+       * And consume the focus either way. Clearing it only on a successful
+       * scroll is what let a dead id persist and fire again on the next
+       * return to Work.
+       */
+      if (!scrollToSection(`lists-section-${listsFocus.id}`)) {
+        scrollToSection(WORK_SECTION_ID.lists)
+      }
+      setListsFocus(null)
     })
     return () => cancelAnimationFrame(raf)
   }, [listsFocus, activeMode])
