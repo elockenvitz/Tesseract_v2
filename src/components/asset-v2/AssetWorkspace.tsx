@@ -47,7 +47,7 @@ import { ArrowUpRight, MoreHorizontal, PencilLine, X } from 'lucide-react'
 import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
 import {
   useAssetWorkspace, primaryPosition, otherPositions,
-  type AssetPosition,
+  type AssetPosition, type AssetDecisionRow, type AssetLiveIdea,
 } from '../../hooks/useAssetWorkspace'
 import {
   type AssetFocus, ORIGIN_NAME, issueTitle, issueDetail,
@@ -485,7 +485,97 @@ export function AssetWorkspacePane({
         onOpenLegacy={onOpenLegacy}
       />
       <div className="px-6 pb-12 pt-5">
+        <DecisionBand data={data} position={position} symbol={symbol} onOpenLegacy={onOpenLegacy} />
         <DesktopColumns lead={<>{lead}</>} context={context.length ? <>{context}</> : undefined} />
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------- understand → decide */
+
+/**
+ * Direction A's decision band: the one place the page turns understanding into
+ * an action. It appears ONLY when a request is waiting on the reader (the hero
+ * collapses to nothing otherwise), frames the request against our view and
+ * against the book, and hands off to where the decision is actually made — this
+ * page shows and hands off, it never decides inline.
+ *
+ * Reward-to-risk is shown only when the ladder and spot that derive it are both
+ * present, and it states its own inputs so the ratio is traceable. It is never
+ * invented from a partial ladder.
+ */
+export function DecisionBand({
+  data, position, symbol, onOpenLegacy,
+}: {
+  data: { decisions: AssetDecisionRow[]; liveIdeas: AssetLiveIdea[]; target: number | null; spot: number | null; ladder: any }
+  position: AssetPosition | null
+  symbol: string | null
+  onOpenLegacy?: () => void
+}) {
+  const pending = data.decisions.find(d => (d.status ?? '').toLowerCase() === 'pending')
+  if (!pending) return null // no request waiting: the hero is absent, not an empty box
+
+  const spot = data.spot
+  const toSpot = data.target != null && spot != null && spot > 0
+    ? ((data.target - spot) / spot) * 100 : null
+
+  // Reward-to-risk strictly from the ladder's own bear/bull and spot. Any gap → omitted.
+  const bear = data.ladder?.cases?.find((c: any) => /bear/i.test(c.name))?.price ?? null
+  const bull = data.ladder?.cases?.find((c: any) => /bull/i.test(c.name))?.price ?? null
+  const rr = (bear != null && bull != null && spot != null && bull > spot && spot > bear)
+    ? { ratio: (bull - spot) / (spot - bear), bear, bull, spot } : null
+
+  const decide = () => {
+    // Hand off to where the asset's decision work lives: its live idea if one
+    // exists, else the legacy asset page. Never decide on this surface.
+    const idea = data.liveIdeas[0]
+    if (idea) routeToIdea(idea.id, `${symbol ?? 'Asset'} — decide: ${pending.action ?? 'request'}`)
+    else onOpenLegacy?.()
+  }
+
+  return (
+    <div data-testid="decision-band"
+         className="mb-5 rounded-lg border border-amber-300/70 bg-amber-50/60 px-5 py-4 dark:border-amber-400/30 dark:bg-amber-500/[0.06]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className={EYEBROW}>Waiting on you</p>
+          <p className="mt-0.5 text-[14px] font-semibold text-gray-900 dark:text-gray-100">
+            {pending.action ?? 'Decision request'}{pending.portfolioName ? ` · ${pending.portfolioName}` : ''}
+          </p>
+          {pending.decisionNote && (
+            <p className="mt-0.5 max-w-[70ch] text-[12px] text-gray-600 dark:text-gray-400">“{pending.decisionNote}”</p>
+          )}
+        </div>
+        {/* Elevated: the one primary action on the page, beside the request it acts on. */}
+        <button type="button" onClick={decide} data-testid="decision-cta"
+                className="shrink-0 rounded-md bg-gray-900 px-4 py-2 text-[13px] font-semibold text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200">
+          Decide
+        </button>
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div data-testid="against-view">
+          <p className={EYEBROW}>Against our view</p>
+          <p className="mt-0.5 text-[12px] text-gray-700 dark:text-gray-300">
+            {toSpot != null
+              ? `Target ${money(data.target!)} · ${toSpot >= 0 ? '+' : ''}${toSpot.toFixed(1)}% to spot`
+              : 'No target on record to weigh the request against.'}
+            {rr && (
+              <span className="text-gray-500">
+                {' · '}reward-to-risk {rr.ratio.toFixed(1)}:1
+                <span className="text-gray-400"> (bear {money(rr.bear)} / spot {money(rr.spot)} / bull {money(rr.bull)})</span>
+              </span>
+            )}
+          </p>
+        </div>
+        <div data-testid="against-book">
+          <p className={EYEBROW}>Against the book</p>
+          <p className="mt-0.5 text-[12px] text-gray-700 dark:text-gray-300">
+            {position && position.weightPct != null
+              ? `${position.portfolioName} carries ${position.weightPct.toFixed(2)}% against it.`
+              : 'Not held in the book this request is for.'}
+          </p>
+        </div>
       </div>
     </div>
   )

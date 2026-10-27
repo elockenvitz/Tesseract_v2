@@ -11,7 +11,11 @@ import { SNAPSHOT_COVERAGE, SNAPSHOT_THESIS_STATUS, SNAPSHOT_QUOTE } from './sna
 import { OUR_VIEW_FIELDS, ourViewContributions } from './our-view-fixtures'
 import { FeedSentinelRepro } from './feed-sentinel-repro'
 import { DesignDirections } from './design/directions'
+import { DecisionBand } from '../src/components/asset-v2/AssetWorkspace'
+import { AW_PENDING, AW_NONE } from './asset-workspace-fixtures'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AssetWorkPane } from '../src/components/asset/work/AssetWorkPane'
+import { splitAttention } from '../src/lib/asset-work/attention'
 
 /**
  * The app's providers, minus everything the harness does not need.
@@ -70,6 +74,16 @@ function Harness() {
     )
   }
 
+  /*
+   * `?surface=asset-workspace&case=pending|none` renders the REAL AssetWorkspacePane
+   * (the component IdeasWorkPane mounts) with synthetic data seeded into its own
+   * react-query key — so the new DecisionBand is viewable without production data or
+   * a login. `case=pending` shows the band; `case=none` shows it collapsed.
+   */
+  if (surface === 'asset-workspace') {
+    return <AssetWorkspaceSurface mode={(q.get('case') as 'pending' | 'none') ?? 'pending'} h={h} />
+  }
+
   if (surface === 'feed-sentinel') {
     return (
       <div data-harness={surface} style={{ padding: 12 }}>
@@ -124,6 +138,75 @@ function Harness() {
    * the Snapshot sits inside AssetTab's column, and measuring it at 1920
    * would measure a width it never actually gets.
    */
+  /*
+   * ?surface=asset-work&case=both|ideas|process|none|pm|analyst
+   *
+   * The Work prototype with synthetic data, so the interaction can be reviewed
+   * without touching the Process or Decisions tabs. The component takes props
+   * shaped to the real contracts — attention already split by splitAttention,
+   * ideas carrying stored stage values, the workflow summary the Process tab
+   * renders — so what is stubbed here is the fetch, not the shape.
+   */
+  if (surface === 'asset-work') {
+    const mode = q.get('case') ?? 'both'
+    const requests = [
+      { id: 'req-1', portfolioId: 'pf-a', requestedBy: 'analyst-1', status: 'pending',
+        action: 'buy', portfolioName: 'Large Cap Growth', requesterName: 'J. Homler',
+        contextNote: 'Add 30bps on the pullback', createdAgo: '2 days ago' },
+      { id: 'req-2', portfolioId: 'pf-b', requestedBy: 'me', status: 'pending',
+        action: 'trim', portfolioName: 'Vision Fund 10K', requesterName: 'You',
+        contextNote: 'Trim into strength', createdAgo: '5 hours ago' },
+    ]
+    const pmIds = mode === 'analyst' ? [] : ['pf-a']
+    const attention = (mode === 'none' || mode === 'process')
+      ? { needsYourAction: [], awaitingOthers: [] }
+      : splitAttention(requests as never, { userId: 'me', pmPortfolioIds: pmIds })
+
+    const ideas = (mode === 'both' || mode === 'ideas' || mode === 'pm' || mode === 'analyst')
+      ? [
+          { id: 'i1', action: 'buy', stage: 'ready_for_decision', rationale: 'Deliveries inflecting; margin trough passed', portfolioName: 'Large Cap Growth', updatedAgo: '3d' },
+          { id: 'i2', action: 'add', stage: 'thesis_forming', rationale: 'Services mix shifting the multiple', portfolioName: 'Vision Fund 10K', updatedAgo: '1w' },
+          { id: 'i3', action: 'sell', stage: 'exploring', rationale: 'Competitive position eroding in China', portfolioName: null, updatedAgo: '2w' },
+        ]
+      : []
+
+    const proc = (mode === 'both' || mode === 'process' || mode === 'pm' || mode === 'analyst')
+      ? {
+          workflowName: 'Earnings Season - Q2 2026',
+          stages: [
+            { id: 's1', label: 'Expectations', done: 2, total: 5, active: true },
+            { id: 's2', label: 'Earnings Print', done: 0, total: 5, active: false },
+            { id: 's3', label: 'Trade Decision', done: 0, total: 3, active: false },
+          ],
+          openStageLabel: 'Expectations', openStageDone: 2, openStageTotal: 5,
+          assigneeName: 'E. Lockenvitz', deadline: 'Nov 1', priorityLabel: 'High',
+        }
+      : null
+
+    return (
+      <div data-harness={surface} style={{ height: `${h}px`, width: '100%', background: '#f9fafb', padding: '16px 32px', overflow: 'auto' }}>
+        <p style={{ font: '600 12px system-ui', color: '#6b7280', marginBottom: 12 }}>
+          AssetWorkPane — case={mode} (pm books: {pmIds.join(',') || 'none'})
+        </p>
+        <div style={{ maxWidth: 760 }}>
+          <AssetWorkPane
+            attention={attention as never}
+            ideas={ideas}
+            process={proc}
+            researchLinks={mode === 'none' ? [] : [
+              { key: 'thesis', label: 'Investment Thesis', detail: '2 sources', onOpen: () => console.log('open thesis') },
+            ]}
+            onOpenIdeas={() => console.log('open idea pipeline')}
+            onOpenIdea={(id) => console.log('open idea', id)}
+            onOpenProcess={() => console.log('open full process')}
+            onNewIdea={() => console.log('new idea')}
+            onStartProcess={() => console.log('start process')}
+          />
+        </div>
+      </div>
+    )
+  }
+
   if (surface === 'snapshot') {
     const assetId = q.get('asset') ?? 'aapl'
     const empty = assetId === 'empty'
@@ -223,6 +306,45 @@ function Harness() {
       {surface === 'ideas'
         ? <IdeasWorkspace />
         : <DashboardShell initialLens={(q.get('lens') as never) ?? 'today'} />}
+    </div>
+  )
+}
+
+/** Dev-only: the real AssetWorkspacePane with a stubbed org context and a seeded
+ *  cache, so its DecisionBand renders on synthetic data. The Decide CTA's real
+ *  hand-off event is caught and shown, demonstrating the navigation into the
+ *  decision workflow without a tab shell here. */
+function AssetWorkspaceSurface({ mode, h }: { mode: 'pending' | 'none'; h: number }) {
+  const [nav, setNav] = React.useState<string | null>(null)
+  React.useEffect(() => {
+    const on = (e: Event) => {
+      const d = JSON.stringify((e as CustomEvent).detail)
+      setNav(d); document.body.setAttribute('data-last-nav', d)
+    }
+    window.addEventListener('decision-engine-action', on as EventListener)
+    return () => window.removeEventListener('decision-engine-action', on as EventListener)
+  }, [])
+  const data = mode === 'pending' ? AW_PENDING : AW_NONE
+  return (
+    <div data-harness="asset-workspace" style={{ height: `${h}px`, width: '100%', background: '#f9fafb', padding: '24px 32px' }}>
+      <div style={{ maxWidth: 1040 }}>
+        <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }}>
+          AssetWorkspacePane › DecisionBand — the real component, synthetic data (case={mode})
+        </p>
+        <DecisionBand data={data} position={data.positions[0] ?? null} symbol="AAPL"
+          onOpenLegacy={() => setNav('{"openLegacy":true}')} />
+        {mode === 'none' && (
+          <p style={{ fontSize: 13, color: '#374151' }}>
+            No pending request → the band renders nothing above this line (it collapsed cleanly).
+          </p>
+        )}
+      </div>
+      {nav && (
+        <div data-testid="harness-nav"
+          style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#111827', color: '#fff', padding: '10px 14px', fontFamily: 'monospace', fontSize: 12 }}>
+          Decide → handed off to the decision workflow: {nav}
+        </div>
+      )}
     </div>
   )
 }

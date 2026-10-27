@@ -410,3 +410,59 @@ describe('one page that adapts, never a sub-navigation', () => {
     expect(screen.queryByTestId('position-tile')).not.toBeInTheDocument()
   })
 })
+
+/* ------------------------------------------------- understand → decide */
+
+const pendingDecision = (over: any = {}) => ({
+  id: 'd1', status: 'pending', action: 'Add in Large Cap Core', decidedAt: null,
+  portfolioId: 'p1', portfolioName: 'Large Cap Core', decisionNote: 'Raising to target on the print.', ...over,
+})
+
+describe('the decision band turns understanding into a decision', () => {
+  it('shows nothing when no request is waiting — the hero collapses', () => {
+    data = { ...BASE, positions: [position()], decisions: [] }
+    render(<AssetWorkspacePane asset={asset} portfolioId="p1" />)
+    expect(screen.queryByTestId('decision-band')).not.toBeInTheDocument()
+  })
+
+  it('does not appear for a decision that is already made', () => {
+    data = { ...BASE, decisions: [pendingDecision({ status: 'approved', decidedAt: daysAgo(1) })] }
+    render(<AssetWorkspacePane asset={asset} />)
+    expect(screen.queryByTestId('decision-band')).not.toBeInTheDocument()
+  })
+
+  it('frames a pending request against our view and the book, with an elevated CTA', () => {
+    data = { ...BASE, positions: [position()], target: 200, spot: 160, decisions: [pendingDecision()] }
+    render(<AssetWorkspacePane asset={asset} portfolioId="p1" />)
+    const band = screen.getByTestId('decision-band')
+    expect(within(band).getByText(/Add in Large Cap Core/)).toBeInTheDocument()
+    expect(within(band).getByTestId('decision-cta')).toHaveTextContent('Decide')
+    expect(within(band).getByTestId('against-view')).toHaveTextContent(/Target.*to spot/)
+    expect(within(band).getByTestId('against-book')).toHaveTextContent(/Large Cap Core carries 28\.20%/)
+  })
+
+  it('shows reward-to-risk only when the ladder and spot that derive it exist, and states its inputs', () => {
+    // bear 120, bull 260, spot 160 -> (260-160)/(160-120) = 2.5:1
+    data = { ...BASE, target: 200, spot: 160, ladder: ladder(120, 260), decisions: [pendingDecision()] }
+    const { rerender } = render(<AssetWorkspacePane asset={asset} />)
+    const view = screen.getByTestId('against-view')
+    expect(view).toHaveTextContent(/reward-to-risk 2\.5:1/)
+    expect(view).toHaveTextContent(/bear .* spot .* bull/)
+
+    // No ladder -> the ratio is omitted, never invented.
+    data = { ...BASE, target: 200, spot: 160, ladder: null, decisions: [pendingDecision()] }
+    rerender(<AssetWorkspacePane asset={{ ...asset, id: 'a-2' }} />)
+    expect(screen.getByTestId('against-view')).not.toHaveTextContent(/reward-to-risk/)
+  })
+
+  it('hands off to the decision workflow rather than deciding inline', async () => {
+    const spy = vi.spyOn(window, 'dispatchEvent')
+    data = { ...BASE, decisions: [pendingDecision()],
+      liveIdeas: [{ id: 'i1', action: 'add', stage: 'deciding', rationale: null, portfolioName: 'Large Cap Core' }] }
+    render(<AssetWorkspacePane asset={asset} />)
+    await userEvent.click(screen.getByTestId('decision-cta'))
+    const fired = spy.mock.calls.some(([e]: any) => e?.type === 'decision-engine-action')
+    expect(fired).toBe(true)
+    spy.mockRestore()
+  })
+})
