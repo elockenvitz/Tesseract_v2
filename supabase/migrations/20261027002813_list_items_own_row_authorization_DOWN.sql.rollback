@@ -1,0 +1,72 @@
+-- =============================================================================
+-- ROLLBACK for 20261027002812_list_items_own_row_authorization
+--
+-- NOT a migration. The `.rollback` suffix keeps it out of the migration path;
+-- run it by hand only.
+--
+-- ⚠ Running this REOPENS the authorization gap. It restores the two policies
+-- verbatim as they stood in production before the fix, which admitted the list
+-- owner and any write/admin collaborator to ANY row, on ANY list type. With
+-- these in place a write collaborator on a collaborative list can again delete
+-- and edit another member's rows via PostgREST.
+--
+-- Use it only if the narrowed policy is found to deny a legitimate caller, and
+-- prefer narrowing the fix to reverting it. After running this,
+-- `supabase/tests/list-items-own-row-authorization.sql` should report 6 failed
+-- assertions (1, 2, 4, 5, 8, 15) — if it does not, this file no longer matches
+-- what it claims to undo.
+-- =============================================================================
+
+DROP POLICY IF EXISTS "List items are removed by their author, or by anyone on a mutual list"
+  ON public.asset_list_items;
+DROP POLICY IF EXISTS "List item notes are edited by their author, or by anyone on a mutual list"
+  ON public.asset_list_items;
+
+CREATE POLICY "Users can delete items from lists they have write access to"
+  ON public.asset_list_items
+  FOR DELETE
+  TO authenticated
+  USING (
+    list_id IN (
+      SELECT asset_lists.id
+        FROM asset_lists
+       WHERE asset_lists.created_by = auth.uid()
+          OR asset_lists.id IN (
+               SELECT asset_list_collaborations.list_id
+                 FROM asset_list_collaborations
+                WHERE asset_list_collaborations.user_id = auth.uid()
+                  AND asset_list_collaborations.permission = ANY (ARRAY['admin'::text, 'write'::text])
+             )
+    )
+  );
+
+CREATE POLICY "Users can update items in lists they have write access to"
+  ON public.asset_list_items
+  FOR UPDATE
+  TO authenticated
+  USING (
+    list_id IN (
+      SELECT asset_lists.id
+        FROM asset_lists
+       WHERE asset_lists.created_by = auth.uid()
+          OR asset_lists.id IN (
+               SELECT asset_list_collaborations.list_id
+                 FROM asset_list_collaborations
+                WHERE asset_list_collaborations.user_id = auth.uid()
+                  AND asset_list_collaborations.permission = ANY (ARRAY['admin'::text, 'write'::text])
+             )
+    )
+  )
+  WITH CHECK (
+    list_id IN (
+      SELECT asset_lists.id
+        FROM asset_lists
+       WHERE asset_lists.created_by = auth.uid()
+          OR asset_lists.id IN (
+               SELECT asset_list_collaborations.list_id
+                 FROM asset_list_collaborations
+                WHERE asset_list_collaborations.user_id = auth.uid()
+                  AND asset_list_collaborations.permission = ANY (ARRAY['admin'::text, 'write'::text])
+             )
+    )
+  );
