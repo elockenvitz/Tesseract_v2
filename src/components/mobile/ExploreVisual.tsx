@@ -32,6 +32,72 @@ import type { ExploreVisual as Visual } from '../../lib/mobile/explore-visual'
 
 const TRACK = 'bg-gray-200 dark:bg-gray-700'
 
+/**
+ * How much room the picture has — the one thing these primitives were never
+ * told.
+ *
+ * ── The problem ───────────────────────────────────────────────────────────
+ *
+ * Every size in this file was chosen against a 178px phone cell, and every
+ * comment below still cites that number. The desktop gallery then rendered
+ * the same markup at 421px on a narrow tile and 881px on a wide one, and a
+ * track is a percentage width with a fixed height: it does not get bigger
+ * when the card does, it gets THINNER-LOOKING.
+ *
+ * Measured live at 1920x889 on AMZN's scenario card:
+ *
+ *   the modelled band          524 x 6px        — 87:1
+ *   its two labels             810px apart, one in each bottom corner
+ *   the whole picture          64px tall inside a 172px panel box
+ *
+ * So a bar that reads as a solid object on a phone reads as a hairline ruled
+ * across a dashboard tile, and the pair of labels under it stop being a pair.
+ *
+ * ── The rule ──────────────────────────────────────────────────────────────
+ *
+ * A picture is BOUNDED and WEIGHTED, never stretched. `tile` thickens every
+ * track by roughly half, lifts the figures a step, and `ExploreVisualBlock`
+ * caps the whole thing at a measure a label pair can span — past which extra
+ * width buys no precision a reader can use and costs the picture its shape.
+ *
+ * `card` is the phone, byte-identical to what shipped. It is the default, so
+ * every mobile caller is unchanged by construction rather than by inspection.
+ *
+ * The root margin belongs to the CALLER at tile density. On the phone the
+ * picture follows prose directly and owns the gap; in the gallery it sits in
+ * a container that already spaces it, and the two margins stacked.
+ */
+export type VisualDensity = 'card' | 'tile'
+
+const SCALE = {
+  card: {
+    root: 'mt-2',
+    bar: 'h-2', band: 'h-1.5', rule: 'h-px', rail: 'h-1',
+    row: 'h-5', tick: 'h-2.5', dot: 'h-2 w-2', marker: 'h-3 w-3',
+    lead: 'text-[17px]', move: 'text-[15px]', value: 'text-[13px]',
+    note: 'text-[10px]', body: 'text-[14px]',
+  },
+  tile: {
+    root: '',
+    bar: 'h-3', band: 'h-2.5', rule: 'h-0.5', rail: 'h-1.5',
+    row: 'h-6', tick: 'h-3.5', dot: 'h-2.5 w-2.5', marker: 'h-3.5 w-3.5',
+    lead: 'text-[20px]', move: 'text-[17px]', value: 'text-[15px]',
+    note: 'text-[11px]', body: 'text-[15px]',
+  },
+} as const
+
+type Scale = (typeof SCALE)['card']
+
+/**
+ * The measure a bounded picture gets.
+ *
+ * 520px is where a two-ended label row stops reading as a pair: `BULL $180`
+ * and `$253` at 881px apart are two unrelated captions in opposite corners.
+ * It is also comfortably past every narrow tile (421px), so the cap costs
+ * those nothing and changes only the cards that were being stretched.
+ */
+const MEASURE = 'max-w-[520px]'
+
 /** A small caps label. Used identically by every archetype so they read as a set. */
 function Cap({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -52,7 +118,7 @@ const money = (v: number) => (v >= 1000 ? `$${v.toFixed(0)}` : v >= 100 ? `$${v.
  * a scale that stretched to include it would put the price back inside the
  * picture and quietly undo the claim.
  */
-function ScenarioRange({ v }: { v: Extract<Visual, { kind: 'scenario_range' }> }) {
+function ScenarioRange({ v, s }: { v: Extract<Visual, { kind: 'scenario_range' }>; s: Scale }) {
   const span = v.high - v.low
   // A third of the band at each end, which is enough room to show a breach
   // without shrinking the band itself into a stripe.
@@ -69,7 +135,7 @@ function ScenarioRange({ v }: { v: Extract<Visual, { kind: 'scenario_range' }> }
   const deviation = edge > 0 ? ((v.current - edge) / edge) * 100 : null
 
   return (
-    <div data-explore-visual="scenario_range" className="mt-2">
+    <div data-explore-visual="scenario_range" className={s.root}>
       {/* The deviation leads, because "the market escaped my range" is the
           finding and the band is the evidence for it. */}
       {outside && deviation != null && (
@@ -77,7 +143,7 @@ function ScenarioRange({ v }: { v: Extract<Visual, { kind: 'scenario_range' }> }
           <span
             data-scenario-deviation
             className={clsx(
-              'text-[17px] font-bold tabular-nums leading-none',
+              s.lead, 'font-bold tabular-nums leading-none',
               above ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
             )}
           >
@@ -93,28 +159,29 @@ function ScenarioRange({ v }: { v: Extract<Visual, { kind: 'scenario_range' }> }
         </div>
       )}
 
-      <div className="relative h-5">
+      <div className={clsx('relative', s.row)}>
         {/* The modelled band. Solid, because it is the thing that was stated. */}
         <div
           data-scenario-band
-          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-gray-300 dark:bg-gray-600"
+          className={clsx('absolute top-1/2 -translate-y-1/2 rounded-full bg-gray-300 dark:bg-gray-600', s.band)}
           style={{ left: `${pos(v.low)}%`, width: `${pos(v.high) - pos(v.low)}%` }}
         />
         {/* The rest of the axis, so the marker has somewhere to be. */}
-        <div className={clsx('absolute inset-x-0 top-1/2 h-px -translate-y-1/2', TRACK)} aria-hidden />
+        <div className={clsx('absolute inset-x-0 top-1/2 -translate-y-1/2', s.rule, TRACK)} aria-hidden />
         {/* Every case gets a tick, so a three-case ladder does not read as two. */}
         {(v.cases ?? []).map(c => (
           <div
             key={`${c.label}:${c.price}`}
             data-scenario-case={c.label}
-            className="absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-gray-500 dark:bg-gray-400"
+            className={clsx('absolute top-1/2 w-px -translate-y-1/2 bg-gray-500 dark:bg-gray-400', s.tick)}
             style={{ left: `${clamp(pos(c.price))}%` }}
           />
         ))}
         <div
           data-scenario-current
           className={clsx(
-            'absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white dark:ring-gray-900',
+            'absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white dark:ring-gray-900',
+            s.marker,
             outside
               ? above ? 'bg-emerald-500' : 'bg-rose-500'
               : 'bg-gray-900 dark:bg-white',
@@ -125,7 +192,7 @@ function ScenarioRange({ v }: { v: Extract<Visual, { kind: 'scenario_range' }> }
 
       <div className="mt-1 flex min-w-0 items-baseline justify-between gap-2">
         <Cap className="min-w-0 truncate">{v.breachedLabel ? `${v.breachedLabel} ${money(edge)}` : `${money(v.low)}–${money(v.high)}`}</Cap>
-        <span className="shrink-0 text-[10px] font-bold tabular-nums text-gray-700 dark:text-gray-200">
+        <span className={clsx('shrink-0 font-bold tabular-nums text-gray-700 dark:text-gray-200', s.note)}>
           {money(v.current)}
         </span>
       </div>
@@ -142,12 +209,12 @@ function ScenarioRange({ v }: { v: Extract<Visual, { kind: 'scenario_range' }> }
  * end — "nobody has put a number here" said in the shape of the thing that is
  * missing.
  */
-function TargetCompare({ v }: { v: Extract<Visual, { kind: 'target_compare' }> }) {
+function TargetCompare({ v, s }: { v: Extract<Visual, { kind: 'target_compare' }>; s: Scale }) {
   const has = v.target != null
   const upside = has && v.current > 0 ? ((v.target! - v.current) / v.current) * 100 : null
 
   return (
-    <div data-explore-visual="target_compare" className="mt-2">
+    <div data-explore-visual="target_compare" className={s.root}>
       <div className="flex items-baseline justify-between">
         <Cap>Current</Cap>
         <Cap>{v.targetLabel ?? 'Target'}</Cap>
@@ -157,21 +224,21 @@ function TargetCompare({ v }: { v: Extract<Visual, { kind: 'target_compare' }> }
           half-width card push the row past the column — which at 390px is a
           horizontally scrolling PAGE, not a clipped label. */}
       <div className="mt-1 flex min-w-0 items-center gap-1.5">
-        <span className="min-w-0 truncate text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
+        <span className={clsx('min-w-0 truncate font-bold tabular-nums text-gray-900 dark:text-white', s.value)}>
           {money(v.current)}
         </span>
-        <span className="h-2 w-2 shrink-0 rounded-full bg-gray-900 dark:bg-white" aria-hidden />
+        <span className={clsx('shrink-0 rounded-full bg-gray-900 dark:bg-white', s.dot)} aria-hidden />
         <span
           className={clsx(
-            'h-px min-w-0 flex-1',
-            has ? TRACK : 'border-t border-dashed border-gray-300 dark:border-gray-600',
+            'min-w-0 flex-1',
+            has ? clsx(s.rule, TRACK) : 'h-px border-t border-dashed border-gray-300 dark:border-gray-600',
           )}
           aria-hidden
         />
         {has ? (
           <>
-            <span className="h-2 w-2 shrink-0 rounded-full border-2 border-gray-900 bg-white dark:border-white dark:bg-gray-900" aria-hidden />
-            <span data-target-value className="min-w-0 truncate text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
+            <span className={clsx('shrink-0 rounded-full border-2 border-gray-900 bg-white dark:border-white dark:bg-gray-900', s.dot)} aria-hidden />
+            <span data-target-value className={clsx('min-w-0 truncate font-bold tabular-nums text-gray-900 dark:text-white', s.value)}>
               {money(v.target!)}
             </span>
           </>
@@ -180,14 +247,14 @@ function TargetCompare({ v }: { v: Extract<Visual, { kind: 'target_compare' }> }
              number here is the one thing a no-target card must not do. */
           <span
             data-target-empty
-            className="min-w-0 shrink truncate rounded border border-dashed border-gray-300 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:border-gray-600"
+            className={clsx('min-w-0 shrink truncate rounded border border-dashed border-gray-300 px-1.5 py-0.5 font-bold uppercase tracking-wide text-gray-400 dark:border-gray-600', s.note)}
           >
             Not set
           </span>
         )}
       </div>
       {upside != null && (
-        <p className="mt-1 text-[10px] font-semibold tabular-nums text-gray-500 dark:text-gray-400">
+        <p className={clsx('mt-1 font-semibold tabular-nums text-gray-500 dark:text-gray-400', s.note)}>
           {upside >= 0 ? '+' : ''}{upside.toFixed(0)}% to target
         </p>
       )}
@@ -219,21 +286,21 @@ const shortDate = (iso: string) => {
  * different failures. Prose collapses them into one "4mo"; two lengths of one
  * line cannot.
  */
-function Elapsed({ v, now }: { v: Extract<Visual, { kind: 'timeline' }>; now: number }) {
+function Elapsed({ v, now, s }: { v: Extract<Visual, { kind: 'timeline' }>; now: number; s: Scale }) {
   const t0 = new Date(v.statedAt).getTime()
   if (!Number.isFinite(t0) || now <= t0) return null
   return (
-    <div data-explore-visual="timeline" data-timeline-shape="elapsed" className="mt-2">
-      <div className={clsx('h-2 w-full rounded-full', TRACK)}>
+    <div data-explore-visual="timeline" data-timeline-shape="elapsed" className={s.root}>
+      <div className={clsx('w-full rounded-full', s.bar, TRACK)}>
         <div data-timeline-elapsed className="h-full w-full rounded-full bg-amber-400 dark:bg-amber-500" />
       </div>
       <div className="mt-1 flex items-baseline justify-between">
         <Cap>Last {shortDate(v.statedAt)}</Cap>
-        <span className="text-[10px] font-bold tabular-nums text-amber-600 dark:text-amber-400">
+        <span className={clsx('font-bold tabular-nums text-amber-600 dark:text-amber-400', s.note)}>
           {elapsed(now - t0)}
         </span>
       </div>
-      <p className="mt-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+      <p className={clsx('mt-0.5 font-bold text-amber-600 dark:text-amber-400', s.note)}>
         {v.overdueLabel ?? 'since anything was recorded'}
       </p>
     </div>
@@ -252,9 +319,9 @@ function Elapsed({ v, now }: { v: Extract<Visual, { kind: 'timeline' }>; now: nu
  * The same primitive rather than a second one: an aging strip and a deadline
  * strip differ by whether a marker exists, which is a property of the data.
  */
-function Timeline({ v, now }: { v: Extract<Visual, { kind: 'timeline' }>; now: number }) {
+function Timeline({ v, now, s }: { v: Extract<Visual, { kind: 'timeline' }>; now: number; s: Scale }) {
   const dueAt = v.dueAt
-  if (!dueAt) return <Elapsed v={v} now={now} />
+  if (!dueAt) return <Elapsed v={v} now={now} s={s} />
   const t0 = new Date(v.statedAt).getTime()
   const t1 = new Date(dueAt).getTime()
   if (!Number.isFinite(t0) || !Number.isFinite(t1) || t1 <= t0) return null
@@ -266,8 +333,8 @@ function Timeline({ v, now }: { v: Extract<Visual, { kind: 'timeline' }>; now: n
   const pct = Math.min(Math.max((honoured / (t2 - t0)) * 100, 22), 78)
 
   return (
-    <div data-explore-visual="timeline" className="mt-2">
-      <div className="flex h-2 w-full items-stretch gap-0.5">
+    <div data-explore-visual="timeline" className={s.root}>
+      <div className={clsx('flex w-full items-stretch gap-0.5', s.bar)}>
         <div className={clsx('rounded-l-full', TRACK)} style={{ width: `${pct}%` }} />
         <div
           data-timeline-overdue
@@ -279,7 +346,7 @@ function Timeline({ v, now }: { v: Extract<Visual, { kind: 'timeline' }>; now: n
         <Cap>Set {shortDate(v.statedAt)}</Cap>
         <Cap className="text-amber-600 dark:text-amber-400">Due {shortDate(dueAt)}</Cap>
       </div>
-      <p className="mt-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+      <p className={clsx('mt-0.5 font-bold text-amber-600 dark:text-amber-400', s.note)}>
         +{elapsed(over)} {v.overdueLabel ?? 'overdue'}
       </p>
     </div>
@@ -294,17 +361,17 @@ function Timeline({ v, now }: { v: Extract<Visual, { kind: 'timeline' }>; now: n
  * has to re-learn every scroll, and 20% is comfortably above any single
  * position in these books.
  */
-function Exposure({ v }: { v: Extract<Visual, { kind: 'exposure' }> }) {
+function Exposure({ v, s }: { v: Extract<Visual, { kind: 'exposure' }>; s: Scale }) {
   const pct = Math.min((v.weightPct / 20) * 100, 100)
   return (
-    <div data-explore-visual="exposure" className="mt-2">
+    <div data-explore-visual="exposure" className={s.root}>
       <div className="flex min-w-0 items-baseline gap-1.5">
-        <span data-exposure-value className="text-[17px] font-bold tabular-nums leading-none text-gray-900 dark:text-white">
+        <span data-exposure-value className={clsx('font-bold tabular-nums leading-none text-gray-900 dark:text-white', s.lead)}>
           {v.weightPct.toFixed(1)}%
         </span>
         <Cap className="min-w-0 truncate">{v.portfolioName ? `of ${v.portfolioName}` : 'of the book'}</Cap>
       </div>
-      <div className={clsx('mt-1.5 h-2 w-full overflow-hidden rounded-full', TRACK)}>
+      <div className={clsx('mt-1.5 w-full overflow-hidden rounded-full', s.bar, TRACK)}>
         <div className="h-full rounded-full bg-gray-900 dark:bg-white" style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -312,27 +379,27 @@ function Exposure({ v }: { v: Extract<Visual, { kind: 'exposure' }> }) {
 }
 
 /** Two weights that disagree, drawn to one scale so the gap is the picture. */
-function Comparison({ v }: { v: Extract<Visual, { kind: 'comparison' }> }) {
+function Comparison({ v, s }: { v: Extract<Visual, { kind: 'comparison' }>; s: Scale }) {
   const max = Math.max(...v.rows.map(r => Math.abs(r.pct)), 1)
   return (
-    <div data-explore-visual="comparison" className="mt-2 space-y-1">
+    <div data-explore-visual="comparison" className={clsx('space-y-1', s.root)}>
       {v.rows.map((r, i) => (
         <div key={r.label} className="flex min-w-0 items-center gap-1.5">
           <Cap className="w-[52px] shrink-0 truncate">{r.label}</Cap>
-          <div className={clsx('h-2 min-w-0 flex-1 overflow-hidden rounded-full', TRACK)}>
+          <div className={clsx('min-w-0 flex-1 overflow-hidden rounded-full', s.bar, TRACK)}>
             <div
               data-comparison-bar={r.label}
               className={clsx('h-full rounded-full', i === 0 ? 'bg-gray-900 dark:bg-white' : 'bg-gray-400 dark:bg-gray-500')}
               style={{ width: `${(Math.abs(r.pct) / max) * 100}%` }}
             />
           </div>
-          <span className="w-[38px] shrink-0 text-right text-[10px] font-bold tabular-nums text-gray-700 dark:text-gray-200">
+          <span className={clsx('w-[38px] shrink-0 text-right font-bold tabular-nums text-gray-700 dark:text-gray-200', s.note)}>
             {r.pct.toFixed(1)}%
           </span>
         </div>
       ))}
       {v.deltaLabel && (
-        <p className="pt-0.5 text-right text-[10px] font-bold text-gray-500 dark:text-gray-400">
+        <p className={clsx('pt-0.5 text-right font-bold text-gray-500 dark:text-gray-400', s.note)}>
           {v.deltaLabel}
         </p>
       )}
@@ -347,12 +414,12 @@ function Comparison({ v }: { v: Extract<Visual, { kind: 'comparison' }> }) {
  * matters starts at the review, and a full-history chart puts the interesting
  * stretch somewhere in the middle of a line with nothing to mark it.
  */
-function LastLook({ v }: { v: Extract<Visual, { kind: 'last_look' }> }) {
+function LastLook({ v, s }: { v: Extract<Visual, { kind: 'last_look' }>; s: Scale }) {
   const up = v.movePct >= 0
   return (
-    <div data-explore-visual="last_look" className="mt-2">
+    <div data-explore-visual="last_look" className={s.root}>
       <div className="flex min-w-0 items-center gap-1.5">
-        <span className="h-2 w-2 shrink-0 rounded-full border-2 border-gray-400 bg-white dark:bg-gray-900" aria-hidden />
+        <span className={clsx('shrink-0 rounded-full border-2 border-gray-400 bg-white dark:bg-gray-900', s.dot)} aria-hidden />
         {/* The label gives way before the number does: "+21%" is the finding
             and "Last look 10mo" is context for it. */}
         {/* "Last look 10mo" is 14 characters between a dot, a rule and a
@@ -361,17 +428,17 @@ function LastLook({ v }: { v: Extract<Visual, { kind: 'last_look' }> }) {
             because a reader cannot tell 1mo from 18mo. The card's own age
             stamp is in the header; this label only has to name the marker. */}
         <Cap className="shrink-0">Last look</Cap>
-        <span className={clsx('h-px min-w-0 flex-1', TRACK)} aria-hidden />
+        <span className={clsx('min-w-0 flex-1', s.rule, TRACK)} aria-hidden />
         <span
           data-lastlook-move
           className={clsx(
-            'shrink-0 text-[15px] font-bold tabular-nums leading-none',
+            'shrink-0 font-bold tabular-nums leading-none', s.move,
             up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
           )}
         >
           {up ? '+' : ''}{v.movePct.toFixed(0)}%
         </span>
-        <span className={clsx('h-2 w-2 shrink-0 rounded-full', up ? 'bg-emerald-500' : 'bg-rose-500')} aria-hidden />
+        <span className={clsx('shrink-0 rounded-full', s.dot, up ? 'bg-emerald-500' : 'bg-rose-500')} aria-hidden />
       </div>
       <p className="mt-1 text-right text-[9px] font-bold uppercase tracking-wide text-gray-400">Today</p>
     </div>
@@ -379,9 +446,9 @@ function LastLook({ v }: { v: Extract<Visual, { kind: 'last_look' }> }) {
 }
 
 /** Where an authored thing has got to, as a rail rather than a chart. */
-function Workflow({ v }: { v: Extract<Visual, { kind: 'workflow' }> }) {
+function Workflow({ v, s }: { v: Extract<Visual, { kind: 'workflow' }>; s: Scale }) {
   return (
-    <div data-explore-visual="workflow" className="mt-2">
+    <div data-explore-visual="workflow" className={s.root}>
       {v.direction && (
         <span
           data-workflow-direction={v.direction}
@@ -405,13 +472,13 @@ function Workflow({ v }: { v: Extract<Visual, { kind: 'workflow' }> }) {
           shape does not is the stage it has actually reached. One label, at a
           size that can be read, under a rail that keeps its four segments. */}
       <div className={clsx('flex items-center gap-1', v.direction && 'mt-1.5')}>
-        {v.stages.map((s, i) => (
+        {v.stages.map((stage, i) => (
           <div
-            key={s}
-            data-workflow-stage={s}
+            key={stage}
+            data-workflow-stage={stage}
             data-active={i === v.activeIndex}
             className={clsx(
-              'h-1 min-w-0 flex-1 rounded-full',
+              'min-w-0 flex-1 rounded-full', s.rail,
               i <= v.activeIndex ? 'bg-violet-500' : TRACK,
             )}
           />
@@ -419,7 +486,7 @@ function Workflow({ v }: { v: Extract<Visual, { kind: 'workflow' }> }) {
       </div>
       <p
         data-workflow-active-label
-        className="mt-1.5 truncate text-[10px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400"
+        className={clsx('mt-1.5 truncate font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400', s.note)}
       >
         {v.stages[v.activeIndex] ?? v.stages[0]}
       </p>
@@ -428,13 +495,13 @@ function Workflow({ v }: { v: Extract<Visual, { kind: 'workflow' }> }) {
 }
 
 /** Somebody's words, as the hero. No chart, no metric, no track. */
-function QuoteVisual({ v }: { v: Extract<Visual, { kind: 'quote' }> }) {
+function QuoteVisual({ v, s }: { v: Extract<Visual, { kind: 'quote' }>; s: Scale }) {
   return (
-    <div data-explore-visual="quote" className="mt-2">
+    <div data-explore-visual="quote" className={s.root}>
       <Quote className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600" aria-hidden />
       <p
         data-quote-text
-        className="mt-1 line-clamp-4 text-[14px] font-medium italic leading-[1.4] text-gray-800 dark:text-gray-100"
+        className={clsx('mt-1 line-clamp-4 font-medium italic leading-[1.4] text-gray-800 dark:text-gray-100', s.body)}
       >
         {v.text}
       </p>
@@ -454,13 +521,13 @@ function QuoteVisual({ v }: { v: Extract<Visual, { kind: 'quote' }> }) {
  * can do, and a second set of affordances inside the picture would be a fourth
  * place to click on a tile that has three.
  */
-function QuestionVisual({ v }: { v: Extract<Visual, { kind: 'question' }> }) {
+function QuestionVisual({ v, s }: { v: Extract<Visual, { kind: 'question' }>; s: Scale }) {
   return (
-    <div data-explore-visual="question" className="mt-2">
+    <div data-explore-visual="question" className={s.root}>
       <HelpCircle className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500" aria-hidden />
       <p
         data-question-text
-        className="mt-1 line-clamp-3 text-[14px] font-semibold leading-[1.35] text-gray-800 dark:text-gray-100"
+        className={clsx('mt-1 line-clamp-3 font-semibold leading-[1.35] text-gray-800 dark:text-gray-100', s.body)}
       >
         {v.text}
       </p>
@@ -473,6 +540,11 @@ interface ExploreVisualProps {
   /** The sparkline, injected — this component never reaches for price data. */
   sparkline?: React.ReactNode
   now?: number
+  /**
+   * How much room the picture has. Defaults to the phone, so every existing
+   * caller is unchanged by construction. See `SCALE`.
+   */
+  density?: VisualDensity
 }
 
 /**
@@ -482,20 +554,37 @@ interface ExploreVisualProps {
  * gets nothing, and the second gets the existing sparkline rather than a second
  * implementation of one.
  */
-export function ExploreVisualBlock({ visual, sparkline, now }: ExploreVisualProps) {
+export function ExploreVisualBlock({ visual, sparkline, now, density = 'card' }: ExploreVisualProps) {
   const t = now ?? Date.now()
-  switch (visual.kind) {
-    case 'scenario_range': return <ScenarioRange v={visual} />
-    case 'target_compare': return <TargetCompare v={visual} />
-    case 'timeline': return <Timeline v={visual} now={t} />
-    case 'exposure': return <Exposure v={visual} />
-    case 'comparison': return <Comparison v={visual} />
-    case 'last_look': return <LastLook v={visual} />
-    case 'workflow': return <Workflow v={visual} />
-    case 'quote': return <QuoteVisual v={visual} />
-    case 'question': return <QuestionVisual v={visual} />
-    case 'price_trend': return sparkline ? <div data-explore-visual="price_trend">{sparkline}</div> : null
-    // Typography carries it. Deliberately renders nothing rather than a box.
-    case 'none': return null
-  }
+  const s = SCALE[density]
+
+  const body = (() => {
+    switch (visual.kind) {
+      case 'scenario_range': return <ScenarioRange v={visual} s={s} />
+      case 'target_compare': return <TargetCompare v={visual} s={s} />
+      case 'timeline': return <Timeline v={visual} now={t} s={s} />
+      case 'exposure': return <Exposure v={visual} s={s} />
+      case 'comparison': return <Comparison v={visual} s={s} />
+      case 'last_look': return <LastLook v={visual} s={s} />
+      case 'workflow': return <Workflow v={visual} s={s} />
+      case 'quote': return <QuoteVisual v={visual} s={s} />
+      case 'question': return <QuestionVisual v={visual} s={s} />
+      case 'price_trend': return sparkline ? <div data-explore-visual="price_trend">{sparkline}</div> : null
+      // Typography carries it. Deliberately renders nothing rather than a box.
+      case 'none': return null
+    }
+  })()
+
+  /*
+   * The measure, applied ONCE here rather than nine times below.
+   *
+   * Not on the phone: the cap is 520px and a phone cell is 178px, so a
+   * wrapper there would be a div that does nothing, on sixty cards. And not
+   * on the sparkline either — `price_trend` hands back whatever the caller
+   * injected, and a plotted series is the one picture that genuinely reads
+   * better the wider it gets. Bounding a chart would be the opposite of this
+   * rule rather than an instance of it.
+   */
+  if (density === 'card' || body === null || visual.kind === 'price_trend') return body
+  return <div className={MEASURE}>{body}</div>
 }

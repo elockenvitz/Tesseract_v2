@@ -445,7 +445,11 @@ export function OpportunityTile({
       out.push({
         key: visual.kind,
         label: 'the finding',
-        node: <ExploreVisualBlock visual={visual} now={Date.now()} />,
+        /* `tile`, because this is not a phone cell. The primitives were drawn
+           against 178px and the gallery renders them at 421px narrow and
+           881px wide, where a fixed-height track becomes a hairline and a
+           two-ended label row becomes two captions in opposite corners. */
+        node: <ExploreVisualBlock visual={visual} now={Date.now()} density="tile" />,
       })
     }
     if (drawsPrice) {
@@ -532,15 +536,24 @@ export function OpportunityTile({
             under the reader's cursor.
           */}
           <div
-            /* `flow-root`, not a bare block: every archetype opens with its
-               own `mt-2`, and a top margin on the first child collapses
-               straight THROUGH a parent that has no padding or border -- so
-               the finding panel pushed the box 8px further down the tile than
-               the price panel did, and paging moved the grid by that much.
-               A block formatting context contains it. Not `overflow-hidden`,
-               which would also contain it but would clip the chart's scrub
-               readout at the top of its box. */
-            className="min-w-0 flow-root"
+            /*
+             * Centred, and a flex container rather than a block.
+             *
+             * The box is sized to the TALLEST panel, and every archetype but
+             * the chart is a bar and two labels. On AMZN that was 64px of
+             * picture in a 172px box, top-aligned -- 108px of void, 63% of
+             * the box, under a hairline. Centring spends the difference
+             * evenly instead of dumping it all below.
+             *
+             * This also retires the `flow-root` that used to be here. That
+             * was containing the archetype's own `mt-2`, which collapsed
+             * through a parent with no padding and made the finding panel sit
+             * 8px lower than the price panel. At `tile` density the archetype
+             * has no root margin at all -- the container's `mt-2`/`mt-3`
+             * above is the gap -- so there is nothing left to collapse, and a
+             * flex parent would not collapse it anyway.
+             */
+            className="flex min-w-0 flex-col justify-center"
             style={{ height: panels.length > 1 ? panelBox : undefined }}
             data-testid="opportunity-visual"
             data-panel={panels[shown].key}
