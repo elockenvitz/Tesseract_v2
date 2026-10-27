@@ -50,6 +50,17 @@ export type DecisionContext = {
    * count from -- a recorded review, or the case being written. Wording only.
    */
   caseAnchor?: 'reviewed' | 'written'
+  /**
+   * Whether the book actually holds this name.
+   *
+   * Stated, never inferred. `tierFor` used to read materiality as "does this
+   * item carry an assetId", which is true of every finding that names a
+   * security and therefore could not be false -- a thesis nobody owns scored
+   * as a real position. An evaluator that knows the answer sets this; one
+   * that does not leaves it undefined and gets the unheld treatment, which
+   * is the safe direction.
+   */
+  held?: boolean
 }
 
 export type DecisionCTA = {

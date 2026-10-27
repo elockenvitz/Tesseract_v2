@@ -80,17 +80,55 @@ const SEVERITY_WEIGHT: Record<string, number> = {
   red: 0.30, orange: 0.20, yellow: 0.12, blue: 0.04, gray: 0,
 }
 
+/**
+ * Findings that are framework decay when capital is behind them and coverage
+ * housekeeping when it is not.
+ *
+ * ── Why a tier move and not just a lower score ────────────────────────────
+ *
+ * Tier is a hard partition and score only orders within it, so a demotion
+ * that stays inside tier 1 still competes for tier-1 slots. WMT's thesis was
+ * 373 days old on a name the book does not hold, the price had moved -0.3%,
+ * and dropping its severity moved it from #3 to #4 on Today -- still one of
+ * four slots on the most prominent surface in the product, still describing
+ * nothing that happened.
+ *
+ * An aged case on a name nobody owns is the same claim `COVERAGE_STALE_THESIS`
+ * already makes, and that sits at tier 4. So it lands there: reported, counted
+ * as evaluated, visible in Also watching, and not interrupting anybody.
+ */
+const HOUSEKEEPING_WHEN_UNHELD: Record<string, TodayTier> = {
+  THESIS_STALE: 4,
+}
+
 export function tierFor(item: DecisionItem): { tier: TodayTier; base: number } {
   const mapped = item.titleKey ? TIER[item.titleKey] : undefined
-  const { tier, base } = mapped ?? UNTIERED
+  const { base } = mapped ?? UNTIERED
+  /* Only where the evaluator actually answered. `undefined` means it was
+     never asked, and silently demoting every evaluator that has not been
+     taught to answer would be a regression across the whole surface. */
+  const demoted = item.titleKey && item.context.held === false
+    ? HOUSEKEEPING_WHEN_UNHELD[item.titleKey]
+    : undefined
+  const tier = demoted ?? (mapped ?? UNTIERED).tier
 
   const severity = SEVERITY_WEIGHT[item.severity] ?? 0
 
   // Materiality: how much of the book this concerns. Mobile's banding is used
   // unchanged so "3% is meaningfully bigger than 0.8%" means the same thing on
-  // both products. `held` is true when the item concerns a real position.
+  // both products.
+  //
+  // `held` was `!!portfolioId || !!assetId`, which is true of every finding
+  // that names a security and therefore could never be false -- a thesis on a
+  // name the book does not own scored as a real position. An evaluator that
+  // knows the answer now states it, and the id fallback is kept only for the
+  // evaluators that do not: a portfolio id IS a book, and the alternative
+  // would silently demote every finding nobody has taught to answer yet.
   const weight = item.context.proposedWeight ?? null
-  const materiality = materialityBand(weight, !!item.context.portfolioId || !!item.context.assetId)
+  const materiality = materialityBand(
+    weight,
+    item.context.held ?? !!item.context.portfolioId,
+  )
 
   // Recency as a bounded modifier, never the sort key — an old unresolved
   // high-impact item loses this component and keeps everything else.

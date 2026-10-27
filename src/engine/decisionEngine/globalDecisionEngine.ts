@@ -46,6 +46,16 @@ export interface EngineArgs {
   coverage: {
     assetIds: string[]
     portfolioIds: string[]
+    /**
+     * The subset of `assetIds` the book actually HOLDS.
+     *
+     * `assetIds` is the union of held names and names this user has written
+     * about, which is the right universe to evaluate but the wrong answer to
+     * "is capital behind this". Kept separate so an evaluator can tell a
+     * position from a reading list; absent means unknown, and unknown is
+     * treated as not held.
+     */
+    heldAssetIds?: ReadonlySet<string>
   }
   data: {
     tradeIdeas?: any[]
@@ -139,6 +149,8 @@ export function runGlobalDecisionEngine(args: EngineArgs): GlobalDecisionEngineR
     thesisUpdates: args.data.thesisUpdates,
     // A thesis confirmed to still hold is not stale, even if nobody edited it.
     thesisReviews: args.data.thesisReviews,
+    // And an aged thesis on a name nobody owns is not an interrupt.
+    heldAssetIds: args.coverage.heldAssetIds,
     now,
   }))
 

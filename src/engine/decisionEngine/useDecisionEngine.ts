@@ -120,12 +120,24 @@ export function useDecisionEngine(): UseDecisionEngineResult {
           .eq('is_archived', false),
       ])
 
+      /*
+       * Held and merely-researched, kept apart.
+       *
+       * The union below is the right universe to EVALUATE -- a name you wrote
+       * up and stopped covering still has a case that can go stale. It is the
+       * wrong answer to "is capital behind this", and merging them here is
+       * what left every evaluator unable to tell the two apart. Same rows,
+       * no extra round trip.
+       */
+      const heldAssetIds = new Set(
+        (holdingsRes.data ?? []).map(h => h.asset_id).filter((id): id is string => !!id),
+      )
       const assetIds = [...new Set([
-        ...(holdingsRes.data?.map(h => h.asset_id) ?? []),
+        ...heldAssetIds,
         ...(researchedRes.data?.map(c => c.asset_id) ?? []),
       ])]
 
-      return { portfolioIds: uniquePortfolioIds, assetIds, roleByPortfolioId }
+      return { portfolioIds: uniquePortfolioIds, assetIds, heldAssetIds, roleByPortfolioId }
     },
     enabled: !!userId,
     staleTime: 300_000,
@@ -590,6 +602,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
       coverage: {
         assetIds: coverage?.assetIds ?? [],
         portfolioIds: coverage?.portfolioIds ?? [],
+        heldAssetIds: coverage?.heldAssetIds,
       },
       data: {
         tradeIdeas: expandedTradeIdeas,

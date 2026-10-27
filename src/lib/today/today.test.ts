@@ -50,6 +50,67 @@ describe('tier assignment', () => {
     expect(tierFor(item({ titleKey: 'OVERDUE_DELIVERABLE' })).tier).toBe(3)
   })
 
+  describe('materiality is a fact, not the presence of an id', () => {
+    /*
+     * `held` read `!!portfolioId || !!assetId`, which is true of every
+     * finding that names a security -- so it could not be false, and a
+     * thesis on a name the book does not own scored as a real position.
+     * That is half of why WMT reached one of Today's four slots on nothing
+     * but its age.
+     */
+    const aged = (held?: boolean) => item({
+      titleKey: 'THESIS_STALE', severity: 'yellow',
+      context: { assetId: 'a-wmt', assetTicker: 'WMT', ...(held == null ? {} : { held }) },
+    })
+
+    it('scores a held name above an unheld one, all else equal', () => {
+      expect(tierFor(aged(true)).base).toBeGreaterThan(tierFor(aged(false)).base)
+    })
+
+    it('moves an unheld stale thesis out of the framework tier entirely', () => {
+      /*
+       * A lower score inside tier 1 still competes for tier-1 slots -- tier
+       * is the partition, score only orders within it. Demoting WMT by
+       * severity alone moved it from #3 to #4 and left it on the surface.
+       * An aged case on a name nobody owns is the claim
+       * COVERAGE_STALE_THESIS already makes, and that is tier 4.
+       */
+      expect(tierFor(aged(true)).tier).toBe(1)
+      expect(tierFor(aged(false)).tier).toBe(4)
+    })
+
+    it('leaves an evaluator that was never asked where it was', () => {
+      /* `undefined` is "not asked", not "not held". Demoting on it would be
+         a silent regression across every evaluator that has not been taught
+         to answer yet. */
+      expect(tierFor(aged()).tier).toBe(1)
+    })
+
+    it('does not credit a name merely for having an id', () => {
+      /* The old rule's exact input: an assetId, no portfolio, nothing stated.
+         It used to score identically to a real position. */
+      expect(tierFor(aged()).base).toBe(tierFor(aged(false)).base)
+      expect(tierFor(aged()).base).toBeLessThan(tierFor(aged(true)).base)
+    })
+
+    it('still credits an evaluator that names a book but not a holding', () => {
+      /* A portfolio id IS a book. Demoting every evaluator that has not yet
+         been taught to answer would be a silent regression across the
+         surface, so the id fallback stays for exactly that case. */
+      /* No weight on either, because `held` is only consulted when the
+         weight is absent -- with a number in hand the band is the number. */
+      const inBook = item({
+        titleKey: 'PROPOSAL_AWAITING_DECISION',
+        context: { portfolioId: 'p1' },
+      })
+      const nowhere = item({
+        titleKey: 'PROPOSAL_AWAITING_DECISION',
+        context: { assetId: 'a-1' },
+      })
+      expect(tierFor(inBook).base).toBeGreaterThan(tierFor(nowhere).base)
+    })
+  })
+
   it('ranks an unmapped evaluator as informational rather than dropping it', () => {
     expect(tierFor(item({ titleKey: 'SOMETHING_NEW' })).tier).toBe(4)
   })

@@ -24,11 +24,16 @@ function daysAgo(n: number): string {
   return new Date(NOW.getTime() - n * 86400000).toISOString()
 }
 
-function baseArgs(overrides: Partial<EngineArgs['data']> = {}): EngineArgs {
+function baseArgs(
+  overrides: Partial<EngineArgs['data']> = {},
+  /* Which of the covered names the book actually holds. Omitted means none,
+     which is what "unknown is not held" resolves to -- see `thesisStale`. */
+  coverage: Partial<EngineArgs['coverage']> = {},
+): EngineArgs {
   return {
     userId: 'u1',
     role: 'analyst',
-    coverage: { assetIds: ['a1', 'a2'], portfolioIds: ['p1'] },
+    coverage: { assetIds: ['a1', 'a2'], portfolioIds: ['p1'], ...coverage },
     data: {
       tradeIdeas: [],
       proposals: [],
@@ -337,10 +342,23 @@ describe('Rating Changed, No Follow-up', () => {
 // ---------------------------------------------------------------------------
 
 describe('Thesis Stale', () => {
+  /*
+   * Age now sets the severity only where the book holds the name.
+   *
+   * These three cases were written when the evaluator fired on the calendar
+   * alone, so they passed no holdings and still expected orange and red. That
+   * is the defect: a thesis on a name nobody owns reaching RED and taking one
+   * of Today's four slots, which is what it did in production on WMT -- 373
+   * days, price moved -0.3%, not a position. Rewritten to state which case
+   * each one is rather than deleted; the unheld path has cases of its own
+   * below.
+   */
+  const held = (ids: string[]) => ({ heldAssetIds: new Set(ids) })
+
   it('fires YELLOW action for thesis 90+ days old', () => {
     const result = runGlobalDecisionEngine(baseArgs({
       thesisUpdates: [makeThesisUpdate('a1', { updated_at: daysAgo(100) })],
-    }))
+    }, held(['a1'])))
     const thesis = result.actionItems.find(i => i.id.startsWith('thesis-stale-'))
     expect(thesis).toBeDefined()
     expect(thesis!.severity).toBe('yellow')
@@ -352,7 +370,7 @@ describe('Thesis Stale', () => {
   it('fires ORANGE action for thesis 135+ days old', () => {
     const result = runGlobalDecisionEngine(baseArgs({
       thesisUpdates: [makeThesisUpdate('a1', { updated_at: daysAgo(150) })],
-    }))
+    }, held(['a1'])))
     const thesis = result.actionItems.find(i => i.id.startsWith('thesis-stale-'))
     expect(thesis).toBeDefined()
     expect(thesis!.severity).toBe('orange')
@@ -363,12 +381,66 @@ describe('Thesis Stale', () => {
   it('fires RED action for thesis 180+ days old', () => {
     const result = runGlobalDecisionEngine(baseArgs({
       thesisUpdates: [makeThesisUpdate('a1', { updated_at: daysAgo(200) })],
-    }))
+    }, held(['a1'])))
     const thesis = result.actionItems.find(i => i.id.startsWith('thesis-stale-'))
     expect(thesis).toBeDefined()
     expect(thesis!.severity).toBe('red')
     expect(thesis!.surface).toBe('action')
     expect(thesis!.dismissible).toBe(false)
+  })
+
+  describe('a date is not a reason', () => {
+    /*
+     * Measured in production: WMT's thesis was 373 days old, the price had
+     * moved -0.3%, the book did not hold it -- and it rendered RED in one of
+     * Today's four slots. Nothing had happened. The only fact was that time
+     * had passed, which is true of every thesis every morning.
+     */
+    it('caps an unheld name at yellow however old the thesis is', () => {
+      const result = runGlobalDecisionEngine(baseArgs({
+        thesisUpdates: [makeThesisUpdate('a1', { updated_at: daysAgo(373) })],
+      }, held(['a2'])))
+      const thesis = result.actionItems.find(i => i.id.startsWith('thesis-stale-'))
+      expect(thesis!.severity).toBe('yellow')
+      expect(thesis!.context.held).toBe(false)
+    })
+
+    it('still raises it, because the work is real', () => {
+      /* Demoted, not dropped. Today counts it as evaluated and reports it in
+         Also watching; what it loses is the claim on a slot. */
+      const result = runGlobalDecisionEngine(baseArgs({
+        thesisUpdates: [makeThesisUpdate('a1', { updated_at: daysAgo(373) })],
+      }, held([])))
+      expect(result.actionItems.filter(i => i.id.startsWith('thesis-stale-'))).toHaveLength(1)
+    })
+
+    it('treats unknown holdings as not held, rather than inventing a position', () => {
+      /* No `heldAssetIds` at all -- an older call site, or a failed holdings
+         read. Under-claiming is the safe direction. */
+      const result = runGlobalDecisionEngine(baseArgs({
+        thesisUpdates: [makeThesisUpdate('a1', { updated_at: daysAgo(200) })],
+      }))
+      const thesis = result.actionItems.find(i => i.id.startsWith('thesis-stale-'))
+      expect(thesis!.severity).toBe('yellow')
+      expect(thesis!.context.held).toBe(false)
+    })
+
+    it('ranks a held stale thesis above an unheld older one', () => {
+      /* The property that matters on the surface: age alone can no longer
+         outrank capital. */
+      const result = runGlobalDecisionEngine(baseArgs({
+        thesisUpdates: [
+          makeThesisUpdate('a1', { updated_at: daysAgo(373) }),
+          makeThesisUpdate('a2', { updated_at: daysAgo(200) }),
+        ],
+      }, held(['a2'])))
+      const stale = result.actionItems.filter(i => i.id.startsWith('thesis-stale-'))
+      expect(stale).toHaveLength(2)
+      /* a1 is 173 days older and scores lower, because a2 is the one with
+         capital behind it. */
+      expect(stale.find(i => i.context.assetId === 'a2')!.severity).toBe('red')
+      expect(stale.find(i => i.context.assetId === 'a1')!.severity).toBe('yellow')
+    })
   })
 
   it('does NOT fire for thesis < 90 days old', () => {
