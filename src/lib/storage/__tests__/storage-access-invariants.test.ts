@@ -50,6 +50,46 @@ function sourceFiles(dir = SRC, acc: string[] = []): string[] {
   return acc
 }
 
+/**
+ * Every source file, walked and comment-stripped ONCE.
+ *
+ * Two of the rules below scan the whole tree, and each re-walked ~580 files
+ * and re-stripped every one of them inside its own `it`. Alone that is fast.
+ * Under the parallel guard, with 500 test files competing for the same disk,
+ * the two took 9.5s and 10.7s and tripped vitest's 5s default — so both
+ * reported `Test timed out` instead of a verdict.
+ *
+ * That is the worse half of the failure: a gate that goes red for being slow
+ * is indistinguishable from one that goes red for finding something, and the
+ * reflex it trains is to raise the timeout, which leaves the gate one slower
+ * machine away from doing it again.
+ *
+ * At module scope the scan happens once, during collection, where no per-test
+ * timeout applies. `viewport-sizing.test` hit this exact wall and solved it
+ * this exact way.
+ */
+const SOURCES = sourceFiles().map(f => {
+  const rel = path.relative(SRC, f).replace(/\\/g, '/')
+  return { rel, code: codeOf(rel) }
+})
+
+describe('the scan these rules depend on is real', () => {
+  /*
+   * Both whole-tree rules below assert an empty array. If the walk returned
+   * nothing — a moved root, a bad cwd — they would pass while checking no
+   * files at all, which is the failure mode this repo keeps producing. This
+   * is what makes the two gates below non-vacuous.
+   */
+  it('reached a meaningful number of source files', () => {
+    expect(SOURCES.length).toBeGreaterThan(300)
+  })
+
+  it('actually stripped comments, so the rules match code and not prose', () => {
+    expect(SOURCES.some(s => s.code.length > 0)).toBe(true)
+    expect(SOURCES.every(s => !/^\s*\/\/ /m.test(s.code))).toBe(true)
+  })
+})
+
 describe('getPublicUrl is never used', () => {
   /*
    * Every bucket in this project is private. `getPublicUrl` on a private
@@ -58,9 +98,7 @@ describe('getPublicUrl is never used', () => {
    * publish an unauthenticated link to the object forever.
    */
   it('appears nowhere in application source', () => {
-    const offenders = sourceFiles()
-      .map(f => path.relative(SRC, f).replace(/\\/g, '/'))
-      .filter(rel => codeOf(rel).includes('getPublicUrl'))
+    const offenders = SOURCES.filter(s => s.code.includes('getPublicUrl')).map(s => s.rel)
     expect(offenders).toEqual([])
   })
 
@@ -102,12 +140,9 @@ describe('the organization logo has one resolver', () => {
   it('no surface signs template-branding directly any more', () => {
     // The five independent signers are now one. Any direct signing of this
     // bucket outside the shared cache is the defect returning.
-    const offenders = sourceFiles()
-      .map(f => path.relative(SRC, f).replace(/\\/g, '/'))
-      .filter(rel => {
-        const body = codeOf(rel)
-        return body.includes("'template-branding'") && body.includes('createSignedUrl')
-      })
+    const offenders = SOURCES
+      .filter(s => s.code.includes("'template-branding'") && s.code.includes('createSignedUrl'))
+      .map(s => s.rel)
     expect(offenders).toEqual([])
   })
 })
