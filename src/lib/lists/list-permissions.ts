@@ -12,11 +12,15 @@
  * ── The rule that is easy to lose ───────────────────────────────────────
  *
  * On a COLLABORATIVE list, write access does not mean you may remove any row.
- * You may remove the rows you added. Postgres does not enforce that half: the
- * DELETE policy on `asset_list_items` admits the owner and any write/admin
- * collaborator, so this function is the only thing standing between a
- * collaborator and somebody else's row. Widening it is a product decision, not
- * a refactor.
+ * You may remove the rows you added.
+ *
+ * This file was for a long time the ONLY thing enforcing that: the DELETE
+ * policy on `asset_list_items` admitted the owner and any write collaborator,
+ * so a collaborator who went around the UI could remove somebody else's row.
+ * Migration 20261027002812 closed it — Postgres now applies the same own-row
+ * term, and 20261027013936 made `added_by` NOT NULL so there is no author-less
+ * row to fall back on. The two rules must stay in agreement: widening either
+ * one is a product decision, not a refactor.
  */
 
 export interface ListDataLike {
@@ -28,7 +32,15 @@ export interface ListDataLike {
 
 export interface CollaboratorLike {
   user_id: string
-  permission: 'read' | 'write' | 'admin'
+  /*
+   * There is no 'admin'. It sat in one CHECK constraint on
+   * `asset_list_collaborations.permission` and was excluded by a second, so
+   * both had to hold and the value could never be written; migration
+   * 20261027013936 dropped it. The branches here that tested for it were
+   * therefore unreachable, which made `hasAdminAccess` an alias for `isOwner`
+   * while reading as though a second tier existed.
+   */
+  permission: 'read' | 'write'
 }
 
 export interface ListItemOwner {
@@ -103,11 +115,12 @@ export function listPermissions({
   const isCollaborator = !!collaboration
   const collaboratorPermission = collaboration?.permission
 
-  const hasWriteAccess = isOwner ||
-    collaboratorPermission === 'write' ||
-    collaboratorPermission === 'admin'
+  const hasWriteAccess = isOwner || collaboratorPermission === 'write'
 
-  const hasAdminAccess = isOwner || collaboratorPermission === 'admin'
+  // Settings and collaborator management are the owner's, and only the
+  // owner's — see the note on CollaboratorLike.permission. Named rather than
+  // inlined because it is a rule, and because an admin tier would land here.
+  const hasAdminAccess = isOwner
 
   const canView = isOwner || isCollaborator
 

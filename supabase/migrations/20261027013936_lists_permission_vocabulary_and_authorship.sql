@@ -2,10 +2,15 @@
 -- Lists: make the permission vocabulary honest, authorship mandatory, and the
 -- grants explicit.
 --
--- ⚠ NOT APPLIED. Authored 2026-10-27; applying it was refused by the tooling
--- in the session that wrote it, so production still has the pre-migration
--- shape. Nothing here is urgent — see "What this does not fix" below — but
--- until it runs, the schema says things that are not true.
+-- APPLIED to production 2026-10-27 as ledger version 20261027013936.
+--
+-- Verified after: `asset_list_collaborations` carries `valid_permission`
+-- (read | write) and nothing else; `asset_list_items.added_by` is NOT NULL
+-- with 0 null rows of 34; 0 of the 10 policies across the three tables are
+-- granted to `public`, and 0 mention 'admin'.
+--
+-- Behaviour change: none. Every removed branch was already unreachable — see
+-- each section for the measurement that establishes that.
 --
 -- Three small corrections to the same table family, deliberately in ONE
 -- migration so list permissions are touched once rather than three times.

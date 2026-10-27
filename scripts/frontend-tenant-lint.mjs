@@ -91,6 +91,36 @@ const P0_TABLES = new Set([
 ])
 
 /**
+ * Tables deliberately NOT org-scoped, with the reason.
+ *
+ * CLAUDE.md Standing Rule 5 makes a table with no org column by design an
+ * explicit exception that "must be documented as such". Until now that
+ * documentation was the ABSENCE of the table from ORG_SCOPED_TABLES above,
+ * which is indistinguishable from an oversight — the reader cannot tell a
+ * decision from a gap, and neither can a reviewer adding a feature on top.
+ *
+ * Listing one here is a claim, not a waiver: the key must carry a reason, and
+ * the table must not also appear in ORG_SCOPED_TABLES. `assertExceptions()`
+ * below enforces both, so a table cannot be quietly excused out of the lint
+ * while still being treated as org-owned.
+ */
+const NOT_ORG_SCOPED_BY_DESIGN = {
+  asset_lists:
+    'Personal/shared lists, not org property. 64 of 66 rows have a NULL ' +
+    'organization_id and no policy references the column; access is ' +
+    'created_by + asset_list_collaborations. Verified 2026-10-27: 0 ' +
+    'cross-org collaborations, anon sees nothing (every branch tests ' +
+    'auth.uid()). If lists are ever made org-owned, the scoping has to be ' +
+    'ADDED — it does not already exist.',
+  asset_list_items:
+    'Rows of an asset_lists list; inherits that table\'s posture. Own-row ' +
+    'authorization is enforced by migration 20261027002812.',
+  asset_list_collaborations:
+    'The sharing grant for an asset_lists list. Scoped to the list and the ' +
+    'reader (user_id = auth.uid()), which is narrower than an org term.',
+}
+
+/**
  * Views that are already org-scoped via their definition — allowed without filter.
  */
 const ORG_SCOPED_VIEWS = new Set([
@@ -245,7 +275,37 @@ const args = process.argv.slice(2)
 const showReport = args.includes('--report')
 const ciMode = args.includes('--ci')
 
+/**
+ * The exception list has to be able to be wrong.
+ *
+ * Two ways it could rot: an entry with no reason (a waiver dressed as
+ * documentation), or a table claimed as both org-scoped and not — which would
+ * mean one of the two lists is stale and the reader cannot tell which. Either
+ * one fails the lint, because a registry that cannot contradict itself is
+ * decoration.
+ */
+function assertExceptions() {
+  const problems = []
+  for (const [table, reason] of Object.entries(NOT_ORG_SCOPED_BY_DESIGN)) {
+    if (typeof reason !== 'string' || reason.trim().length < 40) {
+      problems.push(`${table}: claimed not-org-scoped with no stated reason`)
+    }
+    if (ORG_SCOPED_TABLES.has(table)) {
+      problems.push(
+        `${table}: listed in BOTH ORG_SCOPED_TABLES and ` +
+          `NOT_ORG_SCOPED_BY_DESIGN — one of them is stale`,
+      )
+    }
+  }
+  if (problems.length) {
+    console.error('\nFAIL: the tenant-exception registry contradicts itself:')
+    problems.forEach((p) => console.error('  ' + p))
+    process.exit(1)
+  }
+}
+
 function run() {
+  assertExceptions()
   const srcDir = join(process.cwd(), 'src')
   const files = walkDir(srcDir, ['.ts', '.tsx'])
   let totalViolations = 0
