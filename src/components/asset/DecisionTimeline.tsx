@@ -408,7 +408,10 @@ export function DecisionTimeline({
           onClick={handleLoadMore}
           className="w-full text-center text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 py-2.5 border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors"
         >
-          Show {Math.min(DEFAULT_VISIBLE, events.length - visibleCount)} more events
+          {/* Singular when one is left — "Show 1 more events" is the last
+              thing a reader sees at the bottom of an otherwise careful page. */}
+          Show {Math.min(DEFAULT_VISIBLE, events.length - visibleCount)} more{' '}
+          {Math.min(DEFAULT_VISIBLE, events.length - visibleCount) === 1 ? 'event' : 'events'}
         </button>
       )}
 
