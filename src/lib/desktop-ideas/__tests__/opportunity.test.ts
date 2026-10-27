@@ -59,6 +59,29 @@ describe('what kind of question it raises', () => {
     expect(opportunityKind(item({ signalType: 'no_thesis_on_position' }))).toBe('no_thesis')
   })
 
+  it('reads the absence, not the subject it is an absence of', () => {
+    /*
+     * The type the derived-insight producer actually emits. `insightSignalType`
+     * returns `no_research` for every documentation gap, and the family rule
+     * for `evidence|research|note` used to claim it on the strength of the
+     * word "research" alone -- so 41 of 90 tiles in this lens were chipped
+     * "New research" above the sentence "MU has no investment thesis".
+     *
+     * Asserted through the LABEL as well as the kind, because the kind is an
+     * internal name and the chip is the thing a reader sees contradict the
+     * card.
+     */
+    expect(opportunityKind(item({ signalType: 'no_research' }))).toBe('no_thesis')
+    expect(OPPORTUNITY_LABEL[opportunityKind(item({ signalType: 'no_research' }))])
+      .toBe('No thesis')
+    expect(opportunityKind(item({ signalType: 'missing_case' }))).toBe('no_thesis')
+
+    /* And the negation is a word, not three letters. A note is a thing that
+       exists; "notice" and "unknown" are not absences either. */
+    expect(opportunityKind(item({ signalType: 'note_arrived' }))).toBe('new_evidence')
+    expect(opportunityKind(item({ signalType: 'new_evidence_on_case' }))).toBe('new_evidence')
+  })
+
   it('falls back to the subtype family, and never to a type mobile cannot produce', () => {
     expect(opportunityKind(item({ subtype: 'research', signalType: null }))).toBe('new_evidence')
     expect(opportunityKind(item({ subtype: 'workflow', signalType: null }))).toBe('workflow')

@@ -113,6 +113,12 @@ export function isIdeaWorthy(item: ExploreItem): boolean {
   return !!(item.symbol || item.assetId)
 }
 
+/** A negation attached to a word, at a separator — not the letters "no" inside one. */
+const ABSENT = /(^|_)(no|missing|without)(_|$)/
+
+/** The things a desk writes. An absence of one of these is a documentation gap. */
+const RESEARCH_SUBJECT = /(research|thesis|case|evidence|note)/
+
 /**
  * Which investment question this candidate raises.
  *
@@ -130,10 +136,29 @@ export function opportunityKind(item: ExploreItem): OpportunityKind {
      is. An exact type always beats a substring guess. */
   if (sig === 'coverage_prompt') return 'coverage_gap'
 
+  /*
+   * The absence, before the subject it is an absence OF.
+   *
+   * The family rules below read the subject word and cannot see the negation
+   * attached to it. `insightSignalType` emits `no_research` for every
+   * documentation gap, `no_research` contains "research", and the
+   * `evidence|research|note` rule two lines down therefore claimed it — so 41
+   * of 90 tiles in this lens were chipped "New research" directly above the
+   * sentence "MU has no investment thesis". The chip is the first thing read
+   * on a card and it said the opposite of the finding.
+   *
+   * The thesis branch already carried this test. It only ever fired on types
+   * containing the word "thesis", and the producer's word is "research", so
+   * the one type that actually reaches here in production never met it. One
+   * rule, hoisted, applying to the whole research family.
+   *
+   * Anchored on separators rather than `includes('no')`: a bare substring
+   * matches "note", "notice" and "unknown", none of which assert an absence.
+   */
+  if (ABSENT.test(sig) && RESEARCH_SUBJECT.test(sig)) return 'no_thesis'
+
   if (sig.includes('price') || sig.includes('move') || sig.includes('drift')) return 'price_move'
-  if (sig.includes('thesis') || sig.includes('case')) {
-    return sig.includes('no_') || sig.includes('missing') ? 'no_thesis' : 'new_evidence'
-  }
+  if (sig.includes('thesis') || sig.includes('case')) return 'new_evidence'
   if (sig.includes('weight') || sig.includes('exposure') || sig.includes('active')) return 'exposure'
   if (sig.includes('evidence') || sig.includes('research') || sig.includes('note')) return 'new_evidence'
   if (sig.includes('scenario') || sig.includes('target') || sig.includes('ladder')) return 'framework'
