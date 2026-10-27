@@ -119,6 +119,56 @@ describe('a wide tile with two pictures pages between them', () => {
   })
 })
 
+/*
+ * The card whose finding IS the trajectory. `exploreVisualFor` returns
+ * `price_trend` for `target_hit`, `unusual_move` and `earnings_result`, and
+ * `ExploreVisualBlock` draws that kind by handing back the sparkline the
+ * CALLER injects -- which this caller does not, because the price has its own
+ * panel here. So the archetype resolved to null and `drawsPrice` excluded
+ * `price_trend` by name, and the tile drew nothing at all.
+ *
+ * Measured live at 1920x889 before the fix: 2 of 90 tiles, both "passed its
+ * target", with an empty 0px box where their only picture belonged.
+ */
+const TARGET_HIT = (): Opportunity => {
+  const item = {
+    id: 'aapl-1', dedupeKey: 'aapl', signalType: 'target_hit',
+    category: 'framework' as never, subtype: 'signal',
+    title: 'AAPL passed its target',
+    symbol: 'AAPL', companyName: 'Apple Inc.', assetId: 'a-aapl',
+    destination: {} as never,
+    metric: { value: '+20%', direction: 'good' },
+  } as unknown as ExploreItem
+  return { composed: { item, emphasis: 'standard', score: 5 } as ComposedExploreItem, item, kind: 'framework' }
+}
+
+describe('a card about the price draws the price', () => {
+  it.each(['compact', 'hero'] as const)('on a %s tile, where the archetype has none of its own', (size) => {
+    render(<OpportunityTile o={TARGET_HIT()} size={size} onOpen={() => {}} />)
+
+    const box = screen.getByTestId('opportunity-visual')
+    expect(box.dataset.panel).toBe('price')
+    /* Not merely present -- FILLED. The defect was a box that mounted and
+       held nothing, which `getByTestId` alone would have passed. The horizon
+       ladder is the chart's own and is the cheapest proof it is really
+       there. */
+    expect(screen.getByRole('button', { name: '1M' })).toBeTruthy()
+    expect(box.innerHTML.length).toBeGreaterThan(0)
+  })
+
+  it('is one picture, not a carousel of a chart and a blank', () => {
+    render(<OpportunityTile o={TARGET_HIT()} size="hero" onOpen={() => {}} />)
+    expect(dots()).toHaveLength(0)
+  })
+
+  it('still draws nothing rather than an empty box when there is no series', () => {
+    closes.mockReturnValue({ data: undefined })
+    render(<OpportunityTile o={TARGET_HIT()} size="hero" onOpen={() => {}} />)
+
+    expect(screen.queryByTestId('opportunity-visual')).toBeNull()
+  })
+})
+
 describe('a tile with one picture is not a carousel', () => {
   it('draws no dots when the price never arrives', () => {
     closes.mockReturnValue({ data: undefined })

@@ -364,8 +364,34 @@ export function OpportunityTile({
    * everywhere on the dashboard.
    */
   const { data: closes } = useTileCloses(item.symbol)
-  const drawsPrice = big && (closes?.length ?? 0) >= 2 && visual?.kind !== 'price_trend'
-  const chartHeight = size === 'hero' ? 150 : 120
+  const hasCloses = (closes?.length ?? 0) >= 2
+
+  /*
+   * ── When the tape IS the finding, it is not ambient ──────────────────────
+   *
+   * `exploreVisualFor` returns `price_trend` only for the types whose claim
+   * is the trajectory -- a target reached, an unusual move, an earnings
+   * print. `ExploreVisualBlock` renders that kind by handing back whatever
+   * sparkline the CALLER injected, and this caller injects none: the price
+   * lives in its own panel here, drawn by the shared desktop chart.
+   *
+   * So the two rules disagreed and the tile lost both ways. The archetype
+   * panel resolved to null, and `drawsPrice` was gated on `big` AND on the
+   * kind NOT being `price_trend` -- which is exactly backwards, since
+   * `price_trend` is the one kind that has asked for a chart by name.
+   * Measured live at 1920x889: 2 of 90 tiles -- "AMZN passed its target" and
+   * "AAPL passed its target" -- rendered an empty 0px box where their only
+   * picture should have been.
+   *
+   * One rule now: the chart is drawn when the resolver asked for it, or when
+   * a wide tile has the room to carry it as context beside the finding.
+   */
+  const priceIsTheFinding = visual?.kind === 'price_trend'
+  const drawsPrice = hasCloses && (priceIsTheFinding || big)
+  /* A compact tile asked for the tape still gets a readable plot and not a
+     third of its own height: 150/120 were chosen for the wide tiles that
+     carry the chart as a SECOND panel. */
+  const chartHeight = size === 'hero' ? 150 : big ? 120 : 92
   /* The carousel's box, sized to the taller panel. The chart is it: the
      archetypes are a bar and two labels and none of them reaches 120px. The
      ladder, the plot and the caption are what `height` covers, plus the
@@ -412,7 +438,10 @@ export function OpportunityTile({
    */
   const panels = useMemo(() => {
     const out: { key: string; label: string; node: React.ReactNode }[] = []
-    if (visual && visual.kind !== 'none') {
+    /* `price_trend` is excluded here, not absent: the resolver DID choose a
+       picture for those cards, and it is the chart below rather than one of
+       the bar archetypes. Pushing it here would push a null. */
+    if (visual && visual.kind !== 'none' && !priceIsTheFinding) {
       out.push({
         key: visual.kind,
         label: 'the finding',
@@ -422,12 +451,15 @@ export function OpportunityTile({
     if (drawsPrice) {
       out.push({
         key: 'price',
-        label: 'the price',
+        /* Named for the job it is doing on THIS card, because the dot's
+           label is read aloud: on a card about a target being passed the
+           chart is the finding, not the context beside it. */
+        label: priceIsTheFinding ? 'the finding' : 'the price',
         node: <TilePriceChart points={closes!} fill height={chartHeight} />,
       })
     }
     return out
-  }, [visual, drawsPrice, closes, chartHeight])
+  }, [visual, drawsPrice, priceIsTheFinding, closes, chartHeight])
 
   const [panel, setPanel] = useState(0)
   /* Clamped rather than reset: `closes` arriving or failing changes the panel
