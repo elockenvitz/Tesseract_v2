@@ -156,6 +156,37 @@ describe('arriving from the dashboard applies once', () => {
   })
 })
 
+describe('the requirement writing box uses the room that is there', () => {
+  const CARD = strip(read('src/components/ui/checklist/OperationalItemCard.tsx'))
+  const CSS = read('src/index.css')
+
+  it('is floored against the viewport, not a fixed row count', () => {
+    /*
+     * Measured at 1920x889 with a requirement open: the writing column's
+     * content ended at y=620 inside a scroller running to y=889, so ~269px
+     * sat empty directly beneath the box while the reader scrolled 309px for
+     * the context column on the right. A flat `rows={10}` is about 220px and
+     * used none of it; the editor now measures 267px.
+     *
+     * A FLOOR, not a fixed height — it must still grow on a tall screen and
+     * must not overflow a short laptop.
+     */
+    expect(CARD).toMatch(/min-h-viewport-30[\s\S]{0,400}rows=\{detail \? 10 : 2\}/)
+    // The utility pairs vh with dvh in one rule, per index.css.
+    expect(CSS).toContain('.min-h-viewport-30 {')
+    const at = CSS.indexOf('.min-h-viewport-30 {')
+    const rule = CSS.slice(at, CSS.indexOf('}', at))
+    expect(rule.indexOf('dvh;')).toBeGreaterThan(rule.indexOf('vh;'))
+  })
+
+  it('leaves the compact (non-detail) editor alone', () => {
+    // The same textarea serves a two-row inline control elsewhere; giving
+    // that a 30vh floor would make a task note taller than its own card.
+    expect(CARD).toMatch(/resize-none leading-snug/)
+    expect(CARD).not.toMatch(/min-h-viewport-30[^']*resize-none/)
+  })
+})
+
 describe('a finding written while working a requirement becomes a real note', () => {
   const REQ = strip(read('src/components/asset/work/RequirementWorkspace.tsx'))
   const NOTES = strip(read('src/hooks/useAssetResearchNotes.ts'))

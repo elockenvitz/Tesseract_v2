@@ -608,8 +608,24 @@ export function OperationalItemCard({
                   placeholder={detail
                     ? 'What did you find? What did you conclude, and what would change it?'
                     : 'Add task notes, instructions, or context...'}
+                  /*
+                    In the detail layout the box takes the room that is
+                    already there.
+
+                    Measured on a 1920x889 screen with a requirement open:
+                    the writing column's content ended at y=620 inside a
+                    scroller running to y=889, so ~269px sat empty directly
+                    under the box, while the reader scrolled 309px for the
+                    context column on the right. A flat `rows={10}` is about
+                    220px and ignored all of it.
+
+                    `min-h-viewport-30` is a floor, not a fixed height, so it
+                    still grows with `rows` on a tall screen and does not
+                    overflow a short laptop. `rows` stays as the floor when
+                    the stylesheet has not loaded.
+                  */
                   className={detail
-                    ? 'w-full rounded border border-gray-200 px-3 py-2 text-[13.5px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-900'
+                    ? 'w-full min-h-viewport-30 rounded border border-gray-200 px-3 py-2 text-[13.5px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-900'
                     : 'w-full text-[12px] px-2 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none leading-snug dark:border-gray-700'}
                   rows={detail ? 10 : 2} autoFocus
                   onKeyDown={e => {
