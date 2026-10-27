@@ -93,6 +93,29 @@ describe('the three merged destinations are all still reachable', () => {
     expect(TAB).not.toMatch(/id=\{WORK_SECTION_ID\.decisions\}/)
   })
 
+  it('does not leave a work anchor pending when its section never mounts', () => {
+    /*
+     * `WORK_SECTION_ID.decisions` is null now, but this is about the
+     * mechanism rather than that one value.
+     *
+     * The anchor effect made a SINGLE attempt and cleared the anchor only on
+     * success. Its deps are a stable state object and a string, so a failed
+     * attempt never ran again: a target that had not mounted yet was missed,
+     * and the stale anchor re-fired on every return to Work and scrolled
+     * nowhere. The Process surface waits on queries, so "not mounted yet" is
+     * the normal case for a deep link.
+     *
+     * Two rules: it retries across frames, and it stops — the anchor is
+     * cleared whether or not the scroll ever landed.
+     */
+    const at = TAB.indexOf('const DEADLINE = Date.now() + 1000')
+    expect(at).toBeGreaterThan(-1)
+    const body = TAB.slice(at, at + 400)
+    expect(body).toMatch(/requestAnimationFrame\(attempt\)/)
+    expect(body).toMatch(/scrollToSection\(workAnchor\.id\) \|\| Date\.now\(\) > DEADLINE/)
+    expect(body).toMatch(/setWorkAnchor\(null\)/)
+  })
+
   it('nests the process inside the one Work shell', () => {
     /*
      * This asserted shell → sidebar → navigator → surface → process. The
@@ -166,10 +189,20 @@ describe('handoffs land where they used to', () => {
      * Cleared INSIDE the animation frame. Clearing it in the effect body
      * re-renders at once, changing this effect's deps and running its
      * cleanup — which cancels the frame that was about to scroll.
+     *
+     * Stated as "not in the effect body" rather than by matching the shape
+     * of a single frame, which is what this assertion used to do: it read
+     * `setWorkAnchor(null) … }) … cancelAnimationFrame` and so pinned one
+     * frame rather than the rule, and broke when the one attempt became a
+     * bounded retry.
      */
     const at = TAB.indexOf("if (!workAnchor || activeMode !== 'work') return")
-    const body = TAB.slice(at, at + 1200)
-    expect(body).toMatch(/setWorkAnchor\(null\)[\s\S]{0,60}\}\)[\s\S]{0,80}cancelAnimationFrame/)
+    const body = TAB.slice(at, at + 2400)
+    const frameStarts = body.indexOf('const attempt = () => {')
+    expect(frameStarts).toBeGreaterThan(-1)
+    expect(body.slice(0, frameStarts)).not.toContain('setWorkAnchor(')
+    expect(body.slice(frameStarts)).toContain('setWorkAnchor(null)')
+    expect(body).toContain('cancelAnimationFrame(raf)')
   })
 
   it('carries a nonce, so the same destination twice still scrolls twice', () => {

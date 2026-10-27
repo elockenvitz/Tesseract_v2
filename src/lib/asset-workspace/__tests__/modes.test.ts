@@ -37,12 +37,26 @@ describe('the model is total', () => {
     for (const mode of ASSET_MODES) expect(MODE_LABEL[mode]).toBeTruthy()
   })
 
-  it('gives every Work sub-page a scroll anchor', () => {
+  it('gives a Work sub-page a scroll anchor only if the section exists', () => {
+    /*
+     * Was `expect(WORK_SECTION_ID[sub]).toMatch(/^work-/)` for all three,
+     * which is how `decisions: 'work-ideas'` survived: the test checked the
+     * SHAPE of the id, not that anything carried it. No rendered file has
+     * ever had `work-ideas`, so that anchor resolved to nothing every time.
+     *
+     * The rule now is the one that matters — an anchor is either null or a
+     * `work-` id, and the non-null ones are distinct — plus a named
+     * assertion for the sub-page that deliberately has none.
+     */
     for (const sub of WORK_SUBPAGES) {
-      expect(WORK_SECTION_ID[sub]).toMatch(/^work-/)
       expect(SUBPAGE_MODE[sub]).toBe('work')
+      const id = WORK_SECTION_ID[sub]
+      if (id !== null) expect(id).toMatch(/^work-/)
     }
-    expect(new Set(Object.values(WORK_SECTION_ID)).size).toBe(WORK_SUBPAGES.length)
+    expect(WORK_SECTION_ID.decisions).toBeNull()
+    const anchored = Object.values(WORK_SECTION_ID).filter(v => v !== null)
+    expect(new Set(anchored).size).toBe(anchored.length)
+    expect(anchored).toHaveLength(2)
   })
 
   it('has exactly the Work sub-pages in Work, no more', () => {
@@ -88,7 +102,13 @@ describe('scroll anchors', () => {
   it('names the section for a Work destination', () => {
     expect(workSectionId('workflow')).toBe(WORK_SECTION_ID.workflow)
     expect(workSectionId('lists')).toBe(WORK_SECTION_ID.lists)
-    expect(workSectionId('decisions')).toBe(WORK_SECTION_ID.decisions)
+    /*
+     * Null, and spelled out rather than compared to the table, so this reads
+     * as a claim about behaviour. The caller (`focusWorkSection`) treats null
+     * as "set no anchor", which is what arriving at the ideas should do —
+     * they are already on screen.
+     */
+    expect(workSectionId('decisions')).toBeNull()
   })
 
   it('is null outside Work, so nothing scrolls on the other modes', () => {

@@ -1238,22 +1238,46 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    */
   useEffect(() => {
     if (!workAnchor || activeMode !== 'work') return
-    const raf = requestAnimationFrame(() => {
-      /*
-       * `scrollToSection`, not `scrollIntoView`. The sub-page body is a nested
-       * scroll container under a sticky header, and scrollIntoView adjusts
-       * every scrollable ancestor — it overshot by ~600px and left the Process
-       * section above the viewport. The helper measures the rect delta against
-       * the container that actually scrolls, and the membership chips use the
-       * same one.
-       *
-       * Cleared INSIDE the frame, after the scroll. Clearing it in the effect
-       * body instead re-renders immediately, which changes this effect's deps
-       * and runs its cleanup — cancelling the very frame that was going to
-       * scroll. Nothing moved, and nothing said so.
-       */
-      if (scrollToSection(workAnchor.id)) setWorkAnchor(null)
-    })
+    /*
+     * `scrollToSection`, not `scrollIntoView`. The sub-page body is a nested
+     * scroll container under a sticky header, and scrollIntoView adjusts
+     * every scrollable ancestor — it overshot by ~600px and left the Process
+     * section above the viewport. The helper measures the rect delta against
+     * the container that actually scrolls, and the membership chips use the
+     * same one.
+     *
+     * Cleared INSIDE the frame, after the scroll. Clearing it in the effect
+     * body instead re-renders immediately, which changes this effect's deps
+     * and runs its cleanup — cancelling the very frame that was going to
+     * scroll. Nothing moved, and nothing said so.
+     *
+     * ── Why this retries, and why it gives up ──────────────────────────
+     *
+     * It used to be ONE frame. `scrollToSection` returns false when the id is
+     * absent, and the comment on it says that lets a caller "tell 'not
+     * rendered yet' from 'done'" — but nothing acted on that: the deps are
+     * `workAnchor` (a stable state object) and `activeMode` (a string), so a
+     * failed attempt never ran again. A target that had not mounted yet was
+     * simply missed, and the anchor stayed set to re-fire on the next return
+     * to Work, scrolling nowhere each time.
+     *
+     * Both halves are now handled. The Process surface waits on queries, so
+     * an anchor set before it mounts gets ~1s of frames to find it; after
+     * that the request is abandoned rather than left pending, because an id
+     * still absent a second after entering Work names a section this build
+     * does not have. That is what `WORK_SECTION_ID.decisions` was until it
+     * became null — see the note there.
+     */
+    const DEADLINE = Date.now() + 1000
+    let raf = 0
+    const attempt = () => {
+      if (scrollToSection(workAnchor.id) || Date.now() > DEADLINE) {
+        setWorkAnchor(null)
+        return
+      }
+      raf = requestAnimationFrame(attempt)
+    }
+    raf = requestAnimationFrame(attempt)
     return () => cancelAnimationFrame(raf)
   }, [workAnchor, activeMode])
 

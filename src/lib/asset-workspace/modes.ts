@@ -82,12 +82,37 @@ export type WorkSubPage = (typeof WORK_SUBPAGES)[number]
 /**
  * DOM ids for the Work sections, so a handoff that used to switch tabs can
  * scroll instead. These are the anchors; `AssetTab` owns the elements.
+ *
+ * `decisions` is null, and that is the point of the type.
+ *
+ * It named `work-ideas`, which no rendered file has ever carried — the Open
+ * Items list it anchored was removed when Work became one surface, and the
+ * ideas that replaced it are rows whose surface is SELECTED, not scrolled to.
+ * So `workSectionId('decisions')` handed `focusWorkSection` an id that
+ * `document.getElementById` could not resolve, the scroll silently did
+ * nothing, and `scrollToSection` returning false meant the anchor was never
+ * cleared either. Returning null makes the caller skip the anchor outright,
+ * which is the truthful answer: there is nowhere to scroll, because arriving
+ * at Work already shows the ideas.
+ *
+ * Giving the overview's ideas band the id instead would not fix it — that
+ * section is conditional on there being ideas, so the anchor would resolve
+ * only sometimes, which is worse than not at all.
  */
-export const WORK_SECTION_ID: Record<WorkSubPage, string> = {
-  decisions: 'work-ideas',
+export const WORK_SECTION_ID = {
+  decisions: null,
   workflow: 'work-process',
   lists: 'work-lists',
-}
+  /*
+   * `as const satisfies` rather than `Record<WorkSubPage, string | null>`.
+   * The annotation widened all three to `string | null`, which made the two
+   * REAL anchors nullable at every call site — `scrollToSection()` and the
+   * two `id={...}` props stopped type-checking, for three new errors on a
+   * change that was supposed to remove a lie, not spread it. This keeps
+   * `workflow` and `lists` as string literals while `decisions` is `null`,
+   * and `satisfies` still fails if a sub-page is missing or misspelt.
+   */
+} as const satisfies Record<WorkSubPage, string | null>
 
 export function isAssetSubPage(value: unknown): value is AssetSubPage {
   /* `in` would answer yes to 'toString' — every object literal inherits
@@ -108,7 +133,13 @@ export function modeOf(sub: string | null | undefined): AssetMode {
   return isAssetSubPage(sub) ? SUBPAGE_MODE[sub] : 'overview'
 }
 
-/** The Work section a destination scrolls to, or null if it is not in Work. */
+/**
+ * The Work section a destination scrolls to.
+ *
+ * Null for three different reasons, all of which the caller treats the same:
+ * the destination is not a sub-page at all, it is not in Work, or it is in
+ * Work but names no section (see `WORK_SECTION_ID.decisions`).
+ */
 export function workSectionId(sub: string | null | undefined): string | null {
   if (!isAssetSubPage(sub)) return null
   return Object.prototype.hasOwnProperty.call(WORK_SECTION_ID, sub)
