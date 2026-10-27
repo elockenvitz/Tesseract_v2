@@ -13,6 +13,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { LinkableEntityType } from '../lib/object-links'
+import { stageLabel } from '../lib/ideas/stage-model'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -317,18 +318,16 @@ export function useForwardLinksEnriched(
                 .from('trade_queue_items')
                 .select('id, action, stage, created_at, assets(symbol, company_name), users:created_by(first_name, last_name)')
                 .in('id', ids)
-              const stageLabels: Record<string, string> = {
-                aware: 'Aware', investigate: 'Investigate', deep_research: 'Deep Research',
-                thesis_forming: 'Thesis Forming', ready_for_decision: 'Ready for Decision',
-                idea: 'Idea', discussing: 'Discussing', simulating: 'Simulating', deciding: 'Deciding',
-              }
+              /* Was a local map whose fallback was the EMPTY STRING, so any
+                 canonical stage — the only ones current writers produce —
+                 disappeared from the link label entirely. */
               if (ideas) ideas.forEach((i: any) => {
                 const action = (i.action || 'Trade').toUpperCase()
                 const symbol = i.assets?.symbol || '?'
                 const companyName = i.assets?.company_name || ''
                 const creator = i.users ? [i.users.first_name, i.users.last_name].filter(Boolean).join(' ') : ''
                 const date = i.created_at ? new Date(i.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''
-                const stage = stageLabels[i.stage] || ''
+                const stage = i.stage ? stageLabel(i.stage) : ''
                 const subtitleParts = [companyName, creator, date].filter(Boolean)
                 labelMap.set(i.id, {
                   label: `${action} ${symbol}`,

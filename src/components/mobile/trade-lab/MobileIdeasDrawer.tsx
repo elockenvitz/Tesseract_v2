@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { Check, ChevronRight, Layers, Lightbulb, Plus, Scale, Search, X } from 'lucide-react'
+import { stageLabel } from '../../../lib/ideas/stage-model'
 
 /**
  * Deliberately loose. The drawer's items come from three different shapes in
@@ -39,16 +40,6 @@ interface MobileIdeasDrawerProps {
   isProposalAdded: (proposalItem: any) => boolean
 }
 
-const STAGE_LABEL: Record<string, string> = {
-  investigate: 'Investigate',
-  working_on: 'Investigate',
-  discussing: 'Investigate',
-  deep_research: 'Deep research',
-  modeling: 'Deep research',
-  simulating: 'Deep research',
-  thesis_forming: 'Thesis forming',
-  ready_for_decision: 'Ready',
-}
 
 /**
  * Trade ideas, as a full-screen list.
@@ -366,8 +357,11 @@ function IdeaRow({
           </span>
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[11px]">
+          {/* Canonical label: the local map predated the four-stage model and
+              had no entry for any current stage, so ready_to_recommend
+              rendered as lowercase "ready to recommend". */}
           {stage && (
-            <span className="text-gray-400">{STAGE_LABEL[stage] ?? String(stage).replace(/_/g, ' ')}</span>
+            <span className="text-gray-400">{stageLabel(stage)}</span>
           )}
           {portfolioName && (
             <>

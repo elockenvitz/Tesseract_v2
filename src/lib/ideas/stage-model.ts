@@ -111,9 +111,27 @@ export const IDEA_STAGE_CONFIG: Record<IdeaStage, IdeaStageConfig> = {
   },
 }
 
-/** The user-facing label. Never render a raw stage value. */
-export function stageLabel(stage: string): string {
-  return isIdeaStage(stage) ? IDEA_STAGE_CONFIG[stage].label : stage
+/**
+ * The user-facing label. Never render a raw stage value.
+ *
+ * It normalizes first, so a legacy or unrecognised value gets a label instead
+ * of leaking. That matters because the comment above was aspirational: this
+ * returned the RAW string for anything outside the four canonical stages, and
+ * 72% of production's `trade_queue_items` are outside them — 57 rows of
+ * `ready_for_decision` alone. Every screen calling this was one legacy row
+ * away from showing an enum to a portfolio manager.
+ *
+ * `toIdeaStage` is still THE boundary for anything that reasons about
+ * maturity; this is only presentation, and presentation must never be the
+ * reason a value cannot be displayed.
+ */
+export function stageLabel(stage: string | null | undefined): string {
+  return IDEA_STAGE_CONFIG[toIdeaStage(stage)].label
+}
+
+/** The chip styling for a stage, normalized the same way as its label. */
+export function stageColor(stage: string | null | undefined): string {
+  return IDEA_STAGE_CONFIG[toIdeaStage(stage)].color
 }
 
 /**
