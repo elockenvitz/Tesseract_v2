@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 // Widget types that users can add
 export type WidgetType = 'rich_text' | 'checklist' | 'numeric' | 'date' | 'metric' | 'timeline'
@@ -66,6 +67,7 @@ export const WIDGET_TYPE_OPTIONS: { value: WidgetType; label: string; descriptio
  */
 export function useUserAssetWidgets(assetId: string, viewUserId?: string) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
   const effectiveUserId = viewUserId || user?.id
 
@@ -142,10 +144,12 @@ export function useUserAssetWidgets(assetId: string, viewUserId?: string) {
   const createWidgetMutation = useMutation({
     mutationFn: async (input: CreateWidgetInput) => {
       if (!user?.id) throw new Error('Not authenticated')
+      if (!currentOrgId) throw new Error('No active organization')
 
       const { data, error } = await supabase
         .from('user_asset_widgets')
         .insert({
+          organization_id: currentOrgId,
           user_id: user.id,
           asset_id: input.asset_id,
           widget_type: input.widget_type,
@@ -204,10 +208,12 @@ export function useUserAssetWidgets(assetId: string, viewUserId?: string) {
   const saveWidgetValueMutation = useMutation({
     mutationFn: async (input: SaveWidgetValueInput) => {
       if (!user?.id) throw new Error('Not authenticated')
+      if (!currentOrgId) throw new Error('No active organization')
 
       const { data, error } = await supabase
         .from('user_asset_widget_values')
         .upsert({
+          organization_id: currentOrgId,
           widget_id: input.widget_id,
           user_id: user.id,
           content: input.content || null,
