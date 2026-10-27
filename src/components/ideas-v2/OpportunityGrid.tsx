@@ -39,7 +39,9 @@ import {
 import { TilePriceChart } from '../desktop/TilePriceChart'
 import { useTileCloses } from '../../hooks/useTileCloses'
 import { ExploreVisualBlock } from '../mobile/ExploreVisual'
-import { exploreVisualFor } from '../../lib/mobile/explore-visual'
+import {
+  exploreVisualFor, visualRestatesContext, visualRestatesMetric,
+} from '../../lib/mobile/explore-visual'
 import { useDesktopExplore } from '../../hooks/useDesktopExplore'
 import type { RailCard } from '../../lib/dashboard/focus'
 import { coverageExplorePrompts } from '../../lib/desktop-ideas/coverage-prompts'
@@ -359,6 +361,34 @@ function OpportunityTile({
   const { data: closes } = useTileCloses(item.symbol)
   const drawsPrice = big && (closes?.length ?? 0) >= 2 && visual?.kind !== 'price_trend'
 
+  /*
+   * ── Not saying the same thing twice ──────────────────────────────────────
+   *
+   * Measured on this lens at 1920x889, 90 tiles: 38 of them printed some
+   * string twice. 26 were a whole sentence, 13 a figure. Three causes, and
+   * mobile had already solved two of them.
+   *
+   * `visualRestatesMetric` and `visualRestatesContext` are `explore-visual`'s
+   * own tests, used by `MobileExplore` and `ExploreDetail` since the
+   * archetypes landed. This grid was written without them, so AMZN printed
+   * "+38%" in the eyebrow over a scenario bar captioned "+38% above your
+   * range", and AAPL "+29%" over a last-look bar reading "+29% today". The
+   * picture wins, as it does on mobile: it carries the number AND the shape
+   * of it.
+   *
+   * The third was this file's own. `context` fell back to `item.title`, which
+   * is the sentence `TileReason` prints two lines above it — so every
+   * candidate whose producer supplies no separate context said its one
+   * sentence twice, which is where 26 of the 38 came from. A tile with
+   * nothing further to add now adds nothing.
+   */
+  const metric = item.metric?.value && !visualRestatesMetric(visual, item.metric.value)
+    ? item.metric
+    : null
+  const context = item.context && !visualRestatesContext(visual, item.context)
+    ? item.context
+    : null
+
   return (
     <DesktopTile
       testId="opportunity-tile"
@@ -370,13 +400,13 @@ function OpportunityTile({
         {/* What raised this, in the shared vocabulary. A generated opportunity
             says so here rather than dressing itself as an authored idea. */}
         <TileState tone={toneFor(o)}>{OPPORTUNITY_LABEL[o.kind]}</TileState>
-        {item.metric?.value && (
-          <TileFigure strong={item.metric.direction === 'bad'}>
-            {item.metric.value}
+        {metric?.value && (
+          <TileFigure strong={metric.direction === 'bad'}>
+            {metric.value}
           </TileFigure>
         )}
       </>}
-      context={<span data-testid="opportunity-why">{item.context || item.title}</span>}
+      context={context ? <span data-testid="opportunity-why">{context}</span> : undefined}
       actions={<>
         <TileAction label="Open" onClick={onOpen} primary testId="opportunity-open" />
         {target && (
