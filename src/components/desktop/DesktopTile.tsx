@@ -336,11 +336,34 @@ export function GallerySkeleton({
 }) {
   const size = sizeAt ?? sizeByRank
   const heightOf = (s: TileSize) => heights?.[s] ?? SKELETON_HEIGHT[s]
+  /*
+    The header below is the real gallery's, to the pixel.
+
+    It was not: `pt-6` against the gallery's `pt-5`, a 21px heading against
+    its 19px, and no note at all where the gallery always renders one. So the
+    skeleton's grid began at y=72 and the real grid at y=101, and all ninety
+    tiles dropped 29px the moment the data landed -- residual shift left over
+    after the tile HEIGHTS were matched, from the one band above them that
+    was never measured.
+  */
   return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
-      <div className="flex items-baseline gap-2.5">
-        <h1 className="text-[21px] font-semibold tracking-tight">{title}</h1>
+    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pb-10 pt-5 dark:bg-[#0b0f16]">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">{title}</h1>
         <span className="h-4 w-8 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
+      </div>
+      {/*
+        The note's room, two lines of it.
+
+        Every lens writes a sentence here and the sentence wraps to two lines
+        at the `74ch` measure each of them uses, so two is the case to reserve.
+        A lens whose note runs to one line costs the reader 18px of lift,
+        which is the better way to be wrong than 36px of drop -- and far
+        better than the 36 this was short by when it reserved nothing.
+      */}
+      <div className="mt-1 max-w-[74ch] space-y-1 py-[2px]" aria-hidden>
+        <span className="block h-3 w-full animate-pulse rounded bg-gray-200 dark:bg-white/10" />
+        <span className="block h-3 w-2/5 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
       </div>
       <div
         /* `items-start` to match the real gallery below. It changes nothing on
@@ -766,6 +789,34 @@ const STATE_INK: Record<SemanticTone, string> = {
 /* ------------------------------------------------------------ tile pieces */
 
 /** Object identity: the symbol, and the name where it fits. */
+/**
+ * One display ladder for the tile, and one scale for what sits beside it.
+ *
+ * There were two. `TileIdentity` stepped its ticker 30/24/20/17 and
+ * `TileHeroNumber` stepped its figure 30/25/19/15 -- the same role, "the thing
+ * this tile is about", disagreeing by a pixel or two at every step below hero.
+ * A reader never sees them side by side as a comparison, which is exactly why
+ * it survived: it reads as a gallery that is slightly out of tune rather than
+ * as a bug anybody can point at. The field carried eleven distinct type sizes.
+ *
+ * The identity ladder won because ninety tiles wear it and five wear the
+ * other. `beside` is a company name or a unit -- the small thing on the
+ * baseline of the big thing -- and both now set it the same way.
+ */
+const TILE_DISPLAY: Record<TileSize, string> = {
+  hero: 'text-[30px]',
+  large: 'text-[24px]',
+  medium: 'text-[20px]',
+  compact: 'text-[17px]',
+}
+
+const TILE_BESIDE: Record<TileSize, string> = {
+  hero: 'text-[13px]',
+  large: 'text-[13px]',
+  medium: 'text-[11px]',
+  compact: 'text-[11px]',
+}
+
 export function TileIdentity({
   symbol, name, size = 'compact',
 }: { symbol: string | null; name?: string | null; size?: TileSize }) {
@@ -773,15 +824,12 @@ export function TileIdentity({
     <div className="flex min-w-0 items-baseline gap-2">
       <span className={clsx(
         'font-black leading-none tracking-[-0.03em]',
-        size === 'hero' ? 'text-[30px]'
-          : size === 'large' ? 'text-[24px]'
-          : size === 'medium' ? 'text-[20px]'
-          : 'text-[17px]',
+        TILE_DISPLAY[size],
       )}>{symbol ?? '—'}</span>
       {name && (
         <span className={clsx(
           'min-w-0 truncate font-medium text-gray-500',
-          size === 'hero' ? 'text-[13px]' : 'text-[11px]',
+          TILE_BESIDE[size],
         )}>{name}</span>
       )}
     </div>
@@ -818,11 +866,12 @@ export function TileHeroNumber({
   scale?: TileSize
 }) {
   const stacked = scale === 'hero' || scale === 'large'
-  const figureSize = scale === 'hero' ? 'text-[30px]'
-    : scale === 'large' ? 'text-[25px]'
-    : scale === 'medium' ? 'text-[19px]'
-    : 'text-[15px]'
-  const unitSize = stacked ? 'text-[15px]' : 'text-[11px]'
+  /* The tile's one display ladder -- see `TILE_DISPLAY`. This used to run its
+     own, a pixel or two off at every step below hero. */
+  /* The tile's one display ladder -- see `TILE_DISPLAY`. This used to run its
+     own, a pixel or two off at every step below hero. */
+  const figureSize = TILE_DISPLAY[scale]
+  const unitSize = TILE_BESIDE[scale]
   const labelSize = stacked ? 'text-[12px]' : 'text-[10px]'
 
   return (

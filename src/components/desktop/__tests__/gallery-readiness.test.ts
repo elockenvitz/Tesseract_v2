@@ -172,6 +172,43 @@ describe('the skeleton is the shape of the page it replaces', () => {
     expect(body).toContain('md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12')
   })
 
+  /*
+   * The tiles were matched; the band above them was not.
+   *
+   * Measured at 1536px: the skeleton's grid began at y=72 and the gallery's
+   * at y=101, because the skeleton used `pt-6` against `pt-5`, a 21px heading
+   * against 19px, and reserved nothing for the note every lens writes. So all
+   * ninety tiles dropped 29px at the handover, after the heights had already
+   * been matched -- a shift from the one band nobody measured.
+   *
+   * Asserted as "the same header", part for part, rather than as a number:
+   * the number is the consequence, and a case that pins 29 would go quiet the
+   * moment somebody changed the heading for an unrelated reason.
+   */
+  it('opens on the same header as the gallery it replaces', () => {
+    const header = (fn: string) => {
+      const body = shell.slice(shell.indexOf(fn))
+      return body.slice(0, body.indexOf('grid-cols-1'))
+    }
+    const real = header('export function DesktopGallery')
+    const skel = header('export function GallerySkeleton')
+
+    for (const part of [
+      'px-6 pb-10 pt-5',
+      'flex flex-wrap items-baseline gap-x-2 gap-y-1',
+      'min-w-0 truncate text-[19px] font-semibold tracking-tight',
+    ]) {
+      expect(real).toContain(part)
+      expect(skel).toContain(part)
+    }
+    /* And the note's room, which the skeleton used to leave out entirely.
+       The gallery renders a `note` the LENS supplies, so the measure lives
+       there rather than here -- `74ch`, which all of them set it at, is what
+       the placeholder reserves against. */
+    expect(real).toContain('{note}')
+    expect(skel).toContain('max-w-[74ch]')
+  })
+
   /* One global height is the same mistake in a different place: a hero and a
      compact do not occupy the same room. */
   it('reserves a height per tile size, not one for all of them', () => {
@@ -293,6 +330,36 @@ describe('a tile is as tall as its own contents', () => {
     const tile = shell.slice(shell.indexOf('export function DesktopTile'))
     const shellClasses = tile.slice(tile.indexOf("'group flex"))
     expect(shellClasses.slice(0, 120)).not.toContain('h-full')
+  })
+})
+
+/*
+ * "The thing this tile is about" was set on two different ladders: the ticker
+ * stepped 30/24/20/17 and the hero figure 30/25/19/15, a pixel or two apart at
+ * every step below hero. Nobody sees them side by side as a comparison, which
+ * is why it survived -- it reads as a gallery slightly out of tune rather than
+ * as a defect. The field carried eleven distinct type sizes.
+ */
+describe('the tile has one display ladder', () => {
+  const shell = code('components/desktop/DesktopTile.tsx')
+
+  it('declares it once', () => {
+    expect(shell).toMatch(/const TILE_DISPLAY: Record<TileSize, string>/)
+    expect(shell).toMatch(/const TILE_BESIDE: Record<TileSize, string>/)
+  })
+
+  it.each([
+    ['export function TileIdentity', 'the ticker'],
+    ['export function TileHeroNumber', 'the hero figure'],
+  ])('%s sizes %s from it rather than from its own steps', (fn) => {
+    const body = shell.slice(shell.indexOf(fn))
+    const scope = body.slice(0, body.indexOf('\n}\n'))
+    expect(scope).toContain('TILE_DISPLAY[')
+    /* No hand-rolled ladder left behind beside the shared one. A `text-[Npx]`
+       above 14 inside these two is a second scale by definition: everything
+       smaller is a caption or a label, which is a different role. */
+    const own = [...scope.matchAll(/text-\[(\d+)px\]/g)].map(m => Number(m[1]))
+    expect(own.filter(n => n > 14)).toEqual([])
   })
 })
 
