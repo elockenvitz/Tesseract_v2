@@ -45,7 +45,14 @@ export interface ResearchArtifact {
  * The research artifacts on an asset, plus the explicit asset-link helper.
  * `enabled` is false without an org so the query never runs unscoped.
  */
-export function useAssetResearchNotes(assetId: string | null) {
+/**
+ * @param enabled Whether to fetch the notes LIST. `createArtifact` works
+ *   either way — it needs only the asset, the user and the organization — so
+ *   a caller that wants the write seam and not the list (the Process
+ *   workbench, which already has the notes via `useAssetWorkspace`) passes
+ *   false and adds no query.
+ */
+export function useAssetResearchNotes(assetId: string | null, enabled = true) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
@@ -54,7 +61,7 @@ export function useAssetResearchNotes(assetId: string | null) {
 
   const { data: notes = [], isLoading, error } = useQuery<ResearchArtifact[]>({
     queryKey: listKey,
-    enabled: !!assetId && !!currentOrgId,
+    enabled: !!assetId && !!currentOrgId && enabled,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('asset_notes')

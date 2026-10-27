@@ -81,6 +81,18 @@ interface Props {
   /** Switches the asset to its Research mode. */
   onOpenResearch?: () => void
   /**
+   * Creates a research note on this ASSET and opens it.
+   *
+   * Owned by the caller, which already holds the `asset_notes` write seam;
+   * this component does not learn how a note is stored. Resolves to the new
+   * note's id, or null when the write was refused — which it is when no
+   * organization is active, because a note with no organization would land
+   * in nobody's workspace.
+   */
+  onCreateNote?: () => Promise<string | null>
+  /** Whether a note creation is in flight, so the control can say so. */
+  creatingNote?: boolean
+  /**
    * Opens CoAnalyst on this requirement.
    *
    * The thread is tagged to the asset by the existing engagement seam,
@@ -541,7 +553,7 @@ function Evidence({
 export function RequirementWorkspace({
   assetId, symbol, requirementText, stageLabel, stageDescription,
   onBack, next, onOpenNext, children, priorWorkSlot, stageControls,
-  onOpenNote, onOpenResearch, onAnalyze, className,
+  onOpenNote, onOpenResearch, onCreateNote, creatingNote, onAnalyze, className,
 }: Props) {
   const guidance = guidanceFor({ text: requirementText, stageDescription })
   /*
@@ -741,16 +753,37 @@ export function RequirementWorkspace({
           <div data-testid="requirement-research-block">
             <div className="mb-2 flex items-baseline justify-between gap-2">
               <span className={EYEBROW}>Research on this name</span>
-              {onOpenResearch && (
-                <button
-                  type="button"
-                  data-testid="requirement-open-research"
-                  onClick={onOpenResearch}
-                  className="text-[11px] font-medium text-primary-600 hover:underline"
-                >
-                  Open
-                </button>
-              )}
+              <span className="flex items-baseline gap-2">
+                {/*
+                  A finding reached while working the requirement becomes a
+                  real research note on the asset, rather than being retyped
+                  into Research later or left in the assessment box where
+                  nothing else can cite it. The note belongs to the ASSET, not
+                  to this requirement — pinning it to the requirement needs a
+                  column that does not exist, and is recorded as such.
+                */}
+                {onCreateNote && (
+                  <button
+                    type="button"
+                    data-testid="requirement-new-note"
+                    onClick={() => { void onCreateNote() }}
+                    disabled={creatingNote}
+                    className="text-[11px] font-medium text-primary-600 hover:underline disabled:opacity-50"
+                  >
+                    {creatingNote ? 'Creating…' : 'New note'}
+                  </button>
+                )}
+                {onOpenResearch && (
+                  <button
+                    type="button"
+                    data-testid="requirement-open-research"
+                    onClick={onOpenResearch}
+                    className="text-[11px] font-medium text-primary-600 hover:underline"
+                  >
+                    Open
+                  </button>
+                )}
+              </span>
             </div>
             <RequirementResearch
               assetId={assetId}

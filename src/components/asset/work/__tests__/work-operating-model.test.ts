@@ -155,3 +155,45 @@ describe('arriving from the dashboard applies once', () => {
     expect(TAB).toMatch(/if \(workArrival\.requirementId\) setViewingRequirementId\(workArrival\.requirementId\)/)
   })
 })
+
+describe('a finding written while working a requirement becomes a real note', () => {
+  const REQ = strip(read('src/components/asset/work/RequirementWorkspace.tsx'))
+  const NOTES = strip(read('src/hooks/useAssetResearchNotes.ts'))
+
+  it('goes through the existing asset_notes seam, not a second write path', () => {
+    /*
+     * The requirement had no way to record a finding at all: the assessment
+     * box is the requirement's own answer, and nothing in Work could create
+     * something Research would later show. This adds the control and routes
+     * it through `createArtifact`, which is the same insert Research uses —
+     * so the note carries `organization_id` and the asset link exactly as a
+     * note made in Research does.
+     */
+    expect(TAB).toMatch(/createArtifact: createResearchNote/)
+    expect(TAB).toMatch(/onCreateNote=\{createNoteFromWork\}/)
+    expect(REQ).toContain('data-testid="requirement-new-note"')
+    // No second insert into asset_notes from the work surfaces.
+    expect(REQ).not.toMatch(/from\('asset_notes'\)/)
+  })
+
+  it('costs no extra query, because the list is already loaded', () => {
+    /*
+     * `useAssetWorkspace` already returns the asset's notes as `evidence`.
+     * Mounting the notes hook for its list as well would fetch them twice on
+     * every asset page, so the hook takes an `enabled` flag and this caller
+     * passes false — `createArtifact` needs no list.
+     */
+    expect(TAB).toMatch(/useAssetResearchNotes\(asset\.id, false\)/)
+    expect(NOTES).toMatch(/enabled: !!assetId && !!currentOrgId && enabled/)
+  })
+
+  it('opens what it created, and survives a refused write', () => {
+    // A note created and not opened is a blank row the reader must hunt for.
+    expect(TAB).toMatch(/if \(id\) handleNoteClick\(id\)/)
+    /*
+     * `createArtifact` returns null when no organization is active rather
+     * than writing an unowned row, so the id is checked rather than assumed.
+     */
+    expect(NOTES).toMatch(/if \(!assetId \|\| !user\?\.id \|\| !currentOrgId\) return null/)
+  })
+})

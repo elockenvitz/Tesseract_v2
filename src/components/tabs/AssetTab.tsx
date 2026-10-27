@@ -93,6 +93,7 @@ import {
 import { WorkActionsMenu } from '../asset/work/WorkActionsMenu'
 import { ProcessSwitcher } from '../asset/work/ProcessSwitcher'
 import { useAssetWorkspace } from '../../hooks/useAssetWorkspace'
+import { useAssetResearchNotes } from '../../hooks/useAssetResearchNotes'
 import {
   AssetWorkOverview, WorkOverviewReturn, type OverviewConnection,
 } from '../asset/work/AssetWorkOverview'
@@ -3838,6 +3839,27 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     })
   }
 
+  /*
+   * The write seam for a research note, and nothing else.
+   *
+   * `enabled: false` because the Process workbench already has the asset's
+   * notes through `useAssetWorkspace` — this is here to CREATE one, which
+   * needs no list, so taking it costs no query.
+   *
+   * `createArtifact` returns null when no organization is active rather than
+   * writing an unowned row, so the caller must not assume an id came back.
+   */
+  const { createArtifact: createResearchNote, isCreating: creatingResearchNote } =
+    useAssetResearchNotes(asset.id, false)
+  const createNoteFromWork = useCallback(async () => {
+    const id = await createResearchNote()
+    // Open it immediately: a note created and not opened is a blank row the
+    // reader has to go and find.
+    if (id) handleNoteClick(id)
+    return id
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createResearchNote, asset.id, asset.symbol, onNavigate])
+
   const handleCreateNote = () => {
     // Use stable tab ID - same tab for all notes of this asset
     const tabId = `note-asset-${asset.id}`
@@ -5574,6 +5596,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                      the same process switch the sidebar performs. */
                   onOpenRun={handleWorkflowChange}
                   onOpenNote={handleNoteClick}
+                  /* A finding reached while working a requirement becomes a
+                     real asset_notes row, instead of being retyped into
+                     Research afterwards. */
+                  onCreateNote={createNoteFromWork}
+                  creatingNote={creatingResearchNote}
                   onOpenResearch={() => goToSubPage('research')}
                   /*
                     ── Analysis help, tagged so it comes back ────────────

@@ -116,6 +116,9 @@ interface InvestmentTimelineProps {
   headerActions?: React.ReactNode
   /** Opens one research note, and the asset's Research mode. */
   onOpenNote?: (noteId: string) => void
+  /** Creates a research note on the asset and opens it. See RequirementWorkspace. */
+  onCreateNote?: () => Promise<string | null>
+  creatingNote?: boolean
   onOpenResearch?: () => void
   /** Opens CoAnalyst on one requirement, with the context to seed it. */
   onAnalyzeRequirement?: (ctx: {
@@ -267,6 +270,8 @@ export function InvestmentTimeline({
   headerActions,
   onOpenRun,
   onOpenNote,
+  onCreateNote,
+  creatingNote,
   onOpenResearch,
   onAnalyzeRequirement,
 }: InvestmentTimelineProps) {
@@ -2283,6 +2288,8 @@ export function InvestmentTimeline({
                                    them; these hand off. */
                                 onOpenNote={onOpenNote}
                                 onOpenResearch={onOpenResearch}
+                                onCreateNote={onCreateNote}
+                                creatingNote={creatingNote}
                                 stageControls={stageOwnershipControls}
                                 onAnalyze={onAnalyzeRequirement
                                   ? () => onAnalyzeRequirement({
