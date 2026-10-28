@@ -15,9 +15,19 @@
  *
  * ── How many ──────────────────────────────────────────────────────────────
  *
- * Real findings always come first and are never displaced. Coverage work only
- * tops a thin morning up to `TODAY_COVERAGE_TARGET` items, so it disappears on
- * its own as real findings arrive: four real findings leave no room for any.
+ * Real findings always come first and are never displaced. Coverage work
+ * fills the page BEHIND them, up to `TODAY_COVERAGE_TARGET`.
+ *
+ * That target used to be 5, from a reading of this as a thin-morning patch:
+ * "four real findings leave no room for any". Measured against the real
+ * account, that made the backfill unreachable. The engine produced seven
+ * findings, six surfaced, and `room = 5 - 6` was negative -- so a reader with
+ * FIFTY active coverage rows saw six tiles and no coverage work at all, on a
+ * surface whose brief is that you can keep scrolling.
+ *
+ * The target is now the page's own limit. Coverage work still never displaces
+ * a finding and still disappears name by name as real findings arrive; what
+ * changed is that "thin" now means "fewer than a page", not "fewer than five".
  */
 
 import type { DecisionItem, DecisionSeverity } from '../../engine/decisionEngine/types'
@@ -27,14 +37,32 @@ import {
 } from '../research/coverage-work'
 import { TODAY_LIMIT } from './tiers'
 
-/** A thin Today is topped up to this many items with coverage work. */
-export const TODAY_COVERAGE_TARGET = 5
+/** Today is filled to this many items, real findings first. */
+export const TODAY_COVERAGE_TARGET = TODAY_LIMIT
 
-/** Generated Today items allowed per structural gap: Today is finite. */
+/**
+ * Generated Today items allowed per structural gap.
+ *
+ * These three gaps say the SAME SENTENCE about every name they touch -- "no
+ * thesis on file", "the case is partly written", "nobody has looked in a
+ * while" -- so without a cap a desk with fifty covered names and few written
+ * cases gets a page of one message repeated, which is the thinness trap the
+ * Ideas field already walked into once.
+ *
+ * At 1 each the cap was doing a second job it should not have been: with the
+ * target at 5 it was the real limit on the backfill, so the page could never
+ * show more than three generated tiles however much coverage existed. Raised
+ * to a share of the page rather than a token, so several names with the same
+ * structural gap can appear while no single gap can take the field.
+ *
+ * Deliberately NOT raised for every framing: `new_evidence`, `price_move`
+ * and a no-thesis name that is HELD or carries a live idea are uncapped
+ * already, because each of those is a different, specific fact.
+ */
 export const TODAY_STRUCTURAL_CAPS: Record<StructuralKey, number> = {
-  'no_case:unheld': 1,
-  incomplete_case: 1,
-  long_silence: 1,
+  'no_case:unheld': 4,
+  incomplete_case: 3,
+  long_silence: 4,
 }
 
 /** Coverage titleKeys, one per shared framing. */

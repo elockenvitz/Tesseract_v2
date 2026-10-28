@@ -117,14 +117,28 @@ beforeEach(() => {
 })
 
 describe('a thin morning, Bogey Cap shaped', () => {
-  it('shows the one real finding first, then coverage work as ordinary tiles, to five', () => {
+  it('shows the real finding first, then every coverage name the caps allow', () => {
+    /*
+     * This used to assert "to five", and the five was the whole rule.
+     *
+     * Measured against the real account it made the backfill unreachable:
+     * the engine produced seven findings, six surfaced, and `room = 5 - 6`
+     * was negative -- so a reader with FIFTY active coverage rows saw six
+     * tiles and no coverage work at all. The target is the page now.
+     *
+     * What still bounds the page is the structural cap, and this fixture is
+     * the real account's shape: four names that are held or carry an idea,
+     * and forty-six bare covered names with nothing written. The forty-six
+     * all say one sentence, so four of them appear, not forty-six.
+     */
     env.engine.action = [finding(1)]
     render(<TodayPage />)
-    expect(tiles()).toHaveLength(TODAY_COVERAGE_TARGET)
-    expect(tickers()).toEqual(['R1', 'AMZN', 'TSLA', 'SBUX', 'MELI'])
+    expect(tickers()).toEqual(['R1', 'AMZN', 'TSLA', 'SBUX', 'MELI', 'U00', 'U01', 'U02', 'U03'])
+    expect(tiles()).toHaveLength(9)
+    expect(tiles().length).toBeLessThan(TODAY_COVERAGE_TARGET)
     expect(tiles()[0]).toHaveAttribute('data-rank', '1')
     expect(screen.queryByText(/Coverage needs work|covered names/)).not.toBeInTheDocument()
-    expect(screen.getByText('5 items')).toBeInTheDocument()
+    expect(screen.getByText('9 items')).toBeInTheDocument()
   })
 
   it('says why each name is work now', () => {
@@ -138,11 +152,19 @@ describe('a thin morning, Bogey Cap shaped', () => {
     expect(document.body.textContent).not.toContain('What best describes this position?')
   })
 
-  it('caps bare coverage, so a fresh account is not five identical tiles', () => {
+  it('caps bare coverage, so a fresh account is not a page of identical tiles', () => {
+    /*
+     * The cap is the only thing between this surface and forty-six copies of
+     * one sentence. It was 1, which also made it the real limit on the
+     * backfill -- the page could never show more than three generated tiles
+     * however much coverage existed. It is a share of the page now, so the
+     * number moved; the rule did not.
+     */
     env.gaps = { status: 'ready', candidates: bogey().slice(4), coveredCount: 46 }
     render(<TodayPage />)
-    // Only unheld names remain: one of them, not five.
-    expect(tiles()).toHaveLength(1)
+    // Forty-six unheld names are available and four of them appear.
+    expect(bogey().slice(4)).toHaveLength(46)
+    expect(tiles()).toHaveLength(4)
     expect(tiles()[0]).toHaveTextContent('is on your coverage with no thesis yet.')
   })
 })
@@ -170,17 +192,30 @@ describe('real findings always win', () => {
     expect(tickers()).toHaveLength(TODAY_LIMIT)
   })
 
-  it('gives way one slot at a time as real findings arrive', () => {
+  it('leads with every real finding, and never lets coverage displace one', () => {
+    /*
+     * This asserted "gives way one slot at a time", which was true only
+     * while the target was five: three findings left exactly two slots. With
+     * the target at the page's own limit, coverage no longer gives way until
+     * the findings themselves fill the page -- the rule that survives, and
+     * the one worth guarding, is that real findings LEAD and are never
+     * pushed out by generated work.
+     */
     env.engine.action = [1, 2, 3].map(n => finding(n))
     render(<TodayPage />)
-    expect(tickers()).toEqual(['R1', 'R2', 'R3', 'AMZN', 'TSLA'])
+    expect(tickers().slice(0, 3)).toEqual(['R1', 'R2', 'R3'])
+    expect(tickers().slice(3)).not.toContain(undefined)
+    expect(tiles().length).toBeLessThanOrEqual(TODAY_COVERAGE_TARGET)
+    // And the whole backfill is still there behind them: nothing was dropped
+    // to make room, because there was room.
+    expect(tickers()).toEqual(['R1', 'R2', 'R3', 'AMZN', 'TSLA', 'SBUX', 'MELI', 'U00', 'U01', 'U02', 'U03'])
   })
 
   it('never raises a name a real finding already concerns', () => {
     env.engine.action = [finding(1, { chips: [{ label: 'Ticker', value: 'AMZN' }], context: { assetId: 'a-amzn', assetTicker: 'AMZN' } })]
     render(<TodayPage />)
     expect(tickers().filter(t => t === 'AMZN')).toHaveLength(1)
-    expect(tickers()).toEqual(['AMZN', 'TSLA', 'SBUX', 'MELI', 'U00'])
+    expect(tickers()).toEqual(['AMZN', 'TSLA', 'SBUX', 'MELI', 'U00', 'U01', 'U02', 'U03'])
   })
 
   it('leaves out coverage work the reader dismissed', () => {
