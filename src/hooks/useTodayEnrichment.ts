@@ -33,6 +33,76 @@ import type { TodayItem } from '../lib/today'
 /** A year of closes is enough to reach most review anchors without paging. */
 const HISTORY_DAYS = 400
 
+/*
+ * ── The row cap, and the twelve weeks it silently deleted ────────────────
+ *
+ * PostgREST answers at most 1000 rows. This hook asked for every surfaced
+ * name's history in ONE `.in('symbol', symbols)` query ordered by date
+ * ascending, so once the desk held five names the response hit the cap --
+ * and because the sort was ascending, the rows it dropped were the NEWEST
+ * ones.
+ *
+ * Measured against production on 2026-10-27: five symbols x 258 closes =
+ * 1290 rows available, 1000 returned, so the last close this hook could see
+ * was 2026-07-10 while the real last close was 2026-10-01.
+ *
+ * Nothing failed. `spot` was simply the price from twelve weeks ago, and
+ * every figure derived from it was computed to that date:
+ *
+ *   TSLA, anchored at its thesis 220 days back
+ *     close at the anchor            380.85
+ *     last close under the cap       407.76   -> Today printed "+7.1%"
+ *     last close in the table        354.11   -> the truth is "-7.0%"
+ *
+ * Today said the stock was up 7% and the asset page said it was down 7%,
+ * about the same name on the same day, because the asset page queries one
+ * symbol at a time and never hit the cap. The framework bands were drawn
+ * against the stale mark too, so "the price is +36.3% above the bull case"
+ * was a statement about July.
+ *
+ * The fix is to make the cap unreachable BY CONSTRUCTION rather than to
+ * raise a limit and hope: ask for at most `CHUNK` symbols per request, where
+ * CHUNK is sized so that even a close on every single calendar day of the
+ * window cannot fill the response. `assertWhole` then checks the invariant
+ * actually held, so if the cap or the window ever changes this fails loudly
+ * instead of quietly shaving the recent end off every chart again.
+ */
+export const ROW_CAP = 1000
+export const CHUNK = Math.max(1, Math.floor(ROW_CAP / HISTORY_DAYS))
+export { HISTORY_DAYS }
+
+type Close = { symbol: string; date: string; close: number }
+
+export async function fetchHistory(symbols: string[], floor: string): Promise<Close[]> {
+  const groups: string[][] = []
+  for (let i = 0; i < symbols.length; i += CHUNK) groups.push(symbols.slice(i, i + CHUNK))
+
+  const pages = await Promise.all(groups.map(async group => {
+    const { data, error } = await supabase
+      .from('price_history_cache')
+      .select('symbol, date, close')
+      .in('symbol', group)
+      .gte('date', floor)
+      .order('date', { ascending: true })
+    if (error) throw error
+    const rows = (data ?? []) as Close[]
+    /*
+     * The invariant, checked rather than assumed. A full page means the cap
+     * was reached, which means this page is missing its most recent closes --
+     * the exact silent failure above.
+     */
+    if (rows.length >= ROW_CAP) {
+      throw new Error(
+        `price_history_cache truncated at ${rows.length} rows for ${group.join(',')}: `
+        + 'the chunk size no longer guarantees a complete window.',
+      )
+    }
+    return rows
+  }))
+
+  return pages.flat()
+}
+
 export function useTodayEnrichment(items: TodayItem[]) {
   // Keyed on the surfaced asset ids so the query re-runs when the set changes
   // but not when unrelated state does.
@@ -60,12 +130,7 @@ export function useTodayEnrichment(items: TodayItem[]) {
       const floor = new Date(Date.now() - HISTORY_DAYS * 86_400_000).toISOString().slice(0, 10)
 
       const [history, targets, holdings, research] = await Promise.all([
-        symbols.length
-          ? supabase.from('price_history_cache')
-              .select('symbol, date, close')
-              .in('symbol', symbols).gte('date', floor)
-              .order('date', { ascending: true })
-          : Promise.resolve({ data: [], error: null }),
+        fetchHistory(symbols, floor),
         supabase.from('analyst_price_targets')
           .select('id, asset_id, price, is_official, created_at, updated_at, scenarios(name), assets(id, symbol, company_name)')
           .eq('organization_id', currentOrgId!)
@@ -87,13 +152,22 @@ export function useTodayEnrichment(items: TodayItem[]) {
 
       // History, grouped by symbol then mapped back onto the asset.
       const bySymbol = new Map<string, { date: string; close: number }[]>()
-      for (const row of (history.data ?? []) as any[]) {
+      for (const row of history) {
         const close = Number(row.close)
         if (!Number.isFinite(close)) continue
         const arr = bySymbol.get(row.symbol) ?? []
         arr.push({ date: row.date, close })
         bySymbol.set(row.symbol, arr)
       }
+      /*
+       * Ascending by date, stated rather than inherited.
+       *
+       * Each symbol lives in exactly one chunk and each chunk is ordered, so
+       * this is already true -- but EVERY figure on the surface is
+       * `(last - first) / first`, so if the order were ever wrong the whole
+       * lens would quietly change sign. One sort is cheaper than that risk.
+       */
+      for (const arr of bySymbol.values()) arr.sort((a, b) => a.date.localeCompare(b.date))
       for (const { assetId, symbol } of assets) {
         const series = symbol ? bySymbol.get(symbol) : undefined
         if (series?.length) {
