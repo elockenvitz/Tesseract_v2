@@ -147,4 +147,4 @@ export interface TodayItem {
  * It lives here rather than beside the component so the drawing code and the
  * placeholder read the same number instead of two that can drift apart.
  */
-export const VISUAL_SLOT = { compact: 126, featured: 186 } as const
+export const VISUAL_SLOT = { compact: 172, featured: 224 } as const

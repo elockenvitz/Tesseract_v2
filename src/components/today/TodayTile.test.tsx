@@ -163,51 +163,42 @@ describe('TodayTile', () => {
     expect(screen.getByText(/No structured action yet/)).toBeInTheDocument()
   })
 
-  it('keeps personal and shared dispositions visibly apart', () => {
+  /*
+   * ── The menu lost its two section headers, and these cases with them ───
+   *
+   * The headers said "Personal — only affects your view" and "Shared —
+   * changes the workflow for everyone", and under the second one sat a
+   * forty-word paragraph explaining why there were no shared actions. The
+   * cases below pinned all of it.
+   *
+   * What they were protecting is still protected, and it is worth saying
+   * exactly what: a control that LOOKS like a shared mutation and performs
+   * none is worse than no control, because the reader believes their team's
+   * revisit date moved. No such control is rendered -- there is no Defer,
+   * and the surviving items say "for me". What is gone is the essay about
+   * the absence, which no reader opening a three-item menu needed to read.
+   */
+  it('dismisses for the reader, and says so in the words on the item', () => {
     const h = renderTile()
     fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
-
-    expect(screen.getByText(/Personal — only affects your view/)).toBeInTheDocument()
-    expect(screen.getByText(/Shared — changes the workflow for everyone/)).toBeInTheDocument()
-
-    // An asset has no shared revisit date, so no shared Defer is offered.
-    expect(screen.queryByText('Defer the item')).not.toBeInTheDocument()
-    expect(screen.getByText(/no shared revisit date to move/)).toBeInTheDocument()
-
-    fireEvent.click(screen.getByText('Dismiss for me'))
+    fireEvent.click(screen.getByText('Hide this for me'))
     expect(h.onDismiss).toHaveBeenCalledTimes(1)
   })
 
-  it('never renders a clickable shared action Today cannot perform', () => {
-    // A control that looks like a shared mutation and performs none is worse
-    // than no control: the user believes their team's revisit date moved.
+  it('never renders a shared action Today cannot perform', () => {
     renderTile(decision({
       titleKey: 'PROPOSAL_AWAITING_DECISION',
       context: { assetId: 'a-amzn', assetTicker: 'AMZN', tradeIdeaId: 'tq-1' },
     }))
     fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
-
     expect(screen.queryByRole('button', { name: /Defer/ })).not.toBeInTheDocument()
-    expect(screen.getByText(/Today cannot move it yet/)).toBeInTheDocument()
-    expect(screen.getByText(/defer it from the trade queue/)).toBeInTheDocument()
-  })
-
-  it('does not offer Snooze as a substitute for the shared action', () => {
-    renderTile(decision({
-      titleKey: 'PROPOSAL_AWAITING_DECISION',
-      context: { assetId: 'a-amzn', assetTicker: 'AMZN', tradeIdeaId: 'tq-1' },
-    }))
-    fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
-    // Snooze stays where it belongs -- under Personal, and never renamed.
-    expect(screen.getByText('Snooze 1 day')).toBeInTheDocument()
-    expect(screen.queryByText(/Defer the item/)).not.toBeInTheDocument()
   })
 
   it('snoozes for the chosen duration, and never calls it Defer', () => {
     const h = renderTile()
     fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
-    fireEvent.click(screen.getByText('Snooze 3 days'))
-    expect(h.onSnooze).toHaveBeenCalledWith(expect.anything(), 72)
+    fireEvent.click(screen.getByText('Remind me in 1 week'))
+    expect(h.onSnooze).toHaveBeenCalledWith(expect.anything(), 168)
   })
 
   it('renders the archetype the problem calls for', () => {
@@ -329,7 +320,40 @@ describe('the action row costs nothing until it is approached', () => {
     const { container } = renderTile()
     const row = container.querySelector('[data-testid="today-actions"]')!
     expect(row.className).toMatch(/absolute/)
-    expect(row.className).toMatch(/bottom-0/)
+  })
+
+  it('sits on the eyebrow, never on the tile\'s bottom edge', () => {
+    /*
+     * Pinned to the bottom it kept landing on the one control it shared the
+     * card with: full width it covered the chart, and stopped at 48% it still
+     * covered "See the full chart" on any tile whose body stacks rather than
+     * splits -- the link sat under the scrim and could not be clicked.
+     *
+     * The position was the defect, not its width, so the assertion is about
+     * position: top, never bottom.
+     */
+    const { container } = renderTile(decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }],
+      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
+    }), { featured: true })
+    const row = container.querySelector('[data-testid="today-actions"]')!
+    expect(row.className).toMatch(/(^|\s)top-0(\s|$)/)
+    expect(row.className).not.toMatch(/bottom-0/)
+  })
+
+  it('leaves the visual portal clickable while the row is up', () => {
+    // The portal is the control that was being buried. It must not share an
+    // ancestor with the action row, or it is under the scrim again.
+    const { container } = renderTile(decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }],
+      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
+    }), { featured: true })
+    const row = container.querySelector('[data-testid="today-actions"]')!
+    const portal = container.querySelector('[data-testid="visual-portal"]')!
+    expect(portal).not.toBeNull()
+    expect(row.contains(portal)).toBe(false)
   })
 
   it('anchors the reveal on the tile, not on the row', () => {
@@ -340,25 +364,6 @@ describe('the action row costs nothing until it is approached', () => {
     expect(container.querySelector('article')?.className).toMatch(/(^|\s)group(\s|$)/)
   })
 
-  it('stops the row short of the analysis column, so approaching never hides the chart', () => {
-    // Spanning the full width put the scrim over the bottom of the chart --
-    // the read-out and the portal label -- so approaching a tile hid the
-    // thing you were approaching it to read.
-    const withChart = renderTile(decision({
-      titleKey: 'PROPOSAL_AWAITING_DECISION',
-      chips: [{ label: 'Ticker', value: 'CLOV' }],
-      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
-    }), { featured: true })
-    const row = withChart.container.querySelector('[data-testid="today-actions"]')!
-    expect(row.className).toMatch(/right-\[48%\]/)
-    expect(row.className).not.toMatch(/inset-x-0/)
-
-    // With no chart there is no column to stay out of.
-    const bare = renderTile()
-    expect(bare.container.querySelector('[data-testid="today-actions"]')!.className)
-      .toMatch(/right-0/)
-  })
-
   it('does not clip the overflow menu to the card', () => {
     // A 288px panel opened from inside an `overflow-hidden` box was cut off:
     // the snooze presets were unreachable on every tile.
@@ -366,11 +371,27 @@ describe('the action row costs nothing until it is approached', () => {
     expect(container.querySelector('article')?.className).not.toMatch(/overflow-hidden/)
   })
 
-  it('opens the overflow menu upward, off the tile\'s bottom edge', () => {
-    const { container } = renderTile()
+  it('offers three plain choices, with no briefing to read first', () => {
+    /*
+     * It was two sections -- "Personal — only affects your view", four items
+     * each with its own explanatory hint, "Shared — changes the workflow for
+     * everyone", and a forty-word paragraph about why there are no shared
+     * actions. Six lines of prose to put something off until next week.
+     *
+     * Every sentence was true, which is how it got there, and none of it was
+     * a decision the reader was making. Whose view it leaves is carried by
+     * the words on the item instead.
+     */
+    renderTile()
     fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
-    const menu = container.querySelector('[data-testid="today-actions"] .absolute.bottom-full')
-    expect(menu, 'menu should open above its trigger').not.toBeNull()
+    const labels = screen.getAllByRole('button')
+      .map(b => (b.textContent ?? '').trim())
+      .filter(t => /^(Hide this|Remind me)/.test(t))
+    expect(labels).toEqual(['Hide this for me', 'Remind me in 1 day', 'Remind me in 1 week'])
+
+    for (const gone of [/only affects your view/i, /changes the workflow for everyone/i, /no shared revisit date/i]) {
+      expect(screen.queryByText(gone)).not.toBeInTheDocument()
+    }
   })
 
   it('keeps the body clear of the overlay on a tile with no slack', () => {

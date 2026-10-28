@@ -113,12 +113,17 @@ export function diversify(ranked: readonly TodayItem[], limit: number): TodayIte
     if (o) heldObj.set(o, (heldObj.get(o) ?? 0) + 1)
   }
 
-  /** Would taking this item exceed either cap? */
-  const saturated = (item: TodayItem) => {
+  /** Is this name already on the surface? */
+  const objSaturated = (item: TodayItem) => {
     const o = objectOf(item)
-    return (held.get(keyOf(item)) ?? 0) >= MAX_PER_KEY
-      || (!!o && (heldObj.get(o) ?? 0) >= MAX_PER_OBJECT)
+    return !!o && (heldObj.get(o) ?? 0) >= MAX_PER_OBJECT
   }
+
+  /** Is this KIND of finding already at its cap? */
+  const keySaturated = (item: TodayItem) =>
+    (held.get(keyOf(item)) ?? 0) >= MAX_PER_KEY
+
+  const saturated = (item: TodayItem) => keySaturated(item) || objSaturated(item)
 
   // Rule 1: the lead is the lead.
   take(0)
@@ -139,9 +144,34 @@ export function diversify(ranked: readonly TodayItem[], limit: number): TodayIte
       return candidate.score >= head.score - SCORE_TOLERANCE
     })
 
-    // No qualifying alternative: rank order stands. Saturation is the honest
-    // answer when the book genuinely has one kind of problem.
-    take(alt > 0 ? alt : 0)
+    if (alt > 0) { take(alt); continue }
+
+    /*
+     * The two caps fail differently, and they were failing the same way.
+     *
+     * `take(alt > 0 ? alt : 0)` took the head when nothing comparable
+     * qualified -- the honest answer for an evaluator cap, because a book
+     * that genuinely has one kind of problem should say so. It is never the
+     * honest answer for a NAME. Raising the surface from four tiles to eight
+     * made that visible immediately: NKE took #5 and #6, two tiles carrying
+     * the same ticker, the same fund and the same sentence, because the desk
+     * has two open ideas on it.
+     *
+     * A second tile about the same name tells the reader nothing the first
+     * did not. So the object cap is hard: if ANY unheld name is left in the
+     * pool it goes ahead of a repeat, whatever its tier or score -- those
+     * govern which of several names leads, not whether a name appears twice.
+     * Only when every remaining candidate is a name already shown does the
+     * repeat stand, and then it is the whole truth of what is left.
+     */
+    if (objSaturated(head)) {
+      const fresh = pool.findIndex(c => !objSaturated(c))
+      take(fresh > 0 ? fresh : 0)
+      continue
+    }
+
+    // Key saturation alone: rank order stands.
+    take(0)
   }
 
   // Anything not surfaced keeps its ranked order for "Also watching".

@@ -13,6 +13,7 @@ import { render, screen, within, fireEvent } from '@testing-library/react'
 import type { DecisionItem } from '../../../engine/decisionEngine/types'
 import type { CoverageResearchCandidate } from '../../../lib/research/coverage-research-gaps'
 import type { ResearchFraming } from '../../../lib/research/case-state'
+import { TODAY_LIMIT } from '../../../lib/today'
 
 const env = vi.hoisted(() => ({
   engine: { action: [] as unknown[], intel: [] as unknown[] },
@@ -147,10 +148,14 @@ describe('a thin morning, Bogey Cap shaped', () => {
 })
 
 describe('real findings always win', () => {
-  it('shows no coverage work when four real findings surfaced', () => {
-    env.engine.action = [1, 2, 3, 4].map(n => finding(n))
+  it('shows no coverage work when real findings already fill the surface', () => {
+    // Sized off TODAY_LIMIT. It used to say "four real findings", which was
+    // the same number as the whole surface; once the surface held eight, four
+    // findings left room and the backfill correctly filled it -- the case was
+    // asserting the old count, not the rule.
+    env.engine.action = Array.from({ length: TODAY_LIMIT }, (_, i) => finding(i + 1))
     render(<TodayPage />)
-    expect(tickers()).toEqual(['R1', 'R2', 'R3', 'R4'])
+    expect(tickers()).toEqual(Array.from({ length: TODAY_LIMIT }, (_, i) => `R${i + 1}`))
   })
 
   it('gives way one slot at a time as real findings arrive', () => {

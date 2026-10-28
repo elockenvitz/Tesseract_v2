@@ -321,10 +321,16 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
    * took them off the bottom -- so TSLA's "-7.0%" and AAPL's "+27.6%", the
    * one number the chart exists to state, were sliced in half.
    *
-   *   compact   126 - 8 padding - 20 caption - 24 read-out = 74
-   *   featured  186 - 12        - 20         - 24          = 130
+   *   compact   172 - 8 padding - 20 caption - 24 read-out = 120
+   *   featured  224 - 12        - 20         - 24          = 168
+   *
+   * The slot grew because the plot was the thing being squeezed: a 72px band
+   * of price across a 340px column reads as a sparkline decoration, not as a
+   * chart you interrogate. It is now the tallest thing on the tile, which is
+   * the right order of billing for a surface whose whole claim is what the
+   * price has done since you last looked.
    */
-  const h = compact ? 72 : 128
+  const h = compact ? 118 : 166
   const W = 320
   const min = Math.min(...r.series)
   const max = Math.max(...r.series)

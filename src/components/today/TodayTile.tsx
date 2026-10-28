@@ -15,7 +15,7 @@ import { useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowRight, MoreHorizontal } from 'lucide-react'
 import { askAI, canDiscuss, discuss } from '../../lib/engagement'
-import { supportsSharedDefer, SNOOZE_PRESETS } from '../../lib/attention-state'
+import { SNOOZE_PRESETS } from '../../lib/attention-state'
 import { TodayVisual } from './TodayVisual'
 
 /* The keys enrichment actually draws a window for. Imported rather than
@@ -132,7 +132,6 @@ export function TodayTile({
   item, rank, featured, wide, onPrimary, onDismiss, onSnooze,
 }: TodayTileProps) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const sharedDefer = item.target ? supportsSharedDefer(item.target) : false
 
   /**
    * How this tile is being presented — not what it is about.
@@ -395,7 +394,9 @@ export function TodayTile({
         <div className={clsx(
           'flex min-w-0 flex-col',
           split ? 'gap-2.5' : 'gap-2',
-          split && 'justify-between pb-16',
+          // No bottom reservation any more: the action row moved to the
+          // eyebrow, so the foot of this column is the column's own again.
+          split && 'justify-between',
         )}>
           {/*
             The claim is a portal to the claim, not to the object generally.
@@ -552,25 +553,26 @@ export function TodayTile({
       <div
         data-testid="today-actions"
         className={clsx(
-          // `pt-4`, not `pt-7`: the row now fades in over reserved margin
-          // rather than over prose, so it needs a seam, not a long fade.
-          'absolute bottom-0 left-0 flex flex-wrap items-center gap-1 px-3.5 pb-2.5 pt-4',
-          'bg-gradient-to-t from-white via-white via-70% to-transparent',
-          'dark:from-[#141a25] dark:via-[#141a25]',
           /*
-            It stops at the analysis column.
+            TOP RIGHT, not the bottom edge.
 
-            Spanning the full width put the scrim straight over the bottom of
-            the chart -- the read-out and the portal label -- so approaching a
-            tile hid the thing you were approaching it to read. The body's
-            right column is `minmax(0,0.9fr)` of a `1fr 0.9fr` grid with a
-            16px gap, so a little under half; stopping at 48% keeps the row
-            inside the prose column with clearance.
+            It sat at the bottom and kept landing on the one control it shared
+            the card with. Full width it covered the chart; stopped at 48% it
+            still covered "See the full chart" on every tile whose body stacks
+            instead of splitting -- the link was under the scrim and could not
+            be clicked at all. ANY band pinned to the bottom of a card whose
+            content also ends at the bottom will do this; the position was the
+            defect, not its width.
 
-            On a tile with no chart there is no second column to stay out of,
-            and the row takes the width it needs.
+            The eyebrow row is the one strip of a tile that is reliably empty:
+            a rank, a state, and on most tiles nothing else across the rest of
+            the width. The row lives there now, right-aligned, fading down
+            over its own seam. Nothing a reader goes to a tile FOR is up
+            there, and the chart, its read-out and its portal are untouched.
           */
-          split ? 'right-[48%]' : 'right-0',
+          'absolute right-0 top-0 z-10 flex flex-wrap items-center justify-end gap-1 px-3 pb-5 pt-2',
+          'bg-gradient-to-b from-white via-white via-70% to-transparent',
+          'dark:from-[#141a25] dark:via-[#141a25]',
           QUIET_REVEAL,
         )}
       >
@@ -656,50 +658,38 @@ export function TodayTile({
 
           {menuOpen && (
             <div
-              /* Upward. The trigger sits on the tile's bottom edge, so a
-                 menu dropped below it hangs off the card and, on the last
-                 row, off the page. */
-              className="absolute bottom-full right-0 z-40 mb-1 w-72 overflow-hidden rounded-lg border border-gray-300 bg-white shadow-lg dark:border-white/15 dark:bg-[#171e2b]"
+              /* Downward again: the trigger moved to the tile's top edge, so
+                 a menu opening upward would hang above the card. */
+              className="absolute right-0 top-full z-40 mt-1 w-56 overflow-hidden rounded-lg border border-gray-300 bg-white shadow-lg dark:border-white/15 dark:bg-[#171e2b]"
               onMouseLeave={() => setMenuOpen(false)}
             >
-              <MenuGroup label="Personal — only affects your view" />
-              <MenuItem
-                label="Dismiss for me"
-                hint="Hidden for you on every device. Changes no shared state."
-                onClick={() => { onDismiss(item); setMenuOpen(false) }}
-              />
-              {SNOOZE_PRESETS.map(p => (
+              {/*
+                THREE CHOICES, NO BRIEFING.
+
+                It was a two-section menu: a "Personal — only affects your
+                view" header, four items each carrying its own explanatory
+                hint, a "Shared — changes the workflow for everyone" header,
+                and then a forty-word paragraph explaining why there are no
+                shared actions. Six lines of prose to put something off until
+                next week.
+
+                Every one of those sentences was TRUE, which is how it got
+                there. None of it is a decision the reader is making: they
+                want this off the page, now or for a while. The distinction
+                the headers drew is real and is carried by the words instead
+                -- "Hide this for me" says whose view it leaves.
+
+                Three snooze presets became two. "3 days" sat between a day
+                and a week answering no question either of them did not.
+              */}
+              <MenuItem label="Hide this for me" onClick={() => { onDismiss(item); setMenuOpen(false) }} />
+              {SNOOZE_PRESETS.filter(p => p.hours !== 72).map(p => (
                 <MenuItem
                   key={p.hours}
-                  label={`Snooze ${p.label}`}
-                  hint="Comes back on its own when the snooze expires."
+                  label={`Remind me in ${p.label}`}
                   onClick={() => { onSnooze(item, p.hours); setMenuOpen(false) }}
                 />
               ))}
-
-              <MenuGroup label="Shared — changes the workflow for everyone" />
-              {/*
-                No shared action is offered from Today yet, and none is rendered.
-
-                A control that looks like a shared mutation and performs none is
-                worse than no control: the user believes their team's revisit
-                date moved. So the two cases are stated rather than drawn.
-
-                The object-type case is permanent-ish: an asset simply has no
-                revisit date. The trade-queue case is Today's own gap — the
-                mutation exists (`deferTradeIdeaMutation`), but the id Today
-                carries is not unambiguously a `trade_queue_items.id`: pair
-                trades surface under a synthetic `pair-<id>`, and a proposal
-                expanded across portfolios surfaces once per portfolio while
-                sharing one underlying row. Deferring from either would either
-                miss, or move the date for every portfolio's copy. Resolving
-                that is a workflow question, not a UI one.
-              */}
-              <div className="px-3 pb-2.5 pt-1 text-[10px] leading-snug text-gray-500 dark:text-gray-500">
-                {sharedDefer
-                  ? 'This item has a shared revisit date, but Today cannot move it yet — defer it from the trade queue, where the row it belongs to is unambiguous.'
-                  : 'This object has no shared revisit date to move, so there is no shared Defer for it. Snooze is the personal equivalent.'}
-              </div>
             </div>
           )}
         </div>
@@ -708,27 +698,22 @@ export function TodayTile({
   )
 }
 
-function MenuGroup({ label }: { label: string }) {
-  return (
-    <div className="border-t border-gray-200 px-3 pb-1 pt-2.5 text-[9px] font-bold uppercase tracking-widest text-gray-500 first:border-t-0 dark:border-white/10 dark:text-gray-500">
-      {label}
-    </div>
-  )
-}
+/*
+ * `MenuGroup` is gone with the headers it drew, and `supportsSharedDefer`
+ * with the paragraph that branched on it. Today still offers no shared
+ * action -- the reason is recorded in the menu's own comment -- it simply no
+ * longer writes an essay about the absence above a three-item list.
+ */
 
-function MenuItem({
-  label, hint, onClick, shared,
-}: { label: string; hint: string; onClick: () => void; shared?: boolean }) {
+/** One line, one verb. The explanatory second line is gone with the briefing. */
+function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="block w-full px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-blue-950/30"
+      className="block w-full px-3 py-2 text-left text-[13px] text-gray-900 hover:bg-blue-50 dark:text-gray-100 dark:hover:bg-blue-950/30"
     >
-      <span className="block text-[12px] text-gray-900 dark:text-gray-100">{label}</span>
-      <span className={clsx('mt-0.5 block text-[10px]', shared ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500 dark:text-gray-500')}>
-        {hint}
-      </span>
+      {label}
     </button>
   )
 }

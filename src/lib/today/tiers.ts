@@ -153,12 +153,20 @@ export function compareTodayItems(a: TodayItem, b: TodayItem): number {
 /**
  * How many items Today shows.
  *
- * Finite is a product promise, not a performance concern. Four is the number
- * the approved composition uses: one featured plus three supporting. Anything
- * beyond it is real and is reported as evaluated-but-not-surfaced rather than
+ * Finite is a product promise, not a performance concern. Anything beyond the
+ * limit is real and is reported as evaluated-but-not-surfaced rather than
  * hidden.
+ *
+ * EIGHT, not four. Four was the approved composition -- one featured plus
+ * three supporting -- and on a real desk it left findings the reader wanted
+ * sitting under "Also watching", which is a summary line, not a surface.
+ *
+ * Eight is the next count that fills the grid exactly. The lead takes eight
+ * columns and #2 rides the four beside it; every tile after that is a third
+ * of a row, so a clean field needs the remainder to be a multiple of three:
+ * 1 + 1 + 3 + 3. Five or seven would end on a row with a hole in it.
  */
-export const TODAY_LIMIT = 4
+export const TODAY_LIMIT = 8
 
 export interface TodaySelection {
   surfaced: TodayItem[]
@@ -168,11 +176,55 @@ export interface TodaySelection {
   evaluated: number
 }
 
+/**
+ * One name, one tile — enforced at the cut, not just in the ordering.
+ *
+ * `diversify` pushes a repeat as late as it can, which is the whole answer
+ * while the pool is larger than the surface. It is not an answer when the
+ * desk has fewer findings than there are slots: with seven findings and eight
+ * tiles, NKE's two open ideas BOTH surfaced, as #5 and #7 -- same ticker,
+ * same fund, same sentence, because there was room for them.
+ *
+ * A second tile about a name the reader has already seen is worth less than
+ * an empty cell, so the repeat drops to Also watching, where its count still
+ * shows and nothing is hidden. Findings with no object -- an overdue
+ * deliverable carries no asset -- are never repeats and always keep their
+ * slot.
+ */
+function objectKey(item: TodayItem): string | null {
+  return item.source.context.assetId ?? item.ticker ?? null
+}
+
+/**
+ * The cut itself: at most `limit` tiles, at most one per name.
+ *
+ * Exported because the page performs its own cut -- it expands rollups and
+ * diversifies before slicing -- and a rule that lives only in `selectToday`
+ * is a rule the production surface does not have. That is exactly how NKE
+ * reached the live field twice while `selectToday`'s tests were green.
+ */
+export function cutToday(
+  ordered: readonly TodayItem[], limit: number,
+): { surfaced: TodayItem[]; overflow: TodayItem[] } {
+  const surfaced: TodayItem[] = []
+  const overflow: TodayItem[] = []
+  const seen = new Set<string>()
+
+  for (const item of ordered) {
+    const key = objectKey(item)
+    if (surfaced.length >= limit || (key && seen.has(key))) {
+      overflow.push(item)
+      continue
+    }
+    if (key) seen.add(key)
+    surfaced.push(item)
+  }
+
+  return { surfaced, overflow }
+}
+
 export function selectToday(items: TodayItem[]): TodaySelection {
   const ranked = [...items].sort(compareTodayItems)
-  return {
-    surfaced: ranked.slice(0, TODAY_LIMIT),
-    alsoWatching: ranked.slice(TODAY_LIMIT),
-    evaluated: ranked.length,
-  }
+  const { surfaced, overflow } = cutToday(ranked, TODAY_LIMIT)
+  return { surfaced, alsoWatching: overflow, evaluated: ranked.length }
 }

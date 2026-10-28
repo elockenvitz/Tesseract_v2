@@ -18,6 +18,7 @@ export {
   tierFor,
   compareTodayItems,
   selectToday,
+  cutToday,
   TODAY_LIMIT,
 } from './tiers'
 export type { TodaySelection } from './tiers'

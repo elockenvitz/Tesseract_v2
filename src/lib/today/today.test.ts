@@ -146,14 +146,54 @@ describe('ordering', () => {
 })
 
 describe('composition', () => {
+  // Nine findings on nine DIFFERENT names. The default context is one asset,
+  // and `selectToday` now gives a name one tile -- so a fixture that shared
+  // an assetId was testing the repeat rule, not the cut.
   const many = Array.from({ length: 9 }, (_, i) =>
-    adaptDecisionItem(item({ id: `i${i}`, titleKey: 'THESIS_STALE' })))
+    adaptDecisionItem(item({
+      id: `i${i}`, titleKey: 'THESIS_STALE',
+      context: { assetId: `a-${i}`, assetTicker: `TCK${i}` },
+    })))
 
   it('surfaces a finite set and reports the rest rather than hiding them', () => {
+    // The remainder is derived, not restated: hard-coding "5" meant this
+    // case stopped describing the cut the moment the limit moved.
     const sel = selectToday(many)
-    expect(sel.surfaced).toHaveLength(TODAY_LIMIT)
-    expect(sel.alsoWatching).toHaveLength(5)
-    expect(sel.evaluated).toBe(9)
+    expect(sel.surfaced).toHaveLength(Math.min(TODAY_LIMIT, many.length))
+    expect(sel.alsoWatching).toHaveLength(Math.max(0, many.length - TODAY_LIMIT))
+    expect(sel.evaluated).toBe(many.length)
+  })
+
+  it('gives one name one tile, even when there is room for two', () => {
+    /*
+     * With seven findings and eight slots, NKE's two open ideas BOTH
+     * surfaced -- #5 and #7, same ticker, same fund, same sentence -- because
+     * there was room. `diversify` pushes a repeat as late as it can, which is
+     * the whole answer only while the pool is larger than the surface.
+     *
+     * A second tile about a name already shown is worth less than an empty
+     * cell, so it drops to Also watching where its count still shows.
+     */
+    const nke = (n: number) => adaptDecisionItem(item({
+      id: `nke-${n}`, titleKey: 'IDEA_NOT_SIMULATED',
+      context: { assetId: 'a-nke', assetTicker: 'NKE', tradeIdeaId: `t${n}` },
+    }))
+    const sel = selectToday([nke(1), nke(2), many[0]])
+    // A stale thesis outranks an unsimulated idea, so the stale one leads;
+    // the claim here is the COUNT of NKE tiles, which is one.
+    expect(sel.surfaced.map(i => i.source.context.assetId)).toEqual(['a-0', 'a-nke'])
+    expect(sel.alsoWatching).toHaveLength(1)
+    // Nothing is hidden: the count still adds up.
+    expect(sel.surfaced.length + sel.alsoWatching.length).toBe(sel.evaluated)
+  })
+
+  it('never treats two objectless findings as the same name', () => {
+    // An overdue deliverable carries no asset. Two of them are two findings,
+    // not one repeated, and both keep their slot.
+    const chore = (n: number) => adaptDecisionItem(item({
+      id: `due-${n}`, titleKey: 'OVERDUE_DELIVERABLE', context: {},
+    }))
+    expect(selectToday([chore(1), chore(2)]).surfaced).toHaveLength(2)
   })
 
   it('handles a single item without inventing supporting priorities', () => {

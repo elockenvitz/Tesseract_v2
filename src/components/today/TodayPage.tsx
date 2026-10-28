@@ -22,8 +22,8 @@ import {
 import { useAttentionState } from '../../hooks/useAttentionState'
 import { feedItemAttentionKey } from '../../lib/attention-state'
 import {
-  adaptDecisionItem, selectToday, expandToObjects, diversify, applyEnrichment,
-  compareTodayItems, coverageTodayItems, TODAY_LIMIT,
+  adaptDecisionItem, expandToObjects, diversify, applyEnrichment,
+  compareTodayItems, coverageTodayItems, cutToday, TODAY_LIMIT,
 } from '../../lib/today'
 import { useTodayEnrichment } from '../../hooks/useTodayEnrichment'
 import { useCoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
@@ -75,9 +75,14 @@ export function TodayPage() {
     const ranked = [...visible].sort(compareTodayItems)
     const arranged = diversify(ranked, TODAY_LIMIT)
 
+    // `cutToday`, not `slice`: one name gets one tile. A plain slice let NKE
+    // take two of the eight -- same ticker, same fund, same sentence, from
+    // two open ideas -- because with seven findings there was room for both.
+    const cut = cutToday(arranged, TODAY_LIMIT)
+
     return {
-      surfaced: arranged.slice(0, TODAY_LIMIT),
-      alsoWatching: arranged.slice(TODAY_LIMIT),
+      surfaced: cut.surfaced,
+      alsoWatching: cut.overflow,
       evaluated: arranged.length,
       suppressedCount: suppressed,
       aggregates: expanded.aggregates,
@@ -630,8 +635,8 @@ function Loading() {
       className="mt-4 grid grid-cols-12 items-stretch gap-3.5 px-6"
     >
       <div className={clsx(box, 'col-span-12 lg:col-span-8')} style={{ height: SKELETON_H.lead }} />
-      {[0, 1, 2].map(i => {
-        const { span } = supportingSpan(i, 4)
+      {Array.from({ length: TODAY_LIMIT - 1 }, (_, i) => i).map(i => {
+        const { span } = supportingSpan(i, TODAY_LIMIT)
         return (
           <div
             key={i}
