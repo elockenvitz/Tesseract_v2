@@ -79,7 +79,11 @@ export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boo
         </span>
       </div>
 
-      <Body visual={visual} compact={compact} />
+      {/* The slot is fixed, so the body owns whatever height is left after
+          the caption. `min-h-0` or a flex child refuses to shrink. */}
+      <div className="min-h-0 flex-1">
+        <Body visual={visual} compact={compact} />
+      </div>
 
       {visual.note && (
         <div className="mt-1.5 text-[10px] leading-snug text-gray-500 dark:text-gray-500">
@@ -539,6 +543,38 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
   const at = (p: number) => ((p - lo) / span) * 100
   const beyond = sc.spot > bull || sc.spot < bear
 
+  /*
+   * Which rungs get a printed label.
+   *
+   * A four-case framework puts two rungs close together and the labels
+   * collide: AAPL at 1920x889 printed "BEBAR5Sa0B310" where BEAR 205 and
+   * BASE 230 overlapped. Two true labels on top of each other are worse than
+   * one, because the result is neither.
+   *
+   * So a label is kept only if it clears the last one kept. The rung LINE is
+   * always drawn -- nothing is hidden from the chart, only from the axis --
+   * and running the pointer across the band reads any level exactly. The
+   * extremes are what the axis is for, so bear and bull are always kept and
+   * a middle rung yields to them rather than the other way round.
+   *
+   * The gap is in percent of band width and is wider when the column is
+   * narrower, because a label's width in percent grows as the band shrinks.
+   */
+  const LABEL_GAP = compact ? 26 : 15
+  const labelled = (() => {
+    const sorted = [...sc.cases].sort((a2, b2) => a2.price - b2.price)
+    if (sorted.length <= 2) return sorted
+    const last = sorted[sorted.length - 1]
+    const kept = [sorted[0]]
+    for (const c of sorted.slice(1, -1)) {
+      if (at(c.price) - at(kept[kept.length - 1].price) < LABEL_GAP) continue
+      if (at(last.price) - at(c.price) < LABEL_GAP) continue
+      kept.push(c)
+    }
+    kept.push(last)
+    return kept
+  })()
+
   /** Which side of the desk's thinking a level falls on. */
   const zoneOf = (p: number) => {
     if (p < bear) return 'below the bear case'
@@ -553,10 +589,10 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
   }
 
   return (
-    <div>
+    <div className="flex h-full flex-col">
       {/* One line, one height, whether or not a level is being read -- so
           running across the band never moves the card. */}
-      <div className="flex h-[14px] items-baseline justify-between overflow-hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+      <div className="flex h-[14px] shrink-0 items-baseline justify-between overflow-hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
         <span>{scrub == null ? 'Bear' : ''}</span>
         {scrub != null && (
           <span
@@ -576,7 +612,11 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
       <div
         ref={band}
         data-testid="scenario-band"
-        className={clsx('relative mt-1.5 w-full cursor-crosshair', compact ? 'h-[34px]' : 'h-[46px]')}
+        /* It was 34px of band under a 455px-wide caption -- a hairline asked
+           to carry the whole finding. The slot above is fixed, so taking the
+           remaining height costs nothing and the band reads as a range
+           instead of a rule. */
+        className={clsx('relative mt-1.5 w-full flex-1 cursor-crosshair', compact ? 'min-h-[34px]' : 'min-h-[46px]')}
         onPointerMove={e => {
           if (e.pointerType !== 'mouse' || !band.current) return
           const r = band.current.getBoundingClientRect()
@@ -588,21 +628,31 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
         }}
         onPointerLeave={() => setScrub(null)}
       >
-        {/* Outside the range the desk underwrote. Marked, not painted. */}
-        <div className="absolute inset-y-0 left-0 bg-rose-500/[0.07] dark:bg-rose-400/[0.10]"
+        {/*
+          Outside the range the desk underwrote. Marked, not painted -- but
+          marked enough to see: at 7% alpha the hatching was invisible on a
+          white card, so "the price is above the bull case" was carried by
+          the sentence alone and the picture said nothing.
+
+          The outside is now a flat neutral wash and the inside is the only
+          coloured region, which is the fact worth colouring: the band IS the
+          desk's thinking, and everything outside it is territory nobody
+          wrote a case for.
+        */}
+        <div className="absolute inset-y-0 left-0 rounded-l-[2px] bg-gray-500/[0.07] dark:bg-white/[0.05]"
              style={{ width: `${at(bear)}%` }} />
-        <div className="absolute inset-y-0 right-0 bg-rose-500/[0.07] dark:bg-rose-400/[0.10]"
+        <div className="absolute inset-y-0 right-0 rounded-r-[2px] bg-gray-500/[0.07] dark:bg-white/[0.05]"
              style={{ left: `${at(bull)}%` }} />
 
         {/* What the desk underwrote, bear to bull, because that is what the
             axis IS: the left edge is the case we lose in. */}
         <div
-          className="absolute inset-y-0 bg-gradient-to-r from-rose-500/[0.16] via-slate-400/[0.10] to-emerald-500/[0.16] dark:from-rose-400/[0.18] dark:via-white/[0.07] dark:to-emerald-400/[0.18]"
+          className="absolute inset-y-0 rounded-[2px] bg-gradient-to-r from-rose-500/30 via-slate-400/[0.18] to-emerald-500/30 dark:from-rose-400/30 dark:via-white/[0.12] dark:to-emerald-400/30"
           style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }}
         />
 
         {sc.cases.map(c => (
-          <i key={c.name} className="absolute inset-y-0 w-[2px] bg-slate-400 dark:bg-white/35"
+          <i key={c.name} className="absolute inset-y-0 w-px bg-slate-500/70 dark:bg-white/45"
              style={{ left: `${at(c.price)}%` }} />
         ))}
 
@@ -630,21 +680,46 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
       </div>
 
       {/*
-        The rungs, named and priced, under the band rather than inside it.
+        The rungs, named and priced, each UNDER THE LINE IT NAMES.
 
-        They were absolutely positioned at the band's own baseline, so on a
-        narrow column the three numbers overlapped each other and the price
-        mark. A row underneath cannot collide with the geometry it labels.
+        ── Why this moved twice ──────────────────────────────────────────
+        They began absolutely positioned at the band's own baseline, where on
+        a narrow column the three numbers overlapped each other and the price
+        mark. The fix was a `justify-between` row underneath -- which cannot
+        collide, and also cannot be right: it pins the first label to the
+        left edge, the last to the right edge and the rest evenly between,
+        wherever the rungs actually are. Measured on AMZN at 1920x889, the
+        bull rung sat at 55% of the band with "BULL 180" printed at 100%, and
+        the base rung at 31% with "BASE 120" at 50%. Every label named a line
+        it was nowhere near, which is most of what made the object unreadable.
+
+        So they are positioned at their own rung again, but on their own row
+        where nothing can overlap the geometry, and centred on the rung with
+        the end labels clamped inside the box rather than hanging off it. Two
+        rungs priced close together still crowd; that is a legible crowd of
+        two true labels, not three false ones.
       */}
-      <div className="mt-1 flex items-baseline justify-between font-mono text-[9px] tabular-nums text-gray-500">
-        {[...sc.cases].sort((a2, b2) => a2.price - b2.price).map(c => (
-          <span key={c.name} className="truncate">
-            <span className="font-sans uppercase tracking-[0.06em] text-gray-400">
-              {c.name}
-            </span>{' '}
-            {c.price.toFixed(0)}
-          </span>
-        ))}
+      <div className="relative mt-1 h-[11px] shrink-0 font-mono text-[9px] tabular-nums text-gray-500">
+        {labelled.map(c => {
+          const x = at(c.price)
+          return (
+            <span
+              key={c.name}
+              data-testid="scenario-rung-label"
+              data-rung={c.name}
+              className={clsx(
+                'absolute top-0 whitespace-nowrap',
+                x <= 8 ? 'translate-x-0' : x >= 92 ? '-translate-x-full' : '-translate-x-1/2',
+              )}
+              style={{ left: `${Math.min(100, Math.max(0, x))}%` }}
+            >
+              <span className="font-sans uppercase tracking-[0.06em] text-gray-400">
+                {c.name}
+              </span>{' '}
+              {c.price.toFixed(0)}
+            </span>
+          )
+        })}
       </div>
     </div>
   )
