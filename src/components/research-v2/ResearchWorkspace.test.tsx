@@ -321,9 +321,24 @@ describe('a typed arrival expands the right card, or says it cannot', () => {
 
     const asClaim = render(<ResearchWorkspace focusObjectId="a-amzn" intent="claim" />)
     expect(headings(asClaim.container)).toContain('The case')
-    // The case leads; price is context.
-    const claimOrder = headings(asClaim.container)
-    expect(claimOrder.indexOf('The case')).toBeLessThan(claimOrder.indexOf('Price'))
+    /*
+     * The case leads; price is context.
+     *
+     * This used to compare heading text against a "Price" heading. The
+     * context chart no longer has one -- its own caption reads "Price since
+     * the last update", so a "PRICE" bar above it was the module announcing
+     * what the chart was about to announce -- and a missing heading makes
+     * `indexOf` return -1, which is "before everything" rather than "after".
+     * Compare the case heading with the chart ELEMENT in document order, so
+     * the assertion survives the chart's chrome changing again.
+     */
+    const caseHead = [...asClaim.container.querySelectorAll('h2,h3')]
+      .find(h => h.textContent?.trim() === 'The case')!
+    const chart = asClaim.container.querySelector('[role="img"][aria-label^="Price"]')!
+    expect(caseHead).toBeTruthy()
+    expect(chart).toBeTruthy()
+    expect(caseHead.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy()
     asClaim.unmount()
 
     const asPrice = render(<ResearchWorkspace focusObjectId="a-amzn" intent="price" />)

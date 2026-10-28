@@ -148,7 +148,11 @@ describe('a decision is never graded, though its price may be', () => {
 
 describe('severity means one thing across surfaces', () => {
   it('calls a missing core thesis review, not critical, in both places', () => {
-    expect(src('components/research-v2/ResearchWorkspace.tsx'))
+    // `STATE_TONE` moved out of the workspace component into the Research
+    // model, because the detail HEADER now badges state too and a component
+    // cannot import a tone map from a sibling component without the two
+    // drifting. The rule is unchanged; only its home moved.
+    expect(src('lib/desktop-research/model.ts'))
       .toMatch(/'no-thesis':\s*'review'/)
     const pf = src('lib/desktop-portfolio/model.ts')
     const tone = pf.slice(pf.indexOf('export function toneForGap'), pf.indexOf('MATERIAL_PCT'))

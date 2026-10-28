@@ -37,9 +37,10 @@
  * every lens and a reader learns it once.
  */
 
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowRight } from 'lucide-react'
+import { useWidth } from '../../lib/charts/use-width'
 import { indexAtClientX } from '../../lib/charts/scrub'
 import { moveTone } from '../../lib/charts/tone'
 import { VISUAL_SLOT, type TodayVisual as Visual } from '../../lib/today'
@@ -291,40 +292,8 @@ function ExpectedReturn({ v }: { v: Visual }) {
 
 /* ----------------------------------------------------------- review window */
 
-/**
- * The element's own width in CSS pixels.
- *
- * A chart that draws in its real coordinate system needs to know what that
- * is. The alternative -- a fixed `viewBox` stretched to fit -- is what made
- * these plots look cheap: see the note on `preserveAspectRatio` below.
- *
- * Starts at 0 and the caller draws nothing until a real measurement lands,
- * so the first paint is never a chart at the wrong scale that then jumps.
- */
-function useWidth<T extends HTMLElement>(fallback: number) {
-  const ref = useRef<T | null>(null)
-  const [w, setW] = useState(0)
-  /*
-   * `useLayoutEffect`, not `useEffect`: layout is complete by then and the
-   * measurement is applied before the browser paints, so the plot is never
-   * drawn once at the fallback width and then again at the real one.
-   */
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const apply = (next: number) => setW(prev => (Math.abs(prev - next) < 0.5 ? prev : next))
-    apply(el.getBoundingClientRect().width)
-    // jsdom has no ResizeObserver, and a chart that throws in a unit test is
-    // a chart nobody can test. Measured once there, which is all a test has.
-    if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(entries => {
-      for (const e of entries) apply(e.contentRect.width)
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-  return [ref, w > 0 ? w : fallback] as const
-}
+/* `useWidth` moved to lib/charts so the Research detail's plot draws in the
+   same real-pixel coordinate system this one does, rather than a copy. */
 
 /**
  * Price across the window the caption names, with the review anchor marked.

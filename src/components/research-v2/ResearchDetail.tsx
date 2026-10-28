@@ -28,9 +28,10 @@
 
 import { useRef } from 'react'
 import {
-  DesktopModule, DesktopStat, DesktopSection, DesktopColumns, DeepLinks, DeepLink,
+  DesktopModule, DesktopSection, DesktopColumns, DeepLinks, DeepLink,
 } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
+import { TONE_INK } from '../../lib/semantic-tone'
 import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { useRecordThesisReview, type ThesisReviewOutcome } from '../../hooks/useThesisReview'
@@ -66,7 +67,7 @@ function routeToIdea(ideaId: string, issue: string) {
 }
 import {
   stateOf, whyItMatters, primaryActionFor, targetFor, issueFor,
-  SECTION_LABEL, ALL_SECTIONS, CORE_SECTIONS,
+  SECTION_LABEL, ALL_SECTIONS, CORE_SECTIONS, STATE_TONE,
   dateWords, ageKindOf, thesisDateKindOf,
   type ResearchSubject, type ResearchDateWords,
 } from '../../lib/desktop-research'
@@ -211,29 +212,82 @@ export function ResearchDetail({
       {/* header */}
       <div className="border-b border-gray-200 bg-white px-6 pt-5 dark:border-white/10 dark:bg-[#141a25]">
         <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-          <div className="flex min-w-0 items-baseline gap-2.5">
+          {/*
+            ONE ticker row, and this is it.
+
+            The deck used to draw its own above this one -- ticker, state and
+            a claim -- so opening AMZN from Today gave "AMZN / THESIS MAY BE
+            STALE / <claim>" and then, 75px below, "AMZN / Amazon.com, Inc."
+            with its own figures and its own sentence saying the same thing
+            in different words. `WorkDeck` now yields the identity to the lens
+            (`ownHeader`), which means the state badge it carried has to live
+            here instead, or opening a name would no longer say why it
+            surfaced.
+
+            The badge is `issueFor` and `STATE_TONE` -- the same two functions
+            the rail badges with -- so the card you clicked and the header you
+            land on cannot word or colour the same state differently.
+          */}
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <span className="font-black text-[30px] leading-[1.05] tracking-[-0.035em]">
               {subject.symbol ?? '—'}
             </span>
             {subject.companyName && (
               <span className="truncate text-[13px] font-medium text-gray-500">{subject.companyName}</span>
             )}
+            <span
+              data-testid="detail-state"
+              className={clsx(
+                'text-[9px] font-bold uppercase tracking-widest',
+                TONE_INK[STATE_TONE[stateOf(subject)]],
+              )}
+            >
+              {issueFor(subject)}
+            </span>
           </div>
-          <div className="ml-auto flex flex-wrap gap-2">
-            {subject.daysSinceReview != null && (
-              <DesktopStat value={`${subject.daysSinceReview}d`} label={age.last} />
-            )}
-            <DesktopStat value={String(subject.evidenceCount)} label="Evidence" />
-            {subject.newSinceReview > 0 && (
-              <DesktopStat value={`+${subject.newSinceReview}`} label={capitalize(age.since)} tone="warn" />
-            )}
-            {detail?.weightPct != null && (
-              <DesktopStat value={`${detail.weightPct.toFixed(1)}%`} label="Weight" />
-            )}
-          </div>
+          {/*
+            No figure trio here.
+
+            It was `340d LAST UPDATED / 1 EVIDENCE / 14.2% WEIGHT`, sitting
+            directly above a band reading `340d SINCE UPDATE / +9.7% PRICE /
+            None NEW RESEARCH / 14.2% HELD`. The same three numbers, twice,
+            about eighty pixels apart -- and the evidence pair read as a
+            contradiction, because one counts everything on record and the
+            other counts what arrived since the thesis, and nothing on screen
+            said so.
+
+            The band wins: it has the price move as well, and it names the
+            window it measures over. The total count is not lost -- the
+            "Evidence on record" section below carries it, under a heading
+            that says which question it answers.
+          */}
         </div>
 
-        <p className="mt-3 max-w-[84ch] text-[13px] text-gray-700 dark:text-gray-300">{why}</p>
+        {/*
+          The headline sentence survives only where nothing below states it.
+
+          With a thesis on file it read "Thesis last updated 340 days ago;
+          the stock has moved +9.7% since" -- directly above a band reading
+          `340d SINCE UPDATE / +9.7% PRICE`. The same two numbers, in prose,
+          eighty pixels above the figures themselves, and worse: it took the
+          age from one date and the price move from the window the chart
+          actually measured, then joined them with "since" as though they
+          shared a moment. There the band wins: it states the figures, names
+          its window, and carries the one sentence worth reading -- "No new
+          research since the thesis was last updated. The thesis is simply
+          due a look."
+
+          But the band is gated on `thesisUpdatedAt`. A coverage name with no
+          thesis has no band, so deleting this outright left "why am I here"
+          unanswered on exactly the subject that most needs it -- the one
+          with nothing written about it. `whyItMatters` is also still used by
+          the gallery tiles and the AI context.
+        */}
+        {!subject.thesisUpdatedAt && (
+          <p className="mt-2 max-w-[80ch] text-[13px] leading-relaxed text-gray-700 dark:text-gray-300">
+            {why}
+          </p>
+        )}
 
         <div className="mt-3 flex flex-wrap items-center gap-1 pb-3">
           <button
@@ -490,8 +544,15 @@ export function ResearchDetail({
               </DesktopModule>
             )}
 
+            {/*
+              No "Price" title over it: the chart's own caption already says
+              "Price since the last update", which is the same word plus the
+              thing a bare "Price" leaves out -- which price, measured from
+              when. Two headings for one chart is the module announcing what
+              the chart is about to announce.
+            */}
             {window && leadPanel !== 'price' && (
-              <DesktopModule title="Price">
+              <DesktopModule>
                 <PriceSinceReview w={window} since={thesisDate} />
               </DesktopModule>
             )}

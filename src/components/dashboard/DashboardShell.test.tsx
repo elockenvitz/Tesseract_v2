@@ -83,6 +83,23 @@ const card = (id: string, over: Partial<RailCard> = {}): RailCard => ({
   ...over,
 })
 
+/**
+ * The same arrival, into a lens that does NOT draw its own identity header.
+ *
+ * Research does, so the deck yields to it (`ownHeader`) and there is no
+ * `focus-header` to assert against. Portfolio still relies on the deck's,
+ * which is where the deck-header rules are tested.
+ */
+const intoPortfolio = (objectId = 'a-tgt', rail = [card('a-amzn', { workspaceLens: 'portfolio' })]) =>
+  openDashboardFocus({
+    target: {
+      originLens: 'today', workspaceLens: 'portfolio', objectType: 'asset',
+      objectId, symbol: 'TGT', issue: 'Thesis may be stale', origin: 'today',
+    },
+    backLabel: 'Today',
+    rail,
+  })
+
 const fromToday = (objectId = 'a-tgt', rail = [card('a-amzn'), card('a-wmt')]) =>
   openDashboardFocus({
     target: {
@@ -137,9 +154,19 @@ describe('expanding a card, in this tab', () => {
     // about an asset, while the finding -- and the object's own name until the
     // workspace loaded -- did not survive the click. The rail listed the three
     // things the reader did not choose; nothing named the one they did.
+    /*
+     * Opened into PORTFOLIO, not research.
+     *
+     * The rule is unchanged -- the surface answering a click must name the
+     * object that was clicked -- but who draws that name now depends on the
+     * lens. Research owns its own identity header (ticker, company, state,
+     * figures, actions), so the deck yields to it rather than stacking a
+     * second ticker row above; see `ownHeader`. Portfolio does not, so the
+     * deck's header is still the thing under test here.
+     */
     render(<DashboardShell />)
     await React.act(async () => {
-      fromToday('a-tgt', [card('a-tgt'), card('a-amzn')])
+      intoPortfolio('a-tgt', [card('a-tgt', { workspaceLens: 'portfolio' })])
     })
 
     const header = screen.getByTestId('focus-header')
@@ -148,14 +175,28 @@ describe('expanding a card, in this tab', () => {
     expect(header).toHaveTextContent('Nobody has revisited it.')
   })
 
+  it('yields the header to a lens that draws its own', async () => {
+    /*
+     * The two-ticker bug. Opening AMZN from Today drew the deck's header --
+     * "AMZN / THESIS MAY BE STALE / <claim>" -- and then, 75px below,
+     * Research's own "AMZN / Amazon.com, Inc." with its own figures and its
+     * own sentence saying the same thing in different words.
+     */
+    render(<DashboardShell />)
+    await React.act(async () => { fromToday('a-tgt', [card('a-amzn')]) })
+
+    expect(screen.getByTestId('lens-research')).toBeInTheDocument()
+    expect(screen.queryByTestId('focus-header')).not.toBeInTheDocument()
+  })
+
   it('finds the expanded card by id, never by symbol', async () => {
     // Two findings can concern one ticker. Matching on symbol would collapse
     // them and put the wrong claim above the workspace.
     render(<DashboardShell />)
     await React.act(async () => {
-      fromToday('a-two', [
-        { ...card('a-one'), symbol: 'DUP', detail: 'The first finding.' },
-        { ...card('a-two'), symbol: 'DUP', detail: 'The second finding.' },
+      intoPortfolio('a-two', [
+        { ...card('a-one', { workspaceLens: 'portfolio' }), symbol: 'DUP', detail: 'The first finding.' },
+        { ...card('a-two', { workspaceLens: 'portfolio' }), symbol: 'DUP', detail: 'The second finding.' },
       ])
     })
     expect(screen.getByTestId('focus-header')).toHaveTextContent('The second finding.')

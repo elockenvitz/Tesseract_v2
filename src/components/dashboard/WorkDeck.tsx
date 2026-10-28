@@ -32,6 +32,7 @@
 
 import { clsx } from 'clsx'
 import { ArrowLeft } from 'lucide-react'
+import { useWidth } from '../../lib/charts/use-width'
 import { railAround, type FocusIntent, type RailCard } from '../../lib/dashboard/focus'
 
 /** What each sub-object is called where a reader can see it. */
@@ -44,7 +45,7 @@ const INTENT_LABEL: Record<FocusIntent, string> = {
 }
 
 export function WorkDeck({
-  backLabel, onBack, rail, activeId, onRotate, intent, children,
+  backLabel, onBack, rail, activeId, onRotate, intent, ownHeader, children,
 }: {
   backLabel: string
   onBack: () => void
@@ -53,6 +54,23 @@ export function WorkDeck({
   onRotate: (card: RailCard) => void
   /** Which part of the object the reader reached for, when they named one. */
   intent?: FocusIntent
+  /**
+   * The surface below draws its own identity header, so this one must not.
+   *
+   * `FocusHeader` was written as "not a second tile" -- one line of identity
+   * and one of substance, deliberately without a card or actions. That holds
+   * against a surface with no header of its own. Research has one: opening
+   * AMZN from Today produced "AMZN / THESIS MAY BE STALE / <claim>" and then,
+   * 75px below, "AMZN / Amazon.com, Inc." with its own figures and its own
+   * sentence saying the same thing in different words. Two tickers, and the
+   * smaller one first.
+   *
+   * Which header survives is settled by which one can do the whole job: the
+   * lens's, because it holds the company name, the actions and the figures.
+   * So the lens takes the identity and this yields it, rather than the two
+   * negotiating at runtime.
+   */
+  ownHeader?: boolean
   children: React.ReactNode
 }) {
   /**
@@ -121,7 +139,7 @@ export function WorkDeck({
             {backLabel}
           </button>
         </div>
-        {active && <FocusHeader card={active} intent={intent} />}
+        {active && !ownHeader && <FocusHeader card={active} intent={intent} />}
         {children}
       </div>
     </div>
@@ -340,8 +358,23 @@ function RailSpark({ spark }: { spark: NonNullable<RailCard['spark']> }) {
   const pts = closes.filter((_, i) => i % step === 0 || i === closes.length - 1)
   const lo = Math.min(...pts), hi = Math.max(...pts)
   const span = hi - lo || 1
+
+  /*
+   * Real pixels here too.
+   *
+   * This drew into a 100x20 box with `preserveAspectRatio="none"` and
+   * rendered ~186px wide -- a 1.86x horizontal stretch, which is why its
+   * round caps came out as ovals and its slope read steeper than the same
+   * move does on the chart it previews. A rail is where a reader compares
+   * neighbours; a spark whose steepness is a function of the column width
+   * is the one thing it must not be.
+   */
+  const [box, W] = useWidth<HTMLDivElement>(120)
+  const H = 22
+  const PAD = 3
   const d = pts
-    .map((v, i) => `${i ? 'L' : 'M'}${((i / (pts.length - 1)) * 100).toFixed(2)},${(20 - ((v - lo) / span) * 20).toFixed(2)}`)
+    .map((v, i) => `${i ? 'L' : 'M'}${((i / (pts.length - 1)) * (W - 1)).toFixed(2)},`
+      + `${(PAD + (H - PAD * 2) * (1 - (v - lo) / span)).toFixed(2)}`)
     .join(' ')
 
   return (
@@ -349,15 +382,14 @@ function RailSpark({ spark }: { spark: NonNullable<RailCard['spark']> }) {
       'flex items-center gap-2',
       up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-500',
     )}>
-      <svg
-        viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden
-        className="h-[22px] flex-1"
-      >
-        <path
-          d={d} fill="none" stroke="currentColor" strokeWidth="1.75"
-          vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round"
-        />
-      </svg>
+      <div ref={box} className="min-w-0 flex-1">
+        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden className="block w-full">
+          <path
+            d={d} fill="none" stroke="currentColor" strokeWidth="1.75"
+            strokeLinejoin="round" strokeLinecap="round"
+          />
+        </svg>
+      </div>
       <span className="shrink-0 font-mono text-[11px] font-semibold tabular-nums">
         {up ? '+' : ''}{changePct.toFixed(1)}%
       </span>

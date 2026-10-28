@@ -30,7 +30,8 @@ import { ArrowUpRight } from 'lucide-react'
 export interface DesktopModuleProps {
   /** Anchor id, for in-page jumps. */
   id?: string
-  title: string
+  /** Omitted where the module's own content already names itself. */
+  title?: string
   /** Right-aligned qualifier: a date, a count, a window. */
   meta?: string
   /** Right-aligned control. Sits after `meta` when both are present. */
@@ -71,11 +72,22 @@ export function DesktopModule({
         className,
       )}
     >
-      <div className="flex items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-4 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-        <h3 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">{title}</h3>
-        {meta && <span className="ml-auto text-[10px] text-gray-500">{meta}</span>}
-        {action && <span className={clsx(meta ? 'ml-2' : 'ml-auto')}>{action}</span>}
-      </div>
+      {/*
+        A module whose content names itself needs no bar.
+
+        The price chart's own caption reads "Price since the last update" --
+        which price, measured from when. A "PRICE" bar above it is the module
+        announcing what the chart is about to announce, and it costs a 33px
+        band to do it. Omitting `title` (with no `meta` or `action`) now
+        yields the whole header rather than drawing an empty strip.
+      */}
+      {(title || meta || action) && (
+        <div className="flex items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-4 py-2 dark:border-white/10 dark:bg-white/[0.03]">
+          {title && <h3 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">{title}</h3>}
+          {meta && <span className="ml-auto text-[10px] text-gray-500">{meta}</span>}
+          {action && <span className={clsx(meta ? 'ml-2' : 'ml-auto')}>{action}</span>}
+        </div>
+      )}
       <div className="px-4 py-3.5">{children}</div>
     </section>
   )

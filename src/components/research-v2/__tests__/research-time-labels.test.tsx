@@ -118,11 +118,22 @@ describe('an edited thesis (every scan subject)', () => {
 
     render(<ResearchWorkspace focusObjectId="a-amzn" selectedAssetId="a-amzn" />)
     const pane = detailPane()
-    expect(within(pane).getByText('Last updated')).toBeInTheDocument()
+    /*
+     * No "Last updated" stat here any more.
+     *
+     * That was the header's figure trio -- `140d LAST UPDATED / n EVIDENCE /
+     * x% WEIGHT` -- sitting directly above a band stating the same three
+     * numbers again. The band survives, so the anchor wording is still
+     * asserted; it is asserted on the band and the chart, which is where it
+     * is now said.
+     */
     expect(within(pane).getByText('updated 140d ago')).toBeInTheDocument()
     expect(within(pane).getByText('Since the thesis was last updated')).toBeInTheDocument()
     expect(within(pane).getAllByText('Price since the last update').length).toBeGreaterThan(0)
-    expect(within(pane).getAllByText('LAST UPDATE').length).toBeGreaterThan(0)
+    // Case-insensitive: the chart's anchor tick is sentence case now, for the
+    // reason Today's is -- 8px letter-spaced caps riding on a plot is the
+    // least legible thing this surface can draw, and it labels a dashed line.
+    expect(pane.textContent?.toLowerCase()).toContain('last update')
     expect(pane.textContent).not.toMatch(CLAIMS_REVIEW)
 
     expect(whyItMatters(s)).toBe('Thesis last updated 140 days ago.')
@@ -145,7 +156,8 @@ describe('a generated coverage tile: thesis written, never reviewed', () => {
 
     render(<ResearchWorkspace focusObjectId="a-nke" selectedAssetId="a-nke" />)
     const pane = detailPane()
-    expect(within(pane).getByText('Last written')).toBeInTheDocument()
+    // The header's figure trio is gone (it restated the band below it); the
+    // band carries the anchor wording, and still says "written".
     expect(within(pane).getByText('Since the thesis was written')).toBeInTheDocument()
     expect(within(pane).getAllByText('Price since the thesis was written').length).toBeGreaterThan(0)
     expect(pane.textContent).not.toMatch(CLAIMS_REVIEW)
@@ -179,7 +191,7 @@ describe('a genuine recorded review', () => {
 
     render(<ResearchWorkspace focusObjectId="a-nke" selectedAssetId="a-nke" />)
     const pane = detailPane()
-    expect(within(pane).getByText('Last review')).toBeInTheDocument()
+    // Same as above: the trio went, the band kept the wording.
     expect(within(pane).getByText('reviewed 30d ago')).toBeInTheDocument()
     // The chart starts at the thesis date (written), not at the review.
     expect(within(pane).getAllByText('Price since the thesis was written').length).toBeGreaterThan(0)
@@ -203,20 +215,29 @@ describe('the price chart', () => {
   }
 
   it('names the start event it was given, and a review only when that is a review', () => {
+    /*
+     * The tick is sentence case now, not caps.
+     *
+     * The plot is Today's plot, and Today settled this: 8px all-caps
+     * letter-spaced text riding on a chart is the least legible thing this
+     * surface can draw, and the tick is a quiet note about a dashed line --
+     * not a heading. What is under test is the WORD, so the comparison is
+     * case-insensitive rather than pinned to a typographic choice.
+     */
     const updated = chartText('updated', 200, 100)
     expect(updated).toContain('Price since the last update')
     expect(updated).toContain('since update · ')
-    expect(updated).toContain('LAST UPDATE')
+    expect(updated.toLowerCase()).toContain('last update')
     expect(updated).not.toMatch(CLAIMS_REVIEW)
 
     const written = chartText('written', 200, 100)
     expect(written).toContain('Price since the thesis was written')
-    expect(written).toContain('WRITTEN')
+    expect(written.toLowerCase()).toContain('written')
     expect(written).not.toMatch(CLAIMS_REVIEW)
 
     const reviewed = chartText('reviewed', 200, 100)
     expect(reviewed).toContain('Price since the last review')
-    expect(reviewed).toContain('LAST REVIEW')
+    expect(reviewed.toLowerCase()).toContain('last review')
   })
 
   it('falls back to the history it measured, naming the real start date it could not reach', () => {

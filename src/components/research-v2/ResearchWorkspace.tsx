@@ -20,7 +20,7 @@ import {
 interface Arrival { issue?: string | null; origin?: string | null }
 import {
   stateOf, whyItMatters, compareSubjects, issueFor, withCoverageSubjects, subjectFromCoverage,
-  subscribeToOpenResearch, CORE_SECTIONS, SECTION_LABEL,
+  subscribeToOpenResearch, CORE_SECTIONS, SECTION_LABEL, STATE_TONE,
   dateWords, ageKindOf, thesisDateKindOf,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
@@ -47,27 +47,14 @@ import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
 import { clsx } from 'clsx'
-import type { SemanticTone } from '../../lib/semantic-tone'
 
-/**
- * Research state → shared severity.
- *
- * `no-thesis` was rose here while Portfolio painted the identical condition
- * amber. One fact, two screens, two severities. A case nobody has written is
- * work outstanding, not a framework that has broken, so it is `review` on both.
- *
- * `current` loses its emerald for `neutral`: a green badge on every healthy
- * name is decoration that dilutes the two tones carrying meaning.
+/*
+ * `STATE_TONE` -- Research state → shared severity -- now lives in
+ * `lib/desktop-research/model.ts`, with the reasoning that produced its
+ * values. It moved because the detail HEADER badges state as well as the
+ * rail does, and a component importing a tone map from a sibling component
+ * is how one fact ends up with two severities on two screens.
  */
-const STATE_TONE: Record<string, SemanticTone> = {
-  'evidence-since-review': 'review',
-  'moved-since-review': 'review',
-  'no-thesis': 'review',
-  'incomplete-thesis': 'review',
-  stale: 'review',
-  thin: 'neutral',
-  current: 'neutral',
-}
 
 export interface ResearchWorkspaceProps {
   selectedAssetId?: string | null

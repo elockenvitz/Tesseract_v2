@@ -10,7 +10,7 @@ export type {
   ThesisSection, EvidenceItem, ResearchSubject, ResearchState, ResearchFamily,
 } from './model'
 export {
-  CORE_SECTIONS, ALL_SECTIONS, SECTION_LABEL, STATE_LABEL,
+  CORE_SECTIONS, ALL_SECTIONS, SECTION_LABEL, STATE_LABEL, STATE_TONE,
   stateOf, whyItMatters, familyFor, primaryActionFor,
   issueFor, seedPromptFor, targetFor,
   tierOf, scoreOf, compareSubjects,

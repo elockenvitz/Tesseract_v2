@@ -373,6 +373,9 @@ export function DashboardShell({
               activeId={activeId}
               onRotate={rotate}
               intent={deck.target.source?.intent}
+              /* Research draws its own ticker, company name, figures and
+                 actions, so the deck's header would be a second one. */
+              ownHeader={workLens === 'research'}
             >
               {renderLens(workLens, activeId)}
             </WorkDeck>
