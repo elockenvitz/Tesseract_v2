@@ -1116,8 +1116,27 @@ describe('a handoff never promises what is not there', () => {
     const code = (f: string) => src(f).replace(/\/\*[\s\S]*?\*\//g, '')
     for (const f of ['components/desktop/DesktopTile.tsx', 'components/today/TodayTile.tsx']) {
       expect(code(f)).toContain('rounded-[3px]')
-      expect(code(f)).not.toContain('shadow-sm')
-      expect(code(f)).not.toContain('hover:shadow-md')
+      expect(code(f)).not.toContain('hover:shadow')
+      expect(code(f)).not.toContain('shadow-md')
+      /*
+       * The ban is on a shadow under a CARD, not on every shadow in the
+       * file. Two things inside a tile legitimately float: the visual
+       * pager's selected segment (3px of inset chrome on a pill track, how
+       * every pill control on this product reads) and the actions menu,
+       * which is an overlay and has to lift off whatever it covers.
+       *
+       * So a shadow is allowed only on a line that is also drawing one of
+       * those: a `rounded-full` control, or an `absolute`ly positioned
+       * overlay. Put one back on the tile root and this fails.
+       */
+      const lines = code(f).split('\n')
+      lines.forEach((line, i) => {
+        if (!/shadow-(sm|lg)/.test(line)) return
+        // A class string wraps, so the marker can sit a line or two above
+        // the shadow inside the same clsx call.
+        const near = lines.slice(Math.max(0, i - 3), i + 2).join('\n')
+        expect(near).toMatch(/rounded-full|absolute/)
+      })
     }
 
     /*
@@ -1174,8 +1193,15 @@ describe('a handoff never promises what is not there', () => {
      * hand-rolling its own. The RULES are what matter and they are unchanged.
      */
     const hero = src('components/desktop/DesktopTile.tsx')
-    // Hero is 30px, and 44px -- louder than the ticker -- never comes back.
-    expect(hero).toMatch(/scale === 'hero' \? 'text-\[30px\]'/)
+    /*
+     * Hero is 30px, and 44px -- louder than the ticker -- never comes back.
+     *
+     * The size moved out of an inline ternary into `TILE_DISPLAY`, because
+     * the figure primitive and the hand-rolled spans below `large` were
+     * running two ladders a pixel or two apart at every step. The ladder is
+     * now one table; the value this guard exists for is its top rung.
+     */
+    expect(hero).toMatch(/const TILE_DISPLAY: Record<TileSize, string> = \{\s*\n\s*hero: 'text-\[30px\]'/)
     expect(hero).not.toMatch(/text-\[44px\]/)
     expect(hero).toContain("font-mono font-semibold leading-[0.95]")
     // Only a genuine break inks it. A due review is a calendar fact.
@@ -1432,9 +1458,19 @@ describe('a handoff never promises what is not there', () => {
      */
     expect(visual).toContain('data-testid="scenario-band"')
     expect(visual).toContain('data-testid="scenario-scrub"')
-    // Bear to bull, because that is what the axis IS. The old gradient ran
-    // through blue in the middle and said nothing about its own ends.
-    expect(visual).toContain('from-rose-500/[0.16] via-slate-400/[0.10] to-emerald-500/[0.16]')
+    /*
+     * Bear to bull, because that is what the axis IS. The old gradient ran
+     * through blue in the middle and said nothing about its own ends.
+     *
+     * The alphas were raised (0.16/0.10 → 0.30/0.18) when the band took the
+     * slot's spare height: at 16% a 34px hairline was invisible on a white
+     * card. The DIRECTION is the rule, so this pins the ends and the neutral
+     * middle and leaves the opacity to the eye.
+     */
+    expect(visual).toMatch(
+      /bg-gradient-to-r from-rose-500\/[^ ]+ via-slate-400\/[^ ]+ to-emerald-500\//,
+    )
+    expect(visual).not.toMatch(/via-(blue|indigo|sky)-/)
   })
 
   it('never renders chart labels as stretched SVG text', () => {
@@ -1471,14 +1507,24 @@ describe('a handoff never promises what is not there', () => {
      */
     const enrich = src('lib/today/enrich.ts')
     expect(enrich).toContain('function ageVisual')
-    expect(enrich).toContain('if (!e) return aged ? { ...item, visual: aged } : item')
+    // The tile now carries a panel carousel, so the chosen visual has to be
+    // written to `visuals` as well or the pager renders an empty first page.
+    expect(enrich).toContain('if (!e) return aged ? { ...item, visual: aged, visuals: [aged] } : item')
 
     // Scaled to a year, not to the longest item on the page: a review cycle
     // is what a reader measures against, and a floating scale would make
     // eighteen months look like twelve.
     const visual = src('components/today/TodayVisual.tsx')
     expect(visual).toContain('const YEAR = 365')
-    expect(visual).toContain('data-testid="aging-track"')
+    /*
+     * A dial now, not a track: the bar read as a progress indicator toward
+     * a deadline the product does not have, and the reader asked for it to
+     * go. The fixed scale is what this guard is for and it survives the
+     * change -- the ring's sweep is still `days / YEAR`, not days over the
+     * oldest item on the page.
+     */
+    expect(visual).toContain('data-testid="aging-dial"')
+    expect(visual).not.toContain('data-testid="aging-track"')
   })
 
   it('gives Decisions two visuals, and picks by what the record holds', () => {

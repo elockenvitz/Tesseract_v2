@@ -145,9 +145,30 @@ describe('Today reserves the width its backfill will need', () => {
     expect(page).not.toContain('supportingSpan(i, supporting.length)')
   })
 
-  it('still renders real findings without waiting for coverage', () => {
-    // No coverage gate in front of the field; only the engine's own loading.
-    expect(page).toContain('{isLoading ? (')
+  /*
+   * ── This rule was deliberately superseded, and here is why ──────────────
+   *
+   * It used to read "no coverage gate in front of the field; only the
+   * engine's own loading", so real findings painted the moment the engine
+   * answered. Measured, that gave the reader three paints in 1.3s: tiles
+   * appeared, then the coverage scan returned and the supporting row changed
+   * WIDTH and re-flowed, then enrichment returned and every chart was
+   * redrawn and every sentence rewritten. Reserving width inside a tile
+   * fixed only the middle one; the other two are the page assembling itself
+   * in front of the reader.
+   *
+   * `0fc92e50` replaced the partial gate with one gate over all three reads.
+   * What must stay true is not "coverage never gates" but "no term can hang
+   * the surface" -- every term has to resolve on failure as well as success,
+   * or an org with no coverage row would stare at a skeleton forever.
+   */
+  it('gates the field once on every read, and on nothing that can hang', () => {
+    expect(page).toContain('const settling = isLoading || gaps.status === \'loading\' || enriching')
+    expect(page).toContain('{settling ? (')
+    // Enrichment resolves on failure too, and is false when there is
+    // nothing to enrich -- that is what makes the third term bounded.
+    expect(page).toContain('const enriching = enrichment.pending || coverageEnrichment.pending')
+    // And the field itself holds no second gate of its own.
     const field = page.slice(page.indexOf('data-testid="today-field"'))
     expect(field.slice(0, 400)).not.toContain('gaps.status')
   })
