@@ -26,7 +26,9 @@ vi.mock('../../../engine/decisionEngine', () => ({
   useDecisionEngine: () => ({ selectForDashboard: () => env.engine, isLoading: env.engineLoading }),
 }))
 vi.mock('../../../engine/decisionEngine/dispatchDecisionAction', () => ({ dispatchDecisionAction: vi.fn() }))
-vi.mock('../../../hooks/useTodayEnrichment', () => ({ useTodayEnrichment: () => ({}) }))
+vi.mock('../../../hooks/useTodayEnrichment', () => ({
+  useTodayEnrichment: () => ({ map: {}, pending: false }),
+}))
 vi.mock('../../../hooks/useAttentionState', () => ({
   useAttentionState: () => ({ suppressedKeys: env.suppressed, dismissForMe: vi.fn(), snoozeForMe: vi.fn(), isLoading: false }),
 }))

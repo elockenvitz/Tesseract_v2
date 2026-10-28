@@ -42,7 +42,7 @@ import { clsx } from 'clsx'
 import { ArrowRight } from 'lucide-react'
 import { indexAtClientX } from '../../lib/charts/scrub'
 import { moveTone } from '../../lib/charts/tone'
-import type { TodayVisual as Visual } from '../../lib/today'
+import { VISUAL_SLOT, type TodayVisual as Visual } from '../../lib/today'
 
 export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boolean }) {
   // No visual is better than an apology. The user should never read
@@ -64,9 +64,10 @@ export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boo
     */
     <div
       className={clsx(
-        'border-t border-gray-200/80 dark:border-white/[0.08]',
+        'flex flex-col overflow-hidden border-t border-gray-200/80 dark:border-white/[0.08]',
         compact ? 'mt-2 pt-2' : 'mt-3 pt-3',
       )}
+      style={{ height: compact ? VISUAL_SLOT.compact : VISUAL_SLOT.featured }}
       data-archetype={visual.archetype}
     >
       <div className="flex items-baseline gap-2 mb-1.5">

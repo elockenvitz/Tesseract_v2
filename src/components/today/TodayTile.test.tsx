@@ -13,6 +13,7 @@ import type { DecisionItem } from '../../engine/decisionEngine/types'
 import { ENGAGEMENT_EVENT } from '../../lib/engagement'
 import type { EngagementRequest } from '../../lib/engagement'
 import { adaptDecisionItem } from '../../lib/today'
+import { VISUAL_SLOT } from '../../lib/today'
 import { TodayTile } from './TodayTile'
 
 const decision = (over: Partial<DecisionItem> = {}): DecisionItem => ({
@@ -299,5 +300,111 @@ describe('TodayTile', () => {
     // more than the exact size, which differs featured vs supporting.
     expect(id.className).toMatch(/font-black/)
     expect(id.className).toMatch(/tracking-\[-0\.035em\]/)
+  })
+})
+
+/*
+ * Two things the reader notices before they notice any content: four buttons
+ * repeated on every tile, and the surface re-arranging itself seven seconds
+ * after it painted.
+ */
+describe('the action row is quiet until approached', () => {
+  it('hides the secondary verbs at rest and reveals them on hover or focus', () => {
+    renderTile()
+    for (const name of [/Ask AI/, /Discuss/]) {
+      const cls = screen.getByRole('button', { name }).className
+      expect(cls).toMatch(/opacity-0/)
+      expect(cls).toMatch(/group-hover:opacity-100/)
+      // Tabbing in must reveal them too, or the keyboard path has no actions.
+      expect(cls).toMatch(/group-focus-within:opacity-100/)
+    }
+  })
+
+  it('keeps the one verb that says what to do about this showing', () => {
+    renderTile()
+    // A tile with nothing visible to act on is a tile that has to be hovered
+    // to be understood. The primary stays at full weight, always.
+    const primary = screen.getByRole('button', { name: /Review thesis/ })
+    expect(primary.className).not.toMatch(/opacity-0/)
+  })
+
+  it('anchors the reveal on the tile, not on each button', () => {
+    // `group-hover:` resolves against the nearest ancestor marked `group`.
+    // Without it on the article the buttons would never un-hide -- the whole
+    // mechanism would be dead and every other assertion here would still pass.
+    const { container } = renderTile()
+    expect(container.querySelector('article')?.className).toMatch(/(^|\s)group(\s|$)/)
+  })
+})
+
+describe('room is held for a visual that is still loading', () => {
+  /** A finding that WILL draw once enrichment answers: price-window key + asset. */
+  const willDraw = decision({ titleKey: 'THESIS_STALE', context: { assetId: 'a-amzn', assetTicker: 'AMZN' } })
+
+  it('reserves the space while the enrichment query is in flight', () => {
+    const { container } = renderTile(willDraw, { featured: true, enriching: true })
+    expect(container.querySelector('[data-testid="visual-reserved"]')).not.toBeNull()
+  })
+
+  it('reserves nothing once the query has answered', () => {
+    // Otherwise every tile that will never draw carries a permanent void.
+    const { container } = renderTile(willDraw, { featured: true, enriching: false })
+    expect(container.querySelector('[data-testid="visual-reserved"]')).toBeNull()
+  })
+
+  it('reserves nothing for a finding whose kind never draws a window', () => {
+    const { container } = renderTile(
+      decision({ titleKey: 'OVERDUE_DELIVERABLE', context: { assetId: 'a-amzn', assetTicker: 'AMZN' } }),
+      { featured: true, enriching: true },
+    )
+    expect(container.querySelector('[data-testid="visual-reserved"]')).toBeNull()
+  })
+
+  it('reserves nothing for a finding that names no security', () => {
+    const { container } = renderTile(
+      decision({ titleKey: 'THESIS_STALE', chips: [], context: {} }),
+      { featured: true, enriching: true },
+    )
+    expect(container.querySelector('[data-testid="visual-reserved"]')).toBeNull()
+  })
+
+  it('holds room the same height the arriving visual occupies', () => {
+    // A reservation of the wrong height moves the page twice instead of once,
+    // so it must read the SAME constant the real zone sizes itself from --
+    // not a number copied across two files that can drift apart.
+    const { container } = renderTile(willDraw, { featured: true, enriching: true })
+    const frame = container.querySelector('[data-testid="visual-reserved"]')!.firstElementChild as HTMLElement
+    expect(frame.style.height).toBe(`${VISUAL_SLOT.featured}px`)
+
+    const supporting = renderTile(willDraw, { wide: true, enriching: true })
+    const compact = supporting.container.querySelector('[data-testid="visual-reserved"]')!.firstElementChild as HTMLElement
+    expect(compact.style.height).toBe(`${VISUAL_SLOT.compact}px`)
+  })
+
+  it('draws the loading slot INSTEAD of the archetype it is about to replace', () => {
+    // The whole defect: a stale-thesis tile already draws an `aging` track
+    // from `createdAt` alone, and enrichment swaps it for a price plot. Both
+    // on screen at once, or the old one left up, is the shift.
+    const { container } = renderTile(willDraw, { featured: true, enriching: true })
+    expect(container.querySelector('[data-archetype]')).toBeNull()
+  })
+
+  it('gives every archetype the same slot, so a swap costs nothing', () => {
+    // Measured: aging 107px, scenario 122px, review-window taller again --
+    // which is why replacing one with another moved every tile below it.
+    // `createdAt` is what the aging track is built from -- no enrichment.
+    const drawsNow = decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }],
+      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
+    })
+    const h = (c: HTMLElement) => (c.querySelector('[data-archetype]') as HTMLElement).style.height
+    expect(h(renderTile(drawsNow, { featured: true }).container)).toBe(`${VISUAL_SLOT.featured}px`)
+    expect(h(renderTile(drawsNow, { wide: true }).container)).toBe(`${VISUAL_SLOT.compact}px`)
+  })
+
+  it('reserves the room silently, so nothing is announced that is not there', () => {
+    const { container } = renderTile(willDraw, { featured: true, enriching: true })
+    expect(container.querySelector('[data-testid="visual-reserved"]')?.getAttribute('aria-hidden')).toBe('true')
   })
 })

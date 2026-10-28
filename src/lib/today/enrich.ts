@@ -336,7 +336,7 @@ function enrichVisual(
  * `createdAt`, so there is no price and no anchor. It draws nothing, which is
  * the honest outcome rather than a fabricated one.
  */
-const DRAWS_WINDOW = new Set<string>([
+export const DRAWS_WINDOW = new Set<string>([
   'THESIS_STALE',
   'RATING_NO_FOLLOWUP',
   'EXECUTION_NOT_CONFIRMED',

@@ -118,11 +118,15 @@ export function TodayPage() {
   const enrichment = useTodayEnrichment(surfaced)
   const enriched = useMemo(
     () => [
-      ...surfaced.map(i => applyEnrichment(i, enrichment[i.source.context.assetId ?? ''])),
-      ...generated.map(i => applyEnrichment(i, coverageEnrichment[i.source.context.assetId ?? ''])),
+      ...surfaced.map(i => applyEnrichment(i, enrichment.map[i.source.context.assetId ?? ''])),
+      ...generated.map(i => applyEnrichment(i, coverageEnrichment.map[i.source.context.assetId ?? ''])),
     ],
     [surfaced, enrichment, generated, coverageEnrichment],
   )
+
+  /* Whether the pictures are still on their way, so a tile can hold their
+     room instead of growing into it six seconds after it painted. */
+  const enriching = enrichment.pending || coverageEnrichment.pending
 
   const handlePrimary = (item: TodayItem, source?: FocusSource) => {
     if (!item.primary) return
@@ -376,6 +380,7 @@ function toRailCard(item: TodayItem): RailCard {
                 item={featured}
                 rank={1}
                 featured
+                enriching={enriching}
                 onPrimary={handlePrimary}
                 onDismiss={handleDismiss}
                 onSnooze={handleSnooze}
@@ -389,6 +394,7 @@ function toRailCard(item: TodayItem): RailCard {
                   item={item}
                   rank={i + 2}
                   wide={wide}
+                  enriching={enriching}
                   onPrimary={handlePrimary}
                   onDismiss={handleDismiss}
                   onSnooze={handleSnooze}

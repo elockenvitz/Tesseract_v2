@@ -12,7 +12,7 @@ export type {
   TodayVisual,
   TodayItem,
 } from './types'
-export { TIER_NAMES } from './types'
+export { TIER_NAMES, VISUAL_SLOT } from './types'
 
 export {
   tierFor,
@@ -28,7 +28,7 @@ export { expandToObjects, isAggregate } from './expand'
 export type { AggregateNote, ExpandedCandidates } from './expand'
 
 export { diversify, MAX_PER_KEY, TIER_REACH, SCORE_TOLERANCE } from './diversity'
-export { applyEnrichment, priceWindowSince, windowLabel } from './enrich'
+export { applyEnrichment, priceWindowSince, windowLabel, DRAWS_WINDOW } from './enrich'
 
 export {
   coverageTodayItems, coverageDecisionItem, isCoverageTitleKey,

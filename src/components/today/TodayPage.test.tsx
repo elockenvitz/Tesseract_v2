@@ -41,7 +41,9 @@ const enrichedWith: string[][] = []
 vi.mock('../../hooks/useTodayEnrichment', () => ({
   useTodayEnrichment: (items: { ticker: string | null }[]) => {
     enrichedWith.push(items.map(i => i.ticker ?? '?'))
-    return {}
+    // `{ map, pending }`: a tile cannot reserve room for a chart that is still
+    // loading unless the hook distinguishes "nothing is coming" from "not yet".
+    return { map: {}, pending: false }
   },
 }))
 

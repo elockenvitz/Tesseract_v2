@@ -128,3 +128,23 @@ export interface TodayItem {
   /** Kept so the tile can dispatch the engine's own CTAs unchanged. */
   source: DecisionItem
 }
+
+/*
+ * The analysis zone is one fixed slot, not a box that fits its contents.
+ *
+ * Measured on a cold load at 1920x889: CLS 0.0748 in two shifts, the larger
+ * (0.0639) at t=6.6s, when a tile's visual container went 139px -> 154px and
+ * jumped 67px up the page. The cause is not a missing picture -- a picture is
+ * already drawn. It is that the ARCHETYPE CHANGES when enrichment answers:
+ * an `aging` track at 107px becomes a `review-window` price plot, and every
+ * tile below it moves. Reserving room for an absent visual could never fix
+ * that, because the visual was never absent.
+ *
+ * One height per density makes the swap free, and lets a loading tile hold
+ * the same slot empty. The tallest body -- review-window's plot -- fits; the
+ * shortest -- aging's track -- gets air rather than a cramped hairline.
+ *
+ * It lives here rather than beside the component so the drawing code and the
+ * placeholder read the same number instead of two that can drift apart.
+ */
+export const VISUAL_SLOT = { compact: 126, featured: 142 } as const

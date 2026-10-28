@@ -50,7 +50,7 @@ export function useTodayEnrichment(items: TodayItem[]) {
   // `asset_id` alone counted another workspace's notes and read its ladders.
   const { currentOrgId } = useOrganization()
 
-  const { data } = useQuery<EnrichmentMap>({
+  const { data, status } = useQuery<EnrichmentMap>({
     queryKey: ['today-enrichment', key, currentOrgId],
     enabled: assets.length > 0 && !!currentOrgId,
     staleTime: 5 * 60_000,
@@ -178,5 +178,28 @@ export function useTodayEnrichment(items: TodayItem[]) {
     },
   })
 
-  return data ?? {}
+  /*
+   * The map, and whether it is still coming.
+   *
+   * Measured on a cold load at 1920x889: the tiles painted, sat still for
+   * ~6.3 seconds, and then re-arranged twice as this query answered -- the
+   * aging track and the price plot appearing at once, growing the tile and
+   * pushing everything under it. CLS 0.0748, and both shifts landed almost
+   * seven seconds in, which is what makes it read as a hitch rather than as
+   * loading.
+   *
+   * A tile cannot reserve the room without knowing the difference between
+   * "no visual is coming" and "the visual has not arrived yet", and the bare
+   * map cannot say. Hence the shape change.
+   *
+   * `status`, not `isFetching`: the query is gated on `currentOrgId`, which on
+   * a cold load does not exist for the first several seconds. While it is
+   * disabled nothing is in flight, so `isFetching` was false and the first
+   * measured pass reserved nothing at all -- CLS stayed at 0.0748. `status`
+   * is 'pending' for a query that has not run YET as well as one running now,
+   * and turns 'error' if the fetch fails, so a failure stops reserving rather
+   * than holding an empty frame forever. The `assets.length` guard keeps a
+   * permanently-disabled query (nothing to enrich) from reading as pending.
+   */
+  return { map: data ?? {}, pending: assets.length > 0 && status === 'pending' }
 }
