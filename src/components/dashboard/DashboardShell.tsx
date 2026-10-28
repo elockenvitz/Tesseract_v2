@@ -117,6 +117,51 @@ function rememberLens(lens: DashboardLens): void {
   try { sessionStorage.setItem(LENS_KEY, lens) } catch { /* non-fatal */ }
 }
 
+/** Where the expanded card survives leaving the tab. Session-scoped, like the lens. */
+const DECK_KEY = 'tesseract:dashboard-deck'
+
+/**
+ * The expanded card has to survive leaving the Dashboard, because leaving it
+ * is part of the work.
+ *
+ * ── The measured problem ─────────────────────────────────────────────────
+ *
+ * The workspace's own primary action for most states is "Edit on the asset",
+ * which opens the Asset tab. Coming back landed the reader on the Today
+ * deck: `lens` was remembered and `deck` was not, so the tab restored and
+ * the thing they had open inside it did not. Every hop out to write -- which
+ * is the one thing this surface sends you away to do -- cost the reader
+ * their place and a scroll back to the tile.
+ *
+ * Restored only on the default arrival, exactly as `restoreLens` is: an
+ * explicitly-addressed lens is a deep link, and a remembered card must not
+ * override where someone was deliberately sent.
+ *
+ * Every field is plain JSON -- ids, strings, and the rail's closes arrays --
+ * so this stores the state itself rather than a key to re-fetch it. A
+ * malformed or hand-edited value restores nothing rather than throwing: the
+ * reader loses their place, which is the old behaviour, instead of the shell.
+ */
+function restoreDeck(initial: DashboardLens): DeckState | null {
+  if (initial !== 'today') return null
+  try {
+    const raw = sessionStorage.getItem(DECK_KEY)
+    if (!raw) return null
+    const d = JSON.parse(raw) as DeckState
+    if (!d?.target?.objectId || !d?.active?.objectId) return null
+    if (!(d.target.originLens in LENS_ORDER_SET)) return null
+    if (!(d.active.workspaceLens in LENS_ORDER_SET)) return null
+    return { ...d, rail: Array.isArray(d.rail) ? d.rail : [] }
+  } catch { return null }
+}
+
+function rememberDeck(deck: DeckState | null): void {
+  try {
+    if (deck) sessionStorage.setItem(DECK_KEY, JSON.stringify(deck))
+    else sessionStorage.removeItem(DECK_KEY)
+  } catch { /* non-fatal */ }
+}
+
 /** The valid lens names, so a stale or hand-edited value cannot be restored. */
 const LENS_ORDER_SET: Record<string, true> = {
   today: true, ideas: true, research: true, portfolio: true, decisions: true,
@@ -154,7 +199,12 @@ export function DashboardShell({
    * Stage 3B carried one `lens` doing both jobs, which is why a card opened
    * from Today offered "All research" as the way back.
    */
-  const [deck, setDeck] = useState<DeckState | null>(null)
+  const [deck, setDeck] = useState<DeckState | null>(() => restoreDeck(initialLens))
+
+  /* Back, and choosing a lens by hand, both set this to null -- which clears
+     the stored value, so leaving the workspace deliberately is remembered
+     just as accurately as staying in it. */
+  useEffect(() => { rememberDeck(deck) }, [deck])
 
   useEffect(() => subscribeToDashboardFocus(req => {
     setLens(req.target.originLens)

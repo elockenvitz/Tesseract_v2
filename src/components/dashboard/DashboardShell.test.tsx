@@ -49,6 +49,9 @@ const capture = (e: Event) => tabEvents.push(e as CustomEvent)
 
 beforeEach(() => {
   tabEvents.length = 0
+  // The lens AND the expanded card are both session-scoped now, so a test
+  // that expands a card would otherwise hand the next test a restored deck.
+  try { sessionStorage.clear() } catch { /* jsdom always has it; be safe */ }
   window.addEventListener('decision-engine-action', capture)
 })
 afterEach(() => window.removeEventListener('decision-engine-action', capture))
@@ -136,6 +139,54 @@ describe('expanding a card, in this tab', () => {
     // to a reader who was never in Research.
     expect(screen.getByTestId('workspace-back')).toHaveTextContent('Today')
     expect(screen.getByTestId('workspace-back')).not.toHaveTextContent(/research/i)
+  })
+
+  it('still has the card open after the reader leaves the tab and comes back', async () => {
+    /*
+     * The workspace's own primary action for most states opens the Asset
+     * tab. Coming back unmounted and remounted this shell, and `deck` was
+     * component state -- so every hop out to write cost the reader the card
+     * they were working and put them back at the top of the Today deck.
+     *
+     * Unmount/remount is exactly what the tab switch does, so that is what
+     * this asserts: no event is replayed, the card comes back from the
+     * session.
+     */
+    const first = render(<DashboardShell />)
+    await React.act(async () => { fromToday('a-amzn') })
+    expect(screen.getByTestId('lens-research')).toHaveAttribute('data-selected', 'a-amzn')
+    first.unmount()
+
+    render(<DashboardShell />)
+    expect(screen.getByTestId('lens-research')).toHaveAttribute('data-selected', 'a-amzn')
+    expect(screen.getByTestId('workspace-back')).toHaveTextContent('Today')
+  })
+
+  it('does not bring the card back after the reader closed it', async () => {
+    // The other half of the rule: leaving deliberately is remembered just as
+    // accurately as staying. Without this, Back would be undone by a tab
+    // switch -- a worse bug than the one above.
+    const user = userEvent.setup()
+    const first = render(<DashboardShell />)
+    await React.act(async () => { fromToday('a-amzn') })
+    await user.click(screen.getByTestId('workspace-back'))
+    first.unmount()
+
+    render(<DashboardShell />)
+    expect(screen.queryByTestId('dashboard-focus')).not.toBeInTheDocument()
+    expect(screen.getByTestId('lens-today')).toBeInTheDocument()
+  })
+
+  it('never lets a remembered card override a deep link', async () => {
+    // A v2 surface mounts this shell with its own lens. That is an explicit
+    // destination, and a card remembered from browsing must not take it.
+    const first = render(<DashboardShell />)
+    await React.act(async () => { fromToday('a-amzn') })
+    first.unmount()
+
+    render(<DashboardShell initialLens="portfolio" selectedPortfolioId="p1" />)
+    expect(screen.queryByTestId('dashboard-focus')).not.toBeInTheDocument()
+    expect(screen.getByTestId('lens-portfolio')).toHaveAttribute('data-book', 'p1')
   })
 
   it('returns to the deck it came from', async () => {

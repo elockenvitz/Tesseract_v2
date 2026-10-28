@@ -505,6 +505,7 @@ export function ResearchDetail({
             window={window}
             arrivals={newEvidence.length}
             weightPct={detail?.weightPct ?? subject.weightPct ?? null}
+            portfolioName={detail?.portfolioName ?? null}
           />
         )}
 
@@ -517,7 +518,11 @@ export function ResearchDetail({
           order beside it.
         */}
         <DesktopColumns
-          className="gap-x-12 gap-y-8"
+          /* 1.25fr rather than the primitive's 1.62fr: at 1920 that was 933px
+             of column for a claim set that reads at about 400, and the chart
+             -- the one thing here that genuinely wants width -- was squeezed
+             into the remainder. */
+          className="gap-x-12 gap-y-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,1fr)]"
           lead={<>
             {leadPanel === 'price' && (
               <DesktopSection id="price" title={caseDate.priceSince} lead>
@@ -623,6 +628,32 @@ export function ResearchDetail({
             </p>
           )}
         </DesktopSection>
+
+            {/*
+              What backs the case belongs UNDER the case, not beside the
+              chart.
+
+              Measured at 1920: the lead column was 933px wide and 456px
+              tall holding one 244px section -- 212px of dead height and
+              about 530px of dead width -- while the context column ran the
+              full 456px with three stacked blocks. The split was not the
+              problem; the division of material was. The lead column is the
+              ARGUMENT (what we say, and what is on record for it) and the
+              context column is the MARKET (what the price did, and what
+              arrived since). That fills both and reads in the order a
+              reader actually asks.
+            */}
+            {priorEvidence.length > 0 && (
+              <DesktopSection
+                id="evidence"
+                title="Evidence on record"
+                meta={`${priorEvidence.length}`}
+              >
+                <div className="flex flex-col gap-2.5">
+                  {priorEvidence.slice(0, 8).map(e => <EvidenceRow key={e.id} item={e} />)}
+                </div>
+              </DesktopSection>
+            )}
           </>}
 
           context={<>
@@ -654,33 +685,22 @@ export function ResearchDetail({
             */}
             {window && leadPanel !== 'price' && (
               <DesktopModule>
-                <PriceSinceReview w={window} since={thesisDate} />
+                {/* Taller here than the 166 a tile gets: this column is ~590px
+                    wide, and a 3.5:1 plot reads as a strip rather than a
+                    chart. It also closes most of the ragged height left when
+                    the argument column is the longer of the two. */}
+                <PriceSinceReview w={window} since={thesisDate} height={204} />
               </DesktopModule>
             )}
 
-            {/* A list of titles and dates. It never needed chrome. */}
-            {priorEvidence.length > 0 && (
-              <DesktopSection
-                id="evidence"
-                title="Evidence on record"
-                meta={`${priorEvidence.length}`}
-              >
-                <div className="flex flex-col gap-2.5">
-                  {priorEvidence.slice(0, 8).map(e => <EvidenceRow key={e.id} item={e} />)}
-                </div>
-              </DesktopSection>
-            )}
+            {/*
+              "Held in" is gone, not moved.
 
-            {/* Team is an action, and it already sits in the header. A module
-                explaining how threads work is not investment context. */}
-            {detail?.portfolioName && leadPanel !== 'book' && (
-              <DesktopSection title="Held in">
-                <p className="text-[12px] text-gray-700 dark:text-gray-300">
-                  {detail.portfolioName}
-                  {detail.weightPct != null && ` · ${detail.weightPct.toFixed(1)}% of the book`}
-                </p>
-              </DesktopSection>
-            )}
+              It read "Global Equity · 14.2% of the book" -- the same weight
+              the figure band states four inches above it, plus a portfolio
+              name. The band's own `held` figure now carries the name, so the
+              fact is stated once, where the reader already is.
+            */}
           </>}
         />
 
@@ -757,7 +777,7 @@ function EvidenceRow({ item, isNew }: { item: { title: string | null; content: s
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 function SinceReview({
-  age, caseDate, days, window: w, arrivals, weightPct,
+  age, caseDate, days, window: w, arrivals, weightPct, portfolioName,
 }: {
   /** Words for the subject's age. */
   age: ResearchDateWords
@@ -767,6 +787,8 @@ function SinceReview({
   window: { changePct: number; reachesAnchor: boolean } | null
   arrivals: number
   weightPct: number | null
+  /** Named beside the weight, so "Held in" needs no section of its own. */
+  portfolioName: string | null
 }) {
   const move = w?.reachesAnchor ? w.changePct : null
   return (
@@ -791,7 +813,10 @@ function SinceReview({
           tone={arrivals > 0 ? 'review' : undefined}
         />
         {weightPct != null && (
-          <Fact value={`${weightPct.toFixed(1)}%`} label="held" />
+          <Fact
+            value={`${weightPct.toFixed(1)}%`}
+            label={portfolioName ? `held in ${portfolioName}` : 'held'}
+          />
         )}
       </div>
       {arrivals === 0 && (
