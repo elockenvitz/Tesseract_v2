@@ -124,9 +124,32 @@ export function TodayPage() {
     [surfaced, enrichment, generated, coverageEnrichment],
   )
 
-  /* Whether the pictures are still on their way, so a tile can hold their
-     room instead of growing into it six seconds after it painted. */
+  /*
+   * ONE PAINT, not four.
+   *
+   * Today used to arrive in phases, each one moving what was already on
+   * screen. Measured on a cold load at 1920x889:
+   *
+   *   t=0        header and skeleton
+   *   t~4.9s     the engine answers; tiles paint with text and metrics
+   *   t~5.3s     the coverage scan returns; `layoutTotal` changes, so the
+   *              supporting tiles change WIDTH and the row re-flows
+   *   t~6.2s     enrichment answers; every tile's chart is redrawn, its text
+   *              is rewritten, and new content appears at the foot of the page
+   *
+   * Reserving room inside a tile addressed the third of those and could not
+   * touch the other two, because they are not about a tile's height -- they
+   * are about the page being assembled in front of the reader. Hence a single
+   * gate: nothing of the field renders until all three reads have settled,
+   * and then it renders once, complete.
+   *
+   * Each term is bounded and cannot hang the surface. `isLoading` is the
+   * engine's own query. `gaps.status` leaves 'loading' on success, error or
+   * no-org alike. `pending` is false the moment its query resolves OR fails,
+   * and false immediately when there is nothing to enrich.
+   */
   const enriching = enrichment.pending || coverageEnrichment.pending
+  const settling = isLoading || gaps.status === 'loading' || enriching
 
   const handlePrimary = (item: TodayItem, source?: FocusSource) => {
     if (!item.primary) return
@@ -305,7 +328,7 @@ function toRailCard(item: TodayItem): RailCard {
         />
       </header>
 
-      {isLoading ? (
+      {settling ? (
         <Loading />
       ) : enriched.length === 0 ? (
         /*
@@ -380,7 +403,6 @@ function toRailCard(item: TodayItem): RailCard {
                 item={featured}
                 rank={1}
                 featured
-                enriching={enriching}
                 onPrimary={handlePrimary}
                 onDismiss={handleDismiss}
                 onSnooze={handleSnooze}
@@ -394,7 +416,6 @@ function toRailCard(item: TodayItem): RailCard {
                   item={item}
                   rank={i + 2}
                   wide={wide}
-                  enriching={enriching}
                   onPrimary={handlePrimary}
                   onDismiss={handleDismiss}
                   onSnooze={handleSnooze}
@@ -584,21 +605,41 @@ function Cleared({ evaluated, suppressed }: { evaluated: number; suppressed: num
   )
 }
 
+/*
+ * The skeleton mirrors the field it gives way to, or the gate above just
+ * relocates the shift it was meant to remove.
+ *
+ * The old one was a 192px bar over a three-across row of 160px boxes on its
+ * own `md:grid-cols-2 xl:grid-cols-3` grid. The real field is twelve columns,
+ * 8+4 then 4+4+4, with tiles measured at 369px and 285px. So the skeleton
+ * promised four boxes in the wrong places at roughly half the right height,
+ * and handing over cost a shift on its own.
+ *
+ * Same grid, same spans, same radius, measured heights.
+ */
+const SKELETON_H = { lead: 331, supporting: 247 } as const
+
 function Loading() {
+  const box = clsx(
+    'animate-pulse rounded-[3px] border border-gray-200 bg-white',
+    'dark:border-white/[0.08] dark:bg-[#141a25]',
+  )
   return (
-    <div className="px-6 pt-4">
-      <div className="h-48 animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]" />
-      <div className="mt-3.5 grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
-        {[0, 1, 2].map(i => (
+    <div
+      data-testid="today-loading"
+      className="mt-4 grid grid-cols-12 items-stretch gap-3.5 px-6"
+    >
+      <div className={clsx(box, 'col-span-12 lg:col-span-8')} style={{ height: SKELETON_H.lead }} />
+      {[0, 1, 2].map(i => {
+        const { span } = supportingSpan(i, 4)
+        return (
           <div
             key={i}
-            className={clsx(
-              'h-40 animate-pulse rounded-xl border border-gray-200 bg-white',
-              'dark:border-white/[0.08] dark:bg-[#141a25]',
-            )}
+            className={clsx(box, span)}
+            style={{ height: i === 0 ? SKELETON_H.lead : SKELETON_H.supporting }}
           />
-        ))}
-      </div>
+        )
+      })}
     </div>
   )
 }

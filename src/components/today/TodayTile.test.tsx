@@ -308,87 +308,47 @@ describe('TodayTile', () => {
  * repeated on every tile, and the surface re-arranging itself seven seconds
  * after it painted.
  */
-describe('the action row is quiet until approached', () => {
-  it('hides the secondary verbs at rest and reveals them on hover or focus', () => {
-    renderTile()
-    for (const name of [/Ask AI/, /Discuss/]) {
-      const cls = screen.getByRole('button', { name }).className
-      expect(cls).toMatch(/opacity-0/)
-      expect(cls).toMatch(/group-hover:opacity-100/)
-      // Tabbing in must reveal them too, or the keyboard path has no actions.
-      expect(cls).toMatch(/group-focus-within:opacity-100/)
-    }
+describe('the action row costs nothing until it is approached', () => {
+  it('hides every verb at rest, the primary included', () => {
+    // Fading only the secondaries left "Review thesis" and "Simulate idea"
+    // as the loudest marks on the surface. At rest the tile shows its
+    // finding; the actions arrive when the reader does.
+    const { container } = renderTile()
+    const row = container.querySelector('[data-testid="today-actions"]')!
+    expect(row.className).toMatch(/opacity-0/)
+    expect(row.className).toMatch(/group-hover:opacity-100/)
+    // Tabbing in must reveal them too, or the keyboard path has no actions.
+    expect(row.className).toMatch(/group-focus-within:opacity-100/)
+    expect(row.contains(screen.getByRole('button', { name: /Review thesis/ }))).toBe(true)
   })
 
-  it('keeps the one verb that says what to do about this showing', () => {
-    renderTile()
-    // A tile with nothing visible to act on is a tile that has to be hovered
-    // to be understood. The primary stays at full weight, always.
-    const primary = screen.getByRole('button', { name: /Review thesis/ })
-    expect(primary.className).not.toMatch(/opacity-0/)
+  it('takes the row out of flow, so hovering moves nothing', () => {
+    // It used to reserve 60px whether or not anything in it was visible, so
+    // the space was spent either way. Out of flow, the tile is the same
+    // height hovered and not.
+    const { container } = renderTile()
+    const row = container.querySelector('[data-testid="today-actions"]')!
+    expect(row.className).toMatch(/absolute/)
+    expect(row.className).toMatch(/bottom-0/)
   })
 
-  it('anchors the reveal on the tile, not on each button', () => {
+  it('anchors the reveal on the tile, not on the row', () => {
     // `group-hover:` resolves against the nearest ancestor marked `group`.
-    // Without it on the article the buttons would never un-hide -- the whole
-    // mechanism would be dead and every other assertion here would still pass.
+    // Without it on the article the row never un-hides -- the whole
+    // mechanism is dead and every other assertion here still passes.
     const { container } = renderTile()
     expect(container.querySelector('article')?.className).toMatch(/(^|\s)group(\s|$)/)
   })
+
+  it('keeps the body clear of the overlay on a tile with no slack', () => {
+    // The row is out of flow, so this padding is the only thing between it
+    // and the last line of content.
+    const { container } = renderTile()
+    expect(container.querySelector('[data-body]')?.className).toMatch(/\bpb-3\b/)
+  })
 })
 
-describe('room is held for a visual that is still loading', () => {
-  /** A finding that WILL draw once enrichment answers: price-window key + asset. */
-  const willDraw = decision({ titleKey: 'THESIS_STALE', context: { assetId: 'a-amzn', assetTicker: 'AMZN' } })
-
-  it('reserves the space while the enrichment query is in flight', () => {
-    const { container } = renderTile(willDraw, { featured: true, enriching: true })
-    expect(container.querySelector('[data-testid="visual-reserved"]')).not.toBeNull()
-  })
-
-  it('reserves nothing once the query has answered', () => {
-    // Otherwise every tile that will never draw carries a permanent void.
-    const { container } = renderTile(willDraw, { featured: true, enriching: false })
-    expect(container.querySelector('[data-testid="visual-reserved"]')).toBeNull()
-  })
-
-  it('reserves nothing for a finding whose kind never draws a window', () => {
-    const { container } = renderTile(
-      decision({ titleKey: 'OVERDUE_DELIVERABLE', context: { assetId: 'a-amzn', assetTicker: 'AMZN' } }),
-      { featured: true, enriching: true },
-    )
-    expect(container.querySelector('[data-testid="visual-reserved"]')).toBeNull()
-  })
-
-  it('reserves nothing for a finding that names no security', () => {
-    const { container } = renderTile(
-      decision({ titleKey: 'THESIS_STALE', chips: [], context: {} }),
-      { featured: true, enriching: true },
-    )
-    expect(container.querySelector('[data-testid="visual-reserved"]')).toBeNull()
-  })
-
-  it('holds room the same height the arriving visual occupies', () => {
-    // A reservation of the wrong height moves the page twice instead of once,
-    // so it must read the SAME constant the real zone sizes itself from --
-    // not a number copied across two files that can drift apart.
-    const { container } = renderTile(willDraw, { featured: true, enriching: true })
-    const frame = container.querySelector('[data-testid="visual-reserved"]')!.firstElementChild as HTMLElement
-    expect(frame.style.height).toBe(`${VISUAL_SLOT.featured}px`)
-
-    const supporting = renderTile(willDraw, { wide: true, enriching: true })
-    const compact = supporting.container.querySelector('[data-testid="visual-reserved"]')!.firstElementChild as HTMLElement
-    expect(compact.style.height).toBe(`${VISUAL_SLOT.compact}px`)
-  })
-
-  it('draws the loading slot INSTEAD of the archetype it is about to replace', () => {
-    // The whole defect: a stale-thesis tile already draws an `aging` track
-    // from `createdAt` alone, and enrichment swaps it for a price plot. Both
-    // on screen at once, or the old one left up, is the shift.
-    const { container } = renderTile(willDraw, { featured: true, enriching: true })
-    expect(container.querySelector('[data-archetype]')).toBeNull()
-  })
-
+describe('the analysis zone is one fixed slot', () => {
   it('gives every archetype the same slot, so a swap costs nothing', () => {
     // Measured: aging 107px, scenario 122px, review-window taller again --
     // which is why replacing one with another moved every tile below it.
@@ -403,8 +363,4 @@ describe('room is held for a visual that is still loading', () => {
     expect(h(renderTile(drawsNow, { wide: true }).container)).toBe(`${VISUAL_SLOT.compact}px`)
   })
 
-  it('reserves the room silently, so nothing is announced that is not there', () => {
-    const { container } = renderTile(willDraw, { featured: true, enriching: true })
-    expect(container.querySelector('[data-testid="visual-reserved"]')?.getAttribute('aria-hidden')).toBe('true')
-  })
 })

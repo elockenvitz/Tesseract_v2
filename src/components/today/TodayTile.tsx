@@ -21,7 +21,6 @@ import { TodayVisual } from './TodayVisual'
 /* The keys enrichment actually draws a window for. Imported rather than
    restated so the room a tile reserves and the picture it later gets cannot
    disagree about which findings have one. */
-import { DRAWS_WINDOW as ENRICHMENT_DRAWS, VISUAL_SLOT } from '../../lib/today'
 import type { TodayItem } from '../../lib/today'
 import { withIntent } from '../../lib/today/engagement-intent'
 import { CreateMenu } from '../dashboard/CreateMenu'
@@ -69,11 +68,13 @@ const TONE_BY_KEY: Record<string, SemanticTone> = {
 const QUIET_REVEAL =
   'opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
 
-/** The quiet affordances' own shape, so the three of them cannot drift. */
-const QUIET = `rounded-md px-2.5 py-2 text-[12px] ${QUIET_REVEAL}`
-
-/** For a control that brings its own styling, such as `CreateMenu`. */
-const QUIET_WRAP = QUIET_REVEAL
+/**
+ * The quiet affordances' own shape, so the three of them cannot drift.
+ *
+ * No reveal classes here: the whole row fades as one overlay, and fading each
+ * control inside a fading parent multiplies two opacities for no gain.
+ */
+const QUIET = 'rounded-md px-2.5 py-2 text-[12px]'
 
 export function toneFor(item: TodayItem): SemanticTone {
   const key = item.source.titleKey
@@ -122,21 +123,13 @@ interface TodayTileProps {
    * what stops the tile from having to guess, or from measuring itself.
    */
   wide?: boolean
-  /**
-   * The page's enrichment query has not settled yet.
-   *
-   * Only the page knows: the query is keyed on the whole surfaced set, so a
-   * tile asking for itself would fan out four requests for one. See
-   * `awaitingVisual`.
-   */
-  enriching?: boolean
   onPrimary: (item: TodayItem, source?: FocusSource) => void
   onDismiss: (item: TodayItem) => void
   onSnooze: (item: TodayItem, hours: number) => void
 }
 
 export function TodayTile({
-  item, rank, featured, wide, enriching, onPrimary, onDismiss, onSnooze,
+  item, rank, featured, wide, onPrimary, onDismiss, onSnooze,
 }: TodayTileProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const sharedDefer = item.target ? supportsSharedDefer(item.target) : false
@@ -161,36 +154,6 @@ export function TodayTile({
    */
   const hasVisual = item.visual.archetype !== 'metrics'
 
-  /**
-   * A picture is coming, and the tile holds its room rather than growing
-   * into it.
-   *
-   * `archetype: 'metrics'` means "nothing to draw", and that is also what a
-   * tile reads while `useTodayEnrichment` is still fetching -- the two
-   * states were indistinguishable here. Measured on a cold load at
-   * 1920x889: the tiles painted, sat still for 6.3 seconds, then re-arranged
-   * twice as the query answered, the aging track and the plot appearing at
-   * once. CLS 0.0748, both shifts almost seven seconds in, which is what
-   * makes it read as a hitch rather than as loading -- and the amber run of
-   * the aging track arriving at that moment is the yellow line.
-   *
-   * Reserved only where the finding is one the enrichment actually draws for
-   * (`DRAWS_WINDOW` in `lib/today/enrich`), so a tile that was never going
-   * to have a picture reserves nothing and stays short. `pending` goes false
-   * when the query settles either way, so a failed fetch collapses the room
-   * instead of holding it forever.
-   */
-  /*
-   * Not "no visual yet" -- "not the FINAL visual yet".
-   *
-   * The first version of this checked `!hasVisual`, and never once fired: a
-   * stale-thesis tile already draws an `aging` track from `createdAt` alone,
-   * with no enrichment at all. What arrives at t≈6.6s replaces that track
-   * with a price plot. So the condition is about the key being one that
-   * enrichment REDRAWS, regardless of what is on screen now.
-   */
-  const awaitingVisual = !!enriching && !!item.source.context.assetId
-    && ENRICHMENT_DRAWS.has(item.source.titleKey ?? '')
   /**
    * Where this card's visual leads.
    *
@@ -225,7 +188,7 @@ export function TodayTile({
   /* The reserved room takes the same column the picture will, or the tile
      re-flows from one column to two when it arrives -- which is the larger
      half of the shift this reservation exists to stop. */
-  const split = !!(featured || wide) && (hasVisual || awaitingVisual)
+  const split = !!(featured || wide) && hasVisual
 
   /*
    * The card is the entrance to the object.
@@ -396,7 +359,11 @@ export function TodayTile({
       <div
         data-body={split ? 'split' : wide || featured ? 'capped' : 'single'}
         className={clsx(
-          'flex-1 px-3.5 pt-1.5',
+          // `pb-3`: the action overlay is out of flow, so this is the only
+          // thing keeping it off the last line of content on a tile with no
+          // slack. It is margin, not a reserved row -- a tile with room to
+          // spare spends it on the content, not on a band of empty chrome.
+          'flex-1 px-3.5 pb-3 pt-1.5',
           split
             ? 'grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]'
             : 'flex flex-col gap-2',
@@ -471,7 +438,7 @@ export function TodayTile({
           )}
         </div>
 
-        {hasVisual && !awaitingVisual && (
+        {hasVisual && (
           /*
             The visual is a portal to the thing it draws.
             
@@ -500,61 +467,60 @@ export function TodayTile({
           </div>
         )}
 
-        {awaitingVisual && (
-          /*
-            The room, held open and saying nothing.
+        {/*
+          No "room held for a loading chart" block.
 
-            Not a shimmer: four pulsing rectangles on a priority surface read
-            as four more things happening. The hairline is the one the
-            visual's own container draws, so when the picture lands it lands
-            in the frame already on screen rather than adding one.
-
-            The height is VISUAL_SLOT -- the SAME constant the real zone uses,
-            not a number copied from it. A reservation that can drift from
-            what arrives moves the page twice instead of once.
-          */
-          <div className="min-w-0" data-testid="visual-reserved" aria-hidden>
-            <div
-              className={clsx(
-                'border-t border-gray-200/80 dark:border-white/[0.08]',
-                featured ? 'mt-3 pt-3' : 'mt-2 pt-2',
-              )}
-              style={{ height: featured ? VISUAL_SLOT.featured : VISUAL_SLOT.compact }}
-            />
-            {/* The portal label below the real zone is 15px on a 4px margin.
-                Leaving it out made the reservation 19px short, which is a
-                smaller jump than before but still a jump. */}
-            <div className="mt-1 h-[15px]" />
-          </div>
-        )}
+          There was one, briefly. It is gone because TodayPage no longer
+          renders a tile until the engine, the coverage scan AND enrichment
+          have all settled, so a tile is never built from half its data. A
+          placeholder for a state that cannot occur is dead weight, and it
+          only ever addressed one of the three phases anyway.
+        */}
       </div>
 
       {/*
-        Action row — one verb at rest, the rest on approach.
+        Action row — nothing at rest, everything on approach.
 
         ── What was here ──────────────────────────────────────────────────
         A "NEXT" eyebrow on its own line, then Review thesis, Ask AI,
         Discuss, Create and an overflow button, all drawn at full strength on
         every tile. Measured at 1920x889 on the lead: 62px of a 386px tile,
-        16% of it, before the row's own padding -- and four tiles of it
-        meant twenty controls competing with the four findings they belong
-        to.
+        16% of it -- and four tiles of it meant twenty controls competing
+        with the four findings they belong to.
 
-        The eyebrow is gone outright: it labelled a button that already says
-        what it does, and "NEXT / Review thesis" is the same word twice.
+        Fading the three secondary verbs was not enough: "Review thesis" and
+        "Simulate idea" are the loudest things on the surface, and the row
+        went on reserving 60px whether or not anything in it was visible, so
+        the space was spent either way.
 
-        The quiet affordances stay in the primary's row rather than moving to
-        a row of their own, so revealing them changes no geometry -- the tile
-        is the same height whether the pointer is on it or not, which is what
-        stops a field of four from shuffling as the mouse crosses it. They
-        are hidden by OPACITY, not by `display`, for the same reason.
+        So the row LEAVES THE LAYOUT. It is an overlay pinned to the tile's
+        bottom edge, out of flow: at rest the tile's own content runs to the
+        bottom of the card, and the actions cost nothing. On approach the row
+        fades up over that edge behind a scrim that is opaque where the
+        controls sit and clear above them, so whatever it covers fades out
+        rather than being chopped.
 
-        `group-focus-within` is what keeps them reachable without a pointer:
-        tabbing into the tile reveals them, so the keyboard path is the hover
-        path. They are never `pointer-events-none`, so a reader who clicks
-        where they know a control lives still hits it.
+        It is hidden by OPACITY, not `display`, and it is out of flow, so the
+        tile's height is identical hovered and not -- which is what stops a
+        field of four from shuffling as the pointer crosses it. The body
+        carries bottom padding equal to the row, so on a tile with no slack
+        the overlay lands on margin rather than on a sentence.
+
+        `group-focus-within` keeps the whole row reachable without a pointer:
+        tabbing into the tile reveals it, so the keyboard path is the hover
+        path. Nothing here is `pointer-events-none`, so a reader who clicks
+        where they know a control lives still hits it. An open overflow menu
+        holds focus, so focus-within keeps the row up while it is open.
       */}
-      <div className="flex flex-wrap items-center gap-1 px-3.5 pb-2.5 pt-2">
+      <div
+        data-testid="today-actions"
+        className={clsx(
+          'absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-1 px-3.5 pb-2.5 pt-7',
+          'bg-gradient-to-t from-white via-white via-70% to-transparent',
+          'dark:from-[#141a25] dark:via-[#141a25]',
+          QUIET_REVEAL,
+        )}
+      >
         {item.primary ? (
           <button
             type="button"
@@ -614,7 +580,7 @@ export function TodayTile({
         )}
 
         {/* Create sits with the other engagements, before the overflow. */}
-        <span className={QUIET_WRAP}>
+        <span>
           <CreateMenu
             compact
             intent={engageIntent}
@@ -625,7 +591,7 @@ export function TodayTile({
           />
         </span>
 
-        <div className={clsx('relative ml-auto', !menuOpen && QUIET_WRAP)}>
+        <div className="relative ml-auto">
           <button
             type="button"
             aria-label="More actions"

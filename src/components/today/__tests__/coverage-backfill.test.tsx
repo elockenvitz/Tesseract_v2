@@ -29,6 +29,24 @@ vi.mock('../../../engine/decisionEngine/dispatchDecisionAction', () => ({ dispat
 vi.mock('../../../hooks/useTodayEnrichment', () => ({
   useTodayEnrichment: () => ({ map: {}, pending: false }),
 }))
+
+/* The field is gated on enrichment too, so a pending map holds the skeleton. */
+describe('the field waits for its pictures', () => {
+  it('holds the skeleton while enrichment is still in flight', async () => {
+    vi.doMock('../../../hooks/useTodayEnrichment', () => ({
+      useTodayEnrichment: () => ({ map: {}, pending: true }),
+    }))
+    vi.resetModules()
+    const { TodayPage: Pending } = await import('../TodayPage')
+    env.engine.action = [finding(1)]
+    env.gaps = { status: 'ready', candidates: [], coveredCount: 3 }
+    render(<Pending />)
+    expect(screen.getByTestId('today-loading')).toBeInTheDocument()
+    expect(screen.queryByTestId('today-field')).not.toBeInTheDocument()
+    vi.doUnmock('../../../hooks/useTodayEnrichment')
+    vi.resetModules()
+  })
+})
 vi.mock('../../../hooks/useAttentionState', () => ({
   useAttentionState: () => ({ suppressedKeys: env.suppressed, dismissForMe: vi.fn(), snoozeForMe: vi.fn(), isLoading: false }),
 }))
@@ -156,11 +174,26 @@ describe('real findings always win', () => {
 })
 
 describe('first paint and empty states', () => {
-  it('paints real findings while the coverage scan is still loading', () => {
+  /*
+   * REVERSED, deliberately, and the reason kept.
+   *
+   * This asserted that real findings paint while the coverage scan is still
+   * running -- get the known work up, let the rest arrive. Measured on a cold
+   * load at 1920x889, that is what "the loading is hitchy and happens in
+   * different phases" turned out to be: tiles appeared at t~4.9s, then the
+   * scan returned at t~5.3s and `layoutTotal` changed the supporting tiles'
+   * WIDTH, then enrichment answered at t~6.2s and redrew every chart and
+   * rewrote the text. Three assemblies in front of the reader.
+   *
+   * Painting early is only a kindness if what is painted then stays put. It
+   * did not. So the field now waits for all three reads and renders once.
+   */
+  it('waits for the coverage scan rather than assembling the field in phases', () => {
     env.engine.action = [finding(1)]
     env.gaps = { status: 'loading', candidates: [], coveredCount: 0 }
     render(<TodayPage />)
-    expect(tickers()).toEqual(['R1'])
+    expect(tickers()).toEqual([])
+    expect(screen.getByTestId('today-loading')).toBeInTheDocument()
   })
 
   it('waits for coverage instead of saying "You\'re current" when nothing real surfaced', () => {
