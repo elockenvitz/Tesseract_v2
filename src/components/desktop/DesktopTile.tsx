@@ -347,7 +347,12 @@ export function GallerySkeleton({
     was never measured.
   */
   return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pb-10 pt-5 dark:bg-[#0b0f16]">
+    /* The page is the MAT, not the card -- Today's rule, applied to every
+       gallery. `bg-gray-50/60` computes to about #fcfcfd, so a white card
+       with a hairline was separated from its page by nothing a cheap monitor
+       renders. gray-100 is the first step that reads as a surface behind the
+       cards, and they gain their edge from the fill rather than the line. */
+    <div className="h-full overflow-y-auto bg-gray-100 px-6 pb-10 pt-5 dark:bg-[#070a10]">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">{title}</h1>
         <span className="h-4 w-8 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
@@ -577,10 +582,22 @@ export function DesktopTile({
         'group flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-[3px] border bg-white text-left',
         'transition-colors duration-100',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
-        'dark:bg-[#141a25]',
+        /*
+          The card's edge is a real line, and its fill sits above the page.
+
+          gray-200 on a gray-50/60 ground is about a 3% step, which is inside
+          the range a cheap monitor renders as nothing at all -- the field
+          read as one undivided sheet, reported as "white-washed". Today
+          settled this first: the page goes a step darker and the hairline a
+          step stronger, so the boundary survives both ends of the monitor
+          range. The same pair is used here rather than a second answer,
+          because this shell draws the cards on four lenses and Ideas is not
+          allowed its own contrast.
+        */
+        'dark:bg-[#161d2a]',
         tone === 'critical'
           ? 'border-rose-300 hover:border-rose-400 dark:border-rose-900/60'
-          : 'border-gray-200 hover:border-gray-400 dark:border-white/[0.08] dark:hover:border-white/25',
+          : 'border-gray-300 hover:border-gray-400 dark:border-white/[0.12] dark:hover:border-white/25',
       )}
     >
       {/*

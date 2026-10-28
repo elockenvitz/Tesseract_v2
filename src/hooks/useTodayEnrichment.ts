@@ -24,6 +24,9 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import {
+  chunkFor, fetchDailyCloses, type DailyClose,
+} from '../lib/market-data/daily-closes'
 import { selectCurrentLadders, type TargetRow } from '../lib/signals/current-ladder'
 import { buildBook, weightsByAsset, type HoldingRow } from '../lib/portfolio/holdings'
 import { useOrganization } from '../contexts/OrganizationContext'
@@ -66,41 +69,25 @@ const HISTORY_DAYS = 400
  * window cannot fill the response. `assertWhole` then checks the invariant
  * actually held, so if the cap or the window ever changes this fails loudly
  * instead of quietly shaving the recent end off every chart again.
+ *
+ * The query and its guard now live in `lib/market-data/daily-closes`, because
+ * the Ideas gallery needed the same thing and the only alternatives were an
+ * Ideas component importing a Today hook, or the query being written a second
+ * time -- which is exactly how this bug would reach a third surface. The
+ * WINDOW stays here, because 400 days is Today's requirement and not a
+ * universal one.
  */
-export const ROW_CAP = 1000
-export const CHUNK = Math.max(1, Math.floor(ROW_CAP / HISTORY_DAYS))
+export { ROW_CAP } from '../lib/market-data/daily-closes'
+export const CHUNK = chunkFor(HISTORY_DAYS)
 export { HISTORY_DAYS }
 
-type Close = { symbol: string; date: string; close: number }
+type Close = DailyClose
 
 export async function fetchHistory(symbols: string[], floor: string): Promise<Close[]> {
-  const groups: string[][] = []
-  for (let i = 0; i < symbols.length; i += CHUNK) groups.push(symbols.slice(i, i + CHUNK))
-
-  const pages = await Promise.all(groups.map(async group => {
-    const { data, error } = await supabase
-      .from('price_history_cache')
-      .select('symbol, date, close')
-      .in('symbol', group)
-      .gte('date', floor)
-      .order('date', { ascending: true })
-    if (error) throw error
-    const rows = (data ?? []) as Close[]
-    /*
-     * The invariant, checked rather than assumed. A full page means the cap
-     * was reached, which means this page is missing its most recent closes --
-     * the exact silent failure above.
-     */
-    if (rows.length >= ROW_CAP) {
-      throw new Error(
-        `price_history_cache truncated at ${rows.length} rows for ${group.join(',')}: `
-        + 'the chunk size no longer guarantees a complete window.',
-      )
-    }
-    return rows
-  }))
-
-  return pages.flat()
+  // `floor` is retained in the signature because the call site computes it
+  // from HISTORY_DAYS; the lib derives the same date from `days`.
+  void floor
+  return fetchDailyCloses(symbols, { days: HISTORY_DAYS, chunk: CHUNK })
 }
 
 export function useTodayEnrichment(items: TodayItem[]) {

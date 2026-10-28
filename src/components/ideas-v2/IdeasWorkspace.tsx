@@ -382,8 +382,17 @@ export function IdeasWorkspace({
     change from removing the caller.
   */
 
+  /* The ground is stated on the scroll box below, not inherited. That element
+     is the parallel of `TodayPage`'s, which carries `bg-gray-100
+     dark:bg-[#070a10]`. Left transparent, the Ideas field showed through to
+     the shell's `bg-gray-50/60` -- about #fcfcfd against white cards, so
+     measured live the tiles had no edge at all. Same two tokens as Today, so
+     the two fields read as one surface. */
   return (
-    <div className="h-full overflow-y-auto" data-testid="ideas-lens">
+    <div
+      className="h-full overflow-y-auto bg-gray-100 dark:bg-[#070a10]"
+      data-testid="ideas-lens"
+    >
       {/*
         No header here. `DesktopGallery` inside `OpportunityGrid` draws the
         heading and the note, and this component drew a second `Ideas` above

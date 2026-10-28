@@ -129,6 +129,9 @@ vi.mock('../../hooks/useDesktopExplore', () => ({
    empty series is the state in which the tile simply does not draw one. */
 vi.mock('../../hooks/useTileCloses', () => ({
   useTileCloses: () => ({ data: [], isLoading: false }),
+  // The field batches every tile's closes in one read now. Empty and settled:
+  // these cases are about which tiles exist, not what they draw.
+  useGalleryCloses: () => ({ map: new Map(), pending: false }),
 }))
 
 /*

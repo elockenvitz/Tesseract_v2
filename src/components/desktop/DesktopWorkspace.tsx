@@ -65,7 +65,10 @@ export function DesktopWorkspace({
   }, [mode])
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
+    /* gray-100, matching Today: the page is the ground the cards sit on, and
+       gray-50/60 computes to about #fcfcfd -- indistinguishable from a white
+       card on a monitor that is not colour-managed. */
+    <div className="flex h-full flex-col overflow-hidden bg-gray-100 dark:bg-[#070a10]">
       {mode === 'detail' && (
         <div className="shrink-0 border-b border-gray-200 bg-white px-6 py-2 dark:border-white/10 dark:bg-[#141a25]">
           <button

@@ -36,6 +36,10 @@ import type { Opportunity } from '../../../lib/desktop-ideas/opportunity'
 const closes = vi.fn()
 vi.mock('../../../hooks/useTileCloses', () => ({
   useTileCloses: (symbol?: string | null) => closes(symbol),
+  // The field batches, but this suite renders ONE tile directly, which is
+  // the solo path: the tile falls back to its own hook when the field hands
+  // it nothing. Present so the module's shape matches.
+  useGalleryCloses: () => ({ map: new Map(), pending: false }),
 }))
 
 const { OpportunityTile } = await import('../OpportunityGrid')
@@ -178,10 +182,24 @@ describe('a tile with one picture is not a carousel', () => {
     expect(dots()).toHaveLength(0)
   })
 
-  it('draws no dots on a narrow tile, which has no room for a chart', () => {
+  /*
+   * REVERSED, and the reason kept.
+   *
+   * This asserted that a narrow tile has no carousel, because the price
+   * panel was gated on tile WIDTH (`drawsPrice = hasCloses && (… || big)`).
+   * Measured on the live field at 1920x889: of 56 tiles, FOUR had a second
+   * panel. On the other 52 the carousel did not exist and the price was
+   * unreachable without opening the card.
+   *
+   * Width is a layout fact standing in for "is there anything else worth
+   * seeing", which is a data fact -- and the data was already fetched. A
+   * narrow tile now gets a shorter plot, not no plot, and the picture it
+   * LEADS with is still its finding.
+   */
+  it('pages a narrow tile too, leading with its finding', () => {
     render(<OpportunityTile o={AMZN()} size="compact" onOpen={() => {}} />)
 
-    expect(dots()).toHaveLength(0)
+    expect(dots()).toHaveLength(2)
     expect(screen.getByTestId('opportunity-visual').dataset.panel).toBe('scenario_range')
   })
 

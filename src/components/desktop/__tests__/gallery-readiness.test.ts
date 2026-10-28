@@ -316,7 +316,22 @@ describe('the skeleton is the shape of the page it replaces', () => {
      */
     const fieldCode = code('components/ideas-v2/OpportunityGrid.tsx')
     expect(fieldCode).not.toMatch(/isLoading\s*&&\s*opportunities\.length\s*===\s*0/)
-    expect(fieldCode).toMatch(/if \(isLoading\) \{/)
+    /*
+     * The gate now covers BOTH reads, not just the candidates.
+     *
+     * The closes were fetched per tile -- 56 requests, each resolving on its
+     * own schedule, each arrival turning its tile from one panel into two
+     * and so changing its HEIGHT. The candidate gate was doing its job and
+     * the field still reassembled for seconds afterwards, because the second
+     * read had no gate at all.
+     *
+     * `closes.pending` is bounded the same way Today's terms are: false the
+     * moment the query resolves OR fails, and false immediately when there
+     * is nothing to fetch, so market data cannot hold the field shut.
+     */
+    expect(fieldCode).toMatch(/if \(isLoading \|\| closes\.pending\) \{/)
+    expect(src('hooks/useTileCloses.ts'))
+      .toMatch(/pending: wanted\.length > 0 && status === 'pending'/)
   })
 
   it('keeps Decisions chronological in its skeleton too', () => {

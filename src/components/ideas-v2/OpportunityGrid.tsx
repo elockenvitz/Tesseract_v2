@@ -37,9 +37,9 @@ import {
   TileAction, GallerySkeleton, type TileSize,
 } from '../desktop/DesktopTile'
 import { TilePriceChart } from '../desktop/TilePriceChart'
-import { useTileCloses } from '../../hooks/useTileCloses'
+import { useGalleryCloses, useTileCloses, type TileClose } from '../../hooks/useTileCloses'
 import { ExploreVisualBlock } from '../mobile/ExploreVisual'
-import { CarouselControls } from '../mobile/CarouselControls'
+import { VisualPager } from '../desktop/VisualPager'
 import {
   exploreVisualFor, visualRestatesContext, visualRestatesMetric,
 } from '../../lib/mobile/explore-visual'
@@ -143,6 +143,13 @@ export function OpportunityGrid({
     [opportunities],
   )
 
+  /* Every tile's price in ONE batched read, rather than one request per tile
+     resolving on its own schedule and reflowing its card when it lands. */
+  const closes = useGalleryCloses(useMemo(
+    () => opportunities.map(o => o.item.symbol),
+    [opportunities],
+  ))
+
   /*
    * The peer population for the deck's rail, in the field's own order.
    *
@@ -228,7 +235,20 @@ export function OpportunityGrid({
    * success OR error, so a failing optional producer cannot hold this shut —
    * it reports itself through `missing` instead.
    */
-  if (isLoading) {
+  /*
+   * One gate over both reads, not a field that assembles in two phases.
+   *
+   * The candidates and the closes arrive on different schedules, and the
+   * closes are what turn a tile from one panel into two -- which changes its
+   * height and moves every tile below it. Painting early is only a kindness
+   * if what is painted then stays put, and it did not: measured at 1920x889
+   * over 56 tiles, the grid reflowed for seconds after it appeared.
+   *
+   * `closes.pending` is bounded: false the moment the query resolves OR
+   * fails, and false immediately when there is nothing to fetch, so a
+   * market-data outage cannot hold the field shut.
+   */
+  if (isLoading || closes.pending) {
     return (
       <GallerySkeleton
         title="Ideas"
@@ -313,6 +333,7 @@ export function OpportunityGrid({
           key={o.item.id}
           o={o}
           size={sizes[i]}
+          closes={o.item.symbol ? closes.map.get(o.item.symbol) ?? [] : []}
           onOpen={() => onOpen(o, rail)}
         />
       ))}
@@ -325,11 +346,13 @@ export function OpportunityGrid({
    tile, and the property under test -- that only one picture is mounted at a
    time -- is the tile's, not the field's. */
 export function OpportunityTile({
-  o, size, onOpen,
+  o, size, onOpen, closes: closesIn,
 }: {
   o: Opportunity
   size: TileSize
   onOpen: () => void
+  /** This symbol's closes from the field's one batched read. */
+  closes?: TileClose[]
 }) {
   const item = o.item
   const big = size === 'hero' || size === 'large'
@@ -363,7 +386,21 @@ export function OpportunityTile({
    * settled on, and the same shared chart, so one name's price reads the same
    * everywhere on the dashboard.
    */
-  const { data: closes } = useTileCloses(item.symbol)
+  /*
+   * Handed down from the field, never fetched here.
+   *
+   * This called `useTileCloses(item.symbol)` -- one query PER TILE. Measured
+   * at 1920x889 with 56 tiles that is 56 round trips, each asking for a
+   * whole symbol's history, each resolving on its own schedule, and each
+   * arrival turning its tile from one panel into two and so changing its
+   * HEIGHT. The reader watched the grid reassemble under the cursor.
+   *
+   * `tile-carousel` renders this component directly, so the prop is
+   * optional and falls back to the single-symbol hook: the test exercises
+   * one tile, where there is no batch to belong to.
+   */
+  const solo = useTileCloses(closesIn ? null : item.symbol)
+  const closes = closesIn ?? solo.data
   const hasCloses = (closes?.length ?? 0) >= 2
 
   /*
@@ -387,7 +424,17 @@ export function OpportunityTile({
    * a wide tile has the room to carry it as context beside the finding.
    */
   const priceIsTheFinding = visual?.kind === 'price_trend'
-  const drawsPrice = hasCloses && (priceIsTheFinding || big)
+  /*
+   * Every tile with a price can show it. Measured at 1920x889 over 56 tiles:
+   * `|| big` meant FOUR of them had a second panel, so on 52 cards the
+   * carousel did not exist and the price was unreachable without opening the
+   * card. The gate was tile WIDTH, which is a layout fact, standing in for
+   * "is there anything else worth seeing", which is a data fact -- and the
+   * data was already fetched.
+   *
+   * A narrow tile gets a shorter plot (92px, below), not no plot.
+   */
+  const drawsPrice = hasCloses
   /* A compact tile asked for the tape still gets a readable plot and not a
      third of its own height: 150/120 were chosen for the wide tiles that
      carry the chart as a SECOND panel. */
@@ -437,7 +484,10 @@ export function OpportunityTile({
    * is ambient context a reader asks for second.
    */
   const panels = useMemo(() => {
-    const out: { key: string; label: string; node: React.ReactNode }[] = []
+    /* `label` is the spoken one ("the finding"), `tab` the word printed on
+       the segment. A segment reading "the finding" is a sentence fragment in
+       a control; "Finding" is a name. */
+    const out: { key: string; label: string; tab: string; node: React.ReactNode }[] = []
     /* `price_trend` is excluded here, not absent: the resolver DID choose a
        picture for those cards, and it is the chart below rather than one of
        the bar archetypes. Pushing it here would push a null. */
@@ -445,6 +495,7 @@ export function OpportunityTile({
       out.push({
         key: visual.kind,
         label: 'the finding',
+        tab: 'Finding',
         /* `tile`, because this is not a phone cell. The primitives were drawn
            against 178px and the gallery renders them at 421px narrow and
            881px wide, where a fixed-height track becomes a hairline and a
@@ -459,6 +510,7 @@ export function OpportunityTile({
            label is read aloud: on a card about a target being passed the
            chart is the finding, not the context beside it. */
         label: priceIsTheFinding ? 'the finding' : 'the price',
+        tab: 'Price',
         node: <TilePriceChart points={closes!} fill height={chartHeight} />,
       })
     }
@@ -562,19 +614,25 @@ export function OpportunityTile({
           </div>
 
           {/*
-            The dots are mobile's, unchanged -- the same component the feed's
-            pair-trade charts page with, so a carousel behaves the same way in
-            both shells. There is no swipe here: a desktop pointer pages by
-            clicking a dot, and `portalClick` already lets a <button> through
-            without reading it as "open this tile".
+            Today's pager, not mobile's dots.
+
+            The dots were two 4px circles under the picture -- the same
+            component the phone's pair-trade charts page with, which is right
+            on a surface you swipe. On a desktop field of fifty-six cards a
+            reader cannot tell they are there, let alone that they are
+            pressable, and the carousel went unused. The shared control names
+            each panel and shows arrows either side.
+
+            `portalClick` already lets a <button> through without reading it
+            as "open this tile", so the segments do not open the card.
           */}
-          <CarouselControls
-            count={panels.length}
+          <VisualPager
+            className="mt-1.5"
+            labels={panels.map(p => p.tab)}
+            keys={panels.map(p => p.key)}
             index={shown}
             onChange={setPanel}
-            className="mt-1"
-            label={`${item.symbol ?? 'this'} — ${shown + 1} of ${panels.length}`}
-            dotLabel={i => `Show ${panels[i].label}`}
+            describe={i => `Show ${panels[i].label}`}
           />
         </div>
       )}
