@@ -13,7 +13,7 @@
 
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { ArrowRight, MoreHorizontal } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react'
 import { askAI, canDiscuss, discuss } from '../../lib/engagement'
 import { SNOOZE_PRESETS } from '../../lib/attention-state'
 import { TodayVisual } from './TodayVisual'
@@ -185,7 +185,11 @@ export function TodayTile({
   const panels = (item.visuals?.length ? item.visuals : [item.visual])
     .filter(v => v.archetype !== 'metrics')
   const [panelIndex, setPanelIndex] = useState(0)
-  const panel = panels[Math.min(panelIndex, panels.length - 1)] ?? item.visual
+  const active = Math.min(panelIndex, Math.max(0, panels.length - 1))
+  const panel = panels[active] ?? item.visual
+  /** Arrows wrap, so neither end of a three-panel strip is a dead control. */
+  const step = (by: number) =>
+    setPanelIndex(((active + by) % panels.length + panels.length) % panels.length)
 
   const hasVisual = panels.length > 0
 
@@ -584,29 +588,55 @@ export function TodayTile({
                 {visualIntent === 'framework' ? 'See the price cases' : 'See the full chart'}
               </button>
               {panels.length > 1 && (
+                /*
+                  A CONTROL, not a caption.
+
+                  The first version of this was three words in 10px letter-
+                  spaced uppercase, the same type the captions and axis
+                  labels use. It worked, and it was reported as "no carousels
+                  still" -- because on a surface where every small uppercase
+                  string is a label, one more small uppercase string is a
+                  label. Nothing about it said "press me".
+
+                  A segmented control says it: a filled track, a raised white
+                  thumb on the selection, sentence case at a readable size,
+                  and arrows either side so the gesture is obvious even if the
+                  segments are not. It still costs no height, because it still
+                  shares the portal's row.
+                */
                 <div
                   data-testid="visual-pager"
-                  className="ml-auto flex items-center gap-1"
+                  className="ml-auto flex shrink-0 items-center gap-1"
+                  onKeyDown={e => {
+                    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+                    e.stopPropagation()
+                    e.preventDefault()
+                    step(e.key === 'ArrowLeft' ? -1 : 1)
+                  }}
                 >
-                  {panels.map((v, i) => (
-                    <button
-                      key={`${v.archetype}-${i}`}
-                      type="button"
-                      data-testid="visual-pager-tab"
-                      data-archetype={v.archetype}
-                      aria-pressed={i === Math.min(panelIndex, panels.length - 1)}
-                      onClick={e => { e.stopPropagation(); setPanelIndex(i) }}
-                      className={clsx(
-                        'rounded-sm px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest',
-                        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600',
-                        i === Math.min(panelIndex, panels.length - 1)
-                          ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
-                          : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/10 dark:hover:text-gray-200',
-                      )}
-                    >
-                      {PANEL_LABEL[v.archetype]}
-                    </button>
-                  ))}
+                  <PagerArrow dir={-1} onClick={() => step(-1)} />
+                  <div className="flex items-center gap-0.5 rounded-full bg-gray-100 p-0.5 dark:bg-white/[0.07]">
+                    {panels.map((v, i) => (
+                      <button
+                        key={`${v.archetype}-${i}`}
+                        type="button"
+                        data-testid="visual-pager-tab"
+                        data-archetype={v.archetype}
+                        aria-pressed={i === active}
+                        onClick={e => { e.stopPropagation(); setPanelIndex(i) }}
+                        className={clsx(
+                          'rounded-full px-2.5 py-[3px] text-[11px] font-semibold transition-colors',
+                          'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600',
+                          i === active
+                            ? 'bg-white text-gray-900 shadow-sm dark:bg-[#2a3447] dark:text-white'
+                            : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100',
+                        )}
+                      >
+                        {PANEL_LABEL[v.archetype]}
+                      </button>
+                    ))}
+                  </div>
+                  <PagerArrow dir={1} onClick={() => step(1)} />
                 </div>
               )}
             </div>
@@ -815,6 +845,23 @@ export function TodayTile({
  */
 
 /** One line, one verb. The explanatory second line is gone with the briefing. */
+/** One step of the picture pager. Square, quiet, and obviously pressable. */
+function PagerArrow({ dir, onClick }: { dir: -1 | 1; onClick: () => void }) {
+  const Icon = dir === -1 ? ChevronLeft : ChevronRight
+  return (
+    <button
+      type="button"
+      data-testid="visual-pager-arrow"
+      data-dir={dir}
+      aria-label={dir === -1 ? 'Previous chart' : 'Next chart'}
+      onClick={e => { e.stopPropagation(); onClick() }}
+      className="grid h-5 w-5 place-items-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:hover:bg-white/10 dark:hover:text-gray-100"
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </button>
+  )
+}
+
 function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button

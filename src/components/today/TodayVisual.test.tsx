@@ -112,3 +112,86 @@ describe('the framework band names the lines it draws', () => {
     expect(h(tight.container)).toBe(`${VISUAL_SLOT.compact}px`)
   })
 })
+
+/**
+ * The price plot draws in real pixels.
+ *
+ * It used to draw into a fixed 320-unit box and set
+ * `preserveAspectRatio="none"`, so the browser stretched those units across
+ * the column -- 2.26x horizontally against 1x vertically on the lead tile.
+ * Every round thing came out as an ellipse and every dash came out a
+ * different length from the dashes beside it. That is the difference between
+ * a chart and a picture of a chart, and no amount of added detail could fix
+ * it while the stretch was there.
+ */
+describe('the price plot is not stretched', () => {
+  const priced = (series: number[]): Visual => ({
+    archetype: 'review-window',
+    caption: 'Price since the thesis',
+    window: '210d',
+    reviewWindow: { series, changePct: 12, reachesAnchor: true, anchorLabel: 'thesis' },
+  })
+
+  const SERIES = [100, 104, 99, 112, 108, 121]
+
+  it('never asks the browser to distort it', () => {
+    const { container } = render(<TodayVisual visual={priced(SERIES)} />)
+    const svg = container.querySelector('svg[viewBox]') as SVGElement
+    expect(svg.getAttribute('preserveAspectRatio')).not.toBe('none')
+  })
+
+  /*
+   * There is deliberately no "viewBox width equals rendered width" case here.
+   *
+   * It was written, and it passed with the stretch put back -- jsdom reports
+   * every box as 0 wide, so the hook falls back to the same 320 the broken
+   * version hardcoded, and the two numbers agreed either way. A gate that
+   * cannot observe its own failure mode is decoration, so it is gone rather
+   * than sitting here looking like coverage.
+   *
+   * The 1:1 claim is verified on the real page instead, where the lead tile's
+   * plot reports viewBox "0 0 538 118" at 538px rendered.
+   */
+})
+
+/**
+ * Elapsed time is a dial, not a fourth bar.
+ *
+ * The track restated a figure the metric strip had already printed, and at
+ * 3px of ink across 600px it read as a progress bar -- the one shape on a
+ * dashboard that means "wait".
+ */
+describe('the aging visual', () => {
+  const aged = (days: number): Visual => ({
+    archetype: 'aging',
+    caption: 'Open for',
+    window: `${days} days`,
+    aging: {
+      days,
+      milestones: [
+        { label: 'opened', atPct: 0, hot: false },
+        { label: 'today', atPct: 100, hot: days >= 180 },
+      ],
+    },
+  })
+
+  it('draws a dial and no track', () => {
+    const { container } = render(<TodayVisual visual={aged(220)} />)
+    expect(container.querySelector('[data-testid="aging-dial"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="aging-track"]')).toBeNull()
+  })
+
+  it('states the figure inside the ring, and names both ends of the span', () => {
+    const { container } = render(<TodayVisual visual={aged(220)} />)
+    const text = container.textContent ?? ''
+    expect(text).toContain('220')
+    expect(text).toContain('opened')
+    expect(text).toContain('today')
+  })
+
+  it('closes the ring and says so past a year rather than rescaling', () => {
+    const { container } = render(<TodayVisual visual={aged(500)} />)
+    expect(container.textContent).toContain('1yr+')
+    expect(container.textContent).toContain('more than a year')
+  })
+})

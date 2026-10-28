@@ -474,4 +474,28 @@ describe('a tile pages between its pictures', () => {
     renderTile()
     expect(screen.queryByTestId('visual-pager')).not.toBeInTheDocument()
   })
+
+  it('offers arrows, so the gesture is obvious without reading the segments', () => {
+    /*
+     * The first version was three words in the same 10px letter-spaced
+     * uppercase that every caption and axis label on this surface uses, and
+     * it was reported back as "no carousels still". It worked and nobody
+     * could see it. Arrows are what make a pager look like a pager.
+     */
+    renderTile(decision(), { item: two() } as never)
+    const arrows = screen.getAllByTestId('visual-pager-arrow')
+    expect(arrows.map(a => a.getAttribute('data-dir'))).toEqual(['-1', '1'])
+  })
+
+  it('wraps at both ends, so neither arrow is ever dead', () => {
+    const { container } = renderTile(decision(), { item: two() } as never)
+    const arch = () => container.querySelector('[data-archetype]')?.getAttribute('data-archetype')
+    const [prev, next] = screen.getAllByTestId('visual-pager-arrow')
+
+    expect(arch()).toBe('review-window')
+    fireEvent.click(prev)                 // backwards off the start
+    expect(arch()).toBe('scenario')
+    fireEvent.click(next)                 // forwards off the end
+    expect(arch()).toBe('review-window')
+  })
 })
