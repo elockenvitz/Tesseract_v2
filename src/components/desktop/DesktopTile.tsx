@@ -239,18 +239,28 @@ export function DesktopGallery({
         tile) and LLY 338px (64%), because three lines of text were stretched
         to a neighbour's height. CEG ran 228px empty, 50%.
 
-        `items-start` lets each tile be as tall as what it has to say. Row
-        bottoms go ragged and the page ground shows between them, which is the
-        honest shape of a field where objects carry different amounts — and it
-        is what the packed flow was already assuming.
+        ── Why the stretch is back ───────────────────────────────────────────
 
-        Nothing inside the tile relied on the stretch: the shell is
-        `flex h-full flex-col`, so it fills whatever height it is given rather
-        than demanding one, and the only `flex-1` child is the price chart,
-        which is passed an explicit pixel height.
+        `items-start` was the fix for a while: each tile as tall as what it
+        has to say, row bottoms ragged. It traded void INSIDE the card for
+        void BETWEEN the cards, and measured at 1920x889 the second was no
+        smaller -- the first Ideas row ran AMZN 418px beside LLY 303px and
+        AAPL 303px, so 115px of page ground sat under each short tile and the
+        row read as a broken shelf.
+
+        Neither was ever the real problem. The problem was that nothing in the
+        card wanted the extra height, so wherever it went it was dead. Now the
+        picture takes it: the visual box is `flex-1` over a floor rather than
+        a fixed height (`OpportunityGrid`), the range axis grows its band and
+        marker into whatever it is given, and clamped prose shows the lines
+        that fit instead of a fixed count.
+
+        So rows are flush again and the slack is spent, not moved. Nothing
+        here demands a height: the shell is `flex flex-col` with no `h-full`,
+        which ADAPTS to the row.
       */}
       <div
-        className="mt-4 grid grid-cols-1 items-start gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+        className="mt-4 grid grid-cols-1 items-stretch gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
         style={{
           gridAutoRows: 'minmax(88px, auto)',
           /*
@@ -371,11 +381,11 @@ export function GallerySkeleton({
         <span className="block h-3 w-2/5 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
       </div>
       <div
-        /* `items-start` to match the real gallery below. It changes nothing on
-           its own -- every placeholder carries an explicit `h-[Npx]`, which
+        /* `items-stretch` to match the real gallery below. It changes nothing
+           on its own -- every placeholder carries an explicit `h-[Npx]`, which
            overrides stretch already -- but the two grids are meant to be the
            same geometry, and a difference here is how they drift. */
-        className="mt-4 grid grid-cols-1 items-start gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+        className="mt-4 grid grid-cols-1 items-stretch gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
         style={{ gridAutoRows: 'minmax(88px, auto)', gridAutoFlow: 'row' }}
       >
         {Array.from({ length: count }, (_, i) => {

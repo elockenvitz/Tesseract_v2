@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { clsx } from 'clsx'
 import { Quote, HelpCircle } from 'lucide-react'
 
@@ -16,11 +17,22 @@ import type { ExploreVisual as Visual } from '../../lib/mobile/explore-visual'
  *
  * ── Shared constraints, applied to all of them ────────────────────────────
  *
- * No pointer handlers. A tile is a single tap target and any child that
- * captures a drag competes with the grid's own scroll — the same rule that
- * keeps `TileSparkline` inert. No internal scroller. Nothing here reserves
- * height it might not fill: an archetype whose data is missing is never
- * rendered, because `exploreVisualFor` resolved it to `none` upstream.
+ * No pointer handlers ON THE PHONE. A phone card is a single tap target and
+ * any child that captures a drag competes with the grid's own scroll — the
+ * same rule that keeps `TileSparkline` inert. `card` density therefore stays
+ * inert, byte for byte.
+ *
+ * `tile` density is a mouse, and there the rule costs the reader the answer:
+ * a scenario axis draws three ticks and names none of them, so "which case
+ * is that" needs the card opened. At `tile` the marks are hover- and
+ * keyboard-reachable and report themselves in a fixed-height readout — no
+ * drag, no pointer capture, nothing that can swallow a scroll, and the
+ * desktop shell's `portalClick` already passes a <button> through without
+ * reading it as "open this tile".
+ *
+ * No internal scroller. Nothing here reserves height it might not fill: an
+ * archetype whose data is missing is never rendered, because
+ * `exploreVisualFor` resolved it to `none` upstream.
  *
  * ── Colour ────────────────────────────────────────────────────────────────
  *
@@ -132,6 +144,44 @@ const SCALE: Record<VisualDensity, Scale> = {
  */
 const MEASURE = 'max-w-[520px]'
 
+/**
+ * The archetypes that have something to do with extra height.
+ *
+ * `scenario_range` thickens its band; `quote` and `question` show the lines
+ * that fit; `last_look` weights its endpoints. Every other kind is a fixed
+ * arrangement of rows, so height would be void wherever it was put — those
+ * stay centred in whatever box they are given, which is the best a picture
+ * that cannot grow can do.
+ *
+ * A set rather than a prop per archetype: the caller cannot know which kind
+ * it drew, and this is the one place that does.
+ */
+const GROWS = new Set<Visual['kind']>([
+  'scenario_range', 'quote', 'question', 'last_look',
+  'exposure', 'target_compare', 'workflow', 'timeline',
+])
+
+/**
+ * The root of a picture that may take the room it is given.
+ *
+ * Centred rather than top-aligned: a bar and two labels pinned to the top of
+ * a 300px box is a worse answer than the same thing in the middle of it. The
+ * weight below is what actually spends the height; this just stops the
+ * leftover collecting at one end.
+ */
+const fills = (s: Scale, grow?: boolean) =>
+  clsx(s.root, grow && 'flex h-full min-h-0 flex-col justify-center')
+
+/**
+ * What a track weighs when it has room.
+ *
+ * Fixed steps, not percentages: a bar is read against the type beside it, and
+ * one that scaled freely with a stretched tile would stop being a bar and
+ * start being a block. Measured on the Ideas field, these are roughly double
+ * the phone's and a step above `tile`'s.
+ */
+const HEAVY = { bar: 'h-3.5', rail: 'h-2', rule: 'h-1', dot: 'h-3.5 w-3.5' }
+
 /** A small caps label. Used identically by every archetype so they read as a set. */
 function Cap({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -151,8 +201,33 @@ const money = (v: number) => (v >= 1000 ? `$${v.toFixed(0)}` : v >= 100 ? `$${v.
  * the point: a dot sitting past the end of the band is the whole finding, and
  * a scale that stretched to include it would put the price back inside the
  * picture and quietly undo the claim.
+ *
+ * ── Why this one grows and the measure does not bind it ───────────────────
+ *
+ * `MEASURE` caps every bounded picture at 520px because a label pair 810px
+ * apart stops reading as a pair. This archetype is exempt, and the reason is
+ * that it no longer has a label pair: each case names itself UNDER its own
+ * tick, and the last price names itself under the marker. Width then buys
+ * separation between the cases, which is the one thing the picture is for --
+ * the same argument that exempts the plotted series.
+ *
+ * Measured on AMZN at 1920x889 before this: a 520px picture in an 881px box,
+ * 361px of it void to the right, 72px tall in a 172px box.
+ *
+ * The axis also takes vertical room rather than sitting at a fixed 24px in
+ * the middle of whatever it is given. The band, the rule and the ticks are
+ * percentages of the axis row with pixel floors and ceilings, so the shape
+ * holds on a phone cell and thickens on a stretched tile without ever
+ * becoming a slab.
  */
-function ScenarioRange({ v, s }: { v: Extract<Visual, { kind: 'scenario_range' }>; s: Scale }) {
+function ScenarioRange({ v, s, grow, interactive }: {
+  v: Extract<Visual, { kind: 'scenario_range' }>
+  s: Scale
+  /** The axis takes the room it is given instead of a fixed 24px. */
+  grow?: boolean
+  /** Marks report themselves on hover and by keyboard. Desktop only. */
+  interactive?: boolean
+}) {
   const span = v.high - v.low
   // A third of the band at each end, which is enough room to show a breach
   // without shrinking the band itself into a stripe.
@@ -166,70 +241,262 @@ function ScenarioRange({ v, s }: { v: Extract<Visual, { kind: 'scenario_range' }
   const below = v.current < v.low
   const outside = above || below
   const edge = above ? v.high : v.low
+  /* Only meaningful on a breach. `edge` falls back to `low` when the price is
+     inside the range, so this is a positive number for an in-range card and
+     the caller must gate on `outside` -- it reads "+25% below your range"
+     otherwise, which is the opposite of true. The old outer `outside &&`
+     hid that; reserving the row for hover took the guard away. */
   const deviation = edge > 0 ? ((v.current - edge) / edge) * 100 : null
 
+  /*
+   * What the reader is pointing at, or nothing.
+   *
+   * Hover and focus write the same state, so a mouse and the Tab key reach
+   * the same answer. It is the mark's identity rather than its index, because
+   * a case list that reorders between renders would otherwise move the
+   * readout to a different case without the reader touching anything.
+   */
+  const [asked, setAsked] = useState<string | null>(null)
+  const cases = v.cases ?? []
+  const marks = [
+    ...cases.map(c => ({ id: `case:${c.label}:${c.price}`, label: c.label, price: c.price, current: false })),
+    { id: 'current', label: 'Last', price: v.current, current: true },
+  ]
+  const held = interactive ? marks.find(m => m.id === asked) ?? null : null
+  /*
+   * One format for the whole label row.
+   *
+   * `money` drops the cents at $100 and keeps them below it, which was
+   * invisible while the two labels sat in opposite corners. Under their own
+   * marks they are read as a row, and AMZN drew "BEAR $90.00 · BASE $120 ·
+   * BULL $180" -- the same quantity written two ways, three inches apart.
+   * The row decides once, on its largest member.
+   */
+  const whole = marks.some(m => m.price >= 100)
+  const mark$ = (p: number) => whole ? `$${p.toFixed(0)}` : money(p)
+  /* Distance from the last price, which is the question a case prompts:
+     "how far is the market from what I said". Never from the case to itself. */
+  const gap = held && !held.current && held.price > 0
+    ? ((v.current - held.price) / held.price) * 100
+    : null
+
+  const ask = (id: string) => interactive
+    ? {
+      onMouseEnter: () => setAsked(id),
+      onMouseLeave: () => setAsked(a => (a === id ? null : a)),
+      onFocus: () => setAsked(id),
+      onBlur: () => setAsked(a => (a === id ? null : a)),
+    }
+    : {}
+
   return (
-    <div data-explore-visual="scenario_range" className={s.root}>
-      {/* The deviation leads, because "the market escaped my range" is the
-          finding and the band is the evidence for it. */}
-      {outside && deviation != null && (
-        <div className="mb-1.5 flex min-w-0 items-baseline gap-1.5">
-          <span
-            data-scenario-deviation
-            className={clsx(
-              s.lead, 'font-bold tabular-nums leading-none',
-              above ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
-            )}
-          >
-            {deviation >= 0 ? '+' : ''}{deviation.toFixed(0)}%
-          </span>
-          {/* Short enough to survive a 178px cell. "below your lowest case" is
-              22 characters at 9px beside a 17px number, and it rendered as
-              "BELOW YOUR LOWES…" on every breach card in the grid — a label
-              that truncates mid-word tells the reader less than a shorter one
-              that fits. The band underneath is already labelled with the case
-              names and prices, so "your range" loses nothing. */}
-          <Cap className="min-w-0 truncate">{above ? 'above your range' : 'below your range'}</Cap>
+    <div
+      data-explore-visual="scenario_range"
+      className={clsx(s.root, grow && 'flex h-full min-h-0 flex-col justify-center')}
+    >
+      {/*
+        One readout slot, and it never changes the picture's height.
+
+        It leads with the deviation, because "the market escaped my range" is
+        the finding and the band is the evidence for it. While a mark is held
+        it says that mark instead. Both states occupy the same row, so
+        pointing at a case cannot move the card under the cursor -- the same
+        rule the carousel is sized by.
+      */}
+      {/* RESERVED where it can be filled, not rendered when it happens to
+          have something to say. A card inside its range has no deviation to
+          lead with, so the slot was absent -- and then the first hover
+          INSERTED a row and pushed the axis down under the cursor, which is
+          the one thing the fixed-height rule above exists to prevent. The
+          row is held open whenever a hover could fill it. */}
+      {(outside || interactive) && (
+        <div
+          className="mb-1.5 flex min-w-0 items-baseline gap-1.5"
+          style={interactive ? { minHeight: 20 } : undefined}
+        >
+          {held ? (
+            <>
+              <span className={clsx(s.value, 'shrink-0 font-bold tabular-nums leading-none text-gray-900 dark:text-white')}>
+                {money(held.price)}
+              </span>
+              <Cap className="min-w-0 truncate">
+                {held.current ? 'last price' : held.label}
+                {gap != null && ` · ${gap >= 0 ? '+' : ''}${gap.toFixed(0)}% vs last`}
+              </Cap>
+            </>
+          ) : outside && deviation != null ? (
+            <>
+              <span
+                data-scenario-deviation
+                className={clsx(
+                  s.lead, 'font-bold tabular-nums leading-none',
+                  above ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+                )}
+              >
+                {deviation >= 0 ? '+' : ''}{deviation.toFixed(0)}%
+              </span>
+              {/* Short enough to survive a 178px cell. "below your lowest case"
+                  is 22 characters at 9px beside a 17px number, and it rendered
+                  as "BELOW YOUR LOWES…" on every breach card in the grid — a
+                  label that truncates mid-word tells the reader less than a
+                  shorter one that fits. */}
+              <Cap className="min-w-0 truncate">{above ? 'above your range' : 'below your range'}</Cap>
+            </>
+          ) : null}
         </div>
       )}
 
-      <div className={clsx('relative', s.row)}>
-        {/* The modelled band. Solid, because it is the thing that was stated. */}
+      {/*
+        The axis. `flex-1` where it is allowed to grow, with a floor so a
+        phone cell is unchanged and a ceiling so a very tall tile gets a
+        thicker bar rather than a billboard.
+      */}
+      <div
+        className={clsx('relative', grow ? 'min-h-0 w-full flex-1' : s.row)}
+        style={grow ? { minHeight: 24, maxHeight: 64 } : undefined}
+      >
+        {/* The modelled band. Solid, because it is the thing that was stated.
+            A share of the axis rather than a fixed 6px, so width and height
+            arrive together and it stays an object instead of a ruled line. */}
         <div
           data-scenario-band
-          className={clsx('absolute top-1/2 -translate-y-1/2 rounded-full bg-gray-300 dark:bg-gray-600', s.band)}
+          className={clsx(
+            'absolute top-1/2 -translate-y-1/2 rounded-full bg-gray-300 dark:bg-gray-600',
+            grow ? 'h-[34%] min-h-[10px] max-h-[22px]' : s.band,
+          )}
           style={{ left: `${pos(v.low)}%`, width: `${pos(v.high) - pos(v.low)}%` }}
         />
         {/* The rest of the axis, so the marker has somewhere to be. */}
-        <div className={clsx('absolute inset-x-0 top-1/2 -translate-y-1/2', s.rule, TRACK)} aria-hidden />
-        {/* Every case gets a tick, so a three-case ladder does not read as two. */}
-        {(v.cases ?? []).map(c => (
-          <div
-            key={`${c.label}:${c.price}`}
-            data-scenario-case={c.label}
-            className={clsx('absolute top-1/2 w-px -translate-y-1/2 bg-gray-500 dark:bg-gray-400', s.tick)}
-            style={{ left: `${clamp(pos(c.price))}%` }}
-          />
-        ))}
         <div
-          data-scenario-current
           className={clsx(
-            'absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white dark:ring-gray-900',
-            s.marker,
-            outside
-              ? above ? 'bg-emerald-500' : 'bg-rose-500'
-              : 'bg-gray-900 dark:bg-white',
+            'absolute inset-x-0 top-1/2 -translate-y-1/2',
+            grow ? 'h-[8%] min-h-[2px] max-h-[5px]' : s.rule,
+            TRACK,
           )}
-          style={{ left: `${clamp(pos(v.current))}%` }}
+          aria-hidden
         />
+        {/* Every case gets a tick, so a three-case ladder does not read as two.
+            A <button> where there is a mouse: the tick itself stays 1px -- the
+            picture is unchanged -- and the press target is a 20px column
+            centred on it, because a 1px hit area is not one. */}
+        {cases.map(c => {
+          const id = `case:${c.label}:${c.price}`
+          const on = held?.id === id
+          /* The handle rides the TICK, not the hit area around it. The
+             attribute names the mark and everything that reads it -- the
+             density guard among them -- is asking about the drawn thing, so
+             putting it on the 20px invisible button would have quietly
+             pointed every such reader at a box instead of a mark. */
+          const tick = (
+            <span
+              data-scenario-case={c.label}
+              className={clsx(
+                'block bg-gray-500 dark:bg-gray-400',
+                grow ? 'h-[62%] min-h-[14px]' : s.tick,
+                /* Not `w-px` plus an override: both classes would land in the
+                   same declaration block and the narrower one wins on source
+                   order, so the held tick never thickened. One or the
+                   other. */
+                on ? 'w-0.5 bg-gray-900 dark:bg-white' : 'w-px',
+              )}
+            />
+          )
+          return interactive ? (
+            <button
+              key={id}
+              type="button"
+              data-scenario-mark={c.label}
+              aria-label={`${c.label} ${money(c.price)}`}
+              className="absolute top-1/2 flex h-full w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
+              style={{ left: `${clamp(pos(c.price))}%` }}
+              {...ask(id)}
+            >
+              {tick}
+            </button>
+          ) : (
+            <div
+              key={id}
+              data-scenario-case={c.label}
+              className={clsx('absolute top-1/2 w-px -translate-y-1/2 bg-gray-500 dark:bg-gray-400', s.tick)}
+              style={{ left: `${clamp(pos(c.price))}%` }}
+            />
+          )
+        })}
+        {interactive ? (
+          <button
+            type="button"
+            data-scenario-mark="current"
+            aria-label={`Last price ${money(v.current)}`}
+            className="absolute top-1/2 flex h-full w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
+            style={{ left: `${clamp(pos(v.current))}%` }}
+            {...ask('current')}
+          >
+            <span
+              data-scenario-current
+              className={clsx(
+                'block rounded-full ring-2 ring-white transition-transform dark:ring-gray-900',
+                grow ? 'h-4 w-4' : s.marker,
+                held?.current && 'scale-125',
+                outside
+                  ? above ? 'bg-emerald-500' : 'bg-rose-500'
+                  : 'bg-gray-900 dark:bg-white',
+              )}
+            />
+          </button>
+        ) : (
+          <div
+            data-scenario-current
+            className={clsx(
+              'absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white dark:ring-gray-900',
+              s.marker,
+              outside
+                ? above ? 'bg-emerald-500' : 'bg-rose-500'
+                : 'bg-gray-900 dark:bg-white',
+            )}
+            style={{ left: `${clamp(pos(v.current))}%` }}
+          />
+        )}
       </div>
 
-      <div className="mt-1 flex min-w-0 items-baseline justify-between gap-2">
-        <Cap className="min-w-0 truncate">{v.breachedLabel ? `${v.breachedLabel} ${money(edge)}` : `${money(v.low)}–${money(v.high)}`}</Cap>
-        <span className={clsx('shrink-0 font-bold tabular-nums text-gray-700 dark:text-gray-200', s.note)}>
-          {money(v.current)}
-        </span>
-      </div>
+      {/*
+        ── Where the labels go, and why the right-hand void is gone ──────────
+
+        This was two captions, one in each bottom corner, `justify-between`.
+        At 881px they were 810px apart: not a pair, just two unrelated strings
+        in opposite corners of a card -- which is the reason `MEASURE` capped
+        the picture at 520px and left 361px of the box empty.
+
+        Anchored under their own marks instead, width is no longer something
+        to absorb: it is what separates BEAR from BULL from the last price.
+        Narrow tiles keep the corner pair, because three labels inside 421px
+        would collide and a collision reads worse than a corner.
+      */}
+      {grow && cases.length > 0 ? (
+        <div className="relative mt-1 h-3.5 w-full">
+          {marks.map(m => (
+            <span
+              key={m.id}
+              data-scenario-label={m.current ? 'current' : m.label}
+              className={clsx(
+                'absolute top-0 -translate-x-1/2 whitespace-nowrap text-[9px] font-bold uppercase leading-none tracking-wide tabular-nums',
+                m.current
+                  ? 'text-gray-700 dark:text-gray-200'
+                  : held?.id === m.id ? 'text-gray-900 dark:text-white' : 'text-gray-400',
+              )}
+              style={{ left: `${clamp(pos(m.price))}%` }}
+            >
+              {m.current ? mark$(m.price) : `${m.label} ${mark$(m.price)}`}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-1 flex min-w-0 items-baseline justify-between gap-2">
+          <Cap className="min-w-0 truncate">{v.breachedLabel ? `${v.breachedLabel} ${money(edge)}` : `${money(v.low)}–${money(v.high)}`}</Cap>
+          <span className={clsx('shrink-0 font-bold tabular-nums text-gray-700 dark:text-gray-200', s.note)}>
+            {money(v.current)}
+          </span>
+        </div>
+      )}
     </div>
   )
 }
@@ -243,12 +510,17 @@ function ScenarioRange({ v, s }: { v: Extract<Visual, { kind: 'scenario_range' }
  * end — "nobody has put a number here" said in the shape of the thing that is
  * missing.
  */
-function TargetCompare({ v, s }: { v: Extract<Visual, { kind: 'target_compare' }>; s: Scale }) {
+function TargetCompare({ v, s, grow }: {
+  v: Extract<Visual, { kind: 'target_compare' }>
+  s: Scale
+  grow?: boolean
+}) {
   const has = v.target != null
   const upside = has && v.current > 0 ? ((v.target! - v.current) / v.current) * 100 : null
+  const dot = grow ? HEAVY.dot : s.dot
 
   return (
-    <div data-explore-visual="target_compare" className={s.root}>
+    <div data-explore-visual="target_compare" className={fills(s, grow)}>
       <div className="flex items-baseline justify-between">
         <Cap>Current</Cap>
         <Cap>{v.targetLabel ?? 'Target'}</Cap>
@@ -261,17 +533,19 @@ function TargetCompare({ v, s }: { v: Extract<Visual, { kind: 'target_compare' }
         <span className={clsx('min-w-0 truncate font-bold tabular-nums text-gray-900 dark:text-white', s.value)}>
           {money(v.current)}
         </span>
-        <span className={clsx('shrink-0 rounded-full bg-gray-900 dark:bg-white', s.dot)} aria-hidden />
+        <span className={clsx('shrink-0 rounded-full bg-gray-900 dark:bg-white', dot)} aria-hidden />
         <span
           className={clsx(
-            'min-w-0 flex-1',
-            has ? clsx(s.rule, TRACK) : 'h-px border-t border-dashed border-gray-300 dark:border-gray-600',
+            'min-w-0 flex-1 rounded-full',
+            has
+              ? clsx(grow ? HEAVY.rule : s.rule, TRACK)
+              : 'h-px border-t border-dashed border-gray-300 dark:border-gray-600',
           )}
           aria-hidden
         />
         {has ? (
           <>
-            <span className={clsx('shrink-0 rounded-full border-2 border-gray-900 bg-white dark:border-white dark:bg-gray-900', s.dot)} aria-hidden />
+            <span className={clsx('shrink-0 rounded-full border-2 border-gray-900 bg-white dark:border-white dark:bg-gray-900', dot)} aria-hidden />
             <span data-target-value className={clsx('min-w-0 truncate font-bold tabular-nums text-gray-900 dark:text-white', s.value)}>
               {money(v.target!)}
             </span>
@@ -320,12 +594,17 @@ const shortDate = (iso: string) => {
  * different failures. Prose collapses them into one "4mo"; two lengths of one
  * line cannot.
  */
-function Elapsed({ v, now, s }: { v: Extract<Visual, { kind: 'timeline' }>; now: number; s: Scale }) {
+function Elapsed({ v, now, s, grow }: {
+  v: Extract<Visual, { kind: 'timeline' }>
+  now: number
+  s: Scale
+  grow?: boolean
+}) {
   const t0 = new Date(v.statedAt).getTime()
   if (!Number.isFinite(t0) || now <= t0) return null
   return (
-    <div data-explore-visual="timeline" data-timeline-shape="elapsed" className={s.root}>
-      <div className={clsx('w-full rounded-full', s.bar, TRACK)}>
+    <div data-explore-visual="timeline" data-timeline-shape="elapsed" className={fills(s, grow)}>
+      <div className={clsx('w-full rounded-full', grow ? HEAVY.bar : s.bar, TRACK)}>
         <div data-timeline-elapsed className="h-full w-full rounded-full bg-amber-400 dark:bg-amber-500" />
       </div>
       <div className="mt-1 flex items-baseline justify-between">
@@ -353,9 +632,14 @@ function Elapsed({ v, now, s }: { v: Extract<Visual, { kind: 'timeline' }>; now:
  * The same primitive rather than a second one: an aging strip and a deadline
  * strip differ by whether a marker exists, which is a property of the data.
  */
-function Timeline({ v, now, s }: { v: Extract<Visual, { kind: 'timeline' }>; now: number; s: Scale }) {
+function Timeline({ v, now, s, grow }: {
+  v: Extract<Visual, { kind: 'timeline' }>
+  now: number
+  s: Scale
+  grow?: boolean
+}) {
   const dueAt = v.dueAt
-  if (!dueAt) return <Elapsed v={v} now={now} s={s} />
+  if (!dueAt) return <Elapsed v={v} now={now} s={s} grow={grow} />
   const t0 = new Date(v.statedAt).getTime()
   const t1 = new Date(dueAt).getTime()
   if (!Number.isFinite(t0) || !Number.isFinite(t1) || t1 <= t0) return null
@@ -367,8 +651,8 @@ function Timeline({ v, now, s }: { v: Extract<Visual, { kind: 'timeline' }>; now
   const pct = Math.min(Math.max((honoured / (t2 - t0)) * 100, 22), 78)
 
   return (
-    <div data-explore-visual="timeline" className={s.root}>
-      <div className={clsx('flex w-full items-stretch gap-0.5', s.bar)}>
+    <div data-explore-visual="timeline" className={fills(s, grow)}>
+      <div className={clsx('flex w-full items-stretch gap-0.5', grow ? HEAVY.bar : s.bar)}>
         <div className={clsx('rounded-l-full', TRACK)} style={{ width: `${pct}%` }} />
         <div
           data-timeline-overdue
@@ -395,17 +679,21 @@ function Timeline({ v, now, s }: { v: Extract<Visual, { kind: 'timeline' }>; now
  * has to re-learn every scroll, and 20% is comfortably above any single
  * position in these books.
  */
-function Exposure({ v, s }: { v: Extract<Visual, { kind: 'exposure' }>; s: Scale }) {
+function Exposure({ v, s, grow }: {
+  v: Extract<Visual, { kind: 'exposure' }>
+  s: Scale
+  grow?: boolean
+}) {
   const pct = Math.min((v.weightPct / 20) * 100, 100)
   return (
-    <div data-explore-visual="exposure" className={s.root}>
+    <div data-explore-visual="exposure" className={fills(s, grow)}>
       <div className="flex min-w-0 items-baseline gap-1.5">
         <span data-exposure-value className={clsx('font-bold tabular-nums leading-none text-gray-900 dark:text-white', s.lead)}>
           {v.weightPct.toFixed(1)}%
         </span>
         <Cap className="min-w-0 truncate">{v.portfolioName ? `of ${v.portfolioName}` : 'of the book'}</Cap>
       </div>
-      <div className={clsx('mt-1.5 w-full overflow-hidden rounded-full', s.bar, TRACK)}>
+      <div className={clsx('mt-1.5 w-full overflow-hidden rounded-full', grow ? HEAVY.bar : s.bar, TRACK)}>
         <div className="h-full rounded-full bg-gray-900 dark:bg-white" style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -448,12 +736,26 @@ function Comparison({ v, s }: { v: Extract<Visual, { kind: 'comparison' }>; s: S
  * matters starts at the review, and a full-history chart puts the interesting
  * stretch somewhere in the middle of a line with nothing to mark it.
  */
-function LastLook({ v, s }: { v: Extract<Visual, { kind: 'last_look' }>; s: Scale }) {
+function LastLook({ v, s, grow }: {
+  v: Extract<Visual, { kind: 'last_look' }>
+  s: Scale
+  /** Takes vertical room by weight, never by stretching into a billboard. */
+  grow?: boolean
+}) {
   const up = v.movePct >= 0
+  /* A dumbbell is one line by nature: given 115px it cannot grow a second
+     row, so it spends the room on WEIGHT -- a thicker rule and larger
+     endpoints, bounded -- and centres what is left. An archetype that cannot
+     honestly use height says so by staying small, which is why the ceiling
+     here is small. */
+  const dot = grow ? 'h-3.5 w-3.5' : s.dot
   return (
-    <div data-explore-visual="last_look" className={s.root}>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <span className={clsx('shrink-0 rounded-full border-2 border-gray-400 bg-white dark:bg-gray-900', s.dot)} aria-hidden />
+    <div
+      data-explore-visual="last_look"
+      className={clsx(s.root, grow && 'flex h-full min-h-0 flex-col justify-center')}
+    >
+      <div className={clsx('flex min-w-0 items-center', grow ? 'gap-2' : 'gap-1.5')}>
+        <span className={clsx('shrink-0 rounded-full border-2 border-gray-400 bg-white dark:bg-gray-900', dot)} aria-hidden />
         {/* The label gives way before the number does: "+21%" is the finding
             and "Last look 10mo" is context for it. */}
         {/* "Last look 10mo" is 14 characters between a dot, a rule and a
@@ -462,7 +764,10 @@ function LastLook({ v, s }: { v: Extract<Visual, { kind: 'last_look' }>; s: Scal
             because a reader cannot tell 1mo from 18mo. The card's own age
             stamp is in the header; this label only has to name the marker. */}
         <Cap className="shrink-0">Last look</Cap>
-        <span className={clsx('min-w-0 flex-1', s.rule, TRACK)} aria-hidden />
+        <span
+          className={clsx('min-w-0 flex-1 rounded-full', grow ? 'h-1' : s.rule, TRACK)}
+          aria-hidden
+        />
         <span
           data-lastlook-move
           className={clsx(
@@ -472,7 +777,7 @@ function LastLook({ v, s }: { v: Extract<Visual, { kind: 'last_look' }>; s: Scal
         >
           {up ? '+' : ''}{v.movePct.toFixed(0)}%
         </span>
-        <span className={clsx('shrink-0 rounded-full', s.dot, up ? 'bg-emerald-500' : 'bg-rose-500')} aria-hidden />
+        <span className={clsx('shrink-0 rounded-full', dot, up ? 'bg-emerald-500' : 'bg-rose-500')} aria-hidden />
       </div>
       <p className="mt-1 text-right text-[9px] font-bold uppercase tracking-wide text-gray-400">Today</p>
     </div>
@@ -480,9 +785,13 @@ function LastLook({ v, s }: { v: Extract<Visual, { kind: 'last_look' }>; s: Scal
 }
 
 /** Where an authored thing has got to, as a rail rather than a chart. */
-function Workflow({ v, s }: { v: Extract<Visual, { kind: 'workflow' }>; s: Scale }) {
+function Workflow({ v, s, grow }: {
+  v: Extract<Visual, { kind: 'workflow' }>
+  s: Scale
+  grow?: boolean
+}) {
   return (
-    <div data-explore-visual="workflow" className={s.root}>
+    <div data-explore-visual="workflow" className={fills(s, grow)}>
       {v.direction && (
         <span
           data-workflow-direction={v.direction}
@@ -512,7 +821,7 @@ function Workflow({ v, s }: { v: Extract<Visual, { kind: 'workflow' }>; s: Scale
             data-workflow-stage={stage}
             data-active={i === v.activeIndex}
             className={clsx(
-              'min-w-0 flex-1 rounded-full', s.rail,
+              'min-w-0 flex-1 rounded-full', grow ? HEAVY.rail : s.rail,
               i <= v.activeIndex ? 'bg-violet-500' : TRACK,
             )}
           />
@@ -529,13 +838,31 @@ function Workflow({ v, s }: { v: Extract<Visual, { kind: 'workflow' }>; s: Scale
 }
 
 /** Somebody's words, as the hero. No chart, no metric, no track. */
-function QuoteVisual({ v, s }: { v: Extract<Visual, { kind: 'quote' }>; s: Scale }) {
+function QuoteVisual({ v, s, grow }: {
+  v: Extract<Visual, { kind: 'quote' }>
+  s: Scale
+  /** Shows the lines that FIT rather than a fixed count of them. */
+  grow?: boolean
+}) {
   return (
-    <div data-explore-visual="quote" className={s.root}>
-      <Quote className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600" aria-hidden />
+    <div
+      data-explore-visual="quote"
+      className={clsx(s.root, grow && 'flex h-full min-h-0 flex-col')}
+    >
+      <Quote className="h-3.5 w-3.5 shrink-0 text-gray-300 dark:text-gray-600" aria-hidden />
+      {/* `line-clamp-4` is a count, and a count cannot know how tall the box
+          is: in a tile stretched to a tall neighbour it showed four lines and
+          left the rest of the room empty while the quote itself was still
+          cut off. Clipped against the box instead, the extra height buys
+          actual words -- which is the only honest thing prose can do with
+          it. The clamp stays on the phone, where the box is fixed. */}
       <p
         data-quote-text
-        className={clsx('mt-1 line-clamp-4 font-medium italic leading-[1.4] text-gray-800 dark:text-gray-100', s.body)}
+        className={clsx(
+          'mt-1 font-medium italic leading-[1.4] text-gray-800 dark:text-gray-100',
+          grow ? 'min-h-0 flex-1 overflow-hidden' : 'line-clamp-4',
+          s.body,
+        )}
       >
         {v.text}
       </p>
@@ -555,13 +882,25 @@ function QuoteVisual({ v, s }: { v: Extract<Visual, { kind: 'quote' }>; s: Scale
  * can do, and a second set of affordances inside the picture would be a fourth
  * place to click on a tile that has three.
  */
-function QuestionVisual({ v, s }: { v: Extract<Visual, { kind: 'question' }>; s: Scale }) {
+function QuestionVisual({ v, s, grow }: {
+  v: Extract<Visual, { kind: 'question' }>
+  s: Scale
+  /** Shows the lines that FIT rather than a fixed count of them. See `QuoteVisual`. */
+  grow?: boolean
+}) {
   return (
-    <div data-explore-visual="question" className={s.root}>
-      <HelpCircle className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500" aria-hidden />
+    <div
+      data-explore-visual="question"
+      className={clsx(s.root, grow && 'flex h-full min-h-0 flex-col')}
+    >
+      <HelpCircle className="h-3.5 w-3.5 shrink-0 text-amber-400 dark:text-amber-500" aria-hidden />
       <p
         data-question-text
-        className={clsx('mt-1 line-clamp-3 font-semibold leading-[1.35] text-gray-800 dark:text-gray-100', s.body)}
+        className={clsx(
+          'mt-1 font-semibold leading-[1.35] text-gray-800 dark:text-gray-100',
+          grow ? 'min-h-0 flex-1 overflow-hidden' : 'line-clamp-3',
+          s.body,
+        )}
       >
         {v.text}
       </p>
@@ -579,6 +918,15 @@ interface ExploreVisualProps {
    * caller is unchanged by construction. See `SCALE`.
    */
   density?: VisualDensity
+  /**
+   * The picture may take the room it is given rather than sitting at its
+   * minimum in the middle of it.
+   *
+   * Set by the desktop gallery, where the grid stretches a tile to its row
+   * and the picture is the element that wants the difference. Off by default,
+   * so the phone is unchanged by construction.
+   */
+  fill?: boolean
 }
 
 /**
@@ -588,21 +936,27 @@ interface ExploreVisualProps {
  * gets nothing, and the second gets the existing sparkline rather than a second
  * implementation of one.
  */
-export function ExploreVisualBlock({ visual, sparkline, now, density = 'card' }: ExploreVisualProps) {
+export function ExploreVisualBlock({ visual, sparkline, now, density = 'card', fill }: ExploreVisualProps) {
   const t = now ?? Date.now()
   const s = SCALE[density]
+  /* A mouse, not a thumb. The phone card stays inert -- see the constraints
+     at the top of this file -- so interactivity is `tile` density only, never
+     the `fill` flag, which is about room rather than about input. */
+  const interactive = density === 'tile'
+  const grow = density === 'tile' && fill === true
 
   const body = (() => {
     switch (visual.kind) {
-      case 'scenario_range': return <ScenarioRange v={visual} s={s} />
-      case 'target_compare': return <TargetCompare v={visual} s={s} />
-      case 'timeline': return <Timeline v={visual} now={t} s={s} />
-      case 'exposure': return <Exposure v={visual} s={s} />
+      case 'scenario_range':
+        return <ScenarioRange v={visual} s={s} grow={grow} interactive={interactive} />
+      case 'target_compare': return <TargetCompare v={visual} s={s} grow={grow} />
+      case 'timeline': return <Timeline v={visual} now={t} s={s} grow={grow} />
+      case 'exposure': return <Exposure v={visual} s={s} grow={grow} />
       case 'comparison': return <Comparison v={visual} s={s} />
-      case 'last_look': return <LastLook v={visual} s={s} />
-      case 'workflow': return <Workflow v={visual} s={s} />
-      case 'quote': return <QuoteVisual v={visual} s={s} />
-      case 'question': return <QuestionVisual v={visual} s={s} />
+      case 'last_look': return <LastLook v={visual} s={s} grow={grow} />
+      case 'workflow': return <Workflow v={visual} s={s} grow={grow} />
+      case 'quote': return <QuoteVisual v={visual} s={s} grow={grow} />
+      case 'question': return <QuestionVisual v={visual} s={s} grow={grow} />
       case 'price_trend': return sparkline ? <div data-explore-visual="price_trend">{sparkline}</div> : null
       // Typography carries it. Deliberately renders nothing rather than a box.
       case 'none': return null
@@ -620,5 +974,31 @@ export function ExploreVisualBlock({ visual, sparkline, now, density = 'card' }:
    * rule rather than an instance of it.
    */
   if (density === 'card' || body === null || visual.kind === 'price_trend') return body
+  /* And not on a growing scenario axis, for the reason recorded on
+     `ScenarioRange`: its labels moved onto their own marks, so it has no
+     label pair left for the measure to protect, and the width it was being
+     denied is what separates the cases. The wrapper also has to pass the
+     height through, or a `flex-1` picture would be measured against a block
+     that is only as tall as its content. */
+  /*
+   * Only the archetypes that can USE height get it.
+   *
+   * `flex-1` here overrides the box's own `justify-center`, which is what
+   * centres a picture that cannot grow. So an archetype that would sit at
+   * its minimum at the TOP of a tall box is worse off than one centred in
+   * it, and the four that take the room say so by name.
+   */
+  if (grow && GROWS.has(visual.kind)) {
+    return (
+      <div
+        className={clsx(
+          'flex min-h-0 w-full flex-1 flex-col',
+          visual.kind !== 'scenario_range' && MEASURE,
+        )}
+      >
+        {body}
+      </div>
+    )
+  }
   return <div className={MEASURE}>{body}</div>
 }

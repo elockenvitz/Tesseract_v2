@@ -343,29 +343,65 @@ describe('the skeleton is the shape of the page it replaces', () => {
 })
 
 /*
- * A row is as tall as its tallest tile, and by default every other tile in
- * that row is inflated to match. Measured on Ideas at 1920x889: AMZN carries
- * a price chart and is 524px, so AAPL beside it -- three lines of text -- was
- * also 524px, 342px of it (65%) empty. LLY held 338px of void, CEG 228px.
+ * ── REWRITTEN, and the history kept, because the answer reversed ──────────
  *
- * TWO things cause that, and removing either alone changes nothing, which is
- * why both are pinned here. `align-items` must release the stretch, AND the
- * tile must not carry an explicit height: `height: 100%` overrides alignment,
- * so `h-full` on the tile silently resolved it back to the full row height.
+ * This block used to pin `items-start`. A row is as tall as its tallest tile
+ * and by default every other tile is inflated to match, and measured on
+ * Ideas at 1920x889 that put 342px of void (65%) inside AAPL because AMZN
+ * beside it carried a price chart.
+ *
+ * Releasing the stretch did not remove the void, it MOVED it: the same
+ * measurement after that change read AMZN 418px beside LLY 303px and AAPL
+ * 303px, so 115px of page ground sat under each short tile and the row read
+ * as a broken shelf.
+ *
+ * Neither alignment was ever the fault. The fault was that nothing in the
+ * card wanted the extra height, so wherever it was put it was dead. What is
+ * pinned now is the chain that spends it -- and every link is load-bearing,
+ * because the slack stops at the first one that is missing:
+ *
+ *   the grid stretches  ->  the box is `flex-1` over a FLOOR, not an exact
+ *   height  ->  the picture takes the box  ->  the archetype grows into it.
+ *
+ * `h-full` on the tile stays forbidden for the original reason: an explicit
+ * height overrides alignment, so the tile must ADAPT to its row rather than
+ * demand one.
  */
-describe('a tile is as tall as its own contents', () => {
+describe('a stretched tile has somewhere to put the height', () => {
   const shell = code('components/desktop/DesktopTile.tsx')
+  const field = code('components/ideas-v2/OpportunityGrid.tsx')
+  const visual = code('components/mobile/ExploreVisual.tsx')
 
-  it('lets the gallery grid align its tiles to the top', () => {
+  it('stretches the gallery grid, so rows are flush', () => {
     const grid = shell.slice(shell.indexOf('export function DesktopGallery'))
     const el = grid.slice(grid.indexOf('className="mt-4 grid'))
-    expect(el.slice(0, 160)).toContain('items-start')
+    expect(el.slice(0, 160)).toContain('items-stretch')
   })
 
   it('gives the tile no height of its own, which would override that', () => {
     const tile = shell.slice(shell.indexOf('export function DesktopTile'))
     const shellClasses = tile.slice(tile.indexOf("'group flex"))
     expect(shellClasses.slice(0, 120)).not.toContain('h-full')
+  })
+
+  it('sizes the picture box by a floor, never by an exact height', () => {
+    /* `height: panelBox` was right when the tile was its own height and is
+       the whole defect once it is not: an exact height cannot grow, so the
+       stretch landed UNDER the picture instead of in it. The floor is what
+       still stops a carousel page from relayouting the field. */
+    expect(field).toMatch(/minHeight: panels\.length > 1 \? panelBox : undefined/)
+    expect(field).not.toMatch(/height: panels\.length > 1 \? panelBox/)
+    expect(field).toMatch(/className="flex min-h-0 min-w-0 flex-1 flex-col justify-center"/)
+  })
+
+  it('tells the picture it may fill, and only the kinds that can', () => {
+    expect(field).toMatch(/<ExploreVisualBlock [^>]*density="tile" fill \/>/)
+    /* Named, because `flex-1` overrides the box's own `justify-center`: an
+       archetype that cannot grow is better centred than pinned to the top of
+       a tall box. If this set ever swallows every kind, that is the
+       regression. */
+    expect(visual).toMatch(/const GROWS = new Set<Visual\['kind'\]>\(\[/)
+    expect(visual).toMatch(/if \(grow && GROWS\.has\(visual\.kind\)\) \{/)
   })
 })
 

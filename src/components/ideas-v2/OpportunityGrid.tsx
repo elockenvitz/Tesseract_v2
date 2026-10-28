@@ -500,7 +500,11 @@ export function OpportunityTile({
            against 178px and the gallery renders them at 421px narrow and
            881px wide, where a fixed-height track becomes a hairline and a
            two-ended label row becomes two captions in opposite corners. */
-        node: <ExploreVisualBlock visual={visual} now={Date.now()} density="tile" />,
+        /* `fill`: the grid stretches this tile to its row, the box above is
+           `flex-1`, and the picture is the last link in that chain. Without
+           it the archetype sits at its minimum in the middle of a box it was
+           given room to grow into. */
+        node: <ExploreVisualBlock visual={visual} now={Date.now()} density="tile" fill />,
       })
     }
     if (drawsPrice) {
@@ -575,7 +579,13 @@ export function OpportunityTile({
       <TileReason>{item.title}</TileReason>
 
       {panels.length > 0 && (
-        <div className={clsx('min-w-0', big ? 'mt-3' : 'mt-2')}>
+        /* `flex-1` and `min-h-0`: the picture is what takes a row's spare
+           height. The grid stretches tiles to the tallest in the row again,
+           and this is the element that wants the difference -- everything
+           above it (identity, the reason sentence) is as tall as its text and
+           the pager below is fixed. Without `min-h-0` a flex child refuses to
+           shrink past its content and the tile would overflow its row. */
+        <div className={clsx('flex min-h-0 min-w-0 flex-1 flex-col', big ? 'mt-3' : 'mt-2')}>
           {/*
             One panel's worth of room, whichever panel is showing.
 
@@ -605,8 +615,17 @@ export function OpportunityTile({
              * above is the gap -- so there is nothing left to collapse, and a
              * flex parent would not collapse it anyway.
              */
-            className="flex min-w-0 flex-col justify-center"
-            style={{ height: panels.length > 1 ? panelBox : undefined }}
+            /* A FLOOR, not a height.
+             *
+             * `panelBox` still sizes the box to the tallest panel, so paging
+             * the carousel never relayouts the page -- that part was right
+             * and the reason is above. But it was an exact `height`, and an
+             * exact height cannot grow, so a tile stretched to a tall
+             * neighbour put the difference under the picture instead of in
+             * it. As `minHeight` on a `flex-1` box the floor still holds and
+             * the ceiling is gone. */
+            className="flex min-h-0 min-w-0 flex-1 flex-col justify-center"
+            style={{ minHeight: panels.length > 1 ? panelBox : undefined }}
             data-testid="opportunity-visual"
             data-panel={panels[shown].key}
           >

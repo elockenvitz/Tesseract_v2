@@ -34,7 +34,7 @@
  *                            archetype that prompted the change.
  */
 import { describe, it, expect } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, fireEvent } from '@testing-library/react'
 import { ExploreVisualBlock } from '../ExploreVisual'
 import type { ExploreVisual } from '../../../lib/mobile/explore-visual'
 
@@ -146,5 +146,165 @@ describe('the one picture that is not bounded', () => {
   it('still draws nothing when no series was injected', () => {
     const { container } = render(<ExploreVisualBlock visual={{ kind: 'price_trend' }} density="tile" />)
     expect(container.innerHTML).toBe('')
+  })
+})
+
+/*
+ * ── The picture takes the room the tile was stretched to ──────────────────
+ *
+ * The grid stretches a tile to its row again, so the card is as tall as its
+ * tallest neighbour. `fill` is what stops that height being void: the
+ * archetypes that can use it say so, and the scenario axis stops being
+ * bounded because its labels moved onto their own marks.
+ *
+ * Measured in the running app at 1920x889, first row: 418 / 303 / 303 before,
+ * 418 / 418 / 418 after with `maxSpread` 0 across all sixteen rows, and the
+ * range picture 881px wide where it had been 520 in an 881px box.
+ *
+ * jsdom still performs no layout, so what is asserted is the markup those
+ * measurements depend on.
+ */
+const fillDraw = (visual: ExploreVisual) => {
+  const { container } = render(
+    <ExploreVisualBlock visual={visual} now={NOW} density="tile" fill />,
+  )
+  const root = container.querySelector('[data-explore-visual]')
+  if (!root) throw new Error(`${visual.kind} drew nothing`)
+  return { container, root }
+}
+
+describe('a filling tile', () => {
+  it('lets the scenario axis off the measure, and nothing else', () => {
+    /* The cap exists to keep a LABEL PAIR readable. This archetype no longer
+       has one -- each case names itself under its own tick -- so width now
+       separates the cases instead of being spent on void. Every other kind
+       keeps its two-ended row and keeps the cap with it. */
+    expect(fillDraw(EVERY[0]).container.querySelector('[class*="max-w-[520px]"]')).toBeNull()
+    for (const v of EVERY.slice(1)) {
+      expect(fillDraw(v).container.querySelector('[class*="max-w-[520px]"]')).toBeTruthy()
+    }
+  })
+
+  it('thickens the band past what a bounded tile draws', () => {
+    const band = fillDraw(EVERY[0]).root.querySelector('[data-scenario-band]')
+    expect(band?.className).toContain('h-[34%]')
+    /* A floor and a ceiling, so a phone-sized box keeps its shape and a very
+       tall tile gets a thicker bar rather than a slab. */
+    expect(band?.className).toContain('min-h-[10px]')
+    expect(band?.className).toContain('max-h-[22px]')
+  })
+
+  it('names every mark under its own position', () => {
+    const labels = [...fillDraw(EVERY[0]).root.querySelectorAll('[data-scenario-label]')]
+    expect(labels.map(l => l.getAttribute('data-scenario-label')))
+      .toEqual(['Bear', 'Bull', 'current'])
+    /* Positioned, not laid out in a row: that is what uses the width. */
+    for (const l of labels) expect((l as HTMLElement).style.left).toMatch(/%$/)
+  })
+
+  it('writes every price in the row the same way', () => {
+    /* `money` keeps cents below $100 and drops them above, which nobody saw
+       while the two labels sat in opposite corners. Under their own marks
+       they are a row, and AMZN read "BEAR $90.00 · BASE $120 · BULL $180". */
+    const mixed: ExploreVisual = {
+      kind: 'scenario_range', low: 90, high: 180, current: 255,
+      cases: [{ label: 'Bear', price: 90 }, { label: 'Bull', price: 180 }],
+    }
+    const text = [...fillDraw(mixed).root.querySelectorAll('[data-scenario-label]')]
+      .map(l => l.textContent)
+    expect(text).toEqual(['Bear $90', 'Bull $180', '$255'])
+
+    /* And still cents where every mark is under $100, or this "fix" would
+       round a penny stock's whole range to the same dollar. */
+    const penny: ExploreVisual = {
+      kind: 'scenario_range', low: 2.5, high: 4, current: 3.25,
+      cases: [{ label: 'Bear', price: 2.5 }],
+    }
+    expect([...fillDraw(penny).root.querySelectorAll('[data-scenario-label]')]
+      .map(l => l.textContent)).toEqual(['Bear $2.50', '$3.25'])
+  })
+
+  it('shows the lines that fit instead of a fixed count of them', () => {
+    for (const [v, clamp] of [[EVERY[9], 'line-clamp-4'], [EVERY[10], 'line-clamp-3']] as const) {
+      const p = fillDraw(v).root.querySelector('p')
+      expect(p?.className).not.toContain(clamp)
+      expect(p?.className).toContain('flex-1')
+    }
+  })
+})
+
+describe('the scenario axis answers when asked, and only on a desktop', () => {
+  it('gives every mark a press target and a name', () => {
+    const { root } = fillDraw(EVERY[0])
+    const marks = [...root.querySelectorAll('button[data-scenario-mark]')]
+    expect(marks.map(m => m.getAttribute('aria-label')))
+      .toEqual(['Bear $120', 'Bull $180', 'Last price $249'])
+    /* The hit area is the button; the 1px tick it wraps is the picture. A
+       1px press target is not one. */
+    expect(marks[0].querySelector('[data-scenario-case="Bear"]')).toBeTruthy()
+  })
+
+  it('reports the mark the reader is pointing at', () => {
+    const { root } = fillDraw(EVERY[0])
+    const bear = root.querySelector('button[aria-label="Bear $120"]')!
+    fireEvent.mouseEnter(bear)
+    expect(root.textContent).toContain('$120')
+    /* Distance from the last price, which is the question a case prompts. */
+    expect(root.textContent).toContain('+108% vs last')
+    fireEvent.mouseLeave(bear)
+    expect(root.textContent).not.toContain('+108% vs last')
+  })
+
+  it('answers the keyboard the same way', () => {
+    const { root } = fillDraw(EVERY[0])
+    const bull = root.querySelector('button[aria-label="Bull $180"]')!
+    fireEvent.focus(bull)
+    expect(root.textContent).toContain('$180')
+    fireEvent.blur(bull)
+    expect(root.textContent).not.toContain('+38% vs last')
+  })
+
+  it('holds the readout row open so pointing never moves the card', () => {
+    /*
+     * The trap this change set for itself. A card INSIDE its range has no
+     * deviation to lead with, so the readout row was absent -- and the first
+     * hover inserted a row, pushing the axis down under the cursor. Caught
+     * live, not here: jsdom has no layout. What is pinned is the reservation.
+     */
+    const inside: ExploreVisual = {
+      kind: 'scenario_range', low: 120, high: 180, current: 150,
+      cases: [{ label: 'Bear', price: 120 }, { label: 'Bull', price: 180 }],
+    }
+    const { root } = fillDraw(inside)
+    const slot = root.firstElementChild as HTMLElement
+    expect(slot.textContent).toBe('')
+    expect(slot.style.minHeight).toBe('20px')
+  })
+
+  it('does not claim a breach on a price that is inside the range', () => {
+    /*
+     * Found by the test above, not by review. `deviation` is computed against
+     * `low` whenever the price is not above `high`, so it is a positive
+     * number for an in-range card and says "below your range" about a price
+     * that is nowhere near it. The outer `outside &&` used to hide that, and
+     * holding the row open for hover removed the gate without replacing it.
+     */
+    const inside: ExploreVisual = {
+      kind: 'scenario_range', low: 120, high: 180, current: 150,
+      cases: [{ label: 'Bear', price: 120 }],
+    }
+    expect(fillDraw(inside).root.querySelector('[data-scenario-deviation]')).toBeNull()
+    /* Still drawn where it IS a breach, or this test passes by drawing
+       nothing at all. */
+    expect(fillDraw(EVERY[0]).root.querySelector('[data-scenario-deviation]')).toBeTruthy()
+  })
+
+  it('leaves the phone inert, because a card there is one tap target', () => {
+    /* `card` density keeps no handlers at all: a child that captures a drag
+       competes with the grid's own scroll. The flag that opens this is the
+       density, never `fill`. */
+    const { root } = draw(EVERY[0])
+    expect(root.querySelectorAll('button')).toHaveLength(0)
+    expect(root.querySelector('[data-scenario-current]')).toBeTruthy()
   })
 })
