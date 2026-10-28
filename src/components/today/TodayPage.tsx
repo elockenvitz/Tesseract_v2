@@ -305,7 +305,21 @@ function toRailCard(item: TodayItem): RailCard {
     : supporting.length
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 pb-12 dark:bg-[#0b0f16]">{/* Layout gives full-width tabs `overflow-hidden` on an h-full box, so a
+    /*
+      The page is the MAT, not the card.
+
+      It was `bg-gray-50/60` -- gray-50 at 60% over white, which computes to
+      about #fcfcfd. The tiles are `bg-white` with a gray-200 hairline, so the
+      only thing separating a tile from the page was a 1px line at roughly 3%
+      of the way to black: the field read as one continuous sheet of white
+      with faint boxes drawn on it, and nothing on the page had a figure and
+      a ground.
+
+      gray-100 is the first step that actually reads as a surface behind the
+      cards. The cards stay white and gain their edge for free, because the
+      contrast now comes from the fill rather than the hairline.
+    */
+    <div className="h-full overflow-y-auto bg-gray-100 pb-12 dark:bg-[#070a10]">{/* Layout gives full-width tabs `overflow-hidden` on an h-full box, so a
           full-width surface must own its own scrolling. min-h-full clipped
           everything past the fold with no way to reach it. */}
       {/*
@@ -593,7 +607,7 @@ function ScanUnavailable() {
 
 function Cleared({ evaluated, suppressed }: { evaluated: number; suppressed: number }) {
   return (
-    <div className="mx-6 mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">
+    <div className="mx-6 mt-4 rounded-xl border border-gray-300 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.12] dark:bg-[#161d2a]">
       <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600 dark:text-emerald-400" />
       <h2 className="mt-4 text-[18px] font-semibold tracking-tight text-gray-900 dark:text-gray-50">
         You're current.
@@ -626,8 +640,8 @@ const SKELETON_H = { lead: 326, supporting: 242 } as const
 
 function Loading() {
   const box = clsx(
-    'animate-pulse rounded-[3px] border border-gray-200 bg-white',
-    'dark:border-white/[0.08] dark:bg-[#141a25]',
+    'animate-pulse rounded-[3px] border border-gray-300 bg-white',
+    'dark:border-white/[0.12] dark:bg-[#161d2a]',
   )
   return (
     <div

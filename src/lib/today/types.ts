@@ -125,6 +125,15 @@ export interface TodayItem {
   seedPrompt: string | null
 
   visual: TodayVisual
+  /**
+   * Every picture this finding can draw, best first — `visuals[0]` is always
+   * `visual`, so a reader that only wants the finding's own choice keeps using
+   * `visual` and sees no change.
+   *
+   * Optional because only enrichment can build alternatives: an unenriched
+   * item has exactly one panel, and an absent list means "just `visual`".
+   */
+  visuals?: TodayVisual[]
   /** Kept so the tile can dispatch the engine's own CTAs unchanged. */
   source: DecisionItem
 }

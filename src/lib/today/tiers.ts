@@ -157,16 +157,24 @@ export function compareTodayItems(a: TodayItem, b: TodayItem): number {
  * limit is real and is reported as evaluated-but-not-surfaced rather than
  * hidden.
  *
- * EIGHT, not four. Four was the approved composition -- one featured plus
- * three supporting -- and on a real desk it left findings the reader wanted
- * sitting under "Also watching", which is a summary line, not a surface.
- *
- * Eight is the next count that fills the grid exactly. The lead takes eight
+ * TWENTY, and the arithmetic is still the grid's. The lead takes eight
  * columns and #2 rides the four beside it; every tile after that is a third
- * of a row, so a clean field needs the remainder to be a multiple of three:
- * 1 + 1 + 3 + 3. Five or seven would end on a row with a hole in it.
+ * of a row, so a clean field needs the remainder to be a multiple of three.
+ * 1 + 1 + 18 does that, the same way 1 + 1 + 6 did at eight.
+ *
+ * It went 4 -> 8 -> 20 for the same reason each time, and the reason is not
+ * "more is better". Four was the approved composition, one featured plus
+ * three supporting, and on a real desk it left findings the reader WANTED
+ * sitting under "Also watching" -- a summary line, not a surface. Eight
+ * cleared the fold and stopped there, which made Today a page that ends: a
+ * reader who had worked through it had no way to keep going except to leave.
+ *
+ * Twenty is a page you can scroll through. It is still finite, still ranked,
+ * and nothing is promoted to fill it -- a desk with six real findings shows
+ * six. The cost of a high limit is paid in rows that do not exist, not in
+ * invented content, which is why the number can be generous.
  */
-export const TODAY_LIMIT = 8
+export const TODAY_LIMIT = 20
 
 export interface TodaySelection {
   surfaced: TodayItem[]

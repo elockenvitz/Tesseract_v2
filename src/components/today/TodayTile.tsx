@@ -76,6 +76,24 @@ const QUIET_REVEAL =
  */
 const QUIET = 'rounded-md px-2.5 py-2 text-[12px]'
 
+/**
+ * What each panel is called on the pager.
+ *
+ * One word, and the reader's word rather than the engine's: the archetype
+ * names are internal ("review-window", "expected-return") and the captions
+ * are whole sentences. The tab only has to say which question the next panel
+ * answers, because the caption inside the panel then says it in full.
+ */
+const PANEL_LABEL: Record<string, string> = {
+  'review-window': 'Price',
+  scenario: 'Cases',
+  aging: 'Age',
+  transition: 'Change',
+  'expected-return': 'Upside',
+  exposure: 'Weight',
+  metrics: '—',
+}
+
 export function toneFor(item: TodayItem): SemanticTone {
   const key = item.source.titleKey
   if (key && TONE_BY_KEY[key]) return TONE_BY_KEY[key]
@@ -151,16 +169,34 @@ export function TodayTile({
    * composed, so a featured item with nothing to draw does not reserve half
    * its width for an empty column.
    */
-  const hasVisual = item.visual.archetype !== 'metrics'
+  /*
+   * EVERY picture this finding can draw, and which one is showing.
+   *
+   * `item.visual` is still the finding's own choice and still leads, so the
+   * default card is byte-for-byte what it was. What changes is that the
+   * alternatives enrichment built are now reachable: a tile about an idea
+   * nobody has sized led with its open-for bar and offered no way to ask what
+   * the price had done, even though the history was already in hand.
+   *
+   * The strip is only drawn when there is more than one panel -- it is never a
+   * single dead tab -- and the index is clamped rather than reset, so a panel
+   * list that shortens between renders cannot blank the slot.
+   */
+  const panels = (item.visuals?.length ? item.visuals : [item.visual])
+    .filter(v => v.archetype !== 'metrics')
+  const [panelIndex, setPanelIndex] = useState(0)
+  const panel = panels[Math.min(panelIndex, panels.length - 1)] ?? item.visual
+
+  const hasVisual = panels.length > 0
 
   /**
    * Where this card's visual leads.
    *
-   * Derived from what it actually draws. A scenario band is the desk's own
-   * framework; everything else the Today visuals draw is a price path or a
-   * quantity measured against one, so it leads to price work.
+   * Derived from what it actually draws — the panel ON SCREEN, not the
+   * finding's default, so paging to the price path makes the portal open the
+   * chart rather than the cases.
    */
-  const visualIntent: FocusIntent = item.visual.archetype === 'scenario' ? 'framework' : 'price'
+  const visualIntent: FocusIntent = panel.archetype === 'scenario' ? 'framework' : 'price'
 
   /*
    * What Ask AI and Discuss are about, from what the reader last reached for.
@@ -254,11 +290,17 @@ export function TodayTile({
            from inside this box, and clipping it to the card cut the dropdown
            off -- the snooze presets were unreachable on every tile. The
            analysis slot does its own clipping, so nothing else needed it. */
+        /* The card's edge is a real line now, not a suggestion of one.
+           gray-200 against a gray-50/60 page was a ~3% step, which is inside
+           the range a cheap monitor renders as nothing at all; the page is
+           gray-100 and the hairline gray-300, so the boundary survives both
+           a bad screen and a bright room. Critical keeps its rose edge and
+           gains the same weight. */
         'group relative flex h-full min-w-0 flex-col rounded-[3px] border bg-white',
-        'transition-colors duration-100 dark:bg-[#141a25]',
+        'transition-colors duration-100 dark:bg-[#161d2a]',
         toneFor(item) === 'critical'
-          ? 'border-rose-200/80 dark:border-rose-900/40'
-          : 'border-gray-200 dark:border-white/[0.08]',
+          ? 'border-rose-300 dark:border-rose-900/60'
+          : 'border-gray-300 dark:border-white/[0.12]',
       )}
     >
       {/*
@@ -367,9 +409,20 @@ export function TodayTile({
           // slack. It is margin, not a reserved row -- a tile with room to
           // spare spends it on the content, not on a band of empty chrome.
           'flex-1 px-3.5 pb-3 pt-1.5',
-          split
-            ? 'grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]'
-            : 'flex flex-col gap-2',
+          split && 'grid grid-cols-1 gap-4',
+          !split && 'flex flex-col gap-2',
+          /*
+            The lead gives the chart the wider half, the rest keep the text
+            wider. On a 1233px lead, 1fr/0.9fr put ~650px under a 115-character
+            claim -- one short line across a very long measure, which is both
+            a bad line length and the reason the text column could not fill
+            its own height. Flipping the ratio sets the claim at a readable
+            measure (it wraps, and the column grows into the slack) and hands
+            the ~70px saved to the chart, which is where it does the most good.
+          */
+          split && (featured
+            ? 'lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]'
+            : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]'),
           // No visual, but a wide column: stop at a readable measure instead of
           // setting a claim 150 characters to the line.
           !split && (wide || featured) && 'lg:max-w-[86ch]',
@@ -419,7 +472,9 @@ export function TodayTile({
               // The lead is set at the lead's weight. It had the same 13px
               // sentence as a quarter-width tile and 140px of white under it:
               // the most important finding on the page, typeset as the least.
-              featured ? 'text-[15px]' : 'text-[12px]',
+              // 17px over a ~460px measure sets it at three lines, which is
+              // both the right line length and ~40px of the hole it sat in.
+              featured ? 'text-[17px] leading-relaxed' : 'text-[12px]',
             )}
           >
             {item.claim}
@@ -442,15 +497,33 @@ export function TodayTile({
               floating in a wide box.
             */
             <div className={clsx(
-              'flex flex-wrap items-baseline gap-x-8 gap-y-3',
               !split && item.metrics.length <= 2 && 'lg:max-w-[520px]',
+              /*
+                On the lead, the figures are a BLOCK, not a strip.
+
+                Measured at 1920x889: the lead's text column ran 85px to 363px
+                and held 81px of content -- a 41px claim at the top, a 40px
+                row of figures at the foot, and 197px of nothing between them.
+                `justify-between` was dividing emptiness, not laying anything
+                out, because the tile's height is set by the chart beside it
+                and the text had no way to reach it.
+
+                Four figures in two rows at the lead's own weight close most
+                of that with the item's real content. Nothing is invented: it
+                is the same four numbers, set the way the lead's claim is
+                already set -- the biggest tile on the page should not typeset
+                its evidence at the size a quarter-width tile uses.
+              */
+              featured
+                ? 'grid grid-cols-2 gap-x-8 gap-y-7'
+                : 'flex flex-wrap items-baseline gap-x-8 gap-y-3',
             )}>
               {item.metrics.map(m => (
                 <div key={m.label} className="min-w-0">
                   <span
                     className={clsx(
                       'block truncate font-mono font-semibold leading-none tabular-nums tracking-[-0.01em]',
-                      featured ? 'text-[22px]' : 'text-[17px]',
+                      featured ? 'text-[26px]' : 'text-[17px]',
                       m.tone === 'down' && 'text-rose-600 dark:text-rose-400',
                       m.tone === 'up' && 'text-emerald-600 dark:text-emerald-400',
                       m.tone === 'warn' && 'text-amber-700 dark:text-amber-400',
@@ -484,24 +557,59 @@ export function TodayTile({
             data-no-portal
             onPointerEnter={() => setEngageIntent(visualIntent)}
           >
-            <TodayVisual visual={item.visual} compact={!featured} />
-            <button
-              type="button"
-              data-testid="visual-portal"
-              onClick={e => { e.stopPropagation(); openObject(e.currentTarget, visualIntent) }}
-              className="mt-1 rounded-sm text-[10px] font-semibold uppercase tracking-widest text-gray-400 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:hover:text-blue-400"
-            >
-              {/*
-                It names the OBJECT, not the archive.
+            <TodayVisual visual={panel} compact={!featured} />
+            {/*
+              The pager and the portal share one row, so paging costs no
+              height inside the fixed visual slot -- the slot is what holds
+              Today at zero layout shift, and a strip above the chart would
+              have eaten into the plot on every tile to serve the tiles that
+              have a second panel.
+            */}
+            <div className="mt-1 flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="visual-portal"
+                onClick={e => { e.stopPropagation(); openObject(e.currentTarget, visualIntent) }}
+                className="rounded-sm text-[10px] font-semibold uppercase tracking-widest text-gray-400 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:hover:text-blue-400"
+              >
+                {/*
+                  It names the OBJECT, not the archive.
 
-                "Open price history" sounded like a log of past prices -- a
-                record you look things up in -- when what it opens is this
-                name's research page with the full chart on it. The framework
-                half had the same fault at a lower volume: "framework" is the
-                engine's word for the desk's own bear/base/bull cases.
-              */}
-              {visualIntent === 'framework' ? 'See the price cases' : 'See the full chart'}
-            </button>
+                  "Open price history" sounded like a log of past prices -- a
+                  record you look things up in -- when what it opens is this
+                  name's research page with the full chart on it. The framework
+                  half had the same fault at a lower volume: "framework" is the
+                  engine's word for the desk's own bear/base/bull cases.
+                */}
+                {visualIntent === 'framework' ? 'See the price cases' : 'See the full chart'}
+              </button>
+              {panels.length > 1 && (
+                <div
+                  data-testid="visual-pager"
+                  className="ml-auto flex items-center gap-1"
+                >
+                  {panels.map((v, i) => (
+                    <button
+                      key={`${v.archetype}-${i}`}
+                      type="button"
+                      data-testid="visual-pager-tab"
+                      data-archetype={v.archetype}
+                      aria-pressed={i === Math.min(panelIndex, panels.length - 1)}
+                      onClick={e => { e.stopPropagation(); setPanelIndex(i) }}
+                      className={clsx(
+                        'rounded-sm px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest',
+                        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600',
+                        i === Math.min(panelIndex, panels.length - 1)
+                          ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                          : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/10 dark:hover:text-gray-200',
+                      )}
+                    >
+                      {PANEL_LABEL[v.archetype]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -572,7 +680,8 @@ export function TodayTile({
           */
           'absolute right-0 top-0 z-10 flex flex-wrap items-center justify-end gap-1 px-3 pb-5 pt-2',
           'bg-gradient-to-b from-white via-white via-70% to-transparent',
-          'dark:from-[#141a25] dark:via-[#141a25]',
+          /* Must track the card fill exactly, or the scrim shows as a band. */
+          'dark:from-[#161d2a] dark:via-[#161d2a]',
           QUIET_REVEAL,
         )}
       >

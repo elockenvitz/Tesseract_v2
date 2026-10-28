@@ -155,7 +155,19 @@ describe('real findings always win', () => {
     // asserting the old count, not the rule.
     env.engine.action = Array.from({ length: TODAY_LIMIT }, (_, i) => finding(i + 1))
     render(<TodayPage />)
-    expect(tickers()).toEqual(Array.from({ length: TODAY_LIMIT }, (_, i) => `R${i + 1}`))
+    /*
+     * The SET, not the sequence.
+     *
+     * This compared against `R1..R20` in numeric order, which only ever held
+     * because the limit was single-digit: these findings tie on every ranking
+     * key, so the comparator falls through to `id.localeCompare`, and once
+     * there is an R10 it sorts before R2. The rule under test is that real
+     * findings leave no room for coverage backfill -- their order among
+     * themselves is a different rule, tested in tiers.
+     */
+    expect(new Set(tickers()))
+      .toEqual(new Set(Array.from({ length: TODAY_LIMIT }, (_, i) => `R${i + 1}`)))
+    expect(tickers()).toHaveLength(TODAY_LIMIT)
   })
 
   it('gives way one slot at a time as real findings arrive', () => {

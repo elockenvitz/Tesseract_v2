@@ -418,3 +418,60 @@ describe('the analysis zone is one fixed slot', () => {
   })
 
 })
+
+/**
+ * Paging between the pictures a finding can draw.
+ *
+ * The data half of this is enrichment's (`visuals`); what the tile owes the
+ * reader is a way to reach the alternatives without leaving the card, and a
+ * promise that reaching for them does not move the page.
+ */
+describe('a tile pages between its pictures', () => {
+  /** A finding whose price path leads and whose framework is one tab away. */
+  const two = () => {
+    const item = adaptDecisionItem(decision())
+    const price = { archetype: 'review-window' as const, caption: 'Price since the thesis', window: '210d',
+      reviewWindow: { series: [100, 110, 130], changePct: 30, reachesAnchor: true, anchorLabel: 'thesis' } }
+    const cases = { archetype: 'scenario' as const, caption: 'Price against the framework', window: '3 cases',
+      scenario: { cases: [{ name: 'Bear', price: 90 }, { name: 'Bull', price: 180 }], spot: 130 } }
+    return { ...item, visual: price, visuals: [price, cases] }
+  }
+
+  it('draws one tab per picture, named for the question it answers', () => {
+    renderTile(decision(), { item: two() } as never)
+    const tabs = screen.getAllByTestId('visual-pager-tab')
+    expect(tabs.map(t => t.getAttribute('data-archetype'))).toEqual(['review-window', 'scenario'])
+    expect(tabs.map(t => (t.textContent ?? '').trim())).toEqual(['Price', 'Cases'])
+  })
+
+  it('swaps the picture, and the portal follows it', () => {
+    // Paging to the framework must not leave a portal still offering the
+    // chart -- the control under a picture has to open what is drawn.
+    const { container } = renderTile(decision(), { item: two() } as never)
+    expect(container.querySelector('[data-archetype]')?.getAttribute('data-archetype'))
+      .toBe('review-window')
+    expect(screen.getByTestId('visual-portal').textContent).toMatch(/full chart/i)
+
+    fireEvent.click(screen.getAllByTestId('visual-pager-tab')[1])
+
+    expect(container.querySelector('[data-archetype]')?.getAttribute('data-archetype'))
+      .toBe('scenario')
+    expect(screen.getByTestId('visual-portal').textContent).toMatch(/price cases/i)
+  })
+
+  it('costs no height: the slot is the same before and after a swap', () => {
+    // The whole reason the strip shares the portal's row.
+    const { container } = renderTile(decision(), { item: two(), featured: true } as never)
+    const h = () => (container.querySelector('[data-archetype]') as HTMLElement).style.height
+    const before = h()
+    fireEvent.click(screen.getAllByTestId('visual-pager-tab')[1])
+    expect(h()).toBe(before)
+    expect(before).toBe(`${VISUAL_SLOT.featured}px`)
+  })
+
+  it('draws no strip for a tile with one picture', () => {
+    // A single dead tab is worse than no tab: it implies something to page to.
+    renderTile()
+    expect(screen.queryByTestId('visual-pager')).not.toBeInTheDocument()
+  })
+})

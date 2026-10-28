@@ -97,3 +97,109 @@ describe('the picture follows the finding', () => {
     expect(kinds.size).toBeGreaterThan(1)
   })
 })
+
+/**
+ * The alternatives, which used to be built and thrown away.
+ *
+ * Choosing one picture is right. DISCARDING the rest was not: the data for
+ * the other panels was already in hand, so a reader who wanted to ask the
+ * card a second question -- "fine, but what has the price done?" -- had to
+ * leave the card to do it.
+ */
+describe('a tile keeps every picture it can draw', () => {
+  const panels = (spot: number) =>
+    applyEnrichment(adaptDecisionItem(staleThesis()), enrich(spot)).visuals ?? []
+
+  it('leads with the finding\'s own choice', () => {
+    // The contract every existing reader of `visual` depends on.
+    for (const spot of [248, 130, 70]) {
+      expect(panels(spot)[0]).toEqual(drawn(spot))
+    }
+  })
+
+  it('offers the framework behind a tile that leads with the price path', () => {
+    // Inside the range the band does not earn the tile -- but the ladder
+    // exists, so the reader can still ask to see it.
+    const p = panels(130)
+    expect(p[0].archetype).toBe('review-window')
+    expect(p.map(v => v.archetype)).toContain('scenario')
+  })
+
+  it('offers the price path behind a tile that leads with the framework', () => {
+    const p = panels(248)
+    expect(p[0].archetype).toBe('scenario')
+    expect(p.map(v => v.archetype)).toContain('review-window')
+  })
+
+  it('never repeats an archetype', () => {
+    const kinds = panels(130).map(v => v.archetype)
+    expect(new Set(kinds).size).toBe(kinds.length)
+  })
+
+  it('invents nothing: no ladder means no framework panel', () => {
+    // The guard against a pager that pads itself to look richer.
+    const p = applyEnrichment(
+      adaptDecisionItem(staleThesis()),
+      { spot: 130, history: history(130) },
+    ).visuals ?? []
+    expect(p.map(v => v.archetype)).not.toContain('scenario')
+    expect(p[0].archetype).toBe('review-window')
+  })
+
+  it('invents nothing: no history means no price panel', () => {
+    const p = applyEnrichment(
+      adaptDecisionItem(staleThesis()),
+      { spot: 130, ladder: LADDER },
+    ).visuals ?? []
+    expect(p.map(v => v.archetype)).not.toContain('review-window')
+    expect(p[0].archetype).toBe('scenario')
+  })
+
+  it('never offers the archetype that draws nothing', () => {
+    expect(panels(130).map(v => v.archetype)).not.toContain('metrics')
+  })
+})
+
+/**
+ * A bar of elapsed time never beats a price path.
+ *
+ * Measured on the live desk: the two "idea being worked on" tiles drew
+ * "OPEN FOR / 228 days" over a track with a dot on it, directly beneath a
+ * metric reading "228d OPEN" -- the picture restated the figure. NKE's price
+ * had moved -19% since the idea was opened, the strip said so, and the
+ * history to draw it was already in hand.
+ */
+describe('the age bar is the last resort, not the default', () => {
+  /** An idea nobody has sized. Its key is deliberately NOT in DRAWS_WINDOW. */
+  const openIdea = (): DecisionItem => ({
+    id: 'idea-nosim-a-nke', surface: 'action', severity: 'yellow', category: 'alpha',
+    title: 'Idea Being Worked On', titleKey: 'IDEA_NOT_SIMULATED', description: 'x',
+    chips: [{ label: 'Ticker', value: 'NKE' }, { label: 'Open', value: '228d' }],
+    context: { assetId: 'a-nke', assetTicker: 'NKE' },
+    ctas: [{ label: 'Simulate idea', actionKey: 'OPEN_TRADE_LAB', kind: 'primary' }],
+    sortScore: 0, createdAt: ago(228),
+  } as DecisionItem)
+
+  it('draws the price path for a finding that is not on the window list', () => {
+    const v = applyEnrichment(
+      adaptDecisionItem(openIdea()),
+      { spot: 70, history: history(70) },
+    ).visual
+    expect(v.archetype).toBe('review-window')
+  })
+
+  it('still draws the bar when there is no price to draw', () => {
+    // TGT: an open idea on a name with no history. The bar is then the only
+    // honest answer, and one picture beats none.
+    const v = applyEnrichment(adaptDecisionItem(openIdea()), { spot: 70 }).visual
+    expect(v.archetype).toBe('aging')
+  })
+
+  it('keeps the age reachable behind the price path', () => {
+    const p = applyEnrichment(
+      adaptDecisionItem(openIdea()),
+      { spot: 70, history: history(70) },
+    ).visuals ?? []
+    expect(p.map(v => v.archetype)).toEqual(['review-window', 'aging'])
+  })
+})
