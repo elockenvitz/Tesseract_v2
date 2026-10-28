@@ -256,7 +256,37 @@ function enrichVisual(
   item: TodayItem, e: TodayEnrichment, w: PriceWindow | null, ageDays: number | null,
 ): TodayVisual {
   const spot = e.spot
-  if (e.ladder?.valid && spot != null) {
+
+  /*
+   * WHICH PICTURE, and why it is not always the same one.
+   *
+   * The ladder branch used to win outright: any name with a valid price
+   * ladder drew the framework band, whatever had actually happened to it.
+   * Measured on the live desk at 1920x889, three of Today's four tiles were
+   * "THESIS MAY BE STALE" over three identical "PRICE AGAINST THE FRAMEWORK"
+   * bands, two of them captioned "The price sits inside the framework" -- a
+   * chart drawn to report that nothing had broken.
+   *
+   * The band earns the tile when the price has LEFT the range the desk
+   * underwrote: that is a fact about the desk's own thinking being overtaken,
+   * and it is the whole reason the finding matters. When the price is still
+   * inside the framework, the band has nothing to say, and the question a
+   * stale thesis actually raises -- what has the price done since you last
+   * wrote? -- is the price path from the anchor.
+   *
+   * So the picture follows the finding, and the field varies because the
+   * desk's situations vary, not because anything was shuffled to look varied.
+   */
+  const breached = (() => {
+    if (!e.ladder?.valid || spot == null) return false
+    const prices = e.ladder.cases.map(c => c.price).filter(p => Number.isFinite(p))
+    if (prices.length < 2) return false
+    return spot > Math.max(...prices) || spot < Math.min(...prices)
+  })()
+
+  const drawsWindow = !!w && DRAWS_WINDOW.has(item.source.titleKey ?? '')
+
+  if (e.ladder?.valid && spot != null && (breached || !drawsWindow)) {
     const prices = e.ladder.cases.map(c => c.price).filter(p => Number.isFinite(p))
     if (prices.length >= 2) {
       const bull = Math.max(...prices)
@@ -291,7 +321,7 @@ function enrichVisual(
   }
 
   const anchor = eventOf(item).anchor
-  if (w && DRAWS_WINDOW.has(item.source.titleKey ?? '')) {
+  if (w && drawsWindow) {
     return {
       archetype: 'review-window',
       caption: w.reachesAnchor ? `Price since ${anchor.since}` : 'Price over available history',

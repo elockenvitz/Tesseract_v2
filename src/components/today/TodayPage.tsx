@@ -617,7 +617,7 @@ function Cleared({ evaluated, suppressed }: { evaluated: number; suppressed: num
  *
  * Same grid, same spans, same radius, measured heights.
  */
-const SKELETON_H = { lead: 331, supporting: 247 } as const
+const SKELETON_H = { lead: 326, supporting: 242 } as const
 
 function Loading() {
   const box = clsx(

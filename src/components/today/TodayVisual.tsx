@@ -311,7 +311,20 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
    * readability, not symmetry -- if a tile ever needs a taller plot than its
    * prose, the plot wins.
    */
-  const h = compact ? 84 : 118
+  /*
+   * Sized to the slot, not to a wish.
+   *
+   * The zone is a fixed box now (VISUAL_SLOT), and this plot was built back
+   * when it could push the card as tall as it liked. At 84 the compact
+   * version needed 84 + a 24px read-out under a 20px caption inside a 126px
+   * slot with 8px of padding: ten pixels too many, and `overflow-hidden`
+   * took them off the bottom -- so TSLA's "-7.0%" and AAPL's "+27.6%", the
+   * one number the chart exists to state, were sliced in half.
+   *
+   *   compact   126 - 8 padding - 20 caption - 24 read-out = 74
+   *   featured  186 - 12        - 20         - 24          = 130
+   */
+  const h = compact ? 72 : 128
   const W = 320
   const min = Math.min(...r.series)
   const max = Math.max(...r.series)

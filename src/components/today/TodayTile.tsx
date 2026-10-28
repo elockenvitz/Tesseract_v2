@@ -391,7 +391,10 @@ export function TodayTile({
               'rounded-sm text-left leading-snug text-gray-600 decoration-gray-400 underline-offset-2',
               'hover:text-gray-900 hover:underline focus-visible:outline focus-visible:outline-2',
               'focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:text-gray-400 dark:hover:text-gray-100',
-              featured ? 'text-[13px]' : 'text-[12px]',
+              // The lead is set at the lead's weight. It had the same 13px
+              // sentence as a quarter-width tile and 140px of white under it:
+              // the most important finding on the page, typeset as the least.
+              featured ? 'text-[15px]' : 'text-[12px]',
             )}
           >
             {item.claim}
@@ -421,7 +424,8 @@ export function TodayTile({
                 <div key={m.label} className="min-w-0">
                   <span
                     className={clsx(
-                      'block truncate font-mono text-[17px] font-semibold leading-none tabular-nums tracking-[-0.01em]',
+                      'block truncate font-mono font-semibold leading-none tabular-nums tracking-[-0.01em]',
+                      featured ? 'text-[22px]' : 'text-[17px]',
                       m.tone === 'down' && 'text-rose-600 dark:text-rose-400',
                       m.tone === 'up' && 'text-emerald-600 dark:text-emerald-400',
                       m.tone === 'warn' && 'text-amber-700 dark:text-amber-400',
@@ -451,7 +455,7 @@ export function TodayTile({
             asks to go there.
           */
           <div
-            className="min-w-0"
+            className="flex min-w-0 flex-col justify-center"
             data-no-portal
             onPointerEnter={() => setEngageIntent(visualIntent)}
           >
