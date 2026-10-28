@@ -589,7 +589,9 @@ export function DesktopTile({
           one, and its single `flex-1` child is the body, which then takes its
           content height instead of a neighbour's.
         */
-        'group flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-[3px] border bg-white text-left',
+        /* `relative`: the action overlay is positioned against the CARD, not
+           against the shelf it used to live in. See `TileActions`. */
+        'group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-[3px] border bg-white text-left',
         'transition-colors duration-100',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
         /*
@@ -632,10 +634,9 @@ export function DesktopTile({
           {eyebrow}
         </div>
         {children}
-        {(context || actions) && (
-          <TileShelf size={size} context={context} actions={actions} />
-        )}
+        {context && <TileShelf size={size} context={context} />}
       </div>
+      {actions && <TileActions size={size}>{actions}</TileActions>}
     </div>
   )
 }
@@ -719,8 +720,9 @@ const SHELF_H: Record<TileSize, string> = {
  * the resting one.
  */
 export function TileShelf({
-  size, context, actions,
-}: { size: TileSize; context?: React.ReactNode; actions?: React.ReactNode }) {
+  size, context,
+}: { size: TileSize; context?: React.ReactNode }) {
+  if (!context) return null
   return (
     <div
       data-testid="tile-shelf"
@@ -729,43 +731,59 @@ export function TileShelf({
         SHELF_H[size],
       )}
     >
-      {context && (
-        <div
-          data-testid="tile-shelf-context"
-          className={clsx(
-            'pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 truncate',
-            'text-[10px] text-gray-500 dark:text-gray-400',
-            'opacity-100 transition-opacity duration-150',
-            /* `:focus-visible`, not `:focus-within` -- see the actions row
-               below: click focus was pinning the swap, so a tile whose
-               button had been clicked showed its actions and hid its
-               context until the reader clicked somewhere else. */
-            actions && 'group-hover:opacity-0 group-has-[:focus-visible]:opacity-0',
-          )}
-        >
-          {context}
-        </div>
+      {/* No longer cross-fades. The verbs moved to the top-right corner (see
+          `TileActions`), so the two layers no longer occupy the same strip
+          and there is nothing to swap: the standing context stays readable
+          while the reader reaches for an action, which is strictly more
+          information than trading one for the other. */}
+      <div
+        data-testid="tile-shelf-context"
+        className={clsx(
+          'pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 truncate',
+          'text-[10px] text-gray-500 dark:text-gray-400',
+        )}
+      >
+        {context}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The verbs, in the corner Today puts them in.
+ *
+ * ── Why they moved ───────────────────────────────────────────────────────
+ *
+ * They were the second layer of the shelf: bottom of the card, left-aligned,
+ * cross-fading with the standing context. Today's have always been top-RIGHT,
+ * right-aligned, over a scrim. Measured on the same screen -- Today's at
+ * (top 1, right 1), Ideas' at (top 375, left 21) on a 418px card -- so the
+ * same gesture on two lenses put the buttons at opposite corners, and the
+ * reader has to look for them twice.
+ *
+ * Today is the reference because it is the lens people land on.
+ *
+ * The scrim is what makes this legal over content: a short white-to-nothing
+ * gradient, so a verb never sits on top of a ticker it cannot be read
+ * against. And the reveal is opacity ONLY, keyed on hover and
+ * `:focus-visible` -- never `:focus-within`, which also matches a button
+ * focused by a mouse click and pinned the row open on every tile whose
+ * controls had been used.
+ */
+export function TileActions({ size, children }: { size: TileSize; children: React.ReactNode }) {
+  return (
+    <div
+      data-testid="tile-shelf-actions"
+      className={clsx(
+        'pointer-events-none absolute right-0 top-0 z-10 flex flex-wrap items-center justify-end gap-1.5',
+        size === 'hero' ? 'px-4 pb-5 pt-3' : size === 'compact' ? 'px-2 pb-4 pt-2' : 'px-3 pb-5 pt-2.5',
+        'bg-gradient-to-b from-white via-white via-70% to-transparent dark:from-[#161d2a] dark:via-[#161d2a]',
+        'opacity-0 transition-opacity duration-150',
+        'group-hover:pointer-events-auto group-hover:opacity-100',
+        'group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100',
       )}
-      {actions && (
-        <div
-          data-testid="tile-shelf-actions"
-          className={clsx(
-            'pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-1.5',
-            'opacity-0 transition-opacity duration-150',
-            'group-hover:pointer-events-auto group-hover:opacity-100',
-            /*
-              `:focus-within` matches a button focused by a MOUSE CLICK, and
-              a clicked button keeps focus until something else takes it --
-              so clicking any control on a tile pinned that tile's shelf open
-              with the pointer nowhere near it. `:focus-visible` is the
-              keyboard reader this was for, and only them.
-            */
-            'group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100',
-          )}
-        >
-          {actions}
-        </div>
-      )}
+    >
+      {children}
     </div>
   )
 }

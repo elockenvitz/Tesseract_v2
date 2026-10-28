@@ -185,13 +185,44 @@ describe('a filling tile', () => {
     }
   })
 
-  it('thickens the band past what a bounded tile draws', () => {
-    const band = fillDraw(EVERY[0]).root.querySelector('[data-scenario-band]')
-    expect(band?.className).toContain('h-[34%]')
-    /* A floor and a ceiling, so a phone-sized box keeps its shape and a very
-       tall tile gets a thicker bar rather than a slab. */
-    expect(band?.className).toContain('min-h-[10px]')
-    expect(band?.className).toContain('max-h-[22px]')
+  /*
+   * REWRITTEN, and the reason kept.
+   *
+   * This asserted the band was THICKER: `h-[34%]` between a 10px floor and a
+   * 22px ceiling. That was the first answer to "the bars need to be larger",
+   * and the field came back "cheap and cheesy" -- which is the right word
+   * for a 22px rounded pill with a ringed dot on it.
+   *
+   * Height was never the problem; weight was. The room goes into STRUCTURE
+   * now -- a region with ruled edges, a baseline, hairline marks -- so what
+   * is pinned is that the drawing is an instrument and not a lozenge.
+   */
+  it('draws the range as a ruled region, not a thicker pill', () => {
+    const { root } = fillDraw(EVERY[0])
+    const band = root.querySelector('[data-scenario-band]')
+    /* Tinted, and SHORTER than the axis: a full-height tinted rectangle
+       reads as an empty box waiting for content, which is what the first
+       attempt at this looked like. It sits on the baseline, under marks
+       that stand taller than it. */
+    expect(band?.className).toContain('bottom-0')
+    expect(band?.className).toMatch(/h-\[\d+%\]/)
+    expect(band?.className).not.toContain('inset-y-0')
+    /* The two things that made it read as a toy. */
+    expect(band?.className).not.toContain('rounded-full')
+    expect(band?.className).not.toMatch(/(^|\s)bg-gray-300(\s|$)/)
+    /* A marker that is placed, not stuck on: no filled circle in a ring. */
+    const marker = root.querySelector('[data-scenario-current]')
+    expect(marker?.className).not.toContain('rounded-full')
+    expect(marker?.className).not.toContain('ring-2')
+    expect(marker?.className).toContain('rotate-45')
+  })
+
+  it('keeps the solid bar on a phone, where structure does not fit', () => {
+    /* 178px has no room for a region, a baseline and three rules. The
+       bounded drawing is the honest primitive there and is unchanged. */
+    const band = draw(EVERY[0]).root.querySelector('[data-scenario-band]')
+    expect(band?.className).toContain('rounded-full')
+    expect(band?.className).toContain('h-1.5')
   })
 
   it('names every mark under its own position', () => {

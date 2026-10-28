@@ -75,24 +75,39 @@ describe('the shelf reveals without moving anything', () => {
       actions: <TileAction label="Review" onClick={() => {}} testId="act" />,
     }))
     const shelf = screen.getByTestId('tile-shelf')
-    // Height is on the rail itself, not on either layer, so the layers can be
-    // absolutely positioned and cross-fade in place.
+    // Height is on the rail itself, not on the layer inside it, so the
+    // context can be absolutely positioned and the rail never collapses.
     expect(shelf.className).toMatch(/h-\[\d+px\]/)
-    for (const id of ['tile-shelf-context', 'tile-shelf-actions']) {
-      expect(screen.getByTestId(id).className).toContain('absolute')
-    }
+    expect(screen.getByTestId('tile-shelf-context').className).toContain('absolute')
+    // And the verbs are an overlay on the card, so revealing them adds no
+    // height anywhere.
+    expect(screen.getByTestId('tile-shelf-actions').className).toContain('absolute')
   })
 
-  it('cross-fades: context at rest, actions on hover AND on keyboard focus', () => {
+  /*
+   * REWRITTEN, and the reason kept.
+   *
+   * This asserted a CROSS-FADE: the context and the verbs were two layers in
+   * the same bottom rail, one fading out as the other faded in. They are no
+   * longer in the same place, so there is nothing to swap.
+   *
+   * The verbs moved to the top-right corner because that is where Today puts
+   * them and Today is the lens people land on. Measured on one screen before
+   * the move: Today's action row at (top 1, right 1), Ideas' at (top 375,
+   * left 21) on a 418px card -- the same gesture, opposite corners, and the
+   * reader has to learn it twice.
+   *
+   * What survives unchanged is the part that is not about position: the
+   * reveal is opacity only, it answers the keyboard, and it keys on
+   * `:focus-visible` rather than `:focus-within`.
+   */
+  it('reveals the verbs on hover AND on keyboard focus, without moving anything', () => {
     render(tile({
       context: <span>Review in Outcomes</span>,
       actions: <TileAction label="Review" onClick={() => {}} testId="act" />,
     }))
-    const ctx = screen.getByTestId('tile-shelf-context')
     const acts = screen.getByTestId('tile-shelf-actions')
 
-    expect(ctx.className).toContain('opacity-100')
-    expect(ctx.className).toContain('group-hover:opacity-0')
     expect(acts.className).toContain('opacity-0')
     expect(acts.className).toContain('group-hover:opacity-100')
     /*
@@ -102,15 +117,46 @@ describe('the shelf reveals without moving anything', () => {
      * It must be `:focus-visible` and not `:focus-within`, though: the
      * latter matches a button focused by a MOUSE CLICK, and a clicked button
      * keeps focus until something else takes it -- so clicking any control
-     * on a tile pinned that tile's shelf open with the pointer nowhere near
-     * it, and hid its context underneath.
+     * on a tile pinned that tile's row open with the pointer nowhere near it.
      */
-    expect(ctx.className).toContain('group-has-[:focus-visible]:opacity-0')
     expect(acts.className).toContain('group-has-[:focus-visible]:opacity-100')
-    expect(ctx.className).not.toContain('group-focus-within:')
     expect(acts.className).not.toContain('group-focus-within:')
     // Only opacity transitions: nothing that could reflow.
     expect(acts.className).toContain('transition-opacity')
+  })
+
+  it('puts them in Today\'s corner, over a scrim', () => {
+    render(tile({
+      context: <span>Review in Outcomes</span>,
+      actions: <TileAction label="Review" onClick={() => {}} testId="act" />,
+    }))
+    const acts = screen.getByTestId('tile-shelf-actions')
+    expect(acts.className).toContain('right-0')
+    expect(acts.className).toContain('top-0')
+    expect(acts.className).toContain('justify-end')
+    /* The scrim is what makes this legal over content: without it a verb
+       sits on top of the ticker it is covering. */
+    expect(acts.className).toContain('bg-gradient-to-b')
+    /* Positioned against the CARD, so the card must establish the frame. */
+    expect(screen.getByTestId('desktop-tile').className).toMatch(/(^|\s)relative(\s|$)/)
+  })
+
+  it('stops hiding the standing context, which no longer shares the strip', () => {
+    render(tile({
+      context: <span>Review in Outcomes</span>,
+      actions: <TileAction label="Review" onClick={() => {}} testId="act" />,
+    }))
+    const ctx = screen.getByTestId('tile-shelf-context')
+    expect(ctx.className).not.toContain('group-hover:opacity-0')
+    expect(ctx.className).not.toContain('group-has-[:focus-visible]:opacity-0')
+  })
+
+  it('draws no shelf for a tile that has verbs but nothing standing to say', () => {
+    /* The rail existed to reserve height for the swap. With the verbs gone
+       from it, a shelf under a tile with no context is an empty 34px band. */
+    render(tile({ actions: <TileAction label="Review" onClick={() => {}} testId="act" /> }))
+    expect(screen.queryByTestId('tile-shelf')).not.toBeInTheDocument()
+    expect(screen.getByTestId('tile-shelf-actions')).toBeInTheDocument()
   })
 
   it('renders no shelf at all for a tile with neither context nor actions', () => {

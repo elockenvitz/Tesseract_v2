@@ -177,10 +177,14 @@ const fills = (s: Scale, grow?: boolean) =>
  *
  * Fixed steps, not percentages: a bar is read against the type beside it, and
  * one that scaled freely with a stretched tile would stop being a bar and
- * start being a block. Measured on the Ideas field, these are roughly double
- * the phone's and a step above `tile`'s.
+ * start being a block.
+ *
+ * ONE step above `tile`, not two. The first attempt went to h-3.5/h-2/h-1 and
+ * the field came back "cheap and cheesy" -- at that weight a rounded track is
+ * a lozenge, and sixty lozenges read as a toy. The room a stretched tile
+ * gives is spent on the space AROUND the bar, not on the bar.
  */
-const HEAVY = { bar: 'h-3.5', rail: 'h-2', rule: 'h-1', dot: 'h-3.5 w-3.5' }
+const HEAVY = { bar: 'h-2.5', rail: 'h-1.5', rule: 'h-0.5', dot: 'h-3 w-3' }
 
 /** A small caps label. Used identically by every archetype so they read as a set. */
 function Cap({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -347,103 +351,157 @@ function ScenarioRange({ v, s, grow, interactive }: {
       )}
 
       {/*
-        The axis. `flex-1` where it is allowed to grow, with a floor so a
-        phone cell is unchanged and a ceiling so a very tall tile gets a
-        thicker bar rather than a billboard.
+        ── The axis, drawn as an instrument ──────────────────────────────────
+
+        The previous version answered "the bars need to be larger" by making
+        the band THICKER: a 22px solid grey pill with `rounded-full` ends, a
+        5px rounded rule through it and a 16px filled circle in a white ring.
+        Reported back as "cheap and cheesy", and that is the right word for
+        it -- fat rounded pills and ringed dots are the vocabulary of a
+        fitness app, not of an instrument someone sizes a position with.
+
+        Height was never the problem; WEIGHT was. The same room spent on
+        structure instead reads as a measurement:
+
+          a baseline      one hairline the marks stand on, square ends
+          the range       a tinted REGION with ruled edges, not a solid pill
+          each case       a hairline rising off the baseline, its own height
+          the market      a full-height hairline capped with a small diamond
+
+        Nothing rounded, nothing filled except the 5px cap, and colour only
+        on the one mark that carries meaning. The phone keeps the old drawing
+        exactly -- see the branch below -- because at 178px there is no room
+        for structure and a solid bar is the honest primitive.
       */}
-      <div
-        className={clsx('relative', grow ? 'min-h-0 w-full flex-1' : s.row)}
-        style={grow ? { minHeight: 24, maxHeight: 64 } : undefined}
-      >
-        {/* The modelled band. Solid, because it is the thing that was stated.
-            A share of the axis rather than a fixed 6px, so width and height
-            arrive together and it stays an object instead of a ruled line. */}
-        <div
-          data-scenario-band
-          className={clsx(
-            'absolute top-1/2 -translate-y-1/2 rounded-full bg-gray-300 dark:bg-gray-600',
-            grow ? 'h-[34%] min-h-[10px] max-h-[22px]' : s.band,
-          )}
-          style={{ left: `${pos(v.low)}%`, width: `${pos(v.high) - pos(v.low)}%` }}
-        />
-        {/* The rest of the axis, so the marker has somewhere to be. */}
-        <div
-          className={clsx(
-            'absolute inset-x-0 top-1/2 -translate-y-1/2',
-            grow ? 'h-[8%] min-h-[2px] max-h-[5px]' : s.rule,
-            TRACK,
-          )}
-          aria-hidden
-        />
-        {/* Every case gets a tick, so a three-case ladder does not read as two.
-            A <button> where there is a mouse: the tick itself stays 1px -- the
-            picture is unchanged -- and the press target is a 20px column
-            centred on it, because a 1px hit area is not one. */}
-        {cases.map(c => {
-          const id = `case:${c.label}:${c.price}`
-          const on = held?.id === id
-          /* The handle rides the TICK, not the hit area around it. The
-             attribute names the mark and everything that reads it -- the
-             density guard among them -- is asking about the drawn thing, so
-             putting it on the 20px invisible button would have quietly
-             pointed every such reader at a box instead of a mark. */
-          const tick = (
-            <span
-              data-scenario-case={c.label}
-              className={clsx(
-                'block bg-gray-500 dark:bg-gray-400',
-                grow ? 'h-[62%] min-h-[14px]' : s.tick,
-                /* Not `w-px` plus an override: both classes would land in the
-                   same declaration block and the narrower one wins on source
-                   order, so the held tick never thickened. One or the
-                   other. */
-                on ? 'w-0.5 bg-gray-900 dark:bg-white' : 'w-px',
-              )}
-            />
-          )
-          return interactive ? (
-            <button
-              key={id}
-              type="button"
-              data-scenario-mark={c.label}
-              aria-label={`${c.label} ${money(c.price)}`}
-              className="absolute top-1/2 flex h-full w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
-              style={{ left: `${clamp(pos(c.price))}%` }}
-              {...ask(id)}
-            >
-              {tick}
-            </button>
-          ) : (
+      {grow ? (
+        <div className="relative min-h-0 w-full flex-1" style={{ minHeight: 30, maxHeight: 76 }}>
+          {/* The modelled range, as a shaded region. Ink at low alpha rather
+              than a grey fill, so it sits UNDER the marks instead of
+              competing with them. */}
+          <div
+            data-scenario-band
+            className="absolute bottom-0 h-[52%] bg-gray-900/[0.06] dark:bg-white/[0.07]"
+            style={{ left: `${pos(v.low)}%`, width: `${pos(v.high) - pos(v.low)}%` }}
+          />
+          {/* Its edges, ruled, and standing a little proud of the fill. This
+              is what makes it a bounded region and not a smudge -- the two
+              numbers were STATED and the drawing should say exactly where.
+              The region is deliberately SHORTER than the axis: at full height
+              a tinted rectangle reads as an empty box waiting for content,
+              which is what the first attempt looked like. */}
+          {[v.low, v.high].map(p => (
             <div
-              key={id}
+              key={`edge-${p}`}
+              className="absolute bottom-0 h-[66%] w-px bg-gray-400 dark:bg-white/30"
+              style={{ left: `${pos(p)}%` }}
+              aria-hidden
+            />
+          ))}
+          {/* The baseline the marks stand on. */}
+          <div className="absolute inset-x-0 bottom-0 h-px bg-gray-400 dark:bg-white/25" aria-hidden />
+
+          {cases.map(c => {
+            const id = `case:${c.label}:${c.price}`
+            const on = held?.id === id
+            /* The handle rides the TICK, not the hit area around it: every
+               reader of this attribute -- the density guard among them -- is
+               asking about the drawn mark, and the 20px button is a box. */
+            const tick = (
+              <span
+                data-scenario-case={c.label}
+                /* Taller than the region, so a case inside the range still
+                   reads as a mark ON a scale rather than disappearing into
+                   the tint behind it. */
+                className={clsx(
+                  'absolute bottom-0 block h-[80%]',
+                  on ? 'w-0.5 bg-gray-900 dark:bg-white' : 'w-px bg-gray-500 dark:bg-gray-400',
+                )}
+              />
+            )
+            return interactive ? (
+              <button
+                key={id}
+                type="button"
+                data-scenario-mark={c.label}
+                aria-label={`${c.label} ${money(c.price)}`}
+                className="absolute inset-y-0 flex w-5 -translate-x-1/2 items-end justify-center focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                style={{ left: `${clamp(pos(c.price))}%` }}
+                {...ask(id)}
+              >
+                {tick}
+              </button>
+            ) : (
+              <span
+                key={id}
+                className="absolute inset-y-0 flex w-px -translate-x-1/2 items-end"
+                style={{ left: `${clamp(pos(c.price))}%` }}
+              >
+                {tick}
+              </span>
+            )
+          })}
+
+          {/* The market. A rule the full height of the axis, capped with a
+              small diamond -- a marker that reads as placed rather than
+              stuck on, and the only coloured thing in the picture. */}
+          {(() => {
+            const ink = outside
+              ? above ? 'bg-emerald-600 dark:bg-emerald-400' : 'bg-rose-600 dark:bg-rose-400'
+              : 'bg-gray-900 dark:bg-white'
+            const mark = (
+              <>
+                <span className={clsx('absolute inset-y-0 w-px', ink)} aria-hidden />
+                <span
+                  data-scenario-current
+                  className={clsx(
+                    'absolute top-0 h-[5px] w-[5px] -translate-y-1/2 rotate-45 transition-transform',
+                    ink,
+                    held?.current && 'scale-150',
+                  )}
+                />
+              </>
+            )
+            return interactive ? (
+              <button
+                type="button"
+                data-scenario-mark="current"
+                aria-label={`Last price ${money(v.current)}`}
+                className="absolute inset-y-0 flex w-6 -translate-x-1/2 justify-center focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                style={{ left: `${clamp(pos(v.current))}%` }}
+                {...ask('current')}
+              >
+                {mark}
+              </button>
+            ) : (
+              <span
+                className="absolute inset-y-0 flex w-px -translate-x-1/2 justify-center"
+                style={{ left: `${clamp(pos(v.current))}%` }}
+              >
+                {mark}
+              </span>
+            )
+          })()}
+        </div>
+      ) : (
+        <div className={clsx('relative', s.row)}>
+          {/* The modelled band. Solid, because it is the thing that was
+              stated, and because a 178px cell has no room for structure. */}
+          <div
+            data-scenario-band
+            className={clsx('absolute top-1/2 -translate-y-1/2 rounded-full bg-gray-300 dark:bg-gray-600', s.band)}
+            style={{ left: `${pos(v.low)}%`, width: `${pos(v.high) - pos(v.low)}%` }}
+          />
+          {/* The rest of the axis, so the marker has somewhere to be. */}
+          <div className={clsx('absolute inset-x-0 top-1/2 -translate-y-1/2', s.rule, TRACK)} aria-hidden />
+          {/* Every case gets a tick, so a three-case ladder does not read as two. */}
+          {cases.map(c => (
+            <div
+              key={`${c.label}:${c.price}`}
               data-scenario-case={c.label}
               className={clsx('absolute top-1/2 w-px -translate-y-1/2 bg-gray-500 dark:bg-gray-400', s.tick)}
               style={{ left: `${clamp(pos(c.price))}%` }}
             />
-          )
-        })}
-        {interactive ? (
-          <button
-            type="button"
-            data-scenario-mark="current"
-            aria-label={`Last price ${money(v.current)}`}
-            className="absolute top-1/2 flex h-full w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
-            style={{ left: `${clamp(pos(v.current))}%` }}
-            {...ask('current')}
-          >
-            <span
-              data-scenario-current
-              className={clsx(
-                'block rounded-full ring-2 ring-white transition-transform dark:ring-gray-900',
-                grow ? 'h-4 w-4' : s.marker,
-                held?.current && 'scale-125',
-                outside
-                  ? above ? 'bg-emerald-500' : 'bg-rose-500'
-                  : 'bg-gray-900 dark:bg-white',
-              )}
-            />
-          </button>
-        ) : (
+          ))}
           <div
             data-scenario-current
             className={clsx(
@@ -455,8 +513,8 @@ function ScenarioRange({ v, s, grow, interactive }: {
             )}
             style={{ left: `${clamp(pos(v.current))}%` }}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       {/*
         ── Where the labels go, and why the right-hand void is gone ──────────
@@ -942,8 +1000,12 @@ export function ExploreVisualBlock({ visual, sparkline, now, density = 'card', f
   /* A mouse, not a thumb. The phone card stays inert -- see the constraints
      at the top of this file -- so interactivity is `tile` density only, never
      the `fill` flag, which is about room rather than about input. */
-  const interactive = density === 'tile'
   const grow = density === 'tile' && fill === true
+  /* Interactivity ships WITH the instrument, not merely with the mouse. The
+     marks are reachable because the grown axis draws full-height rules and
+     a 20px column over each one; the bounded drawing has no such geometry,
+     so a hit area there would be an invisible box over a 6px pill. */
+  const interactive = grow
 
   const body = (() => {
     switch (visual.kind) {
