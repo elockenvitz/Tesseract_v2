@@ -350,7 +350,18 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
   const hi = Math.max(...r.series)
   const lo = Math.min(...r.series)
   const first = r.series[0]
-  const frame = !compact
+  /*
+   * The frame is not a luxury of the wide tile.
+   *
+   * It was `!compact`, so the two supporting tiles drew a bare coloured line
+   * and nothing else: no scale, no gridlines, no mark for where the window
+   * starts. A reader could see that TSLA fell and AAPL rose and could not
+   * read a single level off either -- which is what "too remedial" means.
+   * Everything below already exists; it was simply switched off on the tiles
+   * most likely to be read.
+   */
+  const frame = true
+  const gutter = compact ? 34 : 38
   const ticks: { v: number; tag: string }[] = []
   for (const t of [{ v: hi, tag: 'H' }, { v: first, tag: 'open' }, { v: lo, tag: 'L' }]) {
     if (ticks.some(u => Math.abs(y(u.v) - y(t.v)) < 11)) continue
@@ -418,6 +429,20 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
             strokeWidth="1" vectorEffect="non-scaling-stroke"
           />
         ))}
+        {/*
+          The level the window STARTED at, drawn across the plot.
+
+          The gutter already prints this number beside the axis, but a figure
+          in a margin does not answer the question the chart is there for --
+          is the price above or below where it was when you last wrote? A rule
+          at that level answers it without reading anything: everything above
+          the line is gain since the anchor, everything below is give-back.
+        */}
+        <line
+          x1={0} x2={W} y1={y(first)} y2={y(first)} strokeWidth={1} strokeDasharray="3 3"
+          vectorEffect="non-scaling-stroke"
+          className="stroke-slate-400/80 dark:stroke-slate-500/80"
+        />
         <path d={`M${d} L${W},${h} L0,${h} Z`} fill={`url(#${gid})`} />
         <path d={`M${d}`} fill="none" stroke="currentColor" strokeWidth={2.25}
               vectorEffect="non-scaling-stroke" strokeLinejoin="round" className={tone} />
@@ -462,7 +487,7 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
       {/* The price scale. Outside the plot, so a level can be read off the
           gridline it sits on without anything overlapping the series. */}
       {frame && (
-        <div className="relative w-[38px] shrink-0" style={{ height: h }} aria-hidden>
+        <div className="relative shrink-0" style={{ height: h, width: gutter }} aria-hidden>
           {ticks.map(t => (
             <div
               key={t.tag}
@@ -605,7 +630,7 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
     <div className="flex h-full flex-col">
       {/* One line, one height, whether or not a level is being read -- so
           running across the band never moves the card. */}
-      <div className="flex h-[14px] shrink-0 items-baseline justify-between overflow-hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+      <div className="flex h-[14px] shrink-0 items-baseline justify-between overflow-hidden whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400">
         <span>{scrub == null ? 'Bear' : ''}</span>
         {scrub != null && (
           <span
@@ -712,7 +737,9 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
         rungs priced close together still crowd; that is a legible crowd of
         two true labels, not three false ones.
       */}
-      <div className="relative mt-1 h-[11px] shrink-0 font-mono text-[9px] tabular-nums text-gray-500">
+      {/* 9px grey-on-white mono was not small-and-quiet, it was unreadable.
+          11px and real ink; the rung NAMES stay lighter so the figure leads. */}
+      <div className="relative mt-1 h-[13px] shrink-0 font-mono text-[11px] font-medium tabular-nums text-gray-700 dark:text-gray-300">
         {labelled.map(c => {
           const x = at(c.price)
           return (
@@ -726,7 +753,7 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
               )}
               style={{ left: `${Math.min(100, Math.max(0, x))}%` }}
             >
-              <span className="font-sans uppercase tracking-[0.06em] text-gray-400">
+              <span className="font-sans text-[10px] uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
                 {c.name}
               </span>{' '}
               {c.price.toFixed(0)}

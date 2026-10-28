@@ -340,6 +340,39 @@ describe('the action row costs nothing until it is approached', () => {
     expect(container.querySelector('article')?.className).toMatch(/(^|\s)group(\s|$)/)
   })
 
+  it('stops the row short of the analysis column, so approaching never hides the chart', () => {
+    // Spanning the full width put the scrim over the bottom of the chart --
+    // the read-out and the portal label -- so approaching a tile hid the
+    // thing you were approaching it to read.
+    const withChart = renderTile(decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }],
+      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
+    }), { featured: true })
+    const row = withChart.container.querySelector('[data-testid="today-actions"]')!
+    expect(row.className).toMatch(/right-\[48%\]/)
+    expect(row.className).not.toMatch(/inset-x-0/)
+
+    // With no chart there is no column to stay out of.
+    const bare = renderTile()
+    expect(bare.container.querySelector('[data-testid="today-actions"]')!.className)
+      .toMatch(/right-0/)
+  })
+
+  it('does not clip the overflow menu to the card', () => {
+    // A 288px panel opened from inside an `overflow-hidden` box was cut off:
+    // the snooze presets were unreachable on every tile.
+    const { container } = renderTile()
+    expect(container.querySelector('article')?.className).not.toMatch(/overflow-hidden/)
+  })
+
+  it('opens the overflow menu upward, off the tile\'s bottom edge', () => {
+    const { container } = renderTile()
+    fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
+    const menu = container.querySelector('[data-testid="today-actions"] .absolute.bottom-full')
+    expect(menu, 'menu should open above its trigger').not.toBeNull()
+  })
+
   it('keeps the body clear of the overlay on a tile with no slack', () => {
     // The row is out of flow, so this padding is the only thing between it
     // and the last line of content.

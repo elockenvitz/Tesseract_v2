@@ -251,7 +251,11 @@ export function TodayTile({
            than with state, which keeps them out of the render path -- four
            tiles re-rendering on mouseover is a worse surface than a static
            one. */
-        'group relative flex h-full min-w-0 flex-col overflow-hidden rounded-[3px] border bg-white',
+        /* NOT `overflow-hidden`. The overflow menu is a 288px panel opened
+           from inside this box, and clipping it to the card cut the dropdown
+           off -- the snooze presets were unreachable on every tile. The
+           analysis slot does its own clipping, so nothing else needed it. */
+        'group relative flex h-full min-w-0 flex-col rounded-[3px] border bg-white',
         'transition-colors duration-100 dark:bg-[#141a25]',
         toneFor(item) === 'critical'
           ? 'border-rose-200/80 dark:border-rose-900/40'
@@ -372,7 +376,27 @@ export function TodayTile({
           !split && (wide || featured) && 'lg:max-w-[86ch]',
         )}
       >
-        <div className={clsx('flex min-w-0 flex-col', split ? 'gap-2.5' : 'gap-2')}>
+        {/*
+          The prose column fills its box instead of ending halfway up it.
+
+          Measured at 1920x889: the lead tile is 326px, its chart column runs
+          to 288px and its claim-and-figures column stopped at 175px -- 151px
+          of nothing under the most important finding on the page. The column
+          is stretched to the row either way; the only question is whether the
+          slack sits in one hole at the bottom or as air between two things
+          that belong apart.
+
+          So the claim holds the top and the figures drop to the foot of the
+          column, landing near the chart's own baseline. `pb-11` is the band
+          the action row fades into, kept clear so approaching the tile never
+          covers the figures -- the same reason the row stops short of the
+          chart column.
+        */}
+        <div className={clsx(
+          'flex min-w-0 flex-col',
+          split ? 'gap-2.5' : 'gap-2',
+          split && 'justify-between pb-16',
+        )}>
           {/*
             The claim is a portal to the claim, not to the object generally.
 
@@ -466,7 +490,16 @@ export function TodayTile({
               onClick={e => { e.stopPropagation(); openObject(e.currentTarget, visualIntent) }}
               className="mt-1 rounded-sm text-[10px] font-semibold uppercase tracking-widest text-gray-400 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:hover:text-blue-400"
             >
-              {visualIntent === 'framework' ? 'Open framework' : 'Open price history'}
+              {/*
+                It names the OBJECT, not the archive.
+
+                "Open price history" sounded like a log of past prices -- a
+                record you look things up in -- when what it opens is this
+                name's research page with the full chart on it. The framework
+                half had the same fault at a lower volume: "framework" is the
+                engine's word for the desk's own bear/base/bull cases.
+              */}
+              {visualIntent === 'framework' ? 'See the price cases' : 'See the full chart'}
             </button>
           </div>
         )}
@@ -519,9 +552,25 @@ export function TodayTile({
       <div
         data-testid="today-actions"
         className={clsx(
-          'absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-1 px-3.5 pb-2.5 pt-7',
+          // `pt-4`, not `pt-7`: the row now fades in over reserved margin
+          // rather than over prose, so it needs a seam, not a long fade.
+          'absolute bottom-0 left-0 flex flex-wrap items-center gap-1 px-3.5 pb-2.5 pt-4',
           'bg-gradient-to-t from-white via-white via-70% to-transparent',
           'dark:from-[#141a25] dark:via-[#141a25]',
+          /*
+            It stops at the analysis column.
+
+            Spanning the full width put the scrim straight over the bottom of
+            the chart -- the read-out and the portal label -- so approaching a
+            tile hid the thing you were approaching it to read. The body's
+            right column is `minmax(0,0.9fr)` of a `1fr 0.9fr` grid with a
+            16px gap, so a little under half; stopping at 48% keeps the row
+            inside the prose column with clearance.
+
+            On a tile with no chart there is no second column to stay out of,
+            and the row takes the width it needs.
+          */
+          split ? 'right-[48%]' : 'right-0',
           QUIET_REVEAL,
         )}
       >
@@ -607,7 +656,10 @@ export function TodayTile({
 
           {menuOpen && (
             <div
-              className="absolute right-0 z-40 mt-1 w-72 overflow-hidden rounded-lg border border-gray-300 bg-white shadow-lg dark:border-white/15 dark:bg-[#171e2b]"
+              /* Upward. The trigger sits on the tile's bottom edge, so a
+                 menu dropped below it hangs off the card and, on the last
+                 row, off the page. */
+              className="absolute bottom-full right-0 z-40 mb-1 w-72 overflow-hidden rounded-lg border border-gray-300 bg-white shadow-lg dark:border-white/15 dark:bg-[#171e2b]"
               onMouseLeave={() => setMenuOpen(false)}
             >
               <MenuGroup label="Personal — only affects your view" />
