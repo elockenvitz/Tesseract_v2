@@ -308,8 +308,17 @@ describe('the action row costs nothing until it is approached', () => {
     const row = container.querySelector('[data-testid="today-actions"]')!
     expect(row.className).toMatch(/opacity-0/)
     expect(row.className).toMatch(/group-hover:opacity-100/)
-    // Tabbing in must reveal them too, or the keyboard path has no actions.
-    expect(row.className).toMatch(/group-focus-within:opacity-100/)
+    /*
+     * Tabbing in must reveal them too, or the keyboard path has no actions --
+     * but CLICKING one must not pin them.
+     *
+     * `:focus-within` matches mouse-click focus, and a clicked button keeps
+     * focus until something else takes it, so clicking a pager tab or Ask AI
+     * left that tile's row showing with the pointer on the other side of the
+     * page. `:focus-visible` is the reader this was for.
+     */
+    expect(row.className).toMatch(/group-has-\[:focus-visible\]:opacity-100/)
+    expect(row.className).not.toMatch(/group-focus-within:opacity-100/)
     expect(row.contains(screen.getByRole('button', { name: /Review thesis/ }))).toBe(true)
   })
 

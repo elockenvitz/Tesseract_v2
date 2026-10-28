@@ -323,7 +323,11 @@ describe('browse, then engage: one mode at a time', () => {
     // Reveal is opacity only, inside reserved height: no layout shift, and
     // nothing appears that was not already occupying its space.
     expect(shell).toMatch(/group-hover:/)
-    expect(shell).toMatch(/group-focus-within:/)
+    // Keyboard reveal is `:focus-visible`. `:focus-within` also matched a
+    // mouse click, which pinned the shelf open on every tile whose controls
+    // had been clicked.
+    expect(shell).toMatch(/group-has-\[:focus-visible\]:/)
+    expect(shell).not.toMatch(/group-focus-within:/)
     // The shell is not itself a button any more, which is what made nesting
     // one inside it invalid in the first place.
     expect(shell).toMatch(/role="group"/)

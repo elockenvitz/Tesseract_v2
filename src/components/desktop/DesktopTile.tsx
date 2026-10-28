@@ -671,8 +671,11 @@ const SHELF_H: Record<TileSize, string> = {
  * works where the older `group-hover:opacity` reveals on the legacy dashboard
  * widgets pushed their cards around.
  *
- * `group-focus-within` is not a nicety: without it the actions are reachable
- * by Tab but invisible while focused.
+ * A focus reveal is not a nicety: without it the actions are reachable by
+ * Tab but invisible while focused. It keys on `:focus-visible`, never
+ * `:focus-within` -- the latter also matches a button focused by a mouse
+ * click, and a clicked button holds focus, so it left the shelf open on
+ * every tile whose controls had been used.
  */
 /**
  * Exported for Ideas, which is not built on `DesktopTile` and had its own.
@@ -706,7 +709,11 @@ export function TileShelf({
             'pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 truncate',
             'text-[10px] text-gray-500 dark:text-gray-400',
             'opacity-100 transition-opacity duration-150',
-            actions && 'group-hover:opacity-0 group-focus-within:opacity-0',
+            /* `:focus-visible`, not `:focus-within` -- see the actions row
+               below: click focus was pinning the swap, so a tile whose
+               button had been clicked showed its actions and hid its
+               context until the reader clicked somewhere else. */
+            actions && 'group-hover:opacity-0 group-has-[:focus-visible]:opacity-0',
           )}
         >
           {context}
@@ -719,7 +726,14 @@ export function TileShelf({
             'pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-1.5',
             'opacity-0 transition-opacity duration-150',
             'group-hover:pointer-events-auto group-hover:opacity-100',
-            'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+            /*
+              `:focus-within` matches a button focused by a MOUSE CLICK, and
+              a clicked button keeps focus until something else takes it --
+              so clicking any control on a tile pinned that tile's shelf open
+              with the pointer nowhere near it. `:focus-visible` is the
+              keyboard reader this was for, and only them.
+            */
+            'group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100',
           )}
         >
           {actions}

@@ -95,10 +95,20 @@ describe('the shelf reveals without moving anything', () => {
     expect(ctx.className).toContain('group-hover:opacity-0')
     expect(acts.className).toContain('opacity-0')
     expect(acts.className).toContain('group-hover:opacity-100')
-    /* Without focus-within the verbs are reachable by Tab and invisible while
-       focused, which is worse than not having them. */
-    expect(ctx.className).toContain('group-focus-within:opacity-0')
-    expect(acts.className).toContain('group-focus-within:opacity-100')
+    /*
+     * Without a focus reveal the verbs are reachable by Tab and invisible
+     * while focused, which is worse than not having them.
+     *
+     * It must be `:focus-visible` and not `:focus-within`, though: the
+     * latter matches a button focused by a MOUSE CLICK, and a clicked button
+     * keeps focus until something else takes it -- so clicking any control
+     * on a tile pinned that tile's shelf open with the pointer nowhere near
+     * it, and hid its context underneath.
+     */
+    expect(ctx.className).toContain('group-has-[:focus-visible]:opacity-0')
+    expect(acts.className).toContain('group-has-[:focus-visible]:opacity-100')
+    expect(ctx.className).not.toContain('group-focus-within:')
+    expect(acts.className).not.toContain('group-focus-within:')
     // Only opacity transitions: nothing that could reflow.
     expect(acts.className).toContain('transition-opacity')
   })

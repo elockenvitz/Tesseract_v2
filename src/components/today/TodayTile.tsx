@@ -61,12 +61,28 @@ const TONE_BY_KEY: Record<string, SemanticTone> = {
  * row of its own, so revealing it changes NO geometry -- a field of four
  * tiles must not shuffle as the pointer crosses it.
  *
- * `group-focus-within` is the keyboard path: tabbing into the tile reveals
- * the same controls hovering does. Never `pointer-events-none`, so a reader
- * who knows where a control lives can still hit it blind.
+ * `:focus-visible`, not `:focus-within`, is the keyboard path.
+ *
+ * ── The bug this fixes ───────────────────────────────────────────────────
+ *
+ * `:focus-within` matches a button focused by a MOUSE CLICK, and a clicked
+ * button keeps focus until something else takes it. So clicking anything
+ * inside a tile -- a pager tab, Ask AI, the overflow trigger -- pinned that
+ * tile's action row open, and it stayed open with the pointer on the far
+ * side of the page. Reported as "the buttons on hover are staying showing",
+ * and the "sometimes" was exactly this: only after a click.
+ *
+ * `group-has-[:focus-visible]` reveals the row for a reader who TABBED in,
+ * which is who the keyboard path is for, and ignores click focus. The one
+ * case that still needs the row up without hover or keyboard focus is an
+ * open overflow menu, and the tile already has state for that, so it is
+ * stated explicitly rather than inferred from where focus happens to be.
+ *
+ * Never `pointer-events-none`, so a reader who knows where a control lives
+ * can still hit it blind.
  */
 const QUIET_REVEAL =
-  'opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
+  'opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100'
 
 /**
  * The quiet affordances' own shape, so the three of them cannot drift.
@@ -286,7 +302,7 @@ export function TodayTile({
         // rather than one instrument, and a large radius reads friendly where
         // this is meant to read precise.
         /* `group`, so the quiet affordances below can wait for the pointer.
-           They are addressed as `group-hover`/`group-focus-within` rather
+           They are addressed as `group-hover`/`group-has-[:focus-visible]` rather
            than with state, which keeps them out of the render path -- four
            tiles re-rendering on mouseover is a worse surface than a static
            one. */
@@ -682,11 +698,14 @@ export function TodayTile({
         carries bottom padding equal to the row, so on a tile with no slack
         the overlay lands on margin rather than on a sentence.
 
-        `group-focus-within` keeps the whole row reachable without a pointer:
-        tabbing into the tile reveals it, so the keyboard path is the hover
-        path. Nothing here is `pointer-events-none`, so a reader who clicks
-        where they know a control lives still hits it. An open overflow menu
-        holds focus, so focus-within keeps the row up while it is open.
+        `group-has-[:focus-visible]` keeps the whole row reachable without a
+        pointer: tabbing into the tile reveals it, so the keyboard path is
+        the hover path. It is deliberately NOT `:focus-within`, which also
+        matches a button focused by a mouse click and therefore pinned the
+        row open on any tile whose controls had been clicked. Nothing here is
+        `pointer-events-none`, so a reader who clicks where they know a
+        control lives still hits it. An open overflow menu keeps the row up
+        through `menuOpen`, stated rather than inferred from focus.
       */}
       <div
         data-testid="today-actions"
@@ -713,6 +732,10 @@ export function TodayTile({
           /* Must track the card fill exactly, or the scrim shows as a band. */
           'dark:from-[#161d2a] dark:via-[#161d2a]',
           QUIET_REVEAL,
+          /* The menu is opened from inside this row and extends below it.
+             Letting the row fade while its own menu is on screen would strand
+             the panel over the tile with nothing holding it. */
+          menuOpen && 'opacity-100',
         )}
       >
         {item.primary ? (

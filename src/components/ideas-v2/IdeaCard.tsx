@@ -1198,7 +1198,11 @@ function Footer({
         because there is nothing here to click at any point in its life.
       */}
       <div className={clsx(
-        'pointer-events-none absolute inset-0 flex flex-col justify-end overflow-hidden opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0',
+        /* `:focus-visible`, not `:focus-within` -- see the action layer
+           below. Click focus was pinning the swap, so a card whose button
+           had been clicked kept showing its verbs and hiding this line
+           until the reader clicked elsewhere. */
+        'pointer-events-none absolute inset-0 flex flex-col justify-end overflow-hidden opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-has-[:focus-visible]:opacity-0',
         compact ? 'gap-0' : 'gap-1',
       )}>
         <p className={clsx(
@@ -1278,7 +1282,14 @@ function Footer({
         'pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-end',
         'opacity-0 transition-opacity duration-150',
         'group-hover:pointer-events-auto group-hover:opacity-100',
-        'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+        /*
+          `:focus-within` matches a button focused by a MOUSE CLICK, and a
+          clicked button keeps focus until something else takes it -- so
+          clicking any control on a card pinned that card's verbs open with
+          the pointer nowhere near it. `:focus-visible` is the keyboard
+          reader this was for, and only them.
+        */
+        'group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100',
       )}>
         {/* Buttons alone. The why-now line moved to the resting layer above:
             it is standing information rather than a verb, and keeping it here
