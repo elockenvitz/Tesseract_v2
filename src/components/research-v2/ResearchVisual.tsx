@@ -107,14 +107,64 @@ export function PriceSinceReview({ w, since, height = 166 }: { w: AnchoredWindow
   const at = picked != null ? w.series[picked] : null
   const deltaAt = at != null && first > 0 ? ((at - first) / first) * 100 : null
 
+  /*
+   * The figure leads, and it is inked by direction.
+   *
+   * Every chart a reader of this product has used outside it -- a broker, an
+   * exchange, a terminal -- opens with the price and a signed, coloured
+   * change, and draws the path in that same colour. This drew a slate line
+   * under a grey caption and put its one number in a detached row BELOW the
+   * plot, which is the last place an eye trained on those tools looks.
+   *
+   * This is a deliberate exception to "a price return is never toned", which
+   * holds for `DesktopStat` and the tile figures: there, colour is severity,
+   * and a name is not in trouble because its price fell. On a price PATH,
+   * colour is direction, every reader already reads it that way, and the
+   * chart makes no claim about whether the move is good.
+   */
+  const ink = up
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : 'text-rose-600 dark:text-rose-400'
+  const last = w.series[w.series.length - 1]
+  const shownPrice = at ?? last
+  const shownPct = deltaAt ?? w.changePct
+  const day = (iso: string) => {
+    const t = Date.parse(iso)
+    return Number.isFinite(t)
+      ? new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+      : iso
+  }
+
   return (
     <div>
-      <div className="mb-1.5 flex items-baseline gap-2">
+      <div className="mb-1 flex items-baseline gap-2">
         <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
           {w.reachesAnchor ? words.priceSince : 'Price over available history'}
         </span>
         <span className="ml-auto font-mono text-[10px] text-gray-500">
           {w.reachesAnchor ? `${words.since} · ${w.days}d` : `${w.days}d of history`}
+        </span>
+      </div>
+
+      {/* One line, one height, hovered or not: a plot that grows a row on
+          hover moves everything below it. */}
+      <div
+        data-testid="research-chart-readout"
+        className="mb-2 flex items-baseline gap-2"
+      >
+        <span className="font-mono text-[22px] font-semibold leading-none tabular-nums tracking-tight text-gray-900 dark:text-gray-100">
+          {shownPrice.toFixed(2)}
+        </span>
+        <span className={clsx(
+          'rounded px-1.5 py-[2px] font-mono text-[12px] font-semibold tabular-nums',
+          shownPct >= 0
+            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+            : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400',
+        )}>
+          {shownPct >= 0 ? '+' : ''}{shownPct.toFixed(1)}%
+        </span>
+        <span className="truncate text-[11px] text-gray-500">
+          from {words.tick.toLowerCase()}
         </span>
       </div>
 
@@ -125,7 +175,7 @@ export function PriceSinceReview({ w, since, height = 166 }: { w: AnchoredWindow
             viewBox={`0 0 ${W} ${H}`}
             width={W}
             height={H}
-            className="block w-full cursor-crosshair text-slate-500 dark:text-slate-400"
+            className={clsx('block w-full cursor-crosshair', ink)}
             style={{ height: H }}
             role="img"
             aria-label={`Price, ${w.changePct.toFixed(1)} percent`}
@@ -183,15 +233,6 @@ export function PriceSinceReview({ w, since, height = 166 }: { w: AnchoredWindow
           </svg>
         </div>
 
-        {/* As HTML, not SVG <text>: a label inside the plot inherits whatever
-            the coordinate system does to it, which is how "LAST REVIEW" came
-            out horizontally smeared at a different amount per card width. */}
-        {w.reachesAnchor && (
-          <span className="pointer-events-none absolute left-[6px] top-0 whitespace-nowrap text-[9px] text-gray-400">
-            {words.tick.toLowerCase()}
-          </span>
-        )}
-
         <div className="relative shrink-0" style={{ height: H, width: gutter }} aria-hidden>
           {ticks.map(t => (
             <div
@@ -209,24 +250,29 @@ export function PriceSinceReview({ w, since, height = 166 }: { w: AnchoredWindow
         </div>
       </div>
 
-      {/* One line, one height, whether or not a point is selected: a plot that
-          grows a row on hover moves everything below it. */}
+      {/*
+        A real x-axis, which this chart has never had.
+
+        It drew a dashed rule at the left edge with the word "last update"
+        floating beside it and left the reader to guess what span the 496px
+        underneath covered. The window's own endpoints are stored -- `from`
+        and `to` are ISO dates on the slice this plot IS -- so the axis
+        states them rather than implying them.
+
+        Only the two ends, deliberately: the series is trading days, not
+        calendar days, so interpolating a date for a hovered x would be a
+        figure the data does not support. The gutter beside the plot is
+        correspondingly the y-axis; between them the chart now answers "how
+        much, and over what" without a caption.
+      */}
       <div
-        data-testid="research-chart-readout"
-        className="mt-1 flex items-baseline gap-2 font-mono text-[16px] font-semibold tabular-nums text-gray-900 dark:text-gray-100"
+        className="mt-1 flex items-baseline justify-between font-mono text-[10px] tabular-nums text-gray-400 dark:text-gray-500"
+        style={{ paddingRight: gutter + 8 }}
       >
-        {at != null ? (
-          <>
-            <span>{at.toFixed(2)}</span>
-            {deltaAt != null && (
-              <span className="text-[11px] font-medium text-gray-500">
-                {deltaAt >= 0 ? '+' : ''}{deltaAt.toFixed(1)}% from {words.tick.toLowerCase()}
-              </span>
-            )}
-          </>
-        ) : (
-          <span>{up ? '+' : ''}{w.changePct.toFixed(1)}%</span>
-        )}
+        <span className={w.reachesAnchor ? 'text-slate-500 dark:text-slate-400' : undefined}>
+          {w.reachesAnchor ? `${words.tick.toLowerCase()} · ${day(w.from)}` : day(w.from)}
+        </span>
+        <span>{day(w.to)}</span>
       </div>
 
       {!w.reachesAnchor && (

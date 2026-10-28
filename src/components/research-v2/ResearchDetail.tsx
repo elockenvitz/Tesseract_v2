@@ -32,7 +32,7 @@ import {
 } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
 import { TONE_INK } from '../../lib/semantic-tone'
-import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine } from 'lucide-react'
+import { ArrowDown, ArrowUpRight, MessageSquare, MoreHorizontal, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { useRecordThesisReview, type ThesisReviewOutcome } from '../../hooks/useThesisReview'
 import { useRecordObjectView } from '../../hooks/useObjectViewCursor'
@@ -52,6 +52,32 @@ const REVIEW_CHOICES: ReadonlyArray<{ outcome: ThesisReviewOutcome; label: strin
   { outcome: 'changed', label: 'Changed' },
   { outcome: 'needs_work', label: 'Needs work' },
 ]
+
+/**
+ * Each answer in its own colour, because the row asked to be ignored.
+ *
+ * Three identical grey text buttons do not read as a choice -- they read as
+ * a toolbar, which is how the one verb this surface has went unused. These
+ * are the only coloured controls on the bar, and the colours are the
+ * product's existing semantics rather than decoration: the case holding is
+ * the good outcome, the case having changed is a fact to act on, and a case
+ * that cannot be judged as written is the one that needs a person.
+ *
+ * Outlined, not filled: three filled buttons side by side would each claim
+ * to be the recommended answer, and the product must not nudge an analyst
+ * toward one conclusion about their own thesis.
+ */
+const VERDICT_TONE: Record<ThesisReviewOutcome, string> = {
+  holds:
+    'border-emerald-300 bg-white text-emerald-800 hover:border-emerald-500 hover:bg-emerald-50 '
+    + 'dark:border-emerald-800 dark:bg-transparent dark:text-emerald-300 dark:hover:bg-emerald-950/40',
+  changed:
+    'border-amber-300 bg-white text-amber-800 hover:border-amber-500 hover:bg-amber-50 '
+    + 'dark:border-amber-800 dark:bg-transparent dark:text-amber-300 dark:hover:bg-amber-950/40',
+  needs_work:
+    'border-rose-300 bg-white text-rose-800 hover:border-rose-500 hover:bg-rose-50 '
+    + 'dark:border-rose-900 dark:bg-transparent dark:text-rose-300 dark:hover:bg-rose-950/40',
+}
 
 /**
  * Research → Ideas.
@@ -289,7 +315,14 @@ export function ResearchDetail({
           </p>
         )}
 
-        <div className="mt-3 flex flex-wrap items-center gap-1 pb-3">
+        {/*
+          Three groups, not one run of controls: the step, the verdict, the
+          tools. `flex-1` on the outer two is what actually centres the
+          middle one -- `mx-auto` beside an `ml-auto` sibling does not, and
+          measured, it left the verdict 170px off centre.
+        */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 pb-4">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
           <button
             type="button"
             onClick={runPrimary}
@@ -300,6 +333,7 @@ export function ResearchDetail({
               ? <PencilLine className="h-3.5 w-3.5 opacity-70" />
               : <ArrowDown className="h-3.5 w-3.5 opacity-70" />}
           </button>
+          </div>
           {/*
             The verb this surface never had, now with all three answers.
 
@@ -314,86 +348,123 @@ export function ResearchDetail({
             it and are not going to rewrite it right now. Each writes one event
             and touches no thesis text.
           */}
+          {/*
+            The verdict sits in the MIDDLE of the bar, not trailing the
+            primary action.
+
+            It read "Review thesis | REVIEWED Still holds Changed Needs
+            work", which put a past-tense label a few pixels from a button
+            asking you to do the thing -- so the row appeared to say the
+            review had already happened. The label is now the question the
+            three buttons answer, and the group centres itself between the
+            action on the left and the tools on the right, which is also
+            what makes it the thing the eye lands on.
+          */}
           {subject.thesisUpdatedAt && (
-            <span className="inline-flex items-center gap-0.5" data-slot="research-thesis-review">
-              <span className="pl-1 pr-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                Reviewed
+            <span
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-1.5 dark:border-white/10 dark:bg-white/[0.03]"
+              data-slot="research-thesis-review"
+            >
+              <span className="text-[11px] font-medium text-gray-500">
+                Does the case still hold?
               </span>
-              {REVIEW_CHOICES.map(choice => (
-                <button
-                  key={choice.outcome}
-                  type="button"
-                  data-slot={`research-review-${choice.outcome}`}
-                  onClick={() => recordReview(choice.outcome)}
-                  disabled={reviewPending || reviewDone}
-                  className="rounded-md px-2.5 py-2 text-[12px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-60 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  {choice.label}
-                </button>
-              ))}
+              <span className="flex items-center gap-1.5">
+                {REVIEW_CHOICES.map(choice => (
+                  <button
+                    key={choice.outcome}
+                    type="button"
+                    data-slot={`research-review-${choice.outcome}`}
+                    onClick={() => recordReview(choice.outcome)}
+                    disabled={reviewPending || reviewDone}
+                    className={clsx(
+                      'rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors disabled:opacity-60',
+                      VERDICT_TONE[choice.outcome],
+                    )}
+                  >
+                    {choice.label}
+                  </button>
+                ))}
+              </span>
               {(reviewPending || reviewDone) && (
-                <span className="pl-1 text-[12px] text-gray-500">
+                <span className="text-[12px] text-gray-500">
                   {reviewDone ? 'Recorded' : 'Recording…'}
                 </span>
               )}
             </span>
           )}
-          {target && (
-            <button
-              type="button"
-              onClick={() => askAI(target)}
-              className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
-            >
-              Ask AI
-            </button>
-          )}
-          {/*
-            Create, in the same row as the other ways forward.
 
-            The workbench and the card now offer the same control in the same
-            language; what differs is only what the object supports and what
-            the reader reached for. A live idea on the name unlocks the
-            recommendation form, which is why the menu is told about it.
+          {/*
+            Tools, right-aligned as a set.
+
+            Ask AI, Create and Discuss are not steps in the review -- they
+            are what you reach for alongside it -- and interleaving them
+            with the verdict made one undifferentiated run of nine controls.
+            `ml-auto` on the first one pushes the whole group right; where
+            the verdict is absent (a name with no thesis) it still does.
           */}
-          <CreateMenu
-            intent={intent}
-            context={{
-              assetId: subject.assetId,
-              symbol: subject.symbol,
-              hasLiveIdea: !!detail?.liveIdea,
-            }}
-          />
-          {detail?.liveIdea && (
-            <button
-              type="button"
-              onClick={() => routeToIdea(
-                detail.liveIdea!.id,
-                `${subject.symbol ?? 'Asset'} — ${issueFor(subject)}`,
-              )}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
-            >
-              {detail.liveIdea.action
-                ? `Open the ${detail.liveIdea.action} idea`
-                : 'Open the idea'}
-              <ArrowUpRight className="h-3 w-3 opacity-70" />
-            </button>
-          )}
-          {teamable && (
-            <>
-              <span className="text-[11px] text-gray-300 dark:text-gray-700">·</span>
+          <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
+            {detail?.liveIdea && (
+              <button
+                type="button"
+                onClick={() => routeToIdea(
+                  detail.liveIdea!.id,
+                  `${subject.symbol ?? 'Asset'} — ${issueFor(subject)}`,
+                )}
+                className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+              >
+                {detail.liveIdea.action
+                  ? `Open the ${detail.liveIdea.action} idea`
+                  : 'Open the idea'}
+                <ArrowUpRight className="h-3 w-3 opacity-70" />
+              </button>
+            )}
+            {target && (
+              <button
+                type="button"
+                onClick={() => askAI(target)}
+                className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              >
+                Ask AI
+              </button>
+            )}
+            {/*
+              Create, in the same row as the other ways forward.
+
+              The workbench and the card now offer the same control in the
+              same language; what differs is only what the object supports
+              and what the reader reached for. A live idea on the name
+              unlocks the recommendation form, which is why the menu is told
+              about it.
+            */}
+            <CreateMenu
+              intent={intent}
+              context={{
+                assetId: subject.assetId,
+                symbol: subject.symbol,
+                hasLiveIdea: !!detail?.liveIdea,
+              }}
+            />
+            {/*
+              "Team" named an audience, not an action, so it was the one
+              control here nobody could predict the result of. It opens a
+              thread on this object -- `discuss` is what the function has
+              always been called -- so the button says that.
+            */}
+            {teamable && (
               <button
                 type="button"
                 onClick={() => discuss(target!)}
-                className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
-                Team
+                <MessageSquare className="h-3.5 w-3.5 opacity-70" />
+                Discuss
               </button>
-            </>
-          )}
-          <button type="button" aria-label="More actions"
-                  className="ml-auto grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]">
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+            )}
+            <button type="button" aria-label="More actions"
+                    className="grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]">
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </span>
         </div>
       </div>
 
@@ -405,7 +476,17 @@ export function ResearchDetail({
         in since we wrote it. Stacking put the new facts above the belief they
         contradict and pushed the belief off the first screen.
       */}
-      <div className="px-6 pb-10 pt-5">
+      {/*
+        One rhythm down the page.
+
+        Measured, the bands were 20px / 24px / 24px apart with a 125px
+        figure strip between two of them, so the page read as four things
+        of equal importance crowded together rather than as a header, a
+        summary and the body. The body now starts a clear step below the
+        band, and the two columns are spaced further apart than the sections
+        WITHIN a column -- which is what makes them read as two columns.
+      */}
+      <div className="px-6 pb-12 pt-7">
         {/*
           What has changed since the thesis was written.
 
@@ -436,6 +517,7 @@ export function ResearchDetail({
           order beside it.
         */}
         <DesktopColumns
+          className="gap-x-12 gap-y-8"
           lead={<>
             {leadPanel === 'price' && (
               <DesktopSection id="price" title={caseDate.priceSince} lead>
@@ -467,30 +549,49 @@ export function ResearchDetail({
             </button>
           }
         >
+          {/*
+            The case reads as a document now, not as a stack of fragments.
+
+            It was: 9px caps label, 13px claim, 12px detail, 10px byline --
+            four type sizes per section, repeated three times, 14px apart,
+            with the byline directly under the prose so each section ended
+            in grey metadata and the next began immediately. Nothing told
+            the eye where one claim stopped.
+
+            A section is a label with its attribution ON THE SAME LINE, then
+            the claim, with a hairline down the left binding the two. The
+            attribution moves out of the reading path -- who wrote it is a
+            qualifier, not the last word of the argument.
+          */}
           {sections.length > 0 ? (
-            <div className="flex flex-col gap-3.5">
+            <div className="flex flex-col gap-5">
               {sections.map(sec => (
-                <div key={sec.section}>
-                  <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500">
-                    {SECTION_LABEL[sec.section] ?? sec.section}
+                <div
+                  key={sec.section}
+                  className="border-l-2 border-gray-200 pl-3.5 dark:border-white/10"
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-gray-400">
+                      {SECTION_LABEL[sec.section] ?? sec.section}
+                    </span>
                     {!(CORE_SECTIONS as readonly string[]).includes(sec.section) && (
-                      <span className="ml-1.5 font-medium normal-case tracking-normal text-gray-400">
+                      <span className="rounded bg-gray-100 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:bg-white/[0.07] dark:text-gray-400">
                         supporting
                       </span>
                     )}
+                    <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums text-gray-400 dark:text-gray-500">
+                      {sec.authorName ? `${sec.authorName} · ` : ''}
+                      {new Date(sec.updatedAt).toLocaleDateString()}
+                    </span>
                   </div>
-                  <p className="mt-1 max-w-[84ch] whitespace-pre-line text-[13px] leading-relaxed text-gray-800 dark:text-gray-200">
-                    {sec.content || <span className="italic text-gray-500">Empty.</span>}
+                  <p className="mt-1.5 max-w-[80ch] whitespace-pre-line text-[14px] leading-[1.65] text-gray-800 dark:text-gray-200">
+                    {sec.content || <span className="italic text-gray-400">Empty.</span>}
                   </p>
                   {sec.supportingDetail && (
-                    <p className="mt-1 max-w-[84ch] text-[12px] leading-relaxed text-gray-600 dark:text-gray-400">
+                    <p className="mt-2 max-w-[80ch] text-[12.5px] leading-relaxed text-gray-600 dark:text-gray-400">
                       {sec.supportingDetail}
                     </p>
                   )}
-                  <div className="mt-1 text-[10px] text-gray-500">
-                    {sec.authorName ? `${sec.authorName} · ` : ''}
-                    {new Date(sec.updatedAt).toLocaleDateString()}
-                  </div>
                 </div>
               ))}
             </div>
@@ -564,7 +665,7 @@ export function ResearchDetail({
                 title="Evidence on record"
                 meta={`${priorEvidence.length}`}
               >
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2.5">
                   {priorEvidence.slice(0, 8).map(e => <EvidenceRow key={e.id} item={e} />)}
                 </div>
               </DesktopSection>
@@ -599,31 +700,46 @@ export function ResearchDetail({
 
 /* ------------------------------------------------------------------ pieces */
 
+/**
+ * One note on the record.
+ *
+ * ── Why the prior items lost their boxes ──────────────────────────────────
+ *
+ * Eight bordered rectangles in a 300px column is a stack of cards, each
+ * claiming to be an object worth opening, for what is a title, a date and
+ * two lines of preview. The box now marks the ONE distinction that matters
+ * here -- arrived after the case was written, or before it -- so a new item
+ * reads as arriving from outside and the rest read as a list.
+ *
+ * The author moves onto the title's baseline for the same reason it did in
+ * the case: a byline on its own line makes every row three lines tall and
+ * ends each one in grey.
+ */
 function EvidenceRow({ item, isNew }: { item: { title: string | null; content: string | null; createdAt: string; authorName: string | null }; isNew?: boolean }) {
+  const preview = stripHtml(item.content ?? '')
   return (
     <div className={clsx(
-      'rounded-lg border px-3 py-2',
       isNew
-        ? 'border-amber-200 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20'
-        : 'border-gray-200 dark:border-white/10',
+        ? 'rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 dark:border-amber-900/40 dark:bg-amber-950/20'
+        : 'border-b border-gray-100 pb-2.5 last:border-0 last:pb-0 dark:border-white/[0.06]',
     )}>
       <div className="flex items-baseline gap-2">
-        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-900 dark:text-gray-100">
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-gray-900 dark:text-gray-100">
           {item.title || 'Untitled note'}
         </span>
-        <span className="font-mono text-[10px] text-gray-500">
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-gray-400 dark:text-gray-500">
           {new Date(item.createdAt).toLocaleDateString()}
         </span>
       </div>
       {/* Notes are stored as rich text; the shared stripper is what every
           other preview in the app uses, so this reads the same everywhere. */}
-      {stripHtml(item.content ?? '') && (
-        <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-gray-600 dark:text-gray-400">
-          {stripHtml(item.content ?? '')}
+      {preview && (
+        <p className="mt-1 line-clamp-2 text-[11.5px] leading-[1.5] text-gray-600 dark:text-gray-400">
+          {preview}
         </p>
       )}
       {item.authorName && (
-        <div className="mt-1 text-[10px] text-gray-500">{item.authorName}</div>
+        <div className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">{item.authorName}</div>
       )}
     </div>
   )
@@ -656,7 +772,7 @@ function SinceReview({
   return (
     <section
       data-testid="since-review"
-      className="mb-6 border-b border-gray-200 pb-5 dark:border-white/10"
+      className="mb-8 border-b border-gray-200 pb-6 dark:border-white/10"
     >
       <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
         {capitalize(caseDate.sinceThe)}
