@@ -40,6 +40,7 @@ vi.mock('../../../hooks/useTileCloses', () => ({
   // the solo path: the tile falls back to its own hook when the field hands
   // it nothing. Present so the module's shape matches.
   useGalleryCloses: () => ({ map: new Map(), pending: false }),
+  useYearRanges: () => new Map(),
 }))
 
 const { OpportunityTile } = await import('../OpportunityGrid')

@@ -132,6 +132,9 @@ vi.mock('../../hooks/useTileCloses', () => ({
   // The field batches every tile's closes in one read now. Empty and settled:
   // these cases are about which tiles exist, not what they draw.
   useGalleryCloses: () => ({ map: new Map(), pending: false }),
+  // The trailing year is a second, much smaller read -- only the scenario
+  // cards draw it, and no case here is about what they draw.
+  useYearRanges: () => new Map(),
 }))
 
 /*

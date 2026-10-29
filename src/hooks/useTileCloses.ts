@@ -29,7 +29,11 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import { bySymbol, chunkFor, fetchDailyCloses } from '../lib/market-data/daily-closes'
+import {
+  bySymbol, chunkFor, fetchDailyCloses, fetchYearRange, type YearRange,
+} from '../lib/market-data/daily-closes'
+
+export type { YearRange }
 
 /** A dated close, in the shape the tile charts consume. */
 export interface TileClose {
@@ -103,6 +107,41 @@ export function useGalleryCloses(symbols: readonly (string | null | undefined)[]
        it cannot hang on a market-data outage. */
     pending: wanted.length > 0 && status === 'pending',
   }
+}
+
+/**
+ * The trailing-year high and low, for the few cards that draw a range.
+ *
+ * Separate from `useGalleryCloses` on purpose: a year is twice the window the
+ * sparklines need, and the chunk size is `floor(1000 / days)` by
+ * construction, so widening the field's own fetch would take it from ~12
+ * requests to ~28 for a figure five tiles use. The caller passes only the
+ * symbols that actually draw a scenario axis.
+ *
+ * NOT gated on by the field's skeleton. The scenario card is complete without
+ * these marks -- they are context on an axis that already states the finding
+ * -- so they arrive when they arrive rather than holding fifty-six tiles
+ * shut on a second request.
+ *
+ * RLS posture: unchanged, and identical to the hook above. Same table, same
+ * existing read policy, no org scope, no new grant.
+ */
+export function useYearRanges(symbols: readonly (string | null | undefined)[]) {
+  const wanted = useMemo(
+    () => [...new Set(symbols.filter((s): s is string => !!s))].sort(),
+    [symbols],
+  )
+  const key = wanted.join('|')
+
+  const { data } = useQuery<Map<string, YearRange>>({
+    queryKey: ['gallery-year-range', key],
+    enabled: wanted.length > 0,
+    // An extreme over a year does not move the way a last price does.
+    staleTime: 30 * 60_000,
+    queryFn: () => fetchYearRange(wanted),
+  })
+
+  return data ?? new Map<string, YearRange>()
 }
 
 export function useTileCloses(symbol: string | null | undefined) {

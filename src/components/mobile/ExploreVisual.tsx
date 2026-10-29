@@ -3,6 +3,7 @@ import { clsx } from 'clsx'
 import { Quote, HelpCircle } from 'lucide-react'
 
 import type { ExploreVisual as Visual } from '../../lib/mobile/explore-visual'
+import { fitsTheLabel, type YearRange } from '../../lib/market-data/daily-closes'
 
 /**
  * The Explore card's picture, one small component per archetype.
@@ -197,6 +198,11 @@ function Cap({ children, className }: { children: React.ReactNode; className?: s
 
 const money = (v: number) => (v >= 1000 ? `$${v.toFixed(0)}` : v >= 100 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`)
 
+/* `fitsTheLabel` lives with `YearRange` in `lib/market-data/daily-closes`,
+   not here: it is a claim about data, it is unit-tested on its own, and a
+   non-component export from this file breaks fast refresh for every
+   archetype in it. */
+
 /**
  * The price against the range somebody modelled.
  *
@@ -224,20 +230,44 @@ const money = (v: number) => (v >= 1000 ? `$${v.toFixed(0)}` : v >= 100 ? `$${v.
  * holds on a phone cell and thickens on a stretched tile without ever
  * becoming a slab.
  */
-function ScenarioRange({ v, s, grow, interactive }: {
+function ScenarioRange({ v, s, grow, interactive, year }: {
   v: Extract<Visual, { kind: 'scenario_range' }>
   s: Scale
   /** The axis takes the room it is given instead of a fixed 24px. */
   grow?: boolean
   /** Marks report themselves on hover and by keyboard. Desktop only. */
   interactive?: boolean
+  /**
+   * The trailing-year high and low, where the caller has them.
+   *
+   * Context the axis did not have: "above your range" says nothing about
+   * whether the market is also at the top of its own year or merely back
+   * where it was in March. Drawn only on the grown axis -- a phone cell has
+   * no room for four more marks -- and only when the window is one the label
+   * can honestly be put on. See `fitsTheLabel`.
+   */
+  year?: YearRange | null
 }) {
+  /*
+   * ── The scale, and when the year is allowed to stretch it ────────────────
+   *
+   * The modelled range is the scale, padded a third at each end, and that
+   * asymmetry is deliberate: a marker past the end of the band IS the
+   * finding, and a scale that stretched to swallow it would put the price
+   * back inside the picture and quietly undo the claim.
+   *
+   * The year's extremes routinely fall outside that. They cannot be clamped
+   * to the ends -- a clamped mark says "the 52-week high is right here" when
+   * it is somewhere off the card -- so when there is a year to draw, the
+   * domain opens to hold it and the modelled range becomes a REGION within
+   * the year rather than the whole picture. Which is the more honest frame
+   * anyway: the band is one claim on an axis, not the axis.
+   */
   const span = v.high - v.low
-  // A third of the band at each end, which is enough room to show a breach
-  // without shrinking the band itself into a stripe.
   const pad = span * 0.34
-  const lo = v.low - pad
-  const hi = v.high + pad
+  const usable = grow && year && fitsTheLabel(year) ? year : null
+  const lo = usable ? Math.min(v.low, usable.low, v.current) - span * 0.08 : v.low - pad
+  const hi = usable ? Math.max(v.high, usable.high, v.current) + span * 0.08 : v.high + pad
   const pos = (p: number) => ((p - lo) / (hi - lo)) * 100
   const clamp = (n: number) => Math.min(Math.max(n, 2), 98)
 
@@ -374,7 +404,13 @@ function ScenarioRange({ v, s, grow, interactive }: {
         for structure and a solid bar is the honest primitive.
       */}
       {grow ? (
-        <div className="relative min-h-0 w-full flex-1" style={{ minHeight: 30, maxHeight: 76 }}>
+        <div
+          className="relative min-h-0 w-full flex-1"
+          /* `marginBottom` where the year is drawn: its span and serifs hang
+             5px below the baseline, and without the room they sit on top of
+             the label row. */
+          style={{ minHeight: 30, maxHeight: 76, marginBottom: usable ? 6 : 0 }}
+        >
           {/* The modelled range, as a shaded region. Ink at low alpha rather
               than a grey fill, so it sits UNDER the marks instead of
               competing with them. */}
@@ -399,6 +435,32 @@ function ScenarioRange({ v, s, grow, interactive }: {
           ))}
           {/* The baseline the marks stand on. */}
           <div className="absolute inset-x-0 bottom-0 h-px bg-gray-400 dark:bg-white/25" aria-hidden />
+
+          {/* ── The year the market actually traded ────────────────────────
+              Drawn BELOW the baseline, as a span with end serifs, so it
+              reads as the ground the cases are claims about rather than as
+              a fourth case. "Above your range" is a different statement
+              from "above your range AND at the top of its year", and the
+              axis could not previously tell them apart. */}
+          {usable && (
+            <>
+              <div
+                data-scenario-year
+                className="absolute -bottom-[3px] h-px bg-gray-300 dark:bg-white/20"
+                style={{ left: `${pos(usable.low)}%`, width: `${pos(usable.high) - pos(usable.low)}%` }}
+                aria-hidden
+              />
+              {([['low', usable.low], ['high', usable.high]] as const).map(([which, p]) => (
+                <div
+                  key={`52-${which}`}
+                  data-scenario-year-mark={which}
+                  className="absolute -bottom-[5px] h-[5px] w-px bg-gray-400 dark:bg-white/30"
+                  style={{ left: `${pos(p)}%` }}
+                  aria-hidden
+                />
+              ))}
+            </>
+          )}
 
           {cases.map(c => {
             const id = `case:${c.label}:${c.price}`
@@ -530,7 +592,7 @@ function ScenarioRange({ v, s, grow, interactive }: {
         would collide and a collision reads worse than a corner.
       */}
       {grow && cases.length > 0 ? (
-        <div className="relative mt-1 h-3.5 w-full">
+        <div className={clsx('relative mt-1 w-full', usable ? 'h-[23px]' : 'h-3.5')}>
           {marks.map(m => (
             <span
               key={m.id}
@@ -544,6 +606,22 @@ function ScenarioRange({ v, s, grow, interactive }: {
               style={{ left: `${clamp(pos(m.price))}%` }}
             >
               {m.current ? mark$(m.price) : `${m.label} ${mark$(m.price)}`}
+            </span>
+          ))}
+          {/* The year's two ends, on their own line in the lightest ink on
+              the card -- they are the frame, and a frame that competes with
+              the claim inside it has stopped being one. A second row rather
+              than the same one, because a 52-week low and a bear case are
+              often within a few dollars and the two labels would overlap. */}
+          {usable && ([['low', usable.low], ['high', usable.high]] as const).map(([which, p]) => (
+            <span
+              key={`52label-${which}`}
+              data-scenario-year-label={which}
+              className="absolute top-[11px] -translate-x-1/2 whitespace-nowrap text-[8px] font-semibold uppercase leading-none tracking-wide tabular-nums text-gray-400 dark:text-gray-500"
+              style={{ left: `${clamp(pos(p))}%` }}
+              title={`52-week ${which} from closes ${usable.from} to ${usable.to}`}
+            >
+              52w {which} {mark$(p)}
             </span>
           ))}
         </div>
@@ -985,6 +1063,11 @@ interface ExploreVisualProps {
    * so the phone is unchanged by construction.
    */
   fill?: boolean
+  /**
+   * The trailing-year high and low for this symbol, where the caller has
+   * them. Only `scenario_range` draws them; every other archetype ignores it.
+   */
+  year?: YearRange | null
 }
 
 /**
@@ -994,7 +1077,9 @@ interface ExploreVisualProps {
  * gets nothing, and the second gets the existing sparkline rather than a second
  * implementation of one.
  */
-export function ExploreVisualBlock({ visual, sparkline, now, density = 'card', fill }: ExploreVisualProps) {
+export function ExploreVisualBlock({
+  visual, sparkline, now, density = 'card', fill, year,
+}: ExploreVisualProps) {
   const t = now ?? Date.now()
   const s = SCALE[density]
   /* A mouse, not a thumb. The phone card stays inert -- see the constraints
@@ -1010,7 +1095,7 @@ export function ExploreVisualBlock({ visual, sparkline, now, density = 'card', f
   const body = (() => {
     switch (visual.kind) {
       case 'scenario_range':
-        return <ScenarioRange v={visual} s={s} grow={grow} interactive={interactive} />
+        return <ScenarioRange v={visual} s={s} grow={grow} interactive={interactive} year={year} />
       case 'target_compare': return <TargetCompare v={visual} s={s} grow={grow} />
       case 'timeline': return <Timeline v={visual} now={t} s={s} grow={grow} />
       case 'exposure': return <Exposure v={visual} s={s} grow={grow} />

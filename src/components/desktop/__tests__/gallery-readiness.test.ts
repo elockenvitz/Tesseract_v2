@@ -391,11 +391,39 @@ describe('a stretched tile has somewhere to put the height', () => {
        still stops a carousel page from relayouting the field. */
     expect(field).toMatch(/minHeight: panels\.length > 1 \? panelBox : undefined/)
     expect(field).not.toMatch(/height: panels\.length > 1 \? panelBox/)
-    expect(field).toMatch(/className="flex min-h-0 min-w-0 flex-1 flex-col justify-center"/)
+    expect(field).toMatch(/className="relative flex min-h-0 min-w-0 flex-1 flex-col"/)
+  })
+
+  it('takes the showing panel out of flow, so paging resizes nothing', () => {
+    /*
+     * The box floors at `panelBox` but nothing capped it, and the cap is the
+     * half that matters: the chart panel's caption and horizon chips are
+     * intrinsically taller than the axis panel, and every link above is
+     * content-sized -- box to wrapper to column to tile, and
+     * `gridAutoRows: minmax(88px, auto)` sizes the ROW to its tallest
+     * member. Paging to Price grew the card and every card beside it.
+     *
+     * Measured by paging all 45 carousels on the live field: 39px on four
+     * tiles, 5px on three more, and the page grew with them. After: 0px,
+     * every tile, every panel.
+     *
+     * `overflow-hidden` does NOT substitute, and that is the trap worth
+     * recording -- clipping governs painting, not intrinsic sizing, so the
+     * child kept contributing its height to the measurement.
+     */
+    expect(field).toMatch(/className="absolute inset-0 flex min-h-0 flex-col justify-center overflow-hidden"/)
+    expect(field).toMatch(/className="relative flex min-h-0 min-w-0 flex-1 flex-col"/)
+  })
+
+  it('puts the pager where Today puts it', () => {
+    /* Today's sits at the right end of the row under its picture; this one
+       sat at the left end of its own row. Same control, two places to look
+       for it. The column's cross axis is horizontal, so `ml-auto` ends it. */
+    expect(field).toMatch(/className="mt-1\.5 ml-auto"/)
   })
 
   it('tells the picture it may fill, and only the kinds that can', () => {
-    expect(field).toMatch(/<ExploreVisualBlock [^>]*density="tile" fill \/>/)
+    expect(field).toMatch(/<ExploreVisualBlock [^>]*density="tile" fill\b/)
     /* Named, because `flex-1` overrides the box's own `justify-center`: an
        archetype that cannot grow is better centred than pinned to the top of
        a tall box. If this set ever swallows every kind, that is the

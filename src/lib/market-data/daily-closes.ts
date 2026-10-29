@@ -103,6 +103,99 @@ export async function fetchDailyCloses(
   return pages.flat()
 }
 
+/** A trailing-year extreme, with the window it was actually measured over. */
+export interface YearRange {
+  high: number
+  low: number
+  /** Oldest close that fed it. The claim is only as old as the data. */
+  from: string
+  /** Newest. `price_history_cache` is a cache and can be weeks stale. */
+  to: string
+  /** How many closes were behind it. */
+  points: number
+}
+
+/** Calendar days in the trailing-year window. */
+export const YEAR_DAYS = 365
+
+/**
+ * Whether a window may be called "52 week".
+ *
+ * `price_history_cache` is a CACHE. Queried on 2026-10-28, the deepest
+ * symbol held 361 closes ending 2026-10-01 -- four weeks stale -- and most
+ * symbols held well under a year. A high taken over eight months of closes
+ * ending a month ago is a real number, but it is not the number the words
+ * "52-week high" promise, and this codebase does not surface a figure that
+ * cannot be traced to what produced it.
+ *
+ * So the mark is drawn only when the window genuinely covers it:
+ *
+ *   300 days of span   a year is about 252 sessions; 300 calendar days
+ *                      leaves room for holidays and a short tail without
+ *                      accepting a half-year
+ *   180 points         a window with forty closes in it has gaps wide
+ *                      enough to miss the extreme entirely
+ *   45 days of lag     the cache may trail, but not by a quarter
+ *
+ * A card that fails any term draws the axis it drew before. Silence is the
+ * correct output for a figure that cannot be stood behind.
+ */
+export function fitsTheLabel(y: YearRange, now: number = Date.now()): boolean {
+  const from = Date.parse(y.from)
+  const to = Date.parse(y.to)
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return false
+  const DAY = 86_400_000
+  return (to - from) / DAY >= 300
+    && y.points >= 180
+    && (now - to) / DAY <= 45
+    && y.high > y.low
+}
+
+/**
+ * The 52-week high and low, from the same cache everything else reads.
+ *
+ * ── Why this is its own call and not a wider window on the field ──────────
+ *
+ * The gallery fetches 180 days for its sparklines, and a year is twice that.
+ * The chunk size is `floor(1000 / days)` by construction -- the only thing
+ * standing between this cache and the silent truncation that bit Today -- so
+ * a year drops it from 5 symbols a request to 2, and a 56-name field would go
+ * from ~12 requests to ~28 to serve a figure that only the scenario cards
+ * draw. Measured on the live field: 5 of 56 tiles.
+ *
+ * So the year is fetched for THOSE symbols only, which is three requests.
+ *
+ * ── Provenance ────────────────────────────────────────────────────────────
+ *
+ * `from`/`to` come back with the number because the cache is a cache: it can
+ * be weeks behind, and a "52-week high" computed over eleven months of stale
+ * closes is a different claim from the one the label makes. The caller
+ * decides whether the window it got is one it is willing to name.
+ *
+ * These are CLOSES, not intraday extremes. A true 52-week high is the highest
+ * price traded; this is the highest price at which a session settled, and it
+ * is what the only series this app has can support.
+ */
+export async function fetchYearRange(
+  symbols: readonly string[],
+): Promise<Map<string, YearRange>> {
+  const rows = await fetchDailyCloses(symbols, { days: YEAR_DAYS })
+  const out = new Map<string, YearRange>()
+  for (const [symbol, list] of bySymbol(rows)) {
+    const closes = list.map(r => Number(r.close)).filter(Number.isFinite)
+    if (closes.length < 2) continue
+    out.set(symbol, {
+      high: Math.max(...closes),
+      low: Math.min(...closes),
+      // `bySymbol` sorted the list, so the ends are the window.
+      from: list[0].date,
+      to: list[list.length - 1].date,
+      points: closes.length,
+    })
+  }
+  return out
+}
+
 /** Closes grouped by symbol, each oldest-first. */
 export function bySymbol(rows: readonly DailyClose[]): Map<string, DailyClose[]> {
   const out = new Map<string, DailyClose[]>()

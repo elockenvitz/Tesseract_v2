@@ -37,7 +37,10 @@ import {
   TileAction, GallerySkeleton, type TileSize,
 } from '../desktop/DesktopTile'
 import { TilePriceChart } from '../desktop/TilePriceChart'
-import { useGalleryCloses, useTileCloses, type TileClose } from '../../hooks/useTileCloses'
+import {
+  useGalleryCloses, useTileCloses, useYearRanges,
+  type TileClose, type YearRange,
+} from '../../hooks/useTileCloses'
 import { ExploreVisualBlock } from '../mobile/ExploreVisual'
 import { VisualPager } from '../desktop/VisualPager'
 import {
@@ -147,6 +150,19 @@ export function OpportunityGrid({
      resolving on its own schedule and reflowing its card when it lands. */
   const closes = useGalleryCloses(useMemo(
     () => opportunities.map(o => o.item.symbol),
+    [opportunities],
+  ))
+
+  /* The trailing year, for the scenario cards ONLY.
+   *
+   * A year is twice the sparklines' window and the chunk size is
+   * `floor(1000 / days)` by construction, so asking the whole field for one
+   * would take it from ~12 requests to ~28. Measured on the live field, 5 of
+   * 56 tiles draw a range -- which is three requests. */
+  const yearRanges = useYearRanges(useMemo(
+    () => opportunities
+      .filter(o => exploreVisualFor(o.item)?.kind === 'scenario_range')
+      .map(o => o.item.symbol),
     [opportunities],
   ))
 
@@ -334,6 +350,7 @@ export function OpportunityGrid({
           o={o}
           size={sizes[i]}
           closes={o.item.symbol ? closes.map.get(o.item.symbol) ?? [] : []}
+          year={o.item.symbol ? yearRanges.get(o.item.symbol) ?? null : null}
           onOpen={() => onOpen(o, rail)}
         />
       ))}
@@ -346,13 +363,16 @@ export function OpportunityGrid({
    tile, and the property under test -- that only one picture is mounted at a
    time -- is the tile's, not the field's. */
 export function OpportunityTile({
-  o, size, onOpen, closes: closesIn,
+  o, size, onOpen, closes: closesIn, year = null,
 }: {
   o: Opportunity
   size: TileSize
   onOpen: () => void
   /** This symbol's closes from the field's one batched read. */
   closes?: TileClose[]
+  /** Its trailing-year extremes, where the field fetched them. Scenario
+   *  cards draw them; every other archetype ignores the prop. */
+  year?: YearRange | null
 }) {
   const item = o.item
   const big = size === 'hero' || size === 'large'
@@ -504,7 +524,7 @@ export function OpportunityTile({
            `flex-1`, and the picture is the last link in that chain. Without
            it the archetype sits at its minimum in the middle of a box it was
            given room to grow into. */
-        node: <ExploreVisualBlock visual={visual} now={Date.now()} density="tile" fill />,
+        node: <ExploreVisualBlock visual={visual} now={Date.now()} density="tile" fill year={year} />,
       })
     }
     if (drawsPrice) {
@@ -519,7 +539,7 @@ export function OpportunityTile({
       })
     }
     return out
-  }, [visual, drawsPrice, priceIsTheFinding, closes, chartHeight])
+  }, [visual, drawsPrice, priceIsTheFinding, closes, chartHeight, year])
 
   const [panel, setPanel] = useState(0)
   /* Clamped rather than reset: `closes` arriving or failing changes the panel
@@ -624,12 +644,39 @@ export function OpportunityTile({
              * neighbour put the difference under the picture instead of in
              * it. As `minHeight` on a `flex-1` box the floor still holds and
              * the ceiling is gone. */
-            className="flex min-h-0 min-w-0 flex-1 flex-col justify-center"
+            /* ── The panel is POSITIONED, so paging cannot resize anything ──
+             *
+             * `minHeight` floored the box but nothing capped it, and the
+             * cap is the half that matters: the chart panel's caption and
+             * horizon chips are intrinsically taller than the axis panel,
+             * and every link in the chain above is content-sized -- the box
+             * feeds the wrapper, the wrapper the column, the column the
+             * tile, and `gridAutoRows: minmax(88px, auto)` sizes the ROW to
+             * its tallest member. So paging to Price grew the card AND
+             * every card beside it.
+             *
+             * Measured by paging all 45 carousels: the card grew 39px on
+             * four, 5px on three more, and the page grew with it each time.
+             * A read must not relayout the field under the cursor.
+             *
+             * `overflow-hidden` did not fix it, and the reason is worth
+             * keeping: clipping governs painting, not intrinsic sizing. The
+             * child still contributed its height to the measurement.
+             *
+             * Taking the panel out of flow does fix it. The box's own
+             * intrinsic height is then `minHeight` and nothing else --
+             * identical for every panel -- while `flex-1` still lets the
+             * row hand it more. Both panels already fill a box they are
+             * given: the chart measures its own in `fill` mode and the axis
+             * is a flex column over a 30px floor. */
+            className="relative flex min-h-0 min-w-0 flex-1 flex-col"
             style={{ minHeight: panels.length > 1 ? panelBox : undefined }}
             data-testid="opportunity-visual"
             data-panel={panels[shown].key}
           >
-            {panels[shown].node}
+            <div className="absolute inset-0 flex min-h-0 flex-col justify-center overflow-hidden">
+              {panels[shown].node}
+            </div>
           </div>
 
           {/*
@@ -645,8 +692,13 @@ export function OpportunityTile({
             `portalClick` already lets a <button> through without reading it
             as "open this tile", so the segments do not open the card.
           */}
+          {/* `ml-auto`: Today's sits at the RIGHT end of the row under its
+              picture (`ml-auto` beside the "See the full chart" portal), and
+              this one sat at the left end of its own row. Same control, same
+              gesture, two places to look for it. The column's cross axis is
+              horizontal, so an auto left margin pushes it to the end. */}
           <VisualPager
-            className="mt-1.5"
+            className="mt-1.5 ml-auto"
             labels={panels.map(p => p.tab)}
             keys={panels.map(p => p.key)}
             index={shown}
